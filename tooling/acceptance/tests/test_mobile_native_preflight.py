@@ -66,6 +66,7 @@ from tooling.acceptance.provisioners.mobile_native import (
     MobileNativeStationFixtureCapabilityHandler,
     _AndroidUsbNetworkTransport,
     _AndroidUsbNetworkTool,
+    _AppiumDeadlineExceeded,
     _ParentAndroidInstallationAdapter,
     _ParentAppiumSession,
     _ParentAppiumTransport,
@@ -606,6 +607,132 @@ class ParentAppiumTransportTests(unittest.TestCase):
             )
 
         self.assertIsInstance(observed.exception, DriverError)
+
+    def test_android_stop_recovers_timed_out_delete_inside_device_lease(
+        self,
+    ) -> None:
+        requests: list[tuple[str, str, float | None]] = []
+        commands: list[tuple[str, ...]] = []
+        forward_inventories = iter(
+            (
+                (
+                    "android-physical tcp:8201 tcp:6790\n"
+                    "android-physical tcp:8202 tcp:7810\n"
+                ),
+                "",
+            )
+        )
+
+        class Transport:
+            @staticmethod
+            def request(
+                method: str,
+                path: str,
+                _payload: Any = None,
+                *,
+                deadline_monotonic: float | None = None,
+                cancellation: threading.Event | None = None,
+            ) -> object:
+                del cancellation
+                requests.append((method, path, deadline_monotonic))
+                if method == "DELETE":
+                    raise _AppiumDeadlineExceeded(
+                        "synthetic DELETE timeout"
+                    )
+                return []
+
+        class Broker:
+            calls = 0
+
+            def with_physical_device(
+                self,
+                _lease: object,
+                operation: Any,
+                **_kwargs: Any,
+            ) -> object:
+                self.calls += 1
+                return operation(
+                    SimpleNamespace(identifier="android-physical")
+                )
+
+        class Executor:
+            @staticmethod
+            def run(
+                command: tuple[str, ...],
+                **_kwargs: Any,
+            ) -> CommandResult:
+                commands.append(tuple(command))
+                if command[-2:] == ("forward", "--list"):
+                    return CommandResult(0, next(forward_inventories))
+                if "pidof" in command:
+                    return CommandResult(1)
+                return CommandResult(0)
+
+        session = object.__new__(_ParentAppiumSession)
+        session.transport = Transport()
+        session.device_broker = Broker()
+        session._device_lease = object()
+        session.session_id = "appium-session"
+        session.platform = "android"
+        session._application_id = "com.peers.touch.mobile"
+        session.ports = {"system": 8201, "mjpeg": 8202}
+        session.command_executor = Executor()
+        started = time.monotonic()
+
+        session.stop(deadline_monotonic=started + 30)
+
+        self.assertEqual(session.device_broker.calls, 1)
+        self.assertEqual(session.session_id, "")
+        self.assertEqual(
+            [(method, path) for method, path, _ in requests],
+            [
+                ("DELETE", "/session/appium-session"),
+                ("GET", "/sessions"),
+            ],
+        )
+        self.assertLessEqual(
+            requests[0][2],
+            started + 10.1,
+        )
+        for package in (
+            "com.peers.touch.mobile",
+            "io.appium.uiautomator2.server",
+            "io.appium.uiautomator2.server.test",
+        ):
+            self.assertIn(
+                (
+                    "adb",
+                    "-s",
+                    "android-physical",
+                    "shell",
+                    "am",
+                    "force-stop",
+                    package,
+                ),
+                commands,
+            )
+        self.assertIn(
+            (
+                "adb",
+                "-s",
+                "android-physical",
+                "forward",
+                "--remove",
+                "tcp:8201",
+            ),
+            commands,
+        )
+        self.assertIn(
+            (
+                "adb",
+                "-s",
+                "android-physical",
+                "forward",
+                "--remove",
+                "tcp:8202",
+            ),
+            commands,
+        )
 
     def test_active_application_id_reads_android_package(self) -> None:
         session = object.__new__(_ParentAppiumSession)

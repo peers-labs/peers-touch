@@ -25,6 +25,7 @@ import {
 import {
   sanitizeMessagingProjection,
   sanitizeMobileProjection,
+  sanitizeAccessSession,
   sanitizeSessionRevocation,
 } from './projection';
 import { createMobileAcceptanceHarness } from './registry';
@@ -514,6 +515,44 @@ describe('Mobile Acceptance Harness', () => {
         session: { actorPtid: 'ptid:alice' },
       },
     });
+  });
+
+  it('keeps access.submit session output on the public projection boundary', () => {
+    const session = sanitizeAccessSession({
+      stationPeerId: 'station-peer',
+      stationUrl: 'https://station.example',
+      sessionId: 'must-not-cross',
+      actorPtid: 'ptid:alice',
+      deviceId: 'device-1',
+      lifecycleGeneration: 1,
+      expiresAt: '2026-08-29T00:00:00Z',
+      credentialOwner: 'native-oauth',
+    });
+    const source = readFileSync(
+      new URL('./actions.ts', import.meta.url),
+      'utf8',
+    );
+    const accessSubmitSource = source.slice(
+      source.indexOf("'access.submit':"),
+      source.indexOf("'oauth.start':"),
+    );
+
+    expect(session).toEqual({
+      stationPeerId: 'station-peer',
+      actorPtid: 'ptid:alice',
+      expiresAt: '2026-08-29T00:00:00Z',
+    });
+    expect(JSON.stringify(session)).not.toMatch(
+      /stationUrl|sessionId|deviceId|lifecycleGeneration|credentialOwner/,
+    );
+    expect(
+      accessSubmitSource.match(
+        /session:\s*sanitizeAccessSession\(\s*readSessionRuntimeSnapshot\(\)\.session,\s*\)/g,
+      ),
+    ).toHaveLength(3);
+    expect(accessSubmitSource).not.toMatch(
+      /session:\s*readSessionRuntimeSnapshot\(\)\.session/,
+    );
   });
 
   it('keeps acceptance adapters outside direct Zustand mutation APIs', () => {

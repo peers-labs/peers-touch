@@ -192,6 +192,7 @@ import {
 } from './reliabilityFixture';
 import {
   sanitizeAccessDecision,
+  sanitizeAccessSession,
   sanitizeMessagingMessages,
   sanitizeMessagingProjection,
   sanitizeMobileProjection,
@@ -325,7 +326,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       await completeAccessGateLaunch(decision);
       return {
         decision: requirePublicDecision(decision),
-        session: readSessionRuntimeSnapshot().session,
+        session: sanitizeAccessSession(
+          readSessionRuntimeSnapshot().session,
+        ),
       };
     }
 
@@ -352,7 +355,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       await completeAccessGateLaunch(result.decision);
       return {
         decision: requirePublicDecision(result.decision),
-        session: readSessionRuntimeSnapshot().session,
+        session: sanitizeAccessSession(
+          readSessionRuntimeSnapshot().session,
+        ),
       };
     }
 
@@ -375,7 +380,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       }
       return {
         decision: requirePublicDecision(result.decision),
-        session: readSessionRuntimeSnapshot().session,
+        session: sanitizeAccessSession(
+          readSessionRuntimeSnapshot().session,
+        ),
       };
     }
 
