@@ -77,7 +77,9 @@ SHELL_REQUIRED_HARNESS_ACTIONS = (
     "access.submit",
     "cleanup",
     "lifecycle.restart",
+    "lifecycle.resume",
     "lifecycle.snapshot",
+    "lifecycle.suspend",
     "navigation.apply",
     "navigation.snapshot",
     "projection.read",
@@ -128,6 +130,16 @@ return {
   height: Math.round(window.innerHeight),
   scaledElementCount: size === 'maximum' ? nodes.length : 0,
 };
+"""
+START_RESUME_SCRIPT = """
+const root = window.__PEERS_MOBILE_ACCEPTANCE__;
+if (!root || typeof root['lifecycle.resume'] !== 'function') return false;
+window.__PEERS_MOBILE_RESUME__ = Promise.resolve(
+  root['lifecycle.resume']({}),
+).catch((error) => {
+  window.__PEERS_MOBILE_RESUME_ERROR__ = String(error && error.message || error);
+});
+return true;
 """
 SURFACE_AUDIT_SCRIPT = """
 const selector = arguments[0];
@@ -1361,6 +1373,12 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
                         action,
                     )
                 )
+                if entry["entryAction"] == "fixture-deferred-module":
+                    resumed = session.call_action("lifecycle.resume")
+                    if not isinstance(resumed, Mapping):
+                        raise GateError(
+                            "Mobile shell did not resume after degraded capture"
+                        )
         self._configure_cell(session, "portrait-normal")
         artifacts.write_json(
             "mobile-whole-product/source-runtime.json",
@@ -1552,24 +1570,14 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
                 raise GateError(f"Mobile shell did not navigate to {route_id}")
             action_kind = "native-touch"
         elif action == "fixture-deferred-module":
-            lifecycle = session.call_action("lifecycle.snapshot")
-            runtimes = (
-                lifecycle.get("runtimes")
-                if isinstance(lifecycle, Mapping)
-                else None
-            )
-            if (
-                not isinstance(runtimes, list)
-                or not any(
-                    isinstance(runtime, Mapping)
-                    and runtime.get("id") != "recovery-projection"
-                    and runtime.get("status")
-                    in {"pending", "bootstrapping", "failed", "suspended", "resuming"}
-                    for runtime in runtimes
-                )
-            ):
+            suspended = session.call_action("lifecycle.suspend")
+            if not isinstance(suspended, Mapping):
                 raise GateError(
-                    "Mobile shell has no real degraded module to observe"
+                    "Mobile shell did not suspend for degraded-state proof"
+                )
+            if session.execute_script(START_RESUME_SCRIPT) is not True:
+                raise GateError(
+                    "Mobile shell did not start resume for degraded-state proof"
                 )
             action_kind = "system"
         else:
