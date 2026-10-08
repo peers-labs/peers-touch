@@ -1623,6 +1623,7 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
         session: Any,
         timeout_seconds: float = 10.0,
     ) -> None:
+        session.switch_to_app_webview()
         deadline = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline:
             result = session.execute_script(READ_RESUME_SCRIPT)
