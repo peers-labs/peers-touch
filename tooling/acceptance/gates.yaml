@@ -452,8 +452,8 @@
         "mobile.simulator.appium-session"
       ],
       "timeout_seconds": 5400,
-      "environment": "mobile-social-simulator",
-      "provisioner": "mobile-social-simulator",
+      "environment": "mobile-relay-simulator",
+      "provisioner": "mobile-relay-simulator",
       "tier": "env-evidence",
       "description": "Prove exact-source iOS Simulator Mobile discovers a Relay, retains one Station identity across Direct and Relay routes, preserves its Session during explicit route switching, and restores the Relay route after restart."
     },

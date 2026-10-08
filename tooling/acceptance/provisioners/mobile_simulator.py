@@ -8,10 +8,12 @@ import json
 import os
 import platform
 import re
+import secrets
 import signal
 import shutil
 import socket
 import ssl
+import stat
 import subprocess
 import tempfile
 import threading
@@ -69,6 +71,7 @@ from tooling.acceptance.core.reset_authority import (
 from tooling.acceptance.fixtures.chat_native_actors import (
     ACTOR_ACCOUNTS,
     ACTOR_PASSWORD,
+    ResolvedActorIdentity,
     prepare_bound_friendships,
     prepare_federation_contexts,
     reset_fixture,
@@ -112,6 +115,7 @@ STATION_LIFECYCLE_ENVIRONMENT_ID = "mobile-station-lifecycle-simulator"
 DIRECT_SIMULATOR_ENVIRONMENT_ID = "mobile-direct-simulator"
 CHAT_MIXED_NATIVE_ENVIRONMENT_ID = "chat-mixed-native"
 STATION_ACCESS_NATIVE_ENVIRONMENT_ID = "station-access-native"
+MOBILE_RELAY_SIMULATOR_ENVIRONMENT_ID = "mobile-relay-simulator"
 STATION_LIFECYCLE_GATE_ID = "mobile-simulator-station-lifecycle-e2e"
 STATION_SETTINGS_GATE_ID = "mobile-simulator-settings-e2e"
 STATION_BOUND_SIMULATOR_GATE_IDS = frozenset(
@@ -178,6 +182,190 @@ MOBILE_DIRECT_STATION_PROFILE_KEYS = {
 }
 PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 GIT_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+MOBILE_ACTOR_IDENTITY_STATE_ROOT = (
+    Path.home()
+    / ".peers-touch"
+    / "acceptance-state"
+    / "mobile-actor-identities"
+)
+
+
+def _resolve_mobile_actor_identity_via_access(
+    station_url: str,
+    deployment_environment: str,
+    role: str,
+) -> ResolvedActorIdentity:
+    account = ACTOR_ACCOUNTS.get(role)
+    if not account:
+        raise BlockedError(
+            reason=f"Mobile Relay actor role is unsupported: {role}",
+            resource=f"fixture-actor:{role}",
+        )
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PT_ACCESS_CLIENT_STATION": station_url.rstrip("/"),
+            "PT_ACCESS_CLIENT_EMAIL": account,
+            "PT_ACCESS_CLIENT_PASSWORD": ACTOR_PASSWORD,
+        }
+    )
+    try:
+        completed = subprocess.run(
+            ("go", "run", "./apps/station/app/tests/access_client"),
+            cwd=REPO_ROOT,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise BlockedError(
+            reason=(
+                "Mobile Relay canonical actor identity probe could not run: "
+                f"{type(error).__name__}"
+            ),
+            resource=f"fixture-actor:{deployment_environment}:{role}",
+        ) from error
+    if completed.returncode != 0:
+        raise BlockedError(
+            reason="Mobile Relay canonical actor identity probe failed",
+            resource=f"fixture-actor:{deployment_environment}:{role}",
+        )
+    try:
+        payload = json.loads(completed.stdout)
+    except (TypeError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise BlockedError(
+            reason="Mobile Relay canonical actor identity probe was invalid",
+            resource=f"fixture-actor:{deployment_environment}:{role}",
+        ) from error
+    if not isinstance(payload, dict):
+        raise BlockedError(
+            reason="Mobile Relay canonical actor identity probe was invalid",
+            resource=f"fixture-actor:{deployment_environment}:{role}",
+        )
+    payload.pop("token", None)
+    ptid = str(payload.get("ptid") or "").strip()
+    if not ptid.startswith("ptid:"):
+        raise BlockedError(
+            reason="Mobile Relay canonical actor PTID is unavailable",
+            resource=f"fixture-actor:{deployment_environment}:{role}",
+        )
+    return ResolvedActorIdentity(
+        role=role,
+        account_ref=f"station-account:{account}",
+        ptid=ptid,
+        device_policy="persistent-acceptance",
+    )
+
+
+def _load_or_create_mobile_actor_identity_seed(
+    station_peer_id: str,
+    actor_ptid: str,
+    actor: str,
+    *,
+    state_root: Path | None = None,
+) -> bytes:
+    if (
+        not station_peer_id.strip()
+        or not actor_ptid.startswith("ptid:")
+        or actor not in ACTOR_ACCOUNTS
+    ):
+        raise EphemeralCapabilityBlocked(
+            "Mobile Relay actor identity scope is invalid",
+            resource=SIMULATOR_APPIUM_CAPABILITY_ID,
+        )
+    root = state_root or MOBILE_ACTOR_IDENTITY_STATE_ROOT
+    try:
+        root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if root.parent.is_symlink():
+            raise OSError("identity state parent is a symlink")
+        root.mkdir(mode=0o700, exist_ok=True)
+        if root.is_symlink() or not root.is_dir():
+            raise OSError("identity state root is invalid")
+        root.chmod(0o700)
+    except OSError as error:
+        raise EphemeralCapabilityBlocked(
+            "Mobile Relay protected actor identity storage is unavailable",
+            resource=SIMULATOR_APPIUM_CAPABILITY_ID,
+        ) from error
+
+    identity_name = hashlib.sha256(
+        f"{station_peer_id}\0{actor_ptid}".encode("utf-8")
+    ).hexdigest()
+    identity_path = root / f"{identity_name}.key"
+
+    try:
+        descriptor = os.open(
+            identity_path,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+        )
+    except FileNotFoundError:
+        seed = secrets.token_bytes(32)
+        try:
+            descriptor = os.open(
+                identity_path,
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+            )
+        except FileExistsError:
+            return _load_or_create_mobile_actor_identity_seed(
+                station_peer_id,
+                actor_ptid,
+                actor,
+                state_root=root,
+            )
+        except OSError as error:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Relay protected actor identity could not be created",
+                resource=SIMULATOR_APPIUM_CAPABILITY_ID,
+            ) from error
+        try:
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "wb") as handle:
+                descriptor = -1
+                handle.write(seed)
+                handle.flush()
+                os.fsync(handle.fileno())
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+        return seed
+    except OSError as error:
+        raise EphemeralCapabilityBlocked(
+            "Mobile Relay protected actor identity could not be opened",
+            resource=SIMULATOR_APPIUM_CAPABILITY_ID,
+        ) from error
+
+    try:
+        identity_stat = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(identity_stat.st_mode)
+            or identity_stat.st_uid != os.getuid()
+            or stat.S_IMODE(identity_stat.st_mode) & 0o077
+        ):
+            raise OSError("identity state permissions are invalid")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
+            seed = handle.read(33)
+    except OSError as error:
+        raise EphemeralCapabilityBlocked(
+            "Mobile Relay protected actor identity is invalid",
+            resource=SIMULATOR_APPIUM_CAPABILITY_ID,
+        ) from error
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    if len(seed) != 32:
+        raise EphemeralCapabilityBlocked(
+            "Mobile Relay protected actor identity has invalid length",
+            resource=SIMULATOR_APPIUM_CAPABILITY_ID,
+        )
+    return seed
 SELECTED_BUILD_ENVIRONMENT_KEYS = frozenset(
     {
         "ANDROID_HOME",
@@ -4571,6 +4759,9 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             Callable[[str, object], object] | None
         ) = None,
         actor_manifest: Mapping[str, Any] | None = None,
+        actor_identity_seed_provider: (
+            Callable[[str, str, str], bytes] | None
+        ) = None,
         sensitive_values: Sequence[str] = (),
         verifier_source_digest: str | None = None,
     ) -> None:
@@ -4594,6 +4785,7 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             if actor_manifest is not None
             else None
         )
+        self._actor_identity_seed_provider = actor_identity_seed_provider
         self._sensitive_values = tuple(
             dict.fromkeys(value for value in sensitive_values if value)
         )
@@ -5233,54 +5425,72 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
                 == target_service_id
             )
         ]
-        if not sources:
-            return False
         if len(sources) != 1:
-            raise EphemeralCapabilityBlocked(
-                "Chat mixed-native actor identity source is ambiguous",
-                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
-            )
-        source = sources[0]
-        source_root = Path(str(source.get("storage_root") or ""))
+            if sources:
+                raise EphemeralCapabilityBlocked(
+                    "Chat mixed-native actor identity source is ambiguous",
+                    resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
+                )
+            if self._actor_identity_seed_provider is None:
+                return False
         actor_ptid = self._actor_ptid(client_id)
         station_peer_id = str(target_service.get("runtimeIdentity") or "")
-        identity_root = (
-            source_root
-            / "peers-touch"
-            / "desktop"
-            / "data"
-            / "secure-store"
-            / "identity-keys"
-        )
-        if not identity_root.is_dir():
-            return False
-        identity_key_ref = (
-            f"station_peer_{self._storage_segment(station_peer_id)}/"
-            f"{self._storage_segment(actor_ptid)}"
-        )
-        identity_file = identity_root / (
-            hashlib.sha256(identity_key_ref.encode("utf-8")).hexdigest()
-            + ".key"
-        )
-        if not identity_file.is_file():
-            raise EphemeralCapabilityBlocked(
-                "Chat mixed-native actor identity source is incomplete",
-                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
+        if sources:
+            source = sources[0]
+            source_root = Path(str(source.get("storage_root") or ""))
+            identity_root = (
+                source_root
+                / "peers-touch"
+                / "desktop"
+                / "data"
+                / "secure-store"
+                / "identity-keys"
             )
-        seed_hex = identity_file.read_text(encoding="utf-8").strip()
-        if re.fullmatch(r"[0-9a-f]{64}", seed_hex) is None:
-            raise EphemeralCapabilityBlocked(
-                "Chat mixed-native actor identity seed is invalid",
-                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
+            if not identity_root.is_dir():
+                return False
+            identity_key_ref = (
+                f"station_peer_{self._storage_segment(station_peer_id)}/"
+                f"{self._storage_segment(actor_ptid)}"
             )
+            identity_file = identity_root / (
+                hashlib.sha256(identity_key_ref.encode("utf-8")).hexdigest()
+                + ".key"
+            )
+            if not identity_file.is_file():
+                raise EphemeralCapabilityBlocked(
+                    "Chat mixed-native actor identity source is incomplete",
+                    resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
+                )
+            seed_hex = identity_file.read_text(encoding="utf-8").strip()
+            if re.fullmatch(r"[0-9a-f]{64}", seed_hex) is None:
+                raise EphemeralCapabilityBlocked(
+                    "Chat mixed-native actor identity seed is invalid",
+                    resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
+                )
+            seed = bytearray.fromhex(seed_hex)
+        else:
+            seed = bytearray(
+                self._actor_identity_seed_provider(
+                    station_peer_id,
+                    actor_ptid,
+                    actor,
+                )
+            )
+            if len(seed) != 32:
+                seed[:] = b"\x00" * len(seed)
+                raise EphemeralCapabilityBlocked(
+                    "Mobile Relay actor identity seed is invalid",
+                    resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
+                )
         storage_key = self._mobile_actor_identity_storage_key(
             station_peer_id,
             actor_ptid,
         )
-        seed = bytearray.fromhex(seed_hex)
         seed_base64 = base64.b64encode(seed).decode("ascii")
         self._sensitive_values = tuple(
-            dict.fromkeys((*self._sensitive_values, seed_hex, seed_base64))
+            dict.fromkeys(
+                (*self._sensitive_values, seed.hex(), seed_base64)
+            )
         )
         try:
             prepared = session.call_action(
@@ -6476,6 +6686,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
     derives_fixture_federation_id = True
     actor_manifest_kind = ""
     actor_manifest_path = ""
+    existing_actor_probe_client_ids: frozenset[str] = frozenset()
 
     def __init__(
         self,
@@ -6485,6 +6696,12 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         overlay_path: Path | None = None,
         station_profiles: Mapping[str, str] | None = None,
         service_profiles: Mapping[str, str] | None = None,
+        actor_identity_resolver: (
+            Callable[[str, str, str], ResolvedActorIdentity] | None
+        ) = None,
+        actor_identity_seed_provider: (
+            Callable[[str, str, str], bytes] | None
+        ) = None,
     ) -> None:
         super().__init__(contract)
         self.base_factory = base_factory
@@ -6493,6 +6710,8 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         )
         self._station_profiles = dict(station_profiles or {})
         self._service_profiles = dict(service_profiles or {})
+        self._actor_identity_resolver = actor_identity_resolver
+        self._actor_identity_seed_provider = actor_identity_seed_provider
         self._base_manifest: MobileSimulatorRuntimeManifest | None = None
 
     def provision(self, gate_id: str) -> RuntimeManifest:
@@ -7063,6 +7282,26 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         resolved_actors: dict[str, dict[str, Any]] = {}
         for service_id in station_service_ids:
             binding = service_bindings[service_id]
+            service_roles = (
+                fixture_roles
+                if self.requires_actor_reset
+                else tuple(
+                    sorted(
+                        {
+                            client.actor
+                            for client in self.contract.clients
+                            if (
+                                client.id
+                                in self.existing_actor_probe_client_ids
+                                and client.service_bindings[
+                                    "station"
+                                ].service_id
+                                == service_id
+                            )
+                        }
+                    )
+                )
+            )
             if self.requires_actor_reset:
                 verify_reset_target(
                     binding.endpoint,
@@ -7092,9 +7331,18 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                         role,
                         require_disposable=True,
                     )
-                    for role in fixture_roles
+                    for role in service_roles
                 ]
                 if self.requires_actor_reset
+                else [
+                    self._actor_identity_resolver(
+                        binding.endpoint,
+                        binding.deployment_environment,
+                        role,
+                    )
+                    for role in service_roles
+                ]
+                if self._actor_identity_resolver is not None
                 else []
             )
             resolved_actors[service_id] = {
@@ -7283,6 +7531,12 @@ class MobileSocialSimulatorProvisioner(
         relay_trust_anchor_provider: (
             Callable[[str], tuple[bytes, str]] | None
         ) = None,
+        actor_identity_resolver: (
+            Callable[[str, str, str], ResolvedActorIdentity] | None
+        ) = None,
+        actor_identity_seed_provider: (
+            Callable[[str, str, str], bytes] | None
+        ) = None,
     ) -> None:
         super().__init__(
             contract,
@@ -7290,6 +7544,8 @@ class MobileSocialSimulatorProvisioner(
             overlay_path=overlay_path,
             station_profiles=station_profiles,
             service_profiles=service_profiles,
+            actor_identity_resolver=actor_identity_resolver,
+            actor_identity_seed_provider=actor_identity_seed_provider,
         )
         self.session_factory = session_factory
         self.relay_trust_anchor_provider = (
@@ -7406,6 +7662,9 @@ class MobileSocialSimulatorProvisioner(
             actor_manifest=self.evidence_run.store.read_json(
                 ArtifactRef.from_dict(self._manifest.actor_manifest_ref)
             ),
+            actor_identity_seed_provider=(
+                self._actor_identity_seed_provider
+            ),
             sensitive_values=self._raw_authority_values(),
         )
         context = EphemeralGateLaunchContext(
@@ -7444,6 +7703,41 @@ class MobileSocialSimulatorProvisioner(
         return (
             MobileStationLifecycleSimulatorProvisioner
             ._new_appium_session(self, client_id)
+        )
+
+
+class MobileRelaySimulatorProvisioner(
+    MobileSocialSimulatorProvisioner
+):
+    environment_id = MOBILE_RELAY_SIMULATOR_ENVIRONMENT_ID
+    overlay_filename = "mobile-relay-simulator.yaml"
+    actor_manifest_kind = "mobile-relay-simulator-actor-manifest"
+    actor_manifest_path = "runtime/mobile-relay-simulator-actors.json"
+    existing_actor_probe_client_ids = frozenset({"sim-ios"})
+
+    def __init__(
+        self,
+        contract: EnvironmentContract,
+        *,
+        actor_identity_resolver: (
+            Callable[[str, str, str], ResolvedActorIdentity] | None
+        ) = None,
+        actor_identity_seed_provider: (
+            Callable[[str, str, str], bytes] | None
+        ) = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            contract,
+            actor_identity_resolver=(
+                actor_identity_resolver
+                or _resolve_mobile_actor_identity_via_access
+            ),
+            actor_identity_seed_provider=(
+                actor_identity_seed_provider
+                or _load_or_create_mobile_actor_identity_seed
+            ),
+            **kwargs,
         )
 
 

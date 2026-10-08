@@ -400,6 +400,7 @@
           "apps/mobile/src/pages/settings/SettingsSections.tsx",
           "packages/locales/en/common.json",
           "packages/locales/zh-CN/common.json",
+          "tooling/acceptance/environments/mobile-relay-simulator.yaml",
           "tooling/acceptance/environments/mobile-social-simulator.yaml",
           "tooling/acceptance/features/station-access-mobile-relay-binding.yaml",
           "tooling/acceptance/gates/station_access/mobile_relay_native_e2e.py"
@@ -1687,6 +1688,7 @@
           "tooling/acceptance/gates/mobile/simulator_social_e2e.py",
           "tooling/acceptance/gates/mobile/simulator_social_e2e_test.py",
           "tooling/acceptance/environments/mobile-direct-simulator.yaml",
+          "tooling/acceptance/environments/mobile-relay-simulator.yaml",
           "tooling/acceptance/environments/mobile-social-simulator.yaml"
         ]
       },

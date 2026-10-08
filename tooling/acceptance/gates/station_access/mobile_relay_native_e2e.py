@@ -26,7 +26,7 @@ from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
 
 
 GATE_ID = "station-access-mobile-relay-native-e2e"
-ENVIRONMENT_ID = "mobile-social-simulator"
+ENVIRONMENT_ID = "mobile-relay-simulator"
 CLIENT_ID = "sim-ios"
 STATION_SERVICE_ID = "station-primary"
 RELAY_SERVICE_ID = "relay"
@@ -53,7 +53,7 @@ class MobileRelayNativeGate(AcceptanceGate):
         self.manifest = load_runtime_manifest(Path(manifest_path), self.gate_id)
         if self.manifest.get("environmentId") != ENVIRONMENT_ID:
             raise GateError(
-                "Mobile Relay proof requires mobile-social-simulator"
+                "Mobile Relay proof requires mobile-relay-simulator"
             )
         source = self._mapping(self.manifest.get("source"), "runtime source")
         if source.get("workspaceDigest") != "clean" or not source.get("commit"):

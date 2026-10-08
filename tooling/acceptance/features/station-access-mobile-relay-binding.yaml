@@ -13,6 +13,7 @@
     "apps/mobile/src/components/MobileShell.tsx",
     "apps/mobile/src/pages/SettingsPage.tsx",
     "apps/mobile/src/pages/settings/SettingsSections.tsx",
+    "tooling/acceptance/environments/mobile-relay-simulator.yaml",
     "tooling/acceptance/gates/station_access/mobile_relay_native_e2e.py"
   ],
   "truth_sources": [

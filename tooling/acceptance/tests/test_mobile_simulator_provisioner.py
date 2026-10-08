@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import call, patch
+from unittest.mock import Mock, call, patch
 
 from tooling.acceptance.core import (
     ArtifactRef,
@@ -36,6 +36,7 @@ from tooling.acceptance.gates.mobile.simulator_e2e import (
 from tooling.acceptance.provisioners import (
     MobileDirectSimulatorProvisioner,
     MobileIOSLayoutSimulatorProvisioner,
+    MobileRelaySimulatorProvisioner,
     MobileSimulatorProvisioner,
     MobileSocialSimulatorProvisioner,
     MobileStationLifecycleSimulatorProvisioner,
@@ -57,6 +58,7 @@ from tooling.acceptance.provisioners.mobile_simulator import (
     IOS_PEER_DEVICE_NAME,
     IOS_LAYOUT_CLIENTS,
     IOS_RUNTIME,
+    MOBILE_RELAY_SIMULATOR_ENVIRONMENT_ID,
     MOBILE_RELAY_CHILD_HARNESS_ACTIONS,
     MOBILE_WEB_DIST_RELATIVE_PATH,
     SIMULATOR_APPIUM_CAPABILITY_ID,
@@ -67,6 +69,8 @@ from tooling.acceptance.provisioners.mobile_simulator import (
     MobileSimulatorAppiumCapabilityHandler,
     SelectedMobileSimulatorProvisioner,
     _GeneratedAndroidManifestGuard,
+    _load_or_create_mobile_actor_identity_seed,
+    _resolve_mobile_actor_identity_via_access,
     _resolve_android_ndk_home,
     _resolve_android_ndk_tool,
     _resolve_command,
@@ -519,6 +523,8 @@ class FakeParentSimulatorSession:
                     "actorPtid": self.actor_ptid,
                 },
             }
+        if action == "runtime.prepareActorIdentity":
+            return {"prepared": True}
         if action == "lifecycle.scope.read":
             active = self.actor_ptid is not None
             return {
@@ -754,6 +760,95 @@ class MobileSimulatorContractTests(unittest.TestCase):
             ["sim-ios", "sim-ios-peer"],
         )
         self.assertEqual(base.runtime_source_commit, "a" * 40)
+
+    def test_relay_simulator_uses_a_persistent_dedicated_actor(self) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-relay-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+
+        self.assertEqual(
+            contract.id,
+            MOBILE_RELAY_SIMULATOR_ENVIRONMENT_ID,
+        )
+        self.assertEqual(
+            {
+                client.id: (
+                    client.actor,
+                    client.service_bindings["station"].service_id,
+                )
+                for client in contract.clients
+            },
+            {
+                "sim-ios": ("charlie", "station-primary"),
+                "sim-ios-peer": ("bob", "station-secondary"),
+            },
+        )
+        provisioner = get_provisioner(contract)
+        self.assertIsInstance(
+            provisioner,
+            MobileRelaySimulatorProvisioner,
+        )
+        self.assertEqual(
+            provisioner.existing_actor_probe_client_ids,
+            frozenset({"sim-ios"}),
+        )
+
+    def test_relay_actor_identity_seed_is_private_and_stable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "identities"
+
+            first = _load_or_create_mobile_actor_identity_seed(
+                "station-peer",
+                "ptid:charlie",
+                "charlie",
+                state_root=root,
+            )
+            second = _load_or_create_mobile_actor_identity_seed(
+                "station-peer",
+                "ptid:charlie",
+                "charlie",
+                state_root=root,
+            )
+
+            self.assertEqual(len(first), 32)
+            self.assertEqual(second, first)
+            key_files = list(root.glob("*.key"))
+            self.assertEqual(len(key_files), 1)
+            self.assertEqual(key_files[0].stat().st_mode & 0o777, 0o600)
+            self.assertEqual(root.stat().st_mode & 0o777, 0o700)
+
+    def test_relay_actor_identity_probe_returns_only_public_identity(
+        self,
+    ) -> None:
+        completed = SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "token": "must-not-escape",
+                    "ptid": "ptid:charlie",
+                }
+            ).encode("utf-8"),
+            stderr=b"",
+        )
+
+        with patch(
+            "tooling.acceptance.provisioners.mobile_simulator.subprocess.run",
+            return_value=completed,
+        ) as run:
+            actor = _resolve_mobile_actor_identity_via_access(
+                "https://station.example/",
+                "station-deployment",
+                "charlie",
+            )
+
+        self.assertEqual(actor.ptid, "ptid:charlie")
+        self.assertEqual(actor.account_ref, "station-account:carol@p.t")
+        self.assertEqual(actor.device_policy, "persistent-acceptance")
+        self.assertNotIn("must-not-escape", repr(actor))
+        self.assertEqual(
+            run.call_args.kwargs["env"]["PT_ACCESS_CLIENT_STATION"],
+            "https://station.example",
+        )
+        self.assertNotIn("must-not-escape", repr(run.call_args))
 
     def test_direct_simulator_binds_two_actors_to_one_station(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-direct-simulator.yaml"
@@ -1337,6 +1432,68 @@ class MobileSimulatorContractTests(unittest.TestCase):
                 "authorizationRef": None,
                 "targetVerified": False,
             },
+        )
+
+    def test_relay_actor_fixture_resolves_only_the_gate_actor(self) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-relay-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+        resolver = Mock(
+            return_value=SimpleNamespace(
+                role="charlie",
+                account_ref="station-account:carol@p.t",
+                ptid="ptid:charlie",
+                device_policy="persistent-acceptance",
+                federated_handle="",
+                home_station_peer_id="",
+            )
+        )
+        provisioner = MobileRelaySimulatorProvisioner(
+            contract,
+            overlay_path=path,
+            actor_identity_resolver=resolver,
+            actor_identity_seed_provider=lambda *_: b"a" * 32,
+        )
+        evidence = FakeEvidenceRun()
+        provisioner.bind_evidence_run(evidence)  # type: ignore[arg-type]
+        bindings = resolve_mobile_service_bindings(
+            contract,
+            path,
+            environment={
+                "PT_MOBILE_STATION_PRIMARY_URL": (
+                    "https://station-primary.example"
+                ),
+                "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": "deploy-primary",
+                "PT_MOBILE_STATION_SECONDARY_URL": (
+                    "https://station-secondary.example"
+                ),
+                "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV": "deploy-secondary",
+                "PT_RELAY_URL": "https://relay.example",
+                "PT_RELAY_DEPLOY_ENV": "deploy-relay",
+                "PT_RELAY_HEALTH_URL": (
+                    "https://relay.example/sub-oss/healthz"
+                ),
+            },
+        )
+
+        provisioner._prepare_actor_fixture(
+            "station-access-mobile-relay-native-e2e",
+            bindings,
+            provisioner._load_overlay(),
+        )
+
+        resolver.assert_called_once_with(
+            "https://station-primary.example",
+            "deploy-primary",
+            "charlie",
+        )
+        actor_payload = evidence.writes[-1][1]
+        self.assertEqual(
+            actor_payload["stations"]["station-primary"]["actors"][0]["ptid"],
+            "ptid:charlie",
+        )
+        self.assertEqual(
+            actor_payload["stations"]["station-secondary"]["actors"],
+            [],
         )
 
     def test_direct_actor_fixture_resolves_both_roles_on_same_station(
@@ -2368,6 +2525,115 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
         self.assertLess(
             events.index("base-cleanup"),
             events.index("release-source:deploy-secondary"),
+        )
+
+    def test_parent_injects_persistent_actor_identity_before_login(
+        self,
+    ) -> None:
+        services = {
+            "station-primary": self._attestation("station-primary"),
+        }
+        relay_contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "mobile-relay-simulator.yaml"
+        )
+        source_client = relay_contract.clients[0]
+        manifest = dataclasses.replace(
+            new_manifest(
+                environment_id=MOBILE_RELAY_SIMULATOR_ENVIRONMENT_ID,
+                gate_id="station-access-mobile-relay-native-e2e",
+                requested_profile="profile",
+                resolved_profile="profile",
+                slot=7,
+                commit="a" * 40,
+                worktree="/tmp/worktree",
+                workspace_digest="dirty:test",
+            ),
+            state=ProvisioningState.FIXTURE_READY,
+            services=services,
+            clients=(
+                ClientRuntime(
+                    id="sim-ios",
+                    actor="charlie",
+                    runtime="tauri-ios-simulator",
+                    required_service_roles=("station",),
+                    service_bindings=source_client.service_bindings,
+                    worktree="/tmp/worktree",
+                    gateway_port=1,
+                    renderer_port=2,
+                    webdriver_port=3,
+                    profile="sim-ios",
+                    storage_root="/tmp/sim-ios",
+                ),
+            ),
+        ).to_dict()
+        actor_manifest = {
+            "clients": [
+                {
+                    "id": "sim-ios",
+                    "actor": "charlie",
+                    "serviceId": "station-primary",
+                }
+            ],
+            "stations": {
+                "station-primary": {
+                    "actors": [
+                        {
+                            "role": "charlie",
+                            "ptid": "ptid:charlie",
+                        }
+                    ]
+                }
+            },
+        }
+        sessions: dict[str, FakeParentSimulatorSession] = {}
+        provider = Mock(return_value=b"\x01" * 32)
+        handler = MobileSimulatorAppiumCapabilityHandler(
+            manifest=manifest,
+            artifact_writer=self.evidence_run,
+            session_factory=lambda client_id: sessions.setdefault(
+                client_id,
+                FakeParentSimulatorSession(client_id),
+            ),
+            harness_actions=tuple(STATION_LIFECYCLE_HARNESS_ACTIONS),
+            actor_manifest=actor_manifest,
+            actor_identity_seed_provider=provider,
+            verifier_source_digest="d" * 64,
+        )
+        cancellation = threading.Event()
+
+        handler.invoke(
+            "create_bound_session",
+            {"clientId": "sim-ios", "launchOptions": {}},
+            deadline_monotonic=time.monotonic() + 5,
+            cancellation=cancellation,
+        )
+        authenticated = handler.invoke(
+            "authenticate_fixture_actor",
+            {"clientId": "sim-ios"},
+            deadline_monotonic=time.monotonic() + 5,
+            cancellation=cancellation,
+        )
+
+        provider.assert_called_once_with(
+            "peer-primary",
+            "ptid:charlie",
+            "charlie",
+        )
+        preparation = next(
+            payload
+            for action, payload in sessions["sim-ios"].calls
+            if action == "runtime.prepareActorIdentity"
+        )
+        self.assertRegex(
+            preparation["storageKey"],
+            r"^mobile-crypto-identity\.v1\.identity\.[0-9a-f]{32}$",
+        )
+        expected_seed = base64.b64encode(b"\x01" * 32).decode("ascii")
+        self.assertEqual(preparation["seedBase64"], expected_seed)
+        self.assertIn(expected_seed, handler.sensitive_values)
+        self.assertNotIn(
+            expected_seed,
+            json.dumps(authenticated, sort_keys=True),
         )
 
     def test_parent_create_bound_session_resolves_topology_and_emits_proof(
