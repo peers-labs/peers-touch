@@ -1088,6 +1088,30 @@ fn request_content_length(headers: &str) -> MobileResult<usize> {
     Ok(content_length.unwrap_or(0))
 }
 
+fn response_content_length(headers: &str) -> MobileResult<usize> {
+    let mut content_length = None;
+    for line in headers.lines() {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        if name.eq_ignore_ascii_case("transfer-encoding") {
+            return Err(route_error("chunkedResponseUnsupported"));
+        }
+        if name.eq_ignore_ascii_case("content-length") {
+            if content_length.is_some() {
+                return Err(route_error("responseLengthAmbiguous"));
+            }
+            content_length = Some(
+                value
+                    .trim()
+                    .parse::<usize>()
+                    .map_err(|_| route_error("responseLengthInvalid"))?,
+            );
+        }
+    }
+    content_length.ok_or_else(|| route_error("responseLengthMissing"))
+}
+
 fn find_header_end(bytes: &[u8]) -> Option<usize> {
     bytes.windows(4).position(|window| window == b"\r\n\r\n")
 }
@@ -1122,10 +1146,47 @@ fn relay_round_trip(
         .write_all(request)
         .and_then(|_| stream.flush())
         .map_err(|_| route_error("innerTlsWrite"))?;
-    let mut response = Vec::new();
-    stream
-        .read_to_end(&mut response)
-        .map_err(|_| route_error("innerTlsRead"))?;
+    read_http_response(&mut stream)
+}
+
+fn read_http_response<R: Read>(stream: &mut R) -> MobileResult<Vec<u8>> {
+    let mut response = Vec::with_capacity(4096);
+    let mut buffer = [0_u8; 8192];
+    let header_end = loop {
+        let count = stream
+            .read(&mut buffer)
+            .map_err(|_| route_error("innerTlsRead"))?;
+        if count == 0 {
+            return Err(route_error("responseTruncated"));
+        }
+        response.extend_from_slice(&buffer[..count]);
+        if response.len() > MAX_PROXY_REQUEST_BYTES {
+            return Err(route_error("responseTooLarge"));
+        }
+        if let Some(index) = find_header_end(&response) {
+            break index;
+        }
+    };
+    let headers =
+        std::str::from_utf8(&response[..header_end]).map_err(|_| route_error("responseInvalid"))?;
+    let content_length = response_content_length(headers)?;
+    let total = header_end + 4 + content_length;
+    if total > MAX_PROXY_REQUEST_BYTES {
+        return Err(route_error("responseTooLarge"));
+    }
+    while response.len() < total {
+        let count = stream
+            .read(&mut buffer)
+            .map_err(|_| route_error("innerTlsRead"))?;
+        if count == 0 {
+            return Err(route_error("responseTruncated"));
+        }
+        response.extend_from_slice(&buffer[..count]);
+        if response.len() > MAX_PROXY_REQUEST_BYTES {
+            return Err(route_error("responseTooLarge"));
+        }
+    }
+    response.truncate(total);
     Ok(response)
 }
 
@@ -1691,6 +1752,27 @@ mod tests {
         assert!(read_http_request_from_bytes(
             b"POST /actor/access/start HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n"
         )
+        .is_err());
+    }
+
+    #[test]
+    fn relay_response_stops_at_declared_content_length() {
+        let mut response =
+            Cursor::new(b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nabcignored".to_vec());
+        assert_eq!(
+            read_http_response(&mut response).unwrap(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nabc"
+        );
+    }
+
+    #[test]
+    fn relay_response_rejects_missing_or_chunked_length() {
+        assert!(
+            read_http_response(&mut Cursor::new(b"HTTP/1.1 200 OK\r\n\r\nbody".to_vec())).is_err()
+        );
+        assert!(read_http_response(&mut Cursor::new(
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n".to_vec()
+        ))
         .is_err());
     }
 

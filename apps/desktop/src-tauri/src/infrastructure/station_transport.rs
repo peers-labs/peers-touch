@@ -301,6 +301,31 @@ fn request_content_length(headers: &str) -> Result<usize, TransportError> {
     Ok(content_length.unwrap_or(0))
 }
 
+fn response_content_length(headers: &str) -> Result<usize, TransportError> {
+    let mut content_length = None;
+    for line in headers.lines() {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        if name.eq_ignore_ascii_case("transfer-encoding") {
+            return Err(TransportError::new(
+                "Relay proxy does not accept chunked responses",
+            ));
+        }
+        if name.eq_ignore_ascii_case("content-length") {
+            if content_length.is_some() {
+                return Err(TransportError::new(
+                    "Relay proxy response has duplicate Content-Length",
+                ));
+            }
+            content_length = Some(value.trim().parse::<usize>().map_err(|_| {
+                TransportError::new("Relay proxy response has invalid Content-Length")
+            })?);
+        }
+    }
+    content_length.ok_or_else(|| TransportError::new("Relay proxy response has no Content-Length"))
+}
+
 fn find_header_end(bytes: &[u8]) -> Option<usize> {
     bytes.windows(4).position(|window| window == b"\r\n\r\n")
 }
@@ -341,10 +366,53 @@ pub(crate) fn relay_round_trip(
     stream
         .flush()
         .map_err(|error| TransportError::new(format!("flush inner HTTP request: {error}")))?;
-    let mut response = Vec::new();
-    stream
-        .read_to_end(&mut response)
-        .map_err(|error| TransportError::new(format!("read inner HTTP response: {error}")))?;
+    read_http_response(&mut stream)
+}
+
+fn read_http_response<R: Read>(stream: &mut R) -> Result<Vec<u8>, TransportError> {
+    let mut response = Vec::with_capacity(4096);
+    let mut buffer = [0_u8; 8192];
+    let header_end = loop {
+        let count = stream
+            .read(&mut buffer)
+            .map_err(|error| TransportError::new(format!("read inner HTTP response: {error}")))?;
+        if count == 0 {
+            return Err(TransportError::new("Relay proxy response was truncated"));
+        }
+        response.extend_from_slice(&buffer[..count]);
+        if response.len() > MAX_PROXY_REQUEST_BYTES {
+            return Err(TransportError::new(
+                "Relay proxy response exceeds size limit",
+            ));
+        }
+        if let Some(index) = find_header_end(&response) {
+            break index;
+        }
+    };
+    let headers = std::str::from_utf8(&response[..header_end])
+        .map_err(|_| TransportError::new("Relay proxy response headers are not UTF-8"))?;
+    let content_length = response_content_length(headers)?;
+    let total = header_end + 4 + content_length;
+    if total > MAX_PROXY_REQUEST_BYTES {
+        return Err(TransportError::new(
+            "Relay proxy response exceeds size limit",
+        ));
+    }
+    while response.len() < total {
+        let count = stream
+            .read(&mut buffer)
+            .map_err(|error| TransportError::new(format!("read inner HTTP response: {error}")))?;
+        if count == 0 {
+            return Err(TransportError::new("Relay proxy response was truncated"));
+        }
+        response.extend_from_slice(&buffer[..count]);
+        if response.len() > MAX_PROXY_REQUEST_BYTES {
+            return Err(TransportError::new(
+                "Relay proxy response exceeds size limit",
+            ));
+        }
+    }
+    response.truncate(total);
     Ok(response)
 }
 
@@ -793,5 +861,26 @@ mod tests {
             request_content_length("POST /upload HTTP/1.1\r\nContent-Length: not-a-number",)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn relay_response_stops_at_declared_content_length() {
+        let mut response =
+            Cursor::new(b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nabcignored".to_vec());
+        assert_eq!(
+            read_http_response(&mut response).unwrap(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nabc"
+        );
+    }
+
+    #[test]
+    fn relay_response_rejects_missing_or_chunked_length() {
+        assert!(
+            read_http_response(&mut Cursor::new(b"HTTP/1.1 200 OK\r\n\r\nbody".to_vec())).is_err()
+        );
+        assert!(read_http_response(&mut Cursor::new(
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n".to_vec()
+        ))
+        .is_err());
     }
 }
