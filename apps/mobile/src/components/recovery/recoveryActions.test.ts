@@ -101,6 +101,28 @@ describe('Mobile reliability recovery surfaces', () => {
     expect(visibleRecoveryStates([expired], 'shell')).toEqual([expired]);
   });
 
+  it('hides only runtime degradation while an explicit domain fixture is under review', () => {
+    const degraded = {
+      kind: 'deferred-capability',
+      unavailableRuntimes: [],
+    } as const;
+    const offline = {
+      kind: 'device-local-flag',
+      reason: 'no-network',
+      since: 2,
+    } as const;
+
+    expect(visibleRecoveryStates(
+      [degraded, offline],
+      'shell',
+      true,
+    )).toEqual([offline]);
+    expect(visibleRecoveryStates(
+      [degraded],
+      'shell',
+    )).toEqual([degraded]);
+  });
+
   it('keeps deferred capability recovery synchronized with every kernel update', () => {
     let current = { launchState: 'shell', revision: 1 };
     let listener: (() => void) | null = null;
