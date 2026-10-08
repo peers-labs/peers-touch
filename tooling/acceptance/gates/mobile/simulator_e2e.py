@@ -352,6 +352,7 @@ class SimulatorAppiumSession:
         callback_scheme: str,
         ports: Mapping[str, int],
         chromedriver_executable: str = "",
+        process_environment: Mapping[str, str] | None = None,
     ) -> None:
         expected_automation = EXPECTED_AUTOMATION_NAMES.get(platform)
         if expected_automation is None:
@@ -392,6 +393,7 @@ class SimulatorAppiumSession:
         self.callback_scheme = callback_scheme
         self.ports = dict(ports)
         self.chromedriver_executable = chromedriver_executable
+        self.process_environment = dict(process_environment or {})
         self.session_id = ""
         self.current_context = "NATIVE_APP"
 
@@ -434,6 +436,10 @@ class SimulatorAppiumSession:
                 capabilities["appium:additionalWebviewBundleIds"] = [
                     webview_bundle_id
                 ]
+            if self.process_environment:
+                capabilities["appium:processArguments"] = {
+                    "env": dict(self.process_environment),
+                }
         else:
             if not self.chromedriver_executable:
                 raise DriverError(

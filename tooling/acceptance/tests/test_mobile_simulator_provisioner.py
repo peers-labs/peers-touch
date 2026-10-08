@@ -1056,25 +1056,21 @@ class MobileSimulatorContractTests(unittest.TestCase):
             relay_trust_anchor_provider=lambda _: (certificate, digest),
         )
         commands: list[tuple[str, ...]] = []
-        cleanup_commands: list[tuple[str, ...]] = []
-
-        class Base:
-            @staticmethod
-            def _run_checked(
-                command: tuple[str, ...],
-                **_: object,
-            ) -> None:
-                commands.append(command)
-
-            @staticmethod
-            def _run_cleanup(
-                command: tuple[str, ...],
-                **_: object,
-            ) -> None:
-                cleanup_commands.append(command)
 
         with tempfile.TemporaryDirectory() as directory:
             runtime_root = Path(directory)
+
+            class Base:
+                @staticmethod
+                def _run_checked(
+                    command: tuple[str, ...],
+                    **_: object,
+                ) -> CommandResult:
+                    commands.append(command)
+                    container = runtime_root / command[3]
+                    container.mkdir()
+                    return CommandResult(0, str(container) + "\n")
+
             clients = (
                 ClientRuntime(
                     actor="alice",
@@ -1115,6 +1111,9 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     clients=clients,
                 ),
                 {
+                    "applications": {
+                        "ios": {"id": "com.peers.touch.mobile"}
+                    },
                     "clients": {
                         "sim-ios": {"device": "ios-primary"},
                         "sim-ios-peer": {"device": "ios-peer"},
@@ -1135,19 +1134,27 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     )
                 },
             )
-            trust_path = runtime_root / "trust" / "relay-ca.pem"
-            self.assertEqual(trust_path.read_bytes(), certificate)
+            for client_id in ("sim-ios", "sim-ios-peer"):
+                trust_path = Path(
+                    base_manifest.simulator_resources["clients"][client_id][
+                        "processEnvironment"
+                    ]["SSL_CERT_FILE"]
+                )
+                self.assertEqual(trust_path.read_bytes(), certificate)
 
-        self.assertEqual(trust["relay"]["sha256"], digest)
-        self.assertEqual(
-            [command[3] for command in commands],
-            ["ios-primary", "ios-peer"],
-        )
-        provisioner.cleanup()
-        self.assertEqual(
-            [command[3] for command in cleanup_commands],
-            ["ios-peer", "ios-primary"],
-        )
+            self.assertEqual(trust["relay"]["sha256"], digest)
+            self.assertEqual(
+                [command[3] for command in commands],
+                ["ios-primary", "ios-peer"],
+            )
+            provisioner.cleanup()
+            for client_id in ("sim-ios", "sim-ios-peer"):
+                trust_path = Path(
+                    base_manifest.simulator_resources["clients"][client_id][
+                        "processEnvironment"
+                    ]["SSL_CERT_FILE"]
+                )
+                self.assertFalse(trust_path.exists())
 
     def test_social_simulator_preserves_base_harness_actions(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"

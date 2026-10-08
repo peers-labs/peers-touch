@@ -3701,10 +3701,18 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
         )
         capabilities = client.get("appiumCapabilities")
         chromedriver = ""
+        process_environment: dict[str, str] = {}
         if isinstance(capabilities, Mapping):
             value = capabilities.get("appium:chromedriverExecutable")
             if isinstance(value, str):
                 chromedriver = value
+        raw_process_environment = client.get("processEnvironment")
+        if isinstance(raw_process_environment, Mapping):
+            process_environment = {
+                str(key): str(value)
+                for key, value in raw_process_environment.items()
+                if str(key) and str(value)
+            }
         return SimulatorAppiumSession(
             UrllibAppiumTransport(
                 _required_text(
@@ -3762,6 +3770,7 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                 ).items()
             },
             chromedriver_executable=chromedriver,
+            process_environment=process_environment,
         )
 
     def _provision_selected_devices(
@@ -6385,12 +6394,20 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
         )
         appium_capabilities = client.get("appiumCapabilities")
         chromedriver_executable = ""
+        process_environment: dict[str, str] = {}
         if isinstance(appium_capabilities, Mapping):
             value = appium_capabilities.get(
                 "appium:chromedriverExecutable"
             )
             if isinstance(value, str):
                 chromedriver_executable = value
+        raw_process_environment = client.get("processEnvironment")
+        if isinstance(raw_process_environment, Mapping):
+            process_environment = {
+                str(key): str(value)
+                for key, value in raw_process_environment.items()
+                if str(key) and str(value)
+            }
         return SimulatorAppiumSession(
             UrllibAppiumTransport(
                 _required_text(
@@ -6460,6 +6477,7 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                 ).items()
             },
             chromedriver_executable=chromedriver_executable,
+            process_environment=process_environment,
         )
 
 
@@ -7312,10 +7330,20 @@ class MobileSocialSimulatorProvisioner(
                 reason="Mobile Relay Gate has no simulator clients",
                 resource="mobile-relay:transport-trust",
             )
-        runtime_root = Path(base_manifest.clients[0].storage_root).parents[1]
-        trust_path = runtime_root / "trust" / "relay-ca.pem"
-        trust_path.parent.mkdir(parents=True, exist_ok=True)
-        trust_path.write_bytes(certificate)
+        application = _required_object(
+            _required_object(
+                base_manifest.simulator_resources,
+                "applications",
+                "mobile-relay:transport-trust",
+            ),
+            "ios",
+            "mobile-relay:transport-trust",
+        )
+        application_id = _required_text(
+            application,
+            "id",
+            "mobile-relay:transport-trust",
+        )
         installed: list[str] = []
         command_env = dict(os.environ)
         for client_id in ("sim-ios", "sim-ios-peer"):
@@ -7329,39 +7357,47 @@ class MobileSocialSimulatorProvisioner(
                 "device",
                 f"mobile-relay:transport-trust:{client_id}",
             )
-            base._run_checked(
+            container = base._run_checked(
                 (
                     "xcrun",
                     "simctl",
-                    "keychain",
+                    "get_app_container",
                     udid,
-                    "add-root-cert",
-                    str(trust_path),
+                    application_id,
+                    "data",
                 ),
                 env=command_env,
                 timeout=60,
-                resource=f"mobile-relay:trust-install:{client_id}",
+                resource=f"mobile-relay:app-container:{client_id}",
             )
+            container_path = Path(container.stdout.strip())
+            if not container_path.is_absolute():
+                raise BlockedError(
+                    reason="Mobile Relay app container path is invalid",
+                    resource=f"mobile-relay:transport-trust:{client_id}",
+                )
+            trust_path = (
+                container_path
+                / "Library"
+                / "Caches"
+                / f"relay-ca-{digest.removeprefix('sha256:')}.pem"
+            )
+            trust_path.parent.mkdir(parents=True, exist_ok=True)
+            trust_path.write_bytes(certificate)
+            client["processEnvironment"] = {
+                "SSL_CERT_FILE": str(trust_path),
+            }
             self.register_cleanup(
-                f"mobile-relay:keychain-reset:{client_id}",
-                lambda device=udid: base._run_cleanup(
-                    (
-                        "xcrun",
-                        "simctl",
-                        "keychain",
-                        device,
-                        "reset",
-                    ),
-                    env=command_env,
-                    resource=f"mobile-relay:keychain-reset:{device}",
-                ),
+                f"mobile-relay:trust-file:{client_id}",
+                trust_path.unlink,
             )
             installed.append(client_id)
         return {
             "relay": {
                 "sha256": digest,
                 "installedClients": installed,
-                "cleanup": "simulator-keychain-reset",
+                "mechanism": "SSL_CERT_FILE",
+                "cleanup": "app-container-file-remove",
             }
         }
 
