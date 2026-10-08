@@ -734,6 +734,27 @@ class MobileSimulatorContractTests(unittest.TestCase):
             "__PEERS_MOBILE_ACCEPTANCE__",
         )
 
+    def test_social_simulator_uses_run_scoped_ios_devices(self) -> None:
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        )
+        base_contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "mobile-simulator.yaml"
+        )
+        provisioner = MobileSocialSimulatorProvisioner(contract)
+
+        base = provisioner._new_base_provisioner(
+            base_contract,
+            "a" * 40,
+        )
+
+        self.assertIsInstance(base, SelectedMobileSimulatorProvisioner)
+        self.assertEqual(
+            [client.id for client in base.selected_clients],
+            ["sim-ios", "sim-ios-peer"],
+        )
+        self.assertEqual(base.runtime_source_commit, "a" * 40)
+
     def test_direct_simulator_binds_two_actors_to_one_station(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-direct-simulator.yaml"
         payload = json.loads(path.read_text(encoding="utf-8"))

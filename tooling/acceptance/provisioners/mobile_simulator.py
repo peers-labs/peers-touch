@@ -6553,7 +6553,10 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             base_contract = EnvironmentContract.from_yaml(
                 ENVIRONMENTS_DIR / "mobile-simulator.yaml"
             )
-            base = self.base_factory(base_contract)
+            base = self._new_base_provisioner(
+                base_contract,
+                manifest.source_commit,
+            )
             base.bind_evidence_run(self.evidence_run)
             self.register_cleanup("mobile-simulator-base", base.cleanup)
             previous_environment = {
@@ -6696,6 +6699,14 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 reason=blocked.reason,
                 resource=blocked.resource,
             )
+
+    def _new_base_provisioner(
+        self,
+        contract: EnvironmentContract,
+        source_commit: str,
+    ) -> MobileSimulatorProvisioner:
+        del source_commit
+        return self.base_factory(contract)
 
     def _resolve_transport_trust(
         self,
@@ -7289,6 +7300,23 @@ class MobileSocialSimulatorProvisioner(
             MobileSimulatorAppiumCapabilityHandler | None
         ) = None
         self._appium_cleanup_registered = False
+
+    def _new_base_provisioner(
+        self,
+        contract: EnvironmentContract,
+        source_commit: str,
+    ) -> MobileSimulatorProvisioner:
+        if self.base_factory is not MobileSimulatorProvisioner:
+            return super()._new_base_provisioner(contract, source_commit)
+        spec = load_mobile_simulator_spec()
+        return SelectedMobileSimulatorProvisioner(
+            contract,
+            clients=tuple(
+                client for client in spec.clients if client.platform == "ios"
+            ),
+            runtime_source_commit=source_commit,
+            repo_root=REPO_ROOT,
+        )
 
     def _resolve_transport_trust(
         self,
