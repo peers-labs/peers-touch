@@ -1489,13 +1489,21 @@ history rather than a live ownership conflict.
 - TRAE multi-root installations have one workspace bootstrap hook. That hook
   dispatches to the selected canonical integration instead of installing
   competing owner hooks in every worktree.
-- Rollout is a hard cut. After proving no live declaration, child assignment,
-  or workflow action exists on the machine other than the current exact
-  OWNER-bound installer command, the installer deletes
+- Rollout is an atomic hook/catalog replacement. Development declarations are
+  durable work intent and do not block installation. Live child assignments,
+  Action Store locks, or workflow actions still block replacement, except for
+  the current exact OWNER-bound installer command.
+- A concurrent non-destructive replacement may bootstrap without an installer
+  Action Receipt when the installed integration cannot issue one. A
+  declaration-free replacement remains destructive because it removes legacy
+  state and therefore requires the exact create-once OWNER grant.
+- When no Development declaration is live, the installer also deletes
   `~/.peers-touch/dev/conversations/` and every
-  `~/.peers-touch/dev/workspaces/*/workflow/actions/` directory before
-  installing the new bootstrap. Plan/Session/Review/Acceptance stores remain.
-  No legacy schema reader, importer, alias, fallback, or dual-write is allowed.
+  `~/.peers-touch/dev/workspaces/*/workflow/actions/` directory. When a
+  declaration is live, those legacy stores remain inert and are removed by a
+  later declaration-free installation. Plan/Session/Review/Acceptance stores
+  always remain. No legacy schema reader, importer, alias, fallback, or
+  dual-write is allowed.
 
 ### Rationale
 
@@ -1520,8 +1528,10 @@ heuristic.
 - Internal worker/reviewer launchers must issue and terminalize assignments.
 - A child without a valid assignment cannot claim independent worker or
   reviewer authority.
-- Machine-local conversation and Action Receipt history is intentionally
-  discarded at rollout; closed Plan/Session/evidence owners remain unchanged.
+- Machine-local legacy conversation and Action Receipt history is discarded
+  during a declaration-free rollout. A concurrent declaration defers that
+  cleanup without making the legacy stores readable; closed
+  Plan/Session/evidence owners remain unchanged.
 - Multi-root bootstrap installation is a separately declared cross-root
   rollout operation and is not performed implicitly by source implementation.
 - Tests must cover one owner plus two child roles, nested parent linkage,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -20,13 +21,15 @@ import (
 	"time"
 
 	agentdomain "github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
-	agentevent "github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/event"
+	agentpersistence "github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	agentmodel "github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	agentservice "github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
+	"google.golang.org/protobuf/proto"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -44,6 +47,7 @@ const (
 	gateScenarioLiveResume                 = "live_resume_provider"
 	gateRecoveryActionEnv                  = "PEERS_ATELIER_GATE_RECOVERY_ACTION"
 	gateFailureScenarioEnv                 = "PEERS_ATELIER_GATE_EVENT_REPLAY_FAILURE_SCENARIO"
+	gateWaitForWorkspaceEnv                = "PEERS_ATELIER_GATE_WAIT_FOR_WORKSPACE"
 	gateLiveResumeNodeID                   = "atelier-real-product-live-resume-node"
 	gateLiveResumeProviderID               = "atelier-live-resume-provider"
 	gateControlledProviderName             = "openai"
@@ -52,7 +56,7 @@ const (
 	gateArtifactBodyText                   = "# Atelier blocking gate evidence\n\nStation-owned safe text artifact body for product-window fetch evidence.\n"
 	gateArtifactBodyKind                   = "markdown"
 	atelierMount                           = "/applets/atelier"
-	agentEventAPI                          = "/sub-agent/agent/events/subscribe"
+	agentEventAPI                          = "/events/stream"
 	providerCapabilitiesAPI                = "/sub-agent/agent/atelier/provider/capabilities"
 )
 
@@ -1184,12 +1188,13 @@ func run(ctx context.Context) error {
 	}
 
 	probe := &replayProbe{}
+	workspaceLoaded := make(chan struct{})
+	var workspaceLoadedOnce sync.Once
 	createdProbe := &createProbe{}
 	resolvedProbe := &resolveProbe{}
 	runtime := newGateAtelierRuntime()
 	projectionService := runtime.projection
 	providerProbe := &providerProbe{}
-	eventStreamService := agentservice.NewEventStreamService(noopEventBus{})
 	authenticated := httpadapter.RequireJWT(provider)(ctx, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		subject := coreauth.GetSubject(request.Context())
 		if subject == nil || strings.TrimSpace(subject.ID) == "" {
@@ -1206,6 +1211,9 @@ func run(ctx context.Context) error {
 			response.Header().Set("Content-Type", "application/json")
 			response.WriteHeader(http.StatusOK)
 			_ = json.NewEncoder(response).Encode(snapshot)
+			workspaceLoadedOnce.Do(func() {
+				close(workspaceLoaded)
+			})
 		case request.Method == http.MethodPost && request.URL.Path == atelierMount+"/v1/projects":
 			handleCreateProject(response, request, db, projectionService, subject.ID, createdProbe)
 		case request.Method == http.MethodPost && request.URL.Path == atelierMount+"/v1/escalations:resolve":
@@ -1214,8 +1222,8 @@ func run(ctx context.Context) error {
 			handleFetchArtifactBody(response, request, projectionService, subject.ID)
 		case request.Method == http.MethodPost && request.URL.Path == "/sub-agent/agent/atelier/artifact/body/fetch":
 			handleFetchArtifactBody(response, request, projectionService, subject.ID)
-		case request.Method == http.MethodPost && request.URL.Path == agentEventAPI:
-			handleEventReplay(response, request, eventStreamService, subject.ID, probe)
+		case request.Method == http.MethodGet && request.URL.Path == agentEventAPI:
+			handleEventReplay(response, request, db, subject.ID, probe, workspaceLoaded)
 		case request.Method == http.MethodPost && request.URL.Path == providerCapabilitiesAPI:
 			handleProviderCapabilities(response, request, projectionService, subject.ID)
 		default:
@@ -1312,7 +1320,6 @@ func run(ctx context.Context) error {
 }
 
 func newGateAtelierRuntime() *gateAtelierRuntime {
-	eventBus := agentevent.NewMemoryEventBus()
 	growthMetricsSvc := agentservice.NewGrowthMetricsService()
 	diagnosticSvc := agentservice.NewGrowthDiagnosticService()
 	growthMetricsSvc.SetDiagnosticService(diagnosticSvc)
@@ -1353,9 +1360,7 @@ func newGateAtelierRuntime() *gateAtelierRuntime {
 		growthMetricsSvc,
 		convSvc,
 	)
-	turnSvc.SetEventBus(eventBus)
 	orchestrationSvc := agentservice.NewOrchestrationService(agentSvc, turnSvc, toolRegistrySvc)
-	orchestrationSvc.SetEventBus(eventBus)
 	return &gateAtelierRuntime{
 		projection:    agentservice.NewAtelierProjectionService(orchestrationSvc),
 		orchestration: orchestrationSvc,
@@ -1785,34 +1790,14 @@ func handleProviderCapabilities(response http.ResponseWriter, request *http.Requ
 	_ = json.NewEncoder(response).Encode(capabilities)
 }
 
-func handleEventReplay(response http.ResponseWriter, request *http.Request, eventStreamService *agentservice.EventStreamService, actorID string, probe *replayProbe) {
-	var input struct {
-		AgentID       string `json:"agent_id"`
-		TaskID        string `json:"task_id"`
-		AfterEventSeq int64  `json:"after_event_seq"`
-	}
-	if request.Body != nil {
-		body, err := io.ReadAll(request.Body)
-		if err != nil {
-			http.Error(response, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &input); err != nil {
-				http.Error(response, err.Error(), http.StatusBadRequest)
-				return
-			}
-		}
-	}
-	if strings.TrimSpace(input.AgentID) == "" {
-		http.Error(response, "agent_id is required", http.StatusBadRequest)
-		return
-	}
+func handleEventReplay(response http.ResponseWriter, request *http.Request, db *gorm.DB, actorID string, probe *replayProbe, workspaceLoaded <-chan struct{}) {
+	cursor := strings.TrimSpace(request.Header.Get("Last-Event-ID"))
+	afterEventSeq := canonicalGateCursorSequence(cursor)
 	if handleEventReplayFailureScenario(response) {
 		probe.record(replayProbeRequest{
-			AgentID:       input.AgentID,
-			TaskID:        input.TaskID,
-			AfterEventSeq: input.AfterEventSeq,
+			AgentID:       gateAgentID,
+			TaskID:        gateTaskID,
+			AfterEventSeq: afterEventSeq,
 			ReplayedSeqs:  []int64{},
 		})
 		return
@@ -1822,51 +1807,157 @@ func handleEventReplay(response http.ResponseWriter, request *http.Request, even
 	response.Header().Set("Connection", "keep-alive")
 	response.Header().Set("X-Accel-Buffering", "no")
 	response.WriteHeader(http.StatusOK)
-	_, _ = response.Write([]byte("event: connected\ndata: {\"status\":\"connected\"}\n\n"))
-	if flusher, ok := response.(http.Flusher); ok {
-		flusher.Flush()
-	}
-	if probe.consumeCloseBeforeFirstReplay(input.AfterEventSeq) {
+	if probe.consumeCloseBeforeFirstReplay(afterEventSeq) {
 		probe.record(replayProbeRequest{
-			AgentID:       input.AgentID,
-			TaskID:        input.TaskID,
-			AfterEventSeq: input.AfterEventSeq,
+			AgentID:       gateAgentID,
+			TaskID:        gateTaskID,
+			AfterEventSeq: afterEventSeq,
 			ReplayedSeqs:  []int64{},
 		})
 		return
 	}
-	replayEvents, err := eventStreamService.ReplayTaskEvents(request.Context(), actorID, input.AgentID, input.TaskID, input.AfterEventSeq)
-	if err != nil {
-		data, _ := json.Marshal(map[string]string{"error": err.Error()})
-		_, _ = response.Write([]byte(fmt.Sprintf("event: error\ndata: %s\n\n", string(data))))
+	if afterEventSeq == 0 && strings.TrimSpace(os.Getenv(gateWaitForWorkspaceEnv)) == "1" {
+		select {
+		case <-request.Context().Done():
+			return
+		case <-workspaceLoaded:
+			timer := time.NewTimer(time.Second)
+			defer timer.Stop()
+			select {
+			case <-request.Context().Done():
+				return
+			case <-timer.C:
+			}
+		}
+		payload, err := json.Marshal(map[string]any{
+			"agent_id": gateAgentID,
+			"task_id":  gateTaskID,
+			"text":     "Canonical Goal progress after Atelier subscription",
+		})
+		if err != nil {
+			http.Error(response, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := db.Exec(`INSERT OR IGNORE INTO agent_task_events (
+			id, task_id, step_id, turn_id, event_seq, event_type, payload, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			"atelier-real-product-event-4",
+			gateTaskID,
+			"",
+			"",
+			int64(4),
+			int32(agentmodel.TaskEventType_TASK_EVENT_TYPE_STEP_STARTED),
+			string(payload),
+			time.Now().UTC(),
+		).Error; err != nil {
+			http.Error(response, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	if actorID != gateActorID {
+		http.Error(response, "forbidden actor", http.StatusForbidden)
 		return
 	}
-	replayedSeqs := make([]int64, 0, len(replayEvents))
-	for _, event := range replayEvents {
-		if seq, ok := eventSequence(event); ok {
-			replayedSeqs = append(replayedSeqs, seq)
+	var records []agentpersistence.TaskEvent
+	if err := db.WithContext(request.Context()).
+		Where("task_id = ? AND event_seq > ?", gateTaskID, afterEventSeq).
+		Order("event_seq ASC").
+		Find(&records).Error; err != nil {
+		http.Error(response, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	replayedSeqs := make([]int64, 0, len(records))
+	for i := range records {
+		record := &records[i]
+		streamEventID := canonicalGateEventID(record.EventSeq)
+		event := &realtime.StreamEvent{
+			EventId:  streamEventID,
+			TsUnixMs: record.CreatedAt.UnixMilli(),
+			Kind: &realtime.StreamEvent_AgentDomainEvent{
+				AgentDomainEvent: &realtime.AgentDomainEvent{
+					DomainEventId:     record.ID,
+					DomainSequence:    uint64(record.EventSeq),
+					SchemaVersion:     1,
+					EventType:         canonicalGateTaskEventType(record.EventType),
+					TaskId:            record.TaskID,
+					GoalRevision:      uint64(record.EventSeq),
+					CommittedTsUnixMs: record.CreatedAt.UnixMilli(),
+				},
+			},
 		}
-		data := agentservice.SerializeEvent(event)
-		_, _ = response.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", event.EventType, string(data))))
+		encoded, err := proto.Marshal(event)
+		if err != nil {
+			http.Error(response, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		replayedSeqs = append(replayedSeqs, record.EventSeq)
+		_, _ = response.Write([]byte(fmt.Sprintf(
+			"event: stream\nid: %s\ndata: %s\n\n",
+			streamEventID,
+			base64.StdEncoding.EncodeToString(encoded),
+		)))
 		if flusher, ok := response.(http.Flusher); ok {
 			flusher.Flush()
 		}
-		if shouldCloseAfterFirstReplayEvent(input.AfterEventSeq) {
+		if shouldCloseAfterFirstReplayEvent(afterEventSeq) {
 			probe.record(replayProbeRequest{
-				AgentID:       input.AgentID,
-				TaskID:        input.TaskID,
-				AfterEventSeq: input.AfterEventSeq,
+				AgentID:       gateAgentID,
+				TaskID:        gateTaskID,
+				AfterEventSeq: afterEventSeq,
 				ReplayedSeqs:  append([]int64(nil), replayedSeqs...),
 			})
 			return
 		}
 	}
 	probe.record(replayProbeRequest{
-		AgentID:       input.AgentID,
-		TaskID:        input.TaskID,
-		AfterEventSeq: input.AfterEventSeq,
+		AgentID:       gateAgentID,
+		TaskID:        gateTaskID,
+		AfterEventSeq: afterEventSeq,
 		ReplayedSeqs:  replayedSeqs,
 	})
+}
+
+func canonicalGateEventID(sequence int64) string {
+	return fmt.Sprintf("atelier-gate-stream-%d", sequence)
+}
+
+func canonicalGateCursorSequence(cursor string) int64 {
+	const prefix = "atelier-gate-stream-"
+	if !strings.HasPrefix(cursor, prefix) {
+		return 0
+	}
+	sequence, err := strconv.ParseInt(strings.TrimPrefix(cursor, prefix), 10, 64)
+	if err != nil || sequence < 0 {
+		return 0
+	}
+	return sequence
+}
+
+func canonicalGateTaskEventType(eventType int32) string {
+	switch agentmodel.TaskEventType(eventType) {
+	case agentmodel.TaskEventType_TASK_EVENT_TYPE_TASK_CREATED:
+		return string(agentdomain.EventTypeCollaborationTaskCreated)
+	case agentmodel.TaskEventType_TASK_EVENT_TYPE_TASK_STATUS_CHANGED:
+		return string(agentdomain.EventTypeCollaborationTaskCompleted)
+	case agentmodel.TaskEventType_TASK_EVENT_TYPE_STEP_STARTED:
+		return string(agentdomain.EventTypeCollaborationNodeRunning)
+	case agentmodel.TaskEventType_TASK_EVENT_TYPE_STEP_COMPLETED:
+		return string(agentdomain.EventTypeCollaborationNodeCompleted)
+	case agentmodel.TaskEventType_TASK_EVENT_TYPE_STEP_FAILED:
+		return string(agentdomain.EventTypeCollaborationNodeFailed)
+	case agentmodel.TaskEventType_TASK_EVENT_TYPE_ARTIFACT_CREATED:
+		return string(agentdomain.EventTypeCollaborationArtifactCreated)
+	case agentmodel.TaskEventType_TASK_EVENT_TYPE_GATE_RESULT:
+		return string(agentdomain.EventTypeCollaborationGateResult)
+	case agentmodel.TaskEventType_TASK_EVENT_TYPE_INTERRUPT_REQUESTED:
+		return string(agentdomain.EventTypeCollaborationInterruptRequested)
+	case agentmodel.TaskEventType_TASK_EVENT_TYPE_INTERRUPT_RESOLVED:
+		return string(agentdomain.EventTypeCollaborationInterruptResolved)
+	case agentmodel.TaskEventType_TASK_EVENT_TYPE_FEEDBACK_RECORDED:
+		return string(agentdomain.EventTypeCollaborationFeedbackRecorded)
+	default:
+		return string(agentdomain.EventTypeAgentTurnCompleted)
+	}
 }
 
 func handleEventReplayFailureScenario(response http.ResponseWriter) bool {
@@ -1892,24 +1983,6 @@ func handleEventReplayFailureScenario(response http.ResponseWriter) bool {
 func shouldCloseAfterFirstReplayEvent(afterEventSeq int64) bool {
 	return afterEventSeq <= 0 && strings.TrimSpace(os.Getenv("PEERS_ATELIER_GATE_CLOSE_AFTER_FIRST_REPLAY")) == "1"
 }
-
-func eventSequence(event agentdomain.DomainEvent) (int64, bool) {
-	if event.Metadata == nil {
-		return 0, false
-	}
-	seq, err := strconv.ParseInt(strings.TrimSpace(event.Metadata["event_seq"]), 10, 64)
-	if err != nil {
-		return 0, false
-	}
-	return seq, true
-}
-
-type noopEventBus struct{}
-
-func (noopEventBus) Publish(context.Context, agentdomain.DomainEvent) error { return nil }
-func (noopEventBus) Subscribe(string, agentdomain.EventHandler)             {}
-func (noopEventBus) SubscribeAll(agentdomain.EventHandler)                  {}
-func (noopEventBus) Unsubscribe(string, agentdomain.EventHandler)           {}
 
 func randomSecret() (string, error) {
 	var raw [32]byte

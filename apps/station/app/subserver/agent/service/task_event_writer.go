@@ -27,11 +27,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// TaskEventWriter appends task events to the durable outbox with a monotonic
-// per-task sequence and mirrors them onto the realtime event bus.
+// TaskEventWriter appends task events and canonical realtime outbox rows with
+// a monotonic per-task sequence in one transaction.
 type TaskEventWriter struct {
-	eventBus domain.EventBus
-	mu       sync.Mutex
+	openDB         func(context.Context) (*gorm.DB, error)
+	realtimeLimits persistence.AgentRealtimeBacklogLimits
+	mu             sync.Mutex
 }
 
 type artifactBodyEvidence struct {
@@ -46,13 +47,26 @@ type artifactBodyEvidence struct {
 	SanitizedPayload map[string]interface{}
 }
 
-// NewTaskEventWriter builds a writer bound to the given (optional) event bus.
-func NewTaskEventWriter(eventBus domain.EventBus) *TaskEventWriter {
-	return &TaskEventWriter{eventBus: eventBus}
+// NewTaskEventWriter builds the durable Agent event writer.
+func NewTaskEventWriter() *TaskEventWriter {
+	return &TaskEventWriter{
+		realtimeLimits: persistence.DefaultAgentRealtimeBacklogLimits(),
+		openDB: func(ctx context.Context) (*gorm.DB, error) {
+			return store.GetRDS(ctx, store.WithRDSDBName("agent"))
+		},
+	}
 }
 
 func (w *TaskEventWriter) getDB(ctx context.Context) (*gorm.DB, error) {
-	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
+	if w == nil || w.openDB == nil {
+		return nil, errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"agent event database is unavailable",
+			nil,
+		)
+	}
+	db, err := w.openDB(ctx)
 	if err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to open agent db", err)
 	}
@@ -144,7 +158,80 @@ func (w *TaskEventWriter) appendTx(ctx context.Context, tx *gorm.DB, eventID, ta
 	if err := NewProjectStateMachine().AdvanceTaskTx(ctx, tx, record.TaskID, &record); err != nil {
 		return nil, err
 	}
+	if err := w.enqueueCanonicalRealtimeTx(
+		ctx,
+		tx,
+		&record,
+		eventType,
+	); err != nil {
+		return nil, err
+	}
 	return &record, nil
+}
+
+func (w *TaskEventWriter) enqueueCanonicalRealtimeTx(
+	ctx context.Context,
+	tx *gorm.DB,
+	record *persistence.TaskEvent,
+	eventType string,
+) error {
+	if record == nil {
+		return nil
+	}
+	var task persistence.TaskRun
+	result := tx.WithContext(ctx).
+		Where("task_id = ? AND goal_id <> ''", record.TaskID).
+		Limit(1).
+		Find(&task)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil
+	}
+
+	var goal persistence.AgentGoal
+	if err := tx.WithContext(ctx).
+		Where(
+			"goal_id = ? AND owner_ptid = ?",
+			task.GoalID,
+			task.OwnerActorPTID,
+		).
+		First(&goal).Error; err != nil {
+		return err
+	}
+	_, err := persistence.EnqueueAgentRealtimeTx(
+		ctx,
+		tx,
+		persistence.AgentRealtimeIntent{
+			DomainEventID:   record.ID,
+			DomainSequence:  uint64(record.EventSeq),
+			EventType:       strings.TrimSpace(eventType),
+			GoalID:          task.GoalID,
+			TaskID:          task.TaskID,
+			GoalRevision:    goal.Revision,
+			TargetActorPTID: task.OwnerActorPTID,
+			WorkspaceID:     task.WorkspaceID,
+			EventClass:      taskRealtimeEventClass(eventType),
+			CommittedAt:     record.CreatedAt,
+		},
+		w.realtimeLimits,
+	)
+	return err
+}
+
+func taskRealtimeEventClass(eventType string) string {
+	switch domain.EventType(strings.TrimSpace(eventType)) {
+	case domain.EventTypeCollaborationTaskCompleted,
+		domain.EventTypeCollaborationTaskFailed,
+		domain.EventTypeCollaborationTaskCancelled:
+		return persistence.AgentRealtimeClassTerminal
+	case domain.EventTypeCollaborationInterruptRequested,
+		domain.EventTypeCollaborationInterruptResolved:
+		return persistence.AgentRealtimeClassControl
+	default:
+		return persistence.AgentRealtimeClassProgress
+	}
 }
 
 func syncInterruptRequestForTaskEventTx(ctx context.Context, tx *gorm.DB, event *persistence.TaskEvent) error {
@@ -1034,47 +1121,13 @@ func payloadStringListJSON(payload map[string]interface{}, keys ...string) (stri
 	return "", nil
 }
 
-// Publish appends the event to the outbox (when taskID is set) and mirrors it on
-// the event bus with the resolved event_seq attached to metadata. The metadata
-// keys agent_id/task_id are always present; optional keys are added when set.
-func (w *TaskEventWriter) Publish(ctx context.Context, agentID, eventType string, payload interface{}, taskID, stepID, turnID string, extraMeta map[string]string) {
-	metadata := map[string]string{
-		"agent_id": agentID,
-		"task_id":  taskID,
-	}
-	for k, v := range extraMeta {
-		if strings.TrimSpace(v) != "" {
-			metadata[k] = v
-		}
-	}
-	eventID := generateID("evt")
-	if strings.TrimSpace(taskID) != "" {
-		record, err := w.Append(ctx, eventID, taskID, stepID, turnID, eventType, payload)
-		if err != nil {
-			logger.Errorf(ctx, "failed to append task event: task_id=%s event_type=%s err=%v", taskID, eventType, err)
-			if isInterruptEventType(eventType) {
-				return
-			}
-		} else {
-			eventID = record.ID
-			metadata["event_id"] = record.ID
-			metadata["event_seq"] = fmt.Sprintf("%d", record.EventSeq)
-		}
-	}
-	metadata["event_id"] = eventID
-	if w.eventBus == nil {
+// Publish persists a task-scoped event. The AgentRealtimeRelay is the sole
+// component allowed to fan committed rows into the shared realtime EventBus.
+func (w *TaskEventWriter) Publish(ctx context.Context, _ string, eventType string, payload interface{}, taskID, stepID, turnID string, _ map[string]string) {
+	if strings.TrimSpace(taskID) == "" {
 		return
 	}
-	_ = w.eventBus.Publish(ctx, domain.DomainEvent{
-		EventID:   eventID,
-		EventType: eventType,
-		AgentID:   agentID,
-		Payload:   payload,
-		Metadata:  metadata,
-	})
-}
-
-func isInterruptEventType(eventType string) bool {
-	return eventType == string(domain.EventTypeCollaborationInterruptRequested) ||
-		eventType == string(domain.EventTypeCollaborationInterruptResolved)
+	if _, err := w.Append(ctx, generateID("evt"), taskID, stepID, turnID, eventType, payload); err != nil {
+		logger.Errorf(ctx, "failed to append task event: task_id=%s event_type=%s err=%v", taskID, eventType, err)
+	}
 }

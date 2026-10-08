@@ -1356,8 +1356,9 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 					TaskID: taskID, Title: "Post-admission settlement",
 					Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
 					Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-					OwnerActorPTID: "actor_1", ConversationID: "conv_" + test.name,
-					CreatedAt: now, StartedAt: now, UpdatedAt: now,
+					OwnerActorPTID: "actor_1",
+					ConversationID: persistence.NullableConversationID("conv_" + test.name),
+					CreatedAt:      now, StartedAt: now, UpdatedAt: now,
 				}},
 				{name: "step", value: &persistence.ExecutionStep{
 					StepID: stepID, TaskID: taskID, AgentID: "agent_1", TurnID: turnID,

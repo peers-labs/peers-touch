@@ -15,12 +15,17 @@ const unsubscribeEvidencePath = path.join(evidenceDir, 'atelier-product-window-u
 const renderedProjectionEvidencePath = path.join(evidenceDir, 'atelier-product-window-rendered-projection-evidence.json');
 const createdProjectEvidencePath = path.join(evidenceDir, 'atelier-product-window-created-project-evidence.json');
 const certificationCreateGoal = 'Atelier product-window createFromGoal E2E';
+const readOnlyProjectionMode = /^(1|true|TRUE|yes|YES)$/.test(
+  process.env.PEERS_ATELIER_PRODUCT_WINDOW_E2E_READ_ONLY ?? '',
+);
 const productWindowCoveredPaths = [
   'packaged peers.atelier renders inside the normal Desktop product shell',
   'Desktop product-window route reports applet.product.rendered for peers.atelier',
   'official peers.atelier loads Station workspace through /v1/workspace service binding inside the real Desktop product window UI',
-  'official peers.atelier sends createFromGoal through /v1/projects service binding and Station creates a durable task/node/provider-plan/event projection source inside the real Desktop product window UI',
-  'official peers.atelier starts Station projection event replay through atelier.events.subscribe -> /sub-agent/agent/events/subscribe inside the real Desktop product window UI',
+  ...(readOnlyProjectionMode
+    ? []
+    : ['official peers.atelier sends createFromGoal through /v1/projects service binding and Station creates a durable task/node/provider-plan/event projection source inside the real Desktop product window UI']),
+  'official peers.atelier starts Station projection event replay through events.subscribe -> /events/stream inside the real Desktop product window UI',
   'official peers.atelier reconnects after controlled post-first-replay SSE close and resumes from the persisted cursor inside the real Desktop product window UI',
   'official peers.atelier applies a Station projection event to rendered stream state inside the real Desktop product window UI',
   'official peers.atelier unsubscribes atelier.projection.event and cancels the Desktop Gateway projection subscription after product-window close',
@@ -131,6 +136,7 @@ function startGateServer() {
         ...process.env,
         PEERS_ATELIER_GATE_CLOSE_BEFORE_FIRST_REPLAY: '1',
         PEERS_ATELIER_GATE_CLOSE_AFTER_FIRST_REPLAY: '1',
+        ...(readOnlyProjectionMode ? { PEERS_ATELIER_GATE_WAIT_FOR_WORKSPACE: '1' } : {}),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
@@ -269,7 +275,8 @@ async function main() {
           PEERS_APPLET_PRODUCT_WINDOW_E2E_TOKEN: server.ready.token,
           PEERS_APPLET_PRODUCT_WINDOW_E2E_CLOSE_AFTER_RENDER: '1',
           PEERS_APPLET_PRODUCT_WINDOW_E2E_CLOSE_AFTER_RENDER_DELAY_MS:
-            process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_CLOSE_AFTER_RENDER_DELAY_MS ?? '30000',
+            process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_CLOSE_AFTER_RENDER_DELAY_MS
+              ?? (readOnlyProjectionMode ? '45000' : '30000'),
           PEERS_APPLET_PRODUCT_WINDOW_E2E_ATELIER_UNSUBSCRIBE_EVIDENCE: unsubscribeEvidencePath,
           PEERS_APPLET_PRODUCT_WINDOW_E2E_ATELIER_RENDERED_PROJECTION_EVIDENCE:
             renderedProjectionEvidencePath,
@@ -279,7 +286,7 @@ async function main() {
           PEERS_APPLET_PRODUCT_WINDOW_E2E_LAUNCH_OPTIONS_JSON: JSON.stringify({
             agentId: server.ready.agentId,
             certificationMode: 'product-window-e2e',
-            createGoal: certificationCreateGoal,
+            ...(readOnlyProjectionMode ? {} : { createGoal: certificationCreateGoal }),
             agentIds: [server.ready.agentId],
             taskId: server.ready.taskId,
             afterEventSeq: 0,
@@ -287,11 +294,14 @@ async function main() {
             flowId: 'expert-hierarchy',
           }),
           PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS:
-            '/applets/atelier/v1/workspace,/applets/atelier/v1/projects,/sub-agent/agent/events/subscribe',
+            readOnlyProjectionMode
+              ? '/applets/atelier/v1/workspace,/events/stream'
+              : '/applets/atelier/v1/workspace,/applets/atelier/v1/projects,/events/stream',
           PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS_TIMEOUT_MS:
             process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS_TIMEOUT_MS ?? '60000',
           PEERS_APPLET_PRODUCT_WINDOW_E2E_POST_REQUIRED_URLS_WAIT_MS:
-            process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_POST_REQUIRED_URLS_WAIT_MS ?? '35000',
+            process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_POST_REQUIRED_URLS_WAIT_MS
+              ?? (readOnlyProjectionMode ? '60000' : '35000'),
         },
       },
     );
@@ -326,7 +336,10 @@ async function main() {
     assert.equal(unsubscribeEvidence.appletId, 'peers.atelier', 'product-window unsubscribe evidence must be for peers.atelier');
     assert.equal(unsubscribeEvidence.topic, 'atelier.projection.event', 'product-window unsubscribe evidence topic mismatch');
     assert.equal(unsubscribeEvidence.event, 'atelier.projection.unsubscribe', 'product-window unsubscribe evidence event mismatch');
-      const createdProjectEvidence = readJson(createdProjectEvidencePath);
+    let createdProjectEvidence = null;
+    let createdProjectProperties = null;
+    if (!readOnlyProjectionMode) {
+      createdProjectEvidence = readJson(createdProjectEvidencePath);
       assert.equal(createdProjectEvidence.ok, true, 'product-window created project evidence must report ok=true');
       assert.equal(
         createdProjectEvidence.appletId,
@@ -338,7 +351,7 @@ async function main() {
         'atelier.project.created.rendered',
         'product-window created project evidence event mismatch',
       );
-      const createdProjectProperties = createdProjectEvidence.properties ?? {};
+      createdProjectProperties = createdProjectEvidence.properties ?? {};
       assert.equal(
         createdProjectProperties.goal,
         certificationCreateGoal,
@@ -361,6 +374,7 @@ async function main() {
         typeof createdProjectProperties.eventSeq === 'number' && createdProjectProperties.eventSeq > 0,
         'product-window created project evidence must include durable event sequence',
       );
+    }
     const renderedProjectionEvidence = readJson(renderedProjectionEvidencePath);
     assert.equal(renderedProjectionEvidence.ok, true, 'product-window rendered projection evidence must report ok=true');
     assert.equal(
@@ -376,13 +390,17 @@ async function main() {
     const renderedProjectionProperties = renderedProjectionEvidence.properties ?? {};
     assert.equal(
       renderedProjectionProperties.taskId,
-        createdProjectProperties.taskId,
-        'product-window rendered projection evidence must use the created project taskId',
+      createdProjectProperties?.taskId ?? server.ready.taskId,
+      readOnlyProjectionMode
+        ? 'product-window rendered projection evidence must use the seeded taskId'
+        : 'product-window rendered projection evidence must use the created project taskId',
     );
     assert.equal(
       renderedProjectionProperties.patchKind,
-      'stream.append',
-      'product-window rendered projection evidence must come from a stream.append event',
+      readOnlyProjectionMode ? 'snapshot.invalidate' : 'stream.append',
+      readOnlyProjectionMode
+        ? 'read-only product-window evidence must come from a canonical snapshot.invalidate event'
+        : 'product-window rendered projection evidence must come from a stream.append event',
     );
     assert.ok(
       typeof renderedProjectionProperties.eventSeq === 'number' && renderedProjectionProperties.eventSeq >= 1,
@@ -404,22 +422,23 @@ async function main() {
         renderedProjectionProperties.streamCount >= renderedProjectionProperties.eventBlockIds.length,
       'product-window rendered projection evidence must include rendered stream count',
     );
+    const projectedTaskId = createdProjectProperties?.taskId ?? server.ready.taskId;
     const expectedReplayProbeSequence = [
       {
         agentId: server.ready.agentId,
-        taskId: createdProjectProperties.taskId,
+        taskId: projectedTaskId,
         afterEventSeq: 0,
         replayedSeqs: [1],
       },
       {
         agentId: server.ready.agentId,
-        taskId: createdProjectProperties.taskId,
+        taskId: projectedTaskId,
         afterEventSeq: 1,
         replayedSeqs: [2, 3],
       },
       {
         agentId: server.ready.agentId,
-        taskId: createdProjectProperties.taskId,
+        taskId: projectedTaskId,
         afterEventSeq: renderedProjectionProperties.eventSeq,
         replayedSeqs: [],
       },
@@ -431,16 +450,19 @@ async function main() {
     );
     const replayProbeRequests = Array.isArray(replayProbe.requests) ? replayProbe.requests : [];
     assert.ok(replayProbeHasSequence(replayProbeRequests, expectedReplayProbeSequence));
-    const createProbe = await waitForCreateProbe(
-      server.ready.baseUrl,
-      createdProjectProperties.taskId,
-      Number(process.env.PEERS_ATELIER_PRODUCT_WINDOW_CREATE_PROBE_TIMEOUT_MS ?? 15_000),
-    );
-    assert.equal(
-      createProbe.matchedRequest.taskId,
-      createdProjectProperties.taskId,
-      'product-window create probe taskId must match rendered create evidence',
-    );
+    let createProbe = null;
+    if (!readOnlyProjectionMode) {
+      createProbe = await waitForCreateProbe(
+        server.ready.baseUrl,
+        projectedTaskId,
+        Number(process.env.PEERS_ATELIER_PRODUCT_WINDOW_CREATE_PROBE_TIMEOUT_MS ?? 15_000),
+      );
+      assert.equal(
+        createProbe.matchedRequest.taskId,
+        projectedTaskId,
+        'product-window create probe taskId must match rendered create evidence',
+      );
+    }
 
     mkdirSync(evidenceDir, { recursive: true });
     const evidence = {
@@ -456,6 +478,7 @@ async function main() {
       unsubscribeEvidence,
       renderedProjectionEvidence,
       createdProjectEvidence,
+      readOnlyProjectionMode,
       stationGateServer: {
         baseUrl: server.ready.baseUrl,
         taskId: server.ready.taskId,

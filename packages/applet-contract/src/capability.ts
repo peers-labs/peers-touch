@@ -69,7 +69,6 @@ export const CapabilityMethod = {
   AtelierWorkspaceOpen: 'atelier.workspace.open',
   AtelierArtifactBodyFetch: 'atelier.artifact.body.fetch',
   AtelierArtifactPreviewOpen: 'atelier.artifact.preview.open',
-  AtelierEventsSubscribe: 'atelier.events.subscribe',
   AiGenerate: 'ai.generate',
   AiChat: 'ai.chat',
   TelemetryTrack: 'telemetry.track',

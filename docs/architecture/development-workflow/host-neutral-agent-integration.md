@@ -109,9 +109,10 @@ translated, or copied into current authority.
    references, and workflow identity mismatches. A bound workspace requires a
    tracked declaration locator; only an unbound pre-Plan workspace may carry an
    untracked declaration during this source-only audit.
-5. Release the active Development declaration, prove no live action except the
-   current exact OWNER-bound installer command, then install the current host
-   projection without prompting:
+5. Prove no live child assignment, Action Store lock, or workflow action except
+   the current exact OWNER-bound installer command, then install the current
+   host projection without prompting. Live Development declarations may remain
+   because they express durable intent rather than an in-flight hook action:
 
    ```bash
    make skills IDE=<trae|cursor|codex>
@@ -127,20 +128,26 @@ translated, or copied into current authority.
    workspace bootstrap hook selected from the active `.code-workspace`
    descriptor, including `SubagentStart`, `SubagentStop`, `PreCompact`, and
    `PostCompact`. Per-worktree managed TRAE hook entries are removed. No
-   user-global hook file is modified.
-   This hard cut deletes prior machine-local conversation and workflow-action
-   stores before publishing the bootstrap. The installer has no legacy reader,
-   importer, alias, or dual-write path.
+   user-global hook file is modified. Missing folders in a stale workspace
+   descriptor are ignored, while at least one existing folder and the selected
+   source worktree remain mandatory.
+   When declarations are quiescent, this hard cut deletes prior machine-local
+   conversation and workflow-action stores before publishing the bootstrap.
+   When a declaration is live, the same stores remain inert and cleanup is
+   deferred to a later declaration-free installation. The installer and
+   runtime have no legacy reader, importer, alias, or dual-write path.
    The complete install runs while holding the
-   machine work-ledger lock, rejects every live machine declaration, child
-   assignment, canonical workflow action, and Action Store lock as
+   machine work-ledger lock, rejects every live child assignment, canonical
+   workflow action, and Action Store lock as
    `GLOBAL_WORKFLOW_NOT_IDLE`. One live OWNER `skills` Action Receipt is allowed
    only when its canonical binding resolves to the selected source worktree and
    the Kernel issued a create-once grant for that exact action ID. The installer
    atomically consumes the grant, so a seeded receipt or second invocation
-   cannot reuse it. Expired actions are not live. The installer validates the
-   ledger, binding, and Action stores through their canonical owners while
-   holding the lock,
+   cannot reuse it. When declarations are live and legacy cleanup is skipped,
+   the installer may bootstrap without a receipt if the old integration cannot
+   issue one; any observed non-installer action still blocks replacement.
+   Expired actions are not live. The installer validates the ledger, binding,
+   and Action stores through their canonical owners while holding the lock,
    never reclaims another owner's stale ledger lock, waits while a live ledger
    owner holds an inode-bound recovery claim, reclaims only a dead recovery
    owner through PID/start identity, rejects host-root, retirement-root, reset,
@@ -207,9 +214,9 @@ Required report fields:
 - `HOST_PROJECTION_INCOMPLETE`: rerun the non-interactive installer.
 - `SOURCE_CONFLICT`: resolve semantically in that branch; never use a raw patch
   as the rollout authority.
-- `GLOBAL_WORKFLOW_NOT_IDLE`: close or expire every live declaration, child
-  assignment, and workflow action other than the current exact OWNER installer
-  action, then retry the hard cut.
+- `GLOBAL_WORKFLOW_NOT_IDLE`: close or expire every live child assignment and
+  workflow action other than the current exact OWNER installer action, and
+  release every active Action Store lock, then retry the installation.
 - `MACHINE_WORK_LEDGER_LOCKED`: do not reclaim the lock from the rollout path;
   let the Development ledger owner verify or recover it.
 - `AGENT_RESTART_NOT_OBSERVED`: end the installing host session and ACK only

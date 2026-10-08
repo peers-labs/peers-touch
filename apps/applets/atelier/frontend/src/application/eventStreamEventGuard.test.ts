@@ -33,4 +33,15 @@ describe('event stream event guard UI state', () => {
       });
     }
   });
+
+  it('marks canonical invalidation and sequence gaps as reconciling', () => {
+    for (const outcome of ['reconcile', 'gap'] as const) {
+      expect(stateFromAtelierProjectionEventApplyOutcome(outcome)).toEqual({
+        loading: false,
+        eventStreamState: 'subscribing',
+        eventStreamError: '',
+        eventStreamErrorKind: '',
+      });
+    }
+  });
 });

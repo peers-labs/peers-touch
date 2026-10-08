@@ -341,7 +341,7 @@ func TestGateRunnerRunAndAppendTxPersistsGateResult(t *testing.T) {
 		t.Fatalf("seed acceptance predicate: %v", err)
 	}
 
-	writer := NewTaskEventWriter(nil)
+	writer := NewTaskEventWriter()
 	err := db.Transaction(func(tx *gorm.DB) error {
 		_, decision, err := NewGateRunner(nil).RunAndAppendTx(
 			context.Background(),

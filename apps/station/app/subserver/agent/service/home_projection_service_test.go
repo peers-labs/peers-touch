@@ -45,17 +45,29 @@ func (s homeReadinessGetterStub) Get(
 	return s.byAgent[req.GetAgentId()], nil
 }
 
-type homeTaskListerStub struct {
-	tasks []*persistence.AgentTask
-	err   error
+type homeTaskMigrationListerStub struct {
+	migrations []persistence.AgentTaskGoalMap
+	migrateErr error
 }
 
-func (s homeTaskListerStub) ListTasks(
+func (s homeTaskMigrationListerStub) ListTaskMigrationReadbacks(
 	context.Context,
 	string,
+) ([]persistence.AgentTaskGoalMap, error) {
+	return s.migrations, s.migrateErr
+}
+
+type homeGoalExecutionListerStub struct {
+	executions []*GoalExecutionSnapshot
+	err        error
+}
+
+func (s homeGoalExecutionListerStub) ListTaskRunsForOwner(
+	context.Context,
 	string,
-) ([]*persistence.AgentTask, error) {
-	return s.tasks, s.err
+	int,
+) ([]*GoalExecutionSnapshot, error) {
+	return s.executions, s.err
 }
 
 func (s homeConversationListerStub) ListConversations(
@@ -137,6 +149,68 @@ func TestHomeProjectionUsesStationAgentsAndRecentConversations(t *testing.T) {
 	}
 	if projection.GetRevision() != uint64(newer.UnixNano()) {
 		t.Fatalf("revision = %d, want %d", projection.GetRevision(), newer.UnixNano())
+	}
+}
+
+func TestHomeProjectionIncludesCanonicalGoalDirectModelResult(t *testing.T) {
+	now := time.Date(2026, 10, 4, 13, 0, 0, 0, time.UTC)
+	svc := NewHomeProjectionService(
+		homeAgentListerStub{},
+		homeConversationListerStub{},
+		nil,
+		nil,
+		homeGoalExecutionListerStub{executions: []*GoalExecutionSnapshot{{
+			Node: &persistence.AgentGoalNode{
+				GoalID: "goal-result",
+				NodeID: "node-result",
+				TaskID: "task-result",
+				Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED),
+			},
+			Task: &persistence.TaskRun{
+				TaskID:         "task-result",
+				Title:          "Prepare visible result",
+				Surface:        int32(model.TaskSurface_TASK_SURFACE_DIRECT_RUN),
+				Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED),
+				OwnerActorPTID: "ptid:actor-1",
+				GoalID:         "goal-result",
+				GoalNodeID:     "node-result",
+				RootStepID:     "step-result",
+				UpdatedAt:      now,
+			},
+			Step: &persistence.ExecutionStep{
+				StepID:        "step-result",
+				TaskID:        "task-result",
+				AgentID:       "agent-result",
+				Status:        int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED),
+				Attempt:       1,
+				AttemptID:     "attempt-result",
+				ResultSummary: "Durable model result",
+			},
+			Result: &GoalResultProjection{
+				DirectRunID: "direct-result",
+				State:       "succeeded",
+				Summary:     "Durable model result",
+				ArtifactID:  "artifact-result",
+			},
+		}}},
+	)
+	svc.now = func() time.Time { return now }
+
+	projection, err := svc.Get(context.Background(), "ptid:actor-1", 0)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if len(projection.GetActiveTasks()) != 1 ||
+		projection.GetActiveTasks()[0].GetStatus() !=
+			model.HomeTaskStatus_HOME_TASK_STATUS_COMPLETED {
+		t.Fatalf("terminal canonical TaskRun = %+v", projection.GetActiveTasks())
+	}
+	if len(projection.GetBriefItems()) != 1 ||
+		projection.GetBriefItems()[0].GetBriefId() !=
+			"goal-result:artifact-result" ||
+		projection.GetBriefItems()[0].GetSourceRef() != "task-result" ||
+		projection.GetBriefItems()[0].GetSummary() != "Durable model result" {
+		t.Fatalf("Goal result brief = %+v", projection.GetBriefItems())
 	}
 }
 
@@ -324,14 +398,26 @@ func TestHomeProjectionIncludesReadinessAndTaskSlices(t *testing.T) {
 				}},
 			},
 		}},
-		homeTaskListerStub{tasks: []*persistence.AgentTask{{
-			ID:           "task-1",
-			Title:        "Prepare brief",
-			AgentID:      "agent-1",
-			Status:       "running",
-			Progress:     25,
-			OwnerActorID: "ptid:actor-1",
-			UpdatedAt:    now,
+		nil,
+		homeGoalExecutionListerStub{executions: []*GoalExecutionSnapshot{{
+			Task: &persistence.TaskRun{
+				TaskID:         "task-1",
+				Title:          "Prepare brief",
+				Surface:        int32(model.TaskSurface_TASK_SURFACE_API),
+				Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+				OwnerActorPTID: "ptid:actor-1",
+				RootStepID:     "step-1",
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			},
+			Step: &persistence.ExecutionStep{
+				StepID:    "step-1",
+				TaskID:    "task-1",
+				AgentID:   "agent-1",
+				Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+				Attempt:   1,
+				AttemptID: "attempt-1",
+			},
 		}}},
 	)
 	svc.now = func() time.Time { return now }
@@ -355,5 +441,182 @@ func TestHomeProjectionIncludesReadinessAndTaskSlices(t *testing.T) {
 	if len(projection.GetCapabilitySummaries()) != 1 ||
 		projection.GetCapabilitySummaries()[0].GetReadinessState() != "ready" {
 		t.Fatalf("capability summaries = %+v", projection.GetCapabilitySummaries())
+	}
+}
+
+func TestHomeProjectionIncludesCanonicalGoalTaskRun(t *testing.T) {
+	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	svc := NewHomeProjectionService(
+		homeAgentListerStub{},
+		homeConversationListerStub{},
+		nil,
+		nil,
+		homeGoalExecutionListerStub{executions: []*GoalExecutionSnapshot{{
+			Node: &persistence.AgentGoalNode{
+				GoalID: "goal-1",
+				NodeID: "node-1",
+				TaskID: "task-1",
+				Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING),
+			},
+			Task: &persistence.TaskRun{
+				TaskID:         "task-1",
+				Title:          "Prepare durable result",
+				Surface:        int32(model.TaskSurface_TASK_SURFACE_DIRECT_RUN),
+				Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PENDING),
+				OwnerActorPTID: "ptid:actor-1",
+				WorkspaceID:    "workspace-1",
+				GoalID:         "goal-1",
+				GoalNodeID:     "node-1",
+				RootStepID:     "step-1",
+				UpdatedAt:      now,
+			},
+			Step: &persistence.ExecutionStep{
+				StepID:    "step-1",
+				TaskID:    "task-1",
+				AgentID:   "agent-1",
+				Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING),
+				Attempt:   1,
+				AttemptID: "attempt-1",
+			},
+		}}},
+	)
+	svc.now = func() time.Time { return now }
+
+	projection, err := svc.Get(context.Background(), "ptid:actor-1", 0)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if len(projection.GetActiveTasks()) != 1 {
+		t.Fatalf("active tasks = %+v", projection.GetActiveTasks())
+	}
+	task := projection.GetActiveTasks()[0]
+	if task.GetTaskId() != "task-1" ||
+		task.GetGoalId() != "goal-1" ||
+		task.GetGoalNodeId() != "node-1" ||
+		task.GetStepId() != "step-1" ||
+		task.GetAttemptId() != "attempt-1" ||
+		task.GetAttempt() != 1 ||
+		task.GetSurface() != model.TaskSurface_TASK_SURFACE_DIRECT_RUN {
+		t.Fatalf("canonical Goal TaskRun = %+v", task)
+	}
+	if len(projection.GetRecentWork()) != 1 ||
+		projection.GetRecentWork()[0].GetWorkId() != "task-1" {
+		t.Fatalf("recent work = %+v", projection.GetRecentWork())
+	}
+}
+
+func TestHomeProjectionShowsMigratedAgentTaskThroughCanonicalIdentity(t *testing.T) {
+	now := time.Date(2026, 10, 4, 14, 0, 0, 0, time.UTC)
+	migration := persistence.AgentTaskGoalMap{
+		LegacyTaskID:    "legacy-task-1",
+		OwnerPTID:       "ptid:actor-1",
+		GoalID:          "goal-migrated",
+		TaskID:          "task-migrated",
+		GoalNodeID:      "node-migrated",
+		StepID:          "step-migrated",
+		AttemptID:       "attempt-migrated",
+		State:           persistence.AgentTaskMigrationStateMigrated,
+		SourceStatus:    "running",
+		SourceUpdatedAt: now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	svc := NewHomeProjectionService(
+		homeAgentListerStub{},
+		homeConversationListerStub{},
+		nil,
+		homeTaskMigrationListerStub{
+			migrations: []persistence.AgentTaskGoalMap{migration},
+		},
+		homeGoalExecutionListerStub{executions: []*GoalExecutionSnapshot{{
+			Node: &persistence.AgentGoalNode{
+				GoalID: migration.GoalID,
+				NodeID: migration.GoalNodeID,
+				TaskID: migration.TaskID,
+				Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+			},
+			Task: &persistence.TaskRun{
+				TaskID:         migration.TaskID,
+				Title:          "Migrated task",
+				Surface:        int32(model.TaskSurface_TASK_SURFACE_API),
+				Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+				OwnerActorPTID: "ptid:actor-1",
+				GoalID:         migration.GoalID,
+				GoalNodeID:     migration.GoalNodeID,
+				RootStepID:     migration.StepID,
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			},
+			Step: &persistence.ExecutionStep{
+				StepID:    migration.StepID,
+				TaskID:    migration.TaskID,
+				AgentID:   "agent-1",
+				Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+				Attempt:   1,
+				AttemptID: migration.AttemptID,
+			},
+		}}},
+	)
+	svc.now = func() time.Time { return now }
+
+	projection, err := svc.Get(context.Background(), "ptid:actor-1", 0)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if len(projection.GetActiveTasks()) != 1 {
+		t.Fatalf("active tasks = %+v", projection.GetActiveTasks())
+	}
+	task := projection.GetActiveTasks()[0]
+	if task.GetTaskId() != migration.TaskID ||
+		task.GetGoalId() != migration.GoalID ||
+		task.GetLegacySourceId() != migration.LegacyTaskID ||
+		task.GetMigrationState() !=
+			model.HomeTaskMigrationState_HOME_TASK_MIGRATION_STATE_MIGRATED {
+		t.Fatalf("migrated Home task = %+v", task)
+	}
+	if len(projection.GetRecentWork()) != 1 ||
+		projection.GetRecentWork()[0].GetWorkId() != migration.TaskID {
+		t.Fatalf("migrated recent work = %+v", projection.GetRecentWork())
+	}
+}
+
+func TestHomeProjectionOmitsBlockedMigrationWithoutCanonicalTaskRun(t *testing.T) {
+	now := time.Date(2026, 10, 4, 14, 30, 0, 0, time.UTC)
+	migration := persistence.AgentTaskGoalMap{
+		LegacyTaskID:    "legacy-task-blocked",
+		OwnerPTID:       "ptid:actor-1",
+		GoalID:          "goal-blocked",
+		TaskID:          "task-blocked",
+		GoalNodeID:      "node-blocked",
+		StepID:          "step-blocked",
+		AttemptID:       "attempt-blocked",
+		State:           persistence.AgentTaskMigrationStateBlocked,
+		BlockReason:     "terminal_state_ambiguous",
+		SourceStatus:    "completed",
+		SourceUpdatedAt: now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	svc := NewHomeProjectionService(
+		homeAgentListerStub{},
+		homeConversationListerStub{},
+		nil,
+		homeTaskMigrationListerStub{
+			migrations: []persistence.AgentTaskGoalMap{migration},
+		},
+	)
+	svc.now = func() time.Time { return now }
+
+	projection, err := svc.Get(context.Background(), "ptid:actor-1", 0)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if len(projection.GetActiveTasks()) != 0 ||
+		len(projection.GetRecentWork()) != 0 {
+		t.Fatalf(
+			"blocked legacy migration leaked into canonical projection: tasks=%+v recent=%+v",
+			projection.GetActiveTasks(),
+			projection.GetRecentWork(),
+		)
 	}
 }

@@ -109,10 +109,6 @@ const controllerTransitionsSource = fsSync.readFileSync(
   path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/controllerTransitions.ts'),
   'utf8',
 );
-const projectionSubscriptionKeySource = fsSync.readFileSync(
-  path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/atelierProjectionSubscriptionKey.ts'),
-  'utf8',
-);
 const viewStatusSource = fsSync.readFileSync(
   path.join(repoRoot, 'apps/applets/atelier/frontend/src/application/viewStatus.ts'),
   'utf8',
@@ -481,23 +477,10 @@ assert.ok(
   'Atelier official client must require explicit agentIds before project creation',
 );
 assert.ok(
-  clientSource.includes('projectionAgentIdFromSource') &&
-      clientSource.includes('ATELIER_PROJECTION_CONTRACT.eventSubscription.agentIdSourcePriority') &&
-      clientSource.includes('projectionAgentIdResolvers') &&
-      !clientSource.includes('return agentIdsFromSource(source)[0]') &&
-    clientSource.includes('sdk.invoke(ATELIER_PROJECTION_SUBSCRIPTION_METHOD, streamConfig)'),
-  'Atelier official client must derive default projection stream subscription only from explicit agentId/agentIds launch config',
-);
-assert.ok(
-  clientSource.includes('projectionAfterEventSeqFromSnapshot') &&
-    clientSource.includes('workspace.replay?.[taskId]?.nextEventSeq') &&
-    clientSource.includes('projectionTaskIdFromSource') &&
-      clientSource.includes('ATELIER_PROJECTION_CONTRACT.eventSubscription.taskIdSourcePriority') &&
-      clientSource.includes('projectionTaskIdResolvers') &&
-      !clientSource.includes("return snapshot?.selectedTaskId || snapshot?.workspace.tasks[0]?.id || ''") &&
-    clientSource.includes('selectedTaskId: string') &&
-    clientSource.includes('subscribeAtelierProjectionEvents(\n  snapshot: AtelierProjectionSnapshot | null'),
-  'Atelier official client must derive default taskId/afterEventSeq from the loaded projection replay cursor',
+  clientSource.includes('await sdk.events.subscribe(ATELIER_PROJECTION_EVENT_TOPIC)') &&
+    !clientSource.includes('sdk.invoke(ATELIER_PROJECTION_SUBSCRIPTION_METHOD') &&
+    !clientSource.includes('readProjectionStreamConfig'),
+  'Atelier official client must consume the canonical Host topic without opening a feature-specific Station stream',
 );
 assert.ok(
   clientSource.includes('function safeUnsubscribeAtelierProjectionEventTopic') &&
@@ -511,126 +494,24 @@ assert.ok(
 );
 assert.ok(
   officialFrontendPackageSource.includes('src/infrastructure/capability/*.test.ts') &&
-    clientSource.includes('const closeSubscription = () => {') &&
-    clientSource.includes('if (closed) return;') &&
-    clientSource.includes('closed = true;') &&
-    clientSource.includes('if (closed) return;') &&
-    clientSource.includes('return closeSubscription;') &&
-    atelierClientTestSource.includes('cleans local listener and Host topic when events.subscribe rejects before Station stream subscribe') &&
-    atelierClientTestSource.includes('keeps release idempotent and blocks late event or subscription-rejected payload delivery') &&
-    atelierClientTestSource.includes('expect(sdkState.unsubscribe).toHaveBeenCalledTimes(1)') &&
-    atelierClientTestSource.includes("sdkState.unsubscribe.mockRejectedValueOnce(new Error('late rejected official events.unsubscribe'))") &&
-    atelierClientTestSource.includes('expect(unhandledRejections).toHaveLength(0)') &&
-    atelierClientTestSource.includes("reason: 'late rejected official atelier.events.subscribe'") &&
-    atelierClientTestSource.includes('/provider\\.invoke|runtime\\.execute|shell|memory\\.write|input_snapshot|run\\.execute/'),
-  'Atelier official projection subscription source unit matrix must cover rejected subscribe cleanup, idempotent release, late payload isolation, no unhandled rejection, and projection-only payload boundaries',
-);
-assert.ok(
-  atelierClientTestSource.includes('cleans local listener and Host topic when atelier.events.subscribe rejects after Host topic subscribe') &&
-    atelierClientTestSource.includes("streamSubscribeReady.reject(new Error('late rejected official atelier.events.subscribe invoke'))") &&
-    atelierClientTestSource.includes("sdkState.unsubscribe.mockRejectedValueOnce(new Error('late rejected official events.unsubscribe after stream reject'))") &&
-    atelierClientTestSource.includes("projectionEvent('evt-after-stream-reject')") &&
-    atelierClientTestSource.includes('expect(unhandledRejections).toHaveLength(0)') &&
-    atelierClientTestSource.includes('expect(sdkState.handlers.has(ATELIER_PROJECTION_EVENT_TOPIC)).toBe(false)') &&
-    atelierClientTestSource.includes('/provider\\.invoke|runtime\\.execute|shell|memory\\.write|input_snapshot|run\\.execute/'),
-  'Atelier official projection stream subscribe reject source unit matrix must cover Station stream cleanup, late payload isolation, no unhandled rejection, and projection-only payload boundaries',
-);
-assert.ok(
-  atelierClientTestSource.includes('delivers active typed subscription rejection once then cleans listener and blocks later events') &&
-    atelierClientTestSource.includes("code: 'PERMISSION_DENIED'") &&
-    atelierClientTestSource.includes('Atelier projection stream subscription atelier.events.subscribe rejected') &&
-    atelierClientTestSource.includes("projectionEvent('evt-after-active-typed-reject')") &&
-    atelierClientTestSource.includes('expect(rejected).toHaveLength(1)') &&
-    atelierClientTestSource.includes('expect(sdkState.unsubscribe).toHaveBeenCalledTimes(1)') &&
-    atelierClientTestSource.includes('expect(unhandledRejections).toHaveLength(0)') &&
-    atelierClientTestSource.includes('/provider\\.invoke|runtime\\.execute|shell|memory\\.write|input_snapshot|run\\.execute/'),
-  'Atelier official active typed subscription rejection source unit matrix must cover recovery delivery, cleanup idempotence, late event isolation, no unhandled rejection, and projection-only payload boundaries',
-);
-assert.ok(
-  atelierClientTestSource.includes('preserves active typed subscription rejection codes for recovery taxonomy') &&
-    atelierClientTestSource.includes("code: 'FORBIDDEN'") &&
-    atelierClientTestSource.includes("code: 'CONNECTION_CLOSED'") &&
-    atelierClientTestSource.includes("expected: { key: 'atelier.error.authDenied', kind: 'auth-denied' }") &&
-    atelierClientTestSource.includes("expected: { key: 'atelier.error.disconnected', kind: 'disconnected' }") &&
-    atelierClientTestSource.includes('expect(classifyAtelierError(rejected[0])).toEqual(item.expected)') &&
-    atelierClientTestSource.includes('/provider\\.invoke|runtime\\.execute|shell|memory\\.write|input_snapshot|run\\.execute/'),
-  'Atelier official typed subscription rejection code taxonomy source unit matrix must cover auth-denied and disconnected recovery classification with projection-only payload boundaries',
-);
-assert.ok(
-  atelierClientTestSource.includes('fails closed on malformed typed subscription rejection payload fields without treating them as projection events') &&
-    atelierClientTestSource.includes("method: ''") &&
-    atelierClientTestSource.includes("code: { nested: 'FORBIDDEN' }") &&
-    atelierClientTestSource.includes("reason: { nested: 'do not trust malformed reason' }") &&
-    atelierClientTestSource.includes("shellExecute: { command: 'open .' }") &&
-    atelierClientTestSource.includes("Atelier projection stream subscription unknown rejected: unknown rejection") &&
-    atelierClientTestSource.includes("key: 'atelier.error.loadFailed'") &&
-    atelierClientTestSource.includes('expect(malformed).toEqual([])') &&
-    atelierClientTestSource.includes("projectionEvent('evt-after-malformed-typed-reject')"),
-  'Atelier official malformed typed subscription rejection source unit matrix must cover fail-closed generic recovery, projection event isolation, cleanup, and malformed execution-shaped field containment',
-);
-assert.ok(
-  atelierClientSource.includes('const sanitizedCause: Record<string, unknown> = {') &&
-    atelierClientSource.includes("kind: 'atelier.projection.subscription-rejected'") &&
-    atelierClientSource.includes('const code = typeof value.code ===') &&
-    atelierClientSource.includes('sanitizeProjectionSubscriptionCode(value.code)') &&
-    atelierClientSource.includes('if (code) {') &&
-    atelierClientSource.includes('cause: sanitizedCause') &&
-    atelierClientTestSource.includes('sanitizes typed subscription rejection error cause while preserving valid recovery code') &&
-    atelierClientTestSource.includes("providerInvoke: { provider: 'model' }") &&
-    atelierClientTestSource.includes("runtimeExecute: { taskId: 'task-official-subscribe' }") &&
-    atelierClientTestSource.includes("input_snapshot: { prompt: 'must not leak' }") &&
-    atelierClientTestSource.includes('expect(rejected[0]?.cause).toEqual({') &&
-    atelierClientTestSource.includes('expect(classifyAtelierError(rejected[0])).toEqual({') &&
-    atelierClientTestSource.includes('/provider\\.invoke|providerInvoke|runtime\\.execute|runtimeExecute|shell|memory\\.write|input_snapshot|run\\.execute/'),
-  'Atelier official typed subscription rejection sanitized cause source unit matrix must preserve recovery code while stripping execution-shaped fields from Error.cause',
-);
-assert.ok(
-  atelierClientSource.includes('function sanitizeProjectionSubscriptionReason(reason: string): string') &&
-    atelierClientSource.includes('forbiddenProjectionSubscriptionReasonPatterns') &&
-    atelierClientSource.includes('sanitizeProjectionSubscriptionReason(value.reason)') &&
-    atelierClientSource.includes('error: sanitizeProjectionSubscriptionReason(error instanceof Error ? error.message : String(error))') &&
-    atelierClientSource.includes("console.warn('Atelier official projection event topic unsubscribe rejected', {") &&
-    atelierClientTestSource.includes('sanitizes typed subscription rejection reason diagnostic and warning text') &&
-    atelierClientTestSource.includes("reason: 'provider.invoke providerInvoke runtime.execute runtimeExecute shellExecute input_snapshot should not leak from typed rejection'") &&
-    atelierClientTestSource.includes("new Error('provider.invoke providerInvoke runtime.execute runtimeExecute shellExecute input_snapshot should not leak from unsubscribe')") &&
-    atelierClientTestSource.includes("reason: 'Host projection subscription rejected'") &&
-    atelierClientTestSource.includes('subscribeRejectedDiagnostic?.properties?.error') &&
-    atelierClientTestSource.includes('JSON.stringify({ rejected, warnings, subscribeRejectedDiagnostic })'),
-  'Atelier official typed subscription rejection reason diagnostic and warning sanitization source unit matrix must strip execution-shaped fields while preserving structured code',
-);
-assert.ok(
-  atelierClientSource.includes('function sanitizeProjectionSubscriptionCode(code: string): string | undefined') &&
-    atelierClientSource.includes('ATELIER_VIEW_SURFACE.bridgeRuntimeRecoveryCodeKindByCode') &&
-    atelierClientSource.includes('sanitizeProjectionSubscriptionCode(value.code)') &&
-    atelierClientTestSource.includes('keeps only known typed subscription rejection recovery codes in sanitized cause') &&
-    atelierClientTestSource.includes("code: 'connection_closed'") &&
-    atelierClientTestSource.includes("code: 'CONNECTION_CLOSED'") &&
-    atelierClientTestSource.includes("key: 'atelier.error.disconnected'") &&
-    atelierClientTestSource.includes("code: 'providerInvoke runtimeExecute shellExecute input_snapshot should not leak'") &&
-    atelierClientTestSource.includes("reason: 'host sent unknown code'") &&
-    atelierClientTestSource.includes("key: 'atelier.error.loadFailed'") &&
-    atelierClientTestSource.includes('/providerInvoke|runtimeExecute|shellExecute|input_snapshot/'),
-  'Atelier official typed subscription rejection code whitelist source unit matrix must keep only known recovery codes in Error.cause',
+    clientSource.includes('await sdk.events.subscribe(ATELIER_PROJECTION_EVENT_TOPIC)') &&
+    clientSource.includes('isCanonicalProjectionResync(payload)') &&
+    clientSource.includes('safeUnsubscribeAtelierProjectionEventTopic();') &&
+    atelierClientTestSource.includes('uses only the generic Host topic and delivers canonical invalidations') &&
+    atelierClientTestSource.includes('expect(sdkState.invoke).not.toHaveBeenCalled()') &&
+    atelierClientTestSource.includes('requests authoritative reconciliation for canonical Resync') &&
+    atelierClientTestSource.includes('cleans the local handler and Host topic when subscription fails'),
+  'Atelier official projection subscription must use the canonical Host topic with invalidation, Resync, and cleanup coverage',
 );
 assert.ok(
   controllerSource.includes('if (!state.snapshot) return undefined') &&
-    controllerSource.includes('deriveAtelierProjectionSubscriptionKey(state.snapshot, state.selectedTaskId)') &&
     controllerSource.includes('subscribeAtelierProjectionEvents(') &&
-    controllerSource.includes('state.snapshot,\n        subscriptionTaskId') &&
-    controllerSource.includes('stateFromAtelierEventStreamConnecting()') &&
-    controllerSource.includes('stateFromMalformedAtelierProjectionEvent()') &&
-    controllerSource.includes('subscriptionTaskId') &&
-    controllerSource.includes('subscriptionAfterEventSeq') &&
-    controllerSource.includes('[hasSnapshot, subscriptionTaskId, subscriptionAfterEventSeq]') &&
-    !controllerSource.includes('}, [state.selectedTaskId, state.snapshot]);'),
-  'Atelier official controller must subscribe projection events after snapshot load using a stable replay cursor key',
-);
-assert.ok(
-  projectionSubscriptionKeySource.includes('export function deriveAtelierProjectionSubscriptionKey') &&
-    projectionSubscriptionKeySource.includes("selectedTaskId || snapshot?.selectedTaskId || snapshot?.workspace.tasks[0]?.id || ''") &&
-    projectionSubscriptionKeySource.includes('snapshot?.workspace.replay?.[taskId]?.nextEventSeq ?? 0') &&
-    projectionSubscriptionKeySource.includes('hasSnapshot: Boolean(snapshot)'),
-  'Atelier official controller must centralize projection subscription key derivation for created-task resubscribe proof',
+    controllerSource.includes('state.snapshot,\n        state.selectedTaskId') &&
+    controllerSource.includes('reconcileFromCanonicalEvent') &&
+    controllerSource.includes("result.outcome === 'reconcile' || result.outcome === 'gap'") &&
+    controllerSource.includes('reconcileAtelierSnapshot(current, snapshot)') &&
+    controllerSource.includes('[hasSnapshot]'),
+  'Atelier official controller must reconcile canonical invalidations and sequence gaps through Station snapshot readback',
 );
 for (const [name, startToken, endToken] of [
   ['createProject', 'const createProject = useCallback(async () => {', '\n  const resolveDecision = useCallback'],
@@ -1633,7 +1514,8 @@ assert.ok(
     controllerSource.includes('selectedFlowId') &&
     controllerSource.includes('setSelectedFlowId') &&
     controllerSource.includes('buildAtelierProjectCreateIntent') &&
-    controllerSource.includes('createAtelierProjectFromGoal(intent)') &&
+    controllerSource.includes('clientIdempotencyKey: certificationCreateKey') &&
+    controllerSource.includes('clientIdempotencyKey: submitKey') &&
     projectCreateActionGuardsSource.includes("ATELIER_PROJECTION_CONTRACT.methodPayloads['atelier.project.createFromGoal']") &&
     projectCreateActionGuardsSource.includes('ATELIER_TASK_INTENT_PRESETS') &&
     projectCreateActionGuardsSource.includes('ATELIER_RUN_TARGET_KINDS') &&
@@ -2129,7 +2011,6 @@ import {
 } from './apps/applets/atelier/frontend/src/application/projectionReducer.ts';
 import { nextAtelierEventStreamRetryDelayMs } from './apps/applets/atelier/frontend/src/application/eventStreamRecovery.ts';
 import { stateFromMalformedAtelierProjectionEvent } from './apps/applets/atelier/frontend/src/application/eventStreamEventGuard.ts';
-import { deriveAtelierProjectionSubscriptionKey } from './apps/applets/atelier/frontend/src/application/atelierProjectionSubscriptionKey.ts';
 import {
   stateFromAtelierError,
   stateFromAtelierEventStreamConnecting,
@@ -2139,7 +2020,7 @@ import { deriveOfficialRecoveryView, deriveOfficialStatusActionPolicy, isOfficia
 import { deriveOfficialStatusPillView } from './apps/applets/atelier/frontend/src/application/statusPillView.ts';
 import { atelierTypedRecoveryKind, deriveAtelierPageSurface, shouldRenderAtelierEmptyState } from './apps/applets/atelier/frontend/src/application/pageComposition.ts';
 import { deriveAtelierViewStatus } from './apps/applets/atelier/frontend/src/application/viewStatus.ts';
-import { ATELIER_PROJECTION_EVENT_TOPIC, ATELIER_PROJECTION_SUBSCRIPTION_METHOD, ATELIER_RECOVERY_RETRYABLE_KINDS, ATELIER_RECOVERY_TONE_BY_KIND, ATELIER_STATUS_NOTICE_KINDS, ATELIER_TYPED_RECOVERY_KINDS, ATELIER_VIEW_STATUSES, ATELIER_VIEW_SURFACE } from './apps/applets/atelier/frontend/src/domain/projection.contract.generated.ts';
+import { ATELIER_PROJECTION_EVENT_TOPIC, ATELIER_RECOVERY_RETRYABLE_KINDS, ATELIER_RECOVERY_TONE_BY_KIND, ATELIER_STATUS_NOTICE_KINDS, ATELIER_TYPED_RECOVERY_KINDS, ATELIER_VIEW_STATUSES, ATELIER_VIEW_SURFACE } from './apps/applets/atelier/frontend/src/domain/projection.contract.generated.ts';
 
 const messagesZhCn = ${JSON.stringify(messagesZhCn, null, 2)};
 const statusPillViewSource = ${JSON.stringify(statusPillViewSource)};
@@ -2214,7 +2095,6 @@ function resetOfficialEventHarness() {
   officialEventHandlers.clear();
   officialEventSubscribeError = null;
   officialEventUnsubscribeError = null;
-  globalThis.__ATELIER_PROJECTION_STREAM__ = undefined;
   globalThis.__atelierOfficialFrontendGateLaunchOptions = null;
 }
 
@@ -2318,78 +2198,6 @@ function snapshot() {
   };
 }
 
-resetOfficialEventHarness();
-globalThis.__ATELIER_PROJECTION_STREAM__ = {
-  agentId: 'official-created-task-agent',
-  certificationMode: 'product-window-e2e',
-  createGoal: ' build atelier ',
-};
-const officialCreatedTaskInitialSnapshot = snapshot();
-officialCreatedTaskInitialSnapshot.selectedTaskId = '';
-officialCreatedTaskInitialSnapshot.workspace.tasks = [];
-officialCreatedTaskInitialSnapshot.workspace.streams = {};
-officialCreatedTaskInitialSnapshot.workspace.todos = {};
-officialCreatedTaskInitialSnapshot.workspace.contexts = {};
-assert.deepEqual(
-  deriveAtelierProjectionSubscriptionKey(officialCreatedTaskInitialSnapshot, ''),
-  { hasSnapshot: true, taskId: '', afterEventSeq: 0 },
-  'official controller subscription key starts empty before Station returns the created task snapshot',
-);
-capabilityResponses.push({
-  name: 'official created-task lifecycle initial subscribe omits taskId before created snapshot',
-  method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
-  payload: { agentId: 'official-created-task-agent' },
-  response: { accepted: true },
-});
-const releaseOfficialCreatedTaskInitialSubscription = await subscribeAtelierProjectionEvents(
-  officialCreatedTaskInitialSnapshot,
-  '',
-  () => {},
-);
-releaseOfficialCreatedTaskInitialSubscription();
-
-const officialCreatedTaskFreshSnapshot = snapshot();
-officialCreatedTaskFreshSnapshot.selectedTaskId = 'created-task';
-officialCreatedTaskFreshSnapshot.workspace.tasks = [
-  { id: 'created-task', project: 'peers-touch', title: 'Created task', status: 'active' },
-];
-officialCreatedTaskFreshSnapshot.workspace.replay = {
-  'created-task': {
-    source: 'event-window',
-    eventCount: 0,
-    replayedEventCount: 0,
-    nextEventSeq: 23,
-    hasMore: false,
-  },
-};
-const officialCreatedTaskFreshKey = deriveAtelierProjectionSubscriptionKey(
-  officialCreatedTaskFreshSnapshot,
-  '',
-);
-assert.deepEqual(
-  officialCreatedTaskFreshKey,
-  { hasSnapshot: true, taskId: 'created-task', afterEventSeq: 23 },
-  'official controller subscription key retargets to the Station-created selected task and replay cursor',
-);
-capabilityResponses.push({
-  name: 'official created-task lifecycle refreshed subscribe targets created task after fresh snapshot',
-  method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
-  payload: { agentId: 'official-created-task-agent', taskId: 'created-task', afterEventSeq: 23 },
-  response: { accepted: true },
-});
-const releaseOfficialCreatedTaskFreshSubscription = await subscribeAtelierProjectionEvents(
-  officialCreatedTaskFreshSnapshot,
-  officialCreatedTaskFreshKey.taskId,
-  () => {},
-);
-releaseOfficialCreatedTaskFreshSubscription();
-assert.equal(capabilityResponses.length, 0, 'official created-task lifecycle consumed both subscription payloads');
-assert.doesNotMatch(
-  JSON.stringify(officialCreatedTaskFreshKey),
-  /provider|gate|artifact|trace|checkpoint|resume|memory|input_snapshot|shell|file|run/,
-  'official created-task subscription key must remain projection-only metadata',
-);
-
 function validProjectProjection(overrides = {}) {
   return {
     id: 'project-1',
@@ -2451,18 +2259,6 @@ function viewInput(overrides = {}) {
   };
 }
 
-function typedRejectedErrorForGate(payload) {
-  const method = typeof payload.method === 'string' && payload.method.length > 0
-    ? payload.method
-    : 'unknown';
-  const reason = typeof payload.reason === 'string' && payload.reason.length > 0
-    ? payload.reason
-    : 'unknown rejection';
-  return new Error('Atelier projection stream subscription ' + method + ' rejected: ' + reason, {
-    cause: payload,
-  });
-}
-
 function event(id, seq, patch, overrides = {}) {
   return {
     id,
@@ -2475,30 +2271,37 @@ function event(id, seq, patch, overrides = {}) {
 }
 
 resetOfficialEventHarness();
-globalThis.__ATELIER_PROJECTION_STREAM__ = { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 7 };
-capabilityResponses.push({
-  name: 'official projection stream subscribe success',
-  method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
-  payload: { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 7 },
-  response: { accepted: true },
-});
 const receivedOfficialEvents = [];
+let officialResyncCount = 0;
 const releaseOfficialProjectionEvents = await subscribeAtelierProjectionEvents(
   snapshot(),
   'task-1',
   (projectionEvent) => receivedOfficialEvents.push(projectionEvent.id),
+  undefined,
+  undefined,
+  () => {
+    officialResyncCount += 1;
+  },
 );
 assert.deepEqual(
   officialEventCalls.map((call) => call.method + ':' + call.topic),
   ['on:' + ATELIER_PROJECTION_EVENT_TOPIC, 'subscribe:' + ATELIER_PROJECTION_EVENT_TOPIC],
-  'official projection subscription must register local topic before Station stream subscribe',
+  'official projection subscription must register the local handler before subscribing to the canonical Host topic',
 );
 officialEventHandlers.get(ATELIER_PROJECTION_EVENT_TOPIC)?.(event('evt-official-subscribe-success', 1, {
-  kind: 'stream.append',
+  kind: 'snapshot.invalidate',
+  streamEventId: 'stream-official-subscribe-success',
+  eventType: 'agent.task.running',
+  goalId: 'goal-1',
   taskId: 'task-1',
-  blocks: [{ id: 'block-official-subscribe-success', kind: 'agent', text: 'live', done: true }],
+  goalRevision: 1,
+  schemaVersion: 1,
 }));
 assert.deepEqual(receivedOfficialEvents, ['evt-official-subscribe-success']);
+officialEventHandlers.get(ATELIER_PROJECTION_EVENT_TOPIC)?.({
+  kind: 'atelier.projection.resync',
+});
+assert.equal(officialResyncCount, 1);
 releaseOfficialProjectionEvents();
 assert.deepEqual(
   officialEventCalls.map((call) => call.method + ':' + call.topic),
@@ -2511,1099 +2314,16 @@ assert.deepEqual(
   'official projection subscription release must remove local topic handler and request Host unsubscribe',
 );
 assert.equal(officialEventHandlers.has(ATELIER_PROJECTION_EVENT_TOPIC), false);
-assert.equal(capabilityResponses.length, 0, 'official projection subscription success consumed Station stream subscribe invoke');
-
-  resetOfficialEventHarness();
-  globalThis.__ATELIER_PROJECTION_STREAM__ = { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 7 };
-  officialEventSubscribeError = new Error('Host event topic subscribe rejected');
-  await assert.rejects(
-    () => subscribeAtelierProjectionEvents(snapshot(), 'task-1', (projectionEvent) => receivedOfficialEvents.push(projectionEvent.id)),
-    /Host event topic subscribe rejected/,
-    'official projection Host event-topic subscribe rejection must surface to the controller',
-  );
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.deepEqual(
-    officialEventCalls.map((call) => call.method + ':' + call.topic),
-    [
-      'on:' + ATELIER_PROJECTION_EVENT_TOPIC,
-      'subscribe:' + ATELIER_PROJECTION_EVENT_TOPIC,
-      'off:' + ATELIER_PROJECTION_EVENT_TOPIC,
-      'unsubscribe:' + ATELIER_PROJECTION_EVENT_TOPIC,
-    ],
-    'official projection Host event-topic subscribe rejection must remove local handler and request Host unsubscribe',
-  );
-  assert.equal(officialEventHandlers.has(ATELIER_PROJECTION_EVENT_TOPIC), false);
-  officialEventHandlers.get(ATELIER_PROJECTION_EVENT_TOPIC)?.(event('evt-after-rejected-official-host-topic-subscribe', 2, {
-    kind: 'stream.append',
-    taskId: 'task-1',
-    blocks: [{ id: 'block-after-rejected-official-host-topic-subscribe', kind: 'agent', text: 'must not deliver', done: true }],
-  }));
-  assert.equal(
-    receivedOfficialEvents.includes('evt-after-rejected-official-host-topic-subscribe'),
-    false,
-    'official projection Host event-topic subscribe rejection must not keep delivering Host events after local cleanup',
-  );
-  assert.equal(
-    capabilityResponses.length,
-    0,
-    'official projection Host event-topic subscribe rejection must not call Station stream subscribe',
-  );
-
-  resetOfficialEventHarness();
-  globalThis.__ATELIER_PROJECTION_STREAM__ = { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 7 };
-  capabilityResponses.push({
-    name: 'official projection typed subscription-rejected event after subscribe',
-    method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
-    payload: { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 7 },
-    response: { accepted: true },
-  });
-  const typedRejectedReceivedEvents = [];
-  const typedRejectedErrors = [];
-  await subscribeAtelierProjectionEvents(
-    snapshot(),
-    'task-1',
-    (projectionEvent) => typedRejectedReceivedEvents.push(projectionEvent.id),
-    undefined,
-    (error) => typedRejectedErrors.push(error),
-  );
-  officialEventHandlers.get(ATELIER_PROJECTION_EVENT_TOPIC)?.({
-    kind: 'atelier.projection.subscription-rejected',
-    method: 'events.subscribe',
-    code: 'FORBIDDEN',
-    reason: 'opaque Host rejected Atelier projection topic',
-  });
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(typedRejectedErrors.length, 1);
-  assert.equal(
-    typedRejectedErrors[0].message,
-    'Atelier projection stream subscription events.subscribe rejected: opaque Host rejected Atelier projection topic',
-  );
-  assert.deepEqual(
-    classifyAtelierError(typedRejectedErrors[0]),
-    { key: 'atelier.error.authDenied', kind: 'auth-denied' },
-    'official typed subscription-rejected event must preserve structured code for recovery taxonomy',
-  );
-  assert.deepEqual(typedRejectedReceivedEvents, []);
-  assert.deepEqual(
-    officialEventCalls.map((call) => call.method + ':' + call.topic),
-    [
-      'on:' + ATELIER_PROJECTION_EVENT_TOPIC,
-      'subscribe:' + ATELIER_PROJECTION_EVENT_TOPIC,
-      'off:' + ATELIER_PROJECTION_EVENT_TOPIC,
-      'unsubscribe:' + ATELIER_PROJECTION_EVENT_TOPIC,
-    ],
-    'official typed subscription-rejected event must remove local handler and request Host unsubscribe',
-  );
-  assert.equal(officialEventHandlers.has(ATELIER_PROJECTION_EVENT_TOPIC), false);
-  officialEventHandlers.get(ATELIER_PROJECTION_EVENT_TOPIC)?.(event('evt-after-official-typed-subscription-rejected', 2, {
-    kind: 'stream.append',
-    taskId: 'task-1',
-    blocks: [{ id: 'block-after-official-typed-subscription-rejected', kind: 'agent', text: 'must not deliver', done: true }],
-  }));
-  assert.deepEqual(
-    typedRejectedReceivedEvents,
-    [],
-    'official typed subscription-rejected event must not keep delivering Host events after local cleanup',
-  );
-  assert.equal(
-    capabilityResponses.length,
-    0,
-    'official typed subscription-rejected event case consumed Station stream subscribe before Host rejection payload',
-  );
-
-for (const [name, payload, expected] of [
-  ['official typed subscription-rejected forbidden code hard-stops controller recovery', {
-    kind: 'atelier.projection.subscription-rejected',
-    method: 'events.subscribe',
-    code: 'FORBIDDEN',
-    reason: 'opaque Host rejected Atelier projection topic',
-  }, {
-    errorKind: 'auth-denied',
-    viewStatus: 'auth-denied',
-    retryDelayMs: null,
-  }],
-  ['official typed subscription-rejected connection closed code retries controller recovery', {
-    kind: 'atelier.projection.subscription-rejected',
-    method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
-    code: 'CONNECTION_CLOSED',
-    reason: 'opaque Host closed Atelier projection stream',
-  }, {
-    errorKind: 'disconnected',
-    viewStatus: 'disconnected',
-    retryDelayMs: 500,
-  }],
-]) {
-  const typedRejectedError = typedRejectedErrorForGate(payload);
-  const transition = stateFromAtelierEventStreamError(typedRejectedError, true);
-  const transitionErrorKind = 'eventStreamErrorKind' in transition ? transition.eventStreamErrorKind : transition.errorKind;
-  assert.equal(transitionErrorKind, expected.errorKind, name + ' classified typed subscription rejection');
-  assert.equal(
-    nextAtelierEventStreamRetryDelayMs({
-      attempt: 0,
-      errorKind: transitionErrorKind,
-      hasSnapshot: true,
-    }),
-    expected.retryDelayMs,
-    name + ' applied controller retry policy',
-  );
-  assert.equal(
-    deriveAtelierViewStatus({
-      loading: transition.loading,
-      error: 'error' in transition ? transition.error : '',
-      errorKind: 'errorKind' in transition ? transition.errorKind : '',
-      eventStreamErrorKind: 'eventStreamErrorKind' in transition ? transition.eventStreamErrorKind : '',
-      eventStreamState: 'eventStreamState' in transition ? transition.eventStreamState : 'idle',
-      replayHasMore: false,
-      taskCount: 1,
-    }),
-    expected.viewStatus,
-    name + ' derived controller view status',
-  );
-}
-
-for (const [name, explicitAfterEventSeq, snapshotAfterEventSeq, expectedPayload] of [
-  [
-    'official projection stream omits explicit zero cursor and uses snapshot replay cursor',
-    0,
-    9,
-    { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 9 },
-  ],
-  [
-    'official projection stream omits explicit negative cursor and uses snapshot replay cursor',
-    -3,
-    11,
-    { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 11 },
-  ],
-  [
-    'official projection stream omits explicit decimal cursor and uses snapshot replay cursor',
-    '1.5',
-    12,
-    { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 12 },
-  ],
-  [
-    'official projection stream omits unsafe integer cursor and uses snapshot replay cursor',
-    '9007199254740992',
-    13,
-    { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 13 },
-  ],
-]) {
-  resetOfficialEventHarness();
-  globalThis.__ATELIER_PROJECTION_STREAM__ = { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: explicitAfterEventSeq };
-  const cursorSnapshot = snapshot();
-  cursorSnapshot.workspace.replay = {
-    'task-1': {
-      source: 'event-window',
-      eventCount: 0,
-      replayedEventCount: 0,
-      nextEventSeq: snapshotAfterEventSeq,
-      hasMore: false,
-    },
-  };
-  capabilityResponses.push({
-    name,
-    method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
-    payload: expectedPayload,
-    response: { accepted: true },
-  });
-  const releaseCursorSubscription = await subscribeAtelierProjectionEvents(cursorSnapshot, 'task-1', () => {});
-  releaseCursorSubscription();
-  assert.equal(capabilityResponses.length, 0, name + ' consumed Station stream subscribe invoke');
-}
-
-for (const [name, configureLaunchSource, expectedPayload] of [
-  [
-    'official projection stream trims generated agentIds[0] fallback and taskId',
-    () => {
-      globalThis.__ATELIER_PROJECTION_STREAM__ = {
-        agentId: '   ',
-        agentIds: [' agent-fallback ', 'agent-ignored'],
-        taskId: ' task-from-global ',
-        afterEventSeq: 12,
-      };
-    },
-    { agentId: 'agent-fallback', taskId: 'task-from-global', afterEventSeq: 12 },
-  ],
-  [
-    'official projection stream trims launch option agentId and taskId',
-    () => {
-      globalThis.__atelierOfficialFrontendGateLaunchOptions = {
-        query: {
-          agentId: ' launch-agent ',
-          taskId: ' launch-task ',
-          afterEventSeq: 13,
-        },
-      };
-    },
-    { agentId: 'launch-agent', taskId: 'launch-task', afterEventSeq: 13 },
-  ],
-  [
-    'official projection stream trims launch option generated agentIds[0] fallback',
-    () => {
-      globalThis.__atelierOfficialFrontendGateLaunchOptions = {
-        query: {
-          agentId: '   ',
-          agentIds: [' launch-agent-fallback ', 'launch-agent-ignored'],
-          taskId: ' launch-task-from-list ',
-          afterEventSeq: 16,
-        },
-      };
-    },
-    { agentId: 'launch-agent-fallback', taskId: 'launch-task-from-list', afterEventSeq: 16 },
-  ],
-  [
-    'official projection stream trims launch option cursor string',
-    () => {
-      globalThis.__atelierOfficialFrontendGateLaunchOptions = {
-        query: {
-          agentId: ' launch-agent ',
-          taskId: ' launch-task ',
-          afterEventSeq: ' 14 ',
-        },
-      };
-    },
-    { agentId: 'launch-agent', taskId: 'launch-task', afterEventSeq: 14 },
-  ],
-]) {
-  resetOfficialEventHarness();
-  configureLaunchSource();
-  capabilityResponses.push({
-    name,
-    method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
-    payload: expectedPayload,
-    response: { accepted: true },
-  });
-  const releaseNormalizedSubscription = await subscribeAtelierProjectionEvents(snapshot(), 'task-1', () => {});
-  releaseNormalizedSubscription();
-  assert.equal(capabilityResponses.length, 0, name + ' consumed normalized Station stream subscribe invoke');
-}
-
-for (const [name, source, selectedTaskId, configureSnapshot, expectedPayload] of [
-  [
-    'official projection stream prefers product-window created selected task before explicit taskId',
-    {
-      agentId: 'agent-task-source',
-      certificationMode: 'product-window-e2e',
-      createGoal: ' build atelier ',
-      taskId: ' explicit-task-ignored ',
-    },
-    'controller-task-ignored',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'created-task';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'created-task', project: 'peers-touch', title: 'Created task', status: 'active' },
-        { id: 'explicit-task-ignored', project: 'peers-touch', title: 'Explicit ignored', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'created-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 21,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'agent-task-source', taskId: 'created-task', afterEventSeq: 21 },
-  ],
-  [
-    'official projection stream trims product-window created selected task fallback',
-    {
-      agentId: 'agent-task-source',
-      certificationMode: 'product-window-e2e',
-      createGoal: ' build atelier ',
-    },
-    '',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = ' created-trimmed-task ';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'created-trimmed-task', project: 'peers-touch', title: 'Created trimmed task', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'created-trimmed-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 37,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'agent-task-source', taskId: 'created-trimmed-task', afterEventSeq: 37 },
-  ],
-  [
-    'official projection stream ignores blank createGoal certification task and uses explicit taskId',
-    {
-      agentId: 'agent-task-source',
-      certificationMode: 'product-window-e2e',
-      createGoal: '   ',
-      taskId: ' explicit-task ',
-    },
-    'created-task-ignored',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'created-task-ignored';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'created-task-ignored', project: 'peers-touch', title: 'Created task ignored', status: 'active' },
-        { id: 'explicit-task', project: 'peers-touch', title: 'Explicit task', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'explicit-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 33,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'agent-task-source', taskId: 'explicit-task', afterEventSeq: 33 },
-  ],
-  [
-    'official projection stream ignores non-product certification task and uses explicit taskId',
-    {
-      agentId: 'agent-task-source',
-      certificationMode: 'local-smoke',
-      createGoal: ' build atelier ',
-      taskId: ' explicit-task ',
-    },
-    'created-task-ignored',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'created-task-ignored';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'created-task-ignored', project: 'peers-touch', title: 'Created task ignored', status: 'active' },
-        { id: 'explicit-task', project: 'peers-touch', title: 'Explicit task', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'explicit-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 35,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'agent-task-source', taskId: 'explicit-task', afterEventSeq: 35 },
-  ],
-  [
-    'official projection stream uses explicit taskId before controller selected task',
-    {
-      agentId: 'agent-task-source',
-      taskId: ' explicit-task ',
-    },
-    'controller-task-ignored',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'snapshot-selected-task-ignored';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'explicit-task', project: 'peers-touch', title: 'Explicit task', status: 'active' },
-        { id: 'controller-task-ignored', project: 'peers-touch', title: 'Controller ignored', status: 'active' },
-        { id: 'snapshot-selected-task-ignored', project: 'peers-touch', title: 'Snapshot selected ignored', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'explicit-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 29,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'agent-task-source', taskId: 'explicit-task', afterEventSeq: 29 },
-  ],
-  [
-    'official projection stream ignores blank explicit taskId and uses controller selected task',
-    {
-      agentId: 'agent-task-source',
-      taskId: '   ',
-    },
-    'controller-task',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'snapshot-selected-task-ignored';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'controller-task', project: 'peers-touch', title: 'Controller selected', status: 'active' },
-        { id: 'snapshot-selected-task-ignored', project: 'peers-touch', title: 'Snapshot selected ignored', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'controller-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 31,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'agent-task-source', taskId: 'controller-task', afterEventSeq: 31 },
-  ],
-  [
-    'official projection stream uses controller selected task before snapshot selected task',
-    {
-      agentId: 'agent-task-source',
-    },
-    'controller-task',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'snapshot-selected-task';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'snapshot-selected-task', project: 'peers-touch', title: 'Snapshot selected', status: 'active' },
-        { id: 'controller-task', project: 'peers-touch', title: 'Controller selected', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'controller-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 22,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'agent-task-source', taskId: 'controller-task', afterEventSeq: 22 },
-  ],
-  [
-    'official projection stream trims controller selected task fallback',
-    {
-      agentId: 'agent-task-source',
-    },
-    ' controller-trimmed-task ',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'snapshot-selected-task-ignored';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'controller-trimmed-task', project: 'peers-touch', title: 'Controller trimmed', status: 'active' },
-        { id: 'snapshot-selected-task-ignored', project: 'peers-touch', title: 'Snapshot selected ignored', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'controller-trimmed-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 38,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'agent-task-source', taskId: 'controller-trimmed-task', afterEventSeq: 38 },
-  ],
-  [
-    'official projection stream ignores blank controller selected task and uses snapshot selected task',
-    {
-      agentId: 'agent-task-source',
-    },
-    '   ',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'snapshot-selected-after-blank-controller';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'snapshot-first-task-ignored', project: 'peers-touch', title: 'Snapshot first ignored', status: 'active' },
-        { id: 'snapshot-selected-after-blank-controller', project: 'peers-touch', title: 'Snapshot selected after blank controller', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'snapshot-selected-after-blank-controller': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 45,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'agent-task-source', taskId: 'snapshot-selected-after-blank-controller', afterEventSeq: 45 },
-  ],
-  [
-    'official projection stream uses snapshot selected task before snapshot first task',
-    {
-      agentId: 'agent-task-source',
-    },
-    '',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'snapshot-selected-task';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'snapshot-first-task', project: 'peers-touch', title: 'Snapshot first', status: 'active' },
-        { id: 'snapshot-selected-task', project: 'peers-touch', title: 'Snapshot selected', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'snapshot-selected-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 23,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'agent-task-source', taskId: 'snapshot-selected-task', afterEventSeq: 23 },
-  ],
-  [
-    'official projection stream trims snapshot selected task fallback',
-    {
-      agentId: 'agent-task-source',
-    },
-    '',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = ' snapshot-selected-trimmed-task ';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'snapshot-first-task-ignored', project: 'peers-touch', title: 'Snapshot first ignored', status: 'active' },
-        { id: 'snapshot-selected-trimmed-task', project: 'peers-touch', title: 'Snapshot selected trimmed', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'snapshot-selected-trimmed-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 39,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'agent-task-source', taskId: 'snapshot-selected-trimmed-task', afterEventSeq: 39 },
-  ],
-  [
-    'official projection stream ignores blank snapshot selected task and uses snapshot first task',
-    {
-      agentId: 'agent-task-source',
-    },
-    '',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = '   ';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'snapshot-first-after-blank-snapshot', project: 'peers-touch', title: 'Snapshot first after blank snapshot', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'snapshot-first-after-blank-snapshot': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 46,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'agent-task-source', taskId: 'snapshot-first-after-blank-snapshot', afterEventSeq: 46 },
-  ],
-  [
-    'official projection stream uses snapshot first task when selected tasks are empty',
-    {
-      agentId: 'agent-task-source',
-    },
-    '',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = '';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'snapshot-first-task', project: 'peers-touch', title: 'Snapshot first', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'snapshot-first-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 24,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'agent-task-source', taskId: 'snapshot-first-task', afterEventSeq: 24 },
-  ],
-  [
-    'official projection stream trims snapshot first task fallback',
-    {
-      agentId: 'agent-task-source',
-    },
-    '',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = '';
-      projectionSnapshot.workspace.tasks = [
-        { id: ' snapshot-first-trimmed-task ', project: 'peers-touch', title: 'Snapshot first trimmed', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'snapshot-first-trimmed-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 40,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'agent-task-source', taskId: 'snapshot-first-trimmed-task', afterEventSeq: 40 },
-  ],
-]) {
-  resetOfficialEventHarness();
-  globalThis.__ATELIER_PROJECTION_STREAM__ = source;
-  const taskSourceSnapshot = snapshot();
-  configureSnapshot(taskSourceSnapshot);
-  capabilityResponses.push({
-    name,
-    method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
-    payload: expectedPayload,
-    response: { accepted: true },
-  });
-  const releaseTaskFallbackSubscription = await subscribeAtelierProjectionEvents(taskSourceSnapshot, selectedTaskId, () => {});
-  releaseTaskFallbackSubscription();
-  assert.equal(capabilityResponses.length, 0, name + ' consumed generated task source priority Station stream subscribe invoke');
-}
-
-for (const [name, query, selectedTaskId, configureSnapshot, expectedPayload] of [
-  [
-    'official projection stream launch options prefer product-window created selected task before explicit taskId',
-    {
-      agentId: 'launch-agent-task-source',
-      certificationMode: 'product-window-e2e',
-      createGoal: ' build atelier ',
-      taskId: ' launch-explicit-task-ignored ',
-    },
-    'launch-controller-task-ignored',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'launch-created-task';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'launch-created-task', project: 'peers-touch', title: 'Launch created task', status: 'active' },
-        { id: 'launch-explicit-task-ignored', project: 'peers-touch', title: 'Launch explicit ignored', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'launch-created-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 25,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'launch-agent-task-source', taskId: 'launch-created-task', afterEventSeq: 25 },
-  ],
-  [
-    'official projection stream launch options trim product-window created selected task fallback',
-    {
-      agentId: 'launch-agent-task-source',
-      certificationMode: 'product-window-e2e',
-      createGoal: ' build atelier ',
-    },
-    '',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = ' launch-created-trimmed-task ';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'launch-created-trimmed-task', project: 'peers-touch', title: 'Launch created trimmed task', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'launch-created-trimmed-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 41,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'launch-agent-task-source', taskId: 'launch-created-trimmed-task', afterEventSeq: 41 },
-  ],
-  [
-    'official projection stream launch options ignore blank createGoal certification task and use explicit taskId',
-    {
-      agentId: 'launch-agent-task-source',
-      certificationMode: 'product-window-e2e',
-      createGoal: '   ',
-      taskId: ' launch-explicit-task ',
-    },
-    'launch-created-task-ignored',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'launch-created-task-ignored';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'launch-created-task-ignored', project: 'peers-touch', title: 'Launch created task ignored', status: 'active' },
-        { id: 'launch-explicit-task', project: 'peers-touch', title: 'Launch explicit task', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'launch-explicit-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 34,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'launch-agent-task-source', taskId: 'launch-explicit-task', afterEventSeq: 34 },
-  ],
-  [
-    'official projection stream launch options ignore non-product certification task and use explicit taskId',
-    {
-      agentId: 'launch-agent-task-source',
-      certificationMode: 'local-smoke',
-      createGoal: ' build atelier ',
-      taskId: ' launch-explicit-task ',
-    },
-    'launch-created-task-ignored',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'launch-created-task-ignored';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'launch-created-task-ignored', project: 'peers-touch', title: 'Launch created task ignored', status: 'active' },
-        { id: 'launch-explicit-task', project: 'peers-touch', title: 'Launch explicit task', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'launch-explicit-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 36,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'launch-agent-task-source', taskId: 'launch-explicit-task', afterEventSeq: 36 },
-  ],
-  [
-    'official projection stream launch options use explicit taskId before controller selected task',
-    {
-      agentId: 'launch-agent-task-source',
-      taskId: ' launch-explicit-task ',
-    },
-    'launch-controller-task-ignored',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'launch-snapshot-selected-task-ignored';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'launch-explicit-task', project: 'peers-touch', title: 'Launch explicit task', status: 'active' },
-        { id: 'launch-controller-task-ignored', project: 'peers-touch', title: 'Launch controller ignored', status: 'active' },
-        { id: 'launch-snapshot-selected-task-ignored', project: 'peers-touch', title: 'Launch snapshot selected ignored', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'launch-explicit-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 30,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'launch-agent-task-source', taskId: 'launch-explicit-task', afterEventSeq: 30 },
-  ],
-  [
-    'official projection stream launch options ignore blank explicit taskId and use controller selected task',
-    {
-      agentId: 'launch-agent-task-source',
-      taskId: '   ',
-    },
-    'launch-controller-task',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'launch-snapshot-selected-task-ignored';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'launch-controller-task', project: 'peers-touch', title: 'Launch controller selected', status: 'active' },
-        { id: 'launch-snapshot-selected-task-ignored', project: 'peers-touch', title: 'Launch snapshot selected ignored', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'launch-controller-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 32,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'launch-agent-task-source', taskId: 'launch-controller-task', afterEventSeq: 32 },
-  ],
-  [
-    'official projection stream launch options use controller selected task before snapshot selected task',
-    {
-      agentId: 'launch-agent-task-source',
-    },
-    'launch-controller-task',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'launch-snapshot-selected-task';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'launch-snapshot-selected-task', project: 'peers-touch', title: 'Launch snapshot selected', status: 'active' },
-        { id: 'launch-controller-task', project: 'peers-touch', title: 'Launch controller selected', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'launch-controller-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 26,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'launch-agent-task-source', taskId: 'launch-controller-task', afterEventSeq: 26 },
-  ],
-  [
-    'official projection stream launch options trim controller selected task fallback',
-    {
-      agentId: 'launch-agent-task-source',
-    },
-    ' launch-controller-trimmed-task ',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'launch-snapshot-selected-task-ignored';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'launch-controller-trimmed-task', project: 'peers-touch', title: 'Launch controller trimmed', status: 'active' },
-        { id: 'launch-snapshot-selected-task-ignored', project: 'peers-touch', title: 'Launch snapshot selected ignored', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'launch-controller-trimmed-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 42,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'launch-agent-task-source', taskId: 'launch-controller-trimmed-task', afterEventSeq: 42 },
-  ],
-  [
-    'official projection stream launch options ignore blank controller selected task and use snapshot selected task',
-    {
-      agentId: 'launch-agent-task-source',
-    },
-    '   ',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'launch-snapshot-selected-after-blank-controller';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'launch-snapshot-first-task-ignored', project: 'peers-touch', title: 'Launch snapshot first ignored', status: 'active' },
-        { id: 'launch-snapshot-selected-after-blank-controller', project: 'peers-touch', title: 'Launch snapshot selected after blank controller', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'launch-snapshot-selected-after-blank-controller': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 47,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'launch-agent-task-source', taskId: 'launch-snapshot-selected-after-blank-controller', afterEventSeq: 47 },
-  ],
-  [
-    'official projection stream launch options use snapshot selected task before snapshot first task',
-    {
-      agentId: 'launch-agent-task-source',
-    },
-    '',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = 'launch-snapshot-selected-task';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'launch-snapshot-first-task', project: 'peers-touch', title: 'Launch snapshot first', status: 'active' },
-        { id: 'launch-snapshot-selected-task', project: 'peers-touch', title: 'Launch snapshot selected', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'launch-snapshot-selected-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 27,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'launch-agent-task-source', taskId: 'launch-snapshot-selected-task', afterEventSeq: 27 },
-  ],
-  [
-    'official projection stream launch options trim snapshot selected task fallback',
-    {
-      agentId: 'launch-agent-task-source',
-    },
-    '',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = ' launch-snapshot-selected-trimmed-task ';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'launch-snapshot-first-task-ignored', project: 'peers-touch', title: 'Launch snapshot first ignored', status: 'active' },
-        { id: 'launch-snapshot-selected-trimmed-task', project: 'peers-touch', title: 'Launch snapshot selected trimmed', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'launch-snapshot-selected-trimmed-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 43,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'launch-agent-task-source', taskId: 'launch-snapshot-selected-trimmed-task', afterEventSeq: 43 },
-  ],
-  [
-    'official projection stream launch options ignore blank snapshot selected task and use snapshot first task',
-    {
-      agentId: 'launch-agent-task-source',
-    },
-    '',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = '   ';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'launch-snapshot-first-after-blank-snapshot', project: 'peers-touch', title: 'Launch snapshot first after blank snapshot', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'launch-snapshot-first-after-blank-snapshot': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 48,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'launch-agent-task-source', taskId: 'launch-snapshot-first-after-blank-snapshot', afterEventSeq: 48 },
-  ],
-  [
-    'official projection stream launch options use snapshot first task when selected tasks are empty',
-    {
-      agentId: 'launch-agent-task-source',
-    },
-    '',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = '';
-      projectionSnapshot.workspace.tasks = [
-        { id: 'launch-snapshot-first-task', project: 'peers-touch', title: 'Launch snapshot first', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'launch-snapshot-first-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 28,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'launch-agent-task-source', taskId: 'launch-snapshot-first-task', afterEventSeq: 28 },
-  ],
-  [
-    'official projection stream launch options trim snapshot first task fallback',
-    {
-      agentId: 'launch-agent-task-source',
-    },
-    '',
-    (projectionSnapshot) => {
-      projectionSnapshot.selectedTaskId = '';
-      projectionSnapshot.workspace.tasks = [
-        { id: ' launch-snapshot-first-trimmed-task ', project: 'peers-touch', title: 'Launch snapshot first trimmed', status: 'active' },
-      ];
-      projectionSnapshot.workspace.replay = {
-        'launch-snapshot-first-trimmed-task': {
-          source: 'event-window',
-          eventCount: 0,
-          replayedEventCount: 0,
-          nextEventSeq: 44,
-          hasMore: false,
-        },
-      };
-    },
-    { agentId: 'launch-agent-task-source', taskId: 'launch-snapshot-first-trimmed-task', afterEventSeq: 44 },
-  ],
-]) {
-  resetOfficialEventHarness();
-  globalThis.__atelierOfficialFrontendGateLaunchOptions = { query };
-  const launchTaskSourceSnapshot = snapshot();
-  configureSnapshot(launchTaskSourceSnapshot);
-  capabilityResponses.push({
-    name,
-    method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
-    payload: expectedPayload,
-    response: { accepted: true },
-  });
-  const releaseLaunchTaskFallbackSubscription = await subscribeAtelierProjectionEvents(launchTaskSourceSnapshot, selectedTaskId, () => {});
-  releaseLaunchTaskFallbackSubscription();
-  assert.equal(capabilityResponses.length, 0, name + ' consumed launch options generated task source priority Station stream subscribe invoke');
-}
+assert.equal(capabilityResponses.length, 0, 'official canonical topic subscription must not invoke a feature-owned stream');
 
 resetOfficialEventHarness();
-globalThis.__ATELIER_PROJECTION_STREAM__ = {
-  agentId: '   ',
-  agentIds: ['   ', 'agent-ignored'],
-  taskId: ' task-from-global ',
-  afterEventSeq: 15,
-};
-const releaseStrictEmptyAgentIdsFallback = await subscribeAtelierProjectionEvents(snapshot(), 'task-1', () => {});
-releaseStrictEmptyAgentIdsFallback();
-assert.deepEqual(
-  officialEventCalls.map((call) => call.method + ':' + call.topic),
-  [
-    'on:' + ATELIER_PROJECTION_EVENT_TOPIC,
-    'subscribe:' + ATELIER_PROJECTION_EVENT_TOPIC,
-    'off:' + ATELIER_PROJECTION_EVENT_TOPIC,
-    'unsubscribe:' + ATELIER_PROJECTION_EVENT_TOPIC,
-  ],
-  'official projection stream rejects empty generated agentIds[0] fallback without falling through to agentIds[1]',
-);
-assert.equal(
-  capabilityResponses.length,
-  0,
-  'official projection stream empty generated agentIds[0] fallback did not invoke Station stream subscribe',
-);
-
-resetOfficialEventHarness();
-globalThis.__atelierOfficialFrontendGateLaunchOptions = {
-  query: {
-    agentId: '   ',
-    agentIds: ['   ', 'launch-agent-ignored'],
-    taskId: ' launch-task-from-list ',
-    afterEventSeq: 17,
-  },
-};
-const releaseStrictEmptyLaunchAgentIdsFallback = await subscribeAtelierProjectionEvents(snapshot(), 'task-1', () => {});
-releaseStrictEmptyLaunchAgentIdsFallback();
-assert.deepEqual(
-  officialEventCalls.map((call) => call.method + ':' + call.topic),
-  [
-    'on:' + ATELIER_PROJECTION_EVENT_TOPIC,
-    'subscribe:' + ATELIER_PROJECTION_EVENT_TOPIC,
-    'off:' + ATELIER_PROJECTION_EVENT_TOPIC,
-    'unsubscribe:' + ATELIER_PROJECTION_EVENT_TOPIC,
-  ],
-  'official projection stream rejects empty launch option agentIds[0] fallback without falling through to agentIds[1]',
-);
-assert.equal(
-  capabilityResponses.length,
-  0,
-  'official projection stream empty launch option agentIds[0] fallback did not invoke Station stream subscribe',
-);
-
-resetOfficialEventHarness();
-globalThis.__atelierOfficialFrontendGateLaunchOptions = {
-  query: {
-    agentId: 'launch-agent',
-    taskId: 'launch-task',
-    certificationMode: 'product-window-e2e',
-    afterEventSeq: '0',
-  },
-};
-capabilityResponses.push({
-  name: 'official projection stream launch options preserve product-window zero cursor string',
-  method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
-  payload: {
-    agentId: 'launch-agent',
-    taskId: 'launch-task',
-    afterEventSeq: 0,
-  },
-  response: { accepted: true },
-});
-const releaseLaunchOptionsSubscription = await subscribeAtelierProjectionEvents(snapshot(), 'task-1', () => {});
-releaseLaunchOptionsSubscription();
-assert.equal(
-  capabilityResponses.length,
-  0,
-  'official projection stream launch options query consumed Station stream subscribe invoke with product-window zero cursor string',
-);
-resetOfficialEventHarness();
-
-resetOfficialEventHarness();
-globalThis.__ATELIER_PROJECTION_STREAM__ = { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 7 };
-officialEventUnsubscribeError = new Error('unsubscribe rejected after failed subscribe');
-const originalConsoleWarn = console.warn;
-const officialEventWarnings = [];
-console.warn = (...args) => {
-  officialEventWarnings.push(args);
-};
-capabilityResponses.push({
-  name: 'official projection stream subscribe rejects',
-  method: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
-  payload: { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 7 },
-  reject: new Error('Station stream subscribe rejected'),
-});
+officialEventSubscribeError = new Error('Host event topic subscribe rejected');
 await assert.rejects(
   () => subscribeAtelierProjectionEvents(snapshot(), 'task-1', (projectionEvent) => receivedOfficialEvents.push(projectionEvent.id)),
-  /Station stream subscribe rejected/,
-  'official projection subscription must surface Station stream subscribe rejection',
+  /Host event topic subscribe rejected/,
+  'official projection Host event-topic subscribe rejection must surface to the controller',
 );
 await new Promise((resolve) => setTimeout(resolve, 0));
-console.warn = originalConsoleWarn;
 assert.deepEqual(
   officialEventCalls.map((call) => call.method + ':' + call.topic),
   [
@@ -3612,23 +2332,10 @@ assert.deepEqual(
     'off:' + ATELIER_PROJECTION_EVENT_TOPIC,
     'unsubscribe:' + ATELIER_PROJECTION_EVENT_TOPIC,
   ],
-  'official projection subscribe failure must remove local handler and request Host unsubscribe',
+  'official projection Host event-topic subscribe rejection must remove local handler and request Host unsubscribe',
 );
 assert.equal(officialEventHandlers.has(ATELIER_PROJECTION_EVENT_TOPIC), false);
-officialEventHandlers.get(ATELIER_PROJECTION_EVENT_TOPIC)?.(event('evt-after-rejected-official-subscription', 2, {
-  kind: 'stream.append',
-  taskId: 'task-1',
-  blocks: [{ id: 'block-after-rejected-official-subscription', kind: 'agent', text: 'must not deliver', done: true }],
-}));
-assert.equal(
-  receivedOfficialEvents.includes('evt-after-rejected-official-subscription'),
-  false,
-  'official projection subscribe failure must not keep delivering Host events after local cleanup',
-);
-assert.equal(officialEventWarnings.length, 1, 'official projection unsubscribe rejection must be reported exactly once');
-assert.equal(officialEventWarnings[0][0], 'Atelier official projection event topic unsubscribe rejected');
-assert.equal(capabilityResponses.length, 0, 'official projection subscription failure consumed Station stream subscribe invoke');
-resetOfficialEventHarness();
+assert.equal(capabilityResponses.length, 0, 'canonical topic rejection must not invoke a feature-owned stream');
 
 for (const [name, error, expected] of [
   ['uppercase permission denied maps to auth-denied', new Error('PERMISSION_DENIED Station rejected Atelier access'), { key: 'atelier.error.authDenied', kind: 'auth-denied' }],

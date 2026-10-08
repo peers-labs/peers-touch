@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-03
-covered_docs_hash: d9aa942f1f5e111d540cc657c0fc8f262dc06fb3da6279337b2b737379d03938
+covered_docs_hash: b600af920c1eb64d36e86b0e1c25be476d313b23fe6045addaf1b408cedae42d
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,21 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-04 Review
+
+Agent integration replacement now treats Development declarations as durable
+intent rather than in-flight hook activity. Live child assignments, workflow
+actions, and Action Store locks remain blocking. When declarations are live,
+legacy conversation/action history remains inert and cleanup is deferred to a
+later declaration-free installation. Existing review rules already reject
+parallel workflow authority and unguarded hook replacement; the installer
+regression covers concurrent declaration preservation. Stale missing folders
+in a multi-root descriptor are ignored only when valid roots remain and include
+the selected source worktree. The non-destructive concurrent path may bootstrap
+without an installer receipt only when no other workflow action is observable;
+declaration-free cleanup retains the exact-grant requirement. No `SKILL.md` or
+generic review fixture change is required.
 
 ## 2026-10-03 Review
 

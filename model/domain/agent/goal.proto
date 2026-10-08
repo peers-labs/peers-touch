@@ -1,0 +1,130 @@
+syntax = "proto3";
+
+package peers_touch.model.agent.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
+
+enum AgentGoalStatus {
+  AGENT_GOAL_STATUS_UNSPECIFIED = 0;
+  AGENT_GOAL_STATUS_DRAFT = 1;
+  AGENT_GOAL_STATUS_REVIEWING = 2;
+  AGENT_GOAL_STATUS_READY = 3;
+  AGENT_GOAL_STATUS_RUNNING = 4;
+  AGENT_GOAL_STATUS_NEEDS_USER = 5;
+  AGENT_GOAL_STATUS_REPLANNING = 6;
+  AGENT_GOAL_STATUS_RECOVERING = 7;
+  AGENT_GOAL_STATUS_ACCEPTING = 8;
+  AGENT_GOAL_STATUS_ACCEPTED = 9;
+  AGENT_GOAL_STATUS_PARTIAL = 10;
+  AGENT_GOAL_STATUS_FAILED = 11;
+  AGENT_GOAL_STATUS_CANCELLED = 12;
+}
+
+message AgentGoalBudget {
+  uint64 max_tokens = 1;
+  optional double max_cost = 2;
+  uint64 wall_time_ms = 3;
+  uint32 max_parallel_tasks = 4;
+}
+
+message AgentGoalAcceptanceCriterion {
+  string criterion_id = 1;
+  string description = 2;
+  string evaluator = 3;
+  bool required = 4;
+}
+
+message AgentGoal {
+  string goal_id = 1;
+  string owner_ptid = 2;
+  optional string workspace_id = 3;
+  string title = 4;
+  string outcome = 5;
+  repeated string non_goals = 6;
+  repeated string constraints = 7;
+  AgentGoalBudget budget = 8;
+  repeated AgentGoalAcceptanceCriterion acceptance_criteria = 9;
+  AgentGoalStatus status = 10;
+  uint64 revision = 11;
+  uint64 graph_revision = 12;
+  uint64 acceptance_revision = 13;
+  google.protobuf.Timestamp created_at = 14;
+  google.protobuf.Timestamp updated_at = 15;
+}
+
+message CreateAgentGoalRequest {
+  string title = 1;
+  string outcome = 2;
+  optional string workspace_id = 3;
+  string idempotency_key = 4;
+  uint64 expected_revision = 5;
+}
+
+message CreateAgentGoalResponse {
+  AgentGoal goal = 1;
+}
+
+message GetAgentGoalRequest {
+  string goal_id = 1;
+}
+
+message GetAgentGoalResponse {
+  AgentGoal goal = 1;
+}
+
+message UpdateAgentGoalRequest {
+  string goal_id = 1;
+  string outcome = 2;
+  repeated string non_goals = 3;
+  repeated string constraints = 4;
+  AgentGoalBudget budget = 5;
+  repeated AgentGoalAcceptanceCriterion acceptance_criteria = 6;
+  uint64 expected_revision = 7;
+  string idempotency_key = 8;
+}
+
+message UpdateAgentGoalResponse {
+  AgentGoal goal = 1;
+}
+
+message ReviewAgentGoalRequest {
+  string goal_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+}
+
+message ReviewAgentGoalResponse {
+  AgentGoal goal = 1;
+}
+
+message AdmitAgentGoalRequest {
+  string goal_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+}
+
+message AdmitAgentGoalResponse {
+  AgentGoal goal = 1;
+}
+
+message StartAgentGoalRequest {
+  string goal_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+}
+
+message StartAgentGoalResponse {
+  AgentGoal goal = 1;
+}
+
+message CancelAgentGoalRequest {
+  string goal_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+}
+
+message CancelAgentGoalResponse {
+  AgentGoal goal = 1;
+}

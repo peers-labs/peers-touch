@@ -2,6 +2,7 @@ import type { Timestamp } from '@bufbuild/protobuf/wkt';
 
 import {
   HomeProjectionFreshness,
+  HomeTaskStatus,
   HomeWorkKind,
   type HomeBriefItem,
   type HomeCapabilitySummary,
@@ -11,7 +12,43 @@ import {
   type HomeTaskProjection,
   type HomeWorkProjection,
 } from '../gen/proto/domain/agent/home_pb';
+import type { AgentGoal } from '../gen/proto/domain/agent/goal_pb';
+import type { RealtimeAgentDomainEventPayload } from '../kernel/events/types';
 import { createDesktopStore } from './createDesktopStore';
+
+export const TASK_RUN_LIFECYCLE_STATUSES = [
+  'pending',
+  'running',
+  'needs_user',
+  'completed',
+  'failed',
+  'cancelled',
+  'unavailable',
+] as const;
+
+export type TaskRunLifecycleStatus =
+  (typeof TASK_RUN_LIFECYCLE_STATUSES)[number];
+
+export function normalizeHomeTaskRunStatus(
+  status: HomeTaskStatus,
+): TaskRunLifecycleStatus {
+  switch (status) {
+    case HomeTaskStatus.PENDING:
+      return 'pending';
+    case HomeTaskStatus.RUNNING:
+      return 'running';
+    case HomeTaskStatus.NEEDS_USER:
+      return 'needs_user';
+    case HomeTaskStatus.COMPLETED:
+      return 'completed';
+    case HomeTaskStatus.FAILED:
+      return 'failed';
+    case HomeTaskStatus.CANCELLED:
+      return 'cancelled';
+    default:
+      return 'unavailable';
+  }
+}
 
 export interface HomePinnedAgentView {
   agentId: string;
@@ -47,13 +84,49 @@ export interface HomeProjectionView {
   sliceErrors: HomeSliceError[];
 }
 
+export type HomeConnectionState =
+  | 'fresh'
+  | 'reconnecting'
+  | 'resyncing'
+  | 'stale'
+  | 'unauthorized';
+
 interface HomeState {
   projection: HomeProjectionView | null;
+  lastAgentEvent: RealtimeAgentDomainEventPayload | null;
+  agentEventCursors: Record<string, {
+    domainEventId: string;
+    domainSequence: bigint;
+    goalRevision: bigint;
+  }>;
+  connectionState: HomeConnectionState;
+  retryable: boolean;
   loading: boolean;
   error: string | null;
+  goalDraftTitle: string;
+  goalDraftOutcome: string;
+  goalDraftIdempotencyKey: string;
+  savedGoal: AgentGoal | null;
+  goalCreating: boolean;
+  goalReadbackLoading: boolean;
+  goalReadbackRevision: bigint | null;
+  goalCreateError: string | null;
+  goalReadbackError: string | null;
   beginLoad: () => void;
   applyProjection: (projection: HomeWorkProjection) => void;
-  failLoad: (error: string) => void;
+  applyAgentDomainEvent: (
+    event: RealtimeAgentDomainEventPayload,
+  ) => boolean;
+  markConnectionLost: () => void;
+  beginResync: () => void;
+  failLoad: (error: string, unauthorized?: boolean) => void;
+  setGoalDraftTitle: (title: string) => void;
+  setGoalDraftOutcome: (outcome: string) => void;
+  beginGoalCreate: (idempotencyKey: string) => void;
+  applyGoalDraft: (goal: AgentGoal, source: 'create' | 'readback') => void;
+  failGoalCreate: (error: string) => void;
+  beginGoalReadback: () => void;
+  failGoalReadback: (error: string) => void;
   reset: () => void;
 }
 
@@ -102,8 +175,21 @@ export function normalizeHomeProjection(
 
 export const useHomeStore = createDesktopStore<HomeState>('home', (set) => ({
   projection: null,
+  lastAgentEvent: null,
+  agentEventCursors: {},
+  connectionState: 'resyncing',
+  retryable: false,
   loading: false,
   error: null,
+  goalDraftTitle: '',
+  goalDraftOutcome: '',
+  goalDraftIdempotencyKey: '',
+  savedGoal: null,
+  goalCreating: false,
+  goalReadbackLoading: false,
+  goalReadbackRevision: null,
+  goalCreateError: null,
+  goalReadbackError: null,
 
   beginLoad: () => set({ loading: true, error: null }),
 
@@ -119,18 +205,156 @@ export const useHomeStore = createDesktopStore<HomeState>('home', (set) => ({
           freshness: HomeProjectionFreshness.STALE,
           sliceErrors: projection.sliceErrors,
         },
+        connectionState: 'stale',
+        retryable: projection.sliceErrors.some((slice) => slice.retryable),
         loading: false,
         error: null,
       };
     }
     return {
       projection: normalizeHomeProjection(projection),
+      connectionState:
+        projection.freshness === HomeProjectionFreshness.FRESH
+          ? 'fresh'
+          : 'stale',
+      retryable:
+        projection.freshness !== HomeProjectionFreshness.FRESH
+        && projection.sliceErrors.some((slice) => slice.retryable),
       loading: false,
       error: null,
     };
   }),
 
-  failLoad: (error) => set({ loading: false, error }),
+  applyAgentDomainEvent: (event) => {
+    const cursorKey = event.taskId
+      ? `task:${event.taskId}`
+      : `goal:${event.goalId}`;
+    let accepted = false;
+    set((state) => {
+      const cursor = state.agentEventCursors[cursorKey];
+      if (
+        event.schemaVersion !== 1
+        || !event.domainEventId
+        || event.domainSequence <= 0n
+        || (!event.goalId && !event.taskId)
+        || (
+          cursor
+          && (
+            event.domainSequence <= cursor.domainSequence
+            || event.goalRevision < cursor.goalRevision
+          )
+        )
+      ) {
+        return state;
+      }
+      accepted = true;
+      return {
+        lastAgentEvent: event,
+        agentEventCursors: {
+          ...state.agentEventCursors,
+          [cursorKey]: {
+            domainEventId: event.domainEventId,
+            domainSequence: event.domainSequence,
+            goalRevision: event.goalRevision,
+          },
+        },
+      };
+    });
+    return accepted;
+  },
 
-  reset: () => set({ projection: null, loading: false, error: null }),
+  markConnectionLost: () => set({
+    connectionState: 'reconnecting',
+    retryable: false,
+  }),
+
+  beginResync: () => set({
+    connectionState: 'resyncing',
+    retryable: false,
+    loading: true,
+    error: null,
+  }),
+
+  failLoad: (error, unauthorized = false) => set({
+    connectionState: unauthorized ? 'unauthorized' : 'stale',
+    retryable: !unauthorized,
+    loading: false,
+    error,
+  }),
+
+  setGoalDraftTitle: (title) => set({
+    goalDraftTitle: title,
+    goalDraftIdempotencyKey: '',
+    goalCreateError: null,
+  }),
+
+  setGoalDraftOutcome: (outcome) => set({
+    goalDraftOutcome: outcome,
+    goalDraftIdempotencyKey: '',
+    goalCreateError: null,
+  }),
+
+  beginGoalCreate: (idempotencyKey) => set({
+    goalDraftIdempotencyKey: idempotencyKey,
+    goalCreating: true,
+    goalCreateError: null,
+  }),
+
+  applyGoalDraft: (goal, source) => set((state) => {
+    if (
+      state.savedGoal?.goalId === goal.goalId
+      && goal.revision < state.savedGoal.revision
+    ) {
+      return {
+        goalCreating: false,
+        goalReadbackLoading: false,
+        goalReadbackError: 'agent.home.goalReadbackStale',
+      };
+    }
+    return {
+      goalDraftTitle: goal.title,
+      goalDraftOutcome: goal.outcome,
+      savedGoal: goal,
+      goalCreating: false,
+      goalReadbackLoading: false,
+      goalReadbackRevision:
+        source === 'readback' ? goal.revision : state.goalReadbackRevision,
+      goalCreateError: null,
+      goalReadbackError: null,
+    };
+  }),
+
+  failGoalCreate: (error) => set({
+    goalCreating: false,
+    goalCreateError: error,
+  }),
+
+  beginGoalReadback: () => set({
+    goalReadbackLoading: true,
+    goalReadbackError: null,
+  }),
+
+  failGoalReadback: (error) => set({
+    goalReadbackLoading: false,
+    goalReadbackError: error,
+  }),
+
+  reset: () => set({
+    projection: null,
+    lastAgentEvent: null,
+    agentEventCursors: {},
+    connectionState: 'resyncing',
+    retryable: false,
+    loading: false,
+    error: null,
+    goalDraftTitle: '',
+    goalDraftOutcome: '',
+    goalDraftIdempotencyKey: '',
+    savedGoal: null,
+    goalCreating: false,
+    goalReadbackLoading: false,
+    goalReadbackRevision: null,
+    goalCreateError: null,
+    goalReadbackError: null,
+  }),
 }));

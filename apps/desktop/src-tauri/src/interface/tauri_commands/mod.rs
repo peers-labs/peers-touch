@@ -1,7 +1,6 @@
 pub mod account;
 pub mod actor;
 pub mod admin;
-pub mod agent_events;
 pub mod agent_growth;
 pub mod agent_orchestration;
 pub mod agent_scheduler;

@@ -1,0 +1,35 @@
+{
+  "status": "PASS",
+  "evidenceClass": "STATIC_CONTRACT_GATE",
+  "appletId": "peers.atelier",
+  "gate": "atelier:projection-contract-gate",
+  "coveredPaths": [
+    "Atelier projection contract and generated TypeScript artifacts are aligned",
+    "Atelier consumes the canonical Desktop Host topic without a feature-owned Station stream",
+    "Desktop canonical SSE supervisor is the sole owner of /events/stream cursor and reconnect state",
+    "AgentDomainEvent invalidates Atelier projection and Resync triggers authoritative readback",
+    "Station and product-window fixtures use /events/stream with no private Agent event endpoint"
+  ],
+  "notCovered": [
+    "real Desktop product-window rendering",
+    "arbitrary Station network failure recovery",
+    "complete Host + Station + applet E2E"
+  ],
+  "claimBoundary": {
+    "readiness": "NOT_READY",
+    "proves": [
+      "Atelier projection contract and generated TypeScript artifacts are aligned",
+      "Atelier consumes the canonical Desktop Host topic without a feature-owned Station stream",
+      "Desktop canonical SSE supervisor is the sole owner of /events/stream cursor and reconnect state",
+      "AgentDomainEvent invalidates Atelier projection and Resync triggers authoritative readback",
+      "Station and product-window fixtures use /events/stream with no private Agent event endpoint"
+    ],
+    "doesNotProve": [
+      "real Desktop product-window rendering",
+      "arbitrary Station network failure recovery",
+      "complete Host + Station + applet E2E"
+    ]
+  },
+  "command": "pnpm run atelier:projection-contract-gate",
+  "completedAt": "2026-10-04T18:28:27.656Z"
+}

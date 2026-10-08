@@ -182,8 +182,8 @@ export class SurfaceManager {
     const manager = AppletManager.getInstance();
     const info = manager.getAppletInfo(target.appletId);
     const sessionId = manager.getSessionId(target.appletId);
-    const entry = info?.load.desktop?.entry;
-    if (!info || !sessionId || !entry) {
+    const entryUrl = manager.getDesktopEntryUrl(target.appletId);
+    if (!info || !sessionId || !entryUrl) {
       log.error(SURFACE_TAG, 'cannot create host: applet not resolvable', {
         appletId: target.appletId,
         instanceId: target.instanceId,
@@ -198,7 +198,7 @@ export class SurfaceManager {
     host.style.height = '100%';
     host.setAttribute('applet-id', target.appletId);
     host.setAttribute('session-id', sessionId);
-    host.setAttribute('url', `${info.path}/${entry}`);
+    host.setAttribute('url', entryUrl);
     this.wireHost(host, record);
     return host;
   }

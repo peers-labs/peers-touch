@@ -219,20 +219,25 @@ This is the only canonical project Skill projector. Codex also receives the
 worktree-local `pt-ew-plugin`; TRAE receives one descriptor-selected multi-root
 workspace bootstrap. The installer removes managed per-worktree TRAE hooks,
 preserves unrelated host files, never edits global hooks, and cannot run while
-the machine has a live declaration, live child assignment, active canonical
-Action Receipt, or active Action Store lock. The sole exception is one
-current, live OWNER `skills` Action Receipt bound to the selected source
-worktree. There is no separate acknowledgement command;
+the machine has a live child assignment, active canonical Action Receipt, or
+active Action Store lock. The sole action exception is one current, live OWNER
+`skills` Action Receipt bound to the selected source worktree. Live Development
+declarations do not block atomic hook/catalog replacement. When any declaration
+is live, legacy conversation/action history is retained as inert data and
+cleanup is deferred to a later declaration-free installation. This
+non-destructive path may bootstrap without an Action Receipt when the installed
+hook cannot issue one; the declaration-free cleanup path still requires the
+exact create-once OWNER grant. There is no separate acknowledgement command;
 restart the IDE only when the host cannot reload changed hooks, then rerun the
 audit.
 
-The TRAE rollout is a machine-store hard cut: while holding the installation
-lock it completes fallible path/workspace/catalog planning, consumes the exact
-installer grant, publishes `INSTALLING`, deletes the old conversation and
-workflow-action stores inside the guarded lifecycle, installs the new
-OWNER/child binding store contract, and then publishes the one bootstrap. Reset
-or installation failure publishes `BLOCKED`. No legacy binding/action reader or
-dual writer remains.
+The TRAE rollout is an atomic integration replacement: while holding the
+installation lock it completes fallible path/workspace/catalog planning,
+consumes the exact installer grant, publishes `INSTALLING`, conditionally
+deletes old conversation and workflow-action stores only when declarations are
+quiescent, installs the new OWNER/child binding store contract, and then
+publishes the one bootstrap. Reset or installation failure publishes
+`BLOCKED`. No legacy binding/action reader or dual writer remains.
 
 ## 4. Skill Integration
 

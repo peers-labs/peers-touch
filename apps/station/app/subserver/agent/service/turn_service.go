@@ -282,7 +282,6 @@ type TurnService struct {
 	liveResumeBroker     *LiveResumeBroker
 	toolDispatch         *ToolDispatchService
 	chatTaskService      *ChatTaskService
-	eventBus             domain.EventBus
 	eventWriter          *TaskEventWriter
 	activeTurns          sync.Mutex
 	activeTurnCancel     map[string]activeTurnRegistration
@@ -428,6 +427,7 @@ func NewTurnService(
 		convService:      convService,
 		nudgeState:       domain.NewNudgeState(),
 		liveResumeBroker: NewLiveResumeBroker(),
+		eventWriter:      NewTaskEventWriter(),
 		activeTurnCancel: make(map[string]activeTurnRegistration),
 	}
 	if providerService != nil {
@@ -438,11 +438,6 @@ func NewTurnService(
 
 func (s *TurnService) SetLiveResumeBroker(broker *LiveResumeBroker) {
 	s.liveResumeBroker = broker
-}
-
-func (s *TurnService) SetEventBus(eventBus domain.EventBus) {
-	s.eventBus = eventBus
-	s.eventWriter = NewTaskEventWriter(eventBus)
 }
 
 // SetExecutionLifecycle binds detached turn execution to the Station
@@ -753,34 +748,14 @@ func (s *TurnService) queuedTurnConfig(
 }
 
 func (s *TurnService) publishDomainEvent(ctx context.Context, agentID, turnID, taskID, stepID, eventType string, payload interface{}) {
-	if s.eventBus == nil {
+	if strings.TrimSpace(taskID) == "" {
 		return
 	}
-
-	// When the turn belongs to a Station-owned task, route the event through the
-	// durable outbox so it can be replayed by cursor; otherwise publish realtime
-	// only (legacy single-turn callers without a task).
-	if strings.TrimSpace(taskID) != "" {
-		writer := s.eventWriter
-		if writer == nil {
-			writer = NewTaskEventWriter(s.eventBus)
-		}
-		writer.Publish(ctx, agentID, eventType, payload, taskID, stepID, turnID, map[string]string{"turn_id": turnID})
-		return
+	writer := s.eventWriter
+	if writer == nil {
+		writer = NewTaskEventWriter()
 	}
-
-	event := domain.DomainEvent{
-		EventID:   generateID("evt"),
-		EventType: eventType,
-		AgentID:   agentID,
-		Payload:   payload,
-		Metadata: map[string]string{
-			"agent_id": agentID,
-			"turn_id":  turnID,
-		},
-	}
-
-	_ = s.eventBus.Publish(ctx, event)
+	writer.Publish(ctx, agentID, eventType, payload, taskID, stepID, turnID, map[string]string{"turn_id": turnID})
 }
 
 // SubmitToolDecision records an authenticated decision intent. Station owns
@@ -4982,7 +4957,7 @@ func (s *TurnService) interruptTurnWithOutcomeErrorForActor(
 			if strings.TrimSpace(taskID) != "" && strings.TrimSpace(stepID) != "" {
 				writer := s.eventWriter
 				if writer == nil {
-					writer = NewTaskEventWriter(nil)
+					writer = NewTaskEventWriter()
 				}
 				_, err = writer.appendTx(
 					ctx,
@@ -7030,7 +7005,7 @@ func (s *TurnService) completeTurn(
 			if strings.TrimSpace(config.TaskID) != "" && strings.TrimSpace(config.StepID) != "" {
 				writer := s.eventWriter
 				if writer == nil {
-					writer = NewTaskEventWriter(nil)
+					writer = NewTaskEventWriter()
 				}
 				taskEvent, err := writer.appendTx(
 					ctx,
@@ -7405,7 +7380,7 @@ func (s *TurnService) failTurnWithEvent(
 			if strings.TrimSpace(taskID) != "" && strings.TrimSpace(stepID) != "" {
 				writer := s.eventWriter
 				if writer == nil {
-					writer = NewTaskEventWriter(nil)
+					writer = NewTaskEventWriter()
 				}
 				if _, err := writer.appendTx(
 					ctx,
@@ -7661,7 +7636,7 @@ func (s *TurnService) cancelTurnWithResult(
 			if strings.TrimSpace(taskID) != "" && strings.TrimSpace(stepID) != "" {
 				writer := s.eventWriter
 				if writer == nil {
-					writer = NewTaskEventWriter(nil)
+					writer = NewTaskEventWriter()
 				}
 				if _, err := writer.appendTx(
 					ctx,

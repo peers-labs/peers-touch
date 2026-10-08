@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
@@ -202,27 +201,9 @@ func (s *ConnectorManifestService) Sync(
 	if err != nil {
 		return nil, err
 	}
-	for _, manifest := range retired {
-		s.authority.publishManifestInvalidations(
-			ctx,
-			domain.AgentAuthorityInvalidationManifestRetired,
-			manifest,
-		)
-	}
-	for _, manifest := range registered {
-		s.authority.publishManifestInvalidations(
-			ctx,
-			domain.AgentAuthorityInvalidationManifestRegistered,
-			manifest,
-		)
-	}
-	for _, binding := range rebasedBindings {
-		s.authority.publishBindingInvalidation(
-			ctx,
-			domain.AgentAuthorityInvalidationBindingUpsert,
-			binding,
-		)
-	}
+	_ = retired
+	_ = registered
+	_ = rebasedBindings
 	return response, nil
 }
 

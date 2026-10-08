@@ -49,9 +49,9 @@ type ChatTaskService struct {
 
 // NewChatTaskService builds the service with a fresh per-process executor id so
 // recovery can recognise leases that belong to a previous (dead) process.
-func NewChatTaskService(eventBus domain.EventBus) *ChatTaskService {
+func NewChatTaskService() *ChatTaskService {
 	return &ChatTaskService{
-		eventWriter: NewTaskEventWriter(eventBus),
+		eventWriter: NewTaskEventWriter(),
 		executorID:  generateID("station"),
 	}
 }
@@ -93,7 +93,7 @@ func (s *ChatTaskService) EnsureChatTask(ctx context.Context, actorPTID, agentID
 		Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
 		Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
 		OwnerActorPTID: actorPTID,
-		ConversationID: conversationID,
+		ConversationID: persistence.NullableConversationID(conversationID),
 		CreatedAt:      now,
 		StartedAt:      now,
 		UpdatedAt:      now,

@@ -30,6 +30,8 @@ It answers:
 - What calls, dependencies, state transitions, and failure behaviors are
   allowed or forbidden.
 - What contracts and invariants define the target state.
+- Which existing architecture modules and capabilities are required, reused,
+  adapted, or not applicable, and why.
 - Which alternative is selected and what negative consequences it carries.
 - What evidence will prove the architecture meets its claimed quality outcome.
 
@@ -56,6 +58,7 @@ Read these before designing:
 - `docs/global/architecture-document-standard.md`
 - `docs/global/architecture.md`
 - `docs/global/first-principles.md`
+- `docs/architecture/architecture-module-governance/architecture-modules.json`
 - `docs/knowledge/playbooks/documenting-large-requirements.md`
 - The nearest domain and platform sources for every path in scope.
 - Relevant `docs/knowledge/` invariants, pitfalls, and playbooks.
@@ -105,6 +108,65 @@ Output:
 
 Architecture defines allowed relationships and target-state truth. Platform
 documents refine implementation without redefining those boundaries.
+
+### Step 1a. Build The Architecture Applicability Inventory
+
+Before selecting a topology, discover the current architecture modules and
+capabilities that the scope may trigger. Do not stop at the technology or
+module named by the requester.
+
+Required discovery:
+
+1. Read the current architecture index in `docs/README.md` and the global
+   relationships in `docs/global/architecture.md`.
+2. Query the architecture module registry for active modules whose governed
+   paths, capabilities, consumers, contract roots, runtimes, trust boundaries,
+   or owners intersect the proposed scope.
+3. Read the nearest domain and platform architecture for every affected path.
+4. Check each scope-triggered concern family: ownership/source of truth,
+   protocol/API, state/event/realtime notification, persistence/cache/delivery,
+   identity/auth/security/privacy/encryption, federation/multi-device,
+   runtime/lifecycle/projection, and observability/acceptance/operability.
+5. Evaluate the baseline `AAR-C01` through `AAR-C10` cases in
+   `docs/global/architecture-document-standard.md`. Add domain-specific
+   candidates when the baseline set does not cover a triggered concern.
+
+Create this table in `design.md`:
+
+| Case | Candidate architecture / capability | Trigger and evidence | Disposition | Constraint or integration | Rationale and revisit trigger |
+|---|---|---|---|---|---|
+| `AAR-Cxx` / domain-specific | `<source or capability>` | `<scope/path/runtime/contract evidence>` | `required` / `reused` / `adapted` / `not_applicable` | `<owner, contract root, dependency, or none>` | `<why; when to revisit>` |
+
+Disposition rules:
+
+- `required`: an upstream architecture directly constrains the design; trace
+  the design back to its contract.
+- `reused`: consume the existing owner and capability without creating a
+  parallel implementation or source of truth.
+- `adapted`: keep the existing owner authoritative while recording the
+  contract/adapter delta, consequences, and verification.
+- `not_applicable`: cite scope, runtime, trust, lifecycle, or semantic evidence
+  and the scope change that would trigger review again.
+
+Reuse is semantic, not ceremonial. Do not add a bus, registry, queue, adapter,
+store, framework, or other capability merely because it exists. Conversely,
+when an existing capability fits, a parallel implementation requires an
+accepted decision proving the ownership, trust, lifecycle, failure-semantic, or
+quality mismatch and naming the resulting owner and cutover consequence.
+
+An implementation that conflicts with active architecture is migration
+evidence, not a reason to mark the architecture `not_applicable`. Apply the
+repository source hierarchy where it resolves the conflict. Return
+`DESIGN_ARCHITECTURE_CONFLICT` when same-level active sources conflict or when
+multiple materially valid outcomes cannot be resolved from accepted sources.
+Do not proceed to topology selection while that conflict remains.
+
+For every triggered baseline case, apply the standard's Trigger, Authority,
+Disposition, Integration, No Parallel Truth, and Evidence criteria. Report
+`AAR_MISSING_CASE`, `AAR_UNPROVEN_NOT_APPLICABLE`, `AAR_DUPLICATE_OWNER`,
+`AAR_FORCED_REUSE`, or `AAR_UNJUSTIFIED_PARALLEL_CAPABILITY` as blocking
+findings. The baseline cases are probes, not components that every design must
+adopt.
 
 ### Step 1b. Reference Implementation Analysis (when benchmarking)
 
@@ -242,7 +304,8 @@ Every component definition must include:
 - What it must not know, import, or execute.
 
 Every `design.md` includes core principles, a system diagram, contracts,
-component relationships, and endpoints/APIs when applicable.
+component relationships, the architecture applicability inventory from Step
+1a, and endpoints/APIs when applicable.
 
 ### Step 8. Define Quality Outcomes And Architecture Gates
 
@@ -274,6 +337,8 @@ Each ADR-lite decision includes:
 - Reversal trigger or review condition for uncertain decisions.
 
 Do not cite industry adoption as proof that an option fits this workload.
+Creating a parallel capability where an applicable owner already exists
+requires an explicit accepted decision; omission is not an alternative.
 
 ### Step 10. Select The Required Document Set
 
@@ -313,6 +378,18 @@ removed names, aliases, migration blacklists, or compatibility inventories.
 
 Return `DESIGN_READY_FOR_REVIEW` only when:
 
+- The architecture applicability inventory covers every scope-triggered
+  concern and every discovered candidate has exactly one disposition.
+- Every triggered `AAR-C01` through `AAR-C10` baseline case is present; omitted
+  cases are either demonstrably untriggered or reported as `AAR_MISSING_CASE`.
+- Every `required`, `reused`, and `adapted` entry is traceable into ownership,
+  contracts, dependencies, failure semantics, and evidence; every
+  `not_applicable` entry has evidence and a revisit trigger.
+- No applicable capability is silently duplicated, and no unrelated capability
+  is forced into the design for appearance or checklist completion.
+- Architecture-source conflicts are resolved by source hierarchy or an
+  accepted decision; unresolved conflicts return
+  `DESIGN_ARCHITECTURE_CONFLICT`.
 - Evidence ledger distinguishes fact, inference, hypothesis, and proposal.
 - Central root-cause claims are verified or explicitly deferred behind a
   diagnostic gate.
@@ -329,9 +406,11 @@ Return `DESIGN_READY_FOR_REVIEW` only when:
 
 The Development Run must execute an explicit architecture review pass before
 acceptance. By default an independent agent, or the current agent in a separate
-findings-first pass, reviews the evidence ledger, ownership, contracts,
-alternatives, failure semantics, and quality gates. Source-backed findings are
-fixed and re-reviewed inside the Run.
+findings-first pass, reviews candidate discovery completeness, disposition
+evidence, reuse versus adaptation, absence of forced or parallel architecture,
+the evidence ledger, ownership, contracts, alternatives, failure semantics,
+and quality gates. Source-backed findings are fixed and re-reviewed inside the
+Run.
 
 Human owner input is required only when accepted sources cannot choose among
 multiple materially valid product/architecture/security/privacy/compatibility/
@@ -347,6 +426,8 @@ The handoff package to `pt-architecture-execution-methodology` is:
   applicable.
 - Accepted architecture document paths.
 - Accepted decision IDs.
+- Architecture applicability inventory, including reused/adapted capability
+  owners and `not_applicable` revisit triggers.
 - Invariant and forbidden-relationship IDs.
 - Target-state deletion/retention list.
 - Required quality gates and evidence.
@@ -358,6 +439,14 @@ The execution-planning skill may decompose this package. It may not redesign it.
 
 Never:
 
+- Review only the architecture named by the requester or the first matching
+  module.
+- Force a known architecture, component, or pattern into scope without a
+  matching semantic trigger.
+- Mark an active architecture `not_applicable` because the current code has not
+  implemented it or because reuse would expand the immediate change.
+- Create a parallel capability without proving why the current owner cannot be
+  reused or adapted.
 - Treat correlation as causation or a comparison as root-cause proof.
 - Start with files, phases, or tasks before target ownership and contracts.
 - Mix execution sequencing into architecture design.

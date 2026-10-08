@@ -3,8 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
@@ -16,12 +14,10 @@ import (
 
 type AgentHandlers struct {
 	agentService *service.AgentService
-	eventBus     domain.EventBus
 }
 
-func NewAgentHandlers(agentService *service.AgentService, eventBus domain.EventBus) *AgentHandlers {
-	agentService.SetEventBus(eventBus)
-	return &AgentHandlers{agentService: agentService, eventBus: eventBus}
+func NewAgentHandlers(agentService *service.AgentService) *AgentHandlers {
+	return &AgentHandlers{agentService: agentService}
 }
 
 func (h *AgentHandlers) HandleListAgents(ctx context.Context, req *model.ListAgentsRequest) (*model.ListAgentsResponse, error) {
@@ -69,7 +65,6 @@ func (h *AgentHandlers) HandleCreateAgent(ctx context.Context, req *model.Create
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
-	h.publishAgentEvent(ctx, domain.EventTypeAgentCreated, agent)
 	return &model.CreateAgentResponse{Agent: domainAgentToProto(agent)}, nil
 }
 
@@ -151,7 +146,6 @@ func (h *AgentHandlers) HandleCreateAgentRaw(ctx context.Context, req server.Req
 		_ = json.NewEncoder(resp).Encode(map[string]interface{}{"error": err.Error()})
 		return nil
 	}
-	h.publishAgentEvent(ctx, domain.EventTypeAgentCreated, agent)
 	_ = json.NewEncoder(resp).Encode(map[string]interface{}{"agent": domainAgentToMap(agent)})
 	return nil
 }
@@ -216,7 +210,6 @@ func (h *AgentHandlers) HandleUpdateAgent(ctx context.Context, req *model.Update
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
-	h.publishAgentEvent(ctx, domain.EventTypeAgentUpdated, agent)
 	return &model.UpdateAgentResponse{Agent: domainAgentToProto(agent)}, nil
 }
 
@@ -224,25 +217,7 @@ func (h *AgentHandlers) HandleDeleteAgent(ctx context.Context, req *model.Delete
 	if err := h.agentService.DeleteAgent(ctx, subjectActorPTID(ctx), req.GetAgentId()); err != nil {
 		return nil, toHandlerError(err)
 	}
-	h.publishAgentEvent(ctx, domain.EventTypeAgentDeleted, &domain.Agent{AgentID: req.GetAgentId(), OwnerActorPTID: subjectActorPTID(ctx)})
 	return &model.DeleteAgentResponse{Success: true}, nil
-}
-
-func (h *AgentHandlers) publishAgentEvent(ctx context.Context, eventType domain.EventType, agent *domain.Agent) {
-	if h.eventBus == nil || agent == nil {
-		return
-	}
-	_ = h.eventBus.Publish(ctx, domain.DomainEvent{
-		EventID:    fmt.Sprintf("evt-%d", time.Now().UnixNano()),
-		EventType:  string(eventType),
-		OccurredAt: time.Now(),
-		ActorPTID:  agent.OwnerActorPTID,
-		AgentID:    agent.AgentID,
-		Payload:    domainAgentToProto(agent),
-		Metadata: map[string]string{
-			"agent_id": agent.AgentID,
-		},
-	})
 }
 
 func subjectActorPTID(ctx context.Context) string {

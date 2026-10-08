@@ -5,6 +5,10 @@ import type {
   AtelierTask,
 } from '../domain/projection';
 import {
+  isAtelierProjectionPatch,
+  isAtelierProjectionSnapshot,
+} from '../domain/projection';
+import {
   applyAtelierProjectionEventWithResult,
   createAtelierProjectionRuntimeState,
   stateFromAtelierSnapshot,
@@ -16,6 +20,10 @@ function task(id: string, title = id): AtelierTask {
     project: `project-${id}`,
     title,
     status: 'active',
+    executionStatus: 'pending',
+    stepId: `step-${id}`,
+    attemptId: `attempt-${id}`,
+    attempt: 1,
   };
 }
 
@@ -48,6 +56,106 @@ function event(overrides: Partial<AtelierProjectionEvent>): AtelierProjectionEve
 }
 
 describe('Atelier projection reducer', () => {
+  it('accepts stable migration identities and rejects inferred canonical links', () => {
+    expect(isAtelierProjectionPatch({
+      kind: 'task.upsert',
+      task: {
+        ...task('task-native'),
+        projectId: 'goal-native',
+        goalId: 'goal-native',
+        taskRunId: 'task-native',
+      },
+    })).toBe(true);
+    expect(isAtelierProjectionPatch({
+      kind: 'task.upsert',
+      task: {
+        ...task('legacy-task'),
+        projectId: 'goal-canonical',
+        goalId: 'goal-canonical',
+        taskRunId: 'legacy-task',
+        legacySourceId: 'legacy-task',
+        migrationState: 'migrated',
+      },
+    })).toBe(true);
+    expect(isAtelierProjectionPatch({
+      kind: 'task.upsert',
+      task: {
+        ...task('legacy-task'),
+        projectId: 'legacy-project',
+        goalId: 'goal-canonical',
+        taskRunId: 'legacy-task',
+        legacySourceId: 'legacy-task',
+        migrationState: 'migrated',
+      },
+    })).toBe(false);
+    expect(isAtelierProjectionPatch({
+      kind: 'task.upsert',
+      task: {
+        ...task('legacy-task'),
+        legacySourceId: 'legacy-task',
+        migrationState: 'blocked',
+        migrationBlockReason: 'identity_metadata_ambiguous',
+      },
+    })).toBe(true);
+  });
+
+  it('accepts native canonical TaskRun identity on its Goal project', () => {
+    const value = snapshot([{
+      ...task('task-native'),
+      projectId: 'goal-native',
+      goalId: 'goal-native',
+      taskRunId: 'task-native',
+    }]);
+    value.workspace.projects = [{
+      id: 'goal-native',
+      goalId: 'goal-native',
+      taskRunId: 'task-native',
+      goal: 'Ship native canonical work',
+      title: 'Native project',
+      state: 'executing',
+      workspaceRef: 'workspace-native',
+      goalOwnerSignoff: false,
+      residualRisks: [],
+      openBlockers: [],
+      memoryCandidates: [],
+      completion: {
+        noOpenBlockers: true,
+        l0L1AcceptancePassed: false,
+        l2HumanSignoffComplete: false,
+        residualRisksLogged: false,
+        memoryCandidatesGenerated: false,
+      },
+      milestoneTree: {
+        rootId: 'milestone-native',
+        milestones: [{
+          id: 'milestone-native',
+          title: 'Native milestone',
+          state: 'active',
+          taskIds: ['step-task-native'],
+          acceptancePredicateIds: ['predicate-native'],
+          openBlockers: [],
+        }],
+        edges: [],
+      },
+      taskGraph: {
+        rootTaskIds: ['step-task-native'],
+        tasks: [{
+          id: 'step-task-native',
+          title: 'Native step',
+          state: 'todo',
+          agentRole: 'executor',
+          artifactIds: [],
+          gateIds: [],
+        }],
+        edges: [],
+        parallelPolicy: 'serial_only',
+      },
+      defects: [],
+    }];
+
+    expect(isAtelierProjectionSnapshot(value)).toBe(true);
+  });
+
   it('initializes from snapshots and falls back to the first task when selected task is empty', () => {
     const state = stateFromAtelierSnapshot(snapshot([task('task-a'), task('task-b')], ''));
 
@@ -105,6 +213,34 @@ describe('Atelier projection reducer', () => {
     expect(duplicate.state).toBe(first.state);
     expect(stale.state).toBe(first.state);
     expect(first.state.snapshot?.workspace.streams['task-a']).toEqual([{ id: 'block-a', kind: 'text', text: 'A' }]);
+  });
+
+  it('deduplicates canonical invalidations and detects sequence gaps before readback', () => {
+    const current = stateFromAtelierSnapshot(snapshot([task('task-a')]));
+    const invalidation = (id: string, seq: number): AtelierProjectionEvent => event({
+      id,
+      seq,
+      taskId: 'task-a',
+      patch: {
+        kind: 'snapshot.invalidate',
+        streamEventId: `stream-${seq}`,
+        eventType: 'agent.task.running',
+        goalId: 'goal-1',
+        taskId: 'task-a',
+        goalRevision: seq,
+        schemaVersion: 1,
+      },
+    });
+
+    const first = applyAtelierProjectionEventWithResult(current, invalidation('domain-1', 1));
+    const duplicate = applyAtelierProjectionEventWithResult(first.state, invalidation('domain-1', 1));
+    const gap = applyAtelierProjectionEventWithResult(first.state, invalidation('domain-3', 3));
+
+    expect(first.outcome).toBe('reconcile');
+    expect(first.state.snapshot).toBe(current.snapshot);
+    expect(duplicate.outcome).toBe('duplicate');
+    expect(gap.outcome).toBe('gap');
+    expect(gap.state.lastSeqByScope['task:task-a']).toBe(3);
   });
 
   it('rejects non-snapshot patches for unknown tasks while allowing selected task upsert', () => {
@@ -203,5 +339,29 @@ describe('Atelier projection reducer', () => {
     expect(todo.state.snapshot?.workspace.gates?.['task-a']).toEqual([{ id: 'gate-a', name: 'Gate', status: 'passed' }]);
     expect(todo.state.snapshot?.workspace.contexts['task-a']).toEqual({ usedPct: 42, files: [{ name: 'a.ts', group: 'hot' }] });
     expect(todo.state.snapshot?.workspace.todos['task-a']).toEqual([{ id: 'todo-a', text: 'Review', status: 'open' }]);
+  });
+
+  it('normalizes unknown snapshot and event TaskRun states to unavailable', () => {
+    const unknownSnapshot = snapshot([{
+      ...task('task-a'),
+      executionStatus: 'future_state',
+    } as unknown as AtelierTask]);
+    const current = stateFromAtelierSnapshot(unknownSnapshot);
+
+    expect(current.snapshot?.workspace.tasks[0].executionStatus).toBe('unavailable');
+
+    const updated = applyAtelierProjectionEventWithResult(current, event({
+      id: 'unknown-taskrun-status',
+      seq: 1,
+      taskId: 'task-a',
+      patch: {
+        kind: 'task.executionStatus',
+        taskId: 'task-a',
+        status: 'another_future_state',
+      },
+    }));
+
+    expect(updated.outcome).toBe('applied');
+    expect(updated.state.snapshot?.workspace.tasks[0].executionStatus).toBe('unavailable');
   });
 });

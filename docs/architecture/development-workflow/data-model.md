@@ -697,9 +697,11 @@ the assistant response or host transcript. A conflicting second release fails
 closed. It does not terminate or revive a child; child terminal receipts own
 that lifecycle.
 
-This schema is a hard cut. Installation requires no live declaration, child
-assignment, or workflow action on the machine other than the current
-OWNER-bound installer command identified by its exact Action Receipt, then
+This schema is a hard cut. Installation may coexist with live Development
+declarations because they are durable intent rather than in-flight hook
+actions. It requires no live child assignment, Action Store lock, or workflow
+action on the machine other than the current OWNER-bound installer command
+identified by its exact Action Receipt. When no declaration is live, it then
 deletes exactly:
 
 ```text
@@ -707,13 +709,20 @@ deletes exactly:
 ~/.peers-touch/dev/workspaces/*/workflow/actions/
 ```
 
+When declarations are live, those legacy stores remain inert and cleanup is
+deferred to a later declaration-free installation. The current binding and
+Action Receipt implementation never reads, imports, migrates, aliases, or
+dual-writes them.
+
 The Kernel creates a create-once grant for that exact OWNER `skills` action.
 The installer completes fallible catalog, host-root, workspace, and hook
-preflight before consuming the grant. It then requires exactly one such live
-action, atomically consumes its grant, publishes `INSTALLING`, and only then
-starts destructive reset. A seeded receipt, missing action, another action ID,
-or a second invocation has no installation authority; reset failure publishes
-`BLOCKED`.
+preflight before consuming the grant. A declaration-free installation requires
+exactly one such live action, atomically consumes its grant, publishes
+`INSTALLING`, and only then starts destructive reset. With live declarations,
+an installation that skips legacy cleanup may bootstrap without a receipt when
+the old integration cannot issue one; any observed non-installer action still
+blocks it. A seeded receipt, another action ID, or a second destructive
+invocation has no installation authority; reset failure publishes `BLOCKED`.
 
 Canonical Completion Review requests and receipts use schema version `2` under
 `~/.peers-touch/dev/workspaces/<workspaceId>/workflow/completion-reviews-v2/`.

@@ -2,12 +2,10 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"reflect"
 	"strconv"
-	"sync"
 	"testing"
 	"time"
 
@@ -17,30 +15,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"gorm.io/gorm"
 )
-
-type recordingAgentEventBus struct {
-	mu     sync.Mutex
-	events []domain.DomainEvent
-}
-
-func (b *recordingAgentEventBus) Publish(_ context.Context, event domain.DomainEvent) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.events = append(b.events, event)
-	return nil
-}
-
-func (b *recordingAgentEventBus) Subscribe(string, domain.EventHandler) {}
-
-func (b *recordingAgentEventBus) SubscribeAll(domain.EventHandler) {}
-
-func (b *recordingAgentEventBus) Unsubscribe(string, domain.EventHandler) {}
-
-func (b *recordingAgentEventBus) snapshot() []domain.DomainEvent {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return append([]domain.DomainEvent(nil), b.events...)
-}
 
 func TestAgentNameIsUniqueWithinOneActor(t *testing.T) {
 	db := openAgentServiceTestDB(t, "agent_name_unique")
@@ -102,11 +76,9 @@ func TestAgentRenameRejectsSameActorNameConflict(t *testing.T) {
 	}
 }
 
-func TestAgentUpdateRebasesLiveBindingsAndPublishesInvalidation(t *testing.T) {
+func TestAgentUpdateRebasesLiveBindings(t *testing.T) {
 	db := openAgentServiceTestDB(t, "agent_update_binding_rebase")
 	service := NewAgentService()
-	eventBus := &recordingAgentEventBus{}
-	service.SetEventBus(eventBus)
 	agent := seedAgentServiceTestAgent(t, db)
 	now := time.Now().UTC()
 	tombstonedAt := now.Add(-time.Minute)
@@ -166,19 +138,6 @@ func TestAgentUpdateRebasesLiveBindingsAndPublishesInvalidation(t *testing.T) {
 			revisions, agentVersions)
 	}
 
-	events := eventBus.snapshot()
-	if len(events) != 1 {
-		t.Fatalf("invalidation event count = %d, want 1", len(events))
-	}
-	assertAgentAuthorityInvalidation(
-		t,
-		events[0],
-		domain.AgentAuthorityInvalidationAgentUpdated,
-		agent.ID,
-		2,
-		"",
-		0,
-	)
 }
 
 func TestAgentUpdateRollsBackWhenBindingRebaseFails(t *testing.T) {
@@ -231,8 +190,6 @@ func TestAgentUpdateRollsBackWhenBindingRebaseFails(t *testing.T) {
 func TestAgentUpdatePreflightConflictReturnsTypedPayloadWithoutStaleMutation(t *testing.T) {
 	db := openAgentServiceTestDB(t, "agent_update_preflight_conflict")
 	service := NewAgentService()
-	eventBus := &recordingAgentEventBus{}
-	service.SetEventBus(eventBus)
 	agent := seedAgentServiceTestAgent(t, db)
 	if err := db.Model(&persistence.Agent{}).
 		Where("id = ?", agent.ID).
@@ -265,16 +222,11 @@ func TestAgentUpdatePreflightConflictReturnsTypedPayloadWithoutStaleMutation(t *
 		stored.ConfigJSON != `{"winner":true}` {
 		t.Fatalf("stale preflight mutation changed winning agent: %+v", stored)
 	}
-	if events := eventBus.snapshot(); len(events) != 0 {
-		t.Fatalf("preflight conflict published %d invalidation events, want 0", len(events))
-	}
 }
 
 func TestAgentUpdateCASLostRaceReturnsAuthoritativeRevisionWithoutStaleMutation(t *testing.T) {
 	db := openAgentServiceTestDB(t, "agent_update_cas_lost")
 	service := NewAgentService()
-	eventBus := &recordingAgentEventBus{}
-	service.SetEventBus(eventBus)
 	agent := seedAgentServiceTestAgent(t, db)
 	if err := db.Exec(`
 		CREATE TRIGGER simulate_concurrent_agent_winner
@@ -314,9 +266,6 @@ func TestAgentUpdateCASLostRaceReturnsAuthoritativeRevisionWithoutStaleMutation(
 	}
 	if stored.Title != agent.Title || stored.ConfigJSON != agent.ConfigJSON {
 		t.Fatalf("stale CAS mutation leaked into winning agent: %+v", stored)
-	}
-	if events := eventBus.snapshot(); len(events) != 0 {
-		t.Fatalf("CAS conflict published %d invalidation events, want 0", len(events))
 	}
 }
 
@@ -495,46 +444,6 @@ func seedAgentServiceTestAgent(t *testing.T, db *gorm.DB) persistence.Agent {
 		t.Fatalf("seed agent: %v", err)
 	}
 	return agent
-}
-
-func assertAgentAuthorityInvalidation(
-	t *testing.T,
-	event domain.DomainEvent,
-	reason domain.AgentAuthorityInvalidationReason,
-	agentID string,
-	agentVersion uint64,
-	bindingID string,
-	bindingRevision uint64,
-) {
-	t.Helper()
-	if event.EventType != string(domain.EventTypeAgentAuthorityInvalidated) {
-		t.Fatalf("event type = %q", event.EventType)
-	}
-	payload, ok := event.Payload.(domain.AgentAuthorityInvalidation)
-	if !ok {
-		t.Fatalf("event payload type = %T", event.Payload)
-	}
-	if payload.Reason != reason ||
-		payload.AgentID != agentID ||
-		payload.AgentVersion != agentVersion ||
-		payload.BindingID != bindingID ||
-		payload.BindingRevision != bindingRevision {
-		t.Fatalf("unexpected invalidation payload: %+v", payload)
-	}
-	if event.Metadata["agent_id"] != agentID {
-		t.Fatalf("event metadata missing agent_id: %+v", event.Metadata)
-	}
-	var serialized struct {
-		EventType string                            `json:"event_type"`
-		Payload   domain.AgentAuthorityInvalidation `json:"payload"`
-	}
-	if err := json.Unmarshal(SerializeEvent(event), &serialized); err != nil {
-		t.Fatalf("decode serialized invalidation: %v", err)
-	}
-	if serialized.EventType != string(domain.EventTypeAgentAuthorityInvalidated) ||
-		serialized.Payload != payload {
-		t.Fatalf("serialized invalidation mismatch: %+v", serialized)
-	}
 }
 
 func isAgentServiceError(err error, code errcode.Code) bool {

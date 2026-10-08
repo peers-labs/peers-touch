@@ -87,14 +87,14 @@ func TestBuildAtelierProjectionSnapshotMapsCollaborationTask(t *testing.T) {
 		t.Fatalf("expected one projected task, got %d", len(snapshot.Workspace.Tasks))
 	}
 	projected := snapshot.Workspace.Tasks[0]
-	if projected.ID != "collab_1" || projected.Project != "peers-touch" || projected.Status != "active" {
+	if projected.ID != "collab_1" ||
+		projected.Project != "peers-touch" ||
+		projected.Status != "active" ||
+		projected.ExecutionStatus != "running" {
 		t.Fatalf("unexpected task projection: %+v", projected)
 	}
 	if projected.ProjectID != "collab_1" {
 		t.Fatalf("unexpected project id: %q", projected.ProjectID)
-	}
-	if !projected.Running {
-		t.Fatal("expected running task projection")
 	}
 	if len(snapshot.Workspace.Projects) != 1 {
 		t.Fatalf("expected one projected project, got %d", len(snapshot.Workspace.Projects))
@@ -147,6 +147,132 @@ func TestBuildAtelierProjectionSnapshotMapsCollaborationTask(t *testing.T) {
 	}
 	if len(snapshot.Workspace.Streams["collab_1"]) < 2 {
 		t.Fatalf("expected summary and negotiation blocks, got %d", len(snapshot.Workspace.Streams["collab_1"]))
+	}
+}
+
+func TestAtelierProjectionUnknownTaskRunStatusIsUnavailable(t *testing.T) {
+	task := &model.CollaborationTask{
+		TaskId:      "task-unknown-status",
+		Title:       "Unknown status",
+		Status:      model.CollaborationTaskStatus(99),
+		CreatedAt:   timestamppb.Now(),
+		WorkspaceId: "workspace-1",
+	}
+
+	snapshot := BuildAtelierProjectionSnapshot(
+		[]*model.CollaborationTask{task},
+		nil,
+		nil,
+		nil,
+		task.TaskId,
+	)
+
+	projected := snapshot.Workspace.Tasks[0]
+	if projected.ExecutionStatus != "unavailable" {
+		t.Fatalf("unknown TaskRun status = %q, want unavailable", projected.ExecutionStatus)
+	}
+	if snapshot.Workspace.Streams[task.TaskId][0].Done {
+		t.Fatal("unknown TaskRun status was projected as completed")
+	}
+}
+
+func TestAtelierProjectionCollaborationTaskMigrationUsesCanonicalGoalIdentity(t *testing.T) {
+	task := &model.CollaborationTask{
+		TaskId:      "collab-migrated",
+		Title:       "Migrated Atelier project",
+		Description: "Open through the canonical Goal.",
+		Status:      model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING,
+		WorkspaceId: "workspace-1",
+		Meta: map[string]string{
+			"project":    "peers-touch",
+			"project_id": "legacy-project-id",
+		},
+	}
+	migration := persistence.CollaborationTaskGoalMap{
+		LegacyTaskID: task.TaskId,
+		GoalID:       "goal-canonical",
+		TaskID:       task.TaskId,
+		State:        persistence.CollaborationTaskMigrationStateMigrated,
+	}
+
+	snapshot := buildAtelierProjectionSnapshot(
+		[]*model.CollaborationTask{task},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		map[string]persistence.CollaborationTaskGoalMap{task.TaskId: migration},
+		task.TaskId,
+	)
+
+	projectedTask := snapshot.Workspace.Tasks[0]
+	if projectedTask.ID != task.TaskId ||
+		projectedTask.ProjectID != migration.GoalID ||
+		projectedTask.GoalID != migration.GoalID ||
+		projectedTask.TaskRunID != migration.TaskID ||
+		projectedTask.LegacySourceID != task.TaskId ||
+		projectedTask.ExecutionStatus != "running" ||
+		projectedTask.MigrationState != persistence.CollaborationTaskMigrationStateMigrated {
+		t.Fatalf("unexpected migrated task projection: %+v", projectedTask)
+	}
+	project := snapshot.Workspace.Projects[0]
+	if project.ID != migration.GoalID ||
+		project.GoalID != migration.GoalID ||
+		project.TaskRunID != migration.TaskID ||
+		project.LegacySourceID != task.TaskId ||
+		project.MigrationState != persistence.CollaborationTaskMigrationStateMigrated {
+		t.Fatalf("unexpected migrated project projection: %+v", project)
+	}
+}
+
+func TestAtelierProjectionIgnoresBlockedMigrationAsLifecycleSource(t *testing.T) {
+	task := &model.CollaborationTask{
+		TaskId:      "collab-blocked",
+		Title:       "Blocked Atelier project",
+		Description: "Do not infer ambiguous identity.",
+		Status:      model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING,
+		Meta: map[string]string{
+			"goal_id":    "goal-one",
+			"project_id": "goal-two",
+		},
+	}
+	migration := persistence.CollaborationTaskGoalMap{
+		LegacyTaskID: task.TaskId,
+		GoalID:       "goal-candidate",
+		TaskID:       task.TaskId,
+		State:        persistence.CollaborationTaskMigrationStateBlocked,
+		BlockReason:  "identity_metadata_ambiguous",
+	}
+
+	snapshot := buildAtelierProjectionSnapshot(
+		[]*model.CollaborationTask{task},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		map[string]persistence.CollaborationTaskGoalMap{task.TaskId: migration},
+		task.TaskId,
+	)
+
+	projectedTask := snapshot.Workspace.Tasks[0]
+	if projectedTask.ExecutionStatus != "running" ||
+		projectedTask.GoalID != "" ||
+		projectedTask.TaskRunID != "" ||
+		projectedTask.MigrationState != "" ||
+		projectedTask.MigrationBlockReason != "" {
+		t.Fatalf("blocked migration changed TaskRun lifecycle projection: %+v", projectedTask)
+	}
+	project := snapshot.Workspace.Projects[0]
+	if project.GoalID != "" ||
+		project.TaskRunID != "" ||
+		project.MigrationState != "" ||
+		project.MigrationBlockReason != "" {
+		t.Fatalf("blocked migration changed project projection: %+v", project)
+	}
+	if len(project.OpenBlockers) != 0 {
+		t.Fatalf("blocked legacy migration leaked as a project blocker: %+v", project)
 	}
 }
 
@@ -656,7 +782,7 @@ func TestAtelierProviderCapabilitiesWritesFullE2EProviderRuntimeEvidenceFromStat
 func TestTaskEventWriterPersistsProjectAcceptanceIndexes(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "atelier_project_acceptance_indexes")
 	injectOrchestrationServiceTestStore(t, db)
-	writer := NewTaskEventWriter(nil)
+	writer := NewTaskEventWriter()
 	ctx := context.Background()
 
 	if _, err := writer.Append(ctx, "evt_gate_failed_index", "task-acceptance-index", "", "", string(domain.EventTypeCollaborationGateResult), map[string]interface{}{
@@ -905,6 +1031,7 @@ func TestLoadAtelierWorkspacePrefersPersistedProjectAcceptanceIndexes(t *testing
 		}
 	}
 
+	materializeAtelierTaskRunReadFixtures(t, db)
 	snapshot, err := NewAtelierProjectionService(nil).LoadWorkspace(context.Background(), "actor-1", &LoadAtelierWorkspaceRequest{})
 	if err != nil {
 		t.Fatalf("load workspace: %v", err)
@@ -1136,7 +1263,7 @@ func TestTaskEventWriterAdvancesProjectStateMachineFromDurableEvidence(t *testin
 		t.Fatalf("seed artifact index: %v", err)
 	}
 
-	writer := NewTaskEventWriter(nil)
+	writer := NewTaskEventWriter()
 	if _, err := writer.Append(context.Background(), "evt-state-machine-gate", task.ID, node.ID, "", string(domain.EventTypeCollaborationGateResult), map[string]interface{}{
 		"block_kind":  "gate_result",
 		"gate_id":     "gate-contract",
@@ -1176,6 +1303,7 @@ func TestTaskEventWriterAdvancesProjectStateMachineFromDurableEvidence(t *testin
 	if graphNode.ArtifactIDsJSON != `["artifact-contract"]` || graphNode.GateIDsJSON != `["gate-contract"]` {
 		t.Fatalf("expected runtime graph node refs from Station indexes, got %+v", graphNode)
 	}
+	materializeAtelierTaskRunReadFixtures(t, db)
 	snapshot, err := NewAtelierProjectionService(nil).LoadWorkspace(context.Background(), "actor-1", &LoadAtelierWorkspaceRequest{})
 	if err != nil {
 		t.Fatalf("load workspace: %v", err)
@@ -1217,7 +1345,7 @@ func TestTaskEventWriterMaterializesPolicyDefectIndexes(t *testing.T) {
 	}
 	seedResumeCollaborationTask(t, db, task, []persistence.CollaborationTaskNode{node})
 
-	writer := NewTaskEventWriter(nil)
+	writer := NewTaskEventWriter()
 	if _, err := writer.Append(context.Background(), "evt-policy-defect-gate", task.ID, node.ID, "", string(domain.EventTypeCollaborationGateResult), map[string]interface{}{
 		"block_kind":      "gate_result",
 		"gate_id":         "gate-policy",
@@ -1253,6 +1381,7 @@ func TestTaskEventWriterMaterializesPolicyDefectIndexes(t *testing.T) {
 		t.Fatalf("expected defect index from failed gate, got %+v", defect)
 	}
 
+	materializeAtelierTaskRunReadFixtures(t, db)
 	snapshot, err := NewAtelierProjectionService(nil).LoadWorkspace(context.Background(), "actor-1", &LoadAtelierWorkspaceRequest{})
 	if err != nil {
 		t.Fatalf("load workspace: %v", err)
@@ -1283,6 +1412,7 @@ func TestFetchAtelierArtifactBodyReturnsOwnedSafeTextBody(t *testing.T) {
 		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
+	materializeAtelierTaskRunReadFixtures(t, db)
 	if err := db.Create(&persistence.TaskArtifact{
 		ArtifactID:  "artifact-report",
 		TaskID:      task.ID,
@@ -1357,6 +1487,7 @@ func TestFetchAtelierArtifactBodyRejectsUnsafeOrUnownedBlob(t *testing.T) {
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
 	seedResumeCollaborationTask(t, db, otherTask, nil)
+	materializeAtelierTaskRunReadFixtures(t, db)
 	for _, artifact := range []persistence.TaskArtifact{
 		{ArtifactID: "artifact-report", TaskID: task.ID, Kind: "markdown", URI: "artifact://task-body-owned/artifact-report", Checksum: validArtifactChecksum, CreatedAt: now},
 		{ArtifactID: "artifact-html", TaskID: task.ID, Kind: "html", URI: "artifact://task-body-owned/artifact-html", Checksum: validArtifactChecksum, CreatedAt: now},
@@ -1569,6 +1700,7 @@ func TestAtelierTaskLifecycleSetStatusPersistsWorkbenchStateWithoutExecutionTran
 		StartedAt: now,
 		EndedAt:   now,
 	}})
+	materializeAtelierTaskRunReadFixtures(t, db)
 
 	service := NewAtelierProjectionService(nil)
 	snapshot, err := service.SetTaskStatus(context.Background(), "actor-1", &SetAtelierTaskStatusRequest{
@@ -1585,12 +1717,12 @@ func TestAtelierTaskLifecycleSetStatusPersistsWorkbenchStateWithoutExecutionTran
 	if projected.Status != "archived" {
 		t.Fatalf("expected archived workbench lifecycle, got %+v", projected)
 	}
-	if !projected.Running {
-		t.Fatalf("expected execution state to stay running while archived, got %+v", projected)
+	if projected.ExecutionStatus != "running" {
+		t.Fatalf("expected canonical execution status to stay running, got %+v", projected)
 	}
-	var persisted persistence.CollaborationTask
-	if err := db.First(&persisted, "id = ?", task.ID).Error; err != nil {
-		t.Fatalf("load persisted task: %v", err)
+	var persisted persistence.TaskRun
+	if err := db.First(&persisted, "task_id = ?", task.ID).Error; err != nil {
+		t.Fatalf("load persisted TaskRun: %v", err)
 	}
 	if persisted.Status != int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING) {
 		t.Fatalf("expected execution status to remain running, got %d", persisted.Status)
@@ -1640,6 +1772,7 @@ func TestAtelierTaskLifecyclePurgeRequiresDeletedAndUsesPublicService(t *testing
 		EndedAt:   now,
 	}})
 	seedResumeCollaborationTask(t, db, otherTask, nil)
+	materializeAtelierTaskRunReadFixtures(t, db)
 	if err := db.Create(&persistence.TaskEvent{
 		ID:        "evt-lifecycle-purge",
 		TaskID:    task.ID,
@@ -1697,7 +1830,9 @@ func TestAtelierTaskLifecyclePurgeRequiresDeletedAndUsesPublicService(t *testing
 		where string
 	}{
 		{label: "task", model: &persistence.CollaborationTask{}, where: "id = ?"},
+		{label: "TaskRun", model: &persistence.TaskRun{}, where: "task_id = ?"},
 		{label: "node", model: &persistence.CollaborationTaskNode{}, where: "task_id = ?"},
+		{label: "ExecutionStep", model: &persistence.ExecutionStep{}, where: "task_id = ?"},
 		{label: "event", model: &persistence.TaskEvent{}, where: "task_id = ?"},
 		{label: "artifact", model: &persistence.TaskArtifact{}, where: "task_id = ?"},
 		{label: "gate result", model: &persistence.TaskGateResult{}, where: "task_id = ?"},
@@ -1741,9 +1876,9 @@ func TestAtelierSendMessagePersistsTextOnlyUserEvent(t *testing.T) {
 		StartedAt: now,
 		EndedAt:   now,
 	}})
+	materializeAtelierTaskRunReadFixtures(t, db)
 
 	orchestration := NewOrchestrationService(nil, nil, nil)
-	orchestration.SetEventBus(nil)
 	service := NewAtelierProjectionService(orchestration)
 	if _, err := service.SendMessage(context.Background(), "actor-1", &SendAtelierMessageRequest{
 		TaskID: task.ID,
@@ -1916,24 +2051,16 @@ func TestAtelierDecisionResolvedUsesStructuredInterruptEventType(t *testing.T) {
 	if got := taskEventTypeForDomainEvent(string(domain.EventTypeCollaborationInterruptResolved)); got != model.TaskEventType_TASK_EVENT_TYPE_INTERRUPT_RESOLVED {
 		t.Fatalf("expected interrupt resolved task event type, got %s", got.String())
 	}
-	if got := taskEventDomainType(int32(model.TaskEventType_TASK_EVENT_TYPE_INTERRUPT_REQUESTED), nil); got != string(domain.EventTypeCollaborationInterruptRequested) {
-		t.Fatalf("expected interrupt requested domain event type, got %q", got)
-	}
 	payload := map[string]interface{}{
 		"block_kind":          "decision_resolved",
 		"resume_payload_json": `{"choice":"继续执行"}`,
 	}
-	if got := taskEventDomainType(int32(model.TaskEventType_TASK_EVENT_TYPE_INTERRUPT_RESOLVED), payload); got != string(domain.EventTypeCollaborationInterruptResolved) {
-		t.Fatalf("expected interrupt resolved domain event type, got %q", got)
-	}
+	_ = payload
 }
 
 func TestAtelierFeedbackRecordedIsTypedIntentNotStreamPatch(t *testing.T) {
 	if got := taskEventTypeForDomainEvent(string(domain.EventTypeCollaborationFeedbackRecorded)); got != model.TaskEventType_TASK_EVENT_TYPE_FEEDBACK_RECORDED {
 		t.Fatalf("expected feedback recorded task event type, got %s", got.String())
-	}
-	if got := taskEventDomainType(int32(model.TaskEventType_TASK_EVENT_TYPE_FEEDBACK_RECORDED), nil); got != string(domain.EventTypeCollaborationFeedbackRecorded) {
-		t.Fatalf("expected feedback recorded domain event type, got %q", got)
 	}
 	memoryStatus, _, memoryFeeds := atelierFeedbackMemoryCandidatePolicy("positive")
 	if memoryStatus != "candidate" {
@@ -2011,9 +2138,9 @@ func TestAtelierSubmitFeedbackPersistsStationOwnedPolicyEvent(t *testing.T) {
 		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
+	materializeAtelierTaskRunReadFixtures(t, db)
 
 	orchestration := NewOrchestrationService(nil, nil, nil)
-	orchestration.SetEventBus(nil)
 	service := NewAtelierProjectionService(orchestration)
 	response, err := service.SubmitFeedback(context.Background(), "actor-1", &SubmitAtelierFeedbackRequest{
 		TaskID:  task.ID,
@@ -2079,8 +2206,8 @@ func TestConfirmAtelierMemoryCandidateWritesStationOwnedMemory(t *testing.T) {
 		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
+	materializeAtelierTaskRunReadFixtures(t, db)
 	orchestration := NewOrchestrationService(nil, nil, nil)
-	orchestration.SetEventBus(nil)
 	svc := NewAtelierProjectionService(orchestration, NewMemoryService(nil))
 
 	feedback, err := svc.SubmitFeedback(context.Background(), "actor-1", &SubmitAtelierFeedbackRequest{
@@ -2167,8 +2294,8 @@ func TestConfirmAtelierMemoryCandidateRejectsNonCandidateFeedback(t *testing.T) 
 		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
+	materializeAtelierTaskRunReadFixtures(t, db)
 	orchestration := NewOrchestrationService(nil, nil, nil)
-	orchestration.SetEventBus(nil)
 	svc := NewAtelierProjectionService(orchestration, NewMemoryService(nil))
 	feedback, err := svc.SubmitFeedback(context.Background(), "actor-1", &SubmitAtelierFeedbackRequest{
 		TaskID:  task.ID,
@@ -2208,8 +2335,8 @@ func TestAtelierConfirmedMemoryFeedsPlannerRiskVerifierRetrieval(t *testing.T) {
 		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
+	materializeAtelierTaskRunReadFixtures(t, db)
 	orchestration := NewOrchestrationService(nil, nil, nil)
-	orchestration.SetEventBus(nil)
 	memoryService := NewMemoryService(nil)
 	svc := NewAtelierProjectionService(orchestration, memoryService)
 
@@ -2267,6 +2394,15 @@ func TestAtelierConfirmedMemoryFeedsPlannerRiskVerifierRetrieval(t *testing.T) {
 
 func TestConfirmAtelierRerunCreatesStationOwnedNewRun(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "atelier_rerun_confirm_creates_task")
+	if err := db.AutoMigrate(
+		&persistence.AgentGoal{},
+		&persistence.AgentGoalNode{},
+		&persistence.AgentGoalEvent{},
+		&persistence.AgentRealtimeActorCursor{},
+		&persistence.AgentRealtimeOutbox{},
+	); err != nil {
+		t.Fatalf("migrate canonical Atelier writer tables: %v", err)
+	}
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
@@ -2286,6 +2422,7 @@ func TestConfirmAtelierRerunCreatesStationOwnedNewRun(t *testing.T) {
 		EndedAt:   now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
+	materializeAtelierTaskRunReadFixtures(t, db)
 	providerPlanRecord, err := taskProviderPlanRecordFromProto(task.ID, &model.TaskProviderPlan{
 		Providers: []*model.TaskProviderSpec{
 			{AgentId: "agent-1", Role: "Architect", Model: "gpt-4.1"},
@@ -2301,7 +2438,6 @@ func TestConfirmAtelierRerunCreatesStationOwnedNewRun(t *testing.T) {
 		t.Fatalf("seed provider plan: %v", err)
 	}
 	orchestration := NewOrchestrationService(nil, nil, nil)
-	orchestration.SetEventBus(nil)
 	svc := NewAtelierProjectionService(orchestration, NewMemoryService(nil))
 
 	feedback, err := svc.SubmitFeedback(context.Background(), "actor-1", &SubmitAtelierFeedbackRequest{
@@ -2328,15 +2464,16 @@ func TestConfirmAtelierRerunCreatesStationOwnedNewRun(t *testing.T) {
 	if confirmed.RerunTaskID == "" || confirmed.RerunTaskID == task.ID {
 		t.Fatalf("expected new rerun task id, got %+v", confirmed)
 	}
-	var rerunTask persistence.CollaborationTask
-	if err := db.First(&rerunTask, "id = ?", confirmed.RerunTaskID).Error; err != nil {
+	var rerunTask persistence.TaskRun
+	if err := db.First(&rerunTask, "task_id = ?", confirmed.RerunTaskID).Error; err != nil {
 		t.Fatalf("load rerun task: %v", err)
 	}
-	if rerunTask.GoalOwnerPTID != "actor-1" ||
+	if rerunTask.OwnerActorPTID != "actor-1" ||
 		rerunTask.Title != task.Title ||
 		rerunTask.Description != task.Description ||
 		rerunTask.WorkspaceID != task.WorkspaceID ||
-		model.CollaborationTaskStatus(rerunTask.Status) != model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING {
+		rerunTask.GoalID == "" ||
+		model.CollaborationTaskStatus(rerunTask.Status) != model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PENDING {
 		t.Fatalf("unexpected rerun task: %+v", rerunTask)
 	}
 	meta := map[string]string{}
@@ -2350,11 +2487,11 @@ func TestConfirmAtelierRerunCreatesStationOwnedNewRun(t *testing.T) {
 		t.Fatalf("unexpected rerun meta: %+v", meta)
 	}
 	var nodeCount int64
-	if err := db.Model(&persistence.CollaborationTaskNode{}).Where("task_id = ?", confirmed.RerunTaskID).Count(&nodeCount).Error; err != nil {
+	if err := db.Model(&persistence.ExecutionStep{}).Where("task_id = ?", confirmed.RerunTaskID).Count(&nodeCount).Error; err != nil {
 		t.Fatalf("count rerun nodes: %v", err)
 	}
-	if nodeCount != 3 {
-		t.Fatalf("expected two provider nodes plus synthesizer, got %d", nodeCount)
+	if nodeCount != 1 {
+		t.Fatalf("expected one canonical root ExecutionStep, got %d", nodeCount)
 	}
 	var auditCount int64
 	if err := db.Model(&persistence.TaskEvent{}).
@@ -2376,11 +2513,178 @@ func TestConfirmAtelierRerunCreatesStationOwnedNewRun(t *testing.T) {
 		t.Fatalf("expected idempotent rerun confirmation, got %+v", again)
 	}
 	var rerunTaskCount int64
-	if err := db.Model(&persistence.CollaborationTask{}).Where("meta_json LIKE ?", "%"+feedback.FeedbackID+"%").Count(&rerunTaskCount).Error; err != nil {
+	if err := db.Model(&persistence.TaskRun{}).Where("meta_json LIKE ?", "%"+feedback.FeedbackID+"%").Count(&rerunTaskCount).Error; err != nil {
 		t.Fatalf("count rerun tasks: %v", err)
 	}
 	if rerunTaskCount != 1 {
 		t.Fatalf("expected one rerun task after idempotent confirmation, got %d", rerunTaskCount)
+	}
+	var collaborationTaskCount int64
+	if err := db.Model(&persistence.CollaborationTask{}).Count(&collaborationTaskCount).Error; err != nil {
+		t.Fatalf("count legacy collaboration tasks: %v", err)
+	}
+	if collaborationTaskCount != 1 {
+		t.Fatalf("rerun wrote a legacy CollaborationTask: count=%d", collaborationTaskCount)
+	}
+}
+
+func TestAtelierCreateProjectWritesGoalBackedTaskRunWithoutCollaborationTask(
+	t *testing.T,
+) {
+	db := openResumeCollaborationTaskDB(
+		t,
+		"atelier_create_goal_backed_taskrun",
+	)
+	if err := db.AutoMigrate(
+		&persistence.AgentGoal{},
+		&persistence.AgentGoalNode{},
+		&persistence.AgentGoalEvent{},
+		&persistence.AgentRealtimeActorCursor{},
+		&persistence.AgentRealtimeOutbox{},
+	); err != nil {
+		t.Fatalf("migrate canonical Atelier writer tables: %v", err)
+	}
+	injectOrchestrationServiceTestStore(t, db)
+	service := NewAtelierProjectionService(
+		NewOrchestrationService(nil, nil, nil),
+	)
+	request := &CreateAtelierProjectFromGoalRequest{
+		Goal:                 "Ship the canonical Atelier writer",
+		Project:              "peers-touch",
+		IntentPreset:         "work",
+		ClientIdempotencyKey: "atelier-create-taskrun-1",
+		AgentIDs:             []string{"agent-1"},
+		Run: AtelierRunTargetRequest{
+			Kind:     "agents",
+			FlowID:   "expert-hierarchy",
+			AgentIDs: []string{"agent-1"},
+		},
+	}
+
+	first, err := service.CreateProjectFromGoal(
+		context.Background(),
+		"actor-1",
+		request,
+	)
+	if err != nil {
+		t.Fatalf("create canonical Atelier TaskRun: %v", err)
+	}
+	replayed, err := service.CreateProjectFromGoal(
+		context.Background(),
+		"actor-1",
+		request,
+	)
+	if err != nil {
+		t.Fatalf("replay canonical Atelier TaskRun: %v", err)
+	}
+	if first.SelectedTaskID == "" ||
+		replayed.SelectedTaskID != first.SelectedTaskID {
+		t.Fatalf("Atelier TaskRun identity changed on replay: first=%q replay=%q", first.SelectedTaskID, replayed.SelectedTaskID)
+	}
+	var projected *AtelierTaskProjection
+	for index := range first.Workspace.Tasks {
+		if first.Workspace.Tasks[index].ID == first.SelectedTaskID {
+			projected = &first.Workspace.Tasks[index]
+			break
+		}
+	}
+	if projected == nil ||
+		projected.TaskRunID != first.SelectedTaskID ||
+		projected.GoalID == "" ||
+		projected.ProjectID != projected.GoalID ||
+		projected.ExecutionStatus != "pending" {
+		t.Fatalf("Atelier did not open canonical Goal/TaskRun identity: %+v", projected)
+	}
+	for modelValue, want := range map[any]int64{
+		&persistence.CollaborationTask{}:     0,
+		&persistence.CollaborationTaskNode{}: 0,
+		&persistence.AgentGoal{}:             1,
+		&persistence.AgentGoalNode{}:         1,
+		&persistence.TaskRun{}:               1,
+		&persistence.ExecutionStep{}:         1,
+		&persistence.TaskProviderPlan{}:      1,
+	} {
+		var count int64
+		if err := db.Model(modelValue).Count(&count).Error; err != nil {
+			t.Fatalf("count %T: %v", modelValue, err)
+		}
+		if count != want {
+			t.Fatalf("%T count = %d, want %d", modelValue, count, want)
+		}
+	}
+}
+
+func TestAtelierProjectionLoadWorkspaceReadsCanonicalTaskRunsOnly(t *testing.T) {
+	db := openResumeCollaborationTaskDB(
+		t,
+		"atelier_canonical_reader_only",
+	)
+	injectOrchestrationServiceTestStore(t, db)
+	now := time.Now().UTC()
+	if err := db.Create(&persistence.CollaborationTask{
+		ID:            "legacy-only",
+		Title:         "Legacy row must remain hidden",
+		GoalOwnerPTID: "actor-1",
+		Status: int32(
+			model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED,
+		),
+		MetaJSON:  `{"project":"peers-touch"}`,
+		CreatedAt: now.Add(-time.Minute),
+		StartedAt: now.Add(-time.Minute),
+		EndedAt:   now.Add(-time.Minute),
+	}).Error; err != nil {
+		t.Fatalf("create legacy-only task: %v", err)
+	}
+	if err := db.Create(&persistence.TaskRun{
+		TaskID:         "task-canonical-reader",
+		Title:          "Canonical reader task",
+		Description:    "Visible from TaskRun",
+		Surface:        int32(model.TaskSurface_TASK_SURFACE_CANVAS),
+		Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		OwnerActorPTID: "actor-1",
+		WorkspaceID:    "peers-touch",
+		RootStepID:     "step-canonical-reader",
+		MetaJSON:       `{"source":"atelier.project.createFromGoal","atelier_status":"active","agent_id":"agent-1"}`,
+		CreatedAt:      now,
+		StartedAt:      now,
+		UpdatedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("create canonical TaskRun: %v", err)
+	}
+	if err := db.Create(&persistence.ExecutionStep{
+		StepID:    "step-canonical-reader",
+		TaskID:    "task-canonical-reader",
+		AgentID:   "agent-1",
+		Role:      "executor",
+		Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+		Attempt:   1,
+		AttemptID: "attempt-canonical-reader",
+		StartedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("create canonical ExecutionStep: %v", err)
+	}
+
+	snapshot, err := NewAtelierProjectionService(nil).LoadWorkspace(
+		context.Background(),
+		"actor-1",
+		&LoadAtelierWorkspaceRequest{},
+	)
+	if err != nil {
+		t.Fatalf("load canonical workspace: %v", err)
+	}
+	if len(snapshot.Workspace.Tasks) != 1 {
+		t.Fatalf(
+			"legacy row leaked into canonical reader: %+v",
+			snapshot.Workspace.Tasks,
+		)
+	}
+	task := snapshot.Workspace.Tasks[0]
+	if task.ID != "task-canonical-reader" ||
+		task.ExecutionStatus != "running" ||
+		task.StepID != "step-canonical-reader" ||
+		task.AttemptID != "attempt-canonical-reader" ||
+		task.Attempt != 1 {
+		t.Fatalf("canonical TaskRun projection = %+v", task)
 	}
 }
 
@@ -2399,8 +2703,8 @@ func TestConfirmAtelierRerunRejectsNonRerunFeedback(t *testing.T) {
 		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
+	materializeAtelierTaskRunReadFixtures(t, db)
 	orchestration := NewOrchestrationService(nil, nil, nil)
-	orchestration.SetEventBus(nil)
 	svc := NewAtelierProjectionService(orchestration, NewMemoryService(nil))
 	feedback, err := svc.SubmitFeedback(context.Background(), "actor-1", &SubmitAtelierFeedbackRequest{
 		TaskID:  task.ID,
@@ -2546,10 +2850,6 @@ func TestGoalKeeperProjectionPayloadsMapToAtelierArtifactAndGate(t *testing.T) {
 			t.Fatalf("expected GoalKeeper artifact projection to redact raw field %s, got %s", forbidden, projectedArtifactJSON)
 		}
 	}
-	if got := taskEventDomainType(int32(model.TaskEventType_TASK_EVENT_TYPE_ARTIFACT_CREATED), artifactPayload); got != string(domain.EventTypeCollaborationArtifactCreated) {
-		t.Fatalf("expected artifact domain event type, got %q", got)
-	}
-
 	gatePayload := goalKeeperGatePayload(task, verdict, "collab_goalkeeper-final-summary")
 	gateEvent := &model.TaskEvent{
 		EventId:     "evt_goalkeeper_gate",
@@ -2565,12 +2865,6 @@ func TestGoalKeeperProjectionPayloadsMapToAtelierArtifactAndGate(t *testing.T) {
 	}
 	if projectedGate.Patch.Gate == nil || projectedGate.Patch.Gate.Status != "passed" {
 		t.Fatalf("unexpected gate projection: %+v", projectedGate.Patch.Gate)
-	}
-	if got := taskEventDomainType(int32(model.TaskEventType_TASK_EVENT_TYPE_GATE_RESULT), gatePayload); got != string(domain.EventTypeCollaborationGateResult) {
-		t.Fatalf("expected gate domain event type, got %q", got)
-	}
-	if got := taskEventDomainType(int32(model.TaskEventType_TASK_EVENT_TYPE_TURN_EVENT), gatePayload); got != string(domain.EventTypeCollaborationGateResult) {
-		t.Fatalf("expected legacy gate domain event type, got %q", got)
 	}
 }
 
@@ -2702,45 +2996,6 @@ func TestMergeAtelierProjectionReplayRecordsKeepsAnchorsAndTail(t *testing.T) {
 	}
 }
 
-func TestTaskEventRecordToDomainEventIncludesDurableEventEnvelopeMetadata(t *testing.T) {
-	createdAt := time.Date(2026, 7, 1, 12, 20, 0, 0, time.UTC)
-	record := &persistence.TaskEvent{
-		ID:        "evt_replay_envelope",
-		TaskID:    "collab_replay_envelope",
-		StepID:    "node_replay_envelope",
-		EventSeq:  42,
-		EventType: int32(model.TaskEventType_TASK_EVENT_TYPE_TURN_EVENT),
-		Payload:   `{"agent_id":"agent_replay_envelope","result_summary":"projection event"}`,
-		CreatedAt: createdAt,
-	}
-
-	event, ok := taskEventRecordToDomainEvent(record, "ptid:actor-replay", "agent_replay_envelope")
-	if !ok {
-		t.Fatal("expected replay record to map to domain event")
-	}
-	if event.EventID != record.ID {
-		t.Fatalf("expected domain event id %q, got %q", record.ID, event.EventID)
-	}
-	if event.ActorPTID != "ptid:actor-replay" {
-		t.Fatalf("expected actor PTID %q, got %q", "ptid:actor-replay", event.ActorPTID)
-	}
-	if event.AgentID != "agent_replay_envelope" {
-		t.Fatalf("expected agent id %q, got %q", "agent_replay_envelope", event.AgentID)
-	}
-	if event.Metadata["event_id"] != record.ID {
-		t.Fatalf("expected metadata event_id %q, got %q", record.ID, event.Metadata["event_id"])
-	}
-	if event.Metadata["event_seq"] != "42" {
-		t.Fatalf("expected metadata event_seq 42, got %q", event.Metadata["event_seq"])
-	}
-	if event.Metadata["task_id"] != record.TaskID {
-		t.Fatalf("expected metadata task_id %q, got %q", record.TaskID, event.Metadata["task_id"])
-	}
-	if event.Metadata["node_id"] != record.StepID {
-		t.Fatalf("expected metadata node_id %q, got %q", record.StepID, event.Metadata["node_id"])
-	}
-}
-
 func TestBuildAtelierReplayStateExposesCheckpointAndCursor(t *testing.T) {
 	events := []*model.TaskEvent{
 		{EventId: "evt_1", TaskId: "collab_replay", EventSeq: 1},
@@ -2839,6 +3094,7 @@ func TestAtelierMaterializedCheckpointProjectionFoldsPostCheckpointEvents(t *tes
 		},
 		materializedByTask,
 		nil,
+		nil,
 		"",
 	)
 
@@ -2866,6 +3122,103 @@ func TestAtelierMaterializedCheckpointProjectionFoldsPostCheckpointEvents(t *tes
 	}
 	if replay.ReplayedEventCount != 13 || replay.HasMore {
 		t.Fatalf("expected materialized checkpoint to count folded events, got %+v", replay)
+	}
+}
+
+func materializeAtelierTaskRunReadFixtures(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	var tasks []persistence.CollaborationTask
+	if err := db.Order("created_at ASC, id ASC").Find(&tasks).Error; err != nil {
+		t.Fatalf("list Atelier task fixtures: %v", err)
+	}
+	for index := range tasks {
+		task := tasks[index]
+		var count int64
+		if err := db.Model(&persistence.TaskRun{}).
+			Where("task_id = ?", task.ID).
+			Count(&count).Error; err != nil {
+			t.Fatalf("count TaskRun fixture %s: %v", task.ID, err)
+		}
+		if count > 0 {
+			continue
+		}
+
+		meta := decodeStringMap(task.MetaJSON)
+		if strings.TrimSpace(meta["source"]) == "" {
+			meta["source"] = "atelier.test.fixture"
+		}
+		metaJSON, err := json.Marshal(meta)
+		if err != nil {
+			t.Fatalf("encode TaskRun fixture metadata: %v", err)
+		}
+		var nodes []persistence.CollaborationTaskNode
+		if err := db.Where("task_id = ?", task.ID).
+			Order("started_at ASC, id ASC").
+			Find(&nodes).Error; err != nil {
+			t.Fatalf("list task node fixtures %s: %v", task.ID, err)
+		}
+		rootStepID := "step-" + task.ID
+		if len(nodes) > 0 {
+			rootStepID = nodes[0].ID
+		}
+		if err := db.Create(&persistence.TaskRun{
+			TaskID:         task.ID,
+			Title:          task.Title,
+			Description:    task.Description,
+			Surface:        int32(model.TaskSurface_TASK_SURFACE_CANVAS),
+			Status:         task.Status,
+			OwnerActorPTID: task.GoalOwnerPTID,
+			WorkspaceID:    task.WorkspaceID,
+			RootStepID:     rootStepID,
+			MetaJSON:       string(metaJSON),
+			CreatedAt:      task.CreatedAt,
+			StartedAt:      task.StartedAt,
+			UpdatedAt:      task.CreatedAt,
+		}).Error; err != nil {
+			t.Fatalf("create TaskRun fixture %s: %v", task.ID, err)
+		}
+		if len(nodes) == 0 {
+			stepStatus := model.TaskNodeStatus_TASK_NODE_STATUS_PENDING
+			switch model.CollaborationTaskStatus(task.Status) {
+			case model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING,
+				model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED:
+				stepStatus = model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING
+			case model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED:
+				stepStatus = model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED
+			case model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_FAILED:
+				stepStatus = model.TaskNodeStatus_TASK_NODE_STATUS_FAILED
+			case model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_CANCELLED:
+				stepStatus = model.TaskNodeStatus_TASK_NODE_STATUS_SKIPPED
+			}
+			nodes = []persistence.CollaborationTaskNode{{
+				ID:          rootStepID,
+				TaskID:      task.ID,
+				AgentID:     "agent-fixture",
+				Role:        "executor",
+				Description: task.Description,
+				Status:      int32(stepStatus),
+				StartedAt:   task.StartedAt,
+			}}
+		}
+		for nodeIndex := range nodes {
+			node := nodes[nodeIndex]
+			if err := db.Create(&persistence.ExecutionStep{
+				StepID:            node.ID,
+				TaskID:            task.ID,
+				ParentStepID:      node.ParentNodeID,
+				AgentID:           atelierFirstNonEmpty(node.AgentID, "agent-fixture"),
+				Role:              atelierFirstNonEmpty(node.Role, "executor"),
+				Description:       node.Description,
+				Status:            node.Status,
+				Attempt:           1,
+				AttemptID:         "attempt-" + node.ID,
+				EligibleExecutors: model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED.String(),
+				ResultSummary:     node.ResultSummary,
+				StartedAt:         node.StartedAt,
+			}).Error; err != nil {
+				t.Fatalf("create ExecutionStep fixture %s: %v", node.ID, err)
+			}
+		}
 	}
 }
 
@@ -2912,6 +3265,7 @@ func TestAtelierProjectionSnapshotFoldsInterruptRequestAndResolution(t *testing.
 		map[string]AtelierReplayState{
 			"collab_interrupt": buildAtelierReplayStateWithWindow(events, 22, nil, true, len(events)),
 		},
+		nil,
 		nil,
 		nil,
 		"",

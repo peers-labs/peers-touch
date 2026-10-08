@@ -5,6 +5,7 @@ import type {
   AtelierProjectionSnapshot,
   AtelierStreamBlock,
 } from '../domain/projection';
+import { normalizeTaskRunLifecycleStatus } from '../domain/projection';
 
 export interface AtelierProjectionRuntimeState {
   snapshot: AtelierProjectionSnapshot | null;
@@ -13,7 +14,13 @@ export interface AtelierProjectionRuntimeState {
   lastSeqByScope: Record<string, number>;
 }
 
-export type AtelierProjectionEventApplyOutcome = 'applied' | 'duplicate' | 'stale' | 'unknown-task';
+export type AtelierProjectionEventApplyOutcome =
+  | 'applied'
+  | 'reconcile'
+  | 'gap'
+  | 'duplicate'
+  | 'stale'
+  | 'unknown-task';
 
 export interface AtelierProjectionEventApplyResult {
   state: AtelierProjectionRuntimeState;
@@ -32,11 +39,25 @@ export function createAtelierProjectionRuntimeState(): AtelierProjectionRuntimeS
 }
 
 export function stateFromAtelierSnapshot(snapshot: AtelierProjectionSnapshot): AtelierProjectionRuntimeState {
+  const normalized = cloneSnapshot(snapshot);
   return {
-    snapshot,
-    selectedTaskId: selectTaskId(snapshot, snapshot.selectedTaskId),
+    snapshot: normalized,
+    selectedTaskId: selectTaskId(normalized, normalized.selectedTaskId),
     seenEventKeys: [],
     lastSeqByScope: {},
+  };
+}
+
+export function reconcileAtelierSnapshot(
+  current: AtelierProjectionRuntimeState,
+  snapshot: AtelierProjectionSnapshot,
+): AtelierProjectionRuntimeState {
+  const normalized = cloneSnapshot(snapshot);
+  return {
+    snapshot: normalized,
+    selectedTaskId: selectTaskId(normalized, current.selectedTaskId),
+    seenEventKeys: current.seenEventKeys,
+    lastSeqByScope: current.lastSeqByScope,
   };
 }
 
@@ -55,7 +76,11 @@ export function applyAtelierProjectionEventWithResult(
   if (isStaleEvent(current, event)) return { state: current, outcome: 'stale' };
   if (!canApplyPatchToKnownTask(current.snapshot, event.patch)) return { state: current, outcome: 'unknown-task' };
 
-  const snapshot = applyAtelierProjectionPatch(current.snapshot, event);
+  const gap = hasSequenceGap(current, event);
+  const invalidatesSnapshot = event.patch.kind === 'snapshot.invalidate';
+  const snapshot = gap || invalidatesSnapshot
+    ? current.snapshot
+    : applyAtelierProjectionPatch(current.snapshot, event);
   const preferredSelectedTaskId =
     event.patch.kind === 'task.upsert' && event.patch.select
       ? event.patch.task.id
@@ -73,7 +98,7 @@ export function applyAtelierProjectionEventWithResult(
         [scope]: event.seq,
       },
     },
-    outcome: 'applied',
+    outcome: gap ? 'gap' : invalidatesSnapshot ? 'reconcile' : 'applied',
   };
 }
 
@@ -87,17 +112,37 @@ function applyAtelierProjectionPatch(
 
   const next = cloneSnapshot(current);
   switch (patch.kind) {
+    case 'snapshot.invalidate':
+      break;
     case 'task.upsert': {
       const exists = next.workspace.tasks.some((task) => task.id === patch.task.id);
+      const task = {
+        ...patch.task,
+        executionStatus: normalizeTaskRunLifecycleStatus(
+          patch.task.executionStatus,
+        ),
+      };
       next.workspace.tasks = exists
-        ? next.workspace.tasks.map((task) => (task.id === patch.task.id ? patch.task : task))
-        : [patch.task, ...next.workspace.tasks];
+        ? next.workspace.tasks.map((currentTask) =>
+          currentTask.id === task.id ? task : currentTask
+        )
+        : [task, ...next.workspace.tasks];
       if (patch.select) next.selectedTaskId = patch.task.id;
       break;
     }
     case 'task.status':
       next.workspace.tasks = next.workspace.tasks.map((task) =>
         task.id === patch.taskId ? { ...task, status: patch.status } : task,
+      );
+      break;
+    case 'task.executionStatus':
+      next.workspace.tasks = next.workspace.tasks.map((task) =>
+        task.id === patch.taskId
+          ? {
+              ...task,
+              executionStatus: normalizeTaskRunLifecycleStatus(patch.status),
+            }
+          : task,
       );
       break;
     case 'stream.append':
@@ -140,7 +185,11 @@ function canApplyPatchToKnownTask(
   current: AtelierProjectionSnapshot | null,
   patch: AtelierProjectionEvent['patch'],
 ): boolean {
-  if (patch.kind === 'snapshot' || patch.kind === 'task.upsert') return true;
+  if (
+    patch.kind === 'snapshot'
+    || patch.kind === 'snapshot.invalidate'
+    || patch.kind === 'task.upsert'
+  ) return true;
   if (!current) return true;
   return current.workspace.tasks.some((task) => task.id === patch.taskId);
 }
@@ -154,6 +203,11 @@ function isStaleEvent(current: AtelierProjectionRuntimeState, event: AtelierProj
   return lastSeq !== undefined && event.seq <= lastSeq;
 }
 
+function hasSequenceGap(current: AtelierProjectionRuntimeState, event: AtelierProjectionEvent): boolean {
+  const lastSeq = current.lastSeqByScope[eventScope(event)];
+  return lastSeq !== undefined && event.seq > lastSeq + 1;
+}
+
 function rememberEventKey(keys: string[], key: string): string[] {
   const next = [...keys, key];
   return next.length > MAX_ATELIER_EVENT_KEYS ? next.slice(next.length - MAX_ATELIER_EVENT_KEYS) : next;
@@ -164,6 +218,11 @@ function eventKey(event: AtelierProjectionEvent): string {
 }
 
 function eventScope(event: AtelierProjectionEvent): string {
+  if (event.patch.kind === 'snapshot.invalidate') {
+    return event.patch.taskId
+      ? `task:${event.patch.taskId}`
+      : `goal:${event.patch.goalId}`;
+  }
   return event.taskId ?? 'workspace';
 }
 
@@ -197,5 +256,10 @@ function upsertById<TItem extends AtelierArtifactProjection | AtelierGateProject
 }
 
 function cloneSnapshot(snapshot: AtelierProjectionSnapshot): AtelierProjectionSnapshot {
-  return JSON.parse(JSON.stringify(snapshot)) as AtelierProjectionSnapshot;
+  const cloned = JSON.parse(JSON.stringify(snapshot)) as AtelierProjectionSnapshot;
+  cloned.workspace.tasks = cloned.workspace.tasks.map((task) => ({
+    ...task,
+    executionStatus: normalizeTaskRunLifecycleStatus(task.executionStatus),
+  }));
+  return cloned;
 }

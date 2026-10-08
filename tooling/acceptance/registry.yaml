@@ -2017,6 +2017,43 @@
       ]
     },
     {
+      "id": "agent-personal-goal-contract",
+      "features": [
+        "agent-personal-goal-contract"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/agent/goal.proto",
+          "model/domain/agent/orchestration.proto",
+          "apps/station/app/subserver/agent/**/goal*",
+          "apps/station/app/subserver/agent/service/task_run_command_service.go",
+          "apps/station/app/subserver/agent/service/orchestration_service.go",
+          "apps/station/app/subserver/agent/service/orchestration_service_test.go",
+          "apps/station/app/subserver/agent/service/atelier_projection.go",
+          "apps/station/app/subserver/agent/service/atelier_projection_test.go",
+          "apps/station/app/subserver/agent/**/agent_realtime*",
+          "apps/station/app/subserver/agent/**/task_event_writer*",
+          "apps/station/app/subserver/events/**",
+          "apps/desktop/src/components/home/Goal*",
+          "apps/desktop/src/kernel/events/**",
+          "apps/desktop/src/runtimes/homeRuntime.ts",
+          "apps/desktop/src/store/goalExecution.ts",
+          "apps/desktop/src/store/goalDraft.ts",
+          "apps/desktop/src/store/home.ts",
+          "apps/desktop/src-tauri/src/infrastructure/event_stream/**",
+          "apps/desktop/src-tauri/src/application/applets/**",
+          "apps/applets/atelier/**"
+        ]
+      },
+      "require": [
+        "agent-personal-goal-contract-source",
+        "agent-personal-taskrun-cutover-source",
+        "agent-personal-goal-home-e2e",
+        "agent-personal-goal-event-fanout-e2e",
+        "agent-personal-goal-coordinator-e2e"
+      ]
+    },
+    {
       "id": "agent-v2-home-command-center",
       "features": [
         "agent-v2-home-command-center"
@@ -2389,14 +2426,19 @@
       ],
       "when": {
         "paths": [
-          "apps/station/app/subserver/agent/**/event_stream*",
-          "apps/desktop/src/services/eventStream.ts"
+          "apps/station/app/subserver/events/**",
+          "apps/station/app/subserver/agent/**/agent_realtime*",
+          "apps/desktop/src-tauri/src/infrastructure/event_stream/**",
+          "apps/desktop/src/services/eventStream.ts",
+          "apps/desktop/src/runtimes/homeRuntime.ts",
+          "apps/desktop/src-tauri/src/application/applets/**",
+          "apps/applets/atelier/**"
         ]
       },
       "require": [
         "station-agent-unit",
         "desktop-check",
-        "agent-event-stream-e2e"
+        "agent-personal-goal-event-fanout-e2e"
       ]
     },
     {

@@ -14,6 +14,7 @@ import {
   teardownEventStreamBridge,
 } from './eventStream';
 import type {
+  RealtimeAgentDomainEventPayload,
   RealtimeGroupFederationEventPayload,
   RealtimeGroupMembershipChangeKind,
 } from '../kernel/events/types';
@@ -59,16 +60,18 @@ vi.mock('./desktop_api', () => ({
 
 describe('event stream group membership decode', () => {
   beforeEach(() => {
-    (globalThis as any).window = new TestWindow();
+    (globalThis as unknown as { window: Window }).window =
+      new TestWindow() as unknown as Window;
     if (typeof globalThis.CustomEvent === 'undefined') {
-      (globalThis as any).CustomEvent = class<T = unknown> extends Event {
+      (globalThis as unknown as { CustomEvent: typeof CustomEvent }).CustomEvent =
+        class<T = unknown> extends Event {
         detail: T;
 
         constructor(type: string, init?: CustomEventInit<T>) {
           super(type);
           this.detail = init?.detail as T;
         }
-      };
+      } as unknown as typeof CustomEvent;
     }
     listenMock.mockReset();
     listenMock.mockResolvedValue(() => undefined);
@@ -77,8 +80,22 @@ describe('event stream group membership decode', () => {
 
   afterEach(() => {
     teardownEventStreamBridge();
-    (globalThis as any).window = originalWindow;
-    (globalThis as any).CustomEvent = originalCustomEvent;
+    (globalThis as unknown as { window: Window }).window = originalWindow;
+    (globalThis as unknown as { CustomEvent: typeof CustomEvent }).CustomEvent =
+      originalCustomEvent;
+  });
+
+  it('installs one listener per channel across concurrent boot callers', async () => {
+    await Promise.all([
+      installEventStreamBridge(),
+      installEventStreamBridge(),
+    ]);
+
+    expect(listenMock).toHaveBeenCalledTimes(2);
+    expect(listenMock.mock.calls.map(([eventName]) => eventName)).toEqual([
+      'realtime:event',
+      'realtime:connection-state',
+    ]);
   });
 
   it.each([
@@ -147,9 +164,45 @@ describe('event stream group membership decode', () => {
     ]);
   });
 
+  it('dispatches committed Agent domain events with stable identity', async () => {
+    let realtimeHandler: TauriEventHandler = () => {
+      throw new Error('realtime:event handler was not installed');
+    };
+    listenMock.mockImplementation(async (eventName: string, handler: TauriEventHandler) => {
+      if (eventName === 'realtime:event') realtimeHandler = handler;
+      return () => undefined;
+    });
+    const payloads: RealtimeAgentDomainEventPayload[] = [];
+    const unsubscribe = eventBus.subscribe(
+      EVENT.REALTIME_AGENT_DOMAIN_EVENT,
+      (payload) => payloads.push(payload),
+    );
+
+    await installEventStreamBridge();
+    realtimeHandler({
+      payload: {
+        event_id: 'stream-event-agent-1',
+        data_b64: agentDomainFrameBase64(),
+      },
+    });
+    unsubscribe();
+
+    expect(payloads).toEqual([{
+      eventId: 'stream-event-agent-1',
+      domainEventId: 'task-event-4',
+      domainSequence: 4n,
+      schemaVersion: 1,
+      eventType: 'agent.collaboration.node.running',
+      goalId: 'goal-1',
+      taskId: 'task-1',
+      goalRevision: 5n,
+      committedTsUnixMs: 123,
+    }]);
+  });
+
   it('keeps browser gateway resync fallback low-frequency', async () => {
     vi.useFakeTimers();
-    (window as any).__PT_GATEWAY_BASE__ = 'http://127.0.0.1:3031';
+    window.__PT_GATEWAY_BASE__ = 'http://127.0.0.1:3031';
     const payloads: unknown[] = [];
     const unsubscribe = eventBus.subscribe(EVENT.REALTIME_RESYNC, (payload) => {
       payloads.push(payload);
@@ -210,6 +263,26 @@ function groupFederationFrameBase64(): string {
         membershipEpoch: 1n,
         committedTsUnixMs: 123n,
         actorPtid: 'did:peer:bob',
+      },
+    },
+  });
+  return Buffer.from(toBinary(StreamEventSchema, event)).toString('base64');
+}
+
+function agentDomainFrameBase64(): string {
+  const event = create(StreamEventSchema, {
+    eventId: 'stream-event-agent-1',
+    kind: {
+      case: 'agentDomainEvent',
+      value: {
+        domainEventId: 'task-event-4',
+        domainSequence: 4n,
+        schemaVersion: 1,
+        eventType: 'agent.collaboration.node.running',
+        goalId: 'goal-1',
+        taskId: 'task-1',
+        goalRevision: 5n,
+        committedTsUnixMs: 123n,
       },
     },
   });

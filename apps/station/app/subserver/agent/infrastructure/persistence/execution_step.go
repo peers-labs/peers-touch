@@ -16,6 +16,7 @@ type ExecutionStep struct {
 	Status            int32      `gorm:"not null;type:integer;index:idx_agent_execution_steps_status"`
 	TurnID            string     `gorm:"type:varchar(36);index:idx_agent_execution_steps_turn"`
 	Attempt           int32      `gorm:"not null;default:1"`
+	AttemptID         string     `gorm:"column:attempt_id;not null;type:varchar(36);default:'';index:idx_agent_execution_steps_attempt"`
 	EligibleExecutors string     `gorm:"type:text"`
 	ResultSummary     string     `gorm:"type:text"`
 	StartedAt         time.Time  `gorm:"not null;autoCreateTime"`

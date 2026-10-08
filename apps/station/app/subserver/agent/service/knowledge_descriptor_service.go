@@ -14,7 +14,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
@@ -41,10 +40,8 @@ type KnowledgeResourceService struct {
 }
 
 type knowledgeDescriptorMutation struct {
-	descriptor       *model.KnowledgeResourceDescriptor
-	manifest         *model.CapabilityManifest
-	manifestReason   domain.AgentAuthorityInvalidationReason
-	mutatedManifests []*model.CapabilityManifest
+	descriptor *model.KnowledgeResourceDescriptor
+	manifest   *model.CapabilityManifest
 }
 
 func NewKnowledgeResourceService(
@@ -97,7 +94,6 @@ func (s *KnowledgeResourceService) Create(
 		}
 		return nil, nil, err
 	}
-	s.publishManifestInvalidationAfterCommit(ctx, mutation)
 	return mutation.descriptor, mutation.manifest, nil
 }
 
@@ -142,7 +138,7 @@ func (s *KnowledgeResourceService) createTx(
 	if err != nil {
 		return nil, err
 	}
-	registered, manifestMutated, err := s.authority.registerManifestTx(
+	registered, _, err := s.authority.registerManifestTx(
 		tx,
 		knowledgeManifest(revision),
 	)
@@ -180,12 +176,8 @@ func (s *KnowledgeResourceService) createTx(
 		return nil, err
 	}
 	mutation := &knowledgeDescriptorMutation{
-		descriptor:     knowledgeDescriptorModel(revision),
-		manifest:       registered,
-		manifestReason: domain.AgentAuthorityInvalidationManifestRegistered,
-	}
-	if manifestMutated {
-		mutation.mutatedManifests = []*model.CapabilityManifest{registered}
+		descriptor: knowledgeDescriptorModel(revision),
+		manifest:   registered,
 	}
 	return mutation, nil
 }
@@ -246,7 +238,7 @@ func (s *KnowledgeResourceService) Update(
 			return buildErr
 		}
 		manifest := knowledgeManifest(revision)
-		registered, manifestMutated, registerErr := s.authority.registerManifestTx(tx, manifest)
+		registered, _, registerErr := s.authority.registerManifestTx(tx, manifest)
 		if registerErr != nil {
 			return registerErr
 		}
@@ -288,12 +280,8 @@ func (s *KnowledgeResourceService) Update(
 			return err
 		}
 		mutation = knowledgeDescriptorMutation{
-			descriptor:     knowledgeDescriptorModel(revision),
-			manifest:       registered,
-			manifestReason: domain.AgentAuthorityInvalidationManifestRegistered,
-		}
-		if manifestMutated {
-			mutation.mutatedManifests = []*model.CapabilityManifest{registered}
+			descriptor: knowledgeDescriptorModel(revision),
+			manifest:   registered,
 		}
 		return nil
 	})
@@ -311,7 +299,6 @@ func (s *KnowledgeResourceService) Update(
 		}
 		return nil, nil, err
 	}
-	s.publishManifestInvalidationAfterCommit(ctx, mutation)
 	return mutation.descriptor, mutation.manifest, nil
 }
 
@@ -453,7 +440,7 @@ func (s *KnowledgeResourceService) Tombstone(
 		if headUpdate.RowsAffected != 1 {
 			return capabilityConflict("knowledge descriptor changed during tombstone")
 		}
-		retired, retiredManifests, retireErr := s.retireKnowledgeManifestsTx(
+		retired, _, retireErr := s.retireKnowledgeManifestsTx(
 			tx, ptid, &revision, req.GetIdempotencyKey(), reason,
 		)
 		if retireErr != nil {
@@ -476,10 +463,8 @@ func (s *KnowledgeResourceService) Tombstone(
 			return err
 		}
 		mutation = knowledgeDescriptorMutation{
-			descriptor:       knowledgeDescriptorModelWithHead(&revision, &head),
-			manifest:         retired,
-			manifestReason:   domain.AgentAuthorityInvalidationManifestRetired,
-			mutatedManifests: retiredManifests,
+			descriptor: knowledgeDescriptorModelWithHead(&revision, &head),
+			manifest:   retired,
 		}
 		return nil
 	})
@@ -497,7 +482,6 @@ func (s *KnowledgeResourceService) Tombstone(
 		}
 		return nil, nil, err
 	}
-	s.publishManifestInvalidationAfterCommit(ctx, mutation)
 	return mutation.descriptor, mutation.manifest, nil
 }
 
@@ -558,15 +542,6 @@ func (s *KnowledgeResourceService) retireKnowledgeManifestsTx(
 		return nil, nil, capabilityRecordError("current knowledge manifest", gorm.ErrRecordNotFound)
 	}
 	return current, retiredManifests, nil
-}
-
-func (s *KnowledgeResourceService) publishManifestInvalidationAfterCommit(
-	ctx context.Context,
-	mutation knowledgeDescriptorMutation,
-) {
-	for _, manifest := range mutation.mutatedManifests {
-		s.authority.publishManifestInvalidations(ctx, mutation.manifestReason, manifest)
-	}
 }
 
 func validateKnowledgeCreate(

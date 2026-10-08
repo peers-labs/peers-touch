@@ -19,6 +19,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -50,6 +51,41 @@ pub const EVENT_REALTIME: &str = "realtime:event";
 /// "Offline"). Payload: `{ connected: bool, reason?: String }`.
 /// Frequency-limited — emitted only on transitions.
 pub const EVENT_CONNECTION_STATE: &str = "realtime:connection-state";
+
+pub type StreamObserver = Arc<dyn Fn(&str, &str, &StreamEvent) + Send + Sync + 'static>;
+
+fn observer_registry() -> &'static Mutex<HashMap<String, StreamObserver>> {
+    static REG: OnceLock<Mutex<HashMap<String, StreamObserver>>> = OnceLock::new();
+    REG.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Register a process-local observer over the one canonical actor stream.
+///
+/// Observers are projections only: they do not own the Station cursor, open
+/// another connection, or influence delivery acknowledgement.
+pub fn register_observer(id: impl Into<String>, observer: StreamObserver) {
+    if let Ok(mut observers) = observer_registry().lock() {
+        observers.insert(id.into(), observer);
+    }
+}
+
+pub fn unregister_observer(id: &str) {
+    if let Ok(mut observers) = observer_registry().lock() {
+        observers.remove(id);
+    }
+}
+
+fn notify_observers(actor_ptid: &str, event_id: &str, event: &StreamEvent) {
+    let observers = observer_registry()
+        .lock()
+        .map(|registry| registry.values().cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    for observer in observers {
+        if catch_unwind(AssertUnwindSafe(|| observer(actor_ptid, event_id, event))).is_err() {
+            tracing::warn!("event_stream: observer panicked");
+        }
+    }
+}
 
 // ---------------------------------------------------------------------
 // Per-actor supervisor registry.
@@ -121,6 +157,19 @@ pub fn stop(actor_ptid: &str) {
     if let Some(flag) = map.remove(actor_ptid) {
         flag.store(true, Ordering::Relaxed);
     }
+}
+
+/// Stop one actor stream and notify renderer projections immediately.
+///
+/// A cancelled supervisor exits through the successful `run_once` path, so it
+/// cannot publish the disconnected transition itself. Explicit client stops
+/// must therefore emit the lifecycle event at the command boundary.
+pub fn stop_and_notify(app: &AppHandle, actor_ptid: &str) {
+    stop(actor_ptid);
+    let _ = app.emit(
+        EVENT_CONNECTION_STATE,
+        &json!({"connected": false, "reason": "stopped"}),
+    );
 }
 
 /// Stop every Station-scoped event stream before changing Station binding.
@@ -376,32 +425,32 @@ fn dispatch(
             return;
         }
     };
-    let resolved_event_id = match StreamEvent::decode(bytes.as_slice()) {
-        Ok(ev) => {
-            if let Some(StreamKind::Resync(r)) = ev.kind.as_ref() {
-                tracing::info!(
-                    newest = %r.newest_event_id,
-                    reason = %r.reason,
-                    "event_stream: Resync received — frontend will trigger cold catch-up"
-                );
-            }
-            // Prefer the SSE `id:` header; fall back to the decoded
-            // body's event_id (they should match per server contract).
-            event_id
-                .map(str::to_string)
-                .unwrap_or_else(|| ev.event_id.clone())
-        }
+    let decoded = match StreamEvent::decode(bytes.as_slice()) {
+        Ok(event) => event,
         Err(e) => {
             tracing::warn!(error = %e, "event_stream: protobuf decode failed, skipping");
             return;
         }
     };
+    if let Some(StreamKind::Resync(r)) = decoded.kind.as_ref() {
+        tracing::info!(
+            newest = %r.newest_event_id,
+            reason = %r.reason,
+            "event_stream: Resync received — frontend will trigger cold catch-up"
+        );
+    }
+    // Prefer the SSE `id:` header; fall back to the decoded body's event_id
+    // (they should match per server contract).
+    let resolved_event_id = event_id
+        .map(str::to_string)
+        .unwrap_or_else(|| decoded.event_id.clone());
 
     // Persist the cursor BEFORE emit so a frontend-side panic can't
     // strand us in a state where we've shown a message but won't
     // resume past it on reconnect. Empty event_id (heartbeats early
     // in a session before any business event) is a no-op.
     save_cursor(actor_ptid, &resolved_event_id);
+    notify_observers(actor_ptid, &resolved_event_id, &decoded);
 
     let payload = json!({
         "event_id": resolved_event_id,
@@ -435,6 +484,7 @@ fn emit_state(app: &AppHandle, last: &mut Option<bool>, connected: bool, reason:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicUsize;
 
     #[test]
     fn cursor_roundtrip_via_disk() {
@@ -458,5 +508,33 @@ mod tests {
         if let Some(p) = cursor_path(actor) {
             let _ = fs::remove_file(p);
         }
+    }
+
+    #[test]
+    fn observers_receive_decoded_frames_without_owning_the_stream() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_for_observer = Arc::clone(&calls);
+        let observer_id = format!("observer-test-{}", ulid::Ulid::new());
+        register_observer(
+            observer_id.clone(),
+            Arc::new(move |actor, event_id, event| {
+                assert_eq!(actor, "ptid:person:observer");
+                assert_eq!(event_id, "stream-1");
+                assert_eq!(event.event_id, "stream-1");
+                calls_for_observer.fetch_add(1, Ordering::SeqCst);
+            }),
+        );
+
+        notify_observers(
+            "ptid:person:observer",
+            "stream-1",
+            &StreamEvent {
+                event_id: "stream-1".to_string(),
+                ..Default::default()
+            },
+        );
+        unregister_observer(&observer_id);
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }

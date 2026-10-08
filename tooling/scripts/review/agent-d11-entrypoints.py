@@ -229,12 +229,17 @@ def validate_schema(raw: Any) -> tuple[dict[str, Any], list[Issue]]:
     _required_string(aliases, "source", "atelier_aliases", issues)
     _required_string(aliases, "symbol", "atelier_aliases", issues)
     alias_entries = _list(aliases.get("entries"), "atelier_aliases.entries", issues)
-    if aliases.get("expected_count") != 31 or len(alias_entries) != 31:
+    expected_alias_count = aliases.get("expected_count")
+    if (
+        not isinstance(expected_alias_count, int)
+        or expected_alias_count < 0
+        or len(alias_entries) != expected_alias_count
+    ):
         issues.append(
             Issue(
                 "SCHEMA_ALIAS_COUNT",
                 "atelier_aliases",
-                "expected_count and entry count must both equal 31",
+                "expected_count must be a non-negative integer matching the entry count",
             )
         )
     alias_names: set[str] = set()
@@ -684,7 +689,6 @@ class Checker:
                         for candidate in (
                             "handle_atelier_workspace_open",
                             "handle_atelier_artifact_preview_open",
-                            "start_atelier_projection_event_stream",
                         )
                         if candidate in arm
                     ),

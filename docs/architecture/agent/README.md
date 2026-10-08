@@ -1,7 +1,7 @@
 # Agent 架构
 
 > **Status**: active
-> **Version**: v1.5
+> **Version**: v1.6
 > **Created**: 2026-04-11 | **Updated**: 2026-10-03
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `apps/station/app/subserver/agent/`, `apps/desktop/src-tauri/src/application/agent_turn/`, `apps/desktop/src-tauri/src/application/mcp/`
@@ -37,6 +37,7 @@
 | [data-model.md](./data-model.md) | Agent、Conversation、Turn、Capability Binding 与 ToolCall 的权威模型 |
 | [module-layout.md](./module-layout.md) | Model、Station、Desktop 与 Acceptance 的模块职责 |
 | [integration.md](./integration.md) | 跨运行时集成、证据和迁移边界 |
+| [Personal Agent OS amendment](./proposals/20261003-personal-agent-os.md) | **当前产品扩展合同** — 把 Modern Chat Agent、Agent Canvas、Atelier 与 Acceptance 收敛为 Goal → TaskRun → Evidence，并强制 durable event → shared EventBus → canonical SSE |
 | [modern-chat-agent/](./modern-chat-agent/) | **Modern Chat Agent accepted product + architecture** — LobeHub benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的单 Agent 内核；当前最小交付由 Minimum Usable Agent Chat Plan 管理 |
 | [agent-canvas-orchestration.md](./agent-canvas-orchestration.md) | **当前 Agent 编排正式设计** — 以 Agent Canvas 为入口、GoalKeeper 为目标锚点、EngineMatcher/RunPlan/AutonomyController 为运行内核的多 Agent 编排架构 |
 | [provider-station-ownership/](./provider-station-ownership/) | **Provider Station Ownership** — Station 是所有 AI Provider 的唯一执行者和配置所有者；Desktop/Mobile 是编辑入口 + SSE 消费端；per-actor 凭证隔离；版本号防脑裂 |
@@ -58,6 +59,7 @@
 
 | 优先级 | 状态 | 文档 | 定位 |
 |---|---|---|---|
+| Next | prepared | [Personal Agent OS Convergence](./execution-plans/20261003-personal-agent-os-convergence/plan.md) | Goal 真源、TaskRun 收敛、EventBus 单一 fan-out、Coordinator、Acceptance、Atelier/Home 与最终 hard cut |
 | Current | prepared | [MCP Dual Runtime](./execution-plans/20261003-mcp-dual-runtime/plan.md) | **当前执行入口** — Station-owned MCP 配置，Station-local 与 Desktop-local 双执行位置 hard cut |
 | Completed | completed | [Minimum Usable Agent Chat](./execution-plans/20261001-minimum-usable-agent-chat/plan.md) | Direct Model Agent Chat、Skill/MCP 注入、最终回复与重启恢复基线 |
 | Historical | completed / remaining scope descoped | [Modern Chat Agent V2 Alignment Plan Package](./execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md) | 2026-10-01 由 Product Owner 强制停止；未完成的外部 runtime、419-cell remediation 和 aggregate proof 全部退出首版路径 |

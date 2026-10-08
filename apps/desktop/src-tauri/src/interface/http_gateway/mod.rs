@@ -2755,13 +2755,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ))
                 }
             };
-            match app_federation::list_contexts(&token) {
+            match app_federation::list_federations(&token) {
                 Ok(view) => to_json(to_stub(
                     "acceptance_federation_context",
                     json!({
                         "active_station_peer_id": active_station_peer_id,
                         "federations": view
-                            .contexts
+                            .federations
                             .iter()
                             .map(|federation| json!({
                                 "federation_id": federation.federation_id,
@@ -4036,6 +4036,83 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_home::submit_task(input, &token))
         }
+        "agent_home_goal_draft_create" => {
+            let input = match parse_args::<app_home::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_home::create_goal(input, &token))
+        }
+        "agent_home_goal_get" => {
+            let input = match parse_args::<app_home::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_home::get_goal(input, &token))
+        }
+        "agent_home_goal_update" => {
+            let input = match parse_args::<app_home::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_home::update_goal(input, &token))
+        }
+        "agent_home_goal_review" => {
+            let input = match parse_args::<app_home::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_home::review_goal(input, &token))
+        }
+        "agent_home_goal_admit" => {
+            let input = match parse_args::<app_home::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_home::admit_goal(input, &token))
+        }
+        "agent_home_goal_start" => {
+            let input = match parse_args::<app_home::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_home::start_goal(input, &token))
+        }
+        "agent_home_goal_cancel" => {
+            let input = match parse_args::<app_home::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_home::cancel_goal(input, &token))
+        }
         "agent_evaluation_benchmark_create" => dispatch_evaluation(
             args,
             state,
@@ -4938,7 +5015,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            match app_federation::resolve(&token, &input.federation_id, &input.handle) {
+            match app_federation::resolve(&token, &input.handle) {
                 Ok(view) => to_json(AppResult::success(app_federation::encode_resolve(&view))),
                 Err(e) => to_json(e.into_app_result_proto("federation_resolve failed")),
             }
@@ -4970,8 +5047,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            match app_federation::list_contexts(&token) {
-                Ok(view) => to_json(AppResult::success(app_federation::encode_list_contexts(
+            match app_federation::list_federations(&token) {
+                Ok(view) => to_json(AppResult::success(app_federation::encode_list_federations(
                     &view,
                 ))),
                 Err(e) => to_json(e.into_app_result::<Vec<u8>>("federation_list_contexts failed")),

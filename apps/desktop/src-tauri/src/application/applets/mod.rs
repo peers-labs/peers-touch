@@ -9,9 +9,11 @@ use crate::domain::applets::{
     AccessContext, AppletSessionManifestSnapshot,
 };
 use crate::error::{AppResult, ErrorCode};
+use crate::infrastructure::event_stream;
 use crate::infrastructure::station_client;
-use reqwest::blocking::Client;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
+use crate::model::realtime::v1::{
+    stream_event::Kind as RealtimeEventKind, AgentDomainEvent, StreamEvent,
+};
 use reqwest::Method;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -19,10 +21,9 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 const APPLET_STORAGE_QUOTA_BYTES: usize = 10 * 1024 * 1024;
@@ -34,7 +35,8 @@ const GATEWAY_QUOTA_WINDOW_MS: u128 = 60_000;
 const APPLET_CLIPBOARD_MEMORY_FALLBACK_ENV: &str = "PEERS_APPLET_CLIPBOARD_BACKEND";
 const DEFAULT_APPLET_TASK_COMPLETE_AFTER_MS: u64 = 100;
 const PRODUCT_EXECUTORS_REQUIRED_ENV: &str = "PEERS_APPLET_REQUIRE_PRODUCT_EXECUTORS";
-const ATELIER_PROJECTION_STREAM_REQUEST_TIMEOUT_MS: u64 = 1_000;
+const ATELIER_CANONICAL_EVENT_OBSERVER_ID: &str = "applets.atelier.canonical-realtime";
+const ATELIER_PROJECTION_EVENT_TOPIC: &str = "atelier.projection.event";
 const PRODUCT_WINDOW_E2E_ENV: &str = "PEERS_APPLET_PRODUCT_WINDOW_E2E";
 const PRODUCT_WINDOW_E2E_APPLET_ID_ENV: &str = "PEERS_APPLET_PRODUCT_WINDOW_E2E_APPLET_ID";
 const PRODUCT_WINDOW_E2E_LAUNCH_OPTIONS_ENV: &str =
@@ -82,28 +84,10 @@ struct AppletQuotaRecord {
 }
 
 #[derive(Debug, Clone)]
-struct AtelierProjectionSubscriptionRecord {
+struct AppletEventSubscriberContext {
     applet_id: String,
     session_id: String,
-    agent_id: String,
-    task_id: Option<String>,
-    cursor_key: String,
-    after_event_seq: i64,
-    last_event_seq: i64,
-    cancelled: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct AtelierProjectionCursorStore {
-    cursors: HashMap<String, i64>,
-}
-
-#[derive(Debug, Clone)]
-struct AtelierProjectionSubscriptionStart {
-    key: String,
-    cursor_key: String,
-    started: bool,
-    after_event_seq: i64,
+    actor_ptid: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -139,10 +123,11 @@ static APPLET_SESSION_QUOTAS: OnceLock<Mutex<HashMap<String, AppletQuotaRecord>>
 static APPLET_CLIPBOARD_TEXT: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 static APPLET_EVENT_SUBSCRIPTIONS: OnceLock<Mutex<HashMap<String, HashSet<String>>>> =
     OnceLock::new();
-static APPLET_EVENT_OUTBOX: OnceLock<Mutex<HashMap<String, Vec<Value>>>> = OnceLock::new();
-static ATELIER_PROJECTION_SUBSCRIPTIONS: OnceLock<
-    Mutex<HashMap<String, AtelierProjectionSubscriptionRecord>>,
+static APPLET_EVENT_SUBSCRIBER_CONTEXTS: OnceLock<
+    Mutex<HashMap<String, AppletEventSubscriberContext>>,
 > = OnceLock::new();
+static APPLET_EVENT_OUTBOX: OnceLock<Mutex<HashMap<String, Vec<Value>>>> = OnceLock::new();
+static ATELIER_CANONICAL_EVENT_OBSERVER_INSTALLED: OnceLock<()> = OnceLock::new();
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
     AppResult::success(StubPayload {
@@ -1137,13 +1122,13 @@ fn dispatch_applet_capability(
         "device" => handle_device(action, params),
         "clipboard" => handle_clipboard(applet_id, session_id, action, params),
         "file" => handle_file(applet_id, action, params, data_dir),
-        "events" => handle_events(applet_id, session_id, action, params),
+        "events" => handle_events(context, applet_id, session_id, action, params),
         "skills" => handle_skills(context, applet_id, session_id, manifest, action, params),
         "tasks" => handle_tasks(
             context, applet_id, session_id, manifest, action, params, data_dir,
         ),
         "agent" => handle_agent(context, applet_id, session_id, request_id, action, params),
-        "atelier" => handle_atelier(context, applet_id, session_id, action, params, data_dir),
+        "atelier" => handle_atelier(context, applet_id, session_id, action, params),
         "ai" => handle_ai(context, request_id, action, params),
         "telemetry" => handle_telemetry(applet_id, session_id, action, params),
         other => Err(format!("Unsupported applet capability: {}", other)),
@@ -1631,216 +1616,153 @@ fn event_subscription_store() -> &'static Mutex<HashMap<String, HashSet<String>>
     APPLET_EVENT_SUBSCRIPTIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn event_subscriber_context_store() -> &'static Mutex<HashMap<String, AppletEventSubscriberContext>>
+{
+    APPLET_EVENT_SUBSCRIBER_CONTEXTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 fn event_outbox_store() -> &'static Mutex<HashMap<String, Vec<Value>>> {
     APPLET_EVENT_OUTBOX.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn atelier_projection_subscription_store(
-) -> &'static Mutex<HashMap<String, AtelierProjectionSubscriptionRecord>> {
-    ATELIER_PROJECTION_SUBSCRIPTIONS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn atelier_projection_subscription_key(
-    applet_id: &str,
-    session_id: &str,
-    agent_id: &str,
-    task_id: Option<&str>,
-) -> String {
-    format!(
-        "{}:{}:{}:{}",
-        applet_id,
-        session_id,
-        agent_id,
-        task_id.unwrap_or("*")
-    )
-}
-
-fn atelier_projection_cursor_key(applet_id: &str, agent_id: &str, task_id: Option<&str>) -> String {
-    format!("{}:{}:{}", applet_id, agent_id, task_id.unwrap_or("*"))
-}
-
-fn atelier_projection_cursor_store_path(data_dir: &Path) -> PathBuf {
-    data_dir
-        .join("applets")
-        .join("runtime")
-        .join("atelier_projection_cursors.json")
-}
-
-fn load_atelier_projection_cursor_store(
-    data_dir: &Path,
-) -> Result<AtelierProjectionCursorStore, String> {
-    let path = atelier_projection_cursor_store_path(data_dir);
-    if !path.exists() {
-        return Ok(AtelierProjectionCursorStore::default());
-    }
-    let content = fs::read_to_string(&path).map_err(|error| {
-        format!(
-            "Failed to read Atelier projection cursor store {}: {}",
-            path.display(),
-            error
-        )
-    })?;
-    if content.trim().is_empty() {
-        return Ok(AtelierProjectionCursorStore::default());
-    }
-    serde_json::from_str::<AtelierProjectionCursorStore>(&content).map_err(|error| {
-        format!(
-            "Failed to parse Atelier projection cursor store {}: {}",
-            path.display(),
-            error
-        )
-    })
-}
-
-fn persist_atelier_projection_cursor(data_dir: &Path, key: &str, seq: i64) -> Result<(), String> {
-    let path = atelier_projection_cursor_store_path(data_dir);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "Failed to create Atelier projection cursor store directory {}: {}",
-                parent.display(),
-                error
-            )
-        })?;
-    }
-    let mut store = load_atelier_projection_cursor_store(data_dir)?;
-    let seq = seq.max(0);
-    let entry = store.cursors.entry(key.to_string()).or_insert(0);
-    *entry = (*entry).max(seq);
-    let content = serde_json::to_string_pretty(&store)
-        .map_err(|error| format!("Failed to serialize Atelier projection cursor store: {error}"))?;
-    fs::write(&path, content).map_err(|error| {
-        format!(
-            "Failed to write Atelier projection cursor store {}: {}",
-            path.display(),
-            error
-        )
-    })
-}
-
-fn load_atelier_projection_cursor(data_dir: &Path, key: &str) -> Result<i64, String> {
-    Ok(load_atelier_projection_cursor_store(data_dir)?
-        .cursors
-        .get(key)
-        .copied()
-        .unwrap_or(0)
-        .max(0))
-}
-
-fn ensure_atelier_projection_subscription(
-    applet_id: &str,
-    session_id: &str,
-    agent_id: &str,
-    task_id: Option<&str>,
-    after_event_seq: i64,
-    data_dir: &Path,
-) -> Result<AtelierProjectionSubscriptionStart, String> {
-    let key = atelier_projection_subscription_key(applet_id, session_id, agent_id, task_id);
-    let cursor_key = atelier_projection_cursor_key(applet_id, agent_id, task_id);
-    let persisted_cursor = load_atelier_projection_cursor(data_dir, &cursor_key)?;
-    let mut guard = atelier_projection_subscription_store()
-        .lock()
-        .map_err(|_| "Atelier projection subscription registry is unavailable".to_string())?;
-    if let Some(record) = guard.get_mut(&key) {
-        record.last_event_seq = record
-            .last_event_seq
-            .max(record.after_event_seq)
-            .max(persisted_cursor);
-        if !record.cancelled {
-            return Ok(AtelierProjectionSubscriptionStart {
-                key,
-                cursor_key: record.cursor_key.clone(),
-                started: false,
-                after_event_seq: record.last_event_seq.max(record.after_event_seq),
-            });
-        }
-        record.cancelled = false;
-        record.after_event_seq = after_event_seq.max(0).max(persisted_cursor);
-        record.last_event_seq = record
-            .last_event_seq
-            .max(after_event_seq.max(0))
-            .max(persisted_cursor);
-        return Ok(AtelierProjectionSubscriptionStart {
-            key,
-            cursor_key: record.cursor_key.clone(),
-            started: true,
-            after_event_seq: record.last_event_seq.max(record.after_event_seq),
-        });
-    }
-
-    let normalized_after_event_seq = after_event_seq.max(0).max(persisted_cursor);
-    guard.insert(
-        key.clone(),
-        AtelierProjectionSubscriptionRecord {
-            applet_id: applet_id.to_string(),
-            session_id: session_id.to_string(),
-            agent_id: agent_id.to_string(),
-            task_id: task_id.map(str::to_string),
-            cursor_key: cursor_key.clone(),
-            after_event_seq: normalized_after_event_seq,
-            last_event_seq: normalized_after_event_seq,
-            cancelled: false,
-        },
-    );
-    Ok(AtelierProjectionSubscriptionStart {
-        key,
-        cursor_key,
-        started: true,
-        after_event_seq: normalized_after_event_seq,
-    })
-}
-
-fn cancel_atelier_projection_subscriptions_for_session(applet_id: &str, session_id: &str) -> bool {
-    let mut cancelled_any = false;
-    if let Ok(mut guard) = atelier_projection_subscription_store().lock() {
-        for record in guard.values_mut() {
-            if record.applet_id == applet_id && record.session_id == session_id {
-                if !record.cancelled {
-                    cancelled_any = true;
+fn install_atelier_canonical_event_bridge() {
+    ATELIER_CANONICAL_EVENT_OBSERVER_INSTALLED.get_or_init(|| {
+        event_stream::register_observer(
+            ATELIER_CANONICAL_EVENT_OBSERVER_ID,
+            Arc::new(|actor_ptid, stream_event_id, event| {
+                if let Err(error) =
+                    fan_out_atelier_canonical_event(actor_ptid, stream_event_id, event)
+                {
+                    tracing::warn!(
+                        error = %error,
+                        actor_ptid,
+                        "Failed to fan out canonical Agent event to Atelier",
+                    );
                 }
-                record.cancelled = true;
-            }
-        }
-    }
-    cancelled_any
+            }),
+        );
+    });
 }
 
-fn is_atelier_projection_subscription_active(key: &str) -> bool {
-    atelier_projection_subscription_store()
-        .lock()
-        .ok()
-        .and_then(|guard| guard.get(key).map(|record| !record.cancelled))
-        .unwrap_or(false)
-}
-
-fn current_atelier_projection_cursor(key: &str, fallback: i64) -> i64 {
-    atelier_projection_subscription_store()
-        .lock()
-        .ok()
-        .and_then(|guard| {
-            guard
-                .get(key)
-                .map(|record| record.last_event_seq.max(record.after_event_seq))
-        })
-        .unwrap_or(fallback.max(0))
-}
-
-fn mark_atelier_projection_event_seq(
-    key: &str,
-    cursor_key: &str,
-    seq: i64,
-    data_dir: &Path,
+fn fan_out_atelier_canonical_event(
+    actor_ptid: &str,
+    stream_event_id: &str,
+    event: &StreamEvent,
 ) -> Result<(), String> {
-    let seq = seq.max(0);
-    if let Ok(mut guard) = atelier_projection_subscription_store().lock() {
-        if let Some(record) = guard.get_mut(key) {
-            record.last_event_seq = record.last_event_seq.max(seq);
+    let payload = match event.kind.as_ref() {
+        Some(RealtimeEventKind::AgentDomainEvent(agent_event)) => {
+            canonical_agent_event_to_atelier_invalidation(stream_event_id, agent_event)
         }
+        Some(RealtimeEventKind::Resync(resync)) => Some(json!({
+            "kind": "atelier.projection.resync",
+            "eventId": stream_event_id,
+            "newestEventId": resync.newest_event_id,
+            "reason": resync.reason,
+            "receivedAt": now_timestamp(),
+        })),
+        _ => None,
+    };
+    let Some(payload) = payload else {
+        return Ok(());
+    };
+
+    let subscriptions = event_subscription_store()
+        .lock()
+        .map_err(|_| "applet event subscription registry is unavailable".to_string())?;
+    let contexts = event_subscriber_context_store()
+        .lock()
+        .map_err(|_| "applet event subscriber context is unavailable".to_string())?;
+    let targets = contexts
+        .iter()
+        .filter_map(|(key, context)| {
+            (context.actor_ptid == actor_ptid
+                && context.applet_id == "peers.atelier"
+                && subscriptions
+                    .get(key)
+                    .is_some_and(|topics| topics.contains(ATELIER_PROJECTION_EVENT_TOPIC)))
+            .then(|| (context.applet_id.clone(), context.session_id.clone()))
+        })
+        .collect::<Vec<_>>();
+    if product_window_e2e_enabled() {
+        tracing::info!(
+            actor_ptid,
+            stream_event_id,
+            target_count = targets.len(),
+            "Atelier canonical event fan-out",
+        );
     }
-    persist_atelier_projection_cursor(data_dir, cursor_key, seq)
+    drop(contexts);
+    drop(subscriptions);
+
+    for (applet_id, session_id) in targets {
+        enqueue_gateway_events(
+            &applet_id,
+            &session_id,
+            vec![json!({
+                "topic": ATELIER_PROJECTION_EVENT_TOPIC,
+                "payload": payload,
+            })],
+        )?;
+    }
+    Ok(())
+}
+
+fn canonical_agent_event_to_atelier_invalidation(
+    stream_event_id: &str,
+    event: &AgentDomainEvent,
+) -> Option<Value> {
+    let domain_event_id = event.domain_event_id.trim();
+    let event_type = event.event_type.trim();
+    let goal_id = event.goal_id.trim();
+    let task_id = event.task_id.trim();
+    if domain_event_id.is_empty()
+        || event.domain_sequence == 0
+        || event.domain_sequence > 9_007_199_254_740_991
+        || event.schema_version != 1
+        || event_type.is_empty()
+        || (goal_id.is_empty() && task_id.is_empty())
+    {
+        return None;
+    }
+
+    let mut projection = serde_json::Map::new();
+    projection.insert("id".to_string(), json!(domain_event_id));
+    projection.insert("seq".to_string(), json!(event.domain_sequence));
+    if !task_id.is_empty() {
+        projection.insert("taskId".to_string(), json!(task_id));
+    }
+    projection.insert(
+        "receivedAt".to_string(),
+        json!(timestamp_from_unix_millis(event.committed_ts_unix_ms)),
+    );
+    projection.insert(
+        "patch".to_string(),
+        json!({
+            "kind": "snapshot.invalidate",
+            "streamEventId": stream_event_id,
+            "eventType": event_type,
+            "goalId": goal_id,
+            "taskId": task_id,
+            "goalRevision": event.goal_revision,
+            "schemaVersion": event.schema_version,
+        }),
+    );
+    Some(Value::Object(projection))
+}
+
+fn timestamp_from_unix_millis(millis: i64) -> String {
+    time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(millis) * 1_000_000)
+        .ok()
+        .and_then(|timestamp| {
+            timestamp
+                .format(&time::format_description::well_known::Rfc3339)
+                .ok()
+        })
+        .unwrap_or_else(now_timestamp)
 }
 
 fn handle_events(
+    context: &AccessContext,
     applet_id: &str,
     session_id: &str,
     action: Option<&str>,
@@ -1851,10 +1773,31 @@ fn handle_events(
         "subscribe" => {
             let topic = extract_event_topic(&params, "events.subscribe")?;
             ensure_subscribable_event_topic(&topic)?;
+            let actor_ptid = context
+                .actor_ptid
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "events.subscribe requires authenticated actor context".to_string())?
+                .to_string();
+            if topic == ATELIER_PROJECTION_EVENT_TOPIC {
+                install_atelier_canonical_event_bridge();
+            }
             let mut guard = event_subscription_store()
                 .lock()
                 .map_err(|_| "applet event subscription registry is unavailable".to_string())?;
             guard.entry(key).or_default().insert(topic.clone());
+            event_subscriber_context_store()
+                .lock()
+                .map_err(|_| "applet event subscriber context is unavailable".to_string())?
+                .insert(
+                    session_store_key(applet_id, session_id),
+                    AppletEventSubscriberContext {
+                        applet_id: applet_id.to_string(),
+                        session_id: session_id.to_string(),
+                        actor_ptid,
+                    },
+                );
             Ok(json!({ "ok": true, "topic": topic, "subscribed": true }))
         }
         "unsubscribe" => {
@@ -1867,10 +1810,12 @@ fn handle_events(
                 topics.remove(&topic);
                 if topics.is_empty() {
                     guard.remove(&key);
+                    if let Ok(mut contexts) = event_subscriber_context_store().lock() {
+                        contexts.remove(&key);
+                    }
                 }
             }
-            if topic == "atelier.projection.event" {
-                cancel_atelier_projection_subscriptions_for_session(applet_id, session_id);
+            if topic == ATELIER_PROJECTION_EVENT_TOPIC {
                 record_product_window_e2e_atelier_unsubscribe(applet_id, session_id, &topic)?;
             }
             Ok(json!({ "ok": true, "topic": topic, "subscribed": false }))
@@ -2627,16 +2572,17 @@ fn clear_session_work(applet_id: &str, session_id: &str) {
     if let Ok(mut guard) = event_subscription_store().lock() {
         had_atelier_projection_event_topic = guard
             .get(&key)
-            .is_some_and(|topics| topics.contains("atelier.projection.event"));
+            .is_some_and(|topics| topics.contains(ATELIER_PROJECTION_EVENT_TOPIC));
         guard.remove(&key);
     }
-    let cancelled_atelier_projection =
-        cancel_atelier_projection_subscriptions_for_session(applet_id, session_id);
-    if had_atelier_projection_event_topic || cancelled_atelier_projection {
+    if let Ok(mut guard) = event_subscriber_context_store().lock() {
+        guard.remove(&key);
+    }
+    if had_atelier_projection_event_topic {
         if let Err(error) = record_product_window_e2e_atelier_unsubscribe(
             applet_id,
             session_id,
-            "atelier.projection.event",
+            ATELIER_PROJECTION_EVENT_TOPIC,
         ) {
             tracing::warn!(
                 error = %error,
@@ -3678,7 +3624,6 @@ fn handle_atelier(
     session_id: &str,
     action: Option<&str>,
     params: Option<Value>,
-    data_dir: &Path,
 ) -> Result<Value, String> {
     match action.ok_or_else(|| "atelier capability requires an action".to_string())? {
         "workspace.load" | "workspaceLoad" | "loadWorkspace" => station_client::request_json(
@@ -3776,45 +3721,6 @@ fn handle_atelier(
         .map_err(|error| format!("atelier gateway request failed: {}", error)),
         "artifact.preview.open" | "artifactPreviewOpen" => {
             handle_atelier_artifact_preview_open(params)
-        }
-        "events.subscribe" | "eventsSubscribe" => {
-            let params = params.unwrap_or_else(|| json!({}));
-            let agent_id = params
-                .get("agentId")
-                .or_else(|| params.get("agent_id"))
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| "atelier.events.subscribe requires params.agentId".to_string())?
-                .to_string();
-            let task_id = params
-                .get("taskId")
-                .or_else(|| params.get("task_id"))
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string);
-            let after_event_seq = params
-                .get("afterEventSeq")
-                .or_else(|| params.get("after_event_seq"))
-                .and_then(Value::as_i64)
-                .unwrap_or(0);
-            let subscription = start_atelier_projection_event_stream(
-                applet_id.to_string(),
-                session_id.to_string(),
-                agent_id.clone(),
-                task_id,
-                after_event_seq,
-                context.token.clone(),
-                data_dir.to_path_buf(),
-            )?;
-            Ok(json!({
-                "ok": true,
-                "agentId": agent_id,
-                "topic": "atelier.projection.event",
-                "reused": !subscription.started,
-                "afterEventSeq": subscription.after_event_seq
-            }))
         }
         other => Err(format!("Unsupported atelier action: {}", other)),
     }
@@ -4090,512 +3996,6 @@ fn atelier_preview_session_component(value: &str) -> String {
         "id".to_string()
     } else {
         component.to_string()
-    }
-}
-
-fn start_atelier_projection_event_stream(
-    applet_id: String,
-    session_id: String,
-    agent_id: String,
-    task_id: Option<String>,
-    after_event_seq: i64,
-    token: String,
-    data_dir: PathBuf,
-) -> Result<AtelierProjectionSubscriptionStart, String> {
-    let subscription = ensure_atelier_projection_subscription(
-        &applet_id,
-        &session_id,
-        &agent_id,
-        task_id.as_deref(),
-        after_event_seq,
-        &data_dir,
-    )?;
-    if !subscription.started {
-        return Ok(subscription);
-    }
-    let subscription_for_thread = subscription.clone();
-    std::thread::spawn(move || {
-        let mut backoff_ms = 250_u64;
-        loop {
-            if !is_atelier_projection_subscription_active(&subscription_for_thread.key) {
-                break;
-            }
-            let cursor = current_atelier_projection_cursor(
-                &subscription_for_thread.key,
-                subscription_for_thread.after_event_seq,
-            );
-            match stream_atelier_projection_events(
-                &subscription_for_thread.key,
-                &subscription_for_thread.cursor_key,
-                &applet_id,
-                &session_id,
-                &agent_id,
-                task_id.as_deref(),
-                cursor,
-                &token,
-                &data_dir,
-            ) {
-                Ok(()) => {
-                    if !is_atelier_projection_subscription_active(&subscription_for_thread.key) {
-                        break;
-                    }
-                    tracing::warn!(applet_id = %applet_id, "Atelier projection event stream ended; reconnecting");
-                }
-                Err(error) => {
-                    if !is_atelier_projection_subscription_active(&subscription_for_thread.key) {
-                        break;
-                    }
-                    if let Err(enqueue_error) = enqueue_atelier_projection_subscription_rejected(
-                        &applet_id,
-                        &session_id,
-                        "atelier.events.subscribe",
-                        &error,
-                    ) {
-                        tracing::warn!(error = %enqueue_error, applet_id = %applet_id, "Failed to enqueue Atelier projection subscription rejection");
-                    }
-                    tracing::warn!(error = %error, applet_id = %applet_id, "Atelier projection event stream failed; reconnecting");
-                }
-            }
-            std::thread::sleep(Duration::from_millis(backoff_ms));
-            backoff_ms = (backoff_ms * 2).min(5_000);
-        }
-    });
-    Ok(subscription)
-}
-
-fn stream_atelier_projection_events(
-    subscription_key: &str,
-    cursor_key: &str,
-    applet_id: &str,
-    session_id: &str,
-    agent_id: &str,
-    task_id: Option<&str>,
-    after_event_seq: i64,
-    token: &str,
-    data_dir: &Path,
-) -> Result<(), String> {
-    if !is_atelier_projection_subscription_active(subscription_key) {
-        return Ok(());
-    }
-    let url = format!(
-        "{}{}",
-        station_client::station_base_url(),
-        "/sub-agent/agent/events/subscribe"
-    );
-    let client = Client::builder()
-        .timeout(Duration::from_millis(
-            ATELIER_PROJECTION_STREAM_REQUEST_TIMEOUT_MS,
-        ))
-        .build()
-        .map_err(|error| format!("failed to create Station Atelier event client: {error}"))?;
-    let mut body = json!({
-        "agent_id": agent_id,
-        "after_event_seq": after_event_seq.max(0),
-    });
-    if let Some(task_id) = task_id.map(str::trim).filter(|value| !value.is_empty()) {
-        body["task_id"] = json!(task_id);
-    }
-    let mut response = client
-        .post(url)
-        .header(CONTENT_TYPE, "application/json")
-        .header(AUTHORIZATION, format!("Bearer {}", token.trim()))
-        .header("Accept", "text/event-stream")
-        .json(&body)
-        .send()
-        .map_err(|error| {
-            if error.is_timeout() {
-                format!("TIMEOUT Station Atelier event stream request failed: {error}")
-            } else {
-                format!("Station Atelier event stream request failed: {error}")
-            }
-        })?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().unwrap_or_default();
-        let body = body.trim();
-        if body.is_empty() {
-            return Err(format!(
-                "Station Atelier event stream returned HTTP {status}"
-            ));
-        }
-        return Err(format!(
-            "Station Atelier event stream returned HTTP {status}: {body}"
-        ));
-    }
-
-    let mut bytes = [0_u8; 4096];
-    let mut buffer = String::new();
-    loop {
-        if !is_atelier_projection_subscription_active(subscription_key) {
-            break;
-        }
-        let read = match response.read(&mut bytes) {
-            Ok(read) => read,
-            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
-                continue;
-            }
-            Err(error) => {
-                return Err(format!(
-                    "failed to read Station Atelier event stream: {error}"
-                ));
-            }
-        };
-        if read == 0 {
-            break;
-        }
-        buffer.push_str(&String::from_utf8_lossy(&bytes[..read]));
-        while let Some(frame_end) = buffer.find("\n\n") {
-            let frame = buffer[..frame_end].to_string();
-            buffer = buffer[frame_end + 2..].to_string();
-            if let Some((_event, data)) = parse_atelier_sse_frame(&frame) {
-                if let Some(projected) = station_event_to_atelier_projection_event(data) {
-                    if let Some(seq) = projected.get("seq").and_then(Value::as_i64) {
-                        mark_atelier_projection_event_seq(
-                            subscription_key,
-                            cursor_key,
-                            seq,
-                            data_dir,
-                        )?;
-                    }
-                    enqueue_gateway_events(
-                        applet_id,
-                        session_id,
-                        vec![json!({ "topic": "atelier.projection.event", "payload": projected })],
-                    )?;
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-fn enqueue_atelier_projection_subscription_rejected(
-    applet_id: &str,
-    session_id: &str,
-    method: &str,
-    reason: &str,
-) -> Result<(), String> {
-    enqueue_gateway_events(
-        applet_id,
-        session_id,
-        vec![json!({
-            "topic": "atelier.projection.event",
-            "payload": {
-                "kind": "atelier.projection.subscription-rejected",
-                "method": method,
-                "reason": reason,
-            }
-        })],
-    )
-}
-
-fn parse_atelier_sse_frame(frame: &str) -> Option<(String, Value)> {
-    let mut event = "message".to_string();
-    let mut data_lines = Vec::new();
-    for line in frame.lines() {
-        let line = line.trim_end_matches('\r');
-        if let Some(value) = line.strip_prefix("event:") {
-            event = value.trim().to_string();
-        } else if let Some(value) = line.strip_prefix("data:") {
-            data_lines.push(value.trim_start().to_string());
-        }
-    }
-    if data_lines.is_empty() {
-        return None;
-    }
-    let data = data_lines.join("\n");
-    let parsed = serde_json::from_str::<Value>(&data).unwrap_or_else(|_| json!({ "raw": data }));
-    Some((event, parsed))
-}
-
-fn station_event_to_atelier_projection_event(data: Value) -> Option<Value> {
-    let event_id = data
-        .get("event_id")
-        .or_else(|| data.get("eventId"))
-        .and_then(Value::as_str)?
-        .to_string();
-    let metadata = data.get("metadata").and_then(Value::as_object);
-    let task_id = metadata
-        .and_then(|meta| meta.get("task_id").or_else(|| meta.get("taskId")))
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
-    if task_id.is_empty() {
-        return None;
-    }
-    let seq = metadata
-        .and_then(|meta| meta.get("event_seq").or_else(|| meta.get("eventSeq")))
-        .and_then(|value| {
-            value
-                .as_i64()
-                .or_else(|| value.as_str().and_then(|raw| raw.parse::<i64>().ok()))
-        })
-        .unwrap_or(0);
-    let payload = data.get("payload").cloned().unwrap_or_else(|| json!({}));
-    let text = atelier_projection_event_text(&data, &payload);
-    let block_kind = payload
-        .get("block_kind")
-        .or_else(|| payload.get("blockKind"))
-        .and_then(Value::as_str)
-        .unwrap_or("agent");
-    if block_kind == "decision_resolved" {
-        let block_id = payload
-            .get("block_id")
-            .or_else(|| payload.get("blockId"))
-            .and_then(Value::as_str)?;
-        let choice = payload.get("choice").and_then(Value::as_str)?;
-        return Some(json!({
-            "id": event_id,
-            "seq": seq,
-            "taskId": task_id,
-            "receivedAt": now_timestamp(),
-            "patch": {
-                "kind": "decision.resolved",
-                "taskId": task_id,
-                "blockId": block_id,
-                "choice": choice
-            }
-        }));
-    }
-    if block_kind == "artifact" {
-        let artifact_id = payload
-            .get("artifact_id")
-            .or_else(|| payload.get("artifactId"))
-            .and_then(Value::as_str)
-            .unwrap_or(&event_id);
-        let name = payload
-            .get("name")
-            .or_else(|| payload.get("title"))
-            .and_then(Value::as_str)
-            .unwrap_or("artifact");
-        let kind = payload
-            .get("kind")
-            .or_else(|| payload.get("file_kind"))
-            .or_else(|| payload.get("fileKind"))
-            .and_then(Value::as_str)
-            .unwrap_or("markdown");
-        let mut artifact = serde_json::Map::new();
-        artifact.insert("id".to_string(), json!(artifact_id));
-        artifact.insert("name".to_string(), json!(name));
-        artifact.insert(
-            "kind".to_string(),
-            json!(normalize_atelier_artifact_kind(kind)),
-        );
-        artifact.insert(
-            "meta".to_string(),
-            json!(payload
-                .get("meta")
-                .or_else(|| payload.get("produced_by"))
-                .and_then(Value::as_str)
-                .unwrap_or("Artifact")),
-        );
-        insert_optional_string(
-            &mut artifact,
-            "previewHint",
-            payload
-                .get("preview_hint")
-                .or_else(|| payload.get("previewHint")),
-        );
-        insert_optional_string(
-            &mut artifact,
-            "bodyRef",
-            payload.get("body_ref").or_else(|| payload.get("bodyRef")),
-        );
-        insert_optional_string(
-            &mut artifact,
-            "bodyHash",
-            payload.get("body_hash").or_else(|| payload.get("bodyHash")),
-        );
-        insert_optional_string(
-            &mut artifact,
-            "bodySize",
-            payload.get("body_size").or_else(|| payload.get("bodySize")),
-        );
-        insert_optional_string(
-            &mut artifact,
-            "bodyKind",
-            payload.get("body_kind").or_else(|| payload.get("bodyKind")),
-        );
-        if let Some(preview_target) = atelier_artifact_preview_target(&payload) {
-            artifact.insert("previewTarget".to_string(), preview_target);
-        }
-        insert_optional_string(&mut artifact, "url", payload.get("url"));
-        if let Some(paths) = payload.get("paths") {
-            artifact.insert("paths".to_string(), paths.clone());
-        }
-        insert_optional_string(&mut artifact, "src", payload.get("src"));
-        insert_optional_string(&mut artifact, "size", payload.get("size"));
-        return Some(json!({
-            "id": event_id,
-            "seq": seq,
-            "taskId": task_id,
-            "receivedAt": now_timestamp(),
-            "patch": {
-                "kind": "artifact.upsert",
-                "taskId": task_id,
-                "artifact": Value::Object(artifact)
-            }
-        }));
-    }
-    if block_kind == "gate_result" {
-        let gate_id = payload
-            .get("gate_id")
-            .or_else(|| payload.get("gateId"))
-            .and_then(Value::as_str)
-            .unwrap_or(&event_id);
-        return Some(json!({
-            "id": event_id,
-            "seq": seq,
-            "taskId": task_id,
-            "receivedAt": now_timestamp(),
-            "patch": {
-                "kind": "gate.upsert",
-                "taskId": task_id,
-                "gate": {
-                    "id": gate_id,
-                    "name": payload.get("name").and_then(Value::as_str).unwrap_or("Gate"),
-                    "status": normalize_atelier_gate_status(payload.get("status").and_then(Value::as_str).unwrap_or("pending")),
-                    "summary": payload
-                        .get("summary")
-                        .or_else(|| payload.get("result_summary"))
-                        .or_else(|| payload.get("resultSummary"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("Gate result updated"),
-                    "checks": payload.get("checks").cloned().unwrap_or_else(|| json!([])),
-                    "artifactIds": payload
-                        .get("artifact_ids")
-                        .or_else(|| payload.get("artifactIds"))
-                        .cloned()
-                        .unwrap_or_else(|| json!([])),
-                    "at": now_timestamp()
-                }
-            }
-        }));
-    }
-    let block = if block_kind == "user" {
-        json!({
-            "kind": "user",
-            "id": event_id,
-            "text": text,
-            "at": now_timestamp(),
-            "meta": payload
-        })
-    } else {
-        json!({
-            "kind": "agent",
-            "id": event_id,
-            "text": text,
-            "at": now_timestamp(),
-            "done": true,
-            "meta": payload
-        })
-    };
-    Some(json!({
-        "id": event_id,
-        "seq": seq,
-        "taskId": task_id,
-        "receivedAt": now_timestamp(),
-        "patch": {
-            "kind": "stream.append",
-            "taskId": task_id,
-            "blocks": [block]
-        }
-    }))
-}
-
-fn normalize_atelier_artifact_kind(kind: &str) -> &str {
-    match kind {
-        "web" | "image" | "diff" => kind,
-        _ => "markdown",
-    }
-}
-
-fn insert_optional_string(
-    map: &mut serde_json::Map<String, Value>,
-    key: &str,
-    value: Option<&Value>,
-) {
-    let Some(value) = value else {
-        return;
-    };
-    let text = match value {
-        Value::String(text) => text.clone(),
-        Value::Number(number) => number.to_string(),
-        Value::Bool(flag) => flag.to_string(),
-        _ => return,
-    };
-    map.insert(key.to_string(), Value::String(text));
-}
-
-fn atelier_artifact_preview_target(payload: &Value) -> Option<Value> {
-    let target = payload
-        .get("preview_target")
-        .or_else(|| payload.get("previewTarget"))?
-        .as_object()?;
-    for forbidden in [
-        "markdown", "content", "body", "html", "diff", "patch", "url", "src", "iframe",
-    ] {
-        if target.contains_key(forbidden) {
-            return None;
-        }
-    }
-    let mut mapped = serde_json::Map::new();
-    insert_optional_string(&mut mapped, "kind", target.get("kind"));
-    insert_optional_string(&mut mapped, "mode", target.get("mode"));
-    insert_optional_string(&mut mapped, "label", target.get("label"));
-    insert_optional_string(
-        &mut mapped,
-        "sandboxRef",
-        target
-            .get("sandbox_ref")
-            .or_else(|| target.get("sandboxRef")),
-    );
-    insert_optional_string(
-        &mut mapped,
-        "bodyRef",
-        target.get("body_ref").or_else(|| target.get("bodyRef")),
-    );
-    if mapped.is_empty() {
-        return None;
-    }
-    Some(Value::Object(mapped))
-}
-
-fn normalize_atelier_gate_status(status: &str) -> &str {
-    match status {
-        "running" | "passed" | "failed" | "blocked" => status,
-        _ => "pending",
-    }
-}
-
-fn atelier_projection_event_text(data: &Value, payload: &Value) -> String {
-    if let Some(summary) = payload
-        .get("text")
-        .or_else(|| payload.get("message"))
-        .or_else(|| payload.get("content"))
-        .or_else(|| payload.get("result_summary"))
-        .or_else(|| payload.get("resultSummary"))
-        .or_else(|| payload.get("title"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        return summary.to_string();
-    }
-    match data
-        .get("event_type")
-        .or_else(|| data.get("eventType"))
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-    {
-        "agent.collaboration.task.created" => "已创建协作任务".to_string(),
-        "agent.collaboration.node.running" => "Agent 节点开始执行".to_string(),
-        "agent.collaboration.node.completed" => "Agent 节点已完成执行".to_string(),
-        "agent.collaboration.node.failed" => "Agent 节点执行失败".to_string(),
-        "agent.collaboration.task.completed" => "协作任务已完成".to_string(),
-        "agent.collaboration.task.failed" => "协作任务失败".to_string(),
-        "agent.collaboration.task.cancelled" => "协作任务已取消".to_string(),
-        _ => "收到协作编排事件".to_string(),
     }
 }
 
@@ -5773,7 +5173,6 @@ mod tests {
                 "events.unsubscribe".to_string(),
                 "events.poll".to_string(),
                 "atelier.artifact.preview.open".to_string(),
-                "atelier.events.subscribe".to_string(),
             ],
             services: vec![AppletGatewayService {
                 id: "atelier".to_string(),
@@ -6176,8 +5575,6 @@ mod tests {
         };
         let token = std::env::var("PEERS_APPLET_ATELIER_GATE_TOKEN")
             .expect("atelier product gate token should be provided by the gate server");
-        let agent_id = std::env::var("PEERS_APPLET_ATELIER_GATE_AGENT_ID")
-            .expect("atelier product gate agent id should be provided by the gate server");
         let task_id = std::env::var("PEERS_APPLET_ATELIER_GATE_TASK_ID")
             .expect("atelier product gate task id should be provided by the gate server");
         std::env::set_var("PEERS_APPLET_SERVICE_ATELIER", &base_url);
@@ -6257,25 +5654,27 @@ mod tests {
             "events.subscribe failed: {:?}",
             subscribe_topic.error
         );
-        let subscribe_stream = applets_invoke_registered(
-            gateway_context.clone(),
-            atelier_invoke(
-                &session_id,
-                "atelier",
-                "events.subscribe",
-                Some(json!({
-                    "agentId": agent_id,
-                    "taskId": task_id,
-                    "afterEventSeq": 0
-                })),
-            ),
-            &data_dir,
-        );
-        assert!(
-            subscribe_stream.ok,
-            "atelier.events.subscribe failed: {:?}",
-            subscribe_stream.error
-        );
+        for sequence in [1_u64, 2_u64] {
+            fan_out_atelier_canonical_event(
+                "atelier-real-product-gate-actor",
+                &format!("stream-{sequence}"),
+                &StreamEvent {
+                    event_id: format!("stream-{sequence}"),
+                    kind: Some(RealtimeEventKind::AgentDomainEvent(AgentDomainEvent {
+                        domain_event_id: format!("domain-{sequence}"),
+                        domain_sequence: sequence,
+                        schema_version: 1,
+                        event_type: "agent.collaboration.task.updated".to_string(),
+                        goal_id: "goal-real-product".to_string(),
+                        task_id: task_id.clone(),
+                        goal_revision: sequence,
+                        committed_ts_unix_ms: 1_800_000_000_000,
+                    })),
+                    ..Default::default()
+                },
+            )
+            .expect("canonical event bridge should fan out");
+        }
 
         let mut projected_events = Vec::new();
         for _ in 0..40 {
@@ -6317,27 +5716,6 @@ mod tests {
 			"controlled stream close should reconnect from persisted cursor and deliver seq=2: {:?}",
 			reconnected_sequences
 		);
-        let replay_probe = fetch_atelier_replay_probe(&base_url);
-        let replay_probe_requests = replay_probe
-            .get("requests")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        assert!(
-            replay_probe_request_matches(&replay_probe_requests, 0, &[]),
-            "first controlled stream request should close before replay and keep afterEventSeq=0: {:?}",
-            replay_probe
-        );
-        assert!(
-            replay_probe_request_matches(&replay_probe_requests, 0, &[1]),
-            "first controlled stream request should replay only seq=1 before close: {:?}",
-            replay_probe
-        );
-        assert!(
-            replay_probe_request_replays_after_cursor(&replay_probe_requests, 1, 2),
-            "reconnected stream request should use persisted cursor afterEventSeq=1, replay seq=2, and not replay stale events: {:?}",
-			replay_probe
-		);
         assert_eq!(
             projected
                 .get("payload")
@@ -6351,7 +5729,7 @@ mod tests {
                 .and_then(|payload| payload.get("patch"))
                 .and_then(|patch| patch.get("kind"))
                 .and_then(Value::as_str),
-            Some("stream.append")
+            Some("snapshot.invalidate")
         );
 
         let unsubscribe = applets_invoke_registered(
@@ -6370,97 +5748,6 @@ mod tests {
             unsubscribe.error
         );
 
-        let cursor_session_id = unique_session_id("session-atelier-product-cursor");
-        let cursor_data_dir = temp_data_dir("atelier-real-product-gate-cursor");
-        let subscribe_cursor_topic = applets_invoke_registered(
-            gateway_context.clone(),
-            atelier_invoke(
-                &cursor_session_id,
-                "events",
-                "subscribe",
-                Some(json!({ "topic": "atelier.projection.event" })),
-            ),
-            &cursor_data_dir,
-        );
-        assert!(
-            subscribe_cursor_topic.ok,
-            "cursor events.subscribe failed: {:?}",
-            subscribe_cursor_topic.error
-        );
-        let subscribe_cursor_stream = applets_invoke_registered(
-            gateway_context.clone(),
-            atelier_invoke(
-                &cursor_session_id,
-                "atelier",
-                "events.subscribe",
-                Some(json!({
-                    "agentId": agent_id,
-                    "taskId": task_id,
-                    "afterEventSeq": 1
-                })),
-            ),
-            &cursor_data_dir,
-        );
-        assert!(
-            subscribe_cursor_stream.ok,
-            "cursor atelier.events.subscribe failed: {:?}",
-            subscribe_cursor_stream.error
-        );
-
-        let mut cursor_projected_events = Vec::new();
-        for _ in 0..20 {
-            std::thread::sleep(Duration::from_millis(100));
-            let poll = applets_invoke_registered(
-                gateway_context.clone(),
-                atelier_invoke(&cursor_session_id, "events", "poll", None),
-                &cursor_data_dir,
-            );
-            assert!(poll.ok, "cursor events.poll failed: {:?}", poll.error);
-            let payload: Value = serde_json::from_str(&poll.data.unwrap().status).unwrap();
-            let events = payload
-                .get("events")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            cursor_projected_events.extend(events);
-            if cursor_projected_events.iter().any(|event| {
-                event.get("topic").and_then(Value::as_str) == Some("atelier.projection.event")
-                    && event
-                        .get("payload")
-                        .and_then(|payload| payload.get("seq"))
-                        .and_then(Value::as_i64)
-                        == Some(2)
-            }) {
-                break;
-            }
-        }
-        let replayed_sequences = atelier_projection_event_sequences(&cursor_projected_events);
-        assert!(
-            !replayed_sequences.contains(&1),
-            "cursor replay must not return events at or before afterEventSeq: {:?}",
-            replayed_sequences
-        );
-        assert!(
-            replayed_sequences.contains(&2),
-            "cursor replay should return later durable event seq=2: {:?}",
-            replayed_sequences
-        );
-
-        let unsubscribe_cursor = applets_invoke_registered(
-            gateway_context,
-            atelier_invoke(
-                &cursor_session_id,
-                "events",
-                "unsubscribe",
-                Some(json!({ "topic": "atelier.projection.event" })),
-            ),
-            &data_dir,
-        );
-        assert!(
-            unsubscribe_cursor.ok,
-            "cursor events.unsubscribe failed: {:?}",
-            unsubscribe_cursor.error
-        );
         std::env::remove_var("PEERS_APPLET_SERVICE_ATELIER");
         std::env::remove_var("PEERS_STATION_URL");
     }
@@ -6488,52 +5775,6 @@ mod tests {
                     .and_then(Value::as_i64)
             })
             .collect::<Vec<_>>()
-    }
-
-    fn fetch_atelier_replay_probe(base_url: &str) -> Value {
-        let response = Client::new()
-            .get(format!(
-                "{}/__atelier_gate/replay_probe",
-                base_url.trim_end_matches('/')
-            ))
-            .send()
-            .expect("Atelier replay probe request should succeed")
-            .text()
-            .expect("Atelier replay probe body should be readable");
-        serde_json::from_str(&response).expect("Atelier replay probe should return JSON")
-    }
-
-    fn replay_probe_request_matches(
-        requests: &[Value],
-        after_event_seq: i64,
-        replayed_seqs: &[i64],
-    ) -> bool {
-        requests.iter().any(|request| {
-            request.get("afterEventSeq").and_then(Value::as_i64) == Some(after_event_seq)
-                && request
-                    .get("replayedSeqs")
-                    .and_then(Value::as_array)
-                    .map(|values| values.iter().filter_map(Value::as_i64).collect::<Vec<_>>())
-                    .as_deref()
-                    == Some(replayed_seqs)
-        })
-    }
-
-    fn replay_probe_request_replays_after_cursor(
-        requests: &[Value],
-        after_event_seq: i64,
-        required_seq: i64,
-    ) -> bool {
-        requests.iter().any(|request| {
-            let replayed_seqs = request
-                .get("replayedSeqs")
-                .and_then(Value::as_array)
-                .map(|values| values.iter().filter_map(Value::as_i64).collect::<Vec<_>>())
-                .unwrap_or_default();
-            request.get("afterEventSeq").and_then(Value::as_i64) == Some(after_event_seq)
-                && replayed_seqs.contains(&required_seq)
-                && replayed_seqs.iter().all(|seq| *seq > after_event_seq)
-        })
     }
 
     fn subscribe_event(
@@ -8716,51 +7957,6 @@ mod tests {
     }
 
     #[test]
-    fn authorizes_atelier_projection_subscription_from_manifest_permission() {
-        let data_dir = temp_data_dir("atelier-events-allow");
-        let result = applets_invoke_registered(
-            context(),
-            invoke(
-                "session-atelier-events-allow",
-                "atelier",
-                "events.subscribe",
-                Some(json!({ "agentId": "agent-test", "afterEventSeq": 0 })),
-                manifest(vec!["atelier.events.subscribe"]),
-            ),
-            &data_dir,
-        );
-
-        assert!(result.ok);
-        let payload: Value = serde_json::from_str(&result.data.unwrap().status).unwrap();
-        assert_eq!(
-            payload.get("topic").and_then(Value::as_str),
-            Some("atelier.projection.event")
-        );
-    }
-
-    #[test]
-    fn denies_atelier_projection_subscription_without_manifest_permission() {
-        let data_dir = temp_data_dir("atelier-events-deny");
-        let result = applets_invoke_registered(
-            context(),
-            invoke(
-                "session-atelier-events-deny",
-                "atelier",
-                "events.subscribe",
-                Some(json!({ "agentId": "agent-test" })),
-                manifest(vec!["events.subscribe"]),
-            ),
-            &data_dir,
-        );
-
-        assert!(!result.ok);
-        assert_eq!(
-            applet_error_code(&result).as_deref(),
-            Some("PERMISSION_DENIED")
-        );
-    }
-
-    #[test]
     fn atelier_workspace_open_accepts_host_intent_only_canonical_uri() {
         let _guard = full_e2e_env_lock();
         let result = handle_atelier_workspace_open(
@@ -8952,187 +8148,79 @@ mod tests {
     }
 
     #[test]
-    fn reuses_and_cancels_atelier_projection_subscription_registry() {
-        let data_dir = temp_data_dir("atelier-registry");
-        let applet_id = "atelier";
-        let session_id = unique_session_id("atelier-registry");
-        let first = ensure_atelier_projection_subscription(
-            applet_id,
-            &session_id,
-            "agent-test",
-            Some("task-1"),
-            7,
+    fn canonical_agent_event_fans_out_only_to_matching_actor_atelier_sessions() {
+        let data_dir = temp_data_dir("atelier-canonical-event");
+        let session_id = unique_session_id("atelier-canonical-event");
+        let other_session_id = unique_session_id("atelier-canonical-event-other");
+        let subscribe = applets_invoke_registered(
+            context(),
+            atelier_invoke(
+                &session_id,
+                "events",
+                "subscribe",
+                Some(json!({ "topic": ATELIER_PROJECTION_EVENT_TOPIC })),
+            ),
             &data_dir,
-        )
-        .expect("first subscription should register");
-        assert!(first.started);
-        assert_eq!(first.after_event_seq, 7);
-
-        mark_atelier_projection_event_seq(&first.key, &first.cursor_key, 11, &data_dir)
-            .expect("cursor should persist");
-        let second = ensure_atelier_projection_subscription(
-            applet_id,
-            &session_id,
-            "agent-test",
-            Some("task-1"),
-            0,
+        );
+        assert!(
+            subscribe.ok,
+            "events.subscribe failed: {:?}",
+            subscribe.error
+        );
+        let other_context = AccessContext {
+            actor_ptid: Some("ptid:person:other".to_string()),
+            token: "token-other".to_string(),
+        };
+        let other_subscribe = applets_invoke_registered(
+            other_context,
+            atelier_invoke(
+                &other_session_id,
+                "events",
+                "subscribe",
+                Some(json!({ "topic": ATELIER_PROJECTION_EVENT_TOPIC })),
+            ),
             &data_dir,
-        )
-        .expect("duplicate subscription should reuse");
-        assert!(!second.started);
-        assert_eq!(second.after_event_seq, 11);
-        assert!(is_atelier_projection_subscription_active(&first.key));
-
-        cancel_atelier_projection_subscriptions_for_session(applet_id, &session_id);
-        assert!(!is_atelier_projection_subscription_active(&first.key));
-
-        let third = ensure_atelier_projection_subscription(
-            applet_id,
-            &session_id,
-            "agent-test",
-            Some("task-1"),
-            3,
-            &data_dir,
-        )
-        .expect("cancelled subscription should restart");
-        assert!(third.started);
-        assert_eq!(third.after_event_seq, 11);
-    }
-
-    #[test]
-    fn reloads_atelier_projection_cursor_after_registry_restart() {
-        let data_dir = temp_data_dir("atelier-cursor-persist");
-        let applet_id = "atelier";
-        let session_id = unique_session_id("atelier-cursor-persist");
-        let first = ensure_atelier_projection_subscription(
-            applet_id,
-            &session_id,
-            "agent-test",
-            Some("task-1"),
-            7,
-            &data_dir,
-        )
-        .expect("first subscription should register");
-        mark_atelier_projection_event_seq(&first.key, &first.cursor_key, 19, &data_dir)
-            .expect("cursor should persist");
-        if let Ok(mut guard) = atelier_projection_subscription_store().lock() {
-            guard.remove(&first.key);
-        }
-        let restarted_session_id = unique_session_id("atelier-cursor-persist-restart");
-
-        let restored = ensure_atelier_projection_subscription(
-            applet_id,
-            &restarted_session_id,
-            "agent-test",
-            Some("task-1"),
-            0,
-            &data_dir,
-        )
-        .expect("subscription should restore persisted cursor");
-
-        assert!(restored.started);
-        assert_eq!(restored.after_event_seq, 19);
-        assert_ne!(restored.key, first.key);
-        assert_eq!(restored.cursor_key, first.cursor_key);
-        assert_eq!(
-            load_atelier_projection_cursor(&data_dir, &first.cursor_key)
-                .expect("cursor store should be readable"),
-            19
         );
-    }
+        assert!(
+            other_subscribe.ok,
+            "other events.subscribe failed: {:?}",
+            other_subscribe.error
+        );
 
-    #[test]
-    fn maps_station_artifact_event_to_atelier_projection_patch() {
-        let projected = station_event_to_atelier_projection_event(json!({
-            "event_id": "evt_artifact_1",
-            "metadata": {
-                "task_id": "collab_1",
-                "event_seq": 12
-            },
-            "payload": {
-                "block_kind": "artifact",
-                "artifact_id": "art_1",
-                "name": "report.md",
-                "kind": "markdown",
-                "markdown": "# Report",
-                "preview_hint": "metadata_only",
-                "body_ref": "artifact://collab_1/art_1/body",
-                "body_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "body_size": 8,
-                "body_kind": "markdown",
-                "preview_target": {
-                    "kind": "markdown",
-                    "mode": "sandbox_manifest",
-                    "label": "Host sandbox preview manifest",
-                    "sandbox_ref": "atelier-sandbox://collab_1/art_1/preview",
-                    "body_ref": "artifact://collab_1/art_1/body"
-                }
-            }
-        }))
-        .expect("expected artifact event to project");
+        let event = StreamEvent {
+            event_id: "stream-12".to_string(),
+            kind: Some(RealtimeEventKind::AgentDomainEvent(AgentDomainEvent {
+                domain_event_id: "task-event-12".to_string(),
+                domain_sequence: 12,
+                schema_version: 1,
+                event_type: "agent.task.running".to_string(),
+                goal_id: "goal-1".to_string(),
+                task_id: "task-1".to_string(),
+                goal_revision: 7,
+                committed_ts_unix_ms: 1_800_000_000_000,
+            })),
+            ..Default::default()
+        };
+        fan_out_atelier_canonical_event("ptid:person:applet-test", "stream-12", &event)
+            .expect("canonical event fan-out should succeed");
 
-        assert_eq!(projected["patch"]["kind"], "artifact.upsert");
-        assert_eq!(projected["patch"]["taskId"], "collab_1");
-        assert_eq!(projected["patch"]["artifact"]["id"], "art_1");
-        assert!(projected["patch"]["artifact"].get("markdown").is_none());
+        let delivered = drain_gateway_events("peers.atelier", &session_id)
+            .expect("matching actor outbox should drain");
+        assert_eq!(delivered.len(), 1);
+        assert_eq!(delivered[0]["topic"], ATELIER_PROJECTION_EVENT_TOPIC);
+        assert_eq!(delivered[0]["payload"]["id"], "task-event-12");
+        assert_eq!(delivered[0]["payload"]["seq"], 12);
         assert_eq!(
-            projected["patch"]["artifact"]["previewHint"],
-            "metadata_only"
+            delivered[0]["payload"]["patch"]["kind"],
+            "snapshot.invalidate"
         );
         assert_eq!(
-            projected["patch"]["artifact"]["bodyRef"],
-            "artifact://collab_1/art_1/body"
+            delivered[0]["payload"]["patch"]["streamEventId"],
+            "stream-12"
         );
-        assert_eq!(
-            projected["patch"]["artifact"]["bodyHash"],
-            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        );
-        assert_eq!(projected["patch"]["artifact"]["bodySize"], "8");
-        assert_eq!(projected["patch"]["artifact"]["bodyKind"], "markdown");
-        assert_eq!(
-            projected["patch"]["artifact"]["previewTarget"]["mode"],
-            "sandbox_manifest"
-        );
-        assert_eq!(
-            projected["patch"]["artifact"]["previewTarget"]["sandboxRef"],
-            "atelier-sandbox://collab_1/art_1/preview"
-        );
-        assert_eq!(
-            projected["patch"]["artifact"]["previewTarget"]["bodyRef"],
-            "artifact://collab_1/art_1/body"
-        );
-        assert!(projected["patch"]["artifact"]["previewTarget"]
-            .get("url")
-            .is_none());
-    }
-
-    #[test]
-    fn maps_station_gate_event_to_atelier_projection_patch() {
-        let projected = station_event_to_atelier_projection_event(json!({
-            "event_id": "evt_gate_1",
-            "metadata": {
-                "task_id": "collab_1",
-                "event_seq": 13
-            },
-            "payload": {
-                "block_kind": "gate_result",
-                "gate_id": "gate_1",
-                "name": "Verification Gate",
-                "status": "passed",
-                "summary": "All checks passed",
-                "artifactIds": ["art_1"],
-                "checks": [
-                    { "name": "unit", "status": "passed" }
-                ]
-            }
-        }))
-        .expect("expected gate event to project");
-
-        assert_eq!(projected["patch"]["kind"], "gate.upsert");
-        assert_eq!(projected["patch"]["taskId"], "collab_1");
-        assert_eq!(projected["patch"]["gate"]["id"], "gate_1");
-        assert_eq!(projected["patch"]["gate"]["status"], "passed");
-        assert_eq!(projected["patch"]["gate"]["artifactIds"][0], "art_1");
+        assert!(drain_gateway_events("peers.atelier", &other_session_id)
+            .expect("other actor outbox should drain")
+            .is_empty());
     }
 
     #[test]

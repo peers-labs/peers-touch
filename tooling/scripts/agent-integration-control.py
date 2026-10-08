@@ -118,12 +118,16 @@ def read_workspace_descriptor(path: Path) -> tuple[Path, tuple[Path, ...]]:
             raise RuntimeError("TRAE_WORKSPACE_DESCRIPTOR_INVALID")
         try:
             candidate = (descriptor.parent / folder_path).resolve(strict=True)
+        except FileNotFoundError:
+            continue
         except OSError as error:
             raise RuntimeError("TRAE_WORKSPACE_DESCRIPTOR_INVALID") from error
         if not candidate.is_dir():
-            raise RuntimeError("TRAE_WORKSPACE_DESCRIPTOR_INVALID")
+            continue
         if candidate not in roots:
             roots.append(candidate)
+    if not roots:
+        raise RuntimeError("TRAE_WORKSPACE_DESCRIPTOR_INVALID")
     return descriptor, tuple(roots)
 
 
@@ -706,7 +710,7 @@ def claim_installer_action_grant(
         )
 
 
-def require_global_idle(root: Path, current_workspace_id: str) -> None:
+def authorize_installation(root: Path, current_workspace_id: str) -> bool:
     now = datetime.now(timezone.utc)
     ledger = validated_work_ledger(root)
     live_declarations = [
@@ -719,8 +723,7 @@ def require_global_idle(root: Path, current_workspace_id: str) -> None:
             or timestamp(item.get("expiresAt")) > now
         )
     ]
-    if live_declarations:
-        raise RuntimeError("GLOBAL_WORKFLOW_NOT_IDLE: live declaration")
+    purge_legacy_state = not live_declarations
 
     liveness = inspect_workflow_liveness(root, now)
     live_assignments = liveness["bindings"].get("liveAssignments")
@@ -759,6 +762,8 @@ def require_global_idle(root: Path, current_workspace_id: str) -> None:
     ]
     if non_installer or len(live_actions) > 1:
         raise RuntimeError("GLOBAL_WORKFLOW_NOT_IDLE: live workflow action")
+    if len(live_actions) == 0 and live_declarations:
+        return False
     if len(live_actions) != 1:
         raise RuntimeError("WORKFLOW_ACTION_GRANT_UNAVAILABLE")
     exact_receipt = {
@@ -767,6 +772,7 @@ def require_global_idle(root: Path, current_workspace_id: str) -> None:
         if key != "actorProjection"
     }
     claim_installer_action_grant(root, exact_receipt, now)
+    return purge_legacy_state
 
 
 def purge_legacy_binding_state() -> None:
@@ -1191,7 +1197,7 @@ def install(
         if host == "cursor"
         else None
     )
-    require_global_idle(root, workspace_id)
+    purge_legacy_state = authorize_installation(root, workspace_id)
     write_installation_receipt(
         workspace_id,
         branch,
@@ -1203,7 +1209,13 @@ def install(
     )
     skills_root = target_root / "skills"
     try:
-        purge_legacy_binding_state()
+        if purge_legacy_state:
+            purge_legacy_binding_state()
+        else:
+            print(
+                "preserved inert legacy workflow history while "
+                "Development declarations are live"
+            )
         if skills_root.is_symlink():
             skills_root.unlink()
         skills_root.mkdir(mode=0o700, parents=True, exist_ok=True)

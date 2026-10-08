@@ -5,24 +5,12 @@ export const ATELIER_PROJECTION_CONTRACT = {
   "version": "atelier-projection/v0",
   "eventTopic": "atelier.projection.event",
   "eventSubscription": {
-    "agentIdSourcePriority": [
-      "agentId",
-      "agentIds[0]"
-    ],
-    "taskIdSourcePriority": [
-      "certificationCreatedSelectedTaskId",
-      "explicitTaskId",
-      "controllerSelectedTaskId",
-      "snapshotSelectedTaskId",
-      "snapshotFirstTaskId"
-    ],
-    "defaultCursorSource": "workspace.replay[taskId].nextEventSeq",
-    "cursorNumberPolicy": "safe_integer",
-    "zeroCursorPolicy": "omit",
-    "zeroCursorException": {
-      "certificationMode": "product-window-e2e",
-      "explicitZeroCursorPolicy": "preserve"
-    },
+    "transport": "canonical_host_bridge",
+    "hostSubscriptionMethod": "events.subscribe",
+    "stationPath": "/events/stream",
+    "cursorOwner": "desktop.canonical_realtime_supervisor",
+    "invalidationPatchKind": "snapshot.invalidate",
+    "resyncPayloadKind": "atelier.projection.resync",
     "controlledEvidence": {
       "readiness": "controlled_local_upstream",
       "evidenceClass": "CONTROLLED_LOCAL_UPSTREAM",
@@ -35,37 +23,25 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "tooling/acceptance/evidence/applets/official-applet/atelier-bridge-runtime-gate.json"
       ],
       "eventTopic": "atelier.projection.event",
-      "subscriptionMethod": "atelier.events.subscribe",
-      "agentIdSourcePriority": [
-        "agentId",
-        "agentIds[0]"
-      ],
-      "taskIdSourcePriority": [
-        "certificationCreatedSelectedTaskId",
-        "explicitTaskId",
-        "controllerSelectedTaskId",
-        "snapshotSelectedTaskId",
-        "snapshotFirstTaskId"
-      ],
-      "defaultCursorSource": "workspace.replay[taskId].nextEventSeq",
-      "cursorNumberPolicy": "safe_integer",
-      "zeroCursorPolicy": "omit",
-      "zeroCursorException": {
-        "certificationMode": "product-window-e2e",
-        "explicitZeroCursorPolicy": "preserve"
-      },
+      "transport": "canonical_host_bridge",
+      "hostSubscriptionMethod": "events.subscribe",
+      "stationPath": "/events/stream",
+      "cursorOwner": "desktop.canonical_realtime_supervisor",
+      "invalidationPatchKind": "snapshot.invalidate",
+      "resyncPayloadKind": "atelier.projection.resync",
       "hostEventBridgeRequired": true,
       "missingHostEventBridgeFailsClosed": true,
       "subscriptionRejectionTypedRecoveryProven": true,
       "eventVsSnapshotFreshnessProven": true,
       "releaseBeforeRejectCleanupProven": true,
       "boundedRetryMatrixProven": true,
+      "canonicalSingleConnectionProven": true,
+      "privateAgentStreamDeleted": true,
       "realStationSseFailureMatrixProven": false,
-      "realCrossRestartE2EProven": false,
+      "realCrossRestartE2EProven": true,
       "realHostStationAppletE2EProven": false
     }
   },
-  "subscriptionMethod": "atelier.events.subscribe",
   "methods": [
     "atelier.workspace.load",
     "atelier.project.createFromGoal",
@@ -79,8 +55,7 @@ export const ATELIER_PROJECTION_CONTRACT = {
     "atelier.feedback.confirmRerun",
     "atelier.workspace.open",
     "atelier.artifact.body.fetch",
-    "atelier.artifact.preview.open",
-    "atelier.events.subscribe"
+    "atelier.artifact.preview.open"
   ],
   "runtimeMethods": [
     "atelier.workspace.load",
@@ -175,12 +150,6 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "intentKind": "artifact_preview_host_intent",
       "sideEffectClass": "host_ui",
       "executionForbidden": true
-    },
-    "atelier.events.subscribe": {
-      "intentOwner": "station",
-      "intentKind": "projection_event_subscription",
-      "sideEffectClass": "none",
-      "executionForbidden": true
     }
   },
   "methodGovernance": {
@@ -212,12 +181,9 @@ export const ATELIER_PROJECTION_CONTRACT = {
       "atelier.workspace.open",
       "atelier.artifact.preview.open"
     ],
-    "eventSubscriptionMethods": [
-      "atelier.events.subscribe"
-    ],
+    "eventSubscriptionMethods": [],
     "payloadlessMethods": [
-      "atelier.workspace.load",
-      "atelier.events.subscribe"
+      "atelier.workspace.load"
     ],
     "forbiddenExecutionActions": [
       "provider.invoke",
@@ -279,6 +245,7 @@ export const ATELIER_PROJECTION_CONTRACT = {
         "agentIds"
       ],
       "optionalFields": [
+        "clientIdempotencyKey",
         "intentPreset",
         "run.kind",
         "run.flowId",
@@ -410,6 +377,7 @@ export const ATELIER_PROJECTION_CONTRACT = {
           "agentIds"
         ],
         "optionalFields": [
+          "clientIdempotencyKey",
           "intentPreset",
           "run.kind",
           "run.flowId",
@@ -1842,6 +1810,7 @@ export const ATELIER_PROJECTION_CONTRACT = {
   ],
   "patchKinds": [
     "snapshot",
+    "snapshot.invalidate",
     "task.upsert",
     "task.status",
     "stream.append",
@@ -3415,7 +3384,6 @@ export type AtelierBudgetStatus = typeof ATELIER_PROJECTION_CONTRACT.budgetSurfa
 export type AtelierAgentRole = typeof ATELIER_PROJECTION_CONTRACT.agentRoleAuthority.roles[number];
 
 export const ATELIER_PROJECTION_EVENT_TOPIC = ATELIER_PROJECTION_CONTRACT.eventTopic;
-export const ATELIER_PROJECTION_SUBSCRIPTION_METHOD = ATELIER_PROJECTION_CONTRACT.subscriptionMethod;
 export const ATELIER_METHOD_INTENTS = ATELIER_PROJECTION_CONTRACT.methodIntents;
 export const ATELIER_TASK_LIFECYCLE = ATELIER_PROJECTION_CONTRACT.taskLifecycle;
 export const ATELIER_TASK_LIFECYCLE_STATES = ATELIER_PROJECTION_CONTRACT.taskLifecycle.states;

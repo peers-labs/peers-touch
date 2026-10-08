@@ -40,14 +40,35 @@ import {
   type AtelierProjectionVersion,
 } from './projection.contract.generated';
 
+export const TASK_RUN_LIFECYCLE_STATUSES = [
+  'pending',
+  'running',
+  'needs_user',
+  'completed',
+  'failed',
+  'cancelled',
+  'unavailable',
+] as const;
+
+export type TaskRunLifecycleStatus =
+  (typeof TASK_RUN_LIFECYCLE_STATUSES)[number];
+
 export interface AtelierTask {
   id: string;
   project: string;
   projectId?: string;
+  goalId?: string;
+  taskRunId?: string;
+  legacySourceId?: string;
+  migrationState?: 'migrated' | 'blocked';
+  migrationBlockReason?: string;
   title: string;
   status: string;
+  executionStatus: TaskRunLifecycleStatus;
+  stepId: string;
+  attemptId: string;
+  attempt: number;
   branch?: string;
-  running?: boolean;
   intentPreset?: string;
   providerStrategyPreset?: string;
   gatePlanPreset?: string;
@@ -63,6 +84,11 @@ export interface AtelierWorkspaceOpenTarget {
 
 export interface AtelierProjectProjection {
   id: string;
+  goalId?: string;
+  taskRunId?: string;
+  legacySourceId?: string;
+  migrationState?: 'migrated' | 'blocked';
+  migrationBlockReason?: string;
   goal: string;
   title: string;
   state: string;
@@ -329,8 +355,18 @@ export interface AtelierProjectionSnapshot {
 
 export type AtelierProjectionPatch =
   | { kind: 'snapshot'; snapshot: AtelierProjectionSnapshot }
+  | {
+      kind: 'snapshot.invalidate';
+      streamEventId: string;
+      eventType: string;
+      goalId: string;
+      taskId: string;
+      goalRevision: number;
+      schemaVersion: number;
+    }
   | { kind: 'task.upsert'; task: AtelierTask; select?: boolean }
   | { kind: 'task.status'; taskId: string; status: string }
+  | { kind: 'task.executionStatus'; taskId: string; status: string }
   | { kind: 'stream.append'; taskId: string; blocks: AtelierStreamBlock[] }
   | { kind: 'decision.resolved'; taskId: string; blockId: string; choice: string }
   | { kind: 'artifact.upsert'; taskId: string; artifact: AtelierArtifactProjection }
@@ -431,10 +467,22 @@ export function isAtelierProjectionPatch(value: unknown): value is AtelierProjec
   switch (value.kind) {
     case 'snapshot':
       return isAtelierProjectionSnapshot(value.snapshot);
+    case 'snapshot.invalidate':
+      return (
+        isNonEmptyString(value.streamEventId)
+        && isNonEmptyString(value.eventType)
+        && typeof value.goalId === 'string'
+        && typeof value.taskId === 'string'
+        && (value.goalId.length > 0 || value.taskId.length > 0)
+        && isNonNegativeSafeInteger(value.goalRevision)
+        && value.schemaVersion === 1
+      );
     case 'task.upsert':
       return isAtelierTask(value.task) && (value.select === undefined || typeof value.select === 'boolean');
     case 'task.status':
       return isNonEmptyString(value.taskId) && isAtelierTaskStatus(value.status);
+    case 'task.executionStatus':
+      return isNonEmptyString(value.taskId) && isNonEmptyString(value.status);
     case 'stream.append':
       return isNonEmptyString(value.taskId) && Array.isArray(value.blocks) && value.blocks.every(isAtelierStreamBlock);
     case 'decision.resolved':
@@ -457,20 +505,31 @@ function isAtelierProjectionEventTaskScopeConsistent(
   patch: AtelierProjectionPatch,
 ): boolean {
   if (patch.kind === 'snapshot') return eventTaskId === undefined;
+  if (patch.kind === 'snapshot.invalidate') {
+    return patch.taskId
+      ? eventTaskId === patch.taskId
+      : eventTaskId === undefined;
+  }
   if (patch.kind === 'task.upsert') return eventTaskId === undefined || eventTaskId === patch.task.id;
   return eventTaskId === patch.taskId;
 }
 
 function isAtelierTask(value: unknown): value is AtelierTask {
+  if (!isRecord(value) || !isNonEmptyString(value.executionStatus)) {
+    return false;
+  }
+  value.executionStatus = normalizeTaskRunLifecycleStatus(value.executionStatus);
   return (
-    isRecord(value) &&
     isNonEmptyString(value.id) &&
     isNonEmptyString(value.project) &&
     (value.projectId === undefined || isNonEmptyString(value.projectId)) &&
+    isAtelierMigrationIdentity(value, value.projectId, value.id) &&
     isNonEmptyString(value.title) &&
     isAtelierTaskStatus(value.status) &&
+    typeof value.stepId === 'string' &&
+    typeof value.attemptId === 'string' &&
+    isNonNegativeSafeInteger(value.attempt) &&
     (value.branch === undefined || typeof value.branch === 'string') &&
-    (value.running === undefined || typeof value.running === 'boolean') &&
     (value.intentPreset === undefined || isOneOfString(value.intentPreset, ATELIER_TASK_INTENT_PRESETS)) &&
     (value.providerStrategyPreset === undefined || typeof value.providerStrategyPreset === 'string') &&
     (value.gatePlanPreset === undefined || typeof value.gatePlanPreset === 'string') &&
@@ -482,10 +541,20 @@ function isAtelierTaskStatus(value: unknown): boolean {
   return typeof value === 'string' && (ATELIER_TASK_LIFECYCLE_STATES as readonly string[]).includes(value);
 }
 
+export function normalizeTaskRunLifecycleStatus(
+  value: unknown,
+): TaskRunLifecycleStatus {
+  return typeof value === 'string' &&
+    (TASK_RUN_LIFECYCLE_STATUSES as readonly string[]).includes(value)
+    ? value as TaskRunLifecycleStatus
+    : 'unavailable';
+}
+
 function isAtelierProjectProjection(value: unknown): value is AtelierProjectProjection {
   return (
     isRecord(value) &&
     isNonEmptyString(value.id) &&
+    isAtelierMigrationIdentity(value, value.id) &&
     isNonEmptyString(value.goal) &&
     isNonEmptyString(value.title) &&
     isOneOfString(value.state, ATELIER_PROJECT_STATES) &&
@@ -504,6 +573,56 @@ function isAtelierProjectProjection(value: unknown): value is AtelierProjectProj
     (value.policy === undefined || isAtelierPolicyProjection(value.policy)) &&
     Array.isArray(value.defects) &&
     value.defects.every(isAtelierDefectProjection)
+  );
+}
+
+function isAtelierMigrationIdentity(
+  value: Record<string, unknown>,
+  projectedGoalId: unknown,
+  expectedTaskRunId?: unknown,
+): boolean {
+  if (value.migrationState === undefined) {
+    const hasNoCanonicalIdentity =
+      value.goalId === undefined &&
+      value.taskRunId === undefined &&
+      value.legacySourceId === undefined &&
+      value.migrationBlockReason === undefined;
+    const hasNativeCanonicalIdentity =
+      isNonEmptyString(value.goalId) &&
+      isNonEmptyString(value.taskRunId) &&
+      (
+        expectedTaskRunId === undefined ||
+        value.taskRunId === expectedTaskRunId
+      ) &&
+      projectedGoalId === value.goalId &&
+      value.legacySourceId === undefined &&
+      value.migrationBlockReason === undefined;
+    return (
+      hasNoCanonicalIdentity ||
+      hasNativeCanonicalIdentity
+    );
+  }
+  if (
+    value.migrationState !== 'migrated' &&
+    value.migrationState !== 'blocked'
+  ) {
+    return false;
+  }
+  if (!isNonEmptyString(value.legacySourceId)) {
+    return false;
+  }
+  if (value.migrationState === 'blocked') {
+    return (
+      isNonEmptyString(value.migrationBlockReason) &&
+      value.goalId === undefined &&
+      value.taskRunId === undefined
+    );
+  }
+  return (
+    value.migrationBlockReason === undefined &&
+    isNonEmptyString(value.goalId) &&
+    isNonEmptyString(value.taskRunId) &&
+    projectedGoalId === value.goalId
   );
 }
 

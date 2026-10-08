@@ -32,6 +32,15 @@ import {
   fromProjectionSnapshot,
   parseAtelierProjectionEvent,
 } from './projection';
+import {
+  clonePrototypeBridgeRuntimeSnapshot,
+  derivePrototypeBridgeCallStatusStart,
+  shouldApplyPrototypeBridgeCallStatus,
+  shouldApplyPrototypeBridgeSnapshotResponse,
+} from './prototypeBridgeRuntimeCallPolicy';
+import {
+  prototypeBridgeProjectionSubscriptionRejectedError,
+} from './prototypeBridgeProjectionEventPolicy';
 
 export interface AtelierRuntimeBridge {
   call<M extends AtelierRuntimeMethod>(
@@ -64,9 +73,11 @@ export function createBridgeAtelierRuntime({
   const seenEventOrder: string[] = [];
   const lastSeqByScope = new Map<string, number>();
   let unsubscribeBridge: (() => void) | undefined;
+  let activeProjectionSubscriptionToken = 0;
   let latestCallStatusToken = 0;
   let activeCallRestorableStatus: AtelierRuntimeStatus | undefined;
   let latestSnapshotCallToken = 0;
+  let projectionRevision = 0;
 
   const emit = () => {
     for (const listener of Array.from(listeners)) {
@@ -79,7 +90,9 @@ export function createBridgeAtelierRuntime({
   };
 
   const setFromProjection = (projection: AtelierProjectionSnapshot) => {
-    snapshot = withStatus(toRuntimeSnapshot(projection));
+    const nextSnapshot = toRuntimeSnapshot(projection);
+    projectionRevision += 1;
+    snapshot = withStatus(nextSnapshot);
     emit();
     return cloneSnapshot(snapshot);
   };
@@ -88,10 +101,24 @@ export function createBridgeAtelierRuntime({
     if (unsubscribeBridge || !bridge.subscribeProjection) return;
     snapshot = withStatus(snapshot, reconcilingStatus());
     emit();
+    const projectionSubscriptionToken = ++activeProjectionSubscriptionToken;
+    let subscriptionReady = false;
     let cleanup: unknown;
     try {
       cleanup = bridge.subscribeProjection((incomingEvent) => {
+        if (
+          !subscriptionReady
+          || projectionSubscriptionToken !== activeProjectionSubscriptionToken
+        ) return;
         try {
+          const subscriptionRejectedError =
+            prototypeBridgeProjectionSubscriptionRejectedError(incomingEvent);
+          if (subscriptionRejectedError) {
+            projectionRevision += 1;
+            snapshot = withStatus(snapshot, statusFromBridgeError(subscriptionRejectedError));
+            emit();
+            return;
+          }
           const event = parseAtelierProjectionEvent(incomingEvent);
           if (!event) {
             snapshot = withStatus(snapshot, statusFromBridgeError(new Error('invalid projection event')));
@@ -104,9 +131,17 @@ export function createBridgeAtelierRuntime({
             return;
           }
           if (!rememberProjectionEvent(event, seenEventKeys, seenEventOrder)) return;
+          const hasGap = hasProjectionSeqGap(event, lastSeqByScope);
           if (!rememberProjectionSeq(event, lastSeqByScope)) {
             snapshot = withStatus(snapshot, degradedStatus(event.seq));
             emit();
+            return;
+          }
+          projectionRevision += 1;
+          if (hasGap || event.patch.kind === 'snapshot.invalidate') {
+            snapshot = withStatus(snapshot, reconcilingStatus());
+            emit();
+            void callSnapshot('atelier.workspace.load', {});
             return;
           }
           snapshot = withStatus(applyPatch(snapshot, event.patch), eventStatus(event.seq));
@@ -131,13 +166,36 @@ export function createBridgeAtelierRuntime({
     }
 
     unsubscribeBridge = cleanup;
-    snapshot = withStatus(snapshot, readyStatus(snapshot.state));
-    emit();
+    const ready = projectionSubscriptionReady(cleanup);
+    if (!ready) {
+      subscriptionReady = true;
+      snapshot = withStatus(snapshot, readyStatus(snapshot.state));
+      emit();
+      return;
+    }
+    void ready.then(() => {
+      if (
+        unsubscribeBridge !== cleanup
+        || projectionSubscriptionToken !== activeProjectionSubscriptionToken
+      ) return;
+      subscriptionReady = true;
+      snapshot = withStatus(snapshot, readyStatus(snapshot.state));
+      emit();
+    }).catch((error: unknown) => {
+      if (
+        unsubscribeBridge !== cleanup
+        || projectionSubscriptionToken !== activeProjectionSubscriptionToken
+      ) return;
+      unsubscribeBridge = undefined;
+      snapshot = withStatus(snapshot, statusFromBridgeError(error));
+      emit();
+    });
   };
 
   const releaseBridgeSubscription = () => {
     const cleanup = unsubscribeBridge;
     unsubscribeBridge = undefined;
+    activeProjectionSubscriptionToken += 1;
     if (!cleanup) return;
     try {
       cleanup();
@@ -154,27 +212,54 @@ export function createBridgeAtelierRuntime({
     options: { restoreStatusOnSuccess?: boolean } = {},
   ): Promise<AtelierRuntimeResponseByMethod[M]> => {
     const callStatusToken = ++latestCallStatusToken;
-    const currentStatus = snapshot.status ?? readyStatus(snapshot.state);
-    const previousStatus = currentStatus.kind === 'loading'
-      ? activeCallRestorableStatus ?? readyStatus(snapshot.state)
-      : currentStatus;
-    activeCallRestorableStatus = previousStatus;
+    const projectionRevisionAtCall = projectionRevision;
+    const callStatus = derivePrototypeBridgeCallStatusStart({
+      currentStatus: snapshot.status,
+      activeRestorableStatus: activeCallRestorableStatus,
+      readyStatus: readyStatus(snapshot.state),
+    });
+    const previousStatus = callStatus.previousStatus;
+    activeCallRestorableStatus = callStatus.nextActiveRestorableStatus;
     snapshot = withStatus(snapshot, loadingStatus());
     emit();
     try {
       const response = await bridge.call({ method, payload });
-      if (callStatusToken === latestCallStatusToken) {
+      if (shouldApplyPrototypeBridgeCallStatus({
+        callStatusToken,
+        latestCallStatusToken,
+        projectionRevisionAtCall,
+        projectionRevision,
+      })) {
         activeCallRestorableStatus = undefined;
         if (options.restoreStatusOnSuccess ?? true) {
           snapshot = withStatus(snapshot, previousStatus);
           emit();
         }
+      } else if (
+        callStatusToken === latestCallStatusToken
+        && snapshot.status?.kind === 'loading'
+      ) {
+        activeCallRestorableStatus = undefined;
+        snapshot = withStatus(snapshot, previousStatus);
+        emit();
       }
       return response;
     } catch (error) {
-      if (callStatusToken === latestCallStatusToken) {
+      if (shouldApplyPrototypeBridgeCallStatus({
+        callStatusToken,
+        latestCallStatusToken,
+        projectionRevisionAtCall,
+        projectionRevision,
+      })) {
         activeCallRestorableStatus = undefined;
         snapshot = withStatus(snapshot, statusFromBridgeError(error));
+        emit();
+      } else if (
+        callStatusToken === latestCallStatusToken
+        && snapshot.status?.kind === 'loading'
+      ) {
+        activeCallRestorableStatus = undefined;
+        snapshot = withStatus(snapshot, previousStatus);
         emit();
       }
       throw error;
@@ -186,12 +271,23 @@ export function createBridgeAtelierRuntime({
     payload: AtelierRuntimePayloadByMethod[M],
   ) => {
     const snapshotCallToken = ++latestSnapshotCallToken;
+    const projectionRevisionAtCall = projectionRevision;
     try {
       const projection = await call(method, payload, { restoreStatusOnSuccess: false }) as AtelierProjectionSnapshot;
-      if (snapshotCallToken !== latestSnapshotCallToken) return cloneSnapshot(snapshot);
+      if (!shouldApplyPrototypeBridgeSnapshotResponse({
+        snapshotCallToken,
+        latestSnapshotCallToken,
+        projectionRevisionAtCall,
+        projectionRevision,
+      })) return cloneSnapshot(snapshot);
       return setFromProjection(projection);
     } catch (error) {
-      if (snapshotCallToken !== latestSnapshotCallToken) return cloneSnapshot(snapshot);
+      if (!shouldApplyPrototypeBridgeSnapshotResponse({
+        snapshotCallToken,
+        latestSnapshotCallToken,
+        projectionRevisionAtCall,
+        projectionRevision,
+      })) return cloneSnapshot(snapshot);
       snapshot = withStatus(snapshot, statusFromBridgeError(error));
       emit();
       return cloneSnapshot(snapshot);
@@ -250,6 +346,7 @@ export function createBridgeAtelierRuntime({
       return call('atelier.artifact.preview.open', input);
     },
     async setModel(model: string) {
+      projectionRevision += 1;
       snapshot = {
         ...snapshot,
         state: {
@@ -263,8 +360,21 @@ export function createBridgeAtelierRuntime({
   };
 }
 
+function projectionSubscriptionReady(cleanup: () => void): Promise<void> | undefined {
+  const ready = (cleanup as (() => void) & { ready?: unknown }).ready;
+  if (!ready || (typeof ready !== 'object' && typeof ready !== 'function')) {
+    return undefined;
+  }
+  const then = (ready as { then?: unknown }).then;
+  return typeof then === 'function'
+    ? Promise.resolve(ready as PromiseLike<void>)
+    : undefined;
+}
+
 function toRuntimeSnapshot(projection: unknown): AtelierRuntimeSnapshot {
-  return fromProjectionSnapshot(assertAtelierProjectionSnapshot(projection));
+  return clonePrototypeBridgeRuntimeSnapshot(
+    fromProjectionSnapshot(assertAtelierProjectionSnapshot(projection)),
+  );
 }
 
 function withStatus(
@@ -279,6 +389,8 @@ function applyPatch(snapshot: AtelierRuntimeSnapshot, patch: AtelierProjectionPa
 
   const state = cloneSnapshot(snapshot).state;
   switch (patch.kind) {
+    case 'snapshot.invalidate':
+      break;
     case 'task.upsert': {
       const exists = state.tasks.some((task) => task.id === patch.task.id);
       state.tasks = exists
@@ -324,12 +436,16 @@ function applyPatch(snapshot: AtelierRuntimeSnapshot, patch: AtelierProjectionPa
 }
 
 function canApplyPatchToKnownTask(snapshot: AtelierRuntimeSnapshot, patch: AtelierProjectionPatch): boolean {
-  if (patch.kind === 'snapshot' || patch.kind === 'task.upsert') return true;
+  if (
+    patch.kind === 'snapshot'
+    || patch.kind === 'snapshot.invalidate'
+    || patch.kind === 'task.upsert'
+  ) return true;
   return snapshot.state.tasks.some((task) => task.id === patch.taskId);
 }
 
 function cloneSnapshot(snapshot: AtelierRuntimeSnapshot): AtelierRuntimeSnapshot {
-  return JSON.parse(JSON.stringify(snapshot)) as AtelierRuntimeSnapshot;
+  return clonePrototypeBridgeRuntimeSnapshot(snapshot);
 }
 
 function assertNever(value: never): never {
@@ -361,16 +477,33 @@ function rememberProjectionSeq(
   event: AtelierProjectionEvent,
   lastSeqByScope: Map<string, number>,
 ): boolean {
-  const scope = event.taskId ?? 'workspace';
+  const scope = projectionEventScope(event);
   const lastSeq = lastSeqByScope.get(scope);
   if (lastSeq !== undefined && event.seq <= lastSeq) return false;
   lastSeqByScope.set(scope, event.seq);
   return true;
 }
 
+function hasProjectionSeqGap(
+  event: AtelierProjectionEvent,
+  lastSeqByScope: Map<string, number>,
+): boolean {
+  const lastSeq = lastSeqByScope.get(projectionEventScope(event));
+  return lastSeq !== undefined && event.seq > lastSeq + 1;
+}
+
 function projectionEventKey(event: AtelierProjectionEvent): string {
   if (event.id) return `id:${event.id}`;
-  return `seq:${event.taskId ?? 'workspace'}:${event.seq}`;
+  return `seq:${projectionEventScope(event)}:${event.seq}`;
+}
+
+function projectionEventScope(event: AtelierProjectionEvent): string {
+  if (event.patch.kind === 'snapshot.invalidate') {
+    return event.patch.taskId
+      ? `task:${event.patch.taskId}`
+      : `goal:${event.patch.goalId}`;
+  }
+  return event.taskId ?? 'workspace';
 }
 
 function appendUniqueBlocks<TBlock extends { id: string }>(current: TBlock[], incoming: TBlock[]): TBlock[] {
@@ -430,8 +563,12 @@ function degradedStatus(lastEventSeq: number): AtelierRuntimeStatus {
 
 function statusFromBridgeError(error: unknown): AtelierRuntimeStatus {
   const message = error instanceof Error ? error.message : String(error);
-  const normalized = message.toLowerCase();
+  const code = bridgeErrorCode(error);
+  const normalized = `${code ?? ''} ${message}`.toLowerCase();
   if (
+    code === 'PERMISSION_DENIED' ||
+    code === 'FORBIDDEN' ||
+    code === 'UNAUTHORIZED' ||
     normalized.includes('permission') ||
     normalized.includes('unauthorized') ||
     normalized.includes('forbidden') ||
@@ -445,6 +582,9 @@ function statusFromBridgeError(error: unknown): AtelierRuntimeStatus {
     };
   }
   if (
+    code === 'CONNECTION_CLOSED' ||
+    code === 'NETWORK_DISCONNECTED' ||
+    code === 'TIMEOUT' ||
     normalized.includes('network') ||
     normalized.includes('timeout') ||
     normalized.includes('disconnect') ||
@@ -463,4 +603,20 @@ function statusFromBridgeError(error: unknown): AtelierRuntimeStatus {
     detail: message || 'Host bridge 返回了无法识别的 projection 响应。',
     retryable: true,
   };
+}
+
+function bridgeErrorCode(error: unknown): string | undefined {
+  if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string') {
+    return error.code;
+  }
+  if (
+    error instanceof Error
+    && error.cause
+    && typeof error.cause === 'object'
+    && 'code' in error.cause
+    && typeof error.cause.code === 'string'
+  ) {
+    return error.cause.code;
+  }
+  return undefined;
 }

@@ -26,13 +26,12 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/handler"
-	agentevent "github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/externalruntime"
+	sharedevents "github.com/peers-labs/peers-touch/station/app/subserver/events"
 	ossservice "github.com/peers-labs/peers-touch/station/app/subserver/oss/service"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
-	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
@@ -59,6 +58,7 @@ type agentSubServer struct {
 	operationService       *service.CapabilityOperationService
 	evaluationService      *service.EvaluationService
 	externalRuntimeService *service.ExternalRuntimeService
+	realtimeRelay          *service.AgentRealtimeRelay
 	deviceKeys             *touchactor.DeviceStore
 	agentDB                *gorm.DB
 }
@@ -93,6 +93,12 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 		return err
 	}
 	if err = rds.AutoMigrate(persistence.AllModels()...); err != nil {
+		return err
+	}
+	if err = persistence.MigrateAgentTasks(rds); err != nil {
+		return err
+	}
+	if err = persistence.MigrateCollaborationTasks(rds); err != nil {
 		return err
 	}
 	if err = service.MigrateRuntimeSnapshotThinkingModes(rds); err != nil {
@@ -173,7 +179,9 @@ func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error
 			(s.operationService != nil &&
 				!s.turnService.RunExecutionWorker(s.operationService.RunDeadlineSweeper)) ||
 			(s.evaluationService != nil &&
-				!s.turnService.RunExecutionWorker(s.evaluationService.RunWorker)) {
+				!s.turnService.RunExecutionWorker(s.evaluationService.RunWorker)) ||
+			(s.realtimeRelay != nil &&
+				!s.turnService.RunExecutionWorker(s.realtimeRelay.Run)) {
 			_ = s.turnService.StopExecutionLifecycle(context.Background())
 			return fmt.Errorf("start Agent execution workers: lifecycle is stopping")
 		}
@@ -208,9 +216,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
 	deviceIDWrapper := serverwrapper.DeviceID()
 	jwtWrapper := s.jwtWrapper
-	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	hertzJWTWrapper := hertzadapter.RequireJWT(provider)
-	eventBus := agentevent.NewMemoryEventBus()
 
 	// Phase 7: Growth Metrics — must be created early since MemoryService,
 	// SkillService, ReviewService, and TurnService depend on it for event recording.
@@ -223,7 +228,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	memorySvc := service.NewMemoryService(growthMetricsSvc, memoryServiceOptionsFromConfig()...)
 	workspaceSvc := service.NewWorkspaceService()
 	offlineQueueSvc := service.NewOfflineQueueService()
-	eventStreamSvc := service.NewEventStreamService(eventBus)
 	skillsGuardSvc := service.NewSkillsGuardService()
 	skillSvc := service.NewSkillService(skillsGuardSvc, growthMetricsSvc)
 	errorClassifierSvc := service.NewErrorClassifierService()
@@ -298,7 +302,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		growthMetricsSvc,
 		convSvc,
 	)
-	turnSvc.SetEventBus(eventBus)
 	turnSvc.SetExternalRuntimeService(externalRuntimeSvc)
 
 	// Dogfood self-verification service.
@@ -308,14 +311,13 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	schedulerSvc := service.NewSchedulerService(reviewSvc, dogfoodSvc, memorySvc, growthMetricsSvc)
 	orchestrationSvc := service.NewOrchestrationService(agentSvc, turnSvc, toolRegistrySvc)
 	schedulerSvc.SetOrchestrationService(orchestrationSvc)
-	orchestrationSvc.SetEventBus(eventBus)
 	orchestrationSvc.StartTaskRecovery(context.Background())
 
 	// Chat root task: Station owns the Chat surface as a long-lived task so a
 	// turn outlives the client connection. Reclaim interrupted steps on boot.
-	chatTaskSvc := service.NewChatTaskService(eventBus)
+	chatTaskSvc := service.NewChatTaskService()
 
-	agentHandlers := handler.NewAgentHandlers(agentSvc, eventBus)
+	agentHandlers := handler.NewAgentHandlers(agentSvc)
 	turnHandlers := handler.NewTurnHandlers(turnSvc, toolRegistrySvc, chatTaskSvc, convSvc)
 	turnAdmissionSvc := service.NewTurnAdmissionService()
 	turnHandlers.SetAdmissionService(turnAdmissionSvc)
@@ -332,7 +334,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	memoryHandlers := handler.NewMemoryHandlers(memorySvc)
 	workspaceHandlers := handler.NewWorkspaceHandlers(workspaceSvc)
 	offlineQueueHandlers := handler.NewOfflineQueueHandlers(offlineQueueSvc)
-	eventStreamHandlers := handler.NewEventStreamHandlers(eventStreamSvc)
 	skillHandlers := handler.NewSkillHandlers(skillSvc)
 	dogfoodHandlers := handler.NewDogfoodHandlers(dogfoodSvc)
 	schedulerHandlers := handler.NewSchedulerHandlers(schedulerSvc)
@@ -345,7 +346,11 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	ecosystemSvc := service.NewEcosystemService()
 	ecosystemHandlers := handler.NewEcosystemHandlers(ecosystemSvc)
 	agentTaskSvc := service.NewAgentTaskService()
-	agentTaskHandlers := handler.NewAgentTaskHandlers(agentTaskSvc)
+	taskRunCommandSvc := service.NewTaskRunCommandService(s.agentDB)
+	agentTaskHandlers := handler.NewAgentTaskHandlers(
+		agentTaskSvc,
+		taskRunCommandSvc,
+	)
 
 	providerHandlers := handler.NewProviderHandlers(
 		providerConfigSvc,
@@ -368,7 +373,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	toolDispatchSvc.SetCapabilityProofService(proofSvc)
 	toolDispatchSvc.SetConversationService(convSvc)
 	capabilityAuthoritySvc := service.NewCapabilityAuthorityService(s.agentDB)
-	capabilityAuthoritySvc.SetEventBus(eventBus)
 	capabilityReadinessSvc := service.NewCapabilityAuthorityReadinessService(
 		capabilityAuthoritySvc,
 		agentSvc,
@@ -437,18 +441,51 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	evaluationSvc.SetAcceptanceScenarioService(capabilityAcceptanceScenarios)
 	capabilityAcceptanceScenarios.SetEvaluationService(evaluationSvc)
 	evaluationHandlers := handler.NewEvaluationHandlers(evaluationSvc)
+	goalService := service.NewGoalService(s.agentDB)
+	goalExecutionService := service.NewGoalExecutionService(s.agentDB)
+	goalDirectModelExecutor := service.NewGoalDirectModelExecutor(
+		s.agentDB,
+		providerSvc,
+	)
+	goalCoordinator := service.NewGoalCoordinator(
+		s.agentDB,
+		goalExecutionService,
+		goalDirectModelExecutor,
+	)
+	goalDirectModelExecutor.SetGoalTerminalObserver(goalCoordinator)
+	goalAdmissionService := service.NewGoalAdmissionService(
+		goalService,
+		goalExecutionService,
+	)
+	goalAdmissionService.SetExecutionStarter(goalCoordinator)
+	goalCancellationService := service.NewGoalCancellationService(
+		goalService,
+		goalCoordinator,
+	)
+	realtimeRelay := service.NewAgentRealtimeRelay(
+		s.agentDB,
+		func() service.AgentRealtimePublisher {
+			return sharedevents.GetBus()
+		},
+	)
+	goalHandlers := handler.NewGoalHandlers(
+		goalService,
+		goalAdmissionService,
+		goalCancellationService,
+	)
 	homeHandlers := handler.NewHomeHandlers(
 		service.NewHomeProjectionService(
 			agentSvc,
 			convSvc,
 			capabilityReadinessSvc,
 			agentTaskSvc,
+			goalExecutionService,
 		),
 		service.NewHomeCommandService(
 			agentSvc,
 			turnAdmissionSvc,
 			turnSvc,
-			agentTaskSvc,
+			taskRunCommandSvc,
 		),
 	)
 	s.turnService = turnSvc
@@ -456,6 +493,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	s.operationService = operationSvc
 	s.evaluationService = evaluationSvc
 	s.externalRuntimeService = externalRuntimeSvc
+	s.realtimeRelay = realtimeRelay
 
 	handlers := []server.Handler{
 		server.NewTypedHandler("agent-list", "/agent/list", server.POST, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
@@ -470,6 +508,13 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-home-projection-get", "/agent/home/projection/get", server.POST, homeHandlers.HandleGetProjection, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-home-chat-submit", "/agent/home/chat/submit", server.POST, homeHandlers.HandleSubmitChat, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-home-task-submit", "/agent/home/task/submit", server.POST, homeHandlers.HandleSubmitTask, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-goal-create", "/agent/goal/create", server.POST, goalHandlers.HandleCreate, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-goal-get", "/agent/goal/get", server.POST, goalHandlers.HandleGet, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-goal-update", "/agent/goal/update", server.POST, goalHandlers.HandleUpdate, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-goal-review", "/agent/goal/review", server.POST, goalHandlers.HandleReview, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-goal-admit", "/agent/goal/admit", server.POST, goalHandlers.HandleAdmit, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-goal-start", "/agent/goal/start", server.POST, goalHandlers.HandleStart, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-goal-cancel", "/agent/goal/cancel", server.POST, goalHandlers.HandleCancel, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-turn-execute", "/agent/turn/execute", server.POST, turnHandlers.HandleExecuteTurn, logIDWrapper, jwtWrapper, handler.RejectLegacyTurnKnowledge),
 		server.NewHTTPHandler("agent-turn-stream", "/agent/turn/stream", server.POST, turnHandlers.HandleExecuteTurnStream, logIDWrapper, jwtWrapper, handler.RejectLegacyTurnKnowledge),
@@ -593,7 +638,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-atelier-memory-confirm-candidate", "/agent/atelier/memory/confirm-candidate", server.POST, atelierProjectionHandlers.HandleConfirmMemoryCandidate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-atelier-feedback-confirm-rerun", "/agent/atelier/feedback/confirm-rerun", server.POST, atelierProjectionHandlers.HandleConfirmRerun, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-atelier-artifact-body-fetch", "/agent/atelier/artifact/body/fetch", server.POST, atelierProjectionHandlers.HandleFetchArtifactBody, logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("agent-events-subscribe", "/agent/events/subscribe", server.POST, eventStreamHandlers.HandleSubscribe, logIDWrapper, jwtWrapper),
 
 		// POST: protobuf body carries ListMemoriesRequest (GET + empty body leaves agent_id unset).
 		server.NewTypedHandler("agent-memory-list", "/agent/memory/list", server.POST, memoryHandlers.HandleListMemories, logIDWrapper, jwtWrapper),
@@ -633,8 +677,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-offline-queue-ack", "/offline-queue/ack", server.POST, offlineQueueHandlers.HandleAckOperation, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-offline-queue-sync", "/offline-queue/sync", server.POST, offlineQueueHandlers.HandleSync, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-offline-queue-resolve", "/offline-queue/resolve", server.POST, offlineQueueHandlers.HandleResolveConflict, logIDWrapper, jwtWrapper),
-
-		server.NewHertzHandler("agent-events-stream", "/events/stream", server.GET, eventStreamHandlers.HandleSubscribeHertz, hertzJWTWrapper),
 
 		server.NewTypedHandler("agent-skill-list", "/agent/skill/list", server.POST, skillHandlers.HandleListSkills, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-skill-get", "/agent/skill/get", server.GET, skillHandlers.HandleGetSkill, logIDWrapper, jwtWrapper),

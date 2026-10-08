@@ -16,7 +16,13 @@ import {
 describe('project create action guards', () => {
   it('builds trimmed Station-owned project create intents', () => {
     expect(ATELIER_PROJECT_CREATE_REQUIRED_FIELDS).toEqual(['goal', 'agentIds']);
-    expect(ATELIER_PROJECT_CREATE_OPTIONAL_FIELDS).toEqual(['intentPreset', 'run.kind', 'run.flowId', 'run.model']);
+    expect(ATELIER_PROJECT_CREATE_OPTIONAL_FIELDS).toEqual([
+      'clientIdempotencyKey',
+      'intentPreset',
+      'run.kind',
+      'run.flowId',
+      'run.model',
+    ]);
     expect(buildAtelierProjectCreateIntent({
       goal: ' build an Atelier plan ',
       intentPreset: 'code',

@@ -36,13 +36,13 @@ pub mod peers_touch {
 }
 
 use interface::tauri_commands::{
-    account, actor, admin, agent_events, agent_growth, agent_orchestration, agent_scheduler,
-    agent_turn, agents, applets, auth, capability_authority, channels, conversation, cron, crypto,
-    desktop_capture, evaluation, federation, frontend_log, frontend_telemetry, home, host_events,
-    i18n, ice, key_exchange, mcp, memory, messaging as messaging_commands, messaging_recovery,
-    model_config, notebook, notification, oauth2, oss, presence, profile, provider, realtime,
-    runtime_evidence, search, settings, skills, skills_market, social as social_commands, station,
-    system, tools, tts,
+    account, actor, admin, agent_growth, agent_orchestration, agent_scheduler, agent_turn, agents,
+    applets, auth, capability_authority, channels, conversation, cron, crypto, desktop_capture,
+    evaluation, federation, frontend_log, frontend_telemetry, home, host_events, i18n, ice,
+    key_exchange, mcp, memory, messaging as messaging_commands, messaging_recovery, model_config,
+    notebook, notification, oauth2, oss, presence, profile, provider, realtime, runtime_evidence,
+    search, settings, skills, skills_market, social as social_commands, station, system, tools,
+    tts,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -704,6 +704,13 @@ fn main() {
             home::agent_home_projection_get,
             home::agent_home_chat_submit,
             home::agent_home_task_submit,
+            home::agent_home_goal_draft_create,
+            home::agent_home_goal_get,
+            home::agent_home_goal_update,
+            home::agent_home_goal_review,
+            home::agent_home_goal_admit,
+            home::agent_home_goal_start,
+            home::agent_home_goal_cancel,
             evaluation::agent_evaluation_benchmark_create,
             evaluation::agent_evaluation_benchmark_update,
             evaluation::agent_evaluation_benchmark_delete,
@@ -806,10 +813,6 @@ fn main() {
             agent_orchestration::agent_collaboration_get,
             agent_orchestration::agent_collaboration_list,
             agent_orchestration::agent_collaboration_list_events,
-            agent_orchestration::agent_collaboration_subscribe,
-            agent_orchestration::agent_collaboration_cancel_stream,
-            agent_events::agent_events_subscribe,
-            agent_events::agent_events_cancel,
             agent_orchestration::agent_collaboration_cancel_task,
             agent_orchestration::agent_collaboration_resume_task,
             agent_orchestration::agent_collaboration_submit_node_result,

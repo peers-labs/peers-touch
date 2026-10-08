@@ -15,7 +15,6 @@ import {
   ATELIER_DEFAULT_TASK_INTENT_PRESET,
   ATELIER_MEMORY_CANDIDATE_FEEDS,
   ATELIER_PROJECTION_EVENT_TOPIC,
-  ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
   ATELIER_PROVIDER_CAPABILITY_READ_ONLY,
   ATELIER_PROVIDER_CAPABILITY_SCOPES,
   ATELIER_RUN_TARGET_KINDS,
@@ -263,6 +262,7 @@ export async function openAtelierArtifactPreview(input: {
 export async function createAtelierProjectFromGoal(input: {
   goal: string;
   intentPreset?: AtelierIntentPreset;
+  clientIdempotencyKey?: string;
   model?: string;
   runKind?: AtelierRunTargetKind;
     flowId?: AtelierAgentFlowId;
@@ -286,6 +286,9 @@ export async function createAtelierProjectFromGoal(input: {
     agentIds,
     run,
   };
+  if (input.clientIdempotencyKey?.trim()) {
+    payload.clientIdempotencyKey = input.clientIdempotencyKey.trim();
+  }
   const project = input.project ?? config.project;
   if (project) {
     payload.project = project;
@@ -300,7 +303,7 @@ export async function createAtelierProjectFromGoal(input: {
 }
 
 export async function readAtelierCertificationCreateConfig(): Promise<AtelierCertificationCreateConfig | null> {
-  const source = launchConfigSource(readGlobalAtelierConfig()) ?? launchConfigSource(await readLaunchOptions());
+  const source = launchConfigSource(await readLaunchOptions());
   if (!source || source.certificationMode !== 'product-window-e2e') {
     return null;
   }
@@ -328,7 +331,7 @@ export async function readAtelierCertificationCreateConfig(): Promise<AtelierCer
 }
 
 export async function readAtelierCertificationDecisionConfig(): Promise<AtelierCertificationDecisionConfig | null> {
-  const source = launchConfigSource(readGlobalAtelierConfig()) ?? launchConfigSource(await readLaunchOptions());
+  const source = launchConfigSource(await readLaunchOptions());
   if (!source || source.certificationMode !== 'product-window-e2e') {
     return null;
   }
@@ -347,7 +350,7 @@ export async function readAtelierCertificationDecisionConfig(): Promise<AtelierC
 }
 
 export async function readAtelierCertificationPreviewOpenConfig(): Promise<AtelierCertificationPreviewOpenConfig | null> {
-  const source = launchConfigSource(readGlobalAtelierConfig()) ?? launchConfigSource(await readLaunchOptions());
+  const source = launchConfigSource(await readLaunchOptions());
   if (!source || source.certificationMode !== 'product-window-e2e' || source.openArtifactPreview !== true) {
     return null;
   }
@@ -362,7 +365,7 @@ export async function readAtelierCertificationPreviewOpenConfig(): Promise<Ateli
 }
 
 export async function readAtelierCertificationArtifactBodyFetchConfig(): Promise<AtelierCertificationArtifactBodyFetchConfig | null> {
-  const source = launchConfigSource(readGlobalAtelierConfig()) ?? launchConfigSource(await readLaunchOptions());
+  const source = launchConfigSource(await readLaunchOptions());
   if (!source || source.certificationMode !== 'product-window-e2e' || source.fetchArtifactBody !== true) {
     return null;
   }
@@ -801,24 +804,13 @@ export async function purgeAtelierTask(input: { taskId: string }): Promise<Ateli
 }
 
 export async function subscribeAtelierProjectionEvents(
-  snapshot: AtelierProjectionSnapshot | null,
-  selectedTaskId: string,
+  _snapshot: AtelierProjectionSnapshot | null,
+  _selectedTaskId: string,
   handler: (event: AtelierProjectionEvent) => void,
   onMalformedEvent?: (payload: unknown) => void,
   onSubscriptionRejected?: (error: Error) => void,
+  onResync?: () => void,
 ): Promise<() => void> {
-  const streamConfig = await readProjectionStreamConfig(snapshot, selectedTaskId);
-  void trackAtelierProjectionSubscriptionDiagnostic({
-    stage: 'client.stream-config',
-    selectedTaskId,
-    snapshotSelectedTaskId: snapshot?.selectedTaskId,
-    taskCount: snapshot?.workspace.tasks.length ?? 0,
-    hasStreamConfig: Boolean(streamConfig),
-    streamConfigKeys: streamConfig ? Object.keys(streamConfig).sort() : [],
-    agentId: typeof streamConfig?.agentId === 'string' ? streamConfig.agentId : undefined,
-    taskId: typeof streamConfig?.taskId === 'string' ? streamConfig.taskId : undefined,
-    afterEventSeq: typeof streamConfig?.afterEventSeq === 'number' ? streamConfig.afterEventSeq : undefined,
-  }).catch(() => undefined);
   let closed = false;
   let unsubscribeLocal: () => void = () => undefined;
   const closeSubscription = () => {
@@ -829,61 +821,27 @@ export async function subscribeAtelierProjectionEvents(
   };
   unsubscribeLocal = sdk.events.on(ATELIER_PROJECTION_EVENT_TOPIC, (payload) => {
     if (closed) return;
-      const subscriptionRejectedError = projectionSubscriptionRejectedError(payload);
-      if (subscriptionRejectedError) {
-        void trackAtelierProjectionSubscriptionDiagnostic({
-          stage: 'client.subscribe-rejected',
-          selectedTaskId,
-          snapshotSelectedTaskId: snapshot?.selectedTaskId,
-          taskCount: snapshot?.workspace.tasks.length ?? 0,
-          hasStreamConfig: Boolean(streamConfig),
-          streamConfigKeys: streamConfig ? Object.keys(streamConfig).sort() : [],
-          agentId: typeof streamConfig?.agentId === 'string' ? streamConfig.agentId : undefined,
-          taskId: typeof streamConfig?.taskId === 'string' ? streamConfig.taskId : undefined,
-          afterEventSeq: typeof streamConfig?.afterEventSeq === 'number' ? streamConfig.afterEventSeq : undefined,
-          error: subscriptionRejectedError.message,
-        }).catch(() => undefined);
-        closeSubscription();
-        onSubscriptionRejected?.(subscriptionRejectedError);
-        return;
-      }
-      const event = parseAtelierProjectionEvent(payload);
-      if (event) {
-        handler(event);
-        return;
-      }
-      onMalformedEvent?.(payload);
-    });
+    if (isCanonicalProjectionResync(payload)) {
+      onResync?.();
+      return;
+    }
+    const subscriptionRejectedError = projectionSubscriptionRejectedError(payload);
+    if (subscriptionRejectedError) {
+      closeSubscription();
+      onSubscriptionRejected?.(subscriptionRejectedError);
+      return;
+    }
+    const event = parseAtelierProjectionEvent(payload);
+    if (event) {
+      handler(event);
+      return;
+    }
+    onMalformedEvent?.(payload);
+  });
 
   try {
     await sdk.events.subscribe(ATELIER_PROJECTION_EVENT_TOPIC);
-    if (streamConfig) {
-      void trackAtelierProjectionSubscriptionDiagnostic({
-        stage: 'client.invoke-stream-subscribe',
-        selectedTaskId,
-        snapshotSelectedTaskId: snapshot?.selectedTaskId,
-        taskCount: snapshot?.workspace.tasks.length ?? 0,
-        hasStreamConfig: true,
-        streamConfigKeys: Object.keys(streamConfig).sort(),
-        agentId: typeof streamConfig.agentId === 'string' ? streamConfig.agentId : undefined,
-        taskId: typeof streamConfig.taskId === 'string' ? streamConfig.taskId : undefined,
-        afterEventSeq: typeof streamConfig.afterEventSeq === 'number' ? streamConfig.afterEventSeq : undefined,
-      }).catch(() => undefined);
-      await sdk.invoke(ATELIER_PROJECTION_SUBSCRIPTION_METHOD, streamConfig);
-    }
   } catch (error) {
-    void trackAtelierProjectionSubscriptionDiagnostic({
-      stage: 'client.subscribe-rejected',
-      selectedTaskId,
-      snapshotSelectedTaskId: snapshot?.selectedTaskId,
-      taskCount: snapshot?.workspace.tasks.length ?? 0,
-      hasStreamConfig: Boolean(streamConfig),
-      streamConfigKeys: streamConfig ? Object.keys(streamConfig).sort() : [],
-      agentId: typeof streamConfig?.agentId === 'string' ? streamConfig.agentId : undefined,
-      taskId: typeof streamConfig?.taskId === 'string' ? streamConfig.taskId : undefined,
-      afterEventSeq: typeof streamConfig?.afterEventSeq === 'number' ? streamConfig.afterEventSeq : undefined,
-      error: sanitizeProjectionSubscriptionReason(error instanceof Error ? error.message : String(error)),
-    }).catch(() => undefined);
     closeSubscription();
     throw error;
   }
@@ -923,6 +881,10 @@ function projectionSubscriptionRejectedError(value: unknown): Error | undefined 
   return new Error(`Atelier projection stream subscription ${method} rejected: ${reason}`, {
     cause: sanitizedCause,
   });
+}
+
+function isCanonicalProjectionResync(value: unknown): boolean {
+  return isRecord(value) && value.kind === 'atelier.projection.resync';
 }
 
 const forbiddenProjectionSubscriptionReasonPatterns = [
@@ -1033,23 +995,13 @@ export function classifyAtelierError(error: unknown): { key: string; kind: Ateli
   }
 }
 
-async function readProjectionStreamConfig(
-  snapshot: AtelierProjectionSnapshot | null,
-  selectedTaskId: string,
-): Promise<Record<string, unknown> | null> {
-  const fromGlobal = projectionConfigFromUnknown(readGlobalAtelierConfig(), snapshot, selectedTaskId);
-  if (fromGlobal) return fromGlobal;
-
-  return projectionConfigFromUnknown(await readLaunchOptions(), snapshot, selectedTaskId);
-}
-
 async function readAtelierLaunchConfig(): Promise<{
   agentIds: string[];
   flowId?: AtelierAgentFlowId;
   model?: string;
   project?: string;
 }> {
-  const source = launchConfigSource(readGlobalAtelierConfig()) ?? launchConfigSource(await readLaunchOptions());
+  const source = launchConfigSource(await readLaunchOptions());
   const agentIds = source ? agentIdsFromSource(source) : [];
   const config: {
     agentIds: string[];
@@ -1092,121 +1044,6 @@ async function readLaunchOptions(): Promise<unknown> {
   }
 }
 
-function readGlobalAtelierConfig(): unknown {
-  return (globalThis as { __ATELIER_PROJECTION_STREAM__?: unknown }).__ATELIER_PROJECTION_STREAM__;
-}
-
-type ProjectionAgentIdSource = (typeof ATELIER_PROJECTION_CONTRACT.eventSubscription.agentIdSourcePriority)[number];
-type ProjectionTaskIdSource = (typeof ATELIER_PROJECTION_CONTRACT.eventSubscription.taskIdSourcePriority)[number];
-
-type ProjectionTaskIdResolverInput = {
-  source: Record<string, unknown>;
-  snapshot: AtelierProjectionSnapshot | null;
-  selectedTaskId: string;
-};
-
-const projectionAgentIdResolvers = {
-  agentId: (source: Record<string, unknown>) =>
-    trimmedNonEmptyString(source.agentId),
-  'agentIds[0]': (source: Record<string, unknown>) => agentIdAtSourceIndex(source, 0),
-} satisfies Record<ProjectionAgentIdSource, (source: Record<string, unknown>) => string>;
-
-const projectionTaskIdResolvers = {
-  certificationCreatedSelectedTaskId: ({ source, snapshot }: ProjectionTaskIdResolverInput) =>
-    source.certificationMode === 'product-window-e2e' &&
-    typeof source.createGoal === 'string' &&
-    source.createGoal.trim().length > 0 &&
-    snapshot?.selectedTaskId
-      ? trimmedNonEmptyString(snapshot.selectedTaskId)
-      : '',
-  explicitTaskId: ({ source }: ProjectionTaskIdResolverInput) =>
-    trimmedNonEmptyString(source.taskId),
-  controllerSelectedTaskId: ({ selectedTaskId }: ProjectionTaskIdResolverInput) => trimmedNonEmptyString(selectedTaskId),
-  snapshotSelectedTaskId: ({ snapshot }: ProjectionTaskIdResolverInput) => trimmedNonEmptyString(snapshot?.selectedTaskId),
-  snapshotFirstTaskId: ({ snapshot }: ProjectionTaskIdResolverInput) => trimmedNonEmptyString(snapshot?.workspace.tasks[0]?.id),
-} satisfies Record<ProjectionTaskIdSource, (input: ProjectionTaskIdResolverInput) => string>;
-
-function projectionConfigFromUnknown(
-  value: unknown,
-  snapshot: AtelierProjectionSnapshot | null,
-  selectedTaskId: string,
-): Record<string, unknown> | null {
-  const source = launchConfigSource(value);
-  if (!source) return null;
-  const agentId = projectionAgentIdFromSource(source);
-  if (!agentId) return null;
-
-  const config: Record<string, unknown> = { agentId };
-  const taskId = projectionTaskIdFromSource(source, snapshot, selectedTaskId);
-  if (taskId) {
-    config.taskId = taskId;
-  }
-  const explicitAfterEventSeq = projectionAfterEventSeqFromSource(source.afterEventSeq);
-  if (
-    explicitAfterEventSeq !== undefined &&
-    (explicitAfterEventSeq > 0 || shouldPreserveExplicitZeroCursor(source, explicitAfterEventSeq))
-  ) {
-    config.afterEventSeq = explicitAfterEventSeq;
-  } else {
-    const afterEventSeq = projectionAfterEventSeqFromSnapshot(snapshot, taskId);
-    if (afterEventSeq > 0) {
-      config.afterEventSeq = afterEventSeq;
-    }
-  }
-  return config;
-}
-
-function projectionAgentIdFromSource(source: Record<string, unknown>): string {
-  for (const sourceKey of ATELIER_PROJECTION_CONTRACT.eventSubscription.agentIdSourcePriority) {
-    const agentId = projectionAgentIdResolvers[sourceKey](source);
-    if (agentId) return agentId;
-  }
-  return '';
-}
-
-function projectionTaskIdFromSource(
-  source: Record<string, unknown>,
-  snapshot: AtelierProjectionSnapshot | null,
-  selectedTaskId: string,
-): string {
-  const input = { source, snapshot, selectedTaskId };
-  for (const sourceKey of ATELIER_PROJECTION_CONTRACT.eventSubscription.taskIdSourcePriority) {
-    const taskId = projectionTaskIdResolvers[sourceKey](input);
-    if (taskId) return taskId;
-  }
-  return '';
-}
-
-function projectionAfterEventSeqFromSnapshot(snapshot: AtelierProjectionSnapshot | null, taskId: string): number {
-  if (!snapshot || !taskId) {
-    return 0;
-  }
-  const nextEventSeq = snapshot.workspace.replay?.[taskId]?.nextEventSeq;
-  return isProjectionCursorNumber(nextEventSeq) && nextEventSeq > 0 ? nextEventSeq : 0;
-}
-
-function projectionAfterEventSeqFromSource(value: unknown): number | undefined {
-  const parsed = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : undefined;
-  return isProjectionCursorNumber(parsed) ? parsed : undefined;
-}
-
-function shouldPreserveExplicitZeroCursor(source: Record<string, unknown>, afterEventSeq: number): boolean {
-  const exception = ATELIER_PROJECTION_CONTRACT.eventSubscription.zeroCursorException;
-  return (
-    afterEventSeq === 0 &&
-    exception.explicitZeroCursorPolicy === 'preserve' &&
-    source.certificationMode === exception.certificationMode
-  );
-}
-
-function isProjectionCursorNumber(value: unknown): value is number {
-  return (
-    ATELIER_PROJECTION_CONTRACT.eventSubscription.cursorNumberPolicy === 'safe_integer' &&
-    typeof value === 'number' &&
-    Number.isSafeInteger(value)
-  );
-}
-
 function launchConfigSource(value: unknown): Record<string, unknown> | null {
   if (!isRecord(value)) return null;
   return isRecord(value.query) ? value.query : value;
@@ -1223,13 +1060,6 @@ function agentIdsFromSource(source: Record<string, unknown>): string[] {
     return [agentId];
   }
   return [];
-}
-
-function agentIdAtSourceIndex(source: Record<string, unknown>, index: number): string {
-  if (!Array.isArray(source.agentIds)) {
-    return '';
-  }
-  return trimmedNonEmptyString(source.agentIds[index]);
 }
 
 function trimmedNonEmptyString(value: unknown): string {

@@ -251,7 +251,7 @@ async function runScenario(scenario) {
             flowId: 'expert-hierarchy',
           }),
           PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS:
-            '/applets/atelier/v1/workspace,/sub-agent/agent/events/subscribe',
+            '/applets/atelier/v1/workspace,/events/stream',
           PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS_TIMEOUT_MS:
             process.env.PEERS_APPLET_PRODUCT_WINDOW_E2E_REQUIRED_URLS_TIMEOUT_MS ?? '20000',
           PEERS_APPLET_PRODUCT_WINDOW_E2E_POST_REQUIRED_URLS_WAIT_MS:

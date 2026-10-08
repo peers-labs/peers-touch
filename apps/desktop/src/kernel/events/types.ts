@@ -209,6 +209,21 @@ export interface RealtimeSocialGraphEventPayload {
   actorDisplayName: string;
 }
 
+export interface RealtimeAgentDomainEventPayload {
+  /** Durable shared-stream cursor. */
+  eventId: string;
+  /** Stable Agent domain-event identity, preserved across relay retries. */
+  domainEventId: string;
+  /** Monotonic sequence within the owning Goal or Task event stream. */
+  domainSequence: bigint;
+  schemaVersion: number;
+  eventType: string;
+  goalId: string;
+  taskId: string;
+  goalRevision: bigint;
+  committedTsUnixMs: number;
+}
+
 export interface RealtimeMessageMutationPayload {
   /** Server-assigned event id. Opaque cursor; see contract §2.2. */
   eventId: string;
@@ -310,6 +325,7 @@ export interface EventPayloadMap {
   [EVENT.REALTIME_ENVELOPE_DELIVERED]: RealtimeEnvelopeDeliveredPayload;
   [EVENT.REALTIME_CONVERSATION_SETTINGS_CHANGED]: RealtimeConversationSettingsChangedPayload;
   [EVENT.REALTIME_SOCIAL_GRAPH_EVENT]: RealtimeSocialGraphEventPayload;
+  [EVENT.REALTIME_AGENT_DOMAIN_EVENT]: RealtimeAgentDomainEventPayload;
   [EVENT.MOMENT_CREATED]: MomentCreatedPayload;
   [EVENT.MOMENT_DELETED]: MomentDeletedPayload;
   [EVENT.MOMENT_COMMENTED]: MomentCommentedPayload;

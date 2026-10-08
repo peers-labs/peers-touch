@@ -1,7 +1,7 @@
 # Agent 集成
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.3
 > **Created**: 2026-10-02 | **Updated**: 2026-10-03
 > **Owner**: Peers-Touch Agent Team
 
@@ -17,6 +17,8 @@
 | Capability | Manifest/binding/MCP Server types | Config, binding and readiness authority | Station/Desktop executor projection | Config/binding/readiness evidence |
 | ToolCall | ToolCall/receipt types | Governance, owner dispatch and continuation | Station or Desktop-local executor | Lineage, owner and side-effect count |
 | Provider | Provider types | Credential and model execution | Configuration projection | Direct Model response |
+| Goal | Goal/decision/acceptance types | Goal service, coordinator and `GoalAcceptanceService` | Home/Canvas/Atelier projection | Durable readback and independent verdict |
+| Realtime | Typed Agent-to-`StreamEvent` adapter | Shared Station EventBus and `/events/stream` | Cursor-based Desktop/Applet projection | Commit-before-publish, replay, `Resync`, bounded overload |
 
 ## 2. 最小可用 Agent Chat
 
@@ -81,3 +83,53 @@ owner 释放 MCP process、port、fixture storage 和 capability session。
   的逻辑必须在同一 cutover 删除。
 - 产品能力变化必须同步 Feature、Capability、Domain、Registry、Gate 和 Plan。
 - 未运行的平台或能力保持 `UNPROVEN`，不得由相邻 Gate 推断。
+
+## 7. Personal Agent OS 集成
+
+| Product surface | Input | Canonical command | Authoritative readback |
+|---|---|---|---|
+| Modern Chat Agent | Promote conversation to Goal | Station Goal create/admit | Goal + existing Conversation/TaskRun refs |
+| Home | Create/resume Goal | Station Goal command | Home Goal summary projection |
+| Agent Canvas | Participants + collaboration intent | Station Goal graph command | Goal graph and coordinator events |
+| Atelier | Goal/task/decision actions | Station Goal/Task commands | Workspace Goal projection |
+| Acceptance | Criteria/review intent | Station `GoalAcceptanceService` command | Goal-bound verdict and evidence refs |
+
+Acceptance Framework is outside the production mutation path. It drives these
+commands as a receiver, verifies Station readback, and stores formal proof; it
+does not own the Goal verdict.
+
+Desktop owns one canonical Station SSE subscription. A sandboxed applet may
+consume those already received events through a bounded Host bridge queue; an
+`events.poll` bridge implementation is transport-local only and cannot become
+a Station polling path, cursor owner, replay owner, or Goal truth.
+
+The integration cutover order is:
+
+1. Add `AgentGoal` contracts and persistence without changing current consumers.
+2. Add transactional Agent realtime outbox plus leased relay into the shared
+   Station EventBus; move consumers to canonical `/events/stream` and prove
+   transaction failure, publish retry, duplicate delivery, replay-gap,
+   overflow and `Resync` behavior.
+3. Create Goal-backed TaskRuns for new Goal flows.
+4. Migrate `AgentTask` and `CollaborationTask` rows into Goal/TaskRun identities
+   with idempotent source markers.
+5. Cut Chat, Home, Canvas, Atelier, scheduler, recovery and event consumers to
+   the new owners.
+6. Reconcile active work and stop old writers.
+7. Delete old task mutations, metadata-derived completion, Agent-private
+   EventBus/SSE, polling-driven progress and compatibility reads.
+8. Prove zero references and run receiver-perspective product Gates.
+
+The LobeHub checkout is a benchmark input only. Updating it is a separately
+bound external-repository work item, not an implicit task or write claim of the
+Peers Plan. It never changes Peers runtime code or licenses Peers to copy
+Community License source.
+
+## 8. Cross-Plan Preconditions
+
+The prepared MCP Dual Runtime plan must complete before Personal Agent OS claims
+runtime-portable governed execution. Personal Agent OS may build Goal and
+TaskRun truth in parallel, but its release Gate cannot pass while MCP execution
+ownership or the required external runtime cell remains `UNPROVEN`.
+`agent-v2-mcp-lifecycle-e2e` is therefore part of Personal Agent OS completion,
+not merely its optional full-suite list.

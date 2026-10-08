@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
-	agentevent "github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/event"
 	agentservice "github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
@@ -230,7 +229,6 @@ func (s *AtelierSubServer) handlePurgeTask(ctx context.Context, req server.Reque
 }
 
 func newOfficialAtelierProjectionService() *agentservice.AtelierProjectionService {
-	eventBus := agentevent.NewMemoryEventBus()
 	growthMetricsSvc := agentservice.NewGrowthMetricsService()
 	diagnosticSvc := agentservice.NewGrowthDiagnosticService()
 	growthMetricsSvc.SetDiagnosticService(diagnosticSvc)
@@ -271,9 +269,7 @@ func newOfficialAtelierProjectionService() *agentservice.AtelierProjectionServic
 		growthMetricsSvc,
 		convSvc,
 	)
-	turnSvc.SetEventBus(eventBus)
 	orchestrationSvc := agentservice.NewOrchestrationService(agentSvc, turnSvc, toolRegistrySvc)
-	orchestrationSvc.SetEventBus(eventBus)
 	return agentservice.NewAtelierProjectionService(orchestrationSvc)
 }
 

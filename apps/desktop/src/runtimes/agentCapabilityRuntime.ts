@@ -4,9 +4,7 @@ import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
 import {
   api,
-  streamAgentAuthorityEvents,
   type AgentCapabilitySessionList,
-  type AgentAuthorityStreamPayload,
 } from '../services/desktop_api';
 import { useAgentStore } from '../store/agent';
 import {
@@ -30,7 +28,6 @@ let runtimeGeneration = 0;
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
 let runtimeUnsubscribers: Array<() => void> = [];
 let browserCapabilitySessionRefresh: Promise<AgentCapabilitySessionList> | null = null;
-const authorityStreams = new Map<string, AbortController>();
 
 type CapabilitySession = AgentCapabilitySessionList['sessions'][number];
 type AgentCapabilityProjectionStore = Pick<
@@ -222,65 +219,11 @@ async function loadAgentCapabilities(reason: string): Promise<void> {
       .map((agent) => agent.id.trim())
       .filter(Boolean),
   ));
-  syncAuthorityStreams(agentIds);
   await reconcileAgentCapabilityProjection(
     authorityStore,
     agentIds,
     activeSession?.session_id,
   );
-}
-
-export function authorityEventAgentId(
-  payload: AgentAuthorityStreamPayload,
-): string {
-  if (payload.event !== 'agent.authority.invalidated') return '';
-  const envelope = payload.data.payload;
-  if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
-    return '';
-  }
-  const agentId = (envelope as Record<string, unknown>).agent_id;
-  return typeof agentId === 'string' ? agentId.trim() : '';
-}
-
-function syncAuthorityStreams(agentIds: readonly string[]): void {
-  if (isBrowserGatewayRuntime()) return;
-  const desired = new Set(agentIds);
-  for (const [agentId, controller] of authorityStreams) {
-    if (desired.has(agentId)) continue;
-    controller.abort();
-    authorityStreams.delete(agentId);
-  }
-  for (const agentId of desired) {
-    if (authorityStreams.has(agentId)) continue;
-    const controller = streamAgentAuthorityEvents(
-      agentId,
-      (payload) => {
-        const changedAgentId = authorityEventAgentId(payload);
-        if (changedAgentId !== agentId || !installed) return;
-        void reconcileAgentCapabilityProjection(
-          useAgentCapabilityStore.getState(),
-          [agentId],
-        ).catch((error) => {
-          log.warn('agentCapabilityRuntime', 'authority event refresh failed', {
-            agentId,
-            error: String(error),
-          });
-        });
-      },
-      (error) => {
-        log.warn('agentCapabilityRuntime', 'authority event stream failed', {
-          agentId,
-          error: String(error),
-        });
-      },
-    );
-    authorityStreams.set(agentId, controller);
-  }
-}
-
-function clearAuthorityStreams(): void {
-  authorityStreams.forEach((controller) => controller.abort());
-  authorityStreams.clear();
 }
 
 function installReconcileTimer(): void {
@@ -343,7 +286,6 @@ export const agentCapabilityRuntime: RuntimeDescriptor = {
     runtimeGeneration += 1;
     clearReconcileTimer();
     clearProjectionInvalidation();
-    clearAuthorityStreams();
     useAgentCapabilityStore.getState().reset();
     useAgentConnectorStore.getState().reset();
     useMCPStore.getState().reset();

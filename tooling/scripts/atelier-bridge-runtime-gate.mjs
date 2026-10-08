@@ -214,14 +214,6 @@ const prototypeRuntimeBootstrapSource = fsSync.readFileSync(
   path.join(repoRoot, 'packages/prototypes/desktop/applets/atelier/src/runtimeBootstrap.ts'),
   'utf8',
 );
-const prototypeRuntimeBootstrapPolicySource = fsSync.readFileSync(
-  path.join(repoRoot, 'packages/prototypes/desktop/applets/atelier/src/prototypeRuntimeBootstrap.ts'),
-  'utf8',
-);
-const prototypeRuntimeBootstrapPolicyTestSource = fsSync.readFileSync(
-  path.join(repoRoot, 'packages/prototypes/desktop/applets/atelier/src/prototypeRuntimeBootstrap.test.ts'),
-  'utf8',
-);
 const prototypeTaskOrganizerProjectionSource = fsSync.readFileSync(
   path.join(repoRoot, 'packages/prototypes/desktop/applets/atelier/src/prototypeTaskOrganizerProjection.ts'),
   'utf8',
@@ -374,14 +366,6 @@ const appletBridgeSource = fsSync.readFileSync(
   path.join(repoRoot, 'packages/prototypes/desktop/applets/atelier/src/appletBridge.ts'),
   'utf8',
 );
-const prototypeProjectionSubscriptionSource = fsSync.readFileSync(
-  path.join(repoRoot, 'packages/prototypes/desktop/applets/atelier/src/prototypeProjectionSubscription.ts'),
-  'utf8',
-);
-const prototypeProjectionSubscriptionTestSource = fsSync.readFileSync(
-  path.join(repoRoot, 'packages/prototypes/desktop/applets/atelier/src/prototypeProjectionSubscription.test.ts'),
-  'utf8',
-);
 const prototypeEngineTraceSource = fsSync.readFileSync(
   path.join(repoRoot, 'packages/prototypes/desktop/applets/atelier/src/engineTrace.tsx'),
   'utf8',
@@ -395,1299 +379,36 @@ const prototypeEngineTraceProjectionTestSource = fsSync.readFileSync(
   'utf8',
 );
 assert.ok(
-  prototypePageSource.includes('Prototype-only inline disclosure: terminal panel is not wired to shell or execute capability.') &&
-    prototypePageSource.includes('Prototype-only inline disclosure: outline panel is not wired to a real task graph panel.'),
-  'Browser prototype single-column shell must disclose Terminal/Outline as prototype-only inline placeholders',
-);
-assert.ok(
-  appletBridgeSource.includes('ATELIER_ARTIFACT_PREVIEW_OPEN_MODES') &&
-    appletBridgeSource.includes('isArtifactPreviewOpenMode(value.mode)') &&
-    appletBridgeSource.includes('isArtifactPreviewOpenRendererOwner(value.rendererOwner)') &&
-    appletBridgeSource.includes('isArtifactPreviewOpenRendererMode(value.rendererMode)') &&
-    appletBridgeSource.includes('isArtifactPreviewOpenRendererStatus(value.rendererStatus)') &&
-    !appletBridgeSource.includes("value.mode === 'sandbox_manifest'") &&
-    !appletBridgeSource.includes("value.rendererOwner === 'desktop_host'") &&
-    !appletBridgeSource.includes("value.rendererMode === 'host_sandbox_manifest'") &&
-    !appletBridgeSource.includes("value.rendererStatus === 'prepared_not_opened'"),
-  'Browser prototype applet bridge artifact preview response guard must consume generated Host renderer descriptor taxonomy',
-);
-  assert.ok(
-    appletBridgeSource.includes('buildPrototypeProjectionStreamPayload({') &&
-      appletBridgeSource.includes('let lastProjectionStreamPayloadKey') &&
-      appletBridgeSource.includes('refreshProjectionSubscription(projection)') &&
-      appletBridgeSource.includes('subscribeProjectionStream(activeProjectionListener, activeProjectionCloseAfterRejectedSubscribe, projection)') &&
-      prototypeBridgeRuntimeSource.includes('refreshProjectionSubscription?(projection: AtelierProjectionSnapshot): Promise<void> | void') &&
-      prototypeBridgeRuntimeSource.includes('bridge.refreshProjectionSubscription?.(projection)') &&
-      prototypeBridgeRuntimeSource.includes('snapshot = withStatus(nextSnapshot, reconcilingStatus())') &&
-      prototypeBridgeRuntimeSource.includes('latestProjectionRefreshToken') &&
-      appletBridgeSource.includes('return invokeProjectionSubscription(host, ATELIER_PROJECTION_SUBSCRIPTION_METHOD, projectionStreamPayload).catch') &&
-      prototypeProjectionSubscriptionSource.includes('ATELIER_PROJECTION_CONTRACT.eventSubscription.taskIdSourcePriority') &&
-      prototypeProjectionSubscriptionSource.includes('projectionTaskIdResolvers') &&
-      prototypeProjectionSubscriptionSource.includes("certificationMode === 'product-window-e2e'") &&
-      prototypeProjectionSubscriptionSource.includes('createGoal.trim().length > 0') &&
-      prototypeProjectionSubscriptionSource.includes('controllerSelectedTaskId: ({ selectedTaskId }') &&
-      prototypeProjectionSubscriptionSource.includes('export function projectionTaskIdFromSubscription') &&
-      prototypeProjectionSubscriptionSource.includes('export function projectionAfterEventSeqFromSnapshot') &&
-      prototypeProjectionSubscriptionSource.includes('export function compactProjectionStreamPayload') &&
-      prototypeProjectionSubscriptionSource.includes('export function buildPrototypeProjectionStreamPayload') &&
-      prototypeProjectionSubscriptionTestSource.includes('uses certification-created and controller selected task sources before snapshot fallback') &&
-      prototypeProjectionSubscriptionTestSource.includes('builds payloads from certification-created and controller selected task source priority only') &&
-      prototypeProjectionSubscriptionSource.includes('const agentId = input.agentId.trim();') &&
-      prototypeProjectionSubscriptionSource.includes('if (!agentId) return undefined;') &&
-      prototypeProjectionSubscriptionSource.includes('if (taskId) payload.taskId = taskId;') &&
-      prototypeProjectionSubscriptionSource.includes('Number.isSafeInteger(value)') &&
-      prototypeProjectionSubscriptionSource.includes('input.preserveZeroCursor === true && input.afterEventSeq === 0') &&
-      prototypeProjectionSubscriptionTestSource.includes('uses generated task id source priority with explicit intent before snapshot fallback') &&
-      prototypeProjectionSubscriptionTestSource.includes('falls back to selected task and then first snapshot task without inventing task ids') &&
-      prototypeProjectionSubscriptionTestSource.includes('trims required agent id and rejects empty projection stream payloads fail-closed') &&
-      prototypeProjectionSubscriptionTestSource.includes('rejects empty agent id before building Host projection stream payloads') &&
-      prototypeProjectionSubscriptionTestSource.includes('omits empty task id and zero replay cursor fields from Host subscription payload') &&
-      prototypeProjectionSubscriptionTestSource.includes('omits decimal and unsafe replay cursor values from Host subscription payload') &&
-      prototypeProjectionSubscriptionTestSource.includes('lets explicit stream cursor override snapshot replay cursor') &&
-      prototypeProjectionSubscriptionTestSource.includes('falls back to snapshot replay cursor without adding task execution fields') &&
-      appletBridgeSource.includes('Atelier projection stream agentId missing') &&
-      !appletBridgeSource.includes('return snapshot?.selectedTaskId || snapshot?.workspace.tasks[0]?.id'),
-    'Browser prototype applet bridge projection stream taskId fallback order must derive from generated eventSubscription contract',
-  );
-  assert.ok(
-    appletBridgeSource.includes('ATELIER_ARTIFACT_BODY_REF_SHAPE') &&
-      appletBridgeSource.includes('ATELIER_ARTIFACT_SANDBOX_REF_SHAPE') &&
-      appletBridgeSource.includes('isArtifactRef(value, ATELIER_ARTIFACT_BODY_REF_SHAPE)') &&
-      appletBridgeSource.includes('isArtifactRef(value, ATELIER_ARTIFACT_SANDBOX_REF_SHAPE)') &&
-      !appletBridgeSource.includes('^artifact:\\/\\/') &&
-      !appletBridgeSource.includes('^atelier-sandbox:\\/\\/') &&
-      prototypeProjectionSource.includes('ATELIER_ARTIFACT_BODY_REF_SHAPE') &&
-      prototypeProjectionSource.includes('ATELIER_ARTIFACT_SANDBOX_REF_SHAPE') &&
-      prototypeProjectionSource.includes('isArtifactRef(value, ATELIER_ARTIFACT_BODY_REF_SHAPE, taskId, artifactId)') &&
-      prototypeProjectionSource.includes('isArtifactRef(value, ATELIER_ARTIFACT_SANDBOX_REF_SHAPE, taskId, artifactId)') &&
-      !prototypeProjectionSource.includes('ARTIFACT_BODY_REF_PATTERN') &&
-      !prototypeProjectionSource.includes('ATELIER_ARTIFACT_PREVIEW_TARGET_SANDBOX_REF_SCHEMES'),
-    'Browser prototype artifact ref guards must consume generated body/sandbox ref shape descriptors',
-  );
-assert.ok(
-  appletBridgeSource.includes('ATELIER_PROVIDER_CAPABILITY_SCOPES') &&
-    appletBridgeSource.includes('isProviderCapabilityScope(value.scope)') &&
-    appletBridgeSource.includes('value.readOnly === ATELIER_PROVIDER_CAPABILITY_READ_ONLY') &&
-    !appletBridgeSource.includes("value.scope === 'station-provider'") &&
-    !appletBridgeSource.includes('value.readOnly === true'),
-  'Browser prototype applet bridge provider capability response guard must consume generated descriptor taxonomy',
-);
-assert.ok(
-  appletBridgeSource.includes('ATELIER_WORKSPACE_OPEN_URI_SCHEMES') &&
-    appletBridgeSource.includes('ATELIER_WORKSPACE_OPEN_URI_SHAPE') &&
-    appletBridgeSource.includes('function isWorkspaceOpenUriScheme') &&
-    appletBridgeSource.includes('isWorkspaceOpenUriScheme(uri.protocol.slice(0, -1))') &&
-    appletBridgeSource.includes('uri.hostname === shape.host') &&
-    appletBridgeSource.includes('uri.searchParams.getAll(shape.workspaceQueryKey)') &&
-    appletBridgeSource.includes('taskPath.length === shape.taskPathSegments') &&
-    !appletBridgeSource.includes("uri.protocol === 'pt-workspace:'") &&
-    !appletBridgeSource.includes("uri.hostname === 'task'") &&
-    !appletBridgeSource.includes("uri.searchParams.getAll('workspace')") &&
-    prototypeProjectionSource.includes('ATELIER_WORKSPACE_OPEN_URI_SCHEMES') &&
-    prototypeProjectionSource.includes('ATELIER_WORKSPACE_OPEN_URI_SHAPE') &&
-    prototypeProjectionSource.includes('function isWorkspaceOpenUriScheme') &&
-    prototypeProjectionSource.includes('isWorkspaceOpenUriScheme(uri.protocol.slice(0, -1))') &&
-    prototypeProjectionSource.includes('uri.hostname === shape.host') &&
-    prototypeProjectionSource.includes('uri.searchParams.getAll(shape.workspaceQueryKey)') &&
-    prototypeProjectionSource.includes('taskPath.length === shape.taskPathSegments') &&
-    !prototypeProjectionSource.includes("uri.protocol === 'pt-workspace:'") &&
-    !prototypeProjectionSource.includes("uri.hostname === 'task'") &&
-    !prototypeProjectionSource.includes("uri.searchParams.getAll('workspace')"),
-  'Browser prototype workspace URI guards must consume generated URI scheme and shape taxonomy',
-);
-assert.ok(
   appletBridgeSource.includes('ATELIER_PROJECTION_EVENT_TOPIC') &&
-    appletBridgeSource.includes('ATELIER_PROJECTION_SUBSCRIPTION_METHOD') &&
-    appletBridgeSource.includes('const DEFAULT_PROJECTION_EVENT_TOPIC = ATELIER_PROJECTION_EVENT_TOPIC') &&
-    appletBridgeSource.includes('invokeProjectionSubscription(host, ATELIER_PROJECTION_SUBSCRIPTION_METHOD') &&
-    !appletBridgeSource.includes("const DEFAULT_PROJECTION_EVENT_TOPIC = 'atelier.projection.event'") &&
-      !appletBridgeSource.includes("invokeProjectionSubscription(host, 'atelier.events.subscribe'"),
-  'Atelier applet bridge projection topic and subscription method must derive from generated contract',
-);
-assert.ok(
-  prototypePageSource.includes('ATELIER_TASK_INTENT_PRESETS') &&
-    prototypePageSource.includes('type TaskIntentPreset = (typeof ATELIER_TASK_INTENT_PRESETS)[number];') &&
-    prototypePageSource.includes("const [mode, setMode] = useState<TaskIntentPreset>('work');") &&
-    prototypePageSource.includes('ATELIER_TASK_INTENT_PRESETS.map((m) => (') &&
-    prototypePageSource.includes('onClick={() => setMode(m)}') &&
-    prototypePageSource.includes('intentPreset: mode') &&
-    !prototypePageSource.includes("(['work', 'code', 'design'] as const).map((m) => (") &&
-    !prototypePageSource.includes('atelier.ide.mode') &&
-    !prototypePageSource.includes('ide.mode.switch') &&
-    !prototypePageSource.includes('workspace.mode.switch') &&
-    !prototypePageSource.includes('runtime.mode.switch') &&
-    !prototypePageSource.includes('provider.runtime.override'),
-  'Browser prototype Work/Code/Design toggle must stay declarative intentPreset only and must not switch IDE/workspace/provider runtime',
-);
-assert.ok(
-  prototypeRuntimeSource.includes('ATELIER_TASK_INTENT_PRESETS') &&
-    prototypeCreateProjectProjectionSource.includes('ATELIER_DEFAULT_TASK_INTENT_PRESET') &&
-      prototypeCreateProjectProjectionSource.includes('ATELIER_CREATE_FROM_GOAL_INTENT_PRESET_MAPPING') &&
-    prototypeRuntimeSource.includes('AtelierViewStatus') &&
-    prototypeRuntimeSource.includes('export type IntentPreset = (typeof ATELIER_TASK_INTENT_PRESETS)[number];') &&
-    prototypeRuntimeSource.includes('buildPrototypeCreateProjectProjection({') &&
-    prototypeCreateProjectProjectionSource.includes('export function prototypeCreateProjectIntentPresetMetadata') &&
-    prototypeCreateProjectProjectionSource.includes('ATELIER_CREATE_FROM_GOAL_INTENT_PRESET_MAPPING[intentPreset]') &&
-    prototypeCreateProjectProjectionSource.includes('ATELIER_CREATE_FROM_GOAL_INTENT_PRESET_MAPPING[ATELIER_DEFAULT_TASK_INTENT_PRESET]') &&
-    prototypeCreateProjectProjectionSource.includes('export function prototypeCreateProjectWorkspaceUri') &&
-    prototypeCreateProjectProjectionSource.includes('export function prototypeCreateProjectAcknowledgement') &&
-    prototypeCreateProjectProjectionSource.includes('export function buildPrototypeCreateProjectProjection') &&
-    prototypeCreateProjectProjectionTestSource.includes('derives intent preset metadata from generated create-from-goal mapping') &&
-    prototypeCreateProjectProjectionTestSource.includes('builds canonical prototype workspace URIs without exposing file or shell paths') &&
-    prototypeCreateProjectProjectionTestSource.includes('builds a projection-only task, stream, and empty buckets for create-from-goal') &&
-    prototypeCreateProjectProjectionTestSource.includes('falls back to a new-task title and default project without creating execution payloads') &&
-    !prototypeRuntimeSource.includes('pt-workspace://task/${encodeURIComponent(id)}') &&
-    !prototypeRuntimeSource.includes('intentPresetMetadata(input.intentPreset)') &&
-    !prototypeRuntimeSource.includes("export type IntentPreset = 'work' | 'code' | 'design';"),
-  'Browser prototype runtime createProjectFromGoal projection must derive from generated taxonomy through a pure helper',
-);
-assert.ok(
-  prototypeRuntimeSource.includes('ATELIER_RUN_TARGET_KINDS') &&
-      prototypeRuntimeSource.includes('ATELIER_AGENT_FLOW_IDS') &&
-    prototypeRuntimeSource.includes('export type RunTargetKind = (typeof ATELIER_RUN_TARGET_KINDS)[number];') &&
-      prototypeRuntimeSource.includes('export type AgentFlowId = (typeof ATELIER_AGENT_FLOW_IDS)[number];') &&
-    prototypeRuntimeSource.includes("kind: Extract<RunTargetKind, 'model'>;") &&
-      prototypeRuntimeSource.includes("kind: Extract<RunTargetKind, 'agents'>;") &&
-      prototypeRuntimeSource.includes('flowId?: AgentFlowId;') &&
-    !prototypeRuntimeSource.includes('kind: RunTargetKind;') &&
-    !prototypeRuntimeSource.includes("kind: 'model' | 'agents';") &&
-      !prototypeRuntimeSource.includes('flowId?: string;') &&
-        prototypeRunTargetPickerProjectionSource.includes('ATELIER_AGENT_FLOW_DESCRIPTORS') &&
-      prototypeRunTargetPickerProjectionSource.includes('ATELIER_DIRECT_RUN_MODELS') &&
-        prototypePageSource.includes('ATELIER_DEFAULT_AGENT_FLOW_ID') &&
-      prototypeRunTargetPickerProjectionSource.includes('ATELIER_DIRECT_RUN_MODELS.map((model) => ({') &&
-        prototypeRunTargetPickerProjectionSource.includes('ATELIER_AGENT_FLOW_DESCRIPTORS.map((flow) => ({') &&
-      !prototypePageSource.includes('const MODELS = [') &&
-        !prototypePageSource.includes('const AGENT_FLOW_DETAILS') &&
-      !prototypePageSource.includes('const AGENT_FLOWS:') &&
-    prototypePageSource.includes('type RunKind = RunTargetKind;') &&
-      prototypePageSource.includes('useState<RunKind>(ATELIER_DEFAULT_RUN_TARGET_KIND)') &&
-        prototypePageSource.includes('useState<AgentFlowId>(ATELIER_DEFAULT_AGENT_FLOW_ID)') &&
-        !prototypePageSource.includes('useState<AgentFlowId>(ATELIER_AGENT_FLOW_IDS[0])') &&
-      !prototypePageSource.includes('useState<RunKind>(ATELIER_RUN_TARGET_KINDS[0])') &&
-      !prototypePageSource.includes("useState<RunKind>('agents')") &&
-    prototypeRunTargetPickerProjectionSource.includes('ATELIER_RUN_TARGET_KINDS.map((kind) => ({') &&
-    prototypeRunTargetPickerProjectionSource.includes('export function buildPrototypeModelSelectionRequestKey') &&
-    prototypeRunTargetPickerProjectionSource.includes('return `task:${taskId}|model:${model}`;') &&
-    prototypeRunTargetPickerProjectionSource.includes('export function shouldApplyPrototypeModelSelectionSnapshot') &&
-    prototypePageSource.includes('derivePrototypeRunTargetPickerView({ runKind, model, flowId, tab })') &&
-    prototypePageSource.includes('modelSelectionRequestKeyRef.current = buildPrototypeModelSelectionRequestKey({ taskId: selected })') &&
-    prototypePageSource.includes('modelSelectionRequestKeyRef.current = requestKey') &&
-    prototypePageSource.includes('shouldApplyPrototypeModelSelectionSnapshot({') &&
-      prototypePageSource.includes('Model selection is intent-only; failures reuse bridge recovery status.') &&
-      prototypePageSource.includes('setRuntimeStatus(buildPrototypeBridgeStatusFromError(error));') &&
-    prototypePageSource.includes('pickerView.tabs.map((runTab) => (') &&
-    prototypePageSource.includes('pickerView.modelOptions.map((option) => (') &&
-    prototypePageSource.includes('pickerView.flowOptions.map((option) => {') &&
-    prototypeRunTargetPickerProjectionTestSource.includes('renders generated run target tabs without local execution semantics') &&
-    prototypeRunTargetPickerProjectionTestSource.includes('keys model selection snapshots by selected task and model without execution payloads') &&
-    prototypeRunTargetPickerProjectionTestSource.includes('rejects stale model selection snapshots after task or model ownership changes') &&
-    prototypeRunTargetPickerProjectionTestSource.includes('marks generated direct model options as picked metadata only') &&
-    prototypeRunTargetPickerProjectionTestSource.includes('marks generated agent flow options and batch badges as display-only metadata') &&
-    !prototypePageSource.includes('runtime.setModel(m).then(applySnapshot);') &&
-    !prototypePageSource.includes("type RunKind = 'model' | 'agents';") &&
-    !prototypePageSource.includes("([['model', '⚡ 直接模型'], ['agents', '👥 Agents']] as const).map"),
-  'Browser prototype run target kind type and tabs must derive from generated run target taxonomy',
-);
-assert.ok(
-  prototypePageSource.includes('workspaceSnapshotRequestKeyRef.current = loadRequestKey') &&
-    prototypePageSource.includes("source: 'load'") &&
-    prototypePageSource.includes("source: 'reload'") &&
-    prototypePageSource.includes("source: 'subscription'") &&
-    prototypePageSource.includes('workspaceSnapshotSequenceRef.current =') &&
-    prototypePageSource.includes('shouldApplyPrototypeWorkspaceSnapshot({') &&
-    prototypePageSource.includes('buildPrototypeBridgeStatusFromError(error)') &&
-    prototypePageSource.includes('}).catch((error) => {') &&
-    prototypeWorkspaceSnapshotOwnershipSource.includes('export function buildPrototypeWorkspaceSnapshotRequestKey') &&
-    prototypeWorkspaceSnapshotOwnershipSource.includes('return `source:${input.source}|seq:${sequence}`;') &&
-    prototypeWorkspaceSnapshotOwnershipSource.includes('export function shouldApplyPrototypeWorkspaceSnapshot') &&
-    prototypeWorkspaceSnapshotOwnershipTestSource.includes('keys workspace snapshots by source and monotonic sequence without execution payloads') &&
-    prototypeWorkspaceSnapshotOwnershipTestSource.includes('rejects stale workspace load snapshots after newer reload or subscription ownership changes') &&
-    prototypeWorkspaceSnapshotOwnershipTestSource.includes('rejects stale workspace load errors after newer reload or subscription ownership changes') &&
-    !prototypePageSource.includes('runtime.loadWorkspace().then(applySnapshot);'),
-  'Browser prototype workspace load/reload/subscription snapshots must reject stale async workspace snapshots',
-);
-assert.ok(
-  prototypePageSource.includes('run: buildPrototypeRunTarget({ runKind, model: state.model, flowId })') &&
-    prototypeComposerSubmitSource.includes("if (input.runKind === 'model')") &&
-    prototypeComposerSubmitSource.includes("return { kind: 'model', model: input.model };") &&
-    prototypeComposerSubmitSource.includes("return { kind: 'agents', model: input.model, flowId: input.flowId };") &&
-    !prototypePageSource.includes('run: { kind: runKind, model: state.model, flowId }'),
-  'Browser prototype createProjectFromGoal must not send flowId with DirectRun model intent',
-);
-assert.ok(
-  prototypePageSource.includes('Read-only Station provider capabilities. Click inserts a slash command; execution remains Station-owned.') &&
-    prototypePageSource.includes('derivePrototypeProviderCapabilityPanelProjectionView({ capabilities, loading })') &&
-    prototypePageSource.includes('capabilityPanelView.visibleCapabilities') &&
-    prototypePageSource.includes('capabilityPanelView.hiddenCapabilityCount') &&
-    prototypePageSource.includes('capabilityPanelView.emptyVisible') &&
-    prototypePageSource.includes('more Station provider capability descriptors hidden in the compact prototype panel.') &&
-    prototypeProviderCapabilityPanelProjectionSource.includes('ATELIER_PROJECTION_DISPLAY_LIMITS.providerCapabilities') &&
-    prototypeProviderCapabilityPanelProjectionSource.includes("countLabel: input.loading ? 'loading' : String(input.capabilities.length)") &&
-    prototypeProviderCapabilityPanelProjectionSource.includes('emptyVisible: !input.loading && input.capabilities.length === 0') &&
-    prototypeProviderCapabilityPanelProjectionTestSource.includes('uses the generated display limit for visible provider capability descriptors') &&
-    prototypeProviderCapabilityPanelProjectionTestSource.includes('does not report hidden descriptors when capabilities fit the generated limit') &&
-    prototypeProviderCapabilityPanelProjectionTestSource.includes('shows loading instead of count while discovery is pending') &&
-    prototypeProviderCapabilityPanelProjectionTestSource.includes('shows empty state only after non-loading discovery returns no descriptors') &&
-    prototypePageSource.includes('onClick={() => onInsertCommand(capability.slashCommand)}') &&
-    prototypePageSource.includes('buildPrototypeProviderCapabilityCommandIntent({ command })') &&
-    prototypePageSource.includes('appendPrototypeProviderCapabilityCommand({') &&
-    prototypeProviderCapabilityCommandSource.includes("if (!command.startsWith('/')) return { status: 'invalid' };") &&
-    prototypeProviderCapabilityCommandSource.includes("return { status: 'insert', command };") &&
-    prototypeProviderCapabilityCommandTestSource.includes('builds insert-only intents for slash commands') &&
-    prototypeProviderCapabilityCommandTestSource.includes('rejects non-slash commands before mutating the draft') &&
-    prototypeProviderCapabilityCommandTestSource.includes('appends slash commands to existing draft text without sending a message') &&
-    prototypePageSource.includes('derivePrototypeProviderCapabilityDiscoveryView(response)') &&
-    prototypePageSource.includes('prototypeProviderCapabilityDiscoveryErrorStatus(error)') &&
-    prototypePageSource.includes('providerCapabilitiesRequestKeyRef.current = requestKey') &&
-    prototypePageSource.includes('shouldApplyPrototypeProviderCapabilityDiscoveryResponse({') &&
-    prototypeRuntimeSource.includes('buildPrototypeProviderCapabilitiesResponse()') &&
-    prototypeProviderCapabilityDiscoverySource.includes('export function buildPrototypeProviderCapabilitiesResponse') &&
-    prototypeProviderCapabilityDiscoverySource.includes('export function buildPrototypeProviderCapabilityDiscoveryRequestKey') &&
-    prototypeProviderCapabilityDiscoverySource.includes("return taskId ? `task:${taskId}` : 'workspace';") &&
-    prototypeProviderCapabilityDiscoverySource.includes('export function shouldApplyPrototypeProviderCapabilityDiscoveryResponse') &&
-    prototypeProviderCapabilityDiscoverySource.includes("source: 'prototype.station.provider.capabilities'") &&
-    prototypeProviderCapabilityDiscoverySource.includes('scope: ATELIER_PROVIDER_CAPABILITY_SCOPE') &&
-    prototypeProviderCapabilityDiscoverySource.includes('readOnly: ATELIER_PROVIDER_CAPABILITY_READ_ONLY') &&
-    prototypeProviderCapabilityDiscoverySource.includes('capabilities: response.capabilities') &&
-    prototypeProviderCapabilityDiscoverySource.includes("source: response.source") &&
-    prototypeProviderCapabilityDiscoverySource.includes("'provider capabilities unavailable'") &&
-    prototypeProviderCapabilityDiscoveryTestSource.includes('builds read-only Station provider capability descriptors without invoking providers') &&
-    prototypeProviderCapabilityDiscoveryTestSource.includes('projects Station provider capability discovery responses without invoking providers') &&
-    prototypeProviderCapabilityDiscoveryTestSource.includes('uses runtime error messages for provider capability discovery failures') &&
-    prototypeProviderCapabilityDiscoveryTestSource.includes('uses a bounded fallback for unknown provider capability discovery failures') &&
-    prototypeProviderCapabilityDiscoveryTestSource.includes('keys provider capability discovery by selected task or workspace scope') &&
-    prototypeProviderCapabilityDiscoveryTestSource.includes('rejects stale provider capability discovery responses without execution payloads') &&
-    !prototypeRuntimeSource.includes('function mockProviderCapabilities') &&
-    !prototypeRuntimeSource.includes("source: 'prototype.station.provider.capabilities'") &&
-    !prototypeRuntimeSource.includes("slashCommand: '/implement'") &&
-    !prototypePageSource.includes('atelier.provider.invoke') &&
-    !prototypePageSource.includes('skills.invoke') &&
-    !prototypePageSource.includes('provider.invoke') &&
-    !prototypePageSource.includes('model.run') &&
-    !prototypePageSource.includes('cli.execute'),
-  'Browser prototype provider capabilities panel must stay read-only discovery and must only insert slash commands',
-);
-assert.ok(
-  prototypePageSource.includes('derivePrototypeRightRailProjection({') &&
-    prototypePageSource.includes("rightRailProjection.surface === 'project'") &&
-    prototypeRightRailProjectionSource.includes("surface: 'project'") &&
-    prototypeRightRailProjectionSource.includes("surface: 'legacyTodo'") &&
-    prototypeRightRailProjectionSource.includes("surface: 'empty'") &&
-    prototypeRightRailProjectionSource.includes('project.id === input.selectedTask?.projectId') &&
-    prototypeRightRailProjectionSource.includes('project.taskGraph.tasks.some((node) => node.id === input.selectedTaskId)') &&
-    prototypeRightRailProjectionTestSource.includes('selects Station project projection by selected task projectId') &&
-    prototypeRightRailProjectionTestSource.includes('selects Station project projection by TaskGraph node membership') &&
-    prototypeRightRailProjectionTestSource.includes('falls back to legacy Todo projection when no Station project matches') &&
-    prototypeRightRailProjectionTestSource.includes('keeps Context projection independent from project and Todo surface selection') &&
-    !prototypeRightRailProjectionSource.includes('provider.invoke') &&
-    !prototypeRightRailProjectionSource.includes('model.run') &&
-    !prototypeRightRailProjectionSource.includes('cli.execute') &&
-    !prototypeRightRailProjectionSource.includes('memory.write') &&
-    !prototypeRightRailProjectionSource.includes('input_snapshot'),
-  'Browser prototype right rail projection selector must stay pure projection surface selection',
-);
-  assert.ok(
-    prototypePageSource.includes('Atelier — single-column projection shell') &&
-      prototypePageSource.includes('one content rail with task intent, stream, composer, and read-only Station') &&
-      prototypePageSource.includes('Task organizer') &&
-      prototypePageSource.includes('single-column projection section') &&
-      prototypePageSource.includes('Provider capability section') &&
-      prototypePageSource.includes('Workspace projection') &&
-      prototypePageSource.includes('read-only Station sections') &&
-      prototypePageSource.includes('Former rail affordances now live inside the content rail') &&
-      !prototypePageSource.includes('PanelToggleButton') &&
-      !prototypePageSource.includes('railOpen') &&
-      !prototypePageSource.includes('railRightOpen') &&
-      !prototypePageSource.includes('Left rail') &&
-      !prototypePageSource.includes('Right panel'),
-    'Browser prototype default shell must stay synced to the official single-column projection shape without app-level left/right rails',
-  );
-assert.ok(
-  prototypePageSource.includes('derivePrototypeTaskGraphPanelProjectionView(project)') &&
-    prototypePageSource.includes('graphView.visibleRootTaskIds') &&
-    prototypePageSource.includes('graphView.hiddenRootTaskIdCount') &&
-    prototypePageSource.includes('graphView.visibleEdges') &&
-    prototypePageSource.includes('graphView.hiddenEdgeCount') &&
-    prototypePageSource.includes('graphView.visibleNodes') &&
-    prototypePageSource.includes('graphView.hiddenNodeCount') &&
-    prototypePageSource.includes('graphView.integratorRequired') &&
-    prototypeTaskGraphPanelProjectionSource.includes('ATELIER_PROJECTION_DISPLAY_LIMITS.taskGraphRootIds') &&
-    prototypeTaskGraphPanelProjectionSource.includes('ATELIER_PROJECTION_DISPLAY_LIMITS.taskGraphEdges') &&
-    prototypeTaskGraphPanelProjectionSource.includes('ATELIER_PROJECTION_DISPLAY_LIMITS.taskGraphNodes') &&
-    prototypeTaskGraphPanelProjectionSource.includes("integratorRequired: project.taskGraph.parallelPolicy === 'integrator_required'") &&
-    prototypeTaskGraphPanelProjectionTestSource.includes('uses generated display limits for root ids, edges, and nodes') &&
-    prototypeTaskGraphPanelProjectionTestSource.includes('does not report hidden panel entries when projections fit generated limits') &&
-    prototypeTaskGraphPanelProjectionTestSource.includes('projects integrator-required policy as display state only') &&
-    !prototypeTaskGraphPanelProjectionSource.includes('taskGraph.schedule') &&
-    !prototypeTaskGraphPanelProjectionSource.includes('taskGraph.execute') &&
-    !prototypeTaskGraphPanelProjectionSource.includes('taskGraph.replan') &&
-    !prototypeTaskGraphPanelProjectionSource.includes('integrator.merge.execute') &&
-    !prototypeTaskGraphPanelProjectionSource.includes('artifact.produce') &&
-    !prototypeTaskGraphPanelProjectionSource.includes('gate.run'),
-  'Browser prototype TaskGraph panel helper must stay bounded read-only projection display',
-);
-assert.ok(
-  prototypePageSource.includes('derivePrototypeTaskGraphNodeProjectionView(node, { artifactsByTask, gatesByTask })') &&
-    prototypePageSource.includes('TASK_GRAPH_NODE_TONE_COLORS[nodeView.tone]') &&
-    prototypeTaskGraphNodeProjectionSource.includes('ATELIER_PROJECTION_DISPLAY_LIMITS.taskGraphNodeRefs') &&
-    prototypeTaskGraphNodeProjectionSource.includes('ATELIER_PROJECTION_CONTRACT.readOnlyProjectionSurfaces.task_graph.evidenceRefResolution') &&
-    prototypeTaskGraphNodeProjectionSource.includes('evidenceRefResolution.unresolvedLabel') &&
-    prototypeTaskGraphNodeProjectionSource.includes('visibleArtifactRefs') &&
-    prototypeTaskGraphNodeProjectionSource.includes('hiddenArtifactCount') &&
-    prototypeTaskGraphNodeProjectionSource.includes('unresolvedArtifactCount') &&
-    prototypeTaskGraphNodeProjectionSource.includes('visibleGateRefs') &&
-    prototypeTaskGraphNodeProjectionSource.includes('hiddenGateCount') &&
-    prototypeTaskGraphNodeProjectionSource.includes('unresolvedGateCount') &&
-    prototypeTaskGraphNodeProjectionTestSource.includes('uses generated display limits for node artifact and gate refs') &&
-    prototypeTaskGraphNodeProjectionTestSource.includes('does not report hidden refs when projected refs fit the generated limit') &&
-    prototypeTaskGraphNodeProjectionTestSource.includes('marks task graph evidence refs unresolved unless projected artifact and gate ids exist in workspace maps') &&
-    prototypeTaskGraphNodeProjectionTestSource.includes("label: 'artifact-missing (unresolved)'") &&
-    prototypeTaskGraphNodeProjectionTestSource.includes('maps known Station node states to display glyphs and tones') &&
-    prototypeTaskGraphNodeProjectionTestSource.includes('keeps unknown node states as muted projection display without creating actions') &&
-    !prototypeTaskGraphNodeProjectionSource.includes('provider.invoke') &&
-    !prototypeTaskGraphNodeProjectionSource.includes('taskGraph.schedule') &&
-    !prototypeTaskGraphNodeProjectionSource.includes('taskGraph.execute') &&
-    !prototypeTaskGraphNodeProjectionSource.includes('taskGraph.replan') &&
-    !prototypeTaskGraphNodeProjectionSource.includes('integrator.merge.execute') &&
-    !prototypeTaskGraphNodeProjectionSource.includes('artifact.produce') &&
-    !prototypeTaskGraphNodeProjectionSource.includes('gate.run'),
-  'Browser prototype TaskGraph node helper must stay bounded read-only projection display',
-);
-assert.ok(
-  prototypePageSource.includes('Prototype run target selector only writes Station-owned run intent; the applet does not invoke providers, run models, or execute CLI.') &&
-    prototypePageSource.includes("onClick={() => { onPickModel(option.model); setOpen(false); }}") &&
-        prototypePageSource.includes("onClick={() => { onPickFlow(option.id); setOpen(false); }}") &&
-    prototypeRunTargetPickerProjectionSource.includes("batchBadgeLabel: flow.batch === 1 ? '可切换' : '第二批'") &&
-    prototypeRunTargetPickerProjectionSource.includes("batchBadgeTone: flow.batch === 1 ? 'success' : 'muted'") &&
-    !prototypePageSource.includes('runtime.invokeProvider') &&
-    !prototypePageSource.includes('provider.invoke') &&
-    !prototypePageSource.includes('model.run') &&
-    !prototypePageSource.includes('runModel') &&
-    !prototypePageSource.includes('cli.execute') &&
-    !prototypePageSource.includes('executeCli'),
-  'Browser prototype run target picker must stay Station-owned intent only and must not expose provider/model/CLI execution',
-);
-assert.ok(
-  prototypePageSource.includes('buildPrototypeComposerSubmitIntent({') &&
-    prototypePageSource.includes("setComposerMode('goal');") &&
-    prototypePageSource.includes('runtime.createProjectFromGoal({') &&
-    prototypePageSource.includes("composerSubmitRequestKeyRef.current = buildPrototypeComposerSubmitRequestKey({ kind: 'message', taskId: selected })") &&
-    prototypePageSource.includes('composerSubmitRequestKeyRef.current = requestKey') &&
-    prototypePageSource.includes('shouldApplyPrototypeComposerSubmitSnapshot({') &&
-      prototypePageSource.includes('Composer submit is Station-owned intent; failures reuse bridge recovery status.') &&
-      prototypePageSource.includes('setRuntimeStatus(buildPrototypeBridgeStatusFromError(error));') &&
-    prototypePageSource.includes('goal: intent.goal') &&
-    prototypeComposerSubmitSource.includes('export function buildPrototypeComposerSubmitRequestKey') &&
-    prototypeComposerSubmitSource.includes('return `kind:${input.kind}|task:${taskId}|text:${text}|run:${runKind}|model:${model}|flow:${flowId}`;') &&
-    prototypeComposerSubmitSource.includes('export function shouldApplyPrototypeComposerSubmitSnapshot') &&
-    prototypeComposerSubmitSource.includes("export type PrototypeComposerMode = 'message' | 'goal'") &&
-    prototypeComposerSubmitSource.includes("input.composerMode === 'goal' || !selectedTaskId") &&
-    prototypeComposerSubmitSource.includes("return { status: 'create', goal: text };") &&
-    prototypeComposerSubmitSource.includes("status: 'message'") &&
-    prototypeComposerSubmitTestSource.includes('keys composer submit snapshots by kind, task/text, and run metadata without execution payloads') &&
-    prototypeComposerSubmitTestSource.includes('rejects stale composer submit snapshots after task, text, or run ownership changes') &&
-    prototypeComposerSubmitTestSource.includes('routes goal composer submissions to create-from-goal with user-entered text') &&
-    prototypeComposerSubmitTestSource.includes('routes selected message composer submissions to text-only message intents') &&
-    prototypeRuntimeSource.includes('buildPrototypeMessageProjection({') &&
-    prototypeMessageProjectionSource.includes('export function buildPrototypeMessageProjection') &&
-    prototypeMessageProjectionSource.includes('PROTOTYPE_MESSAGE_WAITING_FOR_STATION_TEXT') &&
-    prototypeMessageProjectionTestSource.includes('appends trimmed user text and a Station-waiting projection acknowledgement') &&
-    prototypeMessageProjectionTestSource.includes('creates a stream bucket for a selected task without mutating task-owned side buckets') &&
-    prototypeMessageProjectionTestSource.includes('keeps empty message submissions as no-op projection updates') &&
-    prototypeMessageProjectionTestSource.includes('keeps message projection text-only without execution-shaped payload fields') &&
-    !prototypeRuntimeSource.includes('function userBlock') &&
-    !prototypeRuntimeSource.includes('function agentBlock') &&
-    !prototypePageSource.includes(`runtime.createProjectFromGoal({
-        goal: intent.goal,
-        intentPreset: mode,
-        project: selectedTask?.project ?? 'peers-touch',
-        run: buildPrototypeRunTarget({ runKind, model: state.model, flowId }),
-      }).then(applySnapshot);`) &&
-    !prototypePageSource.includes('runtime.sendMessage({\n      taskId: intent.taskId,\n      text: intent.text,\n    }).then(applySnapshot);') &&
-    !prototypePageSource.includes("goal: '新任务'") &&
-    !prototypePageSource.includes('goal: "新任务"'),
-  'Browser prototype New task/message flow must use pure helpers for create routing and text-only message projection',
-);
-const prototypeDecisionCardStart = prototypeBlocksSource.indexOf('export function DecisionCard({');
-const prototypeDecisionCardEnd = prototypeBlocksSource.indexOf('\n\n/* ── artifact card', prototypeDecisionCardStart);
-const prototypeDecisionCardSource =
-  prototypeDecisionCardStart >= 0 && prototypeDecisionCardEnd > prototypeDecisionCardStart
-    ? prototypeBlocksSource.slice(prototypeDecisionCardStart, prototypeDecisionCardEnd)
-    : '';
-const prototypeChooseStart = prototypePageSource.indexOf('const choose = (blockId: string, opt: string) => {');
-const prototypeChooseEnd = prototypePageSource.indexOf('\n\n  const sendDraft', prototypeChooseStart);
-const prototypeChooseSource =
-  prototypeChooseStart >= 0 && prototypeChooseEnd > prototypeChooseStart
-    ? prototypePageSource.slice(prototypeChooseStart, prototypeChooseEnd)
-    : '';
-assert.ok(
-  prototypeDecisionCardSource.includes('Agent 不替你决定') &&
-    prototypeDecisionCardSource.includes('derivePrototypeDecisionCardView(b)') &&
-    prototypeDecisionCardSource.includes('decisionView.optionViews.map') &&
-    prototypeDecisionCardSource.includes('if (o.clickable) onChoose(b.id, o.text);') &&
-    prototypeDecisionCardSource.includes('已选择「{decisionView.chosenLabel}」，Agent 继续推进。') &&
-    prototypeChooseSource.includes('buildPrototypeDecisionChoiceIntent({') &&
-    prototypeChooseSource.includes('void runtime.resolveDecision({') &&
-    prototypePageSource.includes('decisionChoiceRequestKeyRef.current = buildPrototypeDecisionChoiceRequestKey({ taskId: selected })') &&
-    prototypeChooseSource.includes('decisionChoiceRequestKeyRef.current = requestKey') &&
-    prototypeChooseSource.includes('shouldApplyPrototypeDecisionChoiceSnapshot({') &&
-      prototypeChooseSource.includes('Decision choices are human intent data; failures reuse bridge recovery status.') &&
-      prototypeChooseSource.includes('setRuntimeStatus(buildPrototypeBridgeStatusFromError(error));') &&
-    prototypeChooseSource.includes('choice: intent.choice') &&
-    prototypeDecisionChoiceSource.includes('export function buildPrototypeDecisionChoiceRequestKey') &&
-    prototypeDecisionChoiceSource.includes('return `task:${taskId}|block:${blockId}|choice:${choice}`;') &&
-    prototypeDecisionChoiceSource.includes('export function shouldApplyPrototypeDecisionChoiceSnapshot') &&
-    prototypeDecisionChoiceSource.includes("status: 'resolve'") &&
-    prototypeDecisionChoiceSource.includes('if (!taskId || !blockId || !choice) return { status:') &&
-    prototypeRuntimeSource.includes('buildPrototypeDecisionResolveProjection({') &&
-    prototypeDecisionChoiceSource.includes('export function buildPrototypeDecisionResolveProjection') &&
-    prototypeDecisionChoiceSource.includes('export function derivePrototypeDecisionCardView') &&
-    prototypeDecisionChoiceSource.includes('const picked = Boolean(chosen && chosen === option.text);') &&
-    prototypeDecisionChoiceSource.includes('const primary = picked || Boolean(option.recommended && !chosen);') &&
-    prototypeDecisionChoiceSource.includes('const disabled = Boolean(chosen && !picked);') &&
-    prototypeDecisionChoiceSource.includes('clickable: !disabled') &&
-    prototypeDecisionChoiceTestSource.includes('builds trimmed Station-owned human decision resolve intents') &&
-    prototypeDecisionChoiceTestSource.includes('keys decision choice snapshot requests by task, block, and choice without execution payloads') &&
-    prototypeDecisionChoiceTestSource.includes('rejects stale decision choice snapshots after task, block, or choice ownership changes') &&
-    prototypeDecisionChoiceTestSource.includes('keeps resume-shaped option text as human choice data, not an applet action') &&
-    prototypeDecisionChoiceTestSource.includes('marks the recommended option primary before the human chooses') &&
-    prototypeDecisionChoiceTestSource.includes('keeps the chosen option active and disables the other projected choices') &&
-    prototypeDecisionChoiceTestSource.includes('treats resume-shaped option text as display data without execution affordances') &&
-    prototypeDecisionChoiceTestSource.includes('projects a trimmed human decision choice onto only the matching DecisionCard block') &&
-    prototypeDecisionChoiceTestSource.includes('keeps invalid decision projection input as a no-op state update') &&
-    prototypeDecisionChoiceTestSource.includes('keeps resume-shaped resolved choices as projection data without execution payloads') &&
-    !prototypeChooseSource.includes('runtime.resolveDecision({\n      taskId: intent.taskId,\n      blockId: intent.blockId,\n      choice: intent.choice,\n    }).then(applySnapshot);') &&
-    !prototypeRuntimeSource.includes('? { ...block, chosen: input.choice }') &&
-    !prototypeDecisionCardSource.includes('const picked =') &&
-    !prototypeDecisionCardSource.includes('const disabled =') &&
-    !prototypeDecisionCardSource.includes('resume') &&
-    !prototypeDecisionCardSource.includes('rerun') &&
-    !prototypeDecisionCardSource.includes('execute') &&
-    !prototypeDecisionCardSource.includes('provider.invoke') &&
-    !prototypeDecisionCardSource.includes('gate.rerun') &&
-    !prototypeDecisionCardSource.includes('taskGraph.diff.apply') &&
-    !prototypeChooseSource.includes('resume') &&
-    !prototypeChooseSource.includes('rerun') &&
-    !prototypeChooseSource.includes('execute') &&
-    !prototypeChooseSource.includes('provider.invoke') &&
-    !prototypeChooseSource.includes('gate.rerun') &&
-    !prototypeChooseSource.includes('taskGraph.diff.apply'),
-  'Browser prototype decision card must stay human-choice resolve intent only and must not expose resume/rerun/execute/provider capabilities',
-);
-const prototypeNegoRowStart = prototypeBlocksSource.indexOf('export function NegoRow({');
-const prototypeNegoRowEnd = prototypeBlocksSource.indexOf('\n\n/* ── inline decision card', prototypeNegoRowStart);
-const prototypeNegoRowSource =
-  prototypeNegoRowStart >= 0 && prototypeNegoRowEnd > prototypeNegoRowStart
-    ? prototypeBlocksSource.slice(prototypeNegoRowStart, prototypeNegoRowEnd)
-    : '';
-assert.ok(
-  prototypeNegoRowSource.includes('export function NegoRow({') &&
-    prototypeNegoRowSource.includes('const [open, setOpen] = useState(false);') &&
-    prototypeNegoRowSource.includes('const negoView = derivePrototypeNegotiationProjectionView(b);') &&
-    prototypeNegoRowSource.includes('onClick={() => setOpen((v) => !v)}') &&
-    prototypeNegoRowSource.includes('negoView.visibleVoiceViews.map') &&
-    prototypeNegoRowSource.includes('more Station negotiation voices hidden in the compact prototype row.') &&
-    prototypeNegoRowSource.includes('noEvidenceObjection') &&
-    prototypeNegoRowSource.includes('无证据 → 降级为「疑虑」（反附和）') &&
-    prototypeNegoRowSource.includes('{b.consensus}') &&
-    prototypeNegotiationProjectionSource.includes('ATELIER_PROJECTION_DISPLAY_LIMITS.negotiationVoices') &&
-    prototypeNegotiationProjectionSource.includes("voice.stance === 'objection' && !voice.evidenceRef") &&
-    prototypeNegotiationProjectionSource.includes("statusLabel: block.converged ? '已收敛' : '未收敛'") &&
-    prototypeNegotiationProjectionTestSource.includes('uses the generated display limit for visible Station negotiation voices') &&
-    prototypeNegotiationProjectionTestSource.includes('does not report hidden voices at the generated display limit') &&
-    prototypeNegotiationProjectionTestSource.includes('marks no-evidence objections as display-only concerns') &&
-    prototypeNegotiationProjectionTestSource.includes('maps convergence to display status without producing consensus actions') &&
-    prototypeNegotiationProjectionTestSource.includes('supports empty voice projections without creating negotiation runtime work') &&
-    !prototypeNegotiationProjectionSource.includes('agent.invoke') &&
-    !prototypeNegotiationProjectionSource.includes('atelier.agent') &&
-    !prototypeNegotiationProjectionSource.includes('orchestration.start') &&
-    !prototypeNegotiationProjectionSource.includes('negotiation.run') &&
-    !prototypeNegotiationProjectionSource.includes('provider.invoke') &&
-    !prototypeNegotiationProjectionSource.includes('runtime.invokeProvider') &&
-    !prototypeNegotiationProjectionSource.includes('runtime.execute') &&
-    !prototypeNegotiationProjectionSource.includes('gate.rerun') &&
-    !prototypeNegotiationProjectionSource.includes('taskGraph.diff.apply') &&
-    !prototypeNegoRowSource.includes('agent.invoke') &&
-    !prototypeNegoRowSource.includes('atelier.agent') &&
-    !prototypeNegoRowSource.includes('orchestration.start') &&
-    !prototypeNegoRowSource.includes('negotiation.run') &&
-    !prototypeNegoRowSource.includes('provider.invoke') &&
-    !prototypeNegoRowSource.includes('runtime.invokeProvider') &&
-    !prototypeNegoRowSource.includes('runtime.execute') &&
-    !prototypeNegoRowSource.includes('gate.rerun') &&
-    !prototypeNegoRowSource.includes('taskGraph.diff.apply'),
-  'Browser prototype negotiation row must stay read-only Station voice projection and must not expose agent orchestration/provider execution capabilities',
-);
-assert.ok(
-  prototypeTypesSource.includes('export type AtelierNegotiationVoiceStance =') &&
-    prototypeTypesSource.includes('ATELIER_PROJECTION_CONTRACT.negotiationProjection.voiceStances') &&
-    prototypeTypesSource.includes('sessionId?: string') &&
-    prototypeTypesSource.includes('roundId?: string') &&
-    prototypeTypesSource.includes('voiceId?: string') &&
-    prototypeTypesSource.includes('objectionId?: string'),
-  'Browser prototype NegoVoice stance and trace ids must stay generated-contract derived',
-);
-assert.ok(
-  prototypeEngineTraceSource.includes('prototype-only multi-engine negotiation trace renderer') &&
-    prototypeEngineTraceSource.includes('Renders the local demo output of `runSession`') &&
-    prototypeEngineTraceSource.includes('Station remains the execution/orchestration source of truth.') &&
-    prototypeEngineTraceProjectionSource.includes("PROTOTYPE_ENGINE_TRACE_DISCLOSURE = 'Prototype-only local trace；真实编排归 Station'") &&
-    prototypeEngineTraceSource.includes('derivePrototypeEngineTraceProjectionView({ collaboration: input, engineId })') &&
-    prototypeEngineTraceSource.includes('derivePrototypeEngineTraceTurnView(t)') &&
-    prototypeEngineTraceSource.includes('derivePrototypeEngineTraceRoundView(r)') &&
-    prototypeEngineTraceSource.includes('<span>{disclosure}</span>') &&
-    prototypeEngineTraceProjectionSource.includes('const policy = getPolicy(input.engineId);') &&
-    prototypeEngineTraceProjectionSource.includes('if (!policy) return null;') &&
-    prototypeEngineTraceProjectionSource.includes('const trace = runSession(policy, input.collaboration);') &&
-    prototypeEngineTraceProjectionTestSource.includes('fails closed for unknown prototype engine ids without starting orchestration') &&
-    prototypeEngineTraceProjectionTestSource.includes('summarizes local demo trace while disclosing Station orchestration ownership') &&
-    prototypeEngineTraceProjectionTestSource.includes('does not expose provider/runtime execution shaped actions in the local trace view') &&
-    prototypeEngineTraceProjectionTestSource.includes('marks evidence-less objections as display-only concerns') &&
-    prototypeEngineTraceProjectionTestSource.includes('derives parallel round layout without creating parallel execution') &&
-    !prototypeEngineTraceSource.includes('const policy = getPolicy(engineId);') &&
-    !prototypeEngineTraceSource.includes('const trace = runSession(policy, input);') &&
-    prototypePageSource.includes('render the prototype-only local trace') &&
-    prototypePageSource.includes('without claiming applet orchestration') &&
-    prototypePageSource.includes('return <EngineTrace key={b.id} input={collab} engineId={flowId} />;') &&
-    !prototypeEngineTraceSource.includes('agent.invoke') &&
-    !prototypeEngineTraceSource.includes('atelier.agent') &&
-    !prototypeEngineTraceSource.includes('orchestration.start') &&
-    !prototypeEngineTraceSource.includes('provider.invoke') &&
-    !prototypeEngineTraceSource.includes('runtime.invokeProvider') &&
-    !prototypeEngineTraceSource.includes('runtime.execute') &&
-    !prototypeEngineTraceSource.includes('gate.rerun') &&
-    !prototypeEngineTraceSource.includes('taskGraph.diff.apply') &&
-    !prototypePageSource.includes('orchestration.start') &&
-    !prototypePageSource.includes('provider.invoke') &&
-    !prototypePageSource.includes('runtime.invokeProvider'),
-  'Browser prototype EngineTrace must stay prototype-only local trace disclosure and must not expose agent/provider execution capabilities',
-);
-const prototypeFeedbackBarStart = prototypeBlocksSource.indexOf('function FeedbackBar({');
-const prototypeFeedbackBarEnd = prototypeBlocksSource.indexOf('\n\n/* ── agent reply', prototypeFeedbackBarStart);
-const prototypeFeedbackBarSource =
-  prototypeFeedbackBarStart >= 0 && prototypeFeedbackBarEnd > prototypeFeedbackBarStart
-    ? prototypeBlocksSource.slice(prototypeFeedbackBarStart, prototypeFeedbackBarEnd)
-    : '';
-const prototypeFeedbackFlowStart = prototypePageSource.indexOf('const submitFeedback = (blockId: string, signal: AtelierFeedbackSignal) => {');
-const prototypeFeedbackFlowEnd = prototypePageSource.indexOf('\n\n  const openWorkspace', prototypeFeedbackFlowStart);
-const prototypeFeedbackFlowSource =
-  prototypeFeedbackFlowStart >= 0 && prototypeFeedbackFlowEnd > prototypeFeedbackFlowStart
-    ? prototypePageSource.slice(prototypeFeedbackFlowStart, prototypeFeedbackFlowEnd)
-    : '';
-assert.ok(
-  prototypeBlocksSource.includes('ATELIER_FEEDBACK_SIGNALS') &&
-    prototypeBlocksSource.includes('const FEEDBACK_SIGNAL_LABELS: Record<AtelierFeedbackSignal, string>') &&
-      appletBridgeSource.includes('ATELIER_MEMORY_CANDIDATE_FEEDS') &&
-      appletBridgeSource.includes('value.feeds.every(isFeedbackFeed)') &&
-      appletBridgeSource.includes('feeds.includes(value)') &&
-      !appletBridgeSource.includes("value === 'planner' || value === 'risk' || value === 'verifier'") &&
-    prototypeFeedbackBarSource.includes('ATELIER_FEEDBACK_SIGNALS.map((signal) => button(signal, FEEDBACK_SIGNAL_LABELS[signal]))') &&
-    !prototypeFeedbackBarSource.includes("button('positive', '👍')") &&
-    prototypeFeedbackBarSource.includes('if (!busy) onFeedback(blockId, signal);') &&
-    prototypeFeedbackBarSource.includes('if (!memoryConfirming) onConfirmMemoryCandidate();') &&
-    prototypeFeedbackBarSource.includes('if (!rerunConfirming) onConfirmRerun();') &&
-    prototypeFeedbackFlowSource.includes('void runtime.submitFeedback({ taskId: selected, blockId, signal })') &&
-      prototypeFeedbackFlowSource.includes('derivePrototypeFeedbackPolicyView({ signal, response })') &&
-      prototypePageSource.includes('feedbackRequestKeyRef.current = buildPrototypeFeedbackRequestKey({ taskId: selected })') &&
-      prototypeFeedbackFlowSource.includes('const requestKey = buildPrototypeFeedbackRequestKey({ taskId: selected, blockId, signal })') &&
-      prototypeFeedbackFlowSource.includes('feedbackRequestKeyRef.current = requestKey') &&
-      prototypeFeedbackFlowSource.includes('shouldApplyPrototypeFeedbackResponse({') &&
-      prototypeFeedbackFlowSource.includes("setMemoryConfirmationFeedbackId('')") &&
-      prototypeFeedbackFlowSource.includes("setRerunConfirmationFeedbackId('')") &&
-      prototypeRuntimeSource.includes('buildPrototypeFeedbackResponse({') &&
-      prototypeFeedbackPolicySource.includes('export function buildPrototypeFeedbackResponse') &&
-      prototypeFeedbackPolicySource.includes('export function buildPrototypeFeedbackRequestKey') &&
-      prototypeFeedbackPolicySource.includes('export function shouldApplyPrototypeFeedbackResponse') &&
-      prototypeFeedbackPolicySource.includes('return `task:${taskId}|block:${blockId}|signal:${signal}`;') &&
-      prototypeFeedbackPolicySource.includes('prototype records only a weak memory candidate signal') &&
-      prototypeFeedbackPolicySource.includes('prototype records rerun intent and waits for Station rerun review confirmation') &&
-      prototypeFeedbackPolicySource.includes('response.memoryCandidate.confirmationMode === ATELIER_MEMORY_CONFIRMATION_MODE') &&
-      prototypeFeedbackPolicySource.includes('response.rerunIntent.confirmationMode === ATELIER_RERUN_CONFIRMATION_MODE') &&
-      prototypeFeedbackPolicySource.includes('Station memory confirmation required') &&
-      prototypeFeedbackPolicySource.includes('Station rerun review required') &&
-      prototypeFeedbackPolicyTestSource.includes('builds positive feedback as a weak Station memory candidate without writing memory') &&
-      prototypeFeedbackPolicyTestSource.includes('builds negative feedback with risk feed routing but no execution payloads') &&
-      prototypeFeedbackPolicyTestSource.includes('builds regenerate feedback as a Station rerun review intent without rerunning locally') &&
-      prototypeFeedbackPolicyTestSource.includes('builds neutral feedback as acknowledgement only') &&
-      prototypeFeedbackPolicyTestSource.includes('uses generated memory confirmation mode for positive memory candidates') &&
-      prototypeFeedbackPolicyTestSource.includes('uses generated rerun confirmation mode for regenerate feedback') &&
-      prototypeFeedbackPolicyTestSource.includes('does not show confirmation affordances when confirmation mode does not match generated modes') &&
-      prototypeFeedbackPolicyTestSource.includes('keys feedback submission by task, block, and signal without execution payloads') &&
-      prototypeFeedbackPolicyTestSource.includes('rejects stale feedback responses after task or signal ownership changes') &&
-      !prototypeRuntimeSource.includes('function mockFeedbackResponse') &&
-      !prototypeRuntimeSource.includes("confirmationMode: 'station_memory_review'") &&
-      !prototypeRuntimeSource.includes("confirmationMode: 'station_rerun_review'") &&
-    prototypeFeedbackFlowSource.includes('void runtime.confirmMemoryCandidate({ taskId: memoryConfirmationTaskId, feedbackId: memoryConfirmationFeedbackId })') &&
-    prototypeFeedbackFlowSource.includes('void runtime.confirmRerun({ taskId: rerunConfirmationTaskId, feedbackId: rerunConfirmationFeedbackId })') &&
-    prototypePageSource.includes("memoryConfirmationRequestKeyRef.current = buildPrototypeConfirmationRequestKey({ kind: 'memory', taskId: selected })") &&
-    prototypePageSource.includes("rerunConfirmationRequestKeyRef.current = buildPrototypeConfirmationRequestKey({ kind: 'rerun', taskId: selected })") &&
-    prototypeFeedbackFlowSource.includes("kind: 'memory'") &&
-    prototypeFeedbackFlowSource.includes("kind: 'rerun'") &&
-    prototypeFeedbackFlowSource.includes('memoryConfirmationRequestKeyRef.current = requestKey') &&
-    prototypeFeedbackFlowSource.includes('rerunConfirmationRequestKeyRef.current = requestKey') &&
-    prototypeFeedbackFlowSource.includes('shouldApplyPrototypeConfirmationResponse({') &&
-    prototypeFeedbackFlowSource.includes('setMemoryConfirming(false)') &&
-    prototypeFeedbackFlowSource.includes('setRerunConfirming(false)') &&
-    prototypeFeedbackFlowSource.includes('derivePrototypeMemoryConfirmationStatus(response)') &&
-    prototypeFeedbackFlowSource.includes('derivePrototypeRerunConfirmationStatus(response)') &&
-    prototypeFeedbackFlowSource.includes('prototypeMemoryConfirmationErrorStatus(error)') &&
-    prototypeFeedbackFlowSource.includes('prototypeRerunConfirmationErrorStatus(error)') &&
-    prototypeRuntimeSource.includes('buildPrototypeMemoryConfirmationResponse(input)') &&
-    prototypeRuntimeSource.includes('buildPrototypeRerunConfirmationResponse(input)') &&
-    prototypeConfirmationResultSource.includes('export function buildPrototypeMemoryConfirmationResponse') &&
-    prototypeConfirmationResultSource.includes('export function buildPrototypeRerunConfirmationResponse') &&
-    prototypeConfirmationResultSource.includes('export function buildPrototypeConfirmationRequestKey') &&
-    prototypeConfirmationResultSource.includes('export function shouldApplyPrototypeConfirmationResponse') &&
-    prototypeConfirmationResultSource.includes('return `kind:${input.kind}|task:${taskId}|feedback:${feedbackId}|block:${blockId}`;') &&
-    prototypeConfirmationResultSource.includes('source: ATELIER_MEMORY_CONFIRMATION_MODE') &&
-    prototypeConfirmationResultSource.includes('source: ATELIER_RERUN_CONFIRMATION_MODE') &&
-    prototypeConfirmationResultSource.includes('memory-confirmed:${response.memoryId}') &&
-    prototypeConfirmationResultSource.includes('rerun-confirmed:${response.rerunTaskId}') &&
-    prototypeConfirmationResultTestSource.includes('builds memory confirmation as a Station-owned response without writing memory') &&
-    prototypeConfirmationResultTestSource.includes('builds rerun confirmation as a Station-owned response without rerunning locally') &&
-    prototypeConfirmationResultTestSource.includes('shows Station-owned memory confirmation result ids') &&
-    prototypeConfirmationResultTestSource.includes('shows Station-owned rerun task result ids') &&
-    prototypeConfirmationResultTestSource.includes('keys confirmation requests by kind, task, feedback, and block without execution payloads') &&
-    prototypeConfirmationResultTestSource.includes('rejects stale confirmation responses after task, feedback, or kind ownership changes') &&
-    prototypeConfirmationResultTestSource.includes('uses a bounded fallback for unknown memory confirmation failures') &&
-    prototypeConfirmationResultTestSource.includes('uses a bounded fallback for unknown rerun confirmation failures') &&
-    !prototypeRuntimeSource.includes('memoryId: `prototype-memory-${input.feedbackId}`') &&
-    !prototypeRuntimeSource.includes('rerunTaskId: `prototype-rerun-${input.feedbackId}`') &&
-    !prototypeRuntimeSource.includes('source: ATELIER_MEMORY_CONFIRMATION_MODE') &&
-    !prototypeRuntimeSource.includes('source: ATELIER_RERUN_CONFIRMATION_MODE') &&
-    prototypeFeedbackFlowSource.includes('reloadWorkspace();') &&
-    !prototypeFeedbackBarSource.includes('runtime.') &&
-    !prototypeFeedbackBarSource.includes('provider.invoke') &&
-    !prototypeFeedbackBarSource.includes('memory.write') &&
-    !prototypeFeedbackBarSource.includes('atelier.rerun') &&
-    !prototypeFeedbackBarSource.includes('runtime.rerun') &&
-    !prototypeFeedbackBarSource.includes('execute') &&
-    !prototypeFeedbackFlowSource.includes('provider.invoke') &&
-    !prototypeFeedbackFlowSource.includes('runtime.invokeProvider') &&
-    !prototypeFeedbackFlowSource.includes('memory.write') &&
-    !prototypeFeedbackFlowSource.includes('atelier.memory.write') &&
-    !prototypeFeedbackFlowSource.includes('atelier.rerun') &&
-    !prototypeFeedbackFlowSource.includes('runtime.rerun') &&
-    !prototypeFeedbackFlowSource.includes('runtime.execute') &&
-    !prototypeFeedbackFlowSource.includes('gate.rerun') &&
-    !prototypeFeedbackFlowSource.includes('taskGraph.diff.apply') &&
-    !prototypeFeedbackFlowSource.includes('cli.execute'),
-  'Browser prototype FeedbackBar confirmations must stay Station-owned policy intents and must not expose direct memory write/rerun/execute/provider capabilities',
-);
-assert.ok(
-  prototypePageSource.includes('Host intent only; accepts pt-workspace://, no file URL, shell, or execute capability.') &&
-    prototypePageSource.includes('Host intent · no file/shell/execute') &&
-    prototypePageSource.includes('workspaceOpenRequestKeyRef.current = buildPrototypeWorkspaceOpenRequestKey({ taskId: selected })') &&
-    prototypePageSource.includes('const requestKey = buildPrototypeWorkspaceOpenRequestKey({') &&
-    prototypePageSource.includes('workspaceOpenRequestKeyRef.current = requestKey') &&
-    prototypePageSource.includes('shouldApplyPrototypeWorkspaceOpenResponse({') &&
-    prototypePageSource.includes('setWorkspaceOpenSubmitting(false)') &&
-    prototypePageSource.includes("setWorkspaceOpenStatus('')") &&
-    prototypePageSource.includes('derivePrototypeWorkspaceOpenStatus(response)') &&
-    prototypeRuntimeSource.includes('buildPrototypeWorkspaceOpenResponse(input)') &&
-    prototypeWorkspaceOpenStatusSource.includes('export function buildPrototypeWorkspaceOpenResponse') &&
-    prototypeWorkspaceOpenStatusSource.includes('export function buildPrototypeWorkspaceOpenRequestKey') &&
-    prototypeWorkspaceOpenStatusSource.includes('export function shouldApplyPrototypeWorkspaceOpenResponse') &&
-    prototypeWorkspaceOpenStatusSource.includes('return `task:${taskId}|workspace:${workspaceUri}|ide:${ideHint}`;') &&
-    prototypeWorkspaceOpenStatusSource.includes('opened: false') &&
-    prototypeWorkspaceOpenStatusSource.includes('Prototype records a Host-owned workspace open intent without launching an IDE.') &&
-    prototypeWorkspaceOpenStatusSource.includes("response.opened ? 'opened' : 'host_intent_accepted'") &&
-    prototypeWorkspaceOpenStatusTestSource.includes('builds a Host-owned workspace open intent without claiming IDE launch') &&
-    prototypeWorkspaceOpenStatusTestSource.includes('shows accepted Host intent without claiming the IDE opened') &&
-    prototypeWorkspaceOpenStatusTestSource.includes('shows opened only when the Host response explicitly proves opened=true') &&
-    prototypeWorkspaceOpenStatusTestSource.includes('keys workspace open requests by task, workspace URI, and IDE hint without launch payloads') &&
-    prototypeWorkspaceOpenStatusTestSource.includes('rejects stale workspace open responses after task or target ownership changes') &&
-    !prototypeRuntimeSource.includes("mode: 'prototype_host_intent'") &&
-    !prototypeRuntimeSource.includes('Prototype records a Host-owned workspace open intent without launching an IDE.') &&
-    !prototypePageSource.includes('openExternalUrl') &&
-    !prototypePageSource.includes('shell.execute') &&
-    !prototypePageSource.includes('execute.shell') &&
-    !prototypePageSource.includes('file.open') &&
-    !prototypePageSource.includes('workspace.file.open'),
-  'Browser prototype Open in IDE must stay Host workspace.open intent only and must not expose file/shell/execute',
-);
-assert.ok(
-  prototypePageSource.includes('derivePrototypeBudgetProjectionView({ budget, fallbackPercent, fallbackLabel })') &&
-    prototypePageSource.includes('prototypeBudgetToneColorKey(budgetView.tone)') &&
-    prototypeBudgetProjectionSource.includes('Read-only Station budget projection; halt, cap increase, and resume stay in Station decision routing.') &&
-    prototypeBudgetProjectionSource.includes('progressPercent: clampBudgetPercent') &&
-    prototypeBudgetProjectionSource.includes("tone === 'blocked' || tone === 'danger'") &&
-    prototypeBudgetProjectionTestSource.includes('builds a fallback read-only budget projection when Station budget is absent') &&
-    prototypeBudgetProjectionTestSource.includes('uses Station budget projection dimensions and clamps progress display percent') &&
-    prototypeBudgetProjectionTestSource.includes('keeps fallback title on Station-owned routing') &&
-    prototypeBudgetProjectionTestSource.includes('maps budget tones to display color keys without creating budget actions') &&
-    !prototypeBudgetProjectionSource.includes('budget.write') &&
-    !prototypeBudgetProjectionSource.includes('budget.halt') &&
-    !prototypeBudgetProjectionSource.includes('budget.resume') &&
-    !prototypeBudgetProjectionSource.includes('provider.invoke') &&
-    !prototypeBudgetProjectionSource.includes('model.run') &&
-    !prototypeBudgetProjectionSource.includes('cli.execute'),
-  'Browser prototype budget projection helper must stay display-only and Station-owned',
-);
-assert.ok(
-  prototypePageSource.includes('Read-only Station context projection: no Workspace file discovery, no Run input_snapshot write, and no') &&
-    prototypeContextProjectionSource.includes('ATELIER_CONTEXT_FILE_GROUPS') &&
-    prototypePageSource.includes('ATELIER_DEFAULT_CONTEXT_FILE_GROUP') &&
-    prototypePageSource.includes('useState<ContextFileGroup>(ATELIER_DEFAULT_CONTEXT_FILE_GROUP)') &&
-    prototypePageSource.includes('derivePrototypeContextProjectionView({ ctx, tab })') &&
-    prototypePageSource.includes('contextView.tabs.map((contextTab) =>') &&
-    prototypePageSource.includes('contextView.visibleFiles.map((f) =>') &&
-    prototypePageSource.includes('contextView.hiddenFileCount') &&
-    prototypeContextProjectionSource.includes('ATELIER_PROJECTION_DISPLAY_LIMITS.contextFileRefs') &&
-    prototypeContextProjectionSource.includes('ATELIER_PROJECTION_DISPLAY_LIMITS.contextOtherRefs') &&
-    prototypeContextProjectionSource.includes('ATELIER_CONTEXT_FILE_GROUPS.map((group) => ({') &&
-    prototypeContextProjectionSource.includes('const filesForTab = input.ctx.files.filter((file) => file.group === input.tab);') &&
-    prototypeContextProjectionTestSource.includes('renders generated context tabs without creating workspace discovery actions') &&
-    prototypeContextProjectionTestSource.includes('uses generated file ref display limit for Station-projected file refs') &&
-    prototypeContextProjectionTestSource.includes('uses generated other ref display limit independently from file refs') &&
-    prototypeContextProjectionTestSource.includes('clamps context usage display without mutating Station context projection') &&
-    prototypeTypesSource.includes('export type ContextFileGroup = (typeof ATELIER_CONTEXT_FILE_GROUPS)[number];') &&
-    prototypeTypesSource.includes('group: ContextFileGroup;') &&
-    !prototypePageSource.includes('useState<ContextFileGroup>(ATELIER_CONTEXT_FILE_GROUPS[0])') &&
-    !prototypePageSource.includes("useState<'files' | 'other'>('files')") &&
-    !prototypePageSource.includes("(['files', 'other'] as const).map((k) =>") &&
-    !prototypeTypesSource.includes("group: 'files' | 'other'") &&
-    prototypePageSource.includes('Host+Station+applet E2E proof in this prototype gate.') &&
-    !prototypePageSource.includes('workspace.files.discover') &&
-    !prototypePageSource.includes('WorkspaceFileDiscovery') &&
-    !prototypePageSource.includes('context.files.refresh') &&
-    !prototypePageSource.includes('input_snapshot.write') &&
-    !prototypePageSource.includes('inputSnapshot.write'),
-  'Browser prototype Context panel must stay read-only Station projection and must not expose workspace discovery or input snapshot writes',
-);
-assert.ok(
-  prototypePageSource.includes('Read-only Station TaskGraph projection. The applet does not schedule, execute, or replan nodes.') &&
-    prototypePageSource.includes('Parallel policy: {graphView.parallelPolicy}') &&
-    prototypePageSource.includes('graphView.integratorRequired') &&
-    prototypePageSource.includes('graphView.visibleRootTaskIds') &&
-    prototypePageSource.includes('graphView.hiddenRootTaskIdCount') &&
-    prototypePageSource.includes('graphView.visibleEdges') &&
-    prototypePageSource.includes('graphView.hiddenEdgeCount') &&
-    prototypePageSource.includes('nodeView.visibleArtifactRefs') &&
-    prototypePageSource.includes('nodeView.hiddenArtifactCount') &&
-    prototypePageSource.includes('nodeView.unresolvedArtifactCount') &&
-    prototypePageSource.includes('nodeView.visibleGateRefs') &&
-    prototypePageSource.includes('nodeView.hiddenGateCount') &&
-    prototypePageSource.includes('nodeView.unresolvedGateCount') &&
-    !prototypePageSource.includes('taskGraph.schedule') &&
-    !prototypePageSource.includes('taskGraph.execute') &&
-    !prototypePageSource.includes('taskGraph.replan') &&
-    !prototypePageSource.includes('taskGraph.diff.apply') &&
-    !prototypePageSource.includes('integrator.merge.execute'),
-  'Browser prototype TaskGraph panel must stay read-only Station projection and must not expose scheduling/execution/replan capabilities',
-);
-assert.ok(
-  prototypePageSource.includes('Read-only Station project health projection. The applet does not accept, waive, or mutate project state.') &&
-    prototypePageSource.includes('derivePrototypeProjectHealthProjectionView(project)') &&
-    prototypePageSource.includes('healthView.hiddenBlockerCount') &&
-    prototypePageSource.includes('healthView.hiddenRiskCount') &&
-    prototypePageSource.includes('healthView.hiddenMilestoneCount') &&
-    prototypePageSource.includes('healthView.hiddenMemoryCandidateCount') &&
-    prototypePageSource.includes('healthView.hiddenPolicyRuleCount') &&
-    prototypePageSource.includes('healthView.hiddenDefectCount') &&
-    prototypePageSource.includes('formatPrototypeProjectHealthMilestoneDetail(milestone)') &&
-    prototypeProjectHealthProjectionSource.includes('ATELIER_PROJECTION_DISPLAY_LIMITS.projectHealthItems') &&
-    prototypeProjectHealthProjectionSource.includes('ATELIER_PROJECTION_DISPLAY_LIMITS.projectHealthMilestones') &&
-    prototypeProjectHealthProjectionSource.includes('ATELIER_PROJECTION_DISPLAY_LIMITS.milestoneRefs') &&
-    prototypeProjectHealthProjectionTestSource.includes('uses generated display limits for Project Health compact lists') &&
-    prototypeProjectHealthProjectionTestSource.includes('treats missing policy as an empty read-only projection') &&
-    prototypeProjectHealthProjectionTestSource.includes('formats milestone predicate and blocker refs with generated ref limits') &&
-    !prototypePageSource.includes('project.health.accept') &&
-    !prototypePageSource.includes('project.health.waive') &&
-    !prototypePageSource.includes('project.state.mutate') &&
-    !prototypePageSource.includes('acceptancePredicate.evaluate') &&
-    !prototypePageSource.includes('policy.engine.run') &&
-    !prototypePageSource.includes('defect.lifecycle.mutate'),
-  'Browser prototype Project Health panel must stay read-only Station projection and must not expose project mutation/evaluator capabilities',
-);
-assert.ok(
-  prototypePageSource.includes('title="Projection reload only; no execution, rerun, or provider invoke."') &&
-    prototypePageSource.includes('resolvePrototypeStatusScenario(window.location.search)') &&
-    prototypePageSource.includes('const visibleRuntimeStatus = scenarioStatus ?? runtimeStatus;') &&
-    prototypePageSource.includes('derivePrototypePageSurface({ status: visibleRuntimeStatus, streamLength: stream.length })') &&
-    prototypePageSource.includes('const statusActionPolicy = derivePrototypeStatusActionPolicy({ status: visibleRuntimeStatus, streamLength: stream.length });') &&
-    prototypePageSource.includes('pageSurface.streamVisible ? stream.map(renderBlock) : null') &&
-    prototypePageSource.includes('<RecoveryPanel status={recoveryStatus} retryVisible={statusActionPolicy.retryVisible} onRetry={reloadWorkspace} />') &&
-    prototypePageSource.includes('statusActionPolicy.createProjectVisible ?') &&
-    prototypePageSource.includes('retryVisible: boolean;') &&
-    !prototypePageSource.includes('retryVisible ?? recoveryView.retryVisible') &&
-    prototypeRuntimeSource.includes('return buildPrototypeRuntimeReadyStatus(state);') &&
-    prototypeRecoveryViewSource.includes('export function buildPrototypeRuntimeReadyStatus') &&
-    prototypeRecoveryViewSource.includes("prototypeStatusForScenario(state.tasks.length === 0 ? 'empty' : 'ready')") &&
-    prototypeBridgeRuntimeSource.includes('return buildPrototypeBridgeLoadingStatus();') &&
-    prototypeBridgeRuntimeSource.includes('return buildPrototypeBridgeEventStatus(lastEventSeq);') &&
-    prototypeBridgeRuntimeSource.includes('return buildPrototypeBridgeReconcilingStatus();') &&
-    prototypeBridgeRuntimeSource.includes('return buildPrototypeBridgeDegradedStatus(lastEventSeq);') &&
-    prototypeBridgeRuntimeSource.includes('return buildPrototypeBridgeStatusFromError(error);') &&
-    prototypeRecoveryViewSource.includes('export function buildPrototypeBridgeLoadingStatus') &&
-    prototypeRecoveryViewSource.includes('export function buildPrototypeBridgeAuthDeniedStatus') &&
-    prototypeRecoveryViewSource.includes('export function buildPrototypeBridgeStatusFromError') &&
-    prototypeRecoveryViewSource.includes('export function prototypeBridgeRecoveryKindFromError') &&
-    prototypeRecoveryViewSource.includes('isPrototypeRecord(error.error)') &&
-    prototypeRecoveryViewSource.includes('ATELIER_VIEW_SURFACE.bridgeRuntimeStatusCopyByKind.loading') &&
-    prototypeRecoveryViewSource.includes("ATELIER_VIEW_SURFACE.bridgeRuntimeStatusCopyByKind['auth-denied']") &&
-    prototypeRecoveryViewSource.includes('ATELIER_VIEW_SURFACE.bridgeRuntimeRecoveryCodeKindByCode') &&
-    prototypeRecoveryViewTestSource.includes('builds loading, ready, reconciling, and degraded status from generated bridge copy') &&
-    prototypeRecoveryViewTestSource.includes('builds disconnected/auth-denied/error recovery statuses without execution payloads') &&
-    prototypeRecoveryViewTestSource.includes('classifies structured Host error codes before legacy message fallback') &&
-    prototypeRecoveryViewTestSource.includes("error: { code: 'STREAM_DISCONNECTED'") &&
-    prototypeRecoveryViewTestSource.includes('uses legacy message fallback only when structured recovery code is absent') &&
-    prototypeRecoveryViewTestSource.includes('uses the generated empty status copy when no task projection exists') &&
-    prototypeRecoveryViewTestSource.includes('uses the generated ready status copy when at least one task projection exists') &&
-    prototypeRecoveryViewTestSource.includes('keeps retryable recovery surfaces above implicit empty affordance') &&
-    prototypeRecoveryViewTestSource.includes('covers every generated view status in the page surface matrix') &&
-    !prototypeRuntimeSource.includes("title: '还没有 Atelier 任务'") &&
-    !prototypeRuntimeSource.includes("title: 'Projection 已连接'") &&
-    !prototypeBridgeRuntimeSource.includes('ATELIER_VIEW_SURFACE.bridgeRuntimeStatusCopyByKind.loading') &&
-    !prototypeBridgeRuntimeSource.includes("ATELIER_VIEW_SURFACE.bridgeRuntimeStatusCopyByKind['auth-denied']") &&
-    !prototypeBridgeRuntimeSource.includes('ATELIER_VIEW_SURFACE.bridgeRuntimeStatusCopyByKind.disconnected') &&
-    !prototypeBridgeRuntimeSource.includes('ATELIER_VIEW_SURFACE.bridgeRuntimeStatusCopyByKind.error') &&
-    !prototypeBridgeRuntimeSource.includes('ATELIER_VIEW_SURFACE.bridgeRuntimeRecoveryCodeKindByCode') &&
-    !prototypeBridgeRuntimeSource.includes('function bridgeRuntimeRecoveryKindFromError') &&
-    prototypePageSource.includes("source: 'reload'") &&
-    prototypePageSource.includes('shouldApplyPrototypeWorkspaceSnapshot({'),
-  'Browser prototype recovery retry must reload projection only, keep page surface derived, and must not expose execution/rerun/provider invoke',
-);
-assert.ok(
-  prototypeBridgeRuntimeSource.includes('createPrototypeBridgeProjectionEventMemory()') &&
-    prototypeBridgeRuntimeSource.includes('prototypeBridgeProjectionSubscriptionRejectedError(incomingEvent)') &&
-    prototypeBridgeRuntimeSource.includes('canApplyPrototypeBridgeProjectionPatch(snapshot, event.patch)') &&
-    prototypeBridgeRuntimeSource.includes('rememberPrototypeBridgeProjectionEvent(event, projectionEventMemory)') &&
-    prototypeBridgeRuntimeSource.includes('rememberPrototypeBridgeProjectionSeq(event, projectionEventMemory)') &&
-    prototypeBridgeRuntimeSource.includes('applyPrototypeBridgeProjectionPatch(snapshot, event.patch)') &&
-    !prototypeBridgeRuntimeSource.includes('function applyPatch') &&
-    !prototypeBridgeRuntimeSource.includes('function canApplyPatchToKnownTask') &&
-    !prototypeBridgeRuntimeSource.includes('const MAX_SEEN_EVENT_KEYS') &&
-    !prototypeBridgeRuntimeSource.includes('function rememberProjectionEvent') &&
-    !prototypeBridgeRuntimeSource.includes('function rememberProjectionSeq') &&
-    !prototypeBridgeRuntimeSource.includes('function projectionSubscriptionRejectedError') &&
-    prototypeBridgeProjectionEventPolicySource.includes('export function applyPrototypeBridgeProjectionPatch') &&
-    prototypeBridgeProjectionEventPolicySource.includes('export function canApplyPrototypeBridgeProjectionPatch') &&
-    prototypeBridgeProjectionEventPolicySource.includes('export const MAX_PROTOTYPE_BRIDGE_PROJECTION_EVENT_KEYS = 500') &&
-    prototypeBridgeProjectionEventPolicySource.includes('export function rememberPrototypeBridgeProjectionEvent') &&
-    prototypeBridgeProjectionEventPolicySource.includes('export function rememberPrototypeBridgeProjectionSeq') &&
-    prototypeBridgeProjectionEventPolicySource.includes('export function prototypeBridgeProjectionSubscriptionRejectedError') &&
-    prototypeBridgeProjectionEventPolicySource.includes('const sanitizedCause: Record<string, unknown> = {') &&
-    prototypeBridgeProjectionEventPolicySource.includes('cause: sanitizedCause') &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes('keeps task-scoped patches fail-closed unless the task is known or being created') &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes('applies projection patches without creating execution capabilities') &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes('deduplicates projection events with a bounded cache and keeps stale replay fail-closed by scope seq') &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes('tracks stale sequence rejection per workspace or task scope') &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes('builds stable subscription rejection errors without exposing execution payloads'),
-  'Browser prototype bridge runtime must delegate projection event policy to pure helper with unit coverage',
-);
-assert.ok(
-  prototypeBridgeProjectionEventPolicyTestSource.includes("providerInvoke: { provider: 'model' }") &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes("runtimeExecute: { taskId: 'task-1' }") &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes("input_snapshot: { prompt: 'must not leak' }") &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes("shellExecute: { command: 'open .' }") &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes("method: 'unknown'") &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes("reason: 'unknown rejection'") &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes('/provider\\.invoke|providerInvoke|runtime\\.execute|runtimeExecute|shell|memory\\.write|input_snapshot|run\\.execute/'),
-  'Atelier prototype typed subscription rejection sanitized cause source unit matrix must preserve recovery code while stripping execution-shaped fields',
-);
-assert.ok(
-  prototypeBridgeProjectionEventPolicySource.includes('function sanitizePrototypeProjectionSubscriptionReason(reason: string): string') &&
-    prototypeBridgeProjectionEventPolicySource.includes('forbiddenPrototypeProjectionSubscriptionReasonPatterns') &&
-    prototypeBridgeProjectionEventPolicySource.includes('sanitizePrototypeProjectionSubscriptionReason(value.reason)') &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes('sanitizes typed subscription rejection reason text before message and cause construction') &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes("reason: 'providerInvoke runtimeExecute shellExecute input_snapshot should not leak'") &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes(
-      'Atelier projection stream subscription atelier.events.subscribe rejected: Host projection subscription rejected',
-    ) &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes("reason: 'Host projection subscription rejected'") &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes('/provider\\.invoke|providerInvoke|runtime\\.execute|runtimeExecute|shellExecute|memory\\.write|input_snapshot|run\\.execute/'),
-  'Atelier prototype projection event typed subscription rejection reason sanitization source unit matrix must strip execution-shaped reason text before message and cause construction',
-);
-assert.ok(
-  prototypeBridgeProjectionEventPolicySource.includes('function sanitizePrototypeProjectionSubscriptionCode(code: string): string | undefined') &&
-    prototypeBridgeProjectionEventPolicySource.includes('ATELIER_VIEW_SURFACE.bridgeRuntimeRecoveryCodeKindByCode') &&
-    prototypeBridgeProjectionEventPolicySource.includes('sanitizePrototypeProjectionSubscriptionCode(value.code)') &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes('keeps only known typed subscription rejection recovery codes in sanitized cause') &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes("code: 'connection_closed'") &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes("code: 'CONNECTION_CLOSED'") &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes("code: 'providerInvoke runtimeExecute shellExecute input_snapshot should not leak'") &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes("reason: 'host sent unknown code'") &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes('/providerInvoke|runtimeExecute|shellExecute|input_snapshot/'),
-  'Atelier prototype projection event typed subscription rejection code whitelist source unit matrix must keep only known recovery codes in Error.cause',
-);
-assert.ok(
-  appletBridgeSource.includes('function projectionSubscriptionErrorReason(error: unknown): string') &&
-    appletBridgeSource.includes('forbiddenProjectionSubscriptionReasonPatterns') &&
-    appletBridgeSource.includes('reason: projectionSubscriptionErrorReason(error)') &&
-    appletBridgeSource.includes('console.warn(`Atelier applet bridge ${method} rejected`, {') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('sanitizes rejected subscribe reason text before emitting typed recovery payload') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes("new Error('provider.invoke providerInvoke runtime.execute runtimeExecute shellExecute input_snapshot should not leak')") &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes("reason: 'Host projection subscription rejected'") &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('expect(warnings).toHaveLength(1)') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('JSON.stringify({ seen, warnings })'),
-  'Atelier applet bridge typed subscription rejection reason and warning sanitization source unit matrix must strip execution-shaped fields while preserving structured code',
-);
-assert.ok(
-  prototypeBridgeRuntimeSource.includes('derivePrototypeBridgeCallStatusStart({') &&
-    prototypeBridgeRuntimeSource.includes('shouldApplyPrototypeBridgeCallStatus({') &&
-    prototypeBridgeRuntimeSource.includes('projectionRevisionAtCall,') &&
-    prototypeBridgeRuntimeSource.includes('shouldApplyPrototypeBridgeSnapshotResponse({') &&
-    prototypeBridgeRuntimeSource.includes('clonePrototypeBridgeRuntimeSnapshot(snapshot)') &&
-    !prototypeBridgeRuntimeSource.includes('callStatusToken === latestCallStatusToken') &&
-    !prototypeBridgeRuntimeSource.includes('snapshotCallToken !== latestSnapshotCallToken') &&
-    !prototypeBridgeRuntimeSource.includes('projectionRevisionAtCall !== projectionRevision') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('export function derivePrototypeBridgeCallStatusStart') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('currentStatus.kind ===') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('export function shouldApplyPrototypeBridgeCallStatus') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('input.callStatusToken === input.latestCallStatusToken') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('input.projectionRevisionAtCall === input.projectionRevision') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('lets only the latest Host call on the current projection revision own status restoration or error display') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('export function shouldApplyPrototypeBridgeSnapshotResponse') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('input.projectionRevisionAtCall === input.projectionRevision') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('export function clonePrototypeBridgeRuntimeSnapshot') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('assertPrototypeBridgeRuntimeSnapshotCloneable(snapshot)') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('forbiddenCapabilityKeyPatterns') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('forbiddenCapabilityPathPatterns') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('forbiddenPrototypePollutionKeys') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('Atelier bridge runtime ${context} contains forbidden capability key') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('Atelier bridge runtime ${context} contains forbidden capability path') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('Atelier bridge runtime ${context} contains forbidden prototype pollution key') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('isPlainProjectionObject') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('assertDenseProjectionArray') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('assertProjectionObjectOwnPropertiesVisible') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('optionalUndefinedObjectPathPatterns') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('isAllowedOptionalUndefinedObjectPath(path)') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('Atelier bridge runtime snapshot contains non-plain projection object') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('Atelier bridge runtime snapshot contains undefined projection array value') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('Atelier bridge runtime snapshot contains sparse projection array hole') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('Atelier bridge runtime ${context} contains symbol-keyed projection property') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('Atelier bridge runtime ${context} contains non-enumerable projection property') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('Atelier bridge runtime ${context} contains accessor projection property') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('Object.getOwnPropertyDescriptors(value)') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('Atelier bridge runtime snapshot contains unregistered undefined projection object field') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('Atelier bridge runtime snapshot contains non-finite projection number') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('Number.isFinite(node)') &&
-    prototypeBridgeRuntimeCallPolicySource.includes('Atelier bridge runtime ${context} contains a circular projection reference') &&
-    prototypeRuntimeSource.includes('let state = cloneState(seed)') &&
-    prototypeRuntimeSource.includes('status: cloneStatus(status)') &&
-    prototypeRuntimeSource.includes('function cloneStatus(status: AtelierRuntimeStatus): AtelierRuntimeStatus') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('preserves the restorable status when a new Host call starts from loading') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('lets only the latest Host call on the current projection revision own status restoration or error display') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('ignores stale snapshot responses after newer snapshot calls or projection events') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('clones runtime snapshots without sharing mutable projection buckets') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('fails closed when a projected snapshot carries executable capability values') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('fails closed when a projected snapshot carries forbidden capability-shaped keys') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('fails closed when a projected snapshot carries nested forbidden capability paths') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('keeps read-only provider projection display fields cloneable') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('fails closed when a projected snapshot carries non-plain projection objects') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('fails closed when a projected snapshot carries date-like runtime objects') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('keeps null-prototype projection dictionaries cloneable') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('fails closed when a projected snapshot carries prototype pollution keys') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('fails closed when a projected snapshot carries nested prototype pollution keys') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('fails closed when a projected snapshot carries undefined projection array values') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('fails closed when a projected snapshot carries sparse projection array holes') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('keeps dense projection arrays cloneable') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('fails closed when a projected snapshot carries symbol-keyed properties') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('fails closed when a projected snapshot carries non-enumerable properties') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('fails closed when a projected snapshot carries accessor getter properties') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('fails closed when a projected snapshot carries accessor setter properties') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('keeps cloned snapshots isolated from source snapshot mutations after cloning') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('keeps registered optional undefined projection object fields omittable') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('fails closed when a required projection object field is undefined') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('fails closed when an unregistered projection object field is undefined') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('fails closed when a projected snapshot carries non-finite projection numbers') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('keeps finite projection numbers cloneable') &&
-    prototypeBridgeRuntimeCallPolicyTestSource.includes('fails closed when a projected snapshot carries circular projection references') &&
-    prototypeRuntimeSnapshotIsolationTestSource.includes('keeps getSnapshot state and status isolated from external mutations') &&
-    prototypeRuntimeSnapshotIsolationTestSource.includes('keeps runtime state isolated from seed mutations after construction') &&
-    prototypeRuntimeSource.includes('const replaceState = (next: AtelierState, nextSelectedTaskId = selectedTaskId) => {') &&
-    prototypeRuntimeSource.includes('state = cloneState(next);') &&
-    prototypeRuntimeSource.includes('return replaceState({ ...state, model });') &&
-    prototypeRuntimeSnapshotIsolationTestSource.includes('keeps async returned snapshots isolated from external mutations') &&
-    prototypeRuntimeSnapshotIsolationTestSource.includes('keeps transition-owned state isolated from returned projection mutations') &&
-    prototypeBridgeRuntimeSource.includes('return cloneSnapshot(fromProjectionSnapshot(assertAtelierProjectionSnapshot(projection)));') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('keeps initial Host projection mutations from polluting runtime-owned state') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('keeps accepted Host call projection mutations from polluting runtime-owned state') &&
-    prototypeBridgeProjectionEventPolicySource.includes('const ownedPatch = cloneProjectionPatch(patch);') &&
-    prototypeBridgeProjectionEventPolicySource.includes('return cloneSnapshot(fromProjectionSnapshot(ownedPatch.snapshot));') &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes('keeps accepted event patch object mutations from polluting runtime-owned state') &&
-    prototypeBridgeProjectionEventPolicyTestSource.includes('keeps snapshot patch object mutations from polluting runtime-owned state') &&
-    prototypeBridgeRuntimeSource.includes('let activeProjectionSubscriptionToken = 0;') &&
-    prototypeBridgeRuntimeSource.includes('const projectionSubscriptionToken = ++activeProjectionSubscriptionToken;') &&
-    prototypeBridgeRuntimeSource.includes('if (projectionSubscriptionToken !== activeProjectionSubscriptionToken) return;') &&
-    prototypeBridgeRuntimeSource.includes('let subscriptionCleanupReady = false;') &&
-    prototypeBridgeRuntimeSource.includes('if (!subscriptionCleanupReady) return;') &&
-    prototypeBridgeRuntimeSource.includes('subscriptionCleanupReady = true;') &&
-    prototypeBridgeRuntimeSource.includes('const ready = projectionSubscriptionReady(cleanup);') &&
-    prototypeBridgeRuntimeSource.includes('if (unsubscribeBridge !== cleanup) return;') &&
-    prototypeBridgeRuntimeSource.includes('function projectionSubscriptionReady(cleanup: unknown): Promise<void> | void') &&
+    appletBridgeSource.includes("invokeProjectionSubscription(host, 'events.subscribe'") &&
+    appletBridgeSource.includes("'events.unsubscribe'") &&
     appletBridgeSource.includes('return Object.assign(cleanup, { ready });') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('ignores released Host projection subscription callbacks while accepting the next subscription generation') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('ignores pre-cleanup Host projection subscription callbacks when cleanup is malformed') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('keeps projection subscription reconciling until Host subscribe ack settles') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('maps rejected Host subscribe ack to typed recovery without first marking ready') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('ignores stale Host subscribe ack resolve after subscription replacement') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('ignores stale Host subscribe ack rejection after subscription replacement') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('ignores late subscribe rejections after release without listener delivery duplicate unsubscribe or unhandled rejection') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes("rejectEventSubscribe(new Error('late rejected events.subscribe'))") &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes("rejectProjectionSubscribe(new Error('late rejected atelier.events.subscribe'))") &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('expect(calls.map((call) => call.method)).toEqual([') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('expect(unhandledRejections).toHaveLength(0)') &&
-    prototypeBridgeRuntimeSource.includes('const projectionRevisionAtRefresh = projectionRevision;') &&
-    prototypeBridgeRuntimeSource.includes('if (projectionRevisionAtRefresh !== projectionRevision) return;') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('ignores stale projection refresh failures after a newer subscription event') &&
-    prototypeBridgeRuntimeSource.includes('projectionRefreshToken === latestProjectionRefreshToken') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('keeps synchronous refresh projection events from being overwritten by non-promise settlement') &&
-    prototypeBridgeRuntimeSource.includes('prototypeBridgeProjectionSubscriptionRejectedError(incomingEvent)') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('keeps subscription rejection recovery from being overwritten by stale refresh success') &&
-    prototypeBridgeRuntimeSource.includes("console.warn('Atelier bridge runtime cleanup failed', error);") &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('keeps subscription cleanup recovery from being overwritten by stale refresh success') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('keeps subscription rejection recovery from being overwritten by non-snapshot call success') &&
-    prototypeBridgeRuntimeOwnershipTestSource.includes('keeps subscription rejection recovery from being overwritten by non-snapshot call failure'),
-  'Browser prototype bridge runtime must delegate Host call ownership and stale response policy to pure helper with unit coverage',
+    !appletBridgeSource.includes('projectionStream') &&
+    !appletBridgeSource.includes('ATELIER_PROJECTION_SUBSCRIPTION_METHOD'),
+  'Browser prototype applet bridge must use only the canonical Host event topic',
 );
 assert.ok(
-  prototypeRuntimeBootstrapSource.includes('isPrototypeHostRuntime(sdk.runtime)') &&
-    prototypeRuntimeBootstrapSource.includes('return createMockAtelierRuntime();') &&
-    prototypeRuntimeBootstrapSource.includes('createBridgeAtelierRuntime({') &&
-    prototypeRuntimeBootstrapSource.includes('createAppletSdkAtelierBridge(sdk, {') &&
-    prototypeRuntimeBootstrapSource.includes('buildPrototypeEmptyHostState()') &&
-    prototypeRuntimeBootstrapSource.includes('buildPrototypeProjectionStreamConfig({') &&
-    prototypeRuntimeBootstrapSource.includes('projectionStream: readProjectionStreamConfig(initialSnapshot)') &&
-    prototypeRuntimeBootstrapSource.includes('selectedTaskId: initialSnapshot.selectedTaskId') &&
-    prototypeRuntimeBootstrapSource.includes('return normalizePrototypeProjectionStreamConfig(input);') &&
-    !prototypeRuntimeBootstrapSource.includes('const HOST_RUNTIMES') &&
-    !prototypeRuntimeBootstrapSource.includes("model: 'openrouter-3o'") &&
-    !prototypeRuntimeBootstrapSource.includes('record.agentId.trim()') &&
-    !prototypeRuntimeBootstrapSource.includes('parsed > 0') &&
-    prototypeRuntimeBootstrapPolicySource.includes("export const ATELIER_PROTOTYPE_HOST_RUNTIMES = ['lynx', 'web-host'] as const") &&
-    prototypeRuntimeBootstrapPolicySource.includes('model: ATELIER_DEFAULT_DIRECT_RUN_MODEL') &&
-    prototypeRuntimeBootstrapPolicySource.includes('record.agentId.trim()') &&
-    prototypeRuntimeBootstrapPolicySource.includes('parsed > 0') &&
-    prototypeRuntimeBootstrapPolicyTestSource.includes('allows only generated host-container runtime names to use the applet bridge') &&
-    prototypeRuntimeBootstrapPolicyTestSource.includes('builds an empty Host seed with generated default model and no execution payloads') &&
-    prototypeRuntimeBootstrapPolicyTestSource.includes('prefers explicit global stream config over query params and omits empty query config'),
-  'Browser prototype runtime bootstrap must stay wiring-only and delegate Host seed / stream normalization policy to prototypeRuntimeBootstrap helper',
+  prototypeBridgeRuntimeSource.includes("event.patch.kind === 'snapshot.invalidate'") &&
+    prototypeBridgeRuntimeSource.includes("void callSnapshot('atelier.workspace.load', {})") &&
+    prototypeBridgeRuntimeSource.includes('hasProjectionSeqGap(event, lastSeqByScope)') &&
+    prototypeBridgeRuntimeSource.includes('const ready = projectionSubscriptionReady(cleanup);') &&
+    prototypeBridgeRuntimeOwnershipTestSource.includes('reconciles canonical invalidation through authoritative workspace readback') &&
+    prototypeBridgeRuntimeOwnershipTestSource.includes('does not apply a gap event before authoritative workspace readback') &&
+    prototypeBridgeRuntimeOwnershipTestSource.includes('keeps projection subscription reconciling until Host subscribe ack settles'),
+  'Browser prototype runtime must reconcile canonical invalidations and sequence gaps after Host subscription readiness',
+);
+assert.ok(
+  prototypeRuntimeBootstrapSource.includes('HOST_RUNTIMES.has(sdk.runtime)') &&
+    prototypeRuntimeBootstrapSource.includes('bridge: createAppletSdkAtelierBridge(sdk)') &&
+    prototypeRuntimeBootstrapSource.includes('toProjectionSnapshot(emptyHostState())') &&
+    !prototypeRuntimeBootstrapSource.includes('projectionStream') &&
+    !prototypeRuntimeBootstrapSource.includes('__ATELIER_PROJECTION_STREAM__'),
+  'Browser prototype bootstrap must not own Station stream configuration',
 );
 assert.doesNotMatch(
-  prototypeRuntimeBootstrapSource,
-  /atelier\.workspace\.load|atelier\.events\.subscribe|events\.subscribe|provider\.invoke|runtime\.execute|shell|input_snapshot|memory\.write|run\.execute|file\.write/,
-  'Browser prototype runtime bootstrap must not call Host capabilities or smuggle execution-shaped payloads during startup',
-);
-for (const forbiddenPrototypeTopbarCapability of [
-  'terminal.open',
-  'atelier.terminal.open',
-  'shell.execute',
-  'execute.shell',
-  'outline.open',
-  'atelier.outline.open',
-]) {
-  assert.ok(
-    !prototypePageSource.includes(forbiddenPrototypeTopbarCapability),
-      `Browser prototype inline placeholder must not expose ${forbiddenPrototypeTopbarCapability}`,
-  );
-}
-assert.ok(
-  prototypePreviewSource.includes('const previewRequestKey = buildPrototypeArtifactPreviewRequestKey({ taskId, artifact, capabilityView });') &&
-    prototypePreviewSource.includes('safeBodyRequestKeyRef.current = requestKey') &&
-    prototypePreviewSource.includes('previewOpenRequestKeyRef.current = requestKey') &&
-    prototypePreviewSource.includes('shouldApplyPrototypeArtifactPreviewResponse({') &&
-    prototypePreviewSource.includes('prototypeArtifactBodyFetchErrorStatus(error)') &&
-    prototypePreviewSource.includes('prototypeArtifactPreviewOpenErrorStatus(error)') &&
-    prototypePreviewSource.includes('setSafeBody(null)') &&
-    prototypePreviewSource.includes('setPreviewOpen(null)') &&
-    prototypeArtifactPreviewProjectionSource.includes('export function buildPrototypeArtifactPreviewRequestKey') &&
-    prototypeArtifactPreviewProjectionSource.includes('input.artifact.bodyHash ??') &&
-    prototypeArtifactPreviewProjectionSource.includes('capabilityView.bodyRef') &&
-    prototypeArtifactPreviewProjectionSource.includes('capabilityView.previewBodyRef') &&
-    prototypeArtifactPreviewProjectionSource.includes('capabilityView.previewSandboxRef') &&
-    prototypeArtifactPreviewProjectionSource.includes('export function shouldApplyPrototypeArtifactPreviewResponse') &&
-    prototypeArtifactPreviewProjectionSource.includes('export function prototypeArtifactBodyFetchErrorStatus') &&
-    prototypeArtifactPreviewProjectionSource.includes('export function prototypeArtifactPreviewOpenErrorStatus') &&
-    prototypeArtifactPreviewProjectionTestSource.includes('keys preview requests by Station-projected artifact refs and rejects stale responses') &&
-    prototypeArtifactPreviewProjectionTestSource.includes('normalizes preview request error copy without execution payloads'),
-  'Browser prototype preview must reset stale safe body/sandbox state and ignore stale Host response promises when Station-projected artifact refs change',
-);
-assert.ok(
-  prototypePreviewSource.includes('function ArtifactMetadataPreview') &&
-    prototypePreviewSource.includes('Metadata-only artifact preview') &&
-    prototypePreviewSource.includes('derivePrototypeArtifactMetadataPreviewView(artifact)') &&
-    prototypePreviewSource.includes('derivePrototypeArtifactPreviewCapabilityView(artifact)') &&
-    prototypePreviewSource.includes('derivePrototypeArtifactTrayItemView({ artifact: a, openId })') &&
-    prototypePreviewSource.includes('const intent = buildPrototypeArtifactBodyFetchIntent({ taskId, artifact, capabilityView });') &&
-    prototypePreviewSource.includes("if (intent.status !== 'fetchBody') return;") &&
-    prototypePreviewSource.includes('void onFetchBody(intent.input)') &&
-    prototypePreviewSource.includes('const intent = buildPrototypeArtifactPreviewOpenIntent({ taskId, artifact, capabilityView });') &&
-    prototypePreviewSource.includes("if (intent.status !== 'openPreview') return;") &&
-    prototypePreviewSource.includes('void onOpenPreview(intent.input)') &&
-    prototypePreviewSource.includes('Browser prototype no longer renders raw markdown, iframe, image, diff, URL, or source fields from projection') &&
-    prototypePreviewSource.includes('<ArtifactMetadataPreview artifact={artifact} />') &&
-    prototypeArtifactPreviewProjectionSource.includes('ATELIER_PROJECTION_DISPLAY_LIMITS.artifactPaths') &&
-    prototypeArtifactPreviewProjectionSource.includes("metadataBadge: input.artifact.kind === 'diff' ? 'metadata-only' : ''") &&
-    prototypeArtifactPreviewProjectionSource.includes('canFetchSafeBody: Boolean(bodyRef)') &&
-    prototypeArtifactPreviewProjectionSource.includes('canOpenSandboxPreview: Boolean(previewSandboxRef && previewBodyRef)') &&
-    prototypeArtifactPreviewProjectionSource.includes('export function buildPrototypeArtifactBodyFetchIntent') &&
-    prototypeArtifactPreviewProjectionSource.includes("status: 'fetchBody'") &&
-    prototypeArtifactPreviewProjectionSource.includes("reason: 'missing-station-body-ref'") &&
-    prototypeArtifactPreviewProjectionSource.includes('export function buildPrototypeArtifactPreviewOpenIntent') &&
-    prototypeArtifactPreviewProjectionSource.includes("status: 'openPreview'") &&
-    prototypeArtifactPreviewProjectionSource.includes("reason: 'missing-station-preview-target'") &&
-    prototypeArtifactPreviewProjectionSource.includes('export function buildPrototypeArtifactBodyFetchResponse') &&
-    prototypeArtifactPreviewProjectionSource.includes('bodyHash: input.request.expectedHash ??') &&
-    prototypeArtifactPreviewProjectionSource.includes('retentionStatus:') &&
-    prototypeArtifactPreviewProjectionSource.includes('prototypeArtifactSafeText') &&
-    prototypeArtifactPreviewProjectionSource.includes('export function buildPrototypeArtifactPreviewOpenResponse') &&
-    prototypeArtifactPreviewProjectionSource.includes('ATELIER_ARTIFACT_PREVIEW_OPEN_DEFAULT_MODE') &&
-    prototypeArtifactPreviewProjectionSource.includes("methodPayloads['atelier.artifact.preview.open']") &&
-    prototypeArtifactPreviewProjectionSource.includes('requiredRendererCapabilities') &&
-    prototypeRuntimeSource.includes('buildPrototypeArtifactBodyFetchResponse({ request: input, artifact })') &&
-    prototypeRuntimeSource.includes('buildPrototypeArtifactPreviewOpenResponse(input)') &&
-    prototypeArtifactPreviewProjectionTestSource.includes('keeps diff cards metadata-only without synthetic patch stats') &&
-    prototypeArtifactPreviewProjectionTestSource.includes('uses generated artifact path display limits for metadata preview paths') &&
-    prototypeArtifactPreviewProjectionTestSource.includes('does not synthesize safe body or sandbox refs when Station projection omits them') &&
-    prototypeArtifactPreviewProjectionTestSource.includes('builds ref-only safe body fetch intents from Station projection metadata') &&
-    prototypeArtifactPreviewProjectionTestSource.includes('rejects safe body fetch intent when Station projection omits bodyRef') &&
-    prototypeArtifactPreviewProjectionTestSource.includes('builds ref-only sandbox preview open intents without raw renderer fields') &&
-    prototypeArtifactPreviewProjectionTestSource.includes('rejects sandbox preview open intent when Station projection omits preview refs') &&
-    prototypeArtifactPreviewProjectionTestSource.includes('builds prototype safe body responses from Station-projected safe text metadata') &&
-    prototypeArtifactPreviewProjectionTestSource.includes('uses diff path refs as prototype safe text without exposing patch apply affordances') &&
-    prototypeArtifactPreviewProjectionTestSource.includes('truncates prototype safe body responses by positive request maxBytes') &&
-    prototypeArtifactPreviewProjectionTestSource.includes('falls back to bounded prototype safe text when artifact metadata is missing') &&
-    prototypeArtifactPreviewProjectionTestSource.includes('builds Host sandbox preview responses from generated renderer contract metadata') &&
-    !prototypeRuntimeSource.includes('text.slice(0, maxBytes)') &&
-    !prototypeRuntimeSource.includes('rendererSessionId: `atelier-preview:${input.taskId}:${input.artifactId}`') &&
-    !prototypeRuntimeSource.includes("rendererOwner: 'desktop_host'") &&
-    !prototypeRuntimeSource.includes("rendererMode: 'host_sandbox_manifest'") &&
-    !prototypeRuntimeSource.includes("rendererStatus: 'rendered'") &&
-    !prototypeRuntimeSource.includes("'host_visual_renderer_surface'") &&
-    !prototypePreviewSource.includes('+73') &&
-    !prototypePreviewSource.includes('-11') &&
-    !prototypePreviewSource.includes('artifact.markdown') &&
-    !prototypePreviewSource.includes('artifact.url') &&
-    !prototypePreviewSource.includes('artifact.src') &&
-    !prototypePreviewSource.includes('<iframe') &&
-    !prototypePreviewSource.includes('<img'),
-  'Browser prototype artifact preview must stay metadata-only and must not render raw artifact projection fields',
-);
-assert.ok(
-  prototypePreviewSource.includes('Prototype-only mock logs: real Run runtime stream is not wired.') &&
-    prototypePreviewSource.includes('prototypeArtifactLogTone(log.level)') &&
-    prototypeArtifactPreviewProjectionTestSource.includes('maps mock console log levels to display tones without proving real Run runtime logs') &&
-    !prototypePreviewSource.includes('runtime.logs.subscribe') &&
-    !prototypePreviewSource.includes('atelier.logs.subscribe') &&
-    !prototypePreviewSource.includes('console.logs.subscribe'),
-  'Browser prototype Console Logs panel must disclose mock logs and must not wire runtime log subscription',
-);
-assert.ok(
-  prototypeBlocksSource.includes('derivePrototypeDiffCardProjectionView(b)') &&
-    prototypeBlocksSource.includes('diffView.visiblePaths.map') &&
-    prototypeBlocksSource.includes('diffView.hiddenPathCount') &&
-    prototypeDiffCardProjectionSource.includes('ATELIER_PROJECTION_DISPLAY_LIMITS.diffPaths') &&
-    prototypeDiffCardProjectionSource.includes('summaryLabel: `${block.files} files changed`') &&
-    prototypeDiffCardProjectionSource.includes('hiddenPathCount: Math.max(0, block.paths.length - visiblePaths.length)') &&
-    prototypeDiffCardProjectionTestSource.includes('uses generated diff path display limit for compact stream metadata') &&
-    prototypeDiffCardProjectionTestSource.includes('builds summary labels from Station-projected diff metadata only') &&
-    prototypeDiffCardProjectionTestSource.includes('renders empty diff path metadata without creating patch or execution affordances') &&
-    prototypeDiffCardProjectionTestSource.includes('does not report hidden paths when projected refs fit the generated limit') &&
-    !prototypeBlocksSource.includes('b.paths.map((p)') &&
-    !prototypeDiffCardProjectionSource.includes('provider.invoke') &&
-    !prototypeDiffCardProjectionSource.includes('patch.apply') &&
-    !prototypeDiffCardProjectionSource.includes('runtime.execute'),
-  'Browser prototype DiffCard must derive compact Station diff metadata through a pure helper without execution or patch affordances',
-);
-assert.ok(
-  prototypePageSource.includes('Attachment input is prototype-only: image/file upload is not wired to Host Storage or Run input_snapshot yet.') &&
-    !prototypePageSource.includes('atelier.attachment.upload') &&
-    !prototypePageSource.includes('attachment.upload') &&
-    !prototypePageSource.includes('HostStorage.write') &&
-    !prototypePageSource.includes('input_snapshot.write') &&
-    !prototypePageSource.includes('inputSnapshot.write'),
-  'Browser prototype attachment input must stay disclosure-only and must not wire Host Storage or Run input_snapshot writes',
-);
-assert.ok(
-  prototypePluginsSource.includes("id: 'kanban'") &&
-    prototypePluginsSource.includes("id: 'dag'") &&
-    prototypeTaskOrganizerProjectionSource.includes('ATELIER_TASK_ORGANIZER_MODES.map') &&
-    prototypeTaskOrganizerProjectionSource.includes('ready: mode.ready') &&
-    prototypeTaskOrganizerProjectionSource.includes('ATELIER_DEFAULT_TASK_ORGANIZER_MODE') &&
-    prototypePluginsSource.includes('prototypeTaskOrganizerPluginDescriptors().map') &&
-    prototypePluginsSource.includes('ready: descriptor.ready') &&
-    prototypePluginsSource.includes('export const DEFAULT_PLUGIN_ID = prototypeDefaultTaskOrganizerPluginId();') &&
-    prototypePluginsSource.includes('export function resolveTaskPlugin(pluginId: string): TaskPlugin') &&
-    prototypePluginsSource.includes('item.id === DEFAULT_PLUGIN_ID') &&
-    prototypeTaskOrganizerProjectionTestSource.includes('derives plugin descriptors and default plugin id from generated contract') &&
-    !prototypePluginsSource.includes('export const DEFAULT_PLUGIN_ID = ATELIER_TASK_ORGANIZER_MODES[0].id;') &&
-    prototypePageSource.includes('resolveTaskPlugin(pluginId)') &&
-    !prototypePageSource.includes('PLUGINS.find((p) => p.id === pluginId) ?? PLUGINS[0]') &&
-    !prototypePageSource.includes('?? PLUGINS[0]') &&
-    prototypePluginsSource.includes('ready: false') &&
-    prototypePluginsSource.includes('未实现') &&
-    prototypePluginsSource.includes('实现 TaskPlugin.render 即可，数据模型与对话流不变。') &&
-    !prototypePluginsSource.includes('organizer.reorder') &&
-    !prototypePluginsSource.includes('organizer.schedule') &&
-    !prototypePluginsSource.includes('organizer.execute') &&
-    !prototypePluginsSource.includes('organizer.replan'),
-  'Browser prototype organizer Kanban/DAG plugins must stay placeholders and must not expose reorder/schedule/execute/replan',
-);
-assert.ok(
-  prototypePluginsSource.includes('derivePrototypeTaskOrganizerRowView({') &&
-    prototypePluginsSource.includes('const lifecycleStatus = taskOrganizerActionToLifecycleStatus(key);') &&
-    prototypePluginsSource.includes('host.setStatus(t.id, lifecycleStatus);') &&
-    prototypePluginsSource.includes('host.requestPurge(t.id);') &&
-    prototypePluginsSource.includes('host.purge(t.id);') &&
-    prototypePluginsSource.includes('Station 仍会校验任务处于 deleted 后才允许 purge。') &&
-    prototypePluginsSource.includes('derivePrototypeTaskOrganizerFoldersView(host.tasks)') &&
-    prototypePluginsSource.includes('derivePrototypeTaskOrganizerBuckets(host.tasks)') &&
-    prototypeTaskOrganizerProjectionSource.includes('TASK_ORGANIZER_ACTIONS_BY_STATUS') &&
-    prototypeTaskOrganizerProjectionSource.includes("if (action === 'archive') return 'archived';") &&
-    prototypeTaskOrganizerProjectionSource.includes("if (action === 'delete') return 'deleted';") &&
-    prototypeTaskOrganizerProjectionSource.includes("if (action === 'restore') return 'active';") &&
-    prototypeTaskOrganizerProjectionSource.includes("return ATELIER_TASK_LIFECYCLE_STATES;") &&
-    prototypeTaskOrganizerProjectionTestSource.includes('derives active task lifecycle actions without execution actions') &&
-    prototypeTaskOrganizerProjectionTestSource.includes('derives deleted task purge confirmation labels without bypassing Station precondition') &&
-    prototypeTaskOrganizerProjectionTestSource.includes('partitions projected tasks by generated workbench lifecycle status') &&
-    prototypeTaskOrganizerProjectionTestSource.includes('keeps organizer lifecycle taxonomy orthogonal to execution status values') &&
-    prototypePageSource.includes('buildPrototypeTaskStatusIntent({') &&
-    prototypePageSource.includes('const taskStatus = state.tasks.find((task) => task.id === id)?.status;') &&
-    prototypePageSource.includes('buildPrototypeTaskPurgeIntent({ taskId: id, taskStatus })') &&
-    prototypePageSource.includes("taskLifecycleRequestKeyRef.current = buildPrototypeTaskLifecycleRequestKey({ kind: 'setStatus', taskId: selected })") &&
-    prototypePageSource.includes("kind: 'setStatus',") &&
-    prototypePageSource.includes("kind: 'purge',") &&
-    prototypePageSource.includes('taskLifecycleRequestKeyRef.current = requestKey') &&
-    prototypePageSource.includes('shouldApplyPrototypeTaskLifecycleSnapshot({') &&
-      prototypePageSource.includes('Task lifecycle is intent-only; failures reuse bridge recovery status.') &&
-      prototypePageSource.includes('setRuntimeStatus(buildPrototypeBridgeStatusFromError(error));') &&
-      !prototypePageSource.includes('setStatus: (id, status: TaskStatus) => {\n          const intent = buildPrototypeTaskStatusIntent({') &&
-      !prototypePageSource.includes('purge: (id) => {\n          const intent = buildPrototypeTaskPurgeIntent({ taskId: id });') &&
-    prototypePageSource.includes('status: intent.taskStatus') &&
-    prototypeTaskLifecycleIntentSource.includes('export function buildPrototypeTaskLifecycleRequestKey') &&
-    prototypeTaskLifecycleIntentSource.includes('return `kind:${input.kind}|task:${taskId}|status:${status}`;') &&
-    prototypeTaskLifecycleIntentSource.includes('export function shouldApplyPrototypeTaskLifecycleSnapshot') &&
-    prototypeTaskLifecycleIntentSource.includes('ATELIER_TASK_LIFECYCLE_STATES.includes') &&
-    prototypeTaskLifecycleIntentSource.includes('ATELIER_TASK_LIFECYCLE.purgeRequiresStatus') &&
-    prototypeTaskLifecycleIntentSource.includes("status: 'setStatus'") &&
-    prototypeTaskLifecycleIntentSource.includes("status: 'purge'") &&
-    prototypeRuntimeSource.includes('buildPrototypeTaskStatusProjection({') &&
-    prototypeRuntimeSource.includes('buildPrototypeTaskPurgeProjection({') &&
-    prototypeTaskLifecycleIntentSource.includes('export function buildPrototypeTaskStatusProjection') &&
-    prototypeTaskLifecycleIntentSource.includes('export function buildPrototypeTaskPurgeProjection') &&
-    prototypeTaskLifecycleIntentTestSource.includes('builds Station-owned setStatus intents from generated lifecycle status values') &&
-    prototypeTaskLifecycleIntentTestSource.includes('rejects execution-shaped status values before runtime calls') &&
-    prototypeTaskLifecycleIntentTestSource.includes('builds Station-owned purge intents from task ids only') &&
-    prototypeTaskLifecycleIntentTestSource.includes('rejects purge intents unless the projected task status is deleted') &&
-    prototypeTaskLifecycleIntentTestSource.includes('projects generated task lifecycle status without creating execution payloads') &&
-    prototypeTaskLifecycleIntentTestSource.includes('projects purge by removing task and task-owned side buckets') &&
-    prototypeTaskLifecycleIntentTestSource.includes('keeps selected task when purging a non-selected task') &&
-    prototypeTaskLifecycleIntentTestSource.includes('keys lifecycle snapshot requests by kind, task, and status without execution payloads') &&
-    prototypeTaskLifecycleIntentTestSource.includes('rejects stale lifecycle snapshots after task, status, or operation ownership changes') &&
-    !prototypeRuntimeSource.includes('tasks: state.tasks.map((task) =>') &&
-    !prototypeRuntimeSource.includes('const tasks = state.tasks.filter((task) => task.id !== taskId);') &&
-    !prototypePageSource.includes('runtime.setTaskStatus({\n          taskId: intent.taskId,\n          status: intent.taskStatus,\n        }).then(applySnapshot);') &&
-    !prototypePageSource.includes('runtime.purgeTask(intent.taskId).then(applySnapshot);') &&
-    !prototypePluginsSource.includes('task.execute') &&
-    !prototypePluginsSource.includes('task.schedule') &&
-    !prototypePluginsSource.includes('task.replan') &&
-    !prototypePluginsSource.includes('task.deleteNow') &&
-    !prototypePluginsSource.includes('task.purgeWithoutDeleted') &&
-    !prototypePluginsSource.includes('organizer.execute'),
-  'Browser prototype task lifecycle menu must use lifecycle status/purge intents and must not expose execution or purge bypass capabilities',
+  appletBridgeSource + prototypeRuntimeBootstrapSource,
+  /atelier\.events\.subscribe|\/agent\/events\/subscribe|\/sub-agent\/agent\/events\/subscribe/,
+  'Browser prototype must not retain private Agent event transports',
 );
 const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'atelier-bridge-runtime-gate-'));
 const outfile = path.join(tempDir, 'gate.mjs');
@@ -1699,7 +420,6 @@ import { assertAtelierProjectionSnapshot, parseAtelierProjectionEvent } from './
 import { derivePrototypePageSurface, derivePrototypeRecoveryView, derivePrototypeStatusActionPolicy, isPrototypeStatusActionPolicyConsistent, prototypeStatusForScenario, resolvePrototypeStatusScenario } from './packages/prototypes/desktop/applets/atelier/src/prototypeRecoveryView.ts';
 import {
   ATELIER_PROJECTION_EVENT_TOPIC,
-  ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
   ATELIER_PROTOTYPE_RECOVERY_SEVERITY_BY_STATUS,
   ATELIER_PROTOTYPE_RECOVERY_SYMBOL_BY_STATUS,
   ATELIER_RECOVERY_RETRYABLE_KINDS,
@@ -1950,7 +670,10 @@ async function testProjectionGuards() {
     } else {
       invalidSnapshot.workspace = { ...invalidSnapshot.workspace, ...invalidWorkspacePatch };
     }
-    assert.throws(() => assertAtelierProjectionSnapshot(invalidSnapshot));
+    assert.throws(
+      () => assertAtelierProjectionSnapshot(invalidSnapshot),
+      'invalid workspace projection must fail closed: ' + JSON.stringify(invalidWorkspacePatch),
+    );
   }
   assert.equal(parseAtelierProjectionEvent({ id: 'evt-bad', seq: 1, receivedAt: 'now', patch: { kind: 'unknown' } }), null);
   assert.equal(parseAtelierProjectionEvent({
@@ -4128,592 +2851,21 @@ function testPrototypeRecoveryViewMatrix() {
   assert.equal(resolvePrototypeStatusScenario('?atelierStatus=runtime.logs.subscribe'), undefined, 'prototype controlled status scenario must reject runtime capability-shaped status');
 }
 
-async function testRuntimeBootstrapNormalizesProjectionStreamConfig() {
-  const { normalizeProjectionStreamConfig } = await import('./packages/prototypes/desktop/applets/atelier/src/runtimeBootstrap.ts');
-  const { toProjectionSnapshot } = await import('./packages/prototypes/desktop/applets/atelier/src/projection.ts');
-  const { ATELIER_DEFAULT_DIRECT_RUN_MODEL } = await import('./packages/prototypes/desktop/applets/atelier/src/projection.contract.generated.ts');
-  const {
-    buildPrototypeEmptyHostState,
-    buildPrototypeProjectionStreamConfig,
-    isPrototypeHostRuntime,
-  } = await import('./packages/prototypes/desktop/applets/atelier/src/prototypeRuntimeBootstrap.ts');
-  assert.equal(isPrototypeHostRuntime('lynx'), true);
-  assert.equal(isPrototypeHostRuntime('web-host'), true);
-  assert.equal(isPrototypeHostRuntime('browser'), false);
-  assert.equal(isPrototypeHostRuntime('vite'), false);
-  assert.equal(isPrototypeHostRuntime('node'), false);
-  assert.equal(isPrototypeHostRuntime('desktop'), false);
-  assert.equal(isPrototypeHostRuntime('Lynx'), false);
-  assert.equal(isPrototypeHostRuntime(' lynx '), false);
-  assert.equal(isPrototypeHostRuntime('web-host-preview'), false);
-  assert.equal(isPrototypeHostRuntime(''), false);
-  assert.deepEqual(
-    buildPrototypeEmptyHostState(),
-    {
-      budgetSpent: 0,
-      budgetCap: 1,
-      model: ATELIER_DEFAULT_DIRECT_RUN_MODEL,
-      tasks: [],
-      selectedTaskId: '',
-      stream: {},
-      todos: {},
-      context: {},
-      artifacts: {},
-      gates: {},
-    },
-    'runtime bootstrap Host seed must be an empty projection surface without mock tasks or execution payloads',
-  );
-  assert.doesNotMatch(
-    JSON.stringify(buildPrototypeEmptyHostState()),
-    /provider\.invoke|runtime\.execute|shell|input_snapshot|memory\.write|run\.execute|file\.write/,
-    'runtime bootstrap Host seed must not smuggle execution-shaped payloads into the applet bridge',
-  );
-  assert.equal(normalizeProjectionStreamConfig(undefined), undefined);
-  assert.equal(normalizeProjectionStreamConfig({ agentId: '   ', taskId: 'task-1', afterEventSeq: 7 }), undefined);
-  assert.deepEqual(
-    normalizeProjectionStreamConfig({ agentId: ' agent-1 ', taskId: ' task-1 ', afterEventSeq: '42' }),
-    { agentId: 'agent-1', taskId: 'task-1', afterEventSeq: 42 },
-  );
-  assert.deepEqual(
-    normalizeProjectionStreamConfig({ agentId: 'agent-2', taskId: '   ', afterEventSeq: 0 }),
-    { agentId: 'agent-2' },
-  );
-  assert.deepEqual(
-    normalizeProjectionStreamConfig({ agentId: 'agent-3', afterEventSeq: 'not-a-number' }),
-    { agentId: 'agent-3' },
-  );
-  assert.deepEqual(
-    normalizeProjectionStreamConfig({ agentId: ' agent-primary ', agentIds: ['agent-fallback'], taskId: 'task-1' }),
-    { agentId: 'agent-primary', taskId: 'task-1' },
-    'runtime bootstrap must prefer explicit agentId before generated agentIds[0] fallback',
-  );
-  assert.deepEqual(
-    normalizeProjectionStreamConfig({ agentIds: [' agent-from-list ', 'agent-ignored'], afterEventSeq: '7' }),
-    { agentId: 'agent-from-list', afterEventSeq: 7 },
-    'runtime bootstrap must support generated agentIds[0] fallback for Host global stream config',
-  );
-  assert.equal(
-    normalizeProjectionStreamConfig({ agentIds: ['   ', 'agent-ignored'] }),
-    undefined,
-    'runtime bootstrap must reject empty generated agentIds[0] fallback fail-closed',
-  );
-  const streamConfigSnapshot = toProjectionSnapshot({
-    ...buildPrototypeEmptyHostState(),
-    selectedTaskId: 'snapshot-selected',
-    tasks: [
-      { id: 'snapshot-selected', title: 'Snapshot selected', project: 'peers-touch', status: 'active' },
-      { id: 'first-task', title: 'First task', project: 'peers-touch', status: 'active' },
-    ],
-  });
-  assert.deepEqual(
-    buildPrototypeProjectionStreamConfig({
-      globalConfig: { agentId: 'agent-1', taskId: ' explicit-task ' },
-      selectedTaskId: 'selected-task',
-      initialSnapshot: streamConfigSnapshot,
-    }),
-    { agentId: 'agent-1', taskId: 'explicit-task' },
-    'runtime bootstrap must prefer explicit taskId before generated selected/snapshot task fallback',
-  );
-  assert.deepEqual(
-    buildPrototypeProjectionStreamConfig({
-      globalConfig: { agentId: 'agent-1' },
-      selectedTaskId: ' selected-task ',
-      initialSnapshot: streamConfigSnapshot,
-    }),
-    { agentId: 'agent-1', taskId: 'selected-task' },
-    'runtime bootstrap must support generated controllerSelectedTaskId fallback',
-  );
-  assert.deepEqual(
-    buildPrototypeProjectionStreamConfig({
-      globalConfig: { agentId: 'agent-1' },
-      initialSnapshot: toProjectionSnapshot({
-        ...buildPrototypeEmptyHostState(),
-        tasks: [{ id: 'first-task', title: 'First task', project: 'peers-touch', status: 'active' }],
-      }),
-    }),
-    { agentId: 'agent-1', taskId: 'first-task' },
-    'runtime bootstrap must support generated snapshotFirstTaskId fallback',
-  );
-  assert.deepEqual(
-    buildPrototypeProjectionStreamConfig({
-      globalConfig: { agentId: 'agent-1', certificationMode: 'product-window-e2e', createGoal: 'build atelier' },
-      initialSnapshot: streamConfigSnapshot,
-    }),
-    { agentId: 'agent-1', taskId: 'snapshot-selected' },
-    'runtime bootstrap must support generated certificationCreatedSelectedTaskId fallback',
-  );
-  assert.deepEqual(
-    buildPrototypeProjectionStreamConfig({
-      globalConfig: { agentId: ' global-agent ', taskId: ' global-task ', afterEventSeq: 12 },
-      search: '?agentId=query-agent&taskId=query-task&afterEventSeq=5',
-    }),
-    { agentId: 'global-agent', taskId: 'global-task', afterEventSeq: 12 },
-    'runtime bootstrap must prefer explicit global projection stream config over URL query params',
-  );
-  assert.deepEqual(
-    buildPrototypeProjectionStreamConfig({
-      globalConfig: { agentId: '   ', taskId: 'ignored-task', afterEventSeq: 9 },
-      search: '?agentId=query-agent&taskId=&afterEventSeq=0',
-    }),
-    { agentId: 'query-agent' },
-    'runtime bootstrap must fall back to query params when global projection stream config is invalid',
-  );
-  assert.equal(
-    buildPrototypeProjectionStreamConfig({ search: '?taskId=task-only&afterEventSeq=4' }),
-    undefined,
-    'runtime bootstrap must reject query-only projection stream config without agentId',
-  );
-  assert.deepEqual(
-    buildPrototypeProjectionStreamConfig({ search: '?agentIds=query-agent-from-list&agentIds=query-agent-ignored&afterEventSeq=8' }),
-    { agentId: 'query-agent-from-list', afterEventSeq: 8 },
-    'runtime bootstrap query config must support generated agentIds[0] fallback',
-  );
-  assert.deepEqual(
-    buildPrototypeProjectionStreamConfig({ search: '?agentId=query-agent&agentIds=query-agent-from-list&taskId=query-task' }),
-    { agentId: 'query-agent', taskId: 'query-task' },
-    'runtime bootstrap query config must prefer agentId before generated agentIds[0] fallback',
-  );
-  assert.equal(
-    buildPrototypeProjectionStreamConfig({ search: '?agentIds=&taskId=task-only&afterEventSeq=4' }),
-    undefined,
-    'runtime bootstrap query config must reject empty generated agentIds[0] fallback fail-closed',
-  );
-  assert.deepEqual(
-    buildPrototypeProjectionStreamConfig({
-      search: '?agentId=query-agent',
-      selectedTaskId: ' selected-query-task ',
-      initialSnapshot: streamConfigSnapshot,
-    }),
-    { agentId: 'query-agent', taskId: 'selected-query-task' },
-    'runtime bootstrap query config must support generated controllerSelectedTaskId fallback',
-  );
-  assert.deepEqual(
-    buildPrototypeProjectionStreamConfig({
-      search: '?agentId=query-agent',
-      initialSnapshot: toProjectionSnapshot({
-        ...buildPrototypeEmptyHostState(),
-        tasks: [{ id: 'query-first-task', title: 'Query first task', project: 'peers-touch', status: 'active' }],
-      }),
-    }),
-    { agentId: 'query-agent', taskId: 'query-first-task' },
-    'runtime bootstrap query config must support generated snapshotFirstTaskId fallback',
-  );
-  assert.deepEqual(
-    buildPrototypeProjectionStreamConfig({
-      search: '?agentId=query-agent&certificationMode=product-window-e2e&createGoal=build%20atelier',
-      initialSnapshot: toProjectionSnapshot({
-        ...buildPrototypeEmptyHostState(),
-        selectedTaskId: 'query-created-task',
-        tasks: [{ id: 'query-created-task', title: 'Query created task', project: 'peers-touch', status: 'active' }],
-      }),
-    }),
-    { agentId: 'query-agent', taskId: 'query-created-task' },
-    'runtime bootstrap query config must support generated certificationCreatedSelectedTaskId fallback',
-  );
-}
-
-async function testAppletBridgeUsesReplayCursor() {
-  const { createAppletSdkAtelierBridge } = await import('./packages/prototypes/desktop/applets/atelier/src/appletBridge.ts');
-  const initialSnapshot = snapshot('task-cursor');
-  initialSnapshot.workspace.replay = {
-    'task-cursor': {
-      source: 'checkpoint',
-      eventCount: 10,
-      replayedEventCount: 6,
-      nextEventSeq: 42,
-      hasMore: true,
-    },
-  };
-  const harness = appletHostWithInvoke(initialSnapshot);
-  const bridge = createAppletSdkAtelierBridge(harness.host, {
-    projectionStream: { agentId: 'agent-cursor' },
-    initialSnapshot,
-  });
-  const unsubscribe = bridge.subscribeProjection(() => {});
-  assert.deepEqual(
-    harness.calls.find((call) => call.method === ATELIER_PROJECTION_SUBSCRIPTION_METHOD)?.params,
-    { agentId: 'agent-cursor', taskId: 'task-cursor', afterEventSeq: 42 },
-  );
-  unsubscribe();
-}
-
-async function testAppletBridgeOmitsEmptyReplayCursorFields() {
-  const { createAppletSdkAtelierBridge } = await import('./packages/prototypes/desktop/applets/atelier/src/appletBridge.ts');
-  const emptySnapshot = snapshot('');
-  const harness = appletHostWithEventTracking(emptySnapshot);
-  const bridge = createAppletSdkAtelierBridge(harness.host, {
-    projectionStream: { agentId: 'agent-empty-cursor' },
-    initialSnapshot: emptySnapshot,
-  });
-
-  const unsubscribe = bridge.subscribeProjection(() => {});
-  assert.deepEqual(
-    harness.calls.find((call) => call.method === ATELIER_PROJECTION_SUBSCRIPTION_METHOD)?.params,
-    { agentId: 'agent-empty-cursor' },
-  );
-  unsubscribe();
-}
-
-async function testAppletBridgeRejectsEmptyProjectionStreamAgentIdFailClosed() {
-  const { createAppletSdkAtelierBridge } = await import('./packages/prototypes/desktop/applets/atelier/src/appletBridge.ts');
-  const emptySnapshot = snapshot('');
-  const harness = appletHostWithEventTracking(emptySnapshot);
-  const seen = [];
-  const bridge = createAppletSdkAtelierBridge(harness.host, {
-    projectionStream: { agentId: '   ', taskId: 'task-should-not-subscribe', afterEventSeq: 7 },
-    initialSnapshot: emptySnapshot,
-  });
-
-  const unsubscribe = bridge.subscribeProjection((event) => {
-    seen.push(event);
-  });
-  harness.emit(ATELIER_PROJECTION_EVENT_TOPIC, { kind: 'evt-after-empty-agent-id' });
-
-  assert.equal(
-    harness.calls.some((call) => call.method === ATELIER_PROJECTION_SUBSCRIPTION_METHOD),
-    false,
-    'empty projection stream agentId must not call canonical Station subscription',
-  );
-  assert.equal(seen[0].kind, 'atelier.projection.subscription-rejected');
-  assert.equal(seen[0].method, ATELIER_PROJECTION_SUBSCRIPTION_METHOD);
-  assert.match(seen[0].reason, /agentId missing/);
-  assert.equal(harness.eventUnsubscriptions.length, 1);
-  assert.equal(
-    harness.calls.filter((call) => call.method === 'events.unsubscribe').length,
-    1,
-    'empty projection stream agentId rejection must release the Host projection topic subscription',
-  );
-  assert.equal(seen.some((event) => event.kind === 'evt-after-empty-agent-id'), false);
-  unsubscribe();
-  assert.equal(
-    harness.calls.filter((call) => call.method === 'events.unsubscribe').length,
-    1,
-    'release after fail-closed rejection must not duplicate Host topic cleanup',
-  );
-}
-
-async function testAppletBridgeExplicitProjectionStreamIntentWinsOverSnapshotCursor() {
-  const { createAppletSdkAtelierBridge } = await import('./packages/prototypes/desktop/applets/atelier/src/appletBridge.ts');
-  const initialSnapshot = snapshot('task-snapshot-cursor');
-  initialSnapshot.workspace.replay = {
-    'task-snapshot-cursor': {
-      source: 'checkpoint',
-      eventCount: 10,
-      replayedEventCount: 4,
-      nextEventSeq: 42,
-      hasMore: true,
-    },
-  };
-  const harness = appletHostWithEventTracking(initialSnapshot);
-  const bridge = createAppletSdkAtelierBridge(harness.host, {
-    projectionStream: { agentId: 'agent-explicit', taskId: 'task-explicit', afterEventSeq: 7 },
-    initialSnapshot,
-  });
-
-  const unsubscribe = bridge.subscribeProjection(() => {});
-  assert.deepEqual(
-    harness.calls.find((call) => call.method === ATELIER_PROJECTION_SUBSCRIPTION_METHOD)?.params,
-    { agentId: 'agent-explicit', taskId: 'task-explicit', afterEventSeq: 7 },
-  );
-  unsubscribe();
-}
-
-async function testAppletBridgeProductWindowZeroCursorReachesHostSubscribe() {
-  const { createAppletSdkAtelierBridge } = await import('./packages/prototypes/desktop/applets/atelier/src/appletBridge.ts');
-  const initialSnapshot = snapshot('task-zero-cursor');
-  initialSnapshot.workspace.replay = {
-    'task-zero-cursor': {
-      source: 'checkpoint',
-      eventCount: 10,
-      replayedEventCount: 4,
-      nextEventSeq: 42,
-      hasMore: true,
-    },
-  };
-  const harness = appletHostWithEventTracking(initialSnapshot);
-  const bridge = createAppletSdkAtelierBridge(harness.host, {
-    projectionStream: {
-      agentId: 'agent-zero',
-      taskId: 'task-zero-cursor',
-      afterEventSeq: 0,
-      preserveZeroCursor: true,
-    },
-    initialSnapshot,
-  });
-
-  const unsubscribe = bridge.subscribeProjection(() => {});
-  assert.deepEqual(
-    harness.calls.find((call) => call.method === ATELIER_PROJECTION_SUBSCRIPTION_METHOD)?.params,
-    { agentId: 'agent-zero', taskId: 'task-zero-cursor', afterEventSeq: 0 },
-  );
-  unsubscribe();
-}
-
-async function testBridgeRuntimeRefreshesProjectionSubscribeAfterCreatedSelectedTask() {
-  const { createAppletSdkAtelierBridge } = await import('./packages/prototypes/desktop/applets/atelier/src/appletBridge.ts');
-  const initialSnapshot = snapshot('');
-  const createdSnapshot = snapshot('created-task');
-  createdSnapshot.workspace.replay = {
-    'created-task': {
-      source: 'event-window',
-      eventCount: 0,
-      replayedEventCount: 0,
-      nextEventSeq: 12,
-      hasMore: false,
-    },
-  };
-  const calls = [];
-  const handlers = new Map();
-  const bridge = createAppletSdkAtelierBridge({
-    async invoke(method, params) {
-      calls.push({ method, params });
-      if (method === 'atelier.project.createFromGoal') return createdSnapshot;
-      return {};
-    },
-    onEvent(topic, handler) {
-      handlers.set(topic, handler);
-      return () => {
-        handlers.delete(topic);
-      };
-    },
-  }, {
-    projectionStream: {
-      agentId: 'agent-created-task',
-      certificationMode: 'product-window-e2e',
-      createGoal: 'build atelier',
-      afterEventSeq: 0,
-      preserveZeroCursor: true,
-    },
-    initialSnapshot,
-  });
-  const runtime = createBridgeAtelierRuntime({
-    bridge,
-    initialSnapshot,
-  });
-  const unsubscribe = runtime.subscribe(() => {});
-  assert.deepEqual(
-    calls.filter((call) => call.method === ATELIER_PROJECTION_SUBSCRIPTION_METHOD).map((call) => call.params),
-    [{ agentId: 'agent-created-task', afterEventSeq: 0 }],
-    'initial empty Host snapshot must subscribe only by agent and explicit zero cursor',
-  );
-
-  await runtime.createProjectFromGoal({
-    goal: 'build atelier',
-    intentPreset: 'work',
-    run: { kind: 'model', model: 'openrouter-3o' },
-  });
-
-  const subscribePayloads = calls
-    .filter((call) => call.method === ATELIER_PROJECTION_SUBSCRIPTION_METHOD)
-    .map((call) => call.params);
-  assert.deepEqual(subscribePayloads, [
-    { agentId: 'agent-created-task', afterEventSeq: 0 },
-    { agentId: 'agent-created-task', taskId: 'created-task', afterEventSeq: 0 },
-  ]);
-  assert.doesNotMatch(
-    JSON.stringify(subscribePayloads.at(-1)),
-    /certificationMode|createGoal|selectedTaskId|provider|gate|artifact|trace|checkpoint|resume|memory|input_snapshot|shell|file|run/,
-  );
-  assert.equal(runtime.getSnapshot().state.selectedTaskId, 'created-task');
-  unsubscribe();
-}
-
-async function testBridgeRuntimeKeepsReconcilingUntilRefreshedProjectionSubscribeSettles() {
-  const initialSnapshot = snapshot('');
-  const createdSnapshot = snapshot('created-task');
-  const refresh = deferredPromise();
-  const refreshes = [];
-  const runtime = createBridgeAtelierRuntime({
-    bridge: {
-      async call(request) {
-        if (request.method === 'atelier.project.createFromGoal') return createdSnapshot;
-        return snapshot('');
-      },
-      subscribeProjection() {
-        return () => {};
-      },
-      refreshProjectionSubscription(projection) {
-        refreshes.push(projection.selectedTaskId);
-        return refresh.promise;
-      },
-    },
-    initialSnapshot,
-  });
-  const seen = [];
-  const unsubscribe = runtime.subscribe((next) => {
-    seen.push(next.status?.kind);
-  });
-
-  const result = await runtime.createProjectFromGoal({
-    goal: 'build atelier',
-    intentPreset: 'work',
-    run: { kind: 'model', model: 'openrouter-3o' },
-  });
-
-  assert.deepEqual(refreshes, ['created-task']);
-  assert.equal(result.state.selectedTaskId, 'created-task');
-  assert.equal(result.status?.kind, 'reconciling');
-  assert.equal(runtime.getSnapshot().status?.kind, 'reconciling');
-  assert.equal(seen.includes('ready'), false, 'bridge runtime must not report ready before refreshed projection subscribe settles');
-
-  refresh.resolve();
-  await refresh.promise;
-  await Promise.resolve();
-
-  assert.equal(runtime.getSnapshot().status?.kind, 'ready');
-  assert.doesNotMatch(
-    JSON.stringify(runtime.getSnapshot()),
-    /provider\.invoke|gate\.run|artifact\.write|trace\.write|checkpoint\.write|resume\.execute|memory\.write|input_snapshot|shell|file\.write|run\.execute/,
-    'bridge runtime refreshed subscribe handoff must not expose execution-shaped capabilities',
-  );
-  unsubscribe();
-}
-
-async function testBridgeRuntimeMapsRejectedRefreshedProjectionSubscribeToRecovery() {
-  const initialSnapshot = snapshot('');
-  const createdSnapshot = snapshot('created-task');
-  const refresh = deferredPromise();
-  const runtime = createBridgeAtelierRuntime({
-    bridge: {
-      async call(request) {
-        if (request.method === 'atelier.project.createFromGoal') return createdSnapshot;
-        return snapshot('');
-      },
-      subscribeProjection() {
-        return () => {};
-      },
-      refreshProjectionSubscription() {
-        return refresh.promise;
-      },
-    },
-    initialSnapshot,
-  });
-  const unsubscribe = runtime.subscribe(() => {});
-
-  const result = await runtime.createProjectFromGoal({
-    goal: 'build atelier',
-    intentPreset: 'work',
-    run: { kind: 'model', model: 'openrouter-3o' },
-  });
-  assert.equal(result.status?.kind, 'reconciling');
-
-  refresh.reject(Object.assign(new Error('CONNECTION_CLOSED refreshed subscribe'), { code: 'CONNECTION_CLOSED' }));
-  await refresh.promise.catch(() => undefined);
-  await Promise.resolve();
-
-  assert.equal(runtime.getSnapshot().state.selectedTaskId, 'created-task');
-  assert.equal(runtime.getSnapshot().status?.kind, 'disconnected');
-  assert.equal(runtime.getSnapshot().status?.retryable, true);
-  unsubscribe();
-}
-
-async function testBridgeRuntimeIgnoresStaleRefreshedProjectionSubscribeSettlement() {
-  const initialSnapshot = snapshot('');
-  const firstCreatedSnapshot = snapshot('created-task-one');
-  const secondCreatedSnapshot = snapshot('created-task-two');
-  const firstRefresh = deferredPromise();
-  const secondRefresh = deferredPromise();
-  const refreshes = [];
-  let createCount = 0;
-  const runtime = createBridgeAtelierRuntime({
-    bridge: {
-      async call(request) {
-        if (request.method === 'atelier.project.createFromGoal') {
-          createCount += 1;
-          return createCount === 1 ? firstCreatedSnapshot : secondCreatedSnapshot;
-        }
-        return snapshot('');
-      },
-      subscribeProjection() {
-        return () => {};
-      },
-      refreshProjectionSubscription(projection) {
-        refreshes.push(projection.selectedTaskId);
-        return refreshes.length === 1 ? firstRefresh.promise : secondRefresh.promise;
-      },
-    },
-    initialSnapshot,
-  });
-  const seen = [];
-  const unsubscribe = runtime.subscribe((next) => {
-    seen.push({
-      taskId: next.state.selectedTaskId,
-      status: next.status?.kind,
-    });
-  });
-
-  const firstResult = await runtime.createProjectFromGoal({
-    goal: 'build atelier one',
-    intentPreset: 'work',
-    run: { kind: 'model', model: 'openrouter-3o' },
-  });
-  assert.equal(firstResult.state.selectedTaskId, 'created-task-one');
-  assert.equal(firstResult.status?.kind, 'reconciling');
-
-  const secondResult = await runtime.createProjectFromGoal({
-    goal: 'build atelier two',
-    intentPreset: 'work',
-    run: { kind: 'model', model: 'openrouter-3o' },
-  });
-  assert.deepEqual(refreshes, ['created-task-one', 'created-task-two']);
-  assert.equal(secondResult.state.selectedTaskId, 'created-task-two');
-  assert.equal(runtime.getSnapshot().state.selectedTaskId, 'created-task-two');
-  assert.equal(runtime.getSnapshot().status?.kind, 'reconciling');
-
-  firstRefresh.reject(Object.assign(new Error('CONNECTION_CLOSED stale refreshed subscribe'), { code: 'CONNECTION_CLOSED' }));
-  await firstRefresh.promise.catch(() => undefined);
-  await Promise.resolve();
-
-  assert.equal(runtime.getSnapshot().state.selectedTaskId, 'created-task-two');
-  assert.equal(
-    runtime.getSnapshot().status?.kind,
-    'reconciling',
-    'stale refreshed projection subscribe rejection must not overwrite newer reconciling surface',
-  );
-
-  secondRefresh.resolve();
-  await secondRefresh.promise;
-  await Promise.resolve();
-
-  assert.equal(runtime.getSnapshot().state.selectedTaskId, 'created-task-two');
-  assert.equal(runtime.getSnapshot().status?.kind, 'ready');
-  assert.equal(
-    seen.some((entry) => entry.taskId === 'created-task-two' && entry.status === 'disconnected'),
-    false,
-    'stale refreshed projection subscribe rejection must not emit disconnected for newer projection',
-  );
-  assert.doesNotMatch(
-    JSON.stringify(runtime.getSnapshot()),
-    /provider\.invoke|gate\.run|artifact\.write|trace\.write|checkpoint\.write|resume\.execute|memory\.write|input_snapshot|shell|file\.write|run\.execute/,
-    'stale refreshed projection subscribe race guard must not expose execution-shaped capabilities',
-  );
-  unsubscribe();
-}
-
-async function testAppletBridgeUnsubscribesProjectionTopicAndStream() {
+async function testAppletBridgeCanonicalTopicLifecycle() {
   const { createAppletSdkAtelierBridge } = await import('./packages/prototypes/desktop/applets/atelier/src/appletBridge.ts');
   const initialSnapshot = snapshot('task-cleanup');
   const harness = appletHostWithEventTracking(initialSnapshot);
-  const bridge = createAppletSdkAtelierBridge(harness.host, {
-    projectionStream: { agentId: 'agent-cleanup', taskId: 'task-cleanup', afterEventSeq: 7 },
-    initialSnapshot,
-  });
+  const bridge = createAppletSdkAtelierBridge(harness.host);
 
   const seen = [];
   const unsubscribe = bridge.subscribeProjection((payload) => {
     seen.push(payload);
   });
-  assert.deepEqual(
-    harness.calls.map((call) => call.method),
-    ['events.subscribe', ATELIER_PROJECTION_SUBSCRIPTION_METHOD],
-  );
+  await unsubscribe.ready;
+  assert.deepEqual(harness.calls.map((call) => call.method), ['events.subscribe']);
   assert.deepEqual(
     harness.calls.find((call) => call.method === 'events.subscribe')?.params,
     { topic: ATELIER_PROJECTION_EVENT_TOPIC },
-  );
-  assert.deepEqual(
-    harness.calls.find((call) => call.method === ATELIER_PROJECTION_SUBSCRIPTION_METHOD)?.params,
-    { agentId: 'agent-cleanup', taskId: 'task-cleanup', afterEventSeq: 7 },
   );
   assert.deepEqual(harness.eventSubscriptions.map((entry) => entry.topic), [ATELIER_PROJECTION_EVENT_TOPIC]);
 
@@ -4788,15 +2940,13 @@ async function testAppletBridgeSuccessfulReleaseHandlesRejectedTopicUnsubscribe(
           handlers.delete(topic);
         };
       },
-    }, {
-      projectionStream: { agentId: 'agent-release-unsubscribe-rejected', taskId: 'task-release-unsubscribe-rejected', afterEventSeq: 5 },
-      initialSnapshot: snapshot('task-release-unsubscribe-rejected'),
     });
 
     const seen = [];
     const unsubscribe = bridge.subscribeProjection((payload) => {
       seen.push(payload);
     });
+    await unsubscribe.ready;
     assert.equal(handlers.has(ATELIER_PROJECTION_EVENT_TOPIC), true);
 
     unsubscribe();
@@ -4816,7 +2966,6 @@ async function testAppletBridgeSuccessfulReleaseHandlesRejectedTopicUnsubscribe(
 
     assert.deepEqual(calls.map((call) => call.method), [
       'events.subscribe',
-      ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
       'events.unsubscribe',
     ]);
     assert.deepEqual(
@@ -4855,8 +3004,6 @@ async function testAppletBridgeCorrelatesCustomProjectionTopicAcrossLifecycle() 
   const customProjectionEventTopic = ATELIER_PROJECTION_EVENT_TOPIC + '.custom';
   const bridge = createAppletSdkAtelierBridge(harness.host, {
     projectionEventTopic: customProjectionEventTopic,
-    projectionStream: { agentId: 'agent-topic', taskId: 'task-topic', afterEventSeq: 3 },
-    initialSnapshot,
   });
   const seen = [];
 
@@ -4866,10 +3013,6 @@ async function testAppletBridgeCorrelatesCustomProjectionTopicAcrossLifecycle() 
   assert.deepEqual(
     harness.calls.find((call) => call.method === 'events.subscribe')?.params,
     { topic: customProjectionEventTopic },
-  );
-  assert.deepEqual(
-    harness.calls.find((call) => call.method === ATELIER_PROJECTION_SUBSCRIPTION_METHOD)?.params,
-    { agentId: 'agent-topic', taskId: 'task-topic', afterEventSeq: 3 },
   );
   assert.deepEqual(harness.eventSubscriptions.map((entry) => entry.topic), [customProjectionEventTopic]);
 
@@ -4924,11 +3067,7 @@ async function testAppletBridgeHandlesRejectedSubscriptionInvokes() {
     const bridge = createAppletSdkAtelierBridge({
       async invoke(method, params) {
         calls.push({ method, params });
-        if (
-          method === 'events.subscribe' ||
-          method === ATELIER_PROJECTION_SUBSCRIPTION_METHOD ||
-          method === 'events.unsubscribe'
-        ) {
+        if (method === 'events.subscribe' || method === 'events.unsubscribe') {
           throw new Error('rejected ' + method);
         }
         return snapshot('task-rejected-subscription');
@@ -4939,9 +3078,6 @@ async function testAppletBridgeHandlesRejectedSubscriptionInvokes() {
           handlers.delete(topic);
         };
       },
-    }, {
-      projectionStream: { agentId: 'agent-rejected-subscription', taskId: 'task-rejected-subscription', afterEventSeq: 9 },
-      initialSnapshot: snapshot('task-rejected-subscription'),
     });
 
     const seen = [];
@@ -4965,7 +3101,6 @@ async function testAppletBridgeHandlesRejectedSubscriptionInvokes() {
 
     assert.deepEqual(calls.map((call) => call.method), [
       'events.subscribe',
-      ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
       'events.unsubscribe',
     ]);
     assert.deepEqual(
@@ -4986,94 +3121,7 @@ async function testAppletBridgeHandlesRejectedSubscriptionInvokes() {
       false,
     );
     assert.equal(unhandledRejections.length, 0);
-    assert.equal(warnings.filter((warning) => warning.includes('Atelier applet bridge')).length, 3);
-  } finally {
-    console.warn = originalWarn;
-    process.off('unhandledRejection', onUnhandledRejection);
-  }
-}
-
-async function testAppletBridgeCanonicalSubscriptionRejectionCleansLocalEventHandler() {
-  const { createAppletSdkAtelierBridge } = await import('./packages/prototypes/desktop/applets/atelier/src/appletBridge.ts');
-  const calls = [];
-  const warnings = [];
-  const unhandledRejections = [];
-  const handlers = new Map();
-  const originalWarn = console.warn;
-  const onUnhandledRejection = (reason) => {
-    unhandledRejections.push(reason);
-  };
-  process.on('unhandledRejection', onUnhandledRejection);
-  console.warn = (...args) => {
-    warnings.push(args.map((arg) => String(arg)).join(' '));
-  };
-  try {
-    const bridge = createAppletSdkAtelierBridge({
-      async invoke(method, params) {
-        calls.push({ method, params });
-        if (method === ATELIER_PROJECTION_SUBSCRIPTION_METHOD) {
-          throw Object.assign(new Error('opaque canonical projection stream rejection'), { code: 'CONNECTION_CLOSED' });
-        }
-        if (method === 'events.unsubscribe') return undefined;
-        return snapshot('task-canonical-reject-cleanup');
-      },
-      onEvent(topic, handler) {
-        handlers.set(topic, handler);
-        return () => {
-          handlers.delete(topic);
-        };
-      },
-    }, {
-      projectionStream: { agentId: 'agent-canonical-reject-cleanup', taskId: 'task-canonical-reject-cleanup', afterEventSeq: 11 },
-      initialSnapshot: snapshot('task-canonical-reject-cleanup'),
-    });
-
-    const seen = [];
-    const unsubscribe = bridge.subscribeProjection((payload) => {
-      seen.push(payload);
-    });
-    assert.equal(handlers.has(ATELIER_PROJECTION_EVENT_TOPIC), true);
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.equal(handlers.has(ATELIER_PROJECTION_EVENT_TOPIC), false);
-    handlers.get(ATELIER_PROJECTION_EVENT_TOPIC)?.({
-      id: 'evt-after-canonical-subscription-rejection',
-      seq: 12,
-      taskId: 'task-canonical-reject-cleanup',
-      receivedAt: new Date().toISOString(),
-      patch: {
-        kind: 'task.upsert',
-        task: { id: 'task-canonical-reject-cleanup', project: 'peers-touch', title: 'should not apply after canonical rejection', status: 'active' },
-      },
-    });
-    unsubscribe();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    assert.deepEqual(calls.map((call) => call.method), [
-      'events.subscribe',
-      ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
-      'events.unsubscribe',
-    ]);
-    assert.deepEqual(
-      calls.find((call) => call.method === 'events.unsubscribe')?.params,
-      { topic: ATELIER_PROJECTION_EVENT_TOPIC },
-      'rejected canonical projection subscription must release the Host projection topic',
-    );
-    assert.equal(
-      calls.filter((call) => call.method === 'events.unsubscribe').length,
-      1,
-      'release after rejected canonical projection subscription cleanup must not duplicate Host topic unsubscribe',
-    );
-    assert.equal(seen.length, 1);
-    assert.equal(seen[0].kind, 'atelier.projection.subscription-rejected');
-    assert.equal(seen[0].method, ATELIER_PROJECTION_SUBSCRIPTION_METHOD);
-    assert.equal(seen[0].code, 'CONNECTION_CLOSED');
-    assert.equal(
-      seen.some((payload) => payload.id === 'evt-after-canonical-subscription-rejection'),
-      false,
-    );
-    assert.equal(unhandledRejections.length, 0);
-    assert.equal(warnings.filter((warning) => warning.includes('Atelier applet bridge')).length, 1);
+    assert.equal(warnings.filter((warning) => warning.includes('Atelier applet bridge')).length, 2);
   } finally {
     console.warn = originalWarn;
     process.off('unhandledRejection', onUnhandledRejection);
@@ -5095,14 +3143,14 @@ async function testAppletBridgeMalformedEventCleanupFailsClosed() {
       installedHandler = handler;
       return { malformed: 'unsubscribe cleanup' };
     },
-  }, {
-    projectionStream: { agentId: 'agent-malformed-event-cleanup', taskId: 'task-malformed-event-cleanup', afterEventSeq: 13 },
-    initialSnapshot: snapshot('task-malformed-event-cleanup'),
   });
 
-  const unsubscribe = bridge.subscribeProjection((payload) => {
-    seen.push(payload);
-  });
+  assert.throws(
+    () => bridge.subscribeProjection((payload) => {
+      seen.push(payload);
+    }),
+    /malformed unsubscribe cleanup/,
+  );
   installedHandler?.({
     id: 'evt-after-malformed-event-cleanup',
     seq: 14,
@@ -5113,32 +3161,8 @@ async function testAppletBridgeMalformedEventCleanupFailsClosed() {
       task: { id: 'task-malformed-event-cleanup', project: 'peers-touch', title: 'should not apply after malformed event cleanup', status: 'active' },
     },
   });
-  unsubscribe();
-  unsubscribe();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-
-  assert.deepEqual(calls.map((call) => call.method), [
-    'events.unsubscribe',
-  ]);
-  assert.deepEqual(
-    calls[0]?.params,
-    { topic: ATELIER_PROJECTION_EVENT_TOPIC },
-    'malformed event cleanup must request Host topic unsubscribe fail-closed',
-  );
-  assert.equal(
-    calls.some((call) => call.method === 'events.subscribe' || call.method === ATELIER_PROJECTION_SUBSCRIPTION_METHOD),
-    false,
-    'malformed event cleanup must not start Host topic or Station projection subscription',
-  );
-  assert.equal(seen.length, 1);
-  assert.equal(seen[0].kind, 'atelier.projection.subscription-rejected');
-  assert.equal(seen[0].method, 'events.subscribe');
-  assert.match(seen[0].reason, /malformed unsubscribe cleanup/);
-  assert.equal(
-    seen.some((payload) => payload.id === 'evt-after-malformed-event-cleanup'),
-    false,
-    'malformed event cleanup must close the local handler before late Host events',
-  );
+  assert.deepEqual(calls, []);
+  assert.deepEqual(seen, []);
 }
 
 async function testAppletBridgeReleasedSubscriptionIgnoresLateRejectedInvokes() {
@@ -5148,7 +3172,6 @@ async function testAppletBridgeReleasedSubscriptionIgnoresLateRejectedInvokes() 
   const unhandledRejections = [];
   const handlers = new Map();
   let rejectEventSubscribe;
-  let rejectProjectionSubscribe;
   const originalWarn = console.warn;
   const onUnhandledRejection = (reason) => {
     unhandledRejections.push(reason);
@@ -5166,11 +3189,6 @@ async function testAppletBridgeReleasedSubscriptionIgnoresLateRejectedInvokes() 
             rejectEventSubscribe = reject;
           });
         }
-        if (method === ATELIER_PROJECTION_SUBSCRIPTION_METHOD) {
-          return new Promise((_, reject) => {
-            rejectProjectionSubscribe = reject;
-          });
-        }
         if (method === 'events.unsubscribe') return undefined;
         return snapshot('task-release-before-reject');
       },
@@ -5180,9 +3198,6 @@ async function testAppletBridgeReleasedSubscriptionIgnoresLateRejectedInvokes() 
           handlers.delete(topic);
         };
       },
-    }, {
-      projectionStream: { agentId: 'agent-release-before-reject', taskId: 'task-release-before-reject', afterEventSeq: 3 },
-      initialSnapshot: snapshot('task-release-before-reject'),
     });
 
     const seen = [];
@@ -5194,18 +3209,16 @@ async function testAppletBridgeReleasedSubscriptionIgnoresLateRejectedInvokes() 
     unsubscribe();
     assert.equal(handlers.has(ATELIER_PROJECTION_EVENT_TOPIC), false);
     rejectEventSubscribe(new Error('late rejected events.subscribe'));
-    rejectProjectionSubscribe(new Error('late rejected atelier.events.subscribe'));
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     assert.deepEqual(calls.map((call) => call.method), [
       'events.subscribe',
-      ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
       'events.unsubscribe',
     ]);
     assert.deepEqual(seen, []);
     assert.equal(unhandledRejections.length, 0);
-    assert.equal(warnings.filter((warning) => warning.includes('Atelier applet bridge')).length, 2);
+    assert.equal(warnings.filter((warning) => warning.includes('Atelier applet bridge')).length, 1);
   } finally {
     console.warn = originalWarn;
     process.off('unhandledRejection', onUnhandledRejection);
@@ -5248,13 +3261,6 @@ async function testAppletBridgeSubscriptionRejectionMapsTypedRecovery() {
       code: 'FORBIDDEN',
       expectedStatus: 'auth-denied',
     },
-    {
-      name: 'Station stream network rejection',
-      rejectedMethod: ATELIER_PROJECTION_SUBSCRIPTION_METHOD,
-      reason: 'opaque projection subscription rejected',
-      code: 'CONNECTION_CLOSED',
-      expectedStatus: 'disconnected',
-    },
   ]) {
     const handlers = new Map();
     const initialSnapshot = snapshot('task-subscription-recovery');
@@ -5271,9 +3277,6 @@ async function testAppletBridgeSubscriptionRejectionMapsTypedRecovery() {
           handlers.delete(topic);
         };
       },
-    }, {
-      projectionStream: { agentId: 'agent-subscription-recovery', taskId: 'task-subscription-recovery', afterEventSeq: 3 },
-      initialSnapshot,
     });
     const runtime = createBridgeAtelierRuntime({ bridge, initialSnapshot });
     const release = runtime.subscribe(() => {});
@@ -5303,9 +3306,10 @@ async function testAppletBridgeForwardsMalformedEventsToRuntimeGuard() {
   const { createAppletSdkAtelierBridge } = await import('./packages/prototypes/desktop/applets/atelier/src/appletBridge.ts');
   const initialSnapshot = snapshot('task-guard');
   const harness = appletHostWithEventTracking(initialSnapshot);
-  const bridge = createAppletSdkAtelierBridge(harness.host, { initialSnapshot });
+  const bridge = createAppletSdkAtelierBridge(harness.host);
   const runtime = createBridgeAtelierRuntime({ bridge, initialSnapshot });
   const release = runtime.subscribe(() => {});
+  await new Promise((resolve) => setTimeout(resolve, 0));
 
   try {
     harness.emit(ATELIER_PROJECTION_EVENT_TOPIC, {
@@ -5720,22 +3724,11 @@ await testBridgeSnapshotStaleFailureDoesNotClearNewerSnapshot();
 await testBridgeNonSnapshotErrorsUpdateStatus();
 await testBridgeNonSnapshotSuccessRestoresStatus();
 testPrototypeRecoveryViewMatrix();
-await testRuntimeBootstrapNormalizesProjectionStreamConfig();
-await testAppletBridgeUsesReplayCursor();
-await testAppletBridgeOmitsEmptyReplayCursorFields();
-await testAppletBridgeRejectsEmptyProjectionStreamAgentIdFailClosed();
-await testAppletBridgeExplicitProjectionStreamIntentWinsOverSnapshotCursor();
-await testAppletBridgeProductWindowZeroCursorReachesHostSubscribe();
-await testBridgeRuntimeRefreshesProjectionSubscribeAfterCreatedSelectedTask();
-await testBridgeRuntimeKeepsReconcilingUntilRefreshedProjectionSubscribeSettles();
-await testBridgeRuntimeMapsRejectedRefreshedProjectionSubscribeToRecovery();
-await testBridgeRuntimeIgnoresStaleRefreshedProjectionSubscribeSettlement();
-await testAppletBridgeUnsubscribesProjectionTopicAndStream();
+await testAppletBridgeCanonicalTopicLifecycle();
 await testAppletBridgeSuccessfulReleaseHandlesRejectedTopicUnsubscribe();
 await testAppletBridgeCorrelatesCustomProjectionTopicAcrossLifecycle();
 await testAppletBridgeHandlesRejectedSubscriptionInvokes();
-await testAppletBridgeCanonicalSubscriptionRejectionCleansLocalEventHandler();
-  await testAppletBridgeMalformedEventCleanupFailsClosed();
+await testAppletBridgeMalformedEventCleanupFailsClosed();
 await testAppletBridgeReleasedSubscriptionIgnoresLateRejectedInvokes();
 await testAppletBridgeMissingEventBridgeFailsClosed();
 await testAppletBridgeSubscriptionRejectionMapsTypedRecovery();

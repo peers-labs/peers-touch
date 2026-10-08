@@ -30,6 +30,10 @@ import {
   HomeWorkKind,
 } from '../gen/proto/domain/agent/home_pb';
 import { usePageContext } from '../kernel/usePageContext';
+import { GoalConnectionStatus } from '../components/home/GoalConnectionStatus';
+import { GoalDraftCard } from '../components/home/GoalDraftCard';
+import { GoalProgressPanel } from '../components/home/GoalProgressPanel';
+import { GoalResultSummary } from '../components/home/GoalResultSummary';
 import {
   openHomeConversation,
   openHomeTask,
@@ -38,6 +42,7 @@ import {
   submitHomeTask,
 } from '../runtimes/homeRuntime';
 import { useHomeStore } from '../store/home';
+import { useGoalExecutionStore } from '../store/goalExecution';
 import { openAgentCreateFlow } from '../components/agent/create';
 
 const { useToken } = theme;
@@ -57,6 +62,10 @@ export function HomePage() {
   const projection = useHomeStore((state) => state.projection);
   const loading = useHomeStore((state) => state.loading);
   const error = useHomeStore((state) => state.error);
+  const connectionState = useHomeStore((state) => state.connectionState);
+  const retryable = useHomeStore((state) => state.retryable);
+  const goalExecutions = useGoalExecutionStore((state) => state.executions);
+  const goalResults = useGoalExecutionStore((state) => state.results);
   const [mode, setMode] = useState<HomeMode>('chat');
   const [draft, setDraft] = useState('');
   const [selectedAgentId, setSelectedAgentId] = useState('');
@@ -69,6 +78,16 @@ export function HomePage() {
     [projection?.pinnedAgents],
   );
   const recentWork = projection?.recentWork ?? [];
+  const legacyActiveTasks = useMemo(
+    () => projection?.activeTasks.filter((task) => !task.goalId) ?? [],
+    [projection?.activeTasks],
+  );
+  const regularBriefItems = useMemo(
+    () => projection?.briefItems.filter(
+      (item) => !item.briefId.startsWith('goal-result:'),
+    ) ?? [],
+    [projection?.briefItems],
+  );
   const firstReadyAgent = useMemo(
     () => pinnedAgents.find((agent) => {
       const readiness = projection?.readiness.find(
@@ -142,7 +161,7 @@ export function HomePage() {
     }
   };
 
-  const retryAction = (
+  const retryAction = retryable ? (
     <Button
       aria-label={t('agent.home.retry')}
       icon={<RefreshCw size={14} />}
@@ -151,7 +170,7 @@ export function HomePage() {
       size="small"
       type="text"
     />
-  );
+  ) : undefined;
 
   const openRecentWork = (work: (typeof recentWork)[number]) => {
     if (work.kind === HomeWorkKind.TASK) {
@@ -186,11 +205,14 @@ export function HomePage() {
         </Flexbox>
         <Button
           aria-label={t('agent.home.retry')}
+          disabled={connectionState === 'unauthorized'}
           icon={<RefreshCw size={15} />}
           loading={loading}
           onClick={() => void refreshHomeProjection()}
         />
       </Flexbox>
+
+      <GoalConnectionStatus />
 
       {error ? (
         <Alert
@@ -220,24 +242,42 @@ export function HomePage() {
         />
       ) : null}
 
+      <GoalDraftCard />
+
       {!projection && loading ? (
         <HomeLoading />
       ) : pinnedAgents.length === 0 ? (
-        <Card size="small">
-          <Empty description={t('agent.home.noPinnedAgents')}>
-            <Button
-              data-pt-agent-create
-              type="primary"
-              onClick={() =>
-                openAgentCreateFlow((agentName) =>
-                  navigation.navigateToAgentSurface(agentName, 'profile'),
-                )
-              }
+        <Flexbox gap={token.marginMD}>
+          <Card size="small">
+            <Empty description={t('agent.home.noPinnedAgents')}>
+              <Button
+                data-pt-agent-create
+                type="primary"
+                onClick={() =>
+                  openAgentCreateFlow((agentName) =>
+                    navigation.navigateToAgentSurface(agentName, 'profile'),
+                  )
+                }
+              >
+                {t('agent.home.createAgent')}
+              </Button>
+            </Empty>
+          </Card>
+          {goalExecutions.length || goalResults.length ? (
+            <Card
+              data-pt-home-empty-goal-runs=""
+              size="small"
+              title={t('agent.home.activeTasks')}
             >
-              {t('agent.home.createAgent')}
-            </Button>
-          </Empty>
-        </Card>
+              <GoalProgressPanel />
+            </Card>
+          ) : null}
+          {goalResults.length ? (
+            <Card size="small" title={t('agent.home.goalResults')}>
+              <GoalResultSummary />
+            </Card>
+          ) : null}
+        </Flexbox>
       ) : (
         <div
           style={{
@@ -430,9 +470,10 @@ export function HomePage() {
             </Card>
 
             <Card size="small" title={t('agent.home.activeTasks')}>
-              {projection?.activeTasks.length ? (
+              {goalExecutions.length || goalResults.length || legacyActiveTasks.length ? (
                 <Flexbox gap={12}>
-                  {projection.activeTasks.map((task) => (
+                  <GoalProgressPanel />
+                  {legacyActiveTasks.map((task) => (
                     <Flexbox key={task.taskId} gap={5}>
                       <Flexbox horizontal align="center" justify="space-between" gap={8}>
                         <Button
@@ -458,10 +499,16 @@ export function HomePage() {
               )}
             </Card>
 
+            {goalResults.length ? (
+              <Card size="small" title={t('agent.home.goalResults')}>
+                <GoalResultSummary />
+              </Card>
+            ) : null}
+
             <Card size="small" title={t('agent.home.brief')}>
-              {projection?.briefItems.length ? (
+              {regularBriefItems.length ? (
                 <Flexbox gap={10}>
-                  {projection.briefItems.slice(0, 4).map((item) => (
+                  {regularBriefItems.slice(0, 4).map((item) => (
                     <Flexbox horizontal gap={8} key={item.briefId}>
                       <CheckCircle2 color={token.colorSuccess} size={15} />
                       <Flexbox style={{ minWidth: 0 }}>
@@ -514,12 +561,20 @@ function homeTaskStatusLabel(
   t: (key: string) => string,
 ): string {
   switch (status) {
+    case HomeTaskStatus.PENDING:
+      return t('agent.home.taskPending');
     case HomeTaskStatus.RUNNING:
       return t('agent.home.taskRunning');
     case HomeTaskStatus.NEEDS_USER:
       return t('agent.home.taskNeedsUser');
+    case HomeTaskStatus.COMPLETED:
+      return t('agent.home.taskCompleted');
+    case HomeTaskStatus.FAILED:
+      return t('agent.home.taskFailed');
+    case HomeTaskStatus.CANCELLED:
+      return t('agent.home.taskCancelled');
     default:
-      return t('agent.home.taskPending');
+      return t('agent.home.taskUnavailable');
   }
 }
 
