@@ -22,6 +22,7 @@ from tooling.acceptance.core import (
     REPO_ROOT,
     RuntimeReuseContract,
     SuiteRuntimeAction,
+    SuiteRuntimeError,
     SuiteRuntimeLedger,
     load_runtime_manifest,
     require_runtime_service,
@@ -214,12 +215,12 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             cleanup_failed = any(
                 item["status"] == "failed" for item in self.cleanup
             )
-            if self.suite_runtime_ledger is not None and not cleanup_failed:
-                self.suite_runtime_ledger.record(
-                    SuiteRuntimeAction.CLEANUP_COMPLETE,
+            suite_report, suite_cleanup_error = (
+                self._finalize_suite_runtime(
+                    cleanup_failed=cleanup_failed,
                 )
-            if self.suite_runtime_ledger is not None:
-                suite_report = self.suite_runtime_ledger.report()
+            )
+            if suite_report is not None:
                 suite_report_ref = artifacts.write_json(
                     "mobile-simulator-social/ios-social-parity/"
                     "suite-runtime.json",
@@ -236,7 +237,11 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                     "proofState": suite_report["proofState"],
                     "reportDigest": suite_report["reportDigest"],
                 }
-                if suite_report["result"] != "PASS":
+                if suite_cleanup_error:
+                    result["suiteRuntime"]["cleanupError"] = (
+                        suite_cleanup_error
+                    )
+                if suite_cleanup_error or suite_report["result"] != "PASS":
                     cleanup_failed = True
 
             if cleanup_failed:
@@ -293,6 +298,22 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         stream = sys.stdout if exit_code == 0 else sys.stderr
         stream.write(f"{status}: {self.gate_id}\n")
         return exit_code
+
+    def _finalize_suite_runtime(
+        self,
+        *,
+        cleanup_failed: bool,
+    ) -> tuple[dict[str, Any] | None, str]:
+        ledger = self.suite_runtime_ledger
+        if ledger is None:
+            return None, ""
+        cleanup_error = ""
+        if not cleanup_failed:
+            try:
+                ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)
+            except SuiteRuntimeError as error:
+                cleanup_error = redact_text(str(error))
+        return ledger.report(), cleanup_error
 
     def _load_social_manifest(self) -> dict[str, Any]:
         manifest_path = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "")

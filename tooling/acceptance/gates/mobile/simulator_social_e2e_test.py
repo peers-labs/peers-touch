@@ -3,7 +3,12 @@ from __future__ import annotations
 import unittest
 from unittest.mock import Mock, patch
 
-from tooling.acceptance.core import DriverError, GateError, SuiteRuntimeAction
+from tooling.acceptance.core import (
+    DriverError,
+    GateError,
+    SuiteRuntimeAction,
+    SuiteRuntimeLedger,
+)
 from tooling.acceptance.gates.mobile.simulator_social_e2e import (
     ENVIRONMENT_ID,
     IOS_SOCIAL_ENVIRONMENT_ID,
@@ -240,6 +245,41 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertEqual(
             SimulatorSocialGate("ios-social-parity").environment_id,
             IOS_SOCIAL_ENVIRONMENT_ID,
+        )
+
+    def test_active_scenario_cleanup_preserves_failed_suite_report(self) -> None:
+        gate = SimulatorSocialGate("ios-social-parity")
+        ledger = SuiteRuntimeLedger(
+            IOS_SOCIAL_RUNTIME_REUSE,
+            suite_runtime_id="mps-09-test",
+            source_digest="a" * 40,
+            fixture_epoch="fixture-test",
+        )
+        ledger.record(
+            SuiteRuntimeAction.PROVISION,
+            resource_id="mobile-social-ios-simulator:test",
+        )
+        ledger.record(
+            SuiteRuntimeAction.SCENARIO_START,
+            scenario_id=IOS_SOCIAL_PARITY_SCENARIOS[0],
+        )
+        gate.suite_runtime_ledger = ledger
+
+        report, cleanup_error = gate._finalize_suite_runtime(
+            cleanup_failed=False,
+        )
+
+        self.assertIsNotNone(report)
+        assert report is not None
+        self.assertEqual(report["result"], "FAIL")
+        self.assertEqual(
+            report["events"][-1]["action"],
+            SuiteRuntimeAction.SCENARIO_START.value,
+        )
+        self.assertIn("SUITE_RUNTIME_CLEANUP_INVALID", cleanup_error)
+        self.assertEqual(
+            report["findings"][-1]["code"],
+            "SUITE_CLEANUP_INCOMPLETE",
         )
 
     def test_ios_social_parity_records_each_scenario_once(self) -> None:
