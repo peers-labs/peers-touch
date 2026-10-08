@@ -134,12 +134,23 @@ return {
 START_RESUME_SCRIPT = """
 const root = window.__PEERS_MOBILE_ACCEPTANCE__;
 if (!root || typeof root['lifecycle.resume'] !== 'function') return false;
+window.__PEERS_MOBILE_RESUME_DONE__ = false;
+window.__PEERS_MOBILE_RESUME_ERROR__ = null;
 window.__PEERS_MOBILE_RESUME__ = Promise.resolve(
   root['lifecycle.resume']({}),
+).then(() => {
+  window.__PEERS_MOBILE_RESUME_DONE__ = true;
 ).catch((error) => {
   window.__PEERS_MOBILE_RESUME_ERROR__ = String(error && error.message || error);
+  window.__PEERS_MOBILE_RESUME_DONE__ = true;
 });
 return true;
+"""
+READ_RESUME_SCRIPT = """
+return {
+  done: window.__PEERS_MOBILE_RESUME_DONE__ === true,
+  error: window.__PEERS_MOBILE_RESUME_ERROR__ || null,
+};
 """
 SURFACE_AUDIT_SCRIPT = """
 const selector = arguments[0];
@@ -1374,11 +1385,7 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
                     )
                 )
                 if entry["entryAction"] == "fixture-deferred-module":
-                    resumed = session.call_action("lifecycle.resume")
-                    if not isinstance(resumed, Mapping):
-                        raise GateError(
-                            "Mobile shell did not resume after degraded capture"
-                        )
+                    self._wait_for_resume(session)
         self._configure_cell(session, "portrait-normal")
         artifacts.write_json(
             "mobile-whole-product/source-runtime.json",
@@ -1610,6 +1617,24 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
                 return
             time.sleep(0.2)
         raise GateError(f"Mobile shell surface did not appear: {selector}")
+
+    @staticmethod
+    def _wait_for_resume(
+        session: Any,
+        timeout_seconds: float = 10.0,
+    ) -> None:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            result = session.execute_script(READ_RESUME_SCRIPT)
+            if isinstance(result, Mapping):
+                if result.get("error"):
+                    raise GateError(
+                        f"Mobile shell resume failed: {result['error']}"
+                    )
+                if result.get("done") is True:
+                    return
+            time.sleep(0.2)
+        raise GateError("Mobile shell did not resume after degraded capture")
 
     def _capture_surface(
         self,
