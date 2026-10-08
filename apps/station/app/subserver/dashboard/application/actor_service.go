@@ -15,6 +15,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	touchauth "github.com/peers-labs/peers-touch/station/frame/touch/auth"
 	touchdb "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 )
 
@@ -120,14 +121,11 @@ func (s *ActorService) ListActivePeersSessions(ctx context.Context, limit int) (
 	return s.actorRepo.ListActivePeersSessions(ctx, limit)
 }
 
-// ResetActorPassword resets an actor's password (admin operation).
+// ResetActorPassword resets an actor's password (admin operation) through the
+// single canonical actor auth service, so Dashboard and the real login path
+// always hash and read the same password_hash column.
 func (s *ActorService) ResetActorPassword(ctx context.Context, actorPTID string, newPassword string) error {
-	hash, err := domain.HashPassword(newPassword)
-	if err != nil {
-		return fmt.Errorf("failed to hash password: %w", err)
-	}
-
-	if err := s.actorRepo.ResetPassword(ctx, actorPTID, hash); err != nil {
+	if err := touchauth.ResetActorPassword(ctx, actorPTID, newPassword); err != nil {
 		return err
 	}
 

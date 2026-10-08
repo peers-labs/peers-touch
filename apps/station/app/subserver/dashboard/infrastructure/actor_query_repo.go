@@ -25,7 +25,6 @@ type ActorQueryRepository interface {
 	CountPostsByAuthor(ctx context.Context, actorPTID string) (int64, error)
 	CountFollowers(ctx context.Context, actorPTID string) (int64, error)
 	CountFollowing(ctx context.Context, actorPTID string) (int64, error)
-	ResetPassword(ctx context.Context, actorPTID, passwordHash string) error
 	ListActorSessions(ctx context.Context, actorPTID string) ([]domain.ActorSessionInfo, error)
 	RevokeActorSession(ctx context.Context, actorPTID, sessionID string) error
 
@@ -156,21 +155,6 @@ func (r *actorQueryRepository) CountFollowing(ctx context.Context, actorPTID str
 	var count int64
 	err = r.db.WithContext(ctx).Model(&touchdb.Follow{}).Where("follower_id = ?", actorID).Count(&count).Error
 	return count, err
-}
-
-func (r *actorQueryRepository) ResetPassword(ctx context.Context, actorPTID, passwordHash string) error {
-	actorID, err := r.resolveActorID(ctx, actorPTID)
-	if err != nil {
-		return err
-	}
-	result := r.db.WithContext(ctx).Model(&touchdb.Actor{}).Where("id = ?", actorID).Update("password_hash", passwordHash)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
 }
 
 func (r *actorQueryRepository) ListActorSessions(ctx context.Context, actorPTID string) ([]domain.ActorSessionInfo, error) {
