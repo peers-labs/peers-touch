@@ -2169,11 +2169,16 @@
     box-shadow: 0 -12px 36px rgba(12, 18, 32, 0.16);
   }
   .mp-moment-composer-header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
     display: flex;
+    flex: 0 0 auto;
     min-height: 44px;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    background: #fff;
   }
   .mp-moment-composer-header h2 {
     margin: 0;

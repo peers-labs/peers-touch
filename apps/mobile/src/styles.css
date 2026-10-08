@@ -4079,11 +4079,16 @@ select,
 
 .moments-composer-header,
 .moments-fixture-sheet-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
+  flex: 0 0 auto;
   min-height: 44px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  background: var(--brand-surface);
 }
 
 .moments-composer-header h2,
@@ -4559,7 +4564,7 @@ select,
 @media (orientation: landscape) {
   .moments-composer-backdrop .moments-composer-card,
   .moments-fixture-composer {
-    max-height: 100dvh;
+    max-height: calc(100dvh - var(--safe-area-top));
     padding-bottom: calc(var(--safe-area-bottom) + 10px);
   }
 
