@@ -1735,6 +1735,113 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
 
 
 class ParentAndroidInstallationAdapterTests(unittest.TestCase):
+    def test_adapter_installs_main_apk_without_streaming_and_confirms_coloros(
+        self,
+    ) -> None:
+        commands: list[tuple[str, ...]] = []
+        confirmation = threading.Event()
+        dialog_visible = threading.Event()
+
+        class Executor:
+            @staticmethod
+            def run(
+                command: tuple[str, ...],
+                *,
+                cwd: Path,
+                env: Mapping[str, str],
+                timeout: float,
+            ) -> CommandResult:
+                del cwd, env, timeout
+                commands.append(command)
+                if command[-4:] == (
+                    "install",
+                    "-r",
+                    "--no-streaming",
+                    "/attested/mobile.apk",
+                ):
+                    dialog_visible.set()
+                    confirmation.wait(timeout=2)
+                    return CommandResult(
+                        0 if confirmation.is_set() else 1,
+                        "Success\n" if confirmation.is_set() else "",
+                    )
+                if command[-4:-1] == (
+                    "shell",
+                    "uiautomator",
+                    "dump",
+                ):
+                    return CommandResult(
+                        0 if dialog_visible.is_set() else 1
+                    )
+                if command[-3:] == (
+                    "exec-out",
+                    "cat",
+                    "/sdcard/peers-touch-mobile-install.xml",
+                ):
+                    return CommandResult(
+                        0,
+                        (
+                            '<hierarchy><node text="Peers" '
+                            'resource-id="com.oplus.appdetail:id/app_name" '
+                            'package="com.oplus.appdetail"/>'
+                            '<node text="Continue install" '
+                            'resource-id="com.oplus.appdetail:id/btn_left" '
+                            'enabled="true" clickable="true" '
+                            'package="com.oplus.appdetail" '
+                            'bounds="[10,20][110,70]"/></hierarchy>'
+                        ),
+                    )
+                if command[-4:-1] == ("shell", "rm", "-f"):
+                    return CommandResult(0)
+                if command[-4:-2] == ("input", "tap"):
+                    confirmation.set()
+                    dialog_visible.clear()
+                    return CommandResult(0)
+                return CommandResult(1, stderr="unexpected command")
+
+        class Session:
+            _device_lease = {"opaque": True}
+            device_descriptor = SimpleNamespace(
+                installation=SimpleNamespace(
+                    user_confirmation_on_install=True,
+                )
+            )
+
+            @staticmethod
+            def _with_physical_device(
+                _lease: Mapping[str, object],
+                operation,
+                **_kwargs: object,
+            ):
+                return operation(SimpleNamespace(identifier="process-local"))
+
+            @staticmethod
+            def _request(*_args: object, **_kwargs: object) -> None:
+                raise AssertionError("install must not use Appium")
+
+        adapter = _ParentAndroidInstallationAdapter(
+            Session(),  # type: ignore[arg-type]
+            deadline_monotonic=time.monotonic() + 5,
+            cancellation=threading.Event(),
+            executor=Executor(),
+        )
+
+        adapter.install(Path("/attested/mobile.apk"))
+
+        self.assertTrue(confirmation.is_set())
+        self.assertIn(
+            (
+                "adb",
+                "-s",
+                "process-local",
+                "install",
+                "-r",
+                "--no-streaming",
+                "/attested/mobile.apk",
+            ),
+            commands,
+        )
+
     def test_adapter_reads_only_base_apk_digest_from_opaque_device_handle(
         self,
     ) -> None:
