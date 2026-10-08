@@ -679,8 +679,11 @@ async function commitStandardizedFunctionalPass(scope, overrides = {}) {
     },
     {
       ...scope.dependencies,
-      spawnDevelopmentRunner(_command, arguments_) {
-        assert.equal(_command, 'python3');
+      spawnDevelopmentRunner(_command, arguments_, spawnOptions) {
+        assert.equal(
+          _command,
+          overrides.expectedRunnerPython ?? 'python3',
+        );
         assert.notEqual(arguments_.indexOf('--execution-plan'), -1);
         assert.equal(arguments_.includes('--gate'), false);
         assert.equal(arguments_.includes('--result-file'), false);
@@ -690,7 +693,11 @@ async function commitStandardizedFunctionalPass(scope, overrides = {}) {
           arguments_[outputIndex + 1],
           `${JSON.stringify(aggregateManifestRef)}\n`,
         );
-        overrides.beforeRunnerReturn?.(arguments_);
+        overrides.beforeRunnerReturn?.(
+          arguments_,
+          spawnOptions,
+          _command,
+        );
         return { status: 0, stdout: '', stderr: '' };
       },
       ...(overrides.dependencies ?? {}),
@@ -1827,6 +1834,52 @@ test('functional result fails closed when the workspace Acceptance virtual envir
         }),
       (error) => error?.code === 'SESSION_RUNTIME_REQUIRED',
     );
+  } finally {
+    scope.close();
+  }
+});
+
+test('functional result pins Gate child Python resolution to the workspace virtual environment', async () => {
+  const scope = fixture({
+    workClass: 'product-behavior',
+    runtimeClass: 'native-mobile',
+    deployProfiles: ['dwf-local'],
+    gates: ['chat-gate'],
+  });
+  const runnerPython = path.join(
+    scope.home,
+    '.peers-touch',
+    'dev',
+    'workspaces',
+    WORKSPACE_ID,
+    'runtime',
+    'acceptance-gate-venv',
+    process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
+  );
+  try {
+    await start(scope);
+    await transition(scope, 'IMPLEMENTING');
+    await transition(scope, 'FOCUSED_CHECKING');
+    await transition(scope, 'FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK', 'PASS'),
+    });
+    await advanceRuntimeToFunctionalRunning(scope);
+    await commitStandardizedFunctionalPass(scope, {
+      manifest: { clients: [{ runtime: 'tauri-android' }] },
+      expectedRunnerPython: runnerPython,
+      dependencies: {
+        resolveDevelopmentRunnerPython() {
+          return runnerPython;
+        },
+      },
+      beforeRunnerReturn(_arguments, spawnOptions, command) {
+        assert.equal(command, runnerPython);
+        assert.equal(
+          spawnOptions.env.PATH.split(path.delimiter)[0],
+          path.dirname(runnerPython),
+        );
+      },
+    });
   } finally {
     scope.close();
   }

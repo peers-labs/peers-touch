@@ -1369,22 +1369,29 @@ function runDevelopmentClosure(
       workspaceRoot,
       workspaceId: plan.executionBinding.workspaceId,
     });
+    const runnerEnvironment = {
+      ...process.env,
+      ...(options.home
+        ? {
+            HOME: options.home,
+            PT_MACHINE_DEV_ROOT: path.join(
+              options.home,
+              '.peers-touch',
+              'dev',
+            ),
+          }
+        : {}),
+    };
+    if (path.isAbsolute(runnerPython)) {
+      const runnerBin = path.dirname(runnerPython);
+      runnerEnvironment.PATH = runnerEnvironment.PATH
+        ? `${runnerBin}${path.delimiter}${runnerEnvironment.PATH}`
+        : runnerBin;
+    }
     const completed = spawnDevelopmentRunner(runnerPython, arguments_, {
       cwd: workspaceRoot,
       encoding: 'utf8',
-      env: {
-        ...process.env,
-        ...(options.home
-          ? {
-              HOME: options.home,
-              PT_MACHINE_DEV_ROOT: path.join(
-                options.home,
-                '.peers-touch',
-                'dev',
-              ),
-            }
-          : {}),
-      },
+      env: runnerEnvironment,
       maxBuffer: 16 * 1024 * 1024,
     });
     if (completed.error || completed.status !== 0) {
