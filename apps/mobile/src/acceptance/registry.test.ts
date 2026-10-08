@@ -118,6 +118,7 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('station.select');
     expect(actionNames).toContain('entry.fixture');
     expect(actionNames).toContain('recovery.fixture');
+    expect(actionNames).toContain('chat.fixture');
     expect(actionNames).toContain('oauth.replayHandle');
     expect(actionNames).toContain('oauth.negativeCallback');
     expect(actionNames).toContain('lifecycle.snapshot');
@@ -198,6 +199,34 @@ describe('Mobile Acceptance Harness', () => {
       surfaceId: null,
     })).resolves.toMatchObject({
       surfaceId: null,
+    });
+  });
+
+  it('projects only declared Chat surfaces through production navigation', async () => {
+    const harness = createMobileAcceptanceHarness();
+
+    await expect(harness['chat.fixture']({
+      surfaceId: 'chat.group-management',
+    })).resolves.toMatchObject({
+      surfaceId: 'chat.group-management',
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:chat',
+      detailKeys: ['detail:group-conversation:acceptance-group'],
+    });
+    await expect(harness['chat.fixture']({
+      surfaceId: 'chat.not-real',
+    } as never)).rejects.toThrow(
+      'acceptance.mobile.invalidInput:chat.fixture.surfaceId',
+    );
+    await expect(harness['chat.fixture']({
+      surfaceId: null,
+    })).resolves.toMatchObject({
+      surfaceId: null,
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:chat',
+      detailKeys: [],
     });
   });
 

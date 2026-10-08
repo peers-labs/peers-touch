@@ -176,6 +176,11 @@ import {
   setEntrySurfaceFixture,
 } from './entrySurfaceFixture';
 import {
+  chatSurfaceFixtureRouteKind,
+  isChatSurfaceFixtureId,
+  setChatSurfaceFixture,
+} from './chatSurfaceFixture';
+import {
   isRecoverySurfaceFixtureId,
   setRecoverySurfaceFixture,
 } from './recoverySurfaceFixture';
@@ -340,6 +345,33 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       );
     }
     return setRecoverySurfaceFixture(surfaceId);
+  },
+
+  'chat.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isChatSurfaceFixtureId(surfaceId)) {
+      throw new Error('acceptance.mobile.invalidInput:chat.fixture.surfaceId');
+    }
+    const routeKind = chatSurfaceFixtureRouteKind(surfaceId);
+    applyMobileNavigationIntent({
+      kind: 'primary',
+      routeId: 'tab:chat',
+    });
+    if (routeKind !== 'list') {
+      applyMobileNavigationIntent({
+        kind: 'detail.push',
+        route: routeKind === 'group'
+          ? {
+              routeId: 'detail:group-conversation',
+              groupUlid: 'acceptance-group',
+            }
+          : {
+              routeId: 'detail:chat-conversation',
+              sessionUlid: 'acceptance-direct',
+            },
+      });
+    }
+    return setChatSurfaceFixture(surfaceId);
   },
 
   'access.submit': async (input) => {
@@ -1499,6 +1531,8 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   cleanup: async () => {
     setEntrySurfaceFixture(null);
+    setRecoverySurfaceFixture(null);
+    setChatSurfaceFixture(null);
     let oauthPurge: Awaited<ReturnType<typeof purgeNativeOAuth>> | null = null;
     await getMobileLifecycleKernel().transitionScope(
       'logout',

@@ -40,7 +40,7 @@
     "minimumTouchTargetCssPx": 44,
     "forbiddenVisibleTextPatterns": [
       "^ptid:v[0-9]+:",
-      "^(mobile|common)\\.[A-Za-z0-9_.-]+$"
+      "^(mobile|common|chat)\\.[A-Za-z0-9_.-]+$"
     ],
     "forbiddenBlockingSelectors": [
       "[data-acceptance-id=\"recovery-deferred-capability\"][data-blocks-unrelated-content=\"true\"]"

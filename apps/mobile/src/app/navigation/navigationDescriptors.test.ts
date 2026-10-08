@@ -34,6 +34,20 @@ describe('Mobile navigation descriptor lifetimes', () => {
     ))).toBe(true);
   });
 
+  it('binds Group routes to the registered Messaging runtime owner', () => {
+    const groupRoutes = [...detailDescriptors, ...overlayDescriptors].filter(
+      (descriptor) => descriptor.routeId.includes('group'),
+    );
+
+    expect(groupRoutes).toHaveLength(2);
+    expect(groupRoutes.every(
+      (descriptor) => descriptor.ownerRuntimeId === 'messaging',
+    )).toBe(true);
+    expect([...detailDescriptors, ...overlayDescriptors].some(
+      (descriptor) => descriptor.ownerRuntimeId === 'group',
+    )).toBe(false);
+  });
+
   it('owns primary and detail route identity independently of business stores', () => {
     useMobileNavigationStore.getState().navigatePrimary('tab:contacts');
     useMobileNavigationStore.getState().pushDetail({

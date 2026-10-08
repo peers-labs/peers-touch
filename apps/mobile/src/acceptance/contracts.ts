@@ -36,6 +36,10 @@ import type {
   EntrySurfaceFixtureSnapshot,
 } from './entrySurfaceFixture';
 import type {
+  ChatSurfaceFixtureId,
+  ChatSurfaceFixtureSnapshot,
+} from './chatSurfaceFixture';
+import type {
   RecoverySurfaceFixtureId,
   RecoverySurfaceFixtureSnapshot,
 } from './recoverySurfaceFixture';
@@ -48,6 +52,7 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'station.select',
   'entry.fixture',
   'recovery.fixture',
+  'chat.fixture',
   'access.submit',
   'oauth.start',
   'oauth.status',
@@ -160,6 +165,10 @@ export interface EntrySurfaceFixtureInput {
 
 export interface RecoverySurfaceFixtureInput {
   surfaceId: RecoverySurfaceFixtureId | null;
+}
+
+export interface ChatSurfaceFixtureInput {
+  surfaceId: ChatSurfaceFixtureId | null;
 }
 
 export interface PublicStationEntry {
@@ -1179,6 +1188,10 @@ export interface MobileAcceptanceActionContract {
   'recovery.fixture': {
     input: RecoverySurfaceFixtureInput;
     output: RecoverySurfaceFixtureSnapshot;
+  };
+  'chat.fixture': {
+    input: ChatSurfaceFixtureInput;
+    output: ChatSurfaceFixtureSnapshot;
   };
   'access.submit': {
     input: AccessSubmitInput;
