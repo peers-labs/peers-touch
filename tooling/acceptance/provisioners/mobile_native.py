@@ -318,6 +318,9 @@ MOBILE_NATIVE_APPIUM_REQUEST_TIMEOUT_SECONDS = 660.0
 MOBILE_NATIVE_APPIUM_STOP_REQUEST_TIMEOUT_SECONDS = 10.0
 MOBILE_NATIVE_EPHEMERAL_REQUEST_TIMEOUT_SECONDS = 660.0
 MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS = 600_000
+MOBILE_NATIVE_ANDROID_NEW_COMMAND_TIMEOUT_SECONDS = (
+    MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS // 1000 + 60
+)
 MOBILE_CAPTURE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,95}$")
 MOBILE_CHANNEL_FORBIDDEN_FIELDS = frozenset(
     {
@@ -4806,7 +4809,11 @@ class _ParentAppiumSession:
             "platformName": "iOS" if self.platform == "ios" else "Android",
             "appium:automationName": self.automation_name,
             "appium:autoWebview": False,
-            "appium:newCommandTimeout": 180,
+            "appium:newCommandTimeout": (
+                MOBILE_NATIVE_ANDROID_NEW_COMMAND_TIMEOUT_SECONDS
+                if self.platform == "android"
+                else 180
+            ),
         }
         if self.auto_accept_alerts:
             capability = (
