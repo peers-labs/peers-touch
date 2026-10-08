@@ -558,16 +558,22 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
 
         self.assertEqual(_validate_lifecycle_readiness(snapshot), snapshot)
 
-    def test_surface_audit_is_scoped_and_rejects_global_degradation(self) -> None:
+    def test_surface_audit_uses_shell_controls_only_for_scoped_degradation(
+        self,
+    ) -> None:
         self.assertIn(
-            "root.querySelectorAll(interactiveSelector)",
+            "const controlScope = allowDegradedNotice ? document.body : root;",
             SURFACE_AUDIT_SCRIPT,
         )
-        self.assertIn("root.querySelectorAll('*')", SURFACE_AUDIT_SCRIPT)
+        self.assertIn(
+            "controlScope.querySelectorAll(interactiveSelector)",
+            SURFACE_AUDIT_SCRIPT,
+        )
         self.assertNotIn(
             "document.querySelectorAll(interactiveSelector)",
             SURFACE_AUDIT_SCRIPT,
         )
+        self.assertIn("root.querySelectorAll('*')", SURFACE_AUDIT_SCRIPT)
         self.assertIn(
             '[data-product-surface="shell.degraded-module-notice"]',
             SURFACE_AUDIT_SCRIPT,

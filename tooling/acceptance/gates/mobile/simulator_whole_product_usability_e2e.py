@@ -205,7 +205,8 @@ if (!root || !visible(root)) return {found: false};
 const rootRect = root.getBoundingClientRect();
 const interactiveSelector =
   'button,input,select,textarea,a[href],[role="button"],[tabindex]';
-const interactive = Array.from(root.querySelectorAll(interactiveSelector))
+const controlScope = allowDegradedNotice ? document.body : root;
+const interactive = Array.from(controlScope.querySelectorAll(interactiveSelector))
   .filter(visible)
   .filter((element) => element.getAttribute('tabindex') !== '-1');
 const controls = interactive.map((element) => {
