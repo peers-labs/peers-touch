@@ -8,6 +8,8 @@ from unittest.mock import patch
 from tooling.acceptance.core import (
     EnvironmentContract,
     EphemeralCapabilityBlocked,
+    SuiteRuntimeAction,
+    SuiteRuntimeLedger,
 )
 from tooling.acceptance.gates.mobile.android_social_e2e import (
     CLIENT_ID,
@@ -73,6 +75,41 @@ class AndroidSocialGateTests(unittest.TestCase):
         self.assertEqual(RUNTIME_REUSE.max_client_launches, 3)
         self.assertGreaterEqual(RUNTIME_REUSE.min_warm_reuse_rate, 0.8)
         self.assertFalse(RUNTIME_REUSE.allow_client_replacement)
+
+    def test_active_scenario_cleanup_preserves_failed_suite_report(self) -> None:
+        gate = AndroidSocialGate()
+        ledger = SuiteRuntimeLedger(
+            RUNTIME_REUSE,
+            suite_runtime_id="mps-11a-test",
+            source_digest="a" * 40,
+            fixture_epoch="fixture-test",
+        )
+        ledger.record(
+            SuiteRuntimeAction.PROVISION,
+            resource_id="mobile-android-physical:test",
+        )
+        ledger.record(
+            SuiteRuntimeAction.SCENARIO_START,
+            scenario_id=SCENARIO_IDS[0],
+        )
+        gate.suite_runtime_ledger = ledger
+
+        report, cleanup_error = gate._finalize_suite_runtime(
+            cleanup_failed=False,
+        )
+
+        self.assertIsNotNone(report)
+        assert report is not None
+        self.assertEqual(report["result"], "FAIL")
+        self.assertEqual(
+            report["events"][-1]["action"],
+            SuiteRuntimeAction.SCENARIO_START.value,
+        )
+        self.assertIn("SUITE_RUNTIME_CLEANUP_INVALID", cleanup_error)
+        self.assertEqual(
+            report["findings"][-1]["code"],
+            "SUITE_CLEANUP_INCOMPLETE",
+        )
 
     def test_gate_claim_is_physical_android_and_scope_limited(self) -> None:
         result = AndroidSocialGate()._result_base("PASS")
