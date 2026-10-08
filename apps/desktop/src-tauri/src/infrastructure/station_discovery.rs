@@ -95,7 +95,7 @@ pub fn discover_station_input(input: &str) -> Result<VerifiedEndpoint, StationDi
                 false,
             )
         })?;
-        client = client.add_root_certificate(certificate);
+        client = client.use_rustls_tls().add_root_certificate(certificate);
     }
     let response = client
         .build()

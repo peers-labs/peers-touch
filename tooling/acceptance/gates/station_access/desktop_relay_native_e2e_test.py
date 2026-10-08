@@ -33,6 +33,7 @@ class DesktopRelayNativeGateTest(unittest.TestCase):
         combined = discovery + transport + trust
 
         self.assertIn("PT_ACCEPTANCE_RELAY_CA_DER_B64", trust)
+        self.assertIn("use_rustls_tls", discovery)
         self.assertIn("add_root_certificate", discovery)
         self.assertIn("RootCertStore::empty()", transport)
         self.assertIn("client_tls_with_config", transport)
