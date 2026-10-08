@@ -30,6 +30,9 @@ ENVIRONMENT_ID = "mobile-social-simulator"
 CLIENT_ID = "sim-ios"
 STATION_SERVICE_ID = "station-primary"
 RELAY_SERVICE_ID = "relay"
+REQUIRED_BUSINESS_RUNTIMES = frozenset(
+    {"messaging", "chat-storage", "command", "social", "group"}
+)
 
 
 class MobileRelayNativeGate(AcceptanceGate):
@@ -197,6 +200,8 @@ class MobileRelayNativeGate(AcceptanceGate):
         actor_ptid = self._required_text(session.get("actorPtid"), "actor PTID")
         initial_scope = self._scope(binding)
         self._assert_session_scope(initial_scope, station_peer_id, actor_ptid)
+        self._wait_business_runtimes(binding, "direct-login")
+        self._read_profile(binding, actor_ptid, "direct-login")
 
         direct = self._route_snapshot(binding)
         direct_entry, direct_route = self._active_route(direct, station_peer_id)
@@ -236,12 +241,8 @@ class MobileRelayNativeGate(AcceptanceGate):
         ) != lifecycle_generation:
             raise GateError("Same-Station Relay activation changed lifecycle generation")
         self._assert_session_scope(self._scope(binding), station_peer_id, actor_ptid)
-        profile = self._mapping(
-            binding.call_action(CLIENT_ID, "settings.profile.read"),
-            "Profile over Relay",
-        )
-        if profile.get("actorPtid") != actor_ptid:
-            raise GateError("Relay business read changed actor identity")
+        self._wait_business_runtimes(binding, "relay-activation")
+        self._read_profile(binding, actor_ptid, "relay-activation")
         relay_binding = self._mapping(
             added.get("binding"),
             "Relay binding",
@@ -260,11 +261,13 @@ class MobileRelayNativeGate(AcceptanceGate):
         restarted = binding.call_action(CLIENT_ID, "lifecycle.restart")
         if restarted != {"requested": True, "scope": "webview"}:
             raise GateError("Mobile lifecycle.restart response is invalid")
+        self._wait_business_runtimes(binding, "relay-restart")
         restored_scope = self._wait_scope(
             binding,
             lambda scope: scope.get("activeActorPtid") == actor_ptid,
         )
         self._assert_session_scope(restored_scope, station_peer_id, actor_ptid)
+        self._read_profile(binding, actor_ptid, "relay-restart")
         restored = self._route_snapshot(binding)
         restored_entry, restored_route = self._active_route(
             restored,
@@ -292,6 +295,7 @@ class MobileRelayNativeGate(AcceptanceGate):
         if direct_route.get("routeType") != "direct":
             raise GateError("Explicit route selection did not activate Direct")
         self._assert_session_scope(self._scope(binding), station_peer_id, actor_ptid)
+        self._read_profile(binding, actor_ptid, "direct-selection")
 
         relay_selected = binding.activate_station_route(CLIENT_ID, "relay")
         if not isinstance(relay_selected.get("uiEvidence"), Mapping):
@@ -309,6 +313,7 @@ class MobileRelayNativeGate(AcceptanceGate):
             raise GateError("Route switching changed Station lifecycle generation")
         final_scope = self._scope(binding)
         self._assert_session_scope(final_scope, station_peer_id, actor_ptid)
+        self._read_profile(binding, actor_ptid, "relay-selection")
         self._record(
             "route-switch-preserved-session",
             directRouteId=direct_route_id,
@@ -329,6 +334,7 @@ class MobileRelayNativeGate(AcceptanceGate):
             "sessionPreserved": True,
             "restartRecovered": True,
             "businessReadOverRelay": True,
+            "businessRuntimeContinuity": True,
             "observedScope": [
                 "signed Relay discovery and Station route attestation",
                 "Station-owned inner TLS identity over Relay",
@@ -355,6 +361,55 @@ class MobileRelayNativeGate(AcceptanceGate):
             binding.call_action(CLIENT_ID, "lifecycle.scope.read"),
             "Mobile lifecycle scope",
         )
+
+    def _wait_business_runtimes(
+        self,
+        binding: MobileSimulatorRuntimeBinding,
+        checkpoint: str,
+    ) -> dict[str, Any]:
+        snapshot = self._mapping(
+            binding.call_action(CLIENT_ID, "lifecycle.waitReady", {}),
+            f"{checkpoint} runtime readiness",
+        )
+        runtimes = snapshot.get("runtimes")
+        if snapshot.get("phase") != "ACTIVE" or not isinstance(runtimes, list):
+            raise GateError(f"{checkpoint} Mobile runtime graph is not active")
+        statuses = {
+            runtime.get("id"): runtime.get("status")
+            for runtime in runtimes
+            if isinstance(runtime, Mapping)
+        }
+        unavailable = sorted(
+            runtime_id
+            for runtime_id in REQUIRED_BUSINESS_RUNTIMES
+            if statuses.get(runtime_id) != "ready"
+        )
+        if unavailable:
+            raise GateError(
+                f"{checkpoint} Mobile business runtimes are unavailable: "
+                + ",".join(unavailable)
+            )
+        self._record(
+            "business-runtimes-ready",
+            checkpoint=checkpoint,
+            runtimeIds=sorted(REQUIRED_BUSINESS_RUNTIMES),
+        )
+        return snapshot
+
+    def _read_profile(
+        self,
+        binding: MobileSimulatorRuntimeBinding,
+        actor_ptid: str,
+        checkpoint: str,
+    ) -> dict[str, Any]:
+        profile = self._mapping(
+            binding.call_action(CLIENT_ID, "settings.profile.read"),
+            f"{checkpoint} profile",
+        )
+        if profile.get("actorPtid") != actor_ptid:
+            raise GateError(f"{checkpoint} business read changed actor identity")
+        self._record("business-profile-read", checkpoint=checkpoint)
+        return profile
 
     def _wait_scope(
         self,

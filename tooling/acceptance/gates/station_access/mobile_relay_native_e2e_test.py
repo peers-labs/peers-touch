@@ -13,6 +13,9 @@ class FakeBinding:
     def __init__(self) -> None:
         self.route_type = "direct"
         self.route_revision = 1
+        self.profile_routes: list[str] = []
+        self.action_calls: list[str] = []
+        self.unavailable_runtime: str | None = None
 
     def create_bound_session(self, client_id: str) -> SimpleNamespace:
         return SimpleNamespace(
@@ -79,12 +82,35 @@ class FakeBinding:
         }
 
     def call_action(self, client_id: str, action: str, payload=None):
+        self.action_calls.append(action)
         if action == "lifecycle.scope.read":
             return {
                 "activeStationPeerId": "station-a",
                 "activeActorPtid": "ptid:alice",
             }
+        if action == "lifecycle.waitReady":
+            return {
+                "phase": "ACTIVE",
+                "runtimes": [
+                    {
+                        "id": runtime_id,
+                        "status": (
+                            "failed"
+                            if runtime_id == self.unavailable_runtime
+                            else "ready"
+                        ),
+                    }
+                    for runtime_id in (
+                        "messaging",
+                        "chat-storage",
+                        "command",
+                        "social",
+                        "group",
+                    )
+                ],
+            }
         if action == "settings.profile.read":
+            self.profile_routes.append(self.route_type)
             return {"actorPtid": "ptid:alice"}
         if action == "lifecycle.restart":
             return {"requested": True, "scope": "webview"}
@@ -122,12 +148,35 @@ class MobileRelayNativeGateTests(unittest.TestCase):
         gate.cleanup = []
         gate.client_active = False
 
-        result = gate._run_journey(FakeBinding())
+        binding = FakeBinding()
+        result = gate._run_journey(binding)
 
         self.assertTrue(result["sessionPreserved"])
         self.assertTrue(result["restartRecovered"])
+        self.assertTrue(result["businessRuntimeContinuity"])
         self.assertEqual(result["lifecycleGeneration"], 1)
         self.assertGreater(result["routeRevision"], 1)
+        self.assertEqual(
+            binding.profile_routes,
+            ["direct", "relay", "relay", "direct", "relay"],
+        )
+        self.assertEqual(
+            binding.action_calls.count("lifecycle.waitReady"),
+            3,
+        )
+
+    def test_business_runtime_readiness_fails_closed(self) -> None:
+        gate = MobileRelayNativeGate.__new__(MobileRelayNativeGate)
+        AcceptanceGate.__init__(gate)
+        gate.events = []
+        binding = FakeBinding()
+        binding.unavailable_runtime = "social"
+
+        with self.assertRaisesRegex(
+            Exception,
+            "Mobile business runtimes are unavailable: social",
+        ):
+            gate._wait_business_runtimes(binding, "direct-login")
 
     def test_active_route_rejects_ambiguous_registry(self) -> None:
         with self.assertRaisesRegex(Exception, "ambiguous"):
