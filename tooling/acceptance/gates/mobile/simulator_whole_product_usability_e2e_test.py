@@ -23,6 +23,7 @@ from tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e impor
     CONTRACT_ID,
     GATE_ID,
     READ_RESUME_SCRIPT,
+    START_RESUME_SCRIPT,
     TEXT_SIZE_SCRIPT,
     VISUAL_REVIEW_GATE_ID,
     SimulatorWholeProductUsabilityGate,
@@ -469,6 +470,11 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertEqual(degraded["kind"], "system")
         self.assertEqual(session.lifecycle_actions, ["lifecycle.suspend"])
         gate._wait_for_resume(session)
+
+    def test_resume_script_avoids_webkit_incompatible_trailing_argument_comma(
+        self,
+    ) -> None:
+        self.assertNotIn("root['lifecycle.resume']({}),", START_RESUME_SCRIPT)
 
     def test_shell_product_selectors_are_present_in_production(self) -> None:
         shell = (
