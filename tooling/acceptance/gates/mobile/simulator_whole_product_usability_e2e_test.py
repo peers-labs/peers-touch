@@ -137,19 +137,25 @@ class _ShellDriverSession:
     def __init__(self) -> None:
         self.orientation = "PORTRAIT"
         self.route_id = "tab:chat"
+        self.current_context = "WEBVIEW_com.peers.touch.mobile"
         self.clicked: list[str] = []
         self.lifecycle_actions: list[str] = []
 
     def switch_to_native(self) -> None:
-        return None
+        self.current_context = "NATIVE_APP"
 
     def switch_to_app_webview(self) -> str:
-        return "WEBVIEW_com.peers.touch.mobile"
+        self.current_context = "WEBVIEW_com.peers.touch.mobile"
+        return self.current_context
 
     def set_orientation(self, orientation: str) -> None:
         self.orientation = orientation
 
     def execute_script(self, script: str, *args: Any) -> Any:
+        if script == READ_RESUME_SCRIPT and not self.current_context.startswith(
+            "WEBVIEW"
+        ):
+            raise DriverError("execute/sync is unavailable in native context")
         if script == TEXT_SIZE_SCRIPT:
             width, height = (
                 (852, 393)
@@ -469,7 +475,9 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         )
         self.assertEqual(degraded["kind"], "system")
         self.assertEqual(session.lifecycle_actions, ["lifecycle.suspend"])
+        session.switch_to_native()
         gate._wait_for_resume(session)
+        self.assertTrue(session.current_context.startswith("WEBVIEW"))
 
     def test_resume_script_avoids_webkit_incompatible_trailing_argument_comma(
         self,
