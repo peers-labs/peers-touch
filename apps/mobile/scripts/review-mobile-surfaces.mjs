@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -272,6 +273,32 @@ function selfTest() {
     if (!resolved.surfaceEvidence?.['shell.chat-tab']) {
       fail('development artifact resolution self-test failed');
     }
+    const previousMachineRoot = process.env.PT_MACHINE_DEV_ROOT;
+    process.env.PT_MACHINE_DEV_ROOT = artifactRoot;
+    try {
+      writeReviewRunState(
+        gateId,
+        'shell',
+        'MOBILE-WHOLE-PRODUCT-USABILITY-TEST',
+        workspaceId,
+        aggregateRun,
+      );
+      const storedRun = readReviewRunState(
+        gateId,
+        'shell',
+        'MOBILE-WHOLE-PRODUCT-USABILITY-TEST',
+        workspaceId,
+      );
+      if (storedRun.runId !== aggregateRun.runId) {
+        fail('development review handoff self-test failed');
+      }
+    } finally {
+      if (previousMachineRoot === undefined) {
+        delete process.env.PT_MACHINE_DEV_ROOT;
+      } else {
+        process.env.PT_MACHINE_DEV_ROOT = previousMachineRoot;
+      }
+    }
     const validationEnv = validationEnvironment(
       {
         PATH: '/usr/bin',
@@ -423,6 +450,59 @@ function developmentArtifactRoot(workItem, workspaceId) {
   );
 }
 
+function reviewRunStatePath(workItem, workspaceId, surfaceSet) {
+  return path.join(
+    path.dirname(developmentArtifactRoot(workItem, workspaceId)),
+    'review-mobile-surfaces',
+    `${surfaceSet}.json`,
+  );
+}
+
+function writeReviewRunState(
+  gateId,
+  surfaceSet,
+  workItem,
+  workspaceId,
+  runReference,
+) {
+  const destination = reviewRunStatePath(workItem, workspaceId, surfaceSet);
+  const temporary = `${destination}.tmp-${process.pid}`;
+  mkdirSync(path.dirname(destination), { recursive: true });
+  writeFileSync(
+    temporary,
+    `${JSON.stringify({
+      artifactKind: 'mobile-surface-review-run-reference',
+      gateId,
+      runReference,
+      surfaceSet,
+      workItem,
+      workspaceId,
+    })}\n`,
+  );
+  renameSync(temporary, destination);
+}
+
+function readReviewRunState(gateId, surfaceSet, workItem, workspaceId) {
+  const statePath = reviewRunStatePath(workItem, workspaceId, surfaceSet);
+  let value;
+  try {
+    value = JSON.parse(readFileSync(statePath, 'utf8'));
+  } catch (error) {
+    fail(`development review handoff is unavailable: ${error.message}`);
+  }
+  if (
+    value?.artifactKind !== 'mobile-surface-review-run-reference'
+    || value?.gateId !== gateId
+    || value?.surfaceSet !== surfaceSet
+    || value?.workItem !== workItem
+    || value?.workspaceId !== workspaceId
+    || !value?.runReference
+  ) {
+    fail('development review handoff identity is invalid');
+  }
+  return value.runReference;
+}
+
 function defaultArtifactRoot() {
   return execFileSync(
     'python3',
@@ -485,6 +565,22 @@ function readFunctionalResult(
   runReference,
   explicitArtifactRoot,
 ) {
+  return readFunctionalRun(
+    gateId,
+    workItem,
+    workspaceId,
+    runReference,
+    explicitArtifactRoot,
+  ).result;
+}
+
+function readFunctionalRun(
+  gateId,
+  workItem,
+  workspaceId,
+  runReference,
+  explicitArtifactRoot,
+) {
   const artifactRoot = explicitArtifactRoot
     || developmentArtifactRoot(workItem, workspaceId);
   const report = readArtifactReference(artifactRoot, runReference);
@@ -498,14 +594,19 @@ function readFunctionalResult(
   );
   const evidence = manifest?.artifacts?.[evidenceRole];
   if (!evidence) fail(`functional run has no ${evidenceRole} artifact`);
-  return readArtifactReference(artifactRoot, evidence);
+  return {
+    evidenceReference: evidence,
+    manifestReference: gateResult.developmentManifest,
+    result: readArtifactReference(artifactRoot, evidence),
+  };
 }
 
-function validateLatest(
+function surfaceEvidenceValidationFailure(
   result,
   surfaceSet,
   requireVisualReview,
   artifactRoot,
+  runManifestReference,
 ) {
   const args = [
     '-m',
@@ -515,6 +616,12 @@ function validateLatest(
     surfaceSet,
   ];
   if (!requireVisualReview) args.push('--without-visual-review');
+  if (runManifestReference) {
+    args.push(
+      '--run-manifest-reference',
+      JSON.stringify(runManifestReference),
+    );
+  }
   const validation = spawnSync(
     'python3',
     args,
@@ -527,24 +634,121 @@ function validateLatest(
   );
   if (validation.error) fail(validation.error.message);
   if (validation.status !== 0) {
-    fail(validation.stderr.trim() || 'surface evidence validation failed');
+    return validation.stderr.trim() || 'surface evidence validation failed';
   }
+  return '';
 }
 
-function recordReview(surfaceSet) {
+function validateLatest(
+  result,
+  surfaceSet,
+  requireVisualReview,
+  artifactRoot,
+  runManifestReference,
+) {
+  const failure = surfaceEvidenceValidationFailure(
+    result,
+    surfaceSet,
+    requireVisualReview,
+    artifactRoot,
+    runManifestReference,
+  );
+  if (failure) fail(failure);
+}
+
+function resolveReviewTarget(gateId, surfaceSet, explicitWorkItem) {
+  const formalErrors = [];
+  try {
+    const artifactRoot = defaultArtifactRoot();
+    const result = readLatestResult(gateId);
+    const failure = surfaceEvidenceValidationFailure(
+      result,
+      surfaceSet,
+      false,
+      artifactRoot,
+    );
+    if (!failure) {
+      return {
+        artifactRoot,
+        evidenceReference: undefined,
+        manifestReference: undefined,
+        result,
+      };
+    }
+    formalErrors.push(failure);
+  } catch (error) {
+    formalErrors.push(error.message);
+  }
+
+  const identity = resolveFunctionalIdentity(explicitWorkItem);
+  const artifactRoot = developmentArtifactRoot(
+    identity.workItem,
+    identity.workspaceId,
+  );
+  const runReference = readReviewRunState(
+    gateId,
+    surfaceSet,
+    identity.workItem,
+    identity.workspaceId,
+  );
+  const functionalRun = readFunctionalRun(
+    gateId,
+    identity.workItem,
+    identity.workspaceId,
+    runReference,
+    artifactRoot,
+  );
+  const failure = surfaceEvidenceValidationFailure(
+    functionalRun.result,
+    surfaceSet,
+    false,
+    artifactRoot,
+    functionalRun.manifestReference,
+  );
+  if (failure) {
+    fail(
+      [
+        ...formalErrors.map((error) => `formal: ${error}`),
+        `development: ${failure}`,
+      ].join('\n'),
+    );
+  }
+  return {
+    artifactRoot,
+    evidenceReference: functionalRun.evidenceReference,
+    manifestReference: functionalRun.manifestReference,
+    result: functionalRun.result,
+  };
+}
+
+function recordReview(surfaceSet, target) {
   const decision = readFileSync(0, 'utf8').trim();
   if (!decision) fail('visual review decision JSON is required on stdin');
+  const args = [
+    '-m',
+    'tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e',
+    '--record-visual-review',
+    '--surface-set',
+    surfaceSet,
+  ];
+  if (target.evidenceReference) {
+    args.push(
+      '--surface-evidence-reference',
+      JSON.stringify(target.evidenceReference),
+    );
+  }
+  if (target.manifestReference) {
+    args.push(
+      '--run-manifest-reference',
+      JSON.stringify(target.manifestReference),
+    );
+  }
   const recording = spawnSync(
     'python3',
-    [
-      '-m',
-      'tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e',
-      '--record-visual-review',
-      '--surface-set',
-      surfaceSet,
-    ],
+    args,
     {
       cwd: repoRoot,
+      env: validationEnvironment(process.env, target.artifactRoot),
       input: decision,
       encoding: 'utf8',
     },
@@ -563,46 +767,81 @@ if (options.mode === 'self-test') {
 }
 const inventory = loadInventory();
 const surfaceIds = requiredSurfaceIds(inventory, options.surfaceSet);
-if (options.mode === 'record-review') {
-  recordReview(options.surfaceSet);
-  process.exit(0);
-}
 const gateId = inventory.functionalGates?.[options.surfaceSet];
 if (typeof gateId !== 'string' || !gateId) {
   fail(`surface set ${options.surfaceSet} has no functional Gate`);
 }
+if (options.mode === 'record-review') {
+  recordReview(
+    options.surfaceSet,
+    resolveReviewTarget(gateId, options.surfaceSet, options.workItem),
+  );
+  process.exit(0);
+}
 
 let result;
 let artifactRoot;
+let runManifestReference;
+let functionalIdentity;
+let functionalRunReference;
 if (options.mode === 'functional') {
-  const identity = resolveFunctionalIdentity(options.workItem);
-  const runReference = runFunctional(
+  functionalIdentity = resolveFunctionalIdentity(options.workItem);
+  functionalRunReference = runFunctional(
     options.surfaceSet,
     gateId,
-    identity.workItem,
+    functionalIdentity.workItem,
   );
   artifactRoot = developmentArtifactRoot(
-    identity.workItem,
-    identity.workspaceId,
+    functionalIdentity.workItem,
+    functionalIdentity.workspaceId,
   );
-  result = readFunctionalResult(
+  const functionalRun = readFunctionalRun(
     gateId,
-    identity.workItem,
-    identity.workspaceId,
-    runReference,
+    functionalIdentity.workItem,
+    functionalIdentity.workspaceId,
+    functionalRunReference,
     artifactRoot,
   );
+  result = functionalRun.result;
+  runManifestReference = functionalRun.manifestReference;
 } else {
-  artifactRoot = defaultArtifactRoot();
-  result = readLatestResult(gateId);
+  const target = resolveReviewTarget(
+    gateId,
+    options.surfaceSet,
+    options.workItem,
+  );
+  artifactRoot = target.artifactRoot;
+  result = target.result;
+  runManifestReference = target.manifestReference;
 }
-validateLatest(result, options.surfaceSet, false, artifactRoot);
+validateLatest(
+  result,
+  options.surfaceSet,
+  false,
+  artifactRoot,
+  runManifestReference,
+);
+if (options.mode === 'functional') {
+  writeReviewRunState(
+    gateId,
+    options.surfaceSet,
+    functionalIdentity.workItem,
+    functionalIdentity.workspaceId,
+    functionalRunReference,
+  );
+}
 if (options.mode === 'review') {
   const screenshots = collectScreenshotRefs(result, surfaceIds);
   process.stdout.write(
     `${JSON.stringify({ surfaceSet: options.surfaceSet, screenshots })}\n`,
   );
-  validateLatest(result, options.surfaceSet, true, artifactRoot);
+  validateLatest(
+    result,
+    options.surfaceSet,
+    true,
+    artifactRoot,
+    runManifestReference,
+  );
 }
 
 process.stdout.write(

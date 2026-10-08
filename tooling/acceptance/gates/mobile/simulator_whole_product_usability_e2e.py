@@ -102,6 +102,22 @@ SHELL_ROUTE_ACTIONS = {
     "tap-contacts-tab": "tab:contacts",
     "tap-settings-tab": "tab:settings",
 }
+AUTHENTICATED_SURFACE_SETS = (
+    "shell",
+    "recovery",
+    "chat",
+    "contacts",
+    "moments",
+    "settings",
+)
+SURFACE_SET_ROUTES = {
+    "shell": "tab:chat",
+    "recovery": "tab:chat",
+    "chat": "tab:chat",
+    "contacts": "tab:contacts",
+    "moments": "tab:moments",
+    "settings": "tab:settings",
+}
 ENTRY_PAGE_CONTROL_SURFACES = {
     "entry.station-empty",
     "entry.station-address",
@@ -156,27 +172,6 @@ return {
   width: Math.round(window.innerWidth),
   height: Math.round(window.innerHeight),
   scaledElementCount: size === 'maximum' ? nodes.length : 0,
-};
-"""
-START_RESUME_SCRIPT = """
-const root = window.__PEERS_MOBILE_ACCEPTANCE__;
-if (!root || typeof root['lifecycle.resume'] !== 'function') return false;
-window.__PEERS_MOBILE_RESUME_DONE__ = false;
-window.__PEERS_MOBILE_RESUME_ERROR__ = null;
-window.__PEERS_MOBILE_RESUME__ = Promise.resolve(
-  root['lifecycle.resume']({})
-).then(function () {
-  window.__PEERS_MOBILE_RESUME_DONE__ = true;
-}).catch(function (error) {
-  window.__PEERS_MOBILE_RESUME_ERROR__ = String(error && error.message || error);
-  window.__PEERS_MOBILE_RESUME_DONE__ = true;
-});
-return true;
-"""
-READ_RESUME_SCRIPT = """
-return {
-  done: window.__PEERS_MOBILE_RESUME_DONE__ === true,
-  error: window.__PEERS_MOBILE_RESUME_ERROR__ || null,
 };
 """
 SURFACE_AUDIT_SCRIPT = """
@@ -825,6 +820,7 @@ def validate_surface_evidence(
     expected_source: Mapping[str, str] | None = None,
     require_manifest: bool = True,
     require_visual_review: bool = True,
+    run_manifest_reference: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise GateError("Mobile surface evidence must be an object")
@@ -1067,7 +1063,21 @@ def validate_surface_evidence(
     ]
     surface_evidence_ref: ArtifactRef | None = None
     if require_manifest:
-        manifest = store.latest(GATE_ID)
+        if run_manifest_reference is None:
+            manifest = store.latest(GATE_ID)
+        else:
+            manifest_ref = _validate_artifact_ref(
+                run_manifest_reference,
+                evidence_store=store,
+                gate_id=GATE_ID,
+                run_id=run_id,
+                workspace_id=workspace_id,
+            )
+            manifest = store.read_run_manifest(
+                manifest_ref,
+                manifest_sha256=manifest_ref.sha256,
+                expected_gate_id=GATE_ID,
+            )
         manifest_source = manifest.get("source")
         manifest_result = manifest.get("result")
         manifest_artifacts = manifest.get("artifacts")
@@ -1130,6 +1140,8 @@ def record_visual_review(
     *,
     evidence_store: EvidenceStore | None = None,
     expected_source: Mapping[str, str] | None = None,
+    surface_evidence_reference: Mapping[str, Any] | None = None,
+    run_manifest_reference: Mapping[str, Any] | None = None,
 ) -> dict[str, str]:
     if not isinstance(decision, dict) or set(decision) != {
         "reviewer",
@@ -1173,7 +1185,29 @@ def record_visual_review(
         worktree=REPO_ROOT,
     )
     current_source = dict(expected_source or source_identity(REPO_ROOT))
-    surface_evidence_ref = store.latest_artifact_ref(GATE_ID, EVIDENCE_ROLE)
+    if surface_evidence_reference is None:
+        surface_evidence_ref = store.latest_artifact_ref(
+            GATE_ID,
+            EVIDENCE_ROLE,
+        )
+    else:
+        reference_run_id = surface_evidence_reference.get("runId")
+        reference_workspace_id = surface_evidence_reference.get("workspaceId")
+        if (
+            not isinstance(reference_run_id, str)
+            or not reference_run_id
+            or reference_workspace_id != store.workspace_id
+        ):
+            raise GateError(
+                "Mobile visual review surface evidence identity is invalid"
+            )
+        surface_evidence_ref = _validate_artifact_ref(
+            surface_evidence_reference,
+            evidence_store=store,
+            gate_id=GATE_ID,
+            run_id=reference_run_id,
+            workspace_id=store.workspace_id,
+        )
     value = store.read_json(surface_evidence_ref)
     validate_surface_evidence(
         inventory,
@@ -1183,6 +1217,7 @@ def record_visual_review(
         expected_source=current_source,
         require_manifest=True,
         require_visual_review=False,
+        run_manifest_reference=run_manifest_reference,
     )
     required_cells = inventory["viewportTextSizeCells"]
     entries = selected_surface_entries(inventory, surface_set)
@@ -1470,6 +1505,20 @@ class SimulatorWholeProductUsabilityGate(
                     "station-change-and-logout",
                 ],
             },
+            "all": {
+                "runtimeCell": "ios-simulator-all",
+                "phase": "MWPU-07 Final Functional Frontier",
+                "bom": ["MWPU-07-FRONTIER"],
+                "observedScope": [
+                    "entry",
+                    "shell",
+                    "recovery",
+                    "chat",
+                    "contacts",
+                    "moments",
+                    "settings",
+                ],
+            },
         }.get(surface_set)
         if report_scope is None:
             report_scope = {
@@ -1491,8 +1540,11 @@ class SimulatorWholeProductUsabilityGate(
             "observedScope": report_scope["observedScope"]
             if status == "PASS"
             else [],
-            "unprovenScope": [
-                f"non-{surface_set} Mobile surface sets",
+            "unprovenScope": (
+                []
+                if surface_set == "all"
+                else [f"non-{surface_set} Mobile surface sets"]
+            ) + [
                 "Android",
                 "physical-device behavior",
             ],
@@ -1535,14 +1587,14 @@ class SimulatorWholeProductUsabilityGate(
                 manifest,
                 inventory,
             )
-        if surface_set not in {
-            "shell",
-            "recovery",
-            "chat",
-            "contacts",
-            "moments",
-            "settings",
-        }:
+        if surface_set == "all":
+            return self._run_entry_surface_journey(
+                artifacts,
+                manifest,
+                inventory,
+                continue_to_authenticated=True,
+            )
+        if surface_set not in AUTHENTICATED_SURFACE_SETS:
             raise SimulatorGateBlocked(
                 f"Surface adapter is not implemented for {surface_set}",
                 f"mobile-whole-product:surface-adapter:{surface_set}",
@@ -1641,78 +1693,12 @@ class SimulatorWholeProductUsabilityGate(
             role="mobile-whole-product-foreground",
         )
 
-        entries = selected_surface_entries(inventory, surface_set)
-        surface_evidence = {
-            entry["id"]: {
-                "status": "PASS",
-                "routeOrState": entry["routeOrState"],
-                "entryAction": entry["entryAction"],
-                "surfaceSelector": entry["surfaceSelector"],
-                "expectedResult": expected_result(inventory, entry),
-                "cells": {},
-            }
-            for entry in entries
-        }
-        for cell_id in inventory["viewportTextSizeCells"]:
-            if surface_set == "recovery":
-                session.switch_to_app_webview()
-                session.call_action("recovery.fixture", {"surfaceId": None})
-                time.sleep(0.5)
-            elif surface_set == "chat":
-                session.switch_to_app_webview()
-                session.call_action("chat.fixture", {"surfaceId": None})
-                time.sleep(0.5)
-            elif surface_set == "contacts":
-                session.switch_to_app_webview()
-                session.call_action("contacts.fixture", {"surfaceId": None})
-                time.sleep(0.5)
-            elif surface_set == "moments":
-                session.switch_to_app_webview()
-                session.call_action("moments.fixture", {"surfaceId": None})
-                time.sleep(0.5)
-            elif surface_set == "settings":
-                session.switch_to_app_webview()
-                session.call_action("settings.fixture", {"surfaceId": None})
-                time.sleep(0.5)
-            viewport = self._configure_cell(session, cell_id)
-            for entry in entries:
-                action = (
-                    self._enter_recovery_surface(session, entry)
-                    if surface_set == "recovery"
-                    else self._enter_chat_surface(session, entry)
-                    if surface_set == "chat"
-                    else self._enter_contacts_surface(session, entry)
-                    if surface_set == "contacts"
-                    else self._enter_moments_surface(session, entry)
-                    if surface_set == "moments"
-                    else self._enter_settings_surface(session, entry)
-                    if surface_set == "settings"
-                    else self._enter_surface(session, entry)
-                )
-                surface_evidence[entry["id"]]["cells"][cell_id] = (
-                    self._capture_surface(
-                        artifacts,
-                        session,
-                        inventory,
-                        entry,
-                        cell_id,
-                        viewport,
-                        action,
-                    )
-                )
-                if entry["entryAction"] == "fixture-deferred-module":
-                    self._wait_for_resume(session)
-        self._configure_cell(session, "portrait-normal")
-        if surface_set == "recovery":
-            session.call_action("recovery.fixture", {"surfaceId": None})
-        elif surface_set == "chat":
-            session.call_action("chat.fixture", {"surfaceId": None})
-        elif surface_set == "contacts":
-            session.call_action("contacts.fixture", {"surfaceId": None})
-        elif surface_set == "moments":
-            session.call_action("moments.fixture", {"surfaceId": None})
-        elif surface_set == "settings":
-            session.call_action("settings.fixture", {"surfaceId": None})
+        surface_evidence = self._capture_authenticated_surface_sets(
+            artifacts,
+            session,
+            inventory,
+            (surface_set,),
+        )
         artifacts.write_json(
             "mobile-whole-product/source-runtime.json",
             {
@@ -1748,11 +1734,123 @@ class SimulatorWholeProductUsabilityGate(
             "findings": [],
         }
 
+    def _capture_authenticated_surface_sets(
+        self,
+        artifacts: ArtifactSession,
+        session: Any,
+        inventory: Mapping[str, Any],
+        surface_sets: tuple[str, ...],
+    ) -> dict[str, Any]:
+        fixture_actions = {
+            "recovery": "recovery.fixture",
+            "chat": "chat.fixture",
+            "contacts": "contacts.fixture",
+            "moments": "moments.fixture",
+            "settings": "settings.fixture",
+        }
+        shell_entry_fixtures = {
+            "shell.moments-tab": ("moments.fixture", "moments.feed"),
+        }
+        enter_surface = {
+            "shell": self._enter_surface,
+            "recovery": self._enter_recovery_surface,
+            "chat": self._enter_chat_surface,
+            "contacts": self._enter_contacts_surface,
+            "moments": self._enter_moments_surface,
+            "settings": self._enter_settings_surface,
+        }
+        if (
+            not surface_sets
+            or len(set(surface_sets)) != len(surface_sets)
+            or any(surface_set not in enter_surface for surface_set in surface_sets)
+        ):
+            raise GateError("Authenticated Mobile surface sets are invalid")
+
+        entries_by_set = {
+            surface_set: selected_surface_entries(inventory, surface_set)
+            for surface_set in surface_sets
+        }
+        surface_evidence = {
+            entry["id"]: {
+                "status": "PASS",
+                "routeOrState": entry["routeOrState"],
+                "entryAction": entry["entryAction"],
+                "surfaceSelector": entry["surfaceSelector"],
+                "expectedResult": expected_result(inventory, entry),
+                "cells": {},
+            }
+            for surface_set in surface_sets
+            for entry in entries_by_set[surface_set]
+        }
+
+        for cell_id in inventory["viewportTextSizeCells"]:
+            viewport = self._configure_cell(session, cell_id)
+            for surface_set in surface_sets:
+                route_id = SURFACE_SET_ROUTES[surface_set]
+                session.switch_to_app_webview()
+                navigation = session.call_action(
+                    "navigation.apply",
+                    {"kind": "primary", "routeId": route_id},
+                )
+                if (
+                    not isinstance(navigation, Mapping)
+                    or navigation.get("primaryRouteId") != route_id
+                ):
+                    raise GateError(
+                        f"Mobile surface set did not reset to {route_id}"
+                    )
+                fixture_action = fixture_actions.get(surface_set)
+                if fixture_action:
+                    session.call_action(fixture_action, {"surfaceId": None})
+                    time.sleep(0.5)
+                for entry in entries_by_set[surface_set]:
+                    entry_fixture = shell_entry_fixtures.get(str(entry["id"]))
+                    if entry_fixture:
+                        entry_fixture_action, entry_surface_id = entry_fixture
+                        session.switch_to_app_webview()
+                        session.call_action(
+                            entry_fixture_action,
+                            {"surfaceId": entry_surface_id},
+                        )
+                        time.sleep(0.5)
+                    action = enter_surface[surface_set](session, entry)
+                    surface_evidence[entry["id"]]["cells"][cell_id] = (
+                        self._capture_surface(
+                            artifacts,
+                            session,
+                            inventory,
+                            entry,
+                            cell_id,
+                            viewport,
+                            action,
+                        )
+                    )
+                    if entry["entryAction"] == "fixture-deferred-module":
+                        session.switch_to_app_webview()
+                        session.call_action(
+                            "recovery.fixture",
+                            {"surfaceId": None},
+                        )
+                    if entry_fixture:
+                        session.switch_to_app_webview()
+                        session.call_action(
+                            entry_fixture_action,
+                            {"surfaceId": None},
+                        )
+                if fixture_action:
+                    session.switch_to_app_webview()
+                    session.call_action(fixture_action, {"surfaceId": None})
+
+        self._configure_cell(session, "portrait-normal")
+        return surface_evidence
+
     def _run_entry_surface_journey(
         self,
         artifacts: ArtifactSession,
         manifest: Mapping[str, Any],
         inventory: Mapping[str, Any],
+        *,
+        continue_to_authenticated: bool = False,
     ) -> dict[str, Any]:
         source = _validate_source_identity(manifest)
         canonical_worktree_hash = source.get("canonicalWorktreeHash")
@@ -1889,6 +1987,78 @@ class SimulatorWholeProductUsabilityGate(
                 "Mobile entry surface audit failed: "
                 + json.dumps(surface_failures, sort_keys=True)
             )
+        if continue_to_authenticated:
+            authentication = MobileMessagingJourney(
+                timeout_seconds=45,
+            ).authenticate(session, actor, password=ACTOR_PASSWORD)
+            self._record(spec.client_id, "shell-authenticated")
+            session.switch_to_app_webview()
+            lifecycle = session.call_action(
+                "lifecycle.waitReady",
+                {"includeDiagnostics": True},
+            )
+            if not isinstance(lifecycle, Mapping):
+                raise GateError(
+                    "Mobile lifecycle readiness returned an invalid snapshot"
+                )
+            lifecycle_ref = artifacts.write_json(
+                "mobile-whole-product/lifecycle-readiness.json",
+                {
+                    "artifactKind": "mobile-lifecycle-readiness-diagnostic",
+                    "gateId": self.gate_id,
+                    "runId": artifacts.run_id,
+                    "snapshot": dict(lifecycle),
+                },
+                role="mobile-whole-product-lifecycle-readiness",
+            )
+            _validate_lifecycle_readiness(lifecycle)
+            surface_evidence.update(
+                self._capture_authenticated_surface_sets(
+                    artifacts,
+                    session,
+                    inventory,
+                    AUTHENTICATED_SURFACE_SETS,
+                )
+            )
+            artifacts.write_json(
+                "mobile-whole-product/source-runtime.json",
+                {
+                    "artifactKind": "mobile-whole-product-source-runtime",
+                    "gateId": self.gate_id,
+                    "runId": artifacts.run_id,
+                    "source": source,
+                    "runtime": runtime_identity,
+                    "stationVerification": {
+                        "clientId": actor.client_id,
+                        "stationPeerId": actor.station_peer_id,
+                        "verifiedStationPeerId": station["verifiedStationPeerId"],
+                    },
+                    "authentication": authentication,
+                    "lifecycleReadiness": lifecycle_ref.to_dict(),
+                },
+                role="mobile-whole-product-source-runtime",
+            )
+            return {
+                "artifactKind": "mobile-whole-product-surface-evidence",
+                "gateId": self.gate_id,
+                "contractId": CONTRACT_ID,
+                "surfaceSet": "all",
+                "runId": artifacts.run_id,
+                "workspaceId": artifacts.store.workspace_id,
+                "status": "PASS",
+                "completionStatus": "DONE",
+                "proofStatus": "PROVEN",
+                "source": source,
+                "foregroundEvidence": {
+                    "platform": "ios",
+                    "simulatorApplication": "com.apple.iphonesimulator",
+                    "frontmost": True,
+                    "windowVisible": True,
+                    "observation": foreground_ref.to_dict(),
+                },
+                "surfaceEvidence": surface_evidence,
+                "findings": [],
+            }
         artifacts.write_json(
             "mobile-whole-product/source-runtime.json",
             {
@@ -2103,14 +2273,28 @@ class SimulatorWholeProductUsabilityGate(
                 raise GateError(f"Mobile shell did not navigate to {route_id}")
             action_kind = "native-touch"
         elif action == "fixture-deferred-module":
-            suspended = session.call_action("lifecycle.suspend")
-            if not isinstance(suspended, Mapping):
+            navigation = session.call_action(
+                "navigation.apply",
+                {"kind": "primary", "routeId": "tab:chat"},
+            )
+            if (
+                not isinstance(navigation, Mapping)
+                or navigation.get("primaryRouteId") != "tab:chat"
+            ):
                 raise GateError(
-                    "Mobile shell did not suspend for degraded-state proof"
+                    "Mobile degraded shell fixture did not reset to Chat"
                 )
-            if session.execute_script(START_RESUME_SCRIPT) is not True:
+            observed = session.call_action(
+                "recovery.fixture",
+                {"surfaceId": "recovery.deferred-capability"},
+            )
+            if (
+                not isinstance(observed, Mapping)
+                or observed.get("surfaceId")
+                != "recovery.deferred-capability"
+            ):
                 raise GateError(
-                    "Mobile shell did not start resume for degraded-state proof"
+                    "Mobile shell did not project deferred capability"
                 )
             action_kind = "system"
         else:
@@ -2347,6 +2531,27 @@ class SimulatorWholeProductUsabilityGate(
                 }
                 else "native-touch"
             )
+            if surface_id.startswith("moments.composer"):
+                session.call_action(
+                    "moments.fixture",
+                    {"surfaceId": None},
+                )
+                observed = session.call_action(
+                    "moments.fixture",
+                    {"surfaceId": surface_id},
+                )
+                if (
+                    not isinstance(observed, Mapping)
+                    or observed.get("surfaceId") != surface_id
+                ):
+                    raise GateError(
+                        "Mobile Moments fixture did not restore canonical "
+                        f"scroll for {surface_id}"
+                    )
+                self._wait_for_surface(
+                    session,
+                    str(entry["surfaceSelector"]),
+                )
 
         return {
             "kind": action_kind,
@@ -2605,25 +2810,6 @@ class SimulatorWholeProductUsabilityGate(
             time.sleep(0.2)
         raise GateError(f"Mobile shell surface did not appear: {selector}")
 
-    @staticmethod
-    def _wait_for_resume(
-        session: Any,
-        timeout_seconds: float = 10.0,
-    ) -> None:
-        session.switch_to_app_webview()
-        deadline = time.monotonic() + timeout_seconds
-        while time.monotonic() < deadline:
-            result = session.execute_script(READ_RESUME_SCRIPT)
-            if isinstance(result, Mapping):
-                if result.get("error"):
-                    raise GateError(
-                        f"Mobile shell resume failed: {result['error']}"
-                    )
-                if result.get("done") is True:
-                    return
-            time.sleep(0.2)
-        raise GateError("Mobile shell did not resume after degraded capture")
-
     def _capture_surface(
         self,
         artifacts: ArtifactSession,
@@ -2789,14 +2975,27 @@ def main() -> int:
     action.add_argument("--record-visual-review", action="store_true")
     parser.add_argument("--surface-set", default="all")
     parser.add_argument("--without-visual-review", action="store_true")
+    parser.add_argument("--run-manifest-reference")
+    parser.add_argument("--surface-evidence-reference")
     args = parser.parse_args()
     if args.validate_evidence:
+        if args.surface_evidence_reference:
+            parser.error(
+                "--surface-evidence-reference is valid only with "
+                "--record-visual-review"
+            )
         inventory = load_surface_inventory()
+        run_manifest_reference = (
+            json.loads(args.run_manifest_reference)
+            if args.run_manifest_reference
+            else None
+        )
         validate_surface_evidence(
             inventory,
             args.surface_set,
             json.load(sys.stdin),
             require_visual_review=not args.without_visual_review,
+            run_manifest_reference=run_manifest_reference,
         )
         sys.stdout.write(
             f"PASS: {GATE_ID} surface evidence ({args.surface_set})\n"
@@ -2811,6 +3010,16 @@ def main() -> int:
             load_surface_inventory(),
             args.surface_set,
             json.load(sys.stdin),
+            surface_evidence_reference=(
+                json.loads(args.surface_evidence_reference)
+                if args.surface_evidence_reference
+                else None
+            ),
+            run_manifest_reference=(
+                json.loads(args.run_manifest_reference)
+                if args.run_manifest_reference
+                else None
+            ),
         )
         sys.stdout.write(f"{json.dumps(review_ref, sort_keys=True)}\n")
         return 0

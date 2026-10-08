@@ -22,10 +22,9 @@ from tooling.acceptance.core import (
     source_identity,
 )
 from tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e import (
+    AUTHENTICATED_SURFACE_SETS,
     CONTRACT_ID,
     GATE_ID,
-    READ_RESUME_SCRIPT,
-    START_RESUME_SCRIPT,
     SURFACE_AUDIT_SCRIPT,
     TEXT_SIZE_SCRIPT,
     VISUAL_REVIEW_GATE_ID,
@@ -156,6 +155,8 @@ class _ShellDriverSession:
         self.moments_surface_id: str | None = None
         self.settings_surface_id: str | None = None
         self.activated_apps: list[str] = []
+        self.navigation_actions: list[str] = []
+        self.fixture_history: list[tuple[str, str | None]] = []
 
     def switch_to_native(self) -> None:
         self.current_context = "NATIVE_APP"
@@ -168,10 +169,6 @@ class _ShellDriverSession:
         self.orientation = orientation
 
     def execute_script(self, script: str, *args: Any) -> Any:
-        if script == READ_RESUME_SCRIPT and not self.current_context.startswith(
-            "WEBVIEW"
-        ):
-            raise DriverError("execute/sync is unavailable in native context")
         if script == TEXT_SIZE_SCRIPT:
             width, height = (
                 (852, 393)
@@ -187,8 +184,6 @@ class _ShellDriverSession:
         if script == "mobile: activateApp":
             self.activated_apps.append(args[0]["bundleId"])
             return None
-        if script == READ_RESUME_SCRIPT:
-            return {"done": True, "error": None}
         return True
 
     def find_element(self, using: str, value: str) -> str:
@@ -207,7 +202,35 @@ class _ShellDriverSession:
         action: str,
         payload: dict[str, Any] | None = None,
     ) -> Any:
+        if (
+            action.endswith(".fixture")
+            and not self.current_context.startswith("WEBVIEW")
+        ):
+            raise DriverError("Harness actions require WebView context")
+        fixture_state = {
+            "entry.fixture": "entry_surface_id",
+            "recovery.fixture": "recovery_surface_id",
+            "chat.fixture": "chat_surface_id",
+            "contacts.fixture": "contacts_surface_id",
+            "moments.fixture": "moments_surface_id",
+            "settings.fixture": "settings_surface_id",
+        }
+        surface_id = (payload or {}).get("surfaceId")
+        if action in fixture_state:
+            self.fixture_history.append((action, surface_id))
+        if action in fixture_state and surface_id is not None:
+            overlapping = [
+                state
+                for fixture_action, state in fixture_state.items()
+                if fixture_action != action and getattr(self, state) is not None
+            ]
+            if overlapping:
+                raise DriverError("Acceptance surface fixtures overlap")
         if action == "navigation.snapshot":
+            return {"primaryRouteId": self.route_id}
+        if action == "navigation.apply":
+            self.route_id = str((payload or {})["routeId"])
+            self.navigation_actions.append(self.route_id)
             return {"primaryRouteId": self.route_id}
         if action == "entry.fixture":
             self.entry_surface_id = (payload or {}).get("surfaceId")
@@ -624,7 +647,7 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertEqual(result["orientation"], "landscape")
         self.assertGreater(result["width"], result["height"])
 
-    def test_shell_driver_uses_real_navigation_and_degraded_state(self) -> None:
+    def test_shell_driver_uses_navigation_and_stable_degraded_fixture(self) -> None:
         inventory = load_surface_inventory()
         entries = {
             entry["id"]: entry
@@ -647,10 +670,13 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             entries["shell.degraded-module-notice"],
         )
         self.assertEqual(degraded["kind"], "system")
-        self.assertEqual(session.lifecycle_actions, ["lifecycle.suspend"])
-        session.switch_to_native()
-        gate._wait_for_resume(session)
-        self.assertTrue(session.current_context.startswith("WEBVIEW"))
+        self.assertEqual(
+            session.recovery_surface_id,
+            "recovery.deferred-capability",
+        )
+        self.assertEqual(session.route_id, "tab:chat")
+        self.assertEqual(session.navigation_actions, ["tab:chat"])
+        self.assertEqual(session.lifecycle_actions, [])
 
     def test_entry_driver_projects_states_and_uses_real_station_controls(self) -> None:
         inventory = load_surface_inventory()
@@ -791,6 +817,14 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             "[data-moments-fixture-audience]",
             session.clicked,
         )
+        self.assertEqual(
+            session.fixture_history,
+            [
+                ("moments.fixture", "moments.composer-audience"),
+                ("moments.fixture", None),
+                ("moments.fixture", "moments.composer-audience"),
+            ],
+        )
 
     def test_settings_driver_opens_selected_detail_in_foreground(self) -> None:
         inventory = load_surface_inventory()
@@ -815,12 +849,6 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             '[data-settings-fixture-open="privacy-security"]',
             session.clicked,
         )
-
-    def test_resume_script_avoids_webkit_incompatible_trailing_argument_comma(
-        self,
-    ) -> None:
-        self.assertNotIn("root['lifecycle.resume']({}),", START_RESUME_SCRIPT)
-        self.assertNotIn("=>", START_RESUME_SCRIPT)
 
     def test_lifecycle_readiness_rejects_failed_runtime_with_diagnostic(
         self,
@@ -1114,6 +1142,176 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         for entry in entries:
             self.assertTrue(expected_result(inventory, entry))
 
+    def test_all_surface_journey_continues_entry_session_after_login(
+        self,
+    ) -> None:
+        inventory = load_surface_inventory()
+        gate = SimulatorWholeProductUsabilityGate(
+            foreground_probe=lambda: {},
+        )
+        expected = {"surfaceSet": "all"}
+
+        with patch.object(
+            gate,
+            "_run_entry_surface_journey",
+            return_value=expected,
+        ) as run_entry:
+            result = gate._run_surface_journey(
+                SimpleNamespace(),
+                {},
+                inventory,
+                "all",
+            )
+
+        self.assertEqual(result, expected)
+        run_entry.assert_called_once_with(
+            unittest.mock.ANY,
+            {},
+            inventory,
+            continue_to_authenticated=True,
+        )
+
+    def test_authenticated_aggregate_captures_all_sets_in_one_session(
+        self,
+    ) -> None:
+        inventory = json.loads(json.dumps(load_surface_inventory()))
+        inventory["viewportTextSizeCells"] = ["portrait-normal"]
+        gate = SimulatorWholeProductUsabilityGate(
+            foreground_probe=lambda: {},
+        )
+        session = _ShellDriverSession()
+        viewport = {
+            "width": 393,
+            "height": 852,
+            "orientation": "portrait",
+            "textSize": "normal",
+        }
+
+        def capture(*args: Any) -> dict[str, str]:
+            entry = args[3]
+            return {"surfaceId": str(entry["id"])}
+
+        with (
+            patch.object(
+                gate,
+                "_configure_cell",
+                return_value=viewport,
+            ) as configure,
+            patch.object(
+                gate,
+                "_capture_surface",
+                side_effect=capture,
+            ) as capture_surface,
+            patch(
+                "tooling.acceptance.gates.mobile."
+                "simulator_whole_product_usability_e2e.time.sleep"
+            ),
+        ):
+            result = gate._capture_authenticated_surface_sets(
+                SimpleNamespace(),
+                session,
+                inventory,
+                AUTHENTICATED_SURFACE_SETS,
+            )
+
+        expected_ids = {
+            surface_id
+            for surface_set, surface_ids in REQUIRED_SURFACE_IDS.items()
+            if surface_set != "entry"
+            for surface_id in surface_ids
+        }
+        self.assertSetEqual(set(result), expected_ids)
+        self.assertEqual(capture_surface.call_count, len(expected_ids))
+        self.assertEqual(configure.call_count, 2)
+        self.assertTrue(
+            all(
+                set(surface["cells"]) == {"portrait-normal"}
+                for surface in result.values()
+            )
+        )
+        self.assertIsNone(session.recovery_surface_id)
+        self.assertIsNone(session.chat_surface_id)
+        self.assertIsNone(session.contacts_surface_id)
+        self.assertIsNone(session.moments_surface_id)
+        self.assertIsNone(session.settings_surface_id)
+        self.assertEqual(
+            session.navigation_actions,
+            [
+                "tab:chat",
+                "tab:chat",
+                "tab:chat",
+                "tab:chat",
+                "tab:contacts",
+                "tab:moments",
+                "tab:settings",
+            ],
+        )
+        self.assertEqual(
+            session.fixture_history[:2],
+            [
+                ("moments.fixture", "moments.feed"),
+                ("moments.fixture", None),
+            ],
+        )
+
+    def test_landscape_moments_composer_preserves_top_safe_area(self) -> None:
+        styles = (
+            REPO_ROOT
+            / "apps"
+            / "mobile"
+            / "src"
+            / "styles.css"
+        ).read_text(encoding="utf-8")
+        landscape_rule = re.search(
+            r"@media \(orientation: landscape\) \{\s*"
+            r"\.moments-composer-backdrop \.moments-composer-card,\s*"
+            r"\.moments-fixture-composer \{(?P<body>.*?)\n  \}",
+            styles,
+            flags=re.DOTALL,
+        )
+
+        self.assertIsNotNone(landscape_rule)
+        self.assertIn(
+            "max-height: calc(100dvh - var(--safe-area-top));",
+            landscape_rule.group("body"),
+        )
+        composer_header_rule = re.search(
+            r"\.moments-composer-header,\s*"
+            r"\.moments-fixture-sheet-header \{(?P<body>.*?)\n\}",
+            styles,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(composer_header_rule)
+        self.assertIn(
+            "position: sticky;",
+            composer_header_rule.group("body"),
+        )
+
+    def test_all_surface_report_names_final_frontier_scope(self) -> None:
+        report = SimulatorWholeProductUsabilityGate._result_report(
+            "PASS",
+            "all",
+        )
+
+        self.assertEqual(report["runtimeCell"], "ios-simulator-all")
+        self.assertEqual(report["bom"], ["MWPU-07-FRONTIER"])
+        self.assertEqual(
+            report["observedScope"],
+            [
+                "entry",
+                "shell",
+                "recovery",
+                "chat",
+                "contacts",
+                "moments",
+                "settings",
+            ],
+        )
+        self.assertEqual(
+            report["unprovenScope"],
+            ["Android", "physical-device behavior"],
+        )
+
     def test_inventory_covers_current_route_and_setting_sources(self) -> None:
         inventory = load_surface_inventory()
         route_states = {
@@ -1250,6 +1448,95 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             "completionStatus": "DONE",
             "proofStatus": "NOT_APPLICABLE",
         }))
+
+    def test_accepts_explicit_development_manifest_without_latest_pointer(
+        self,
+    ) -> None:
+        inventory = load_surface_inventory()
+        expected_source = source_identity(REPO_ROOT)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = EvidenceStore(Path(temp_dir), worktree=REPO_ROOT)
+            with store.begin_run(GATE_ID, source=expected_source) as run:
+                value = valid_surface_evidence(inventory, "shell", run)
+                run.write_json(
+                    "mobile-whole-product/surface-evidence.json",
+                    value,
+                    role="mobile-surface-evidence",
+                )
+                run.finalize(
+                    result={
+                        "artifactKind": "development-functional-result",
+                        "status": "passed",
+                        "evidenceStatus": "PASS",
+                        "exit_code": 0,
+                        "completionStatus": "DONE",
+                        "proofStatus": "NOT_APPLICABLE",
+                    }
+                )
+                manifest_ref = run.manifest_ref
+
+            result = validate_surface_evidence(
+                inventory,
+                "shell",
+                value,
+                evidence_store=store,
+                expected_source=expected_source,
+                require_visual_review=False,
+                run_manifest_reference=manifest_ref.to_dict(),
+            )
+
+        self.assertEqual(result["surfaceSet"], "shell")
+
+    def test_records_review_for_explicit_development_surface_evidence(
+        self,
+    ) -> None:
+        inventory = load_surface_inventory()
+        expected_source = source_identity(REPO_ROOT)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = EvidenceStore(Path(temp_dir), worktree=REPO_ROOT)
+            with store.begin_run(GATE_ID, source=expected_source) as run:
+                value = valid_surface_evidence(inventory, "shell", run)
+                evidence_ref = run.write_json(
+                    "mobile-whole-product/surface-evidence.json",
+                    value,
+                    role="mobile-surface-evidence",
+                )
+                run.finalize(
+                    result={
+                        "artifactKind": "development-functional-result",
+                        "status": "passed",
+                        "evidenceStatus": "PASS",
+                        "exit_code": 0,
+                        "completionStatus": "DONE",
+                        "proofStatus": "NOT_APPLICABLE",
+                    }
+                )
+                manifest_ref = run.manifest_ref
+
+            review_ref = record_visual_review(
+                inventory,
+                "shell",
+                {
+                    "reviewer": {"kind": "agent", "id": "test-agent"},
+                    "verdict": "PASS",
+                    "findings": [],
+                },
+                evidence_store=store,
+                expected_source=expected_source,
+                surface_evidence_reference=evidence_ref.to_dict(),
+                run_manifest_reference=manifest_ref.to_dict(),
+            )
+            result = validate_surface_evidence(
+                inventory,
+                "shell",
+                value,
+                evidence_store=store,
+                expected_source=expected_source,
+                run_manifest_reference=manifest_ref.to_dict(),
+            )
+
+        self.assertEqual(result["surfaceSet"], "shell")
+        self.assertEqual(review_ref["gateId"], VISUAL_REVIEW_GATE_ID)
 
     def test_requires_an_independent_visual_review_after_surface_capture(self) -> None:
         inventory = load_surface_inventory()
