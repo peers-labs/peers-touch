@@ -1,6 +1,15 @@
 # ─── QA / Integration Testing ───────────────────────────────────
 
-.PHONY: test test-docker test-docker-keep test-docker-logs test-api clean-test
+.PHONY: test test-docker test-docker-keep test-docker-logs test-api clean-test \
+	oauth-version-bump oauth-version-check
+
+# Bump the OAuth broker patch version (0.0.1) before each release.
+oauth-version-bump:
+	@python3 tooling/scripts/bump-oauth-version.py
+
+# Validate the OAuth broker VERSION file (major.minor.patch).
+oauth-version-check:
+	@python3 tooling/scripts/bump-oauth-version.py --check
 
 test: test-docker
 

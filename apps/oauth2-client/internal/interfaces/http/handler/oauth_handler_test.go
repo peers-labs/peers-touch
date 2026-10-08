@@ -2,9 +2,11 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"testing"
 	"time"
 
@@ -14,6 +16,9 @@ import (
 	recordcrypto "github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/crypto"
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/persistence/memory"
 )
+
+var semverRegexp = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+
 
 func TestOAuthEndpointsRejectNonGetMethods(t *testing.T) {
 	handler := OAuthHandler{}
@@ -36,6 +41,28 @@ func TestOAuthEndpointsRejectNonGetMethods(t *testing.T) {
 				t.Fatalf("Allow = %q, want GET", recorder.Header().Get("Allow"))
 			}
 		})
+	}
+}
+
+func TestHealthzReturnsSemanticVersion(t *testing.T) {
+	handler := OAuthHandler{}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/healthz", nil)
+
+	handler.Healthz(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body["status"] != "ok" {
+		t.Fatalf("status field = %q, want ok", body["status"])
+	}
+	if !semverRegexp.MatchString(body["version"]) {
+		t.Fatalf("version = %q, want major.minor.patch digits", body["version"])
 	}
 }
 
