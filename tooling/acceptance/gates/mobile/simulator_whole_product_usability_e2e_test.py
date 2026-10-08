@@ -22,6 +22,7 @@ from tooling.acceptance.core import (
 from tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e import (
     CONTRACT_ID,
     GATE_ID,
+    READ_RESUME_SCRIPT,
     TEXT_SIZE_SCRIPT,
     VISUAL_REVIEW_GATE_ID,
     SimulatorWholeProductUsabilityGate,
@@ -160,6 +161,8 @@ class _ShellDriverSession:
                 "height": height,
                 "scaledElementCount": 1 if args[0] == "maximum" else 0,
             }
+        if script == READ_RESUME_SCRIPT:
+            return {"done": True, "error": None}
         return True
 
     def find_element(self, using: str, value: str) -> str:
@@ -465,6 +468,7 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         )
         self.assertEqual(degraded["kind"], "system")
         self.assertEqual(session.lifecycle_actions, ["lifecycle.suspend"])
+        gate._wait_for_resume(session)
 
     def test_shell_product_selectors_are_present_in_production(self) -> None:
         shell = (
