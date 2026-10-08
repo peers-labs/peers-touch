@@ -80,6 +80,7 @@ SHELL_REQUIRED_HARNESS_ACTIONS = (
     "access.submit",
     "chat.fixture",
     "cleanup",
+    "contacts.fixture",
     "entry.fixture",
     "lifecycle.restart",
     "lifecycle.resume",
@@ -1430,6 +1431,18 @@ class SimulatorWholeProductUsabilityGate(
                     "group-management",
                 ],
             },
+            "contacts": {
+                "runtimeCell": "ios-simulator-contacts",
+                "phase": "MWPU-05 Contacts Usability",
+                "bom": ["MWPU-05-CONTACTS"],
+                "observedScope": [
+                    "contacts-list-and-search",
+                    "friend-request-recovery",
+                    "contact-profile-and-blocking",
+                    "federated-people-search",
+                    "group-creation",
+                ],
+            },
         }.get(surface_set)
         if report_scope is None:
             report_scope = {
@@ -1495,7 +1508,7 @@ class SimulatorWholeProductUsabilityGate(
                 manifest,
                 inventory,
             )
-        if surface_set not in {"shell", "recovery", "chat"}:
+        if surface_set not in {"shell", "recovery", "chat", "contacts"}:
             raise SimulatorGateBlocked(
                 f"Surface adapter is not implemented for {surface_set}",
                 f"mobile-whole-product:surface-adapter:{surface_set}",
@@ -1615,6 +1628,10 @@ class SimulatorWholeProductUsabilityGate(
                 session.switch_to_app_webview()
                 session.call_action("chat.fixture", {"surfaceId": None})
                 time.sleep(0.5)
+            elif surface_set == "contacts":
+                session.switch_to_app_webview()
+                session.call_action("contacts.fixture", {"surfaceId": None})
+                time.sleep(0.5)
             viewport = self._configure_cell(session, cell_id)
             for entry in entries:
                 action = (
@@ -1622,6 +1639,8 @@ class SimulatorWholeProductUsabilityGate(
                     if surface_set == "recovery"
                     else self._enter_chat_surface(session, entry)
                     if surface_set == "chat"
+                    else self._enter_contacts_surface(session, entry)
+                    if surface_set == "contacts"
                     else self._enter_surface(session, entry)
                 )
                 surface_evidence[entry["id"]]["cells"][cell_id] = (
@@ -1642,6 +1661,8 @@ class SimulatorWholeProductUsabilityGate(
             session.call_action("recovery.fixture", {"surfaceId": None})
         elif surface_set == "chat":
             session.call_action("chat.fixture", {"surfaceId": None})
+        elif surface_set == "contacts":
+            session.call_action("contacts.fixture", {"surfaceId": None})
         artifacts.write_json(
             "mobile-whole-product/source-runtime.json",
             {
@@ -2156,6 +2177,63 @@ class SimulatorWholeProductUsabilityGate(
             )
             session.click_element(tab)
             action_kind = "native-touch"
+
+        return {
+            "kind": action_kind,
+            "target": action,
+            "performed": True,
+        }
+
+    def _enter_contacts_surface(
+        self,
+        session: Any,
+        entry: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        surface_id = str(entry["id"])
+        action = str(entry["entryAction"])
+        session.switch_to_app_webview()
+        observed = session.call_action(
+            "contacts.fixture",
+            {"surfaceId": surface_id},
+        )
+        if (
+            not isinstance(observed, Mapping)
+            or observed.get("surfaceId") != surface_id
+        ):
+            raise GateError(
+                f"Mobile Contacts fixture did not project {surface_id}"
+            )
+        self._wait_for_surface(
+            session,
+            str(entry["surfaceSelector"]),
+        )
+
+        action_kind = "system"
+        if action == "tap-contacts-tab":
+            tab = session.find_element(
+                "css selector",
+                '[data-route-id="tab:contacts"]',
+            )
+            session.click_element(tab)
+            action_kind = "native-touch"
+        elif action in {"type-contact-query", "search-unknown-contact"}:
+            search = session.find_element(
+                "css selector",
+                "[data-contacts-fixture-search]",
+            )
+            session.click_element(search)
+            action_kind = "native-text"
+        elif action in {
+            "search-unknown-person",
+            "search-federated-person",
+            "search-existing-contact",
+        }:
+            search = session.find_element(
+                "css selector",
+                "[data-contacts-fixture-people-search]",
+            )
+            session.click_element(search)
+            action_kind = "native-text"
 
         return {
             "kind": action_kind,

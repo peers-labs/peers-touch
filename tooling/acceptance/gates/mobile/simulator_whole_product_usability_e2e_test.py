@@ -152,6 +152,7 @@ class _ShellDriverSession:
         self.entry_surface_id: str | None = None
         self.recovery_surface_id: str | None = None
         self.chat_surface_id: str | None = None
+        self.contacts_surface_id: str | None = None
         self.activated_apps: list[str] = []
 
     def switch_to_native(self) -> None:
@@ -222,6 +223,12 @@ class _ShellDriverSession:
             self.chat_surface_id = (payload or {}).get("surfaceId")
             return {
                 "surfaceId": self.chat_surface_id,
+                "revision": 1,
+            }
+        if action == "contacts.fixture":
+            self.contacts_surface_id = (payload or {}).get("surfaceId")
+            return {
+                "surfaceId": self.contacts_surface_id,
                 "revision": 1,
             }
         if action in {"lifecycle.suspend", "lifecycle.resume"}:
@@ -449,6 +456,18 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertIn("returning-session", report["observedScope"])
         self.assertIn("scoped-degradation", report["observedScope"])
 
+    def test_contacts_gate_emits_contacts_specific_acceptance_report(self) -> None:
+        report = SimulatorWholeProductUsabilityGate._result_report(
+            "PASS",
+            "contacts",
+        )
+
+        self.assertEqual(report["runtimeCell"], "ios-simulator-contacts")
+        self.assertEqual(report["phase"], "MWPU-05 Contacts Usability")
+        self.assertEqual(report["bom"], ["MWPU-05-CONTACTS"])
+        self.assertIn("federated-people-search", report["observedScope"])
+        self.assertIn("group-creation", report["observedScope"])
+
     def test_foreground_probe_requires_the_declared_booted_simulator(self) -> None:
         completed = subprocess.CompletedProcess(
             args=[],
@@ -665,6 +684,35 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertIn("[data-chat-fixture-composer]", session.clicked)
         self.assertIn("XCUIElementTypeTextField", session.clicked)
 
+    def test_contacts_driver_projects_declared_surfaces_and_uses_search(
+        self,
+    ) -> None:
+        inventory = load_surface_inventory()
+        entries = {
+            entry["id"]: entry
+            for entry in selected_surface_entries(inventory, "contacts")
+        }
+        gate = SimulatorWholeProductUsabilityGate(
+            foreground_probe=lambda: {},
+        )
+        session = _ShellDriverSession()
+
+        action = gate._enter_contacts_surface(
+            session,
+            entries["contacts.search-loading"],
+        )
+
+        self.assertEqual(action["kind"], "native-text")
+        self.assertEqual(action["target"], "search-federated-person")
+        self.assertEqual(
+            session.contacts_surface_id,
+            "contacts.search-loading",
+        )
+        self.assertIn(
+            "[data-contacts-fixture-people-search]",
+            session.clicked,
+        )
+
     def test_resume_script_avoids_webkit_incompatible_trailing_argument_comma(
         self,
     ) -> None:
@@ -862,6 +910,27 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertIn("data-product-surface={productSurface}", page_content)
         self.assertNotIn("copyable>{member.ptid}", overlays)
         self.assertNotIn("copyable>{candidate.peerPtid}", overlays)
+
+    def test_contacts_product_selectors_are_present_in_foreground_components(
+        self,
+    ) -> None:
+        fixture = (
+            REPO_ROOT / "apps/mobile/src/acceptance/contactsSurfaceFixture.ts"
+        ).read_text(encoding="utf-8")
+        fixture_surface = (
+            REPO_ROOT
+            / "apps/mobile/src/pages/contacts/ContactsAcceptanceSurface.tsx"
+        ).read_text(encoding="utf-8")
+        page = (
+            REPO_ROOT / "apps/mobile/src/pages/ContactsPage.tsx"
+        ).read_text(encoding="utf-8")
+
+        for surface_id in REQUIRED_SURFACE_IDS["contacts"]:
+            self.assertIn(surface_id, fixture, surface_id)
+        self.assertIn("data-product-surface={surfaceId}", fixture_surface)
+        self.assertIn('data-acceptance-id="create-group"', fixture_surface)
+        self.assertNotIn("copyable>{selectedContact.peerPtid}", page)
+        self.assertNotIn("copyable>{contact.peerPtid}", page)
 
     def test_inventory_covers_every_surface_set_and_contract_cell(self) -> None:
         inventory = load_surface_inventory()

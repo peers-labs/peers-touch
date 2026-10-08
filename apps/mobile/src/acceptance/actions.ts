@@ -181,6 +181,11 @@ import {
   setChatSurfaceFixture,
 } from './chatSurfaceFixture';
 import {
+  contactsSurfaceFixtureRouteKind,
+  isContactsSurfaceFixtureId,
+  setContactsSurfaceFixture,
+} from './contactsSurfaceFixture';
+import {
   isRecoverySurfaceFixtureId,
   setRecoverySurfaceFixture,
 } from './recoverySurfaceFixture';
@@ -372,6 +377,37 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       });
     }
     return setChatSurfaceFixture(surfaceId);
+  },
+
+  'contacts.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isContactsSurfaceFixtureId(surfaceId)) {
+      throw new Error('acceptance.mobile.invalidInput:contacts.fixture.surfaceId');
+    }
+    const routeKind = contactsSurfaceFixtureRouteKind(surfaceId);
+    applyMobileNavigationIntent({
+      kind: 'primary',
+      routeId: 'tab:contacts',
+    });
+    if (routeKind === 'profile') {
+      applyMobileNavigationIntent({
+        kind: 'detail.push',
+        route: {
+          routeId: 'detail:contact-profile',
+          actorPtid: 'ptid:acceptance-contact',
+        },
+      });
+    } else if (routeKind === 'people' || routeKind === 'group') {
+      applyMobileNavigationIntent({
+        kind: 'overlay.open',
+        route: {
+          routeId: routeKind === 'group'
+            ? 'overlay:create-group'
+            : 'overlay:add-friend',
+        },
+      });
+    }
+    return setContactsSurfaceFixture(surfaceId);
   },
 
   'access.submit': async (input) => {

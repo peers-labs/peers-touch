@@ -19,6 +19,7 @@ import type {
 import { MobileAvatar } from '../components/MobileAvatar';
 import { MobileNotice } from '../components/MobileNotice';
 import { BoundedList } from '../components/BoundedList';
+import { useContactsSurfaceFixture } from '../acceptance/contactsSurfaceFixture';
 import { readRouteQuery, saveRouteQuery } from '../app/navigation/scrollRestoration';
 import { formatSocialError, useSocialStore } from '../features/social/socialStore';
 import { projectAcceptedContacts, projectOutgoingRequests, projectPendingInboundRequests, type SocialContact } from '../features/social/socialProjection';
@@ -41,6 +42,7 @@ import {
 } from '../features/social/contactCommands';
 import { dispatchBlockUser, dispatchUnblockUser } from '../features/chat/chatCommands';
 import { groupCommandOutcomeKey } from '../features/chat/groupCommandState';
+import { ContactsAcceptanceSurface } from './contacts/ContactsAcceptanceSurface';
 
 const { Text } = Typography;
 /** Maximum contacts mounted in one traversable window. */
@@ -56,7 +58,20 @@ interface ContactsPageProps {
   readonly onBack: () => void;
 }
 
-export function ContactsPage({
+export function ContactsPage(props: ContactsPageProps) {
+  const fixture = useContactsSurfaceFixture();
+  if (fixture.surfaceId) {
+    return (
+      <ContactsAcceptanceSurface
+        key={`${fixture.surfaceId}:${fixture.revision}`}
+        surfaceId={fixture.surfaceId}
+      />
+    );
+  }
+  return <ContactsPageInner {...props} />;
+}
+
+function ContactsPageInner({
   activeContactPtid,
   activeOverlay,
   onOpenChat,
@@ -392,7 +407,12 @@ export function ContactsPage({
 
   if (activeContactPtid) {
     return (
-      <div className="page-container mobile-detail-page">
+      <div
+        className="page-container mobile-detail-page"
+        data-product-surface={selectedContact
+          ? 'contacts.profile'
+          : 'contacts.profile-unavailable'}
+      >
         <header className="page-header">
           <button
             className="header-action"
@@ -417,7 +437,6 @@ export function ContactsPage({
               <div className="contact-profile-copy">
                 <Text strong className="contact-profile-name">{selectedProfile?.displayName || selectedContact.peerName}</Text>
                 {selectedProfile?.acct || selectedProfile?.username ? <Text type="secondary">{selectedProfile.acct || selectedProfile.username}</Text> : null}
-                <Text type="secondary" copyable>{selectedContact.peerPtid}</Text>
                 {selectedProfile?.note ? <Text className="contact-profile-note">{selectedProfile.note}</Text> : null}
                 <Tag color={selectedContact.peerOnline ? 'success' : 'default'}>
                   {selectedContact.peerOnline ? t('mobile.social.online') : t('mobile.social.offline')}
@@ -474,7 +493,7 @@ export function ContactsPage({
   // Render
   // -----------------------------------------------------------------------
   return (
-    <div className="page-container">
+    <div className="page-container" data-product-surface="contacts.list">
       <header className="page-header">
         <h1 className="header-title">{t('mobile.contacts.title')}</h1>
         <button
@@ -616,7 +635,10 @@ export function ContactsPage({
         onCancel={closeFindPeople}
         destroyOnHidden
       >
-        <div className="find-people-modal">
+        <div
+          className="find-people-modal"
+          data-product-surface="contacts.add-friend"
+        >
           <Input.Search
             value={peopleQuery}
             onChange={(e) => {
@@ -742,7 +764,11 @@ export function ContactsPage({
         }}
         destroyOnHidden
       >
-        <div className="group-create-form" data-acceptance-id="create-group">
+        <div
+          className="group-create-form"
+          data-acceptance-id="create-group"
+          data-product-surface="contacts.create-group"
+        >
           {pendingGroupConversationId ? (
             <MobileNotice>
               {t('mobile.recovery.command.state.pending')}
@@ -792,7 +818,13 @@ export function ContactsPage({
                           </MobileAvatar>
                         )}
                         title={<Text strong>{contact.peerName}</Text>}
-                        description={<Text type="secondary" copyable>{contact.peerPtid}</Text>}
+                        description={(
+                          <Text type="secondary">
+                            {contact.peerOnline
+                              ? t('mobile.social.online')
+                              : t('mobile.social.offline')}
+                          </Text>
+                        )}
                       />
                       <Checkbox
                         aria-label={contact.peerName}
