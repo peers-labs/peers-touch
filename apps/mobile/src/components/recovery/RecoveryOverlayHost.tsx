@@ -16,11 +16,15 @@ import {
   type MobileLaunchState,
 } from '../../app/lifecycle';
 import { useMobileI18n } from '../../app/mobileI18n';
+import { useChatSurfaceFixture } from '../../acceptance/chatSurfaceFixture';
+import { useContactsSurfaceFixture } from '../../acceptance/contactsSurfaceFixture';
+import { useMomentsSurfaceFixture } from '../../acceptance/momentsSurfaceFixture';
 import {
   recoveryStateForFixture,
   setRecoverySurfaceFixture,
   useRecoverySurfaceFixture,
 } from '../../acceptance/recoverySurfaceFixture';
+import { useSettingsSurfaceFixture } from '../../acceptance/settingsSurfaceFixture';
 import {
   applyReliabilityCommandRecoveryAction,
   applyLegacyReliabilityDisposition,
@@ -65,12 +69,18 @@ interface RecoveryOverlayHostProps {
 export function visibleRecoveryStates(
   states: readonly RecoveryState[],
   launchState: MobileLaunchState,
+  domainFixtureActive = false,
 ): readonly RecoveryState[] {
-  if (launchState !== 'access-gate-chain') return states;
-  return states.filter((state) => !(
-    state.kind === 'device-local-flag'
-    && state.reason === 'session-expired'
-  ));
+  return states.filter((state) => {
+    if (domainFixtureActive && state.kind === 'deferred-capability') {
+      return false;
+    }
+    return !(
+      launchState === 'access-gate-chain'
+      && state.kind === 'device-local-flag'
+      && state.reason === 'session-expired'
+    );
+  });
 }
 
 export function bindDeferredCapabilityProjection(
@@ -91,6 +101,16 @@ export function RecoveryOverlayHost({
   const { t } = useMobileI18n();
   const lifecycle = useLifecycleKernel();
   const fixture = useRecoverySurfaceFixture();
+  const chatFixture = useChatSurfaceFixture();
+  const contactsFixture = useContactsSurfaceFixture();
+  const momentsFixture = useMomentsSurfaceFixture();
+  const settingsFixture = useSettingsSurfaceFixture();
+  const domainFixtureActive = Boolean(
+    chatFixture.surfaceId
+    || contactsFixture.surfaceId
+    || momentsFixture.surfaceId
+    || settingsFixture.surfaceId,
+  );
   const recoveryRuntimeStatus =
     lifecycle.runtimes.get('recovery-projection')?.status;
   const [snapshot, setSnapshot] = useState<RecoveryProjectionSnapshot>(
@@ -281,7 +301,11 @@ export function RecoveryOverlayHost({
   const fixtureState = recoveryStateForFixture(fixture.surfaceId);
   const visibleStates = fixture.surfaceId
     ? (fixtureState ? [fixtureState] : [])
-    : visibleRecoveryStates(snapshot.states, lifecycle.launchState);
+    : visibleRecoveryStates(
+        snapshot.states,
+        lifecycle.launchState,
+        domainFixtureActive,
+      );
   if (visibleStates.length === 0) return null;
 
   return (
