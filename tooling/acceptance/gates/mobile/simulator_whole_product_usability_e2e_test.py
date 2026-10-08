@@ -475,6 +475,7 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self,
     ) -> None:
         self.assertNotIn("root['lifecycle.resume']({}),", START_RESUME_SCRIPT)
+        self.assertNotIn("=>", START_RESUME_SCRIPT)
 
     def test_shell_product_selectors_are_present_in_production(self) -> None:
         shell = (

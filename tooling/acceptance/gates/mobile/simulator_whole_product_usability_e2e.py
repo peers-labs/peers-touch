@@ -138,9 +138,9 @@ window.__PEERS_MOBILE_RESUME_DONE__ = false;
 window.__PEERS_MOBILE_RESUME_ERROR__ = null;
 window.__PEERS_MOBILE_RESUME__ = Promise.resolve(
   root['lifecycle.resume']({})
-).then(() => {
+).then(function () {
   window.__PEERS_MOBILE_RESUME_DONE__ = true;
-).catch((error) => {
+}).catch(function (error) {
   window.__PEERS_MOBILE_RESUME_ERROR__ = String(error && error.message || error);
   window.__PEERS_MOBILE_RESUME_DONE__ = true;
 });
