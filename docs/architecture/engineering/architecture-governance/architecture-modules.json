@@ -491,6 +491,46 @@
       "externalCapabilityRegistries": []
     },
     {
+      "id": "api-ownership",
+      "root": "docs/architecture/engineering/api-governance",
+      "status": "active",
+      "owner": "Architecture Team",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": false,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "AO-D01",
+        "AO-D02",
+        "AO-D03",
+        "AO-D04",
+        "AO-D05",
+        "AO-D06",
+        "AO-D07",
+        "AO-D10",
+        "AO-D10A"
+      ],
+      "governedPaths": [
+        "apps/station/app/cmd/station_api_ownership",
+        "docs/architecture/engineering/api-governance"
+      ],
+      "capabilities": [],
+      "externalCapabilityRegistries": []
+    },
+    {
       "id": "station-access-lifecycle",
       "root": "docs/architecture/platform/station/access",
       "status": "active",
