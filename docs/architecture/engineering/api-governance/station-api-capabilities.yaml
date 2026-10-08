@@ -1325,37 +1325,37 @@ capabilities:
 
   - id: federation.presence.query
     domain_owner: station.federation
-    truth_owner: presence.runtime
+    truth_owner: presence.authority
     exposure: peer
     canonical_route: { method: POST, path: /federation/presence/query }
     request_proto: peers_touch.model.presence.v1.PresenceQueryRequest
     response_proto: peers_touch.model.presence.v1.PresenceQueryResponse
-    truth_stores: []
-    allowed_dependencies: [federation.auth.verify, presence.query]
+    truth_stores: [actor_presence_leases]
+    allowed_dependencies: [federation.auth.verify, presence.authority.read]
     forbidden_aliases: []
     superseded_symbols: []
 
-  - id: federation.realtime.signal
+  - id: federation.realtime.signal.forward
     domain_owner: station.federation
-    truth_owner: realtime.event
+    truth_owner: realtime.call_control
     exposure: peer
     canonical_route: { method: POST, path: /federation/realtime/signal }
     request_proto: peers_touch.model.realtime.v1.CallSignal
-    response_proto: ""
-    truth_stores: []
-    allowed_dependencies: [federation.auth.verify, conversation.membership.read, realtime.signal.publish]
+    response_proto: peers_touch.model.realtime.v1.FederatedSignalAck
+    truth_stores: [realtime_events, realtime_call_resolutions]
+    allowed_dependencies: [federation.auth.verify, realtime.signal.authorize, realtime.signal.publish]
     forbidden_aliases: []
     superseded_symbols: []
 
-  - id: federation.realtime.call_resolution.get
+  - id: federation.realtime.call_resolution.read
     domain_owner: station.federation
-    truth_owner: realtime.call_resolution
+    truth_owner: realtime.call_control
     exposure: peer
     canonical_route: { method: POST, path: /federation/realtime/call-resolution }
     request_proto: peers_touch.model.realtime.v1.GetFederatedCallResolutionRequest
     response_proto: peers_touch.model.realtime.v1.GetFederatedCallResolutionResponse
     truth_stores: [realtime_call_resolutions]
-    allowed_dependencies: [federation.auth.verify, actor.home_station.read, realtime.call_resolution.read]
+    allowed_dependencies: [federation.auth.verify, realtime.call_resolution.read]
     forbidden_aliases: []
     superseded_symbols: []
 

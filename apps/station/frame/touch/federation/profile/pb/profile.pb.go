@@ -29,7 +29,7 @@ const (
 //     DHT under "/pst-actor/<handle>" and answers "which station is
 //     authoritative for this handle?".
 //   - ActorProfileEnvelope is the *content* — it travels point-to-point
-//     over /relay/forward and answers "what does this actor look like
+//     over a scoped opaque Relay tunnel and answers "what does this actor look like
 //     right now?".
 //
 // Receivers verify the envelope's `signature` against `signing_key_pem`
