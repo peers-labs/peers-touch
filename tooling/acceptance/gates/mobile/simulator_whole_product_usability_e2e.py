@@ -682,6 +682,24 @@ def _validate_artifact_ref(
     return reference
 
 
+def _is_proven_manifest_result(value: Any) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    if (
+        value.get("completionStatus") != "DONE"
+        or value.get("proofStatus") != "PROVEN"
+    ):
+        return False
+    if value.get("status") == "PASS":
+        return True
+    return (
+        value.get("artifactKind") == "acceptance-gate-result"
+        and value.get("status") == "passed"
+        and value.get("evidenceStatus") == "PASS"
+        and value.get("exit_code") == 0
+    )
+
+
 def _validate_visual_review(
     *,
     evidence_store: EvidenceStore,
@@ -702,9 +720,7 @@ def _validate_visual_review(
         or manifest.get("source") != current_source
         or not isinstance(artifacts, dict)
         or not isinstance(result, dict)
-        or result.get("status") != "PASS"
-        or result.get("completionStatus") != "DONE"
-        or result.get("proofStatus") != "PROVEN"
+        or not _is_proven_manifest_result(result)
     ):
         raise GateError("Mobile visual review run manifest is invalid")
     reference = _validate_artifact_ref(
@@ -1021,9 +1037,7 @@ def validate_surface_evidence(
             manifest.get("runId") != run_id
             or manifest_source != current_source
             or not isinstance(manifest_result, dict)
-            or manifest_result.get("status") != "PASS"
-            or manifest_result.get("completionStatus") != "DONE"
-            or manifest_result.get("proofStatus") != "PROVEN"
+            or not _is_proven_manifest_result(manifest_result)
             or not isinstance(manifest_artifacts, dict)
         ):
             raise GateError("Mobile surface evidence run manifest is invalid")

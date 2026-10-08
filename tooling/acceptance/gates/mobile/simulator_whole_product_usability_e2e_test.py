@@ -737,6 +737,41 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertEqual(result["surfaceSet"], "shell")
         self.assertEqual(review_ref["gateId"], VISUAL_REVIEW_GATE_ID)
 
+    def test_accepts_successful_acceptance_run_manifest_result(self) -> None:
+        inventory = load_surface_inventory()
+        expected_source = source_identity(REPO_ROOT)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = EvidenceStore(Path(temp_dir), worktree=REPO_ROOT)
+            with store.begin_run(GATE_ID, source=expected_source) as run:
+                value = valid_surface_evidence(inventory, "shell", run)
+                run.write_json(
+                    "mobile-whole-product/surface-evidence.json",
+                    value,
+                    role="mobile-surface-evidence",
+                )
+                run.finalize(
+                    result={
+                        "artifactKind": "acceptance-gate-result",
+                        "status": "passed",
+                        "evidenceStatus": "PASS",
+                        "exit_code": 0,
+                        "completionStatus": "DONE",
+                        "proofStatus": "PROVEN",
+                    }
+                )
+                run.publish_latest()
+
+            result = validate_surface_evidence(
+                inventory,
+                "shell",
+                value,
+                evidence_store=store,
+                expected_source=expected_source,
+                require_visual_review=False,
+            )
+
+        self.assertEqual(result["surfaceSet"], "shell")
+
     def test_requires_an_independent_visual_review_after_surface_capture(self) -> None:
         inventory = load_surface_inventory()
         expected_source = source_identity(REPO_ROOT)
