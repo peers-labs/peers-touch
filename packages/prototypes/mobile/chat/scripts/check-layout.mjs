@@ -67,7 +67,10 @@ try {
           })),
           touchTargets: [...element.querySelectorAll(
             '.mp-header-action, .mp-search-bar .ant-input-affix-wrapper, '
-              + '.mp-thread-back, .mp-thread-action, .mp-runtime-notice .ant-btn',
+              + '.mp-thread-back, .mp-thread-action, .mp-runtime-notice .ant-btn, '
+              + '.mp-profile-trigger, .mp-setting-row, .mp-sign-out, '
+              + '.mp-setting-detail-content .ant-btn, '
+              + '.mp-setting-detail-content .ant-switch, .mp-confirm-btn',
           )].map((target) => {
             const style = getComputedStyle(target);
             return {
@@ -110,6 +113,43 @@ try {
 
     await open('journey');
     await capture('default');
+    await open('long-lists');
+    await device.getByRole('button', { name: 'Me', exact: true }).click();
+    await capture('settings-summary');
+    const settingsDetails = [
+      ['Account Info', 'account-info'],
+      ['Notifications', 'notifications'],
+      ['Privacy & Security', 'privacy-security'],
+      ['Safety Number', 'safety-number'],
+      ['Blocked Users', 'blocked-users'],
+      ['Chat Settings', 'chat-settings'],
+      ['Chat Background', 'chat-background'],
+      ['Station Connection', 'station-connection'],
+      ['Encryption', 'encryption'],
+      ['Language', 'language'],
+      ['About Peers Touch', 'about'],
+    ];
+    for (const [label, id] of settingsDetails) {
+      await device.getByRole('button', { name: new RegExp(label) }).first().click();
+      await capture(`settings-${id}`);
+      if (id === 'account-info') {
+        await device.locator('input[value="Alice Chen"]').fill('Alice Chen Updated');
+        await capture('settings-account-dirty');
+        await device.getByRole('button', { name: 'Save Changes', exact: true }).click();
+        await capture('settings-account-saved');
+      }
+      if (id === 'station-connection') {
+        await device.getByRole('button', { name: 'Change Station', exact: true }).click();
+        await device.getByRole('dialog', { name: 'Change Station', exact: true }).waitFor();
+        await capture('settings-station-change');
+        await device.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await device.getByRole('button', { name: 'Log Out', exact: true }).click();
+        await device.getByRole('dialog', { name: 'Log Out?', exact: true }).waitFor();
+        await capture('settings-logout-confirm');
+        await device.getByRole('button', { name: 'Cancel', exact: true }).click();
+      }
+      await device.getByRole('button', { name: 'Back', exact: true }).click();
+    }
     await open('session-revoked');
     await capture('auth-session-revoked');
     await open('social-unavailable');

@@ -154,6 +154,7 @@ class _ShellDriverSession:
         self.chat_surface_id: str | None = None
         self.contacts_surface_id: str | None = None
         self.moments_surface_id: str | None = None
+        self.settings_surface_id: str | None = None
         self.activated_apps: list[str] = []
 
     def switch_to_native(self) -> None:
@@ -236,6 +237,12 @@ class _ShellDriverSession:
             self.moments_surface_id = (payload or {}).get("surfaceId")
             return {
                 "surfaceId": self.moments_surface_id,
+                "revision": 1,
+            }
+        if action == "settings.fixture":
+            self.settings_surface_id = (payload or {}).get("surfaceId")
+            return {
+                "surfaceId": self.settings_surface_id,
                 "revision": 1,
             }
         if action in {"lifecycle.suspend", "lifecycle.resume"}:
@@ -490,6 +497,24 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         )
         self.assertIn(
             "detail-and-comment-continuity",
+            report["observedScope"],
+        )
+
+    def test_settings_gate_emits_settings_specific_acceptance_report(self) -> None:
+        report = SimulatorWholeProductUsabilityGate._result_report(
+            "PASS",
+            "settings",
+        )
+
+        self.assertEqual(report["runtimeCell"], "ios-simulator-settings")
+        self.assertEqual(report["phase"], "MWPU-07 Settings Usability")
+        self.assertEqual(report["bom"], ["MWPU-07-SETTINGS"])
+        self.assertIn(
+            "owner-scoped-save-and-conflict",
+            report["observedScope"],
+        )
+        self.assertIn(
+            "station-change-and-logout",
             report["observedScope"],
         )
 
@@ -767,6 +792,30 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             session.clicked,
         )
 
+    def test_settings_driver_opens_selected_detail_in_foreground(self) -> None:
+        inventory = load_surface_inventory()
+        entries = {
+            entry["id"]: entry
+            for entry in selected_surface_entries(inventory, "settings")
+        }
+        gate = SimulatorWholeProductUsabilityGate(
+            foreground_probe=lambda: {},
+        )
+        session = _ShellDriverSession()
+
+        action = gate._enter_settings_surface(
+            session,
+            entries["settings.privacy-security"],
+        )
+
+        self.assertEqual(action["kind"], "native-touch")
+        self.assertEqual(action["target"], "tap-setting-privacy-security")
+        self.assertEqual(session.settings_surface_id, "settings.summary")
+        self.assertIn(
+            '[data-settings-fixture-open="privacy-security"]',
+            session.clicked,
+        )
+
     def test_resume_script_avoids_webkit_incompatible_trailing_argument_comma(
         self,
     ) -> None:
@@ -844,6 +893,7 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertIn("fullyVisibleWithinAncestors", SURFACE_AUDIT_SCRIPT)
         self.assertIn("clipsOverflow(style.overflowX)", SURFACE_AUDIT_SCRIPT)
         self.assertIn("clipsOverflow(style.overflowY)", SURFACE_AUDIT_SCRIPT)
+        self.assertIn("if (style.position === 'fixed') break;", SURFACE_AUDIT_SCRIPT)
         self.assertIn(
             "fullyVisibleWithinAncestors(boundary, rect)",
             SURFACE_AUDIT_SCRIPT,
@@ -1012,6 +1062,27 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             'data-product-surface="moments.feed"',
             page,
         )
+
+    def test_settings_product_selectors_are_present_in_foreground_components(
+        self,
+    ) -> None:
+        fixture = (
+            REPO_ROOT / "apps/mobile/src/acceptance/settingsSurfaceFixture.ts"
+        ).read_text(encoding="utf-8")
+        fixture_surface = (
+            REPO_ROOT
+            / "apps/mobile/src/pages/settings/SettingsAcceptanceSurface.tsx"
+        ).read_text(encoding="utf-8")
+        page = (
+            REPO_ROOT / "apps/mobile/src/pages/SettingsPage.tsx"
+        ).read_text(encoding="utf-8")
+
+        for surface_id in REQUIRED_SURFACE_IDS["settings"]:
+            self.assertIn(surface_id, fixture, surface_id)
+        self.assertIn("data-product-surface={productSurface}", fixture_surface)
+        self.assertIn('data-acceptance-id={unsaved', fixture_surface)
+        self.assertIn('data-product-surface="settings.summary"', page)
+        self.assertNotIn("actorPtid={authSession?.actorRef.ptid}", page)
 
     def test_inventory_covers_every_surface_set_and_contract_cell(self) -> None:
         inventory = load_surface_inventory()

@@ -191,6 +191,11 @@ import {
   setMomentsSurfaceFixture,
 } from './momentsSurfaceFixture';
 import {
+  isSettingsSurfaceFixtureId,
+  setSettingsSurfaceFixture,
+  settingsSurfaceFixtureRoute,
+} from './settingsSurfaceFixture';
+import {
   isRecoverySurfaceFixtureId,
   setRecoverySurfaceFixture,
 } from './recoverySurfaceFixture';
@@ -435,6 +440,28 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       });
     }
     return setMomentsSurfaceFixture(surfaceId);
+  },
+
+  'settings.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isSettingsSurfaceFixtureId(surfaceId)) {
+      throw new Error('acceptance.mobile.invalidInput:settings.fixture.surfaceId');
+    }
+    const route = settingsSurfaceFixtureRoute(surfaceId);
+    applyMobileNavigationIntent({
+      kind: 'primary',
+      routeId: 'tab:settings',
+    });
+    if (route.kind === 'detail' && route.settingId) {
+      applyMobileNavigationIntent({
+        kind: 'detail.push',
+        route: {
+          routeId: 'detail:setting',
+          settingId: route.settingId,
+        },
+      });
+    }
+    return setSettingsSurfaceFixture(surfaceId);
   },
 
   'access.submit': async (input) => {

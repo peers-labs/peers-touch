@@ -104,7 +104,21 @@ export interface GroupItem {
   memberCount: number;
 }
 
+export type SettingId =
+  | 'account-info'
+  | 'notifications'
+  | 'privacy-security'
+  | 'safety-number'
+  | 'blocked-users'
+  | 'chat-settings'
+  | 'chat-background'
+  | 'station-connection'
+  | 'encryption'
+  | 'language'
+  | 'about';
+
 export interface SettingEntry {
+  id: SettingId;
   label: string;
   value?: string;
   icon: React.ComponentType<{ size?: number }>;

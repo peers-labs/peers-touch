@@ -4888,8 +4888,213 @@ select,
 
 .settings-dirty-buttons {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.setting-row,
+.settings-profile-trigger,
+.settings-sign-out,
+.settings-section .ant-btn,
+.settings-section .ant-input,
+.settings-section .ant-input-affix-wrapper,
+.settings-section .ant-select-selector,
+.settings-dirty-bar .ant-btn,
+.settings-acceptance-fixture .ant-btn,
+.settings-acceptance-fixture .ant-input,
+.settings-acceptance-fixture .ant-input-affix-wrapper,
+.settings-acceptance-fixture .ant-select-selector {
+  min-height: 44px;
+}
+
+.settings-section .ant-switch,
+.settings-acceptance-fixture .ant-switch {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  background: transparent !important;
+}
+
+.settings-section .ant-switch .ant-switch-inner,
+.settings-acceptance-fixture .ant-switch .ant-switch-inner {
+  height: 24px;
+  margin: 10px 0;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.22);
+}
+
+.settings-section .ant-switch.ant-switch-checked .ant-switch-inner,
+.settings-acceptance-fixture .ant-switch.ant-switch-checked .ant-switch-inner {
+  background: var(--brand-primary);
+}
+
+.settings-section .ant-switch .ant-switch-handle,
+.settings-acceptance-fixture .ant-switch .ant-switch-handle {
+  top: 12px;
+}
+
+.settings-section .ant-select-selector,
+.settings-acceptance-fixture .ant-select-selector {
+  min-height: 44px !important;
+  align-items: center;
+}
+
+.settings-section .ant-select {
+  min-height: 44px;
+  align-items: center;
+}
+
+.settings-fixture-select {
+  min-width: 120px;
+  min-height: 44px;
+  height: 44px;
+  padding: 0 34px 0 12px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.settings-section .ant-input-number,
+.settings-acceptance-fixture .ant-input-number {
+  min-height: 44px;
+}
+
+.settings-section .ant-input-number-input,
+.settings-acceptance-fixture .ant-input-number-input {
+  height: 42px;
+}
+
+.settings-section .ant-checkbox-wrapper,
+.settings-acceptance-fixture .ant-checkbox-wrapper {
+  min-height: 44px;
+  align-items: center;
+}
+
+.settings-row {
+  flex-wrap: wrap;
+}
+
+.settings-row > .ant-select,
+.settings-row > .ant-input-number {
+  max-width: 100%;
+}
+
+.settings-acceptance-fixture {
+  min-height: 100%;
+}
+
+.settings-acceptance-fixture[aria-hidden='true'] {
+  pointer-events: none;
+}
+
+.settings-fixture-summary,
+.settings-fixture-detail {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.settings-fixture-state {
+  display: flex;
+  min-height: 220px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  text-align: center;
+}
+
+.settings-fixture-state .mobile-notice {
+  width: min(100%, 420px);
+  margin: 0;
+}
+
+.settings-fixture-avatar {
+  border-radius: 16px !important;
+  background: #e9eef9 !important;
+  color: #3156a3 !important;
+  font-weight: 700;
+}
+
+.settings-fixture-stat-fragment {
+  display: contents;
+}
+
+.settings-fixture-person {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+
+.settings-fixture-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 360;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-top: var(--safe-area-top);
+  background: rgba(12, 18, 32, 0.38);
+}
+
+.settings-fixture-sheet {
+  display: flex;
+  width: min(100%, 640px);
+  max-height: calc(100dvh - var(--safe-area-top));
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 16px calc(var(--safe-area-bottom) + 16px);
+  overflow-y: auto;
+  border-radius: 18px 18px 0 0;
+  background: #fff;
+  box-shadow: 0 -12px 36px rgba(12, 18, 32, 0.16);
+}
+
+.settings-fixture-sheet h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.settings-fixture-sheet .ant-btn {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.settings-fixture-sheet-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.settings-fixture-station-choice {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 24px;
+  min-height: 64px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 8px;
+}
+
+@media (orientation: landscape) {
+  .settings-fixture-sheet {
+    max-height: 100dvh;
+    padding-bottom: calc(var(--safe-area-bottom) + 10px);
+  }
+
+  .settings-fixture-state {
+    min-height: 140px;
+  }
 }
 
 /* ── Conversation list — prototype-aligned icons & preview ── */

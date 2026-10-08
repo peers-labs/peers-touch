@@ -173,7 +173,13 @@ export function MobileShell({
         onBack={() => setSelectedGroup(null)} />;
     }
     if (activeTab === 'profile' && selectedSetting) {
-      return <SettingDetailView setting={selectedSetting} onBack={() => setSelectedSetting(null)} />;
+      return (
+        <SettingDetailView
+          setting={selectedSetting}
+          onBack={() => setSelectedSetting(null)}
+          onChangeStation={onChangeStation}
+        />
+      );
     }
     switch (activeTab) {
       case 'chat': return <ChatPage conversations={longLists ? longListConversations : socialDemo.conversations}

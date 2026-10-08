@@ -92,6 +92,7 @@ SHELL_REQUIRED_HARNESS_ACTIONS = (
     "moments.fixture",
     "projection.read",
     "recovery.fixture",
+    "settings.fixture",
     "social.projection.read",
     "station.add",
 )
@@ -222,6 +223,7 @@ const fullyVisibleWithinAncestors = (element, rect) => {
       clipsOverflow(style.overflowY)
       && (rect.top < ancestorRect.top - 1 || rect.bottom > ancestorRect.bottom + 1)
     ) return false;
+    if (style.position === 'fixed') break;
   }
   return true;
 };
@@ -1456,6 +1458,18 @@ class SimulatorWholeProductUsabilityGate(
                     "policy-and-availability-states",
                 ],
             },
+            "settings": {
+                "runtimeCell": "ios-simulator-settings",
+                "phase": "MWPU-07 Settings Usability",
+                "bom": ["MWPU-07-SETTINGS"],
+                "observedScope": [
+                    "me-summary-and-selected-details",
+                    "owner-scoped-save-and-conflict",
+                    "permission-and-unavailable-states",
+                    "device-storage-management",
+                    "station-change-and-logout",
+                ],
+            },
         }.get(surface_set)
         if report_scope is None:
             report_scope = {
@@ -1527,6 +1541,7 @@ class SimulatorWholeProductUsabilityGate(
             "chat",
             "contacts",
             "moments",
+            "settings",
         }:
             raise SimulatorGateBlocked(
                 f"Surface adapter is not implemented for {surface_set}",
@@ -1655,6 +1670,10 @@ class SimulatorWholeProductUsabilityGate(
                 session.switch_to_app_webview()
                 session.call_action("moments.fixture", {"surfaceId": None})
                 time.sleep(0.5)
+            elif surface_set == "settings":
+                session.switch_to_app_webview()
+                session.call_action("settings.fixture", {"surfaceId": None})
+                time.sleep(0.5)
             viewport = self._configure_cell(session, cell_id)
             for entry in entries:
                 action = (
@@ -1666,6 +1685,8 @@ class SimulatorWholeProductUsabilityGate(
                     if surface_set == "contacts"
                     else self._enter_moments_surface(session, entry)
                     if surface_set == "moments"
+                    else self._enter_settings_surface(session, entry)
+                    if surface_set == "settings"
                     else self._enter_surface(session, entry)
                 )
                 surface_evidence[entry["id"]]["cells"][cell_id] = (
@@ -1690,6 +1711,8 @@ class SimulatorWholeProductUsabilityGate(
             session.call_action("contacts.fixture", {"surfaceId": None})
         elif surface_set == "moments":
             session.call_action("moments.fixture", {"surfaceId": None})
+        elif surface_set == "settings":
+            session.call_action("settings.fixture", {"surfaceId": None})
         artifacts.write_json(
             "mobile-whole-product/source-runtime.json",
             {
@@ -2325,6 +2348,110 @@ class SimulatorWholeProductUsabilityGate(
                 else "native-touch"
             )
 
+        return {
+            "kind": action_kind,
+            "target": action,
+            "performed": True,
+        }
+
+    def _enter_settings_surface(
+        self,
+        session: Any,
+        entry: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        surface_id = str(entry["id"])
+        action = str(entry["entryAction"])
+        detail_actions = {
+            f"tap-setting-{setting_id}": (
+                "settings.summary",
+                f'[data-settings-fixture-open="{setting_id}"]',
+            )
+            for setting_id in (
+                "account-info",
+                "notifications",
+                "privacy-security",
+                "safety-number",
+                "blocked-users",
+                "chat-settings",
+                "chat-background",
+                "station-connection",
+                "encryption",
+                "language",
+                "about",
+            )
+        }
+        transitions = {
+            **detail_actions,
+            "change-setting": (
+                "settings.account-info",
+                "[data-settings-fixture-change]",
+            ),
+            "save-setting": (
+                "settings.detail-dirty",
+                "[data-settings-fixture-save]",
+            ),
+            "tap-manage-storage": (
+                "settings.chat-settings",
+                "[data-settings-fixture-storage-manage]",
+            ),
+            "select-storage-items-and-clear": (
+                "settings.storage-manage",
+                "[data-settings-fixture-storage-select]",
+            ),
+            "confirm-storage-clear": (
+                "settings.storage-confirm",
+                "[data-settings-fixture-storage-confirm]",
+            ),
+            "change-storage-retention": (
+                "settings.chat-settings",
+                "[data-settings-fixture-retention]",
+            ),
+            "tap-clear-cache": (
+                "settings.chat-settings",
+                "[data-settings-fixture-clear-cache]",
+            ),
+            "tap-change-station": (
+                "settings.station-connection",
+                "[data-settings-fixture-change-station]",
+            ),
+            "back-with-dirty-setting": (
+                "settings.detail-dirty",
+                "[data-settings-fixture-back]",
+            ),
+            "tap-logout": (
+                "settings.summary",
+                "[data-settings-fixture-logout]",
+            ),
+        }
+        initial_surface, selector = transitions.get(
+            action,
+            (surface_id, None),
+        )
+        session.switch_to_app_webview()
+        observed = session.call_action(
+            "settings.fixture",
+            {"surfaceId": initial_surface},
+        )
+        if (
+            not isinstance(observed, Mapping)
+            or observed.get("surfaceId") != initial_surface
+        ):
+            raise GateError(
+                f"Mobile Settings fixture did not project {initial_surface}"
+            )
+
+        action_kind = "system"
+        if action == "tap-settings-tab":
+            selector = '[data-route-id="tab:settings"]'
+        if selector:
+            control = session.find_element("css selector", selector)
+            session.click_element(control)
+            action_kind = "native-touch"
+
+        self._wait_for_surface(
+            session,
+            str(entry["surfaceSelector"]),
+        )
         return {
             "kind": action_kind,
             "target": action,
