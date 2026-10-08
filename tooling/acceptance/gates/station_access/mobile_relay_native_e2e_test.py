@@ -128,6 +128,7 @@ class MobileRelayNativeGateTests(unittest.TestCase):
 
         self.assertIn("PT_ACCEPTANCE_RELAY_CA_DER_B64", source)
         self.assertIn("RootCertStore::empty()", source)
+        self.assertIn("add_root_certificate", source)
         self.assertIn("client_tls_with_config", source)
         self.assertNotIn("danger_accept_invalid_certs", source)
 

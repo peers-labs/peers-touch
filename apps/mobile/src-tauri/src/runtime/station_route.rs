@@ -417,9 +417,13 @@ fn discover_station_input(input: &str) -> MobileResult<VerifiedDiscovery> {
         client_protocol_version: ACCESS_PROTOCOL_VERSION,
     };
     let endpoint = format!("{}{}", parsed.origin, ACCESS_PATH);
-    let response = Client::builder()
+    let mut client = Client::builder()
         .timeout(Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::none());
+    if let Some(certificate) = acceptance_relay_discovery_certificate()? {
+        client = client.add_root_certificate(certificate);
+    }
+    let response = client
         .build()
         .map_err(|_| discovery_error("clientUnavailable"))?
         .post(endpoint)
@@ -1375,6 +1379,18 @@ fn acceptance_relay_tls_connector() -> MobileResult<Option<Connector>> {
         .with_root_certificates(roots)
         .with_no_client_auth();
     Ok(Some(Connector::Rustls(Arc::new(config))))
+}
+
+fn acceptance_relay_discovery_certificate() -> MobileResult<Option<reqwest::Certificate>> {
+    let Some(encoded) = option_env!("PT_ACCEPTANCE_RELAY_CA_DER_B64") else {
+        return Ok(None);
+    };
+    let certificate = STANDARD
+        .decode(encoded)
+        .map_err(|_| discovery_error("relayTrustAnchorInvalid"))?;
+    reqwest::Certificate::from_der(&certificate)
+        .map(Some)
+        .map_err(|_| discovery_error("relayTrustAnchorInvalid"))
 }
 
 fn is_loopback_host(host: &str) -> bool {
