@@ -19,8 +19,8 @@ BOM = ["BOM-SMP-01"]
 SPEC = ["SPEC-ANCHOR-01"]
 GATE = "Desktop source must expose required stable anchors before DOM automation evidence can be accepted"
 ARTIFACT_KIND = "desktop-anchor-source-gate"
-REPORT_PATH = "reports/desktop-anchor-source-gate.json"
-REPORT_MARKDOWN_PATH = "reports/desktop-anchor-source-gate.md"
+REPORT_PATH = "tooling/acceptance/reports/desktop-anchor-source-gate.json"
+REPORT_MARKDOWN_PATH = "tooling/acceptance/reports/desktop-anchor-source-gate.md"
 
 
 def utc_now() -> str:

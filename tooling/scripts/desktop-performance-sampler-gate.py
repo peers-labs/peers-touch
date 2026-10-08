@@ -19,7 +19,7 @@ from _acceptance_artifacts import (
 
 
 PRODUCER_GATE_ID = "desktop-performance-sampler-gate"
-DEFAULT_OUTPUT_PREFIX = "reports/desktop-performance-sampler-gate-latest"
+DEFAULT_OUTPUT_PREFIX = "tooling/acceptance/reports/desktop-performance-sampler-gate-latest"
 STATION_MIRROR_OUTPUT_PREFIX = "tooling/acceptance/reports/desktop-performance-station-mirror"
 STATION_MIRROR_REPORT_PATH = f"{STATION_MIRROR_OUTPUT_PREFIX}.json"
 

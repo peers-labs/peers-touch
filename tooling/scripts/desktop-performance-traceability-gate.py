@@ -22,7 +22,7 @@ PHASE = "P0c-5"
 BOM = ["BOM-RUN-05", "BOM-CAP-05", "BOM-GATE-02"]
 SPEC = ["SPEC-MIRROR-01", "SPEC-STA-03", "SPEC-GATE-02"]
 GATE = "Phase 0 aggregate issue and result evidence must preserve source artifact, phase, BOM, Spec, and Gate traceability"
-DEFAULT_OUTPUT = "reports/desktop-performance-traceability-gate.json"
+DEFAULT_OUTPUT = "tooling/acceptance/reports/desktop-performance-traceability-gate.json"
 REQUIRED_ISSUE_FIELDS = [
     "sourceArtifact",
     "sourceArtifactKind",

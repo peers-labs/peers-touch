@@ -25,7 +25,7 @@ from _acceptance_artifacts import (
 
 
 PRODUCER_GATE_ID = "desktop-performance-matrix-gate"
-DEFAULT_OUTPUT_PREFIX = "reports/desktop-performance-matrix-latest"
+DEFAULT_OUTPUT_PREFIX = "tooling/acceptance/reports/desktop-performance-matrix-latest"
 
 ALLOWED_STATUSES = {
     "sampled",

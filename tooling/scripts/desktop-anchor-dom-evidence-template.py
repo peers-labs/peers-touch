@@ -20,8 +20,8 @@ from _acceptance_artifacts import (
 ARTIFACT_KIND = "desktop-anchor-dom-evidence"
 OBSERVATIONS_TEMPLATE_ARTIFACT_KIND = "desktop-anchor-dom-observations-template"
 PRODUCER_ID = "desktop-anchor-dom-evidence-template-gate"
-EVIDENCE_TEMPLATE_PATH = "reports/desktop-anchor-dom-evidence-template.json"
-OBSERVATIONS_TEMPLATE_PATH = "reports/desktop-anchor-dom-observations-template.json"
+EVIDENCE_TEMPLATE_PATH = "tooling/acceptance/reports/desktop-anchor-dom-evidence-template.json"
+OBSERVATIONS_TEMPLATE_PATH = "tooling/acceptance/reports/desktop-anchor-dom-observations-template.json"
 COLLECT_COMMAND = "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py"
 
 

@@ -48,8 +48,8 @@ ANCHOR_INVENTORY_PRODUCER_ID = "desktop-anchor-inventory-gate"
 ANCHOR_INVENTORY_GATE = "Native Tauri runtime cells target the same object identity"
 DOM_EVIDENCE_PRODUCER_ID = "desktop-anchor-dom-evidence-collect-gate"
 DOM_EVIDENCE_ROLE = "report"
-REPORT_PATH = "reports/desktop-anchor-inventory.json"
-REPORT_MARKDOWN_PATH = "reports/desktop-anchor-inventory.md"
+REPORT_PATH = "tooling/acceptance/reports/desktop-anchor-inventory.json"
+REPORT_MARKDOWN_PATH = "tooling/acceptance/reports/desktop-anchor-inventory.md"
 
 
 def utc_now() -> str:

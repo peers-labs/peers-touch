@@ -15,7 +15,7 @@ from _acceptance_artifacts import artifact_session, explicit_output_path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_OUTPUT = "reports/messaging-platform-baseline.json"
+DEFAULT_OUTPUT = "tooling/acceptance/reports/messaging-platform-baseline.json"
 OWNERSHIP_PATH = (
     ROOT / "tooling/acceptance/plans/messaging-platform-ownership.json"
 )

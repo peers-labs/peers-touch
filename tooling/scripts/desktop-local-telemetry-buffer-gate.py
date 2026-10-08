@@ -16,8 +16,8 @@ from _acceptance_artifacts import (
 )
 
 ARTIFACT_KIND = "desktop-local-telemetry-buffer-gate"
-REPORT_PATH = "reports/desktop-local-telemetry-buffer-gate.json"
-REPORT_MARKDOWN_PATH = "reports/desktop-local-telemetry-buffer-gate.md"
+REPORT_PATH = "tooling/acceptance/reports/desktop-local-telemetry-buffer-gate.json"
+REPORT_MARKDOWN_PATH = "tooling/acceptance/reports/desktop-local-telemetry-buffer-gate.md"
 PHASE = "P0b-2/P0b-3/P0b-4/P0b-5/P0b-6/P0b-7/P0c-5"
 BOM = [
     "BOM-CON-02",

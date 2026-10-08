@@ -19,7 +19,7 @@ GATE = (
     "Local telemetry static tests must prove Desktop envelope/queue, Native Tauri upload validation, "
     "Station ingest/query/rollup implementation, and Station query contract coverage while leaving live upload/query/mirror proof to env gates"
 )
-DEFAULT_OUTPUT = "reports/desktop-telemetry-local-loop-gate.json"
+DEFAULT_OUTPUT = "tooling/acceptance/reports/desktop-telemetry-local-loop-gate.json"
 TAURI_MAIN_PATH = Path("apps/desktop/src-tauri/src/main.rs")
 TAURI_FRONTEND_TELEMETRY_COMMAND_PATH = Path("apps/desktop/src-tauri/src/interface/tauri_commands/frontend_telemetry.rs")
 DESKTOP_API_PATH = Path("apps/desktop/src/services/desktop_api.ts")

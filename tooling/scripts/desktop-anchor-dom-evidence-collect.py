@@ -19,7 +19,7 @@ from _acceptance_artifacts import (
 
 ARTIFACT_KIND = "desktop-anchor-dom-evidence"
 PRODUCER_ID = "desktop-anchor-dom-evidence-collect-gate"
-REPORT_PATH = "reports/desktop-anchor-dom-evidence.json"
+REPORT_PATH = "tooling/acceptance/reports/desktop-anchor-dom-evidence.json"
 REPORT_ROLE = "report"
 CURRENT_REPORT_REF = "evidence-store:current:report"
 COLLECT_COMMAND = "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py"
