@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from tooling.acceptance.core import (
+    AcceptanceGate,
     ArtifactRef,
     ArtifactSession,
     DriverError,
@@ -1192,7 +1193,10 @@ def record_visual_review(
     return review_ref.to_dict()
 
 
-class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
+class SimulatorWholeProductUsabilityGate(
+    SimulatorCallbackRoutingGate,
+    AcceptanceGate,
+):
     gate_id = GATE_ID
 
     def __init__(self, *, foreground_probe: Any = None, **kwargs: Any) -> None:
