@@ -1363,6 +1363,7 @@ class _AndroidUsbNetworkTransport:
                 "com.android.vpndialogs",
                 "com.android.systemui",
                 "com.android.settings",
+                "com.oplus.wirelesssettings",
             }
         ]
         return self._tap_ui_node(
