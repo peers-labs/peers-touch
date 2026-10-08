@@ -4008,8 +4008,11 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
                 "friendRequests": [
                     {
                         "requestId": "request-1",
+                        "federationId": "federation-1",
                         "senderPtid": "ptid:alice",
                         "receiverPtid": "ptid:bob",
+                        "senderHomeStationPeerId": "station-a",
+                        "receiverHomeStationPeerId": "station-a",
                         "status": 1,
                     }
                 ],
@@ -4023,6 +4026,14 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
                 },
                 "peerOnline": {"ptid:bob": True},
                 "lastReconcileAt": 13,
+                "ingress": {
+                    "lifecycle": "active",
+                    "streamCursor": "event-1",
+                    "writeAdmissionOpen": True,
+                    "staleDomains": [],
+                    "dataQueueDepth": 0,
+                    "controlQueueDepth": 0,
+                },
             },
             "cleanup": {
                 "oauthPurge": {
@@ -4107,6 +4118,26 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
                         cancellation=threading.Event(),
                     )
         values["lifecycle.scope.read"] = lifecycle_scope
+
+        social_projection = values["social.projection.read"]
+        values["social.projection.read"] = {
+            **social_projection,
+            "ingress": None,
+        }
+        self.assertIsNone(
+            handler.invoke(
+                "harness_action",
+                {
+                    "clientId": "alice-ios",
+                    "sessionRef": "opaque-session",
+                    "action": "social.projection.read",
+                    "actionPayload": {},
+                },
+                deadline_monotonic=float("inf"),
+                cancellation=threading.Event(),
+            )["value"]["ingress"]
+        )
+        values["social.projection.read"] = social_projection
 
         for invalid in (
             {},
