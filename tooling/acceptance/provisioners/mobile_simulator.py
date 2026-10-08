@@ -34,6 +34,7 @@ from tooling.acceptance.core import (
     ClientBindingError,
     ClientRuntimeIdentity,
     ClientRuntime,
+    DriverError,
     EnvironmentClient,
     EnvironmentContract,
     EnvironmentProvisioner,
@@ -5039,13 +5040,13 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
                 },
             },
         )
-        route_element = session.find_element(
-            "css selector",
+        route_element = self._wait_for_element(
+            session,
             f'button[data-station-route-type="{route_type}"]',
         )
         session.click_element(route_element)
-        confirm = session.find_element(
-            "css selector",
+        confirm = self._wait_for_element(
+            session,
             'button[data-station-route-confirm="true"]',
         )
         session.click_element(confirm)
@@ -5075,6 +5076,24 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
         raise EphemeralCapabilityBlocked(
             f"Mobile {route_type} Station route did not become active",
             resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{route_type}-route",
+        )
+
+    @staticmethod
+    def _wait_for_element(
+        session: Any,
+        selector: str,
+        *,
+        timeout_seconds: float = 30.0,
+    ) -> str:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            try:
+                return session.find_element("css selector", selector)
+            except DriverError:
+                time.sleep(0.25)
+        raise EphemeralCapabilityBlocked(
+            "Mobile Station route control is unavailable",
+            resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:station-route-ui",
         )
 
     @staticmethod

@@ -20,6 +20,7 @@ from tooling.acceptance.core import (
     ArtifactRef,
     BlockedError,
     ClientRuntime,
+    DriverError,
     EnvironmentContract,
     ProvisioningError,
     ProvisioningState,
@@ -2635,6 +2636,26 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
             expected_seed,
             json.dumps(authenticated, sort_keys=True),
         )
+
+    def test_parent_waits_for_route_controls_to_render(self) -> None:
+        session = Mock()
+        session.find_element.side_effect = [
+            DriverError("not rendered"),
+            "route-element",
+        ]
+
+        with patch(
+            "tooling.acceptance.provisioners.mobile_simulator.time.sleep",
+        ):
+            element = (
+                MobileSimulatorAppiumCapabilityHandler._wait_for_element(
+                    session,
+                    'button[data-station-route-type="direct"]',
+                )
+            )
+
+        self.assertEqual(element, "route-element")
+        self.assertEqual(session.find_element.call_count, 2)
 
     def test_parent_create_bound_session_resolves_topology_and_emits_proof(
         self,
