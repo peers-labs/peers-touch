@@ -24,9 +24,11 @@ from tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e impor
     GATE_ID,
     READ_RESUME_SCRIPT,
     START_RESUME_SCRIPT,
+    SURFACE_AUDIT_SCRIPT,
     TEXT_SIZE_SCRIPT,
     VISUAL_REVIEW_GATE_ID,
     SimulatorWholeProductUsabilityGate,
+    _validate_lifecycle_readiness,
     audit_visible_text,
     expected_result,
     load_surface_inventory,
@@ -484,6 +486,64 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
     ) -> None:
         self.assertNotIn("root['lifecycle.resume']({}),", START_RESUME_SCRIPT)
         self.assertNotIn("=>", START_RESUME_SCRIPT)
+
+    def test_lifecycle_readiness_rejects_failed_runtime_with_diagnostic(
+        self,
+    ) -> None:
+        snapshot = {
+            "phase": "ACTIVE",
+            "generation": 3,
+            "runtimes": [
+                {"id": "auth", "status": "ready", "errorKey": None},
+                {
+                    "id": "private-social",
+                    "status": "failed",
+                    "errorKey": "mobile.lifecycle.runtimeFailed",
+                },
+            ],
+            "runtimeErrors": [
+                {
+                    "runtimeId": "private-social",
+                    "error": "MOBILE_PRIVATE_SOCIAL_PREKEYS_UNAVAILABLE",
+                }
+            ],
+        }
+
+        with self.assertRaises(GateError) as raised:
+            _validate_lifecycle_readiness(snapshot)
+        self.assertIn("private-social", str(raised.exception))
+        self.assertIn(
+            "MOBILE_PRIVATE_SOCIAL_PREKEYS_UNAVAILABLE",
+            str(raised.exception),
+        )
+
+    def test_lifecycle_readiness_accepts_only_ready_runtimes(self) -> None:
+        snapshot = {
+            "phase": "ACTIVE",
+            "generation": 3,
+            "runtimes": [
+                {"id": "auth", "status": "ready", "errorKey": None},
+                {"id": "private-social", "status": "ready", "errorKey": None},
+            ],
+            "runtimeErrors": [],
+        }
+
+        self.assertEqual(_validate_lifecycle_readiness(snapshot), snapshot)
+
+    def test_surface_audit_is_scoped_and_rejects_global_degradation(self) -> None:
+        self.assertIn(
+            "root.querySelectorAll(interactiveSelector)",
+            SURFACE_AUDIT_SCRIPT,
+        )
+        self.assertIn("root.querySelectorAll('*')", SURFACE_AUDIT_SCRIPT)
+        self.assertNotIn(
+            "document.querySelectorAll(interactiveSelector)",
+            SURFACE_AUDIT_SCRIPT,
+        )
+        self.assertIn(
+            '[data-product-surface="shell.degraded-module-notice"]',
+            SURFACE_AUDIT_SCRIPT,
+        )
 
     def test_shell_product_selectors_are_present_in_production(self) -> None:
         shell = (
