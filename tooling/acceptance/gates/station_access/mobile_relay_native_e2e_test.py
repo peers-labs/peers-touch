@@ -128,6 +128,9 @@ class FakeBinding:
             return {"clean": True}
         raise AssertionError(action)
 
+    def close(self):
+        return ("sim-ios",)
+
 
 class MobileRelayNativeGateTests(unittest.TestCase):
     def test_mobile_relay_uses_the_injected_ca_without_disabling_tls(self) -> None:
@@ -209,6 +212,33 @@ class MobileRelayNativeGateTests(unittest.TestCase):
         self.assertEqual(
             gate.events[0]["event"],
             "relay-restart-retry",
+        )
+
+    def test_cleanup_returns_to_direct_before_logout(self) -> None:
+        gate = MobileRelayNativeGate.__new__(MobileRelayNativeGate)
+        AcceptanceGate.__init__(gate)
+        gate.client_active = True
+        gate.cleanup = []
+        binding = FakeBinding()
+        binding.route_type = "relay"
+
+        self.assertIsNone(gate._cleanup(binding))
+
+        self.assertEqual(binding.route_type, "direct")
+        self.assertEqual(
+            gate.cleanup,
+            [
+                {
+                    "resource": "cleanup-direct-route",
+                    "status": "passed",
+                },
+                {"resource": "product-harness", "status": "passed"},
+                {
+                    "resource": "runtime-binding",
+                    "status": "passed",
+                    "stoppedClients": ["sim-ios"],
+                },
+            ],
         )
 
     def test_active_route_rejects_ambiguous_registry(self) -> None:

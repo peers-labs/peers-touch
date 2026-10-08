@@ -499,6 +499,19 @@ class MobileRelayNativeGate(AcceptanceGate):
         failures: list[str] = []
         if self.client_active:
             try:
+                binding.activate_station_route(CLIENT_ID, "direct")
+            except Exception as error:
+                failures.append(
+                    f"cleanup route: {type(error).__name__}"
+                )
+                self.cleanup.append(
+                    {"resource": "cleanup-direct-route", "status": "failed"}
+                )
+            else:
+                self.cleanup.append(
+                    {"resource": "cleanup-direct-route", "status": "passed"}
+                )
+            try:
                 value = binding.call_action(CLIENT_ID, "cleanup")
                 if not isinstance(value, Mapping):
                     raise GateError("Mobile cleanup response is invalid")
