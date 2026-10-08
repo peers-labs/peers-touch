@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from tooling.acceptance.core import ArtifactRef, DriverError
 from tooling.acceptance.gates.mobile.appium import (
     APPIUM_CAPABILITY_ID,
+    SESSION_START_TIMEOUT_SECONDS,
     SESSION_STOP_TIMEOUT_SECONDS,
     AppiumSession,
 )
@@ -179,7 +180,7 @@ class AppiumChildFacadeTests(unittest.TestCase):
         self.assertNotIn("udid", payload)
         self.assertNotIn("serial", payload)
         self.assertNotIn("device", payload)
-        self.assertGreaterEqual(timeout, 180.0)
+        self.assertEqual(timeout, SESSION_START_TIMEOUT_SECONDS)
         self.assertIsInstance(self.session.fresh_install_trace, ArtifactRef)
 
     def test_android_social_uses_generic_installation_trace(self) -> None:
