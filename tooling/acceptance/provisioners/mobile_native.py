@@ -527,6 +527,84 @@ class _AndroidUsbNetworkTool:
     build_root: Path
 
 
+def _read_android_ui_hierarchy(
+    run_adb: Callable[..., CommandResult],
+    dump_path: str,
+) -> ET.Element | None:
+    dumped = run_adb("shell", "uiautomator", "dump", dump_path)
+    if dumped.returncode != 0:
+        return None
+    try:
+        content = run_adb("exec-out", "cat", dump_path)
+    finally:
+        removed = run_adb("shell", "rm", "-f", dump_path)
+        if removed.returncode != 0:
+            raise ProvisioningError(
+                "Android UI hierarchy cleanup failed"
+            )
+    if content.returncode != 0:
+        return None
+    try:
+        return ET.fromstring(content.stdout)
+    except ET.ParseError:
+        return None
+
+
+def _tap_android_ui_node(
+    run_adb: Callable[..., CommandResult],
+    nodes: Sequence[ET.Element],
+) -> bool:
+    if len(nodes) != 1:
+        return False
+    coordinates = tuple(
+        int(value)
+        for value in re.findall(
+            r"\d+",
+            nodes[0].attrib.get("bounds", ""),
+        )
+    )
+    if len(coordinates) != 4:
+        return False
+    left, top, right, bottom = coordinates
+    tapped = run_adb(
+        "shell",
+        "input",
+        "tap",
+        str((left + right) // 2),
+        str((top + bottom) // 2),
+    )
+    return tapped.returncode == 0
+
+
+def _approve_oplus_install_confirmation_if_visible(
+    run_adb: Callable[..., CommandResult],
+    *,
+    application_name: str,
+    dump_path: str,
+) -> bool:
+    root = _read_android_ui_hierarchy(run_adb, dump_path)
+    if root is None:
+        return False
+    nodes = tuple(root.iter("node"))
+    if not any(
+        node.attrib.get("resource-id")
+        == "com.oplus.appdetail:id/app_name"
+        and node.attrib.get("text") == application_name
+        for node in nodes
+    ):
+        return False
+    buttons = [
+        node
+        for node in nodes
+        if node.attrib.get("package") == "com.oplus.appdetail"
+        and node.attrib.get("resource-id")
+        == "com.oplus.appdetail:id/btn_left"
+        and node.attrib.get("enabled") == "true"
+        and node.attrib.get("clickable") == "true"
+    ]
+    return _tap_android_ui_node(run_adb, buttons)
+
+
 class _ManagedProcess(Protocol):
     def poll(self) -> int | None:
         ...
@@ -1269,36 +1347,15 @@ class _AndroidUsbNetworkTransport:
         deadline_monotonic: float | None,
         cancellation: threading.Event | None,
     ) -> bool:
-        root = self._read_ui_hierarchy(
-            device_identifier,
-            "/sdcard/peers-touch-usb-network-install.xml",
-            deadline_monotonic=deadline_monotonic,
-            cancellation=cancellation,
-        )
-        if root is None:
-            return False
-        nodes = tuple(root.iter("node"))
-        if not any(
-            node.attrib.get("resource-id")
-            == "com.oplus.appdetail:id/app_name"
-            and node.attrib.get("text") == "Peers USB Network"
-            for node in nodes
-        ):
-            return False
-        buttons = [
-            node
-            for node in nodes
-            if node.attrib.get("package") == "com.oplus.appdetail"
-            and node.attrib.get("resource-id")
-            == "com.oplus.appdetail:id/btn_left"
-            and node.attrib.get("enabled") == "true"
-            and node.attrib.get("clickable") == "true"
-        ]
-        return self._tap_ui_node(
-            device_identifier,
-            buttons,
-            deadline_monotonic=deadline_monotonic,
-            cancellation=cancellation,
+        return _approve_oplus_install_confirmation_if_visible(
+            lambda *arguments: self._adb(
+                device_identifier,
+                *arguments,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            ),
+            application_name="Peers USB Network",
+            dump_path="/sdcard/peers-touch-usb-network-install.xml",
         )
 
     def _companion_action(
@@ -4438,10 +4495,17 @@ class _ParentAndroidInstallationAdapter:
         )
 
     def install(self, package: Path) -> None:
-        self.session._request(
-            "POST",
-            self.session._path("/appium/device/install_app"),
-            {"appPath": str(package)},
+        lease = self.session._device_lease
+        if lease is None:
+            raise DriverError(
+                "Android installation adapter has no physical-device authority"
+            )
+        self.session._with_physical_device(
+            lease,
+            lambda handle: self._install_with_handle(
+                handle.identifier,
+                package,
+            ),
             deadline_monotonic=self.deadline_monotonic,
             cancellation=self.cancellation,
         )
@@ -4515,6 +4579,83 @@ class _ParentAndroidInstallationAdapter:
                 "Android installed package SHA-256 readback failed"
             )
         return AndroidInstalledArtifact(present=True, sha256=digest)
+
+    def _install_with_handle(
+        self,
+        device_identifier: str,
+        package: Path,
+    ) -> None:
+        if self.cancellation is not None and self.cancellation.is_set():
+            raise _AppiumDeadlineExceeded(
+                "Android installation was cancelled"
+            )
+        deadline = self.deadline_monotonic or (
+            time.monotonic()
+            + MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS / 1000
+        )
+        if deadline <= time.monotonic():
+            raise _AppiumDeadlineExceeded(
+                "Android installation exceeded its deadline"
+            )
+        outcome: dict[str, Any] = {}
+
+        def install() -> None:
+            try:
+                outcome["result"] = self.executor.run(
+                    (
+                        "adb",
+                        "-s",
+                        device_identifier,
+                        "install",
+                        "-r",
+                        "--no-streaming",
+                        str(package),
+                    ),
+                    cwd=REPO_ROOT,
+                    env=os.environ,
+                    timeout=max(1.0, deadline - time.monotonic()),
+                )
+            except BaseException as error:
+                outcome["error"] = error
+
+        worker = threading.Thread(
+            target=install,
+            name="android-application-install",
+            daemon=True,
+        )
+        worker.start()
+        while worker.is_alive() and time.monotonic() < deadline:
+            if self.cancellation is not None and self.cancellation.is_set():
+                break
+            if (
+                self.session.device_descriptor is not None
+                and self.session.device_descriptor.installation
+                .user_confirmation_on_install
+            ):
+                _approve_oplus_install_confirmation_if_visible(
+                    lambda *arguments: self._run_adb(
+                        device_identifier,
+                        *arguments,
+                    ),
+                    application_name="Peers",
+                    dump_path="/sdcard/peers-touch-mobile-install.xml",
+                )
+            worker.join(timeout=0.1)
+        worker.join()
+        error = outcome.get("error")
+        if isinstance(error, BaseException):
+            raise DriverError(
+                "Android no-streaming installation failed"
+            ) from error
+        result = outcome.get("result")
+        if not isinstance(result, CommandResult):
+            raise DriverError(
+                "Android no-streaming installation result is unavailable"
+            )
+        if result.returncode != 0:
+            raise DriverError(
+                "Android no-streaming installation failed"
+            )
 
     def _run_adb(
         self,
