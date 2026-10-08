@@ -80,6 +80,7 @@ SHELL_REQUIRED_HARNESS_ACTIONS = (
     "lifecycle.resume",
     "lifecycle.snapshot",
     "lifecycle.suspend",
+    "lifecycle.waitReady",
     "navigation.apply",
     "navigation.snapshot",
     "projection.read",
@@ -155,6 +156,7 @@ return {
 SURFACE_AUDIT_SCRIPT = """
 const selector = arguments[0];
 const minimum = arguments[1];
+const allowDegradedNotice = arguments[2] === true;
 const visible = (element) => {
   const style = getComputedStyle(element);
   const rect = element.getBoundingClientRect();
@@ -180,7 +182,7 @@ if (!root || !visible(root)) return {found: false};
 const rootRect = root.getBoundingClientRect();
 const interactiveSelector =
   'button,input,select,textarea,a[href],[role="button"],[tabindex]';
-const interactive = Array.from(document.querySelectorAll(interactiveSelector))
+const interactive = Array.from(root.querySelectorAll(interactiveSelector))
   .filter(visible)
   .filter((element) => element.getAttribute('tabindex') !== '-1');
 const controls = interactive.map((element) => {
@@ -201,7 +203,7 @@ const controls = interactive.map((element) => {
         && rect.bottom <= window.innerHeight + 1,
     },
   };
-});
+}).filter(({value}) => value.inViewport);
 const occlusions = controls.flatMap(({element, value}) => {
   const rect = element.getBoundingClientRect();
   const x = Math.min(window.innerWidth - 1, Math.max(0, rect.left + rect.width / 2));
@@ -211,7 +213,7 @@ const occlusions = controls.flatMap(({element, value}) => {
     ? []
     : [value.label || element.tagName.toLowerCase()];
 });
-const clippedText = Array.from(document.querySelectorAll('body *'))
+const clippedText = Array.from(root.querySelectorAll('*'))
   .filter(visible)
   .filter((element) => element.children.length === 0)
   .filter((element) => label(element))
@@ -223,10 +225,18 @@ const clippedText = Array.from(document.querySelectorAll('body *'))
       || element.scrollHeight > element.clientHeight + 1;
   })
   .map((element) => label(element).slice(0, 160));
-const blockingSurfaces = Array.from(document.querySelectorAll(
-  '[data-blocks-unrelated-content="true"]',
-)).filter(visible).map((element) => (
-  element.getAttribute('data-acceptance-id') || element.tagName.toLowerCase()
+const blockingSelector = allowDegradedNotice
+  ? '[data-blocks-unrelated-content="true"]'
+  : [
+      '[data-blocks-unrelated-content="true"]',
+      '[data-product-surface="shell.degraded-module-notice"]',
+    ].join(',');
+const blockingSurfaces = Array.from(
+  document.querySelectorAll(blockingSelector),
+).filter(visible).map((element) => (
+  element.getAttribute('data-product-surface')
+  || element.getAttribute('data-acceptance-id')
+  || element.tagName.toLowerCase()
 ));
 return {
   found: true,
@@ -256,6 +266,57 @@ return {
   blockingSurfaces,
 };
 """
+
+
+def _validate_lifecycle_readiness(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise GateError("Mobile lifecycle readiness returned an invalid snapshot")
+    phase = value.get("phase")
+    runtimes = value.get("runtimes")
+    runtime_errors = value.get("runtimeErrors")
+    if (
+        phase != "ACTIVE"
+        or not isinstance(runtimes, list)
+        or not runtimes
+        or not isinstance(runtime_errors, list)
+    ):
+        raise GateError("Mobile lifecycle did not settle after authentication")
+    diagnostic_errors = {
+        item.get("runtimeId"): redact_text(str(item.get("error")))
+        for item in runtime_errors
+        if (
+            isinstance(item, Mapping)
+            and isinstance(item.get("runtimeId"), str)
+            and item["runtimeId"]
+            and isinstance(item.get("error"), str)
+            and item["error"]
+        )
+    }
+    failures = []
+    for runtime in runtimes:
+        if (
+            not isinstance(runtime, Mapping)
+            or not isinstance(runtime.get("id"), str)
+            or not runtime["id"]
+            or not isinstance(runtime.get("status"), str)
+        ):
+            raise GateError("Mobile lifecycle readiness has an invalid runtime")
+        if runtime["status"] == "ready":
+            continue
+        failures.append(
+            {
+                "runtimeId": runtime["id"],
+                "status": runtime["status"],
+                "errorKey": runtime.get("errorKey"),
+                "error": diagnostic_errors.get(runtime["id"]),
+            }
+        )
+    if failures:
+        raise GateError(
+            "Mobile lifecycle has failed runtimes after authentication: "
+            + json.dumps(failures, sort_keys=True)
+        )
+    return dict(value)
 
 
 def load_surface_inventory(path: Path = INVENTORY_PATH) -> dict[str, Any]:
@@ -1124,6 +1185,15 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
                     inventory,
                     surface_set,
                 )
+                validate_surface_evidence(
+                    inventory,
+                    surface_set,
+                    result,
+                    evidence_store=artifacts.store,
+                    expected_source=result["source"],
+                    require_manifest=False,
+                    require_visual_review=False,
+                )
                 status = "PASS"
                 completion_status = "DONE"
                 proof_status = "PROVEN"
@@ -1154,23 +1224,37 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
                 completion_status = "PARTIAL"
                 proof_status = "UNPROVEN"
                 exit_code = 1
-                result = {
-                    "artifactKind": "mobile-whole-product-surface-evidence",
-                    "gateId": self.gate_id,
-                    "contractId": CONTRACT_ID,
-                    "surfaceSet": surface_set,
-                    "runId": "",
-                    "workspaceId": "",
-                    "source": {},
-                    "foregroundEvidence": {},
-                    "surfaceEvidence": {},
-                    "findings": [
+                existing_result = locals().get("result")
+                if isinstance(existing_result, dict):
+                    result = existing_result
+                    findings = result.get("findings")
+                    if not isinstance(findings, list):
+                        findings = []
+                        result["findings"] = findings
+                    findings.append(
                         {
                             "code": type(error).__name__,
                             "message": redact_text(str(error)),
                         }
-                    ],
-                }
+                    )
+                else:
+                    result = {
+                        "artifactKind": "mobile-whole-product-surface-evidence",
+                        "gateId": self.gate_id,
+                        "contractId": CONTRACT_ID,
+                        "surfaceSet": surface_set,
+                        "runId": "",
+                        "workspaceId": "",
+                        "source": {},
+                        "foregroundEvidence": {},
+                        "surfaceEvidence": {},
+                        "findings": [
+                            {
+                                "code": type(error).__name__,
+                                "message": redact_text(str(error)),
+                            }
+                        ],
+                    }
             finally:
                 self._cleanup_sessions(artifacts)
             if any(item["status"] == "failed" for item in self.cleanup):
@@ -1333,6 +1417,26 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
             timeout_seconds=45,
         ).authenticate(session, actor, password=ACTOR_PASSWORD)
         self._record(spec.client_id, "shell-authenticated")
+        session.switch_to_app_webview()
+        lifecycle = session.call_action(
+            "lifecycle.waitReady",
+            {"includeDiagnostics": True},
+        )
+        if not isinstance(lifecycle, Mapping):
+            raise GateError(
+                "Mobile lifecycle readiness returned an invalid snapshot"
+            )
+        lifecycle_ref = artifacts.write_json(
+            "mobile-whole-product/lifecycle-readiness.json",
+            {
+                "artifactKind": "mobile-lifecycle-readiness-diagnostic",
+                "gateId": self.gate_id,
+                "runId": artifacts.run_id,
+                "snapshot": dict(lifecycle),
+            },
+            role="mobile-whole-product-lifecycle-readiness",
+        )
+        _validate_lifecycle_readiness(lifecycle)
 
         session.switch_to_native()
         active_application = session.execute_script("mobile: activeAppInfo")
@@ -1396,6 +1500,7 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
                 "source": source,
                 "runtime": runtime_identity,
                 "authentication": authentication,
+                "lifecycleReadiness": lifecycle_ref.to_dict(),
             },
             role="mobile-whole-product-source-runtime",
         )
@@ -1589,7 +1694,11 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
             action_kind = "system"
         else:
             raise GateError(f"Unsupported shell entry action: {action}")
-        self._wait_for_surface(session, str(entry["surfaceSelector"]))
+        self._wait_for_surface(
+            session,
+            str(entry["surfaceSelector"]),
+            require_heading=entry["id"] != "shell.degraded-module-notice",
+        )
         return {
             "kind": action_kind,
             "target": action,
@@ -1600,21 +1709,38 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
     def _wait_for_surface(
         session: Any,
         selector: str,
+        require_heading: bool = True,
         timeout_seconds: float = 10.0,
     ) -> None:
         deadline = time.monotonic() + timeout_seconds
+        stable_observations = 0
         while time.monotonic() < deadline:
             found = session.execute_script(
                 "const node=document.querySelector(arguments[0]);"
                 "if(!node)return false;"
                 "const rect=node.getBoundingClientRect();"
                 "const style=getComputedStyle(node);"
-                "return style.display!=='none'&&style.visibility!=='hidden'"
-                "&&Number(style.opacity)>0&&rect.width>0&&rect.height>0;",
+                "const visible=style.display!=='none'&&style.visibility!=='hidden'"
+                "&&Number(style.opacity)>0&&rect.width>0&&rect.height>0;"
+                "if(!visible)return false;"
+                "if(!arguments[1])return true;"
+                "const heading=node.querySelector('h1,[role=\"heading\"][aria-level=\"1\"]');"
+                "if(!heading)return false;"
+                "const headingRect=heading.getBoundingClientRect();"
+                "const headingStyle=getComputedStyle(heading);"
+                "return headingStyle.display!=='none'"
+                "&&headingStyle.visibility!=='hidden'"
+                "&&Number(headingStyle.opacity)>0"
+                "&&headingRect.width>0&&headingRect.height>0;",
                 selector,
+                require_heading,
             )
             if found is True:
-                return
+                stable_observations += 1
+                if stable_observations >= 2:
+                    return
+            else:
+                stable_observations = 0
             time.sleep(0.2)
         raise GateError(f"Mobile shell surface did not appear: {selector}")
 
@@ -1652,6 +1778,7 @@ class SimulatorWholeProductUsabilityGate(SimulatorCallbackRoutingGate):
             SURFACE_AUDIT_SCRIPT,
             entry["surfaceSelector"],
             inventory["qualityRules"]["minimumTouchTargetCssPx"],
+            entry["id"] == "shell.degraded-module-notice",
         )
         if not isinstance(observation, Mapping) or observation.get("found") is not True:
             raise GateError(f"Mobile shell surface is unavailable: {entry['id']}")
