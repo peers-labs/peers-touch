@@ -315,6 +315,7 @@ MOBILE_NATIVE_EPHEMERAL_QUIESCE_TIMEOUT_SECONDS = (
     MOBILE_NATIVE_PARENT_CLEANUP_TIMEOUT_SECONDS + 5.0
 )
 MOBILE_NATIVE_APPIUM_REQUEST_TIMEOUT_SECONDS = 660.0
+MOBILE_NATIVE_APPIUM_STOP_REQUEST_TIMEOUT_SECONDS = 10.0
 MOBILE_NATIVE_EPHEMERAL_REQUEST_TIMEOUT_SECONDS = 660.0
 MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS = 600_000
 MOBILE_CAPTURE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,95}$")
@@ -4708,6 +4709,7 @@ class _ParentAppiumSession:
         device_descriptor: MobileDeviceDescriptor | None = None,
         auto_accept_alerts: bool = False,
         chromedriver_executable: str = "",
+        command_executor: CommandExecutor | None = None,
     ) -> None:
         if device_descriptor is not None and platform_name != "android":
             raise DriverError(
@@ -4726,6 +4728,7 @@ class _ParentAppiumSession:
         self.auto_accept_alerts = auto_accept_alerts
         self.ports = dict(ports)
         self.chromedriver_executable = chromedriver_executable
+        self.command_executor = command_executor or SubprocessExecutor()
         self.session_id = ""
         self._device_lease: dict[str, Any] | None = None
         self._build_attestation: dict[str, Any] | None = None
@@ -4926,15 +4929,183 @@ class _ParentAppiumSession:
         deadline_monotonic: float | None = None,
         cancellation: threading.Event | None = None,
     ) -> None:
-        if self.session_id:
-            session_id = self.session_id
-            self._request(
-                "DELETE",
-                f"/session/{urllib.parse.quote(session_id, safe='')}",
-                deadline_monotonic=deadline_monotonic,
+        if not self.session_id:
+            return
+        if self._device_lease is None:
+            raise DriverError(
+                "Appium physical-device authority is unavailable"
+            )
+        session_id = self.session_id
+        request_deadline = time.monotonic() + (
+            MOBILE_NATIVE_APPIUM_STOP_REQUEST_TIMEOUT_SECONDS
+        )
+        if deadline_monotonic is not None:
+            request_deadline = min(request_deadline, deadline_monotonic)
+
+        def stop_with_handle(
+            handle: ResolvedPhysicalDeviceHandle,
+        ) -> None:
+            try:
+                self.transport.request(
+                    "DELETE",
+                    (
+                        "/session/"
+                        + urllib.parse.quote(session_id, safe="")
+                    ),
+                    deadline_monotonic=request_deadline,
+                    cancellation=cancellation,
+                )
+            except _AppiumDeadlineExceeded:
+                if self.platform != "android":
+                    raise
+                self._force_stop_android_session(
+                    handle.identifier,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+
+        self._with_physical_device(
+            self._device_lease,
+            stop_with_handle,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        self.session_id = ""
+
+    def _force_stop_android_session(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> None:
+        deadline = deadline_monotonic or (
+            time.monotonic()
+            + MOBILE_NATIVE_PARENT_CLEANUP_TIMEOUT_SECONDS
+        )
+
+        def run_adb(*arguments: str) -> CommandResult:
+            if cancellation is not None and cancellation.is_set():
+                raise _AppiumDeadlineExceeded(
+                    "Android Appium cleanup was cancelled"
+                )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise _AppiumDeadlineExceeded(
+                    "Android Appium cleanup exceeded its deadline"
+                )
+            try:
+                return self.command_executor.run(
+                    ("adb", "-s", device_identifier, *arguments),
+                    cwd=REPO_ROOT,
+                    env=os.environ,
+                    timeout=min(10.0, remaining),
+                )
+            except BlockedError as error:
+                raise DriverError(
+                    "Android Appium cleanup command failed"
+                ) from error
+
+        packages = tuple(
+            package
+            for package in (
+                self._application_id,
+                "io.appium.uiautomator2.server",
+                "io.appium.uiautomator2.server.test",
+            )
+            if package
+        )
+        for package in packages:
+            stopped = run_adb(
+                "shell",
+                "am",
+                "force-stop",
+                package,
+            )
+            if stopped.returncode != 0:
+                raise DriverError(
+                    "Android Appium cleanup could not stop a package"
+                )
+
+        forwards = run_adb("forward", "--list")
+        if forwards.returncode != 0:
+            raise DriverError(
+                "Android Appium cleanup could not inspect port forwards"
+            )
+        forwarded_ports = {
+            f"tcp:{port}"
+            for role in ("system", "mjpeg")
+            if isinstance((port := self.ports.get(role)), int) and port > 0
+        }
+        for line in forwards.stdout.splitlines():
+            fields = line.split()
+            if (
+                len(fields) < 2
+                or fields[0] != device_identifier
+                or fields[1] not in forwarded_ports
+            ):
+                continue
+            run_adb(
+                "forward",
+                "--remove",
+                fields[1],
+            )
+        remaining_forwards = run_adb("forward", "--list")
+        if (
+            remaining_forwards.returncode != 0
+            or any(
+                len(fields := line.split()) >= 2
+                and fields[0] == device_identifier
+                and fields[1] in forwarded_ports
+                for line in remaining_forwards.stdout.splitlines()
+            )
+        ):
+            raise DriverError(
+                "Android Appium cleanup left an active port forward"
+            )
+
+        while time.monotonic() < deadline:
+            active = False
+            for package in packages:
+                process = run_adb("shell", "pidof", package)
+                if process.returncode not in {0, 1}:
+                    raise DriverError(
+                        "Android Appium cleanup process check failed"
+                    )
+                active = active or bool(process.stdout.strip())
+            if not active:
+                break
+            _wait_for_appium_poll(
+                min(0.1, max(0.0, deadline - time.monotonic())),
                 cancellation=cancellation,
             )
-            self.session_id = ""
+        else:
+            raise _AppiumDeadlineExceeded(
+                "Android Appium cleanup left active processes"
+            )
+
+        sessions = self.transport.request(
+            "GET",
+            "/sessions",
+            deadline_monotonic=deadline,
+            cancellation=cancellation,
+        )
+        if (
+            not isinstance(sessions, list)
+            or any(
+                isinstance(candidate, Mapping)
+                and str(
+                    candidate.get("id")
+                    or candidate.get("sessionId")
+                    or ""
+                )
+                == self.session_id
+                for candidate in sessions
+            )
+        ):
+            raise DriverError(
+                "Android Appium cleanup left an active server session"
+            )
 
     def wait_for_ready(
         self,
