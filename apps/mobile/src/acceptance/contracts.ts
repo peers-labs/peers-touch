@@ -31,6 +31,10 @@ import type {
 } from '../runtimes/nativeLifecycleBridge';
 import type { DevicePreferences } from '../runtimes/deviceSettingsRuntime';
 import type { EmbeddedMobileBuildIdentity } from './buildIdentity';
+import type {
+  EntrySurfaceFixtureId,
+  EntrySurfaceFixtureSnapshot,
+} from './entrySurfaceFixture';
 
 export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'build.identity',
@@ -38,6 +42,7 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'station.add',
   'station.replace',
   'station.select',
+  'entry.fixture',
   'access.submit',
   'oauth.start',
   'oauth.status',
@@ -142,6 +147,10 @@ export interface StationReplaceInput {
 export interface StationSelectInput {
   stationPeerId: string;
   draftDisposition?: DraftDisposition;
+}
+
+export interface EntrySurfaceFixtureInput {
+  surfaceId: EntrySurfaceFixtureId | null;
 }
 
 export interface PublicStationEntry {
@@ -1153,6 +1162,10 @@ export interface MobileAcceptanceActionContract {
   'station.select': {
     input: StationSelectInput;
     output: StationSelectionOutput;
+  };
+  'entry.fixture': {
+    input: EntrySurfaceFixtureInput;
+    output: EntrySurfaceFixtureSnapshot;
   };
   'access.submit': {
     input: AccessSubmitInput;

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button, Modal, Tag, Typography } from 'antd';
-import { Check, Plus, Server, X } from 'lucide-react';
+import { Check, ChevronDown, Plus, Server, X } from 'lucide-react';
 import type { StationEntry } from '../types';
 
 const { Text } = Typography;
@@ -18,6 +18,7 @@ export function StationSelector({
   const [protocol, setProtocol] = useState<'http' | 'https'>('https');
   const [address, setAddress] = useState('');
   const [addingStation, setAddingStation] = useState(false);
+  const [protocolPickerOpen, setProtocolPickerOpen] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState<StationEntry | null>(
     showRemovalConfirmation
       ? entries.find((entry) => entry.url === activeUrl) ?? entries[0] ?? null
@@ -52,8 +53,15 @@ export function StationSelector({
       {showStationInput && (
         <div className="mp-station-input-row">
           <div className="mp-station-url-control">
-            <button type="button" className="mp-station-protocol" onClick={() => setProtocol(protocol === 'https' ? 'http' : 'https')}>
-              {protocol.toUpperCase()}
+            <button
+              type="button"
+              className="mp-station-protocol"
+              aria-label="Station protocol"
+              aria-expanded={protocolPickerOpen}
+              onClick={() => setProtocolPickerOpen(true)}
+            >
+              <span>{protocol.toUpperCase()}</span>
+              <ChevronDown size={14} aria-hidden="true" />
             </button>
             <input
               className="mp-station-address"
@@ -99,7 +107,6 @@ export function StationSelector({
                   <span className="mp-station-entry-icon"><Server size={18} /></span>
                   <span className="mp-station-entry-copy">
                     <Text strong={isActive} className="mp-truncate">{entry.label}</Text>
-                    <Text type="secondary" className="mp-truncate">{entry.url}</Text>
                   </span>
                   <span className={`mp-station-entry-status ${status.className}`}>{status.label}</span>
                   <span className="mp-station-check-slot">
@@ -147,6 +154,36 @@ export function StationSelector({
           </Modal>
         </div>
       )}
+
+      <Modal
+        open={protocolPickerOpen}
+        title="Station protocol"
+        footer={null}
+        onCancel={() => setProtocolPickerOpen(false)}
+      >
+        <div className="mp-station-protocol-options">
+          {(['https', 'http'] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={option === protocol ? 'active' : ''}
+              aria-pressed={option === protocol}
+              onClick={() => {
+                setProtocol(option);
+                setProtocolPickerOpen(false);
+              }}
+            >
+              <span>{option.toUpperCase()}</span>
+              <small>
+                {option === 'https'
+                  ? 'Encrypted and recommended.'
+                  : 'Unencrypted. Use only on a trusted local network.'}
+              </small>
+              {option === protocol ? <Check size={17} aria-hidden="true" /> : null}
+            </button>
+          ))}
+        </div>
+      </Modal>
     </section>
   );
 }

@@ -10,9 +10,10 @@ describe('StationSelector removal contract', () => {
   it('requires an explicit destructive confirmation before removing a Station', () => {
     expect(source).toContain('setPendingRemoval(entry)');
     expect(source).toContain('open={pendingRemoval !== null}');
-    expect(source).toContain('onOk={confirmStationRemoval}');
+    expect(source).toContain('onClick={confirmStationRemoval}');
     expect(source).toContain('onCancel={() => setPendingRemoval(null)}');
-    expect(source).toContain('okButtonProps={{ danger: true }}');
+    expect(source).toContain('className="entry-confirmation-button danger"');
+    expect(source).toContain('data-product-surface="entry.station-remove-confirm"');
   });
 
   it('removes only the Station captured by the confirmation state', () => {

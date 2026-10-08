@@ -138,6 +138,29 @@ describe('AccessGateHost attempt recovery', () => {
   });
 });
 
+describe('AccessGateHost entry surface inventory', () => {
+  it('projects distinct login, OAuth, pending, and expired-session surfaces', () => {
+    expect(renderGate([
+      action('auth.password', 'ACCESS_GATE_TYPE_AUTH_LOGIN', 'submit_login'),
+    ])).toContain('data-product-surface="entry.access-login"');
+    expect(renderGate([
+      action('auth.oauth', 'ACCESS_GATE_TYPE_AUTH_OAUTH', 'start_oauth'),
+    ])).toContain('data-product-surface="entry.access-oauth"');
+    expect(renderGate([], {
+      decision: {
+        state: 'ACCESS_DECISION_STATE_PENDING',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    })).toContain('data-product-surface="entry.access-pending"');
+    expect(renderGate([
+      action('auth.password', 'ACCESS_GATE_TYPE_AUTH_LOGIN', 'submit_login'),
+    ], {
+      forceSessionExpired: true,
+    })).toContain('data-product-surface="entry.session-expired"');
+  });
+});
+
 describe('AccessGateHost shared Auth identity', () => {
   it('uses the canonical Desktop logo asset in Mobile and its prototype', () => {
     const hash = (path: string) => createHash('sha256')

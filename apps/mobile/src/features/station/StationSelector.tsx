@@ -1,6 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Input, Modal, Tag, Typography } from 'antd';
-import { AlertTriangle, Check, Plus, Server, Trash2, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  Plus,
+  Server,
+  Trash2,
+  X,
+} from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import {
@@ -9,8 +17,14 @@ import {
   type MobileStationEntry,
   type StationProtocol,
 } from './stationRegistry';
+import { stationDisplayName } from './stationDisplayName';
 
-const { Text } = Typography;
+const { Text, Title } = Typography;
+
+export type StationSelectorSurfaceFixture =
+  | 'address'
+  | 'address-invalid'
+  | 'remove-confirm';
 
 export function StationSelector({
   activeStationPeerId,
@@ -18,6 +32,7 @@ export function StationSelector({
   error,
   checking,
   verifyingUrls,
+  surfaceFixture,
   onAdd,
   onSelect,
   onRemove,
@@ -27,18 +42,30 @@ export function StationSelector({
   error: string | null;
   checking: boolean;
   verifyingUrls: string[];
+  surfaceFixture?: StationSelectorSurfaceFixture;
   onAdd: (protocol: StationProtocol, address: string) => boolean | Promise<boolean>;
   onSelect: (stationPeerId: string) => void | Promise<void>;
   onRemove: (stationPeerId: string) => void;
 }) {
   const { t } = useMobileI18n();
   const [protocol, setProtocol] = useState<StationProtocol>('https');
-  const [address, setAddress] = useState('');
-  const [addingStation, setAddingStation] = useState(false);
+  const [address, setAddress] = useState(
+    surfaceFixture === 'address-invalid' ? 'not a valid station' : '',
+  );
+  const [addingStation, setAddingStation] = useState(
+    surfaceFixture === 'address' || surfaceFixture === 'address-invalid',
+  );
+  const [protocolPickerOpen, setProtocolPickerOpen] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState<MobileStationEntry | null>(null);
   const hasEntries = entries.length > 0;
   const showStationInput = !hasEntries || addingStation;
   const canAdd = useMemo(() => Boolean(buildStationUrl({ protocol, address })), [address, protocol]);
+
+  useEffect(() => {
+    if (surfaceFixture === 'remove-confirm' && entries[0]) {
+      setPendingRemoval(entries[0]);
+    }
+  }, [entries, surfaceFixture]);
 
   function updateAddress(value: string) {
     const next = splitStationInput(value, protocol);
@@ -58,6 +85,7 @@ export function StationSelector({
   function closeStationInput() {
     setAddress('');
     setProtocol('https');
+    setProtocolPickerOpen(false);
     setAddingStation(false);
   }
 
@@ -84,13 +112,23 @@ export function StationSelector({
 
       {showStationInput ? (
         <div className={`station-input-row ${hasEntries ? 'with-cancel' : ''}`}>
-          <div className={`station-url-control ${error ? 'error' : ''}`}>
+          <div
+            className={`station-url-control ${error ? 'error' : ''}`}
+            data-product-surface={
+              surfaceFixture === 'address-invalid'
+                ? 'entry.station-address-invalid'
+                : 'entry.station-address'
+            }
+          >
             <button
               type="button"
               className="station-protocol-select"
-              onClick={() => setProtocol(protocol === 'https' ? 'http' : 'https')}
+              aria-label={t('mobile.launch.protocol')}
+              aria-expanded={protocolPickerOpen}
+              onClick={() => setProtocolPickerOpen(true)}
             >
-              {protocol.toUpperCase()}
+              <span>{protocol.toUpperCase()}</span>
+              <ChevronDown size={14} aria-hidden="true" />
             </button>
             <Input
               className="station-address-input"
@@ -108,16 +146,28 @@ export function StationSelector({
           </div>
           <Button icon={<Plus size={16} />} aria-label={t('mobile.launch.addStation')} loading={checking} disabled={!canAdd || checking} onClick={submit} />
           {hasEntries ? (
-            <Button className="station-input-cancel" icon={<X size={16} />} onClick={closeStationInput} />
+            <Button
+              className="station-input-cancel"
+              icon={<X size={16} />}
+              aria-label={t('common.action.cancel')}
+              onClick={closeStationInput}
+            />
           ) : null}
         </div>
       ) : null}
 
-      {error ? <Text type="danger" className="station-error">{error}</Text> : null}
+      {error ? (
+        <Text type="danger" className="station-error" role="alert">
+          {error}
+        </Text>
+      ) : null}
 
       <div className="station-list">
         {entries.length === 0 ? (
-          <div className="station-empty">
+          <div
+            className="station-empty"
+            data-product-surface="entry.station-empty"
+          >
             <Server size={18} />
             <Text type="secondary">{t('mobile.launch.emptyStations')}</Text>
           </div>
@@ -125,46 +175,51 @@ export function StationSelector({
           entries.map((entry) => {
             const isActive = entry.stationPeerId === activeStationPeerId;
             const status = getStationStatus(entry, verifyingUrls.includes(entry.url), t);
+            const displayName = stationDisplayName(
+              entry.label,
+              entry.url,
+              t('common.stationPicker.fallbackLabel'),
+            );
+            const surfaceId = status.className === 'validating'
+              ? 'entry.station-verifying'
+              : status.className === 'offline'
+                ? 'entry.station-unavailable'
+                : undefined;
             return (
               <div
                 key={entry.stationPeerId}
-                role="button"
-                tabIndex={0}
                 className={`station-entry ${isActive ? 'active' : ''}`}
-                onClick={() => onSelect(entry.stationPeerId)}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Enter' && event.key !== ' ') return;
-                  event.preventDefault();
-                  onSelect(entry.stationPeerId);
-                }}
+                data-product-surface={surfaceId}
               >
-                <Server size={18} />
-                <span className="station-entry-copy">
-                  <Text strong={isActive} className="mobile-truncate">{entry.label}</Text>
-                  <Text type="secondary" className="mobile-truncate">{entry.url}</Text>
-                </span>
-                <span className={`station-entry-status ${status.className}`}>
-                  {status.label}
-                </span>
-                {isActive ? <Check size={16} /> : null}
-                <span
+                <button
+                  type="button"
+                  className="station-entry-main"
+                  aria-pressed={isActive}
+                  onClick={() => onSelect(entry.stationPeerId)}
+                >
+                  <Server size={18} aria-hidden="true" />
+                  <span className="station-entry-copy">
+                    <Text strong={isActive} className="mobile-truncate">{displayName}</Text>
+                  </span>
+                  <span className={`station-entry-status ${status.className}`}>
+                    {status.label}
+                  </span>
+                  <span className="station-entry-check" aria-hidden="true">
+                    {isActive ? <Check size={16} /> : null}
+                  </span>
+                </button>
+                <button
+                  type="button"
                   className="station-remove"
-                  role="button"
-                  tabIndex={0}
                   aria-label={t('common.action.delete')}
+                  data-entry-action="remove-station"
                   onClick={(event) => {
-                    event.stopPropagation();
-                    setPendingRemoval(entry);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key !== 'Enter' && event.key !== ' ') return;
-                    event.preventDefault();
                     event.stopPropagation();
                     setPendingRemoval(entry);
                   }}
                 >
                   <Trash2 size={15} />
-                </span>
+                </button>
               </div>
             );
           })
@@ -178,17 +233,79 @@ export function StationSelector({
       ) : null}
 
       <Modal
-        title={t('common.stationPicker.removeLabel', {
-          station: pendingRemoval?.label ?? '',
-        })}
         open={pendingRemoval !== null}
-        okText={t('common.action.delete')}
-        okButtonProps={{ danger: true }}
-        cancelText={t('common.action.cancel')}
-        onOk={confirmStationRemoval}
         onCancel={() => setPendingRemoval(null)}
+        footer={null}
         destroyOnClose
-      />
+      >
+        <section
+          className="entry-confirmation"
+          data-product-surface="entry.station-remove-confirm"
+        >
+          <Title level={1}>
+            {t('common.stationPicker.removeLabel', {
+              station: pendingRemoval
+                ? stationDisplayName(
+                    pendingRemoval.label,
+                    pendingRemoval.url,
+                    t('common.stationPicker.fallbackLabel'),
+                  )
+                : '',
+            })}
+          </Title>
+          <Text type="secondary">{t('mobile.launch.stationRemoveBody')}</Text>
+          <div className="entry-confirmation-actions">
+            <button
+              type="button"
+              className="entry-confirmation-button"
+              onClick={() => setPendingRemoval(null)}
+            >
+              {t('common.action.cancel')}
+            </button>
+            <button
+              type="button"
+              className="entry-confirmation-button danger"
+              onClick={confirmStationRemoval}
+            >
+              {t('common.action.delete')}
+            </button>
+          </div>
+        </section>
+      </Modal>
+
+      <Modal
+        open={protocolPickerOpen}
+        onCancel={() => setProtocolPickerOpen(false)}
+        footer={null}
+        className="station-protocol-sheet"
+        title={t('mobile.launch.protocol')}
+        destroyOnClose
+      >
+        <div className="station-protocol-options">
+          {(['https', 'http'] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={option === protocol ? 'active' : ''}
+              aria-pressed={option === protocol}
+              onClick={() => {
+                setProtocol(option);
+                setProtocolPickerOpen(false);
+              }}
+            >
+              <span>{option.toUpperCase()}</span>
+              <small>
+                {t(
+                  option === 'https'
+                    ? 'mobile.launch.protocolHttps'
+                    : 'mobile.launch.protocolHttp',
+                )}
+              </small>
+              {option === protocol ? <Check size={17} aria-hidden="true" /> : null}
+            </button>
+          ))}
+        </div>
+      </Modal>
     </section>
   );
 }

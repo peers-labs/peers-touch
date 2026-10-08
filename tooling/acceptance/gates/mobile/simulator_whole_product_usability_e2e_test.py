@@ -143,6 +143,7 @@ class _ShellDriverSession:
         self.current_context = "WEBVIEW_com.peers.touch.mobile"
         self.clicked: list[str] = []
         self.lifecycle_actions: list[str] = []
+        self.entry_surface_id: str | None = None
 
     def switch_to_native(self) -> None:
         self.current_context = "NATIVE_APP"
@@ -186,9 +187,19 @@ class _ShellDriverSession:
         if route_match:
             self.route_id = route_match.group(1)
 
-    def call_action(self, action: str) -> Any:
+    def call_action(
+        self,
+        action: str,
+        payload: dict[str, Any] | None = None,
+    ) -> Any:
         if action == "navigation.snapshot":
             return {"primaryRouteId": self.route_id}
+        if action == "entry.fixture":
+            self.entry_surface_id = (payload or {}).get("surfaceId")
+            return {
+                "surfaceId": self.entry_surface_id,
+                "revision": 1,
+            }
         if action in {"lifecycle.suspend", "lifecycle.resume"}:
             self.lifecycle_actions.append(action)
             return {"snapshot": {"phase": action.removeprefix("lifecycle.")}}
@@ -366,7 +377,7 @@ def valid_surface_evidence(
 
 class WholeProductSurfaceContractTests(unittest.TestCase):
     def test_shell_gate_emits_canonical_acceptance_report(self) -> None:
-        report = SimulatorWholeProductUsabilityGate._result_report("PASS")
+        report = SimulatorWholeProductUsabilityGate._result_report("PASS", "shell")
 
         self.assertEqual(
             report["artifactKind"],
@@ -378,6 +389,22 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             ["MS-PA28", "MS-PA29", "MS-AG12"],
         )
         self.assertTrue(report["sampleEmissionAllowed"])
+
+    def test_entry_gate_emits_entry_specific_acceptance_report(self) -> None:
+        report = SimulatorWholeProductUsabilityGate._result_report("PASS", "entry")
+
+        self.assertEqual(report["runtimeCell"], "ios-simulator-entry")
+        self.assertEqual(report["phase"], "MWPU-03 Entry Usability")
+        self.assertEqual(report["bom"], ["MWPU-03-ENTRY"])
+        self.assertEqual(
+            report["observedScope"],
+            [
+                "launch",
+                "station-selection",
+                "access-gates",
+                "runtime-preparation",
+            ],
+        )
 
     def test_foreground_probe_requires_the_declared_booted_simulator(self) -> None:
         completed = subprocess.CompletedProcess(
@@ -509,6 +536,41 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         gate._wait_for_resume(session)
         self.assertTrue(session.current_context.startswith("WEBVIEW"))
 
+    def test_entry_driver_projects_states_and_uses_real_station_controls(self) -> None:
+        inventory = load_surface_inventory()
+        entries = {
+            entry["id"]: entry
+            for entry in selected_surface_entries(inventory, "entry")
+        }
+        gate = SimulatorWholeProductUsabilityGate(
+            foreground_probe=lambda: {},
+        )
+        session = _ShellDriverSession()
+
+        projected = gate._enter_entry_surface(
+            session,
+            entries["entry.access-pending"],
+        )
+        self.assertEqual(projected["kind"], "system")
+        self.assertEqual(session.entry_surface_id, "entry.access-pending")
+
+        address = gate._enter_entry_surface(
+            session,
+            entries["entry.station-address"],
+        )
+        self.assertEqual(address["kind"], "native-touch")
+        self.assertIn(".station-add-secondary", session.clicked)
+
+        removal = gate._enter_entry_surface(
+            session,
+            entries["entry.station-remove-confirm"],
+        )
+        self.assertEqual(removal["kind"], "native-touch")
+        self.assertIn(
+            '[data-entry-action="remove-station"]',
+            session.clicked,
+        )
+
     def test_resume_script_avoids_webkit_incompatible_trailing_argument_comma(
         self,
     ) -> None:
@@ -562,7 +624,8 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self,
     ) -> None:
         self.assertIn(
-            "const controlScope = allowDegradedNotice ? document.body : root;",
+            "const controlScope = allowDegradedNotice || usePageControls "
+            "? document.body : root;",
             SURFACE_AUDIT_SCRIPT,
         )
         self.assertIn(
@@ -613,9 +676,40 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertNotIn("ptidDisplay", settings)
         self.assertIn("settings-profile-subtitle", settings)
         self.assertIn(
-            "launchState === 'shell' || launchState === 'resume'",
+            "renderedLaunchState === 'shell' || renderedLaunchState === 'resume'",
             app,
         )
+
+    def test_entry_product_selectors_are_present_in_production(self) -> None:
+        app = (REPO_ROOT / "apps/mobile/src/App.tsx").read_text(
+            encoding="utf-8"
+        )
+        station = (
+            REPO_ROOT
+            / "apps/mobile/src/features/station/StationSelector.tsx"
+        ).read_text(encoding="utf-8")
+        launch = (
+            REPO_ROOT
+            / "apps/mobile/src/features/station/StationLaunchScreen.tsx"
+        ).read_text(encoding="utf-8")
+        progress = (
+            REPO_ROOT
+            / "apps/mobile/src/features/station/EntryProgressScreen.tsx"
+        ).read_text(encoding="utf-8")
+        access = (
+            REPO_ROOT
+            / "apps/mobile/src/features/auth/AccessGateHost.tsx"
+        ).read_text(encoding="utf-8")
+
+        for surface_id in REQUIRED_SURFACE_IDS["entry"]:
+            self.assertTrue(
+                surface_id in app
+                or surface_id in station
+                or surface_id in launch
+                or surface_id in progress
+                or surface_id in access,
+                surface_id,
+            )
 
     def test_inventory_covers_every_surface_set_and_contract_cell(self) -> None:
         inventory = load_surface_inventory()
