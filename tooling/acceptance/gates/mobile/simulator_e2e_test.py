@@ -1067,6 +1067,9 @@ class SimulatorAppiumCapabilityTests(unittest.TestCase):
                             capabilities["appium:bundleId"],
                             "com.peers.touch.mobile",
                         )
+                        self.assertTrue(
+                            capabilities["appium:autoAcceptAlerts"]
+                        )
                         self.assertTrue(capabilities["appium:isHeadless"])
                         self.assertFalse(
                             capabilities["appium:shouldTerminateApp"]
