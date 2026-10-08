@@ -54,6 +54,11 @@ export function DeviceLocalBar({
     <section
       className="recovery-notice recovery-device-local"
       data-acceptance-id="recovery-device-local"
+      data-product-surface={
+        state.reason === 'session-expired'
+          ? 'recovery.session-revoked'
+          : undefined
+      }
       role="status"
       aria-label={t(reasonKey)}
       aria-busy={pendingAction !== null}

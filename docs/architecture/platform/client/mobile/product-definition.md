@@ -1,8 +1,8 @@
 # Mobile Shell — 产品定义
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-27 | **Updated**: 2026-09-19
+> **Version**: v1.2
+> **Created**: 2026-08-27 | **Updated**: 2026-10-08
 > **Owner**: Mobile Product Team
 > **Module**: `apps/mobile/`
 
@@ -72,6 +72,7 @@ making the device a business authority.
 | MS-C12 | Voice/video call | deferred | No enabled call action until the Mobile call contract and runtime exist. |
 | MS-C13 | Chat Docs custom tab | deferred | No enabled tab until a shared-document domain and product journey are accepted. |
 | MS-C14 | Local message flag | degraded | May remain device-local if clearly labeled and never presented as cross-device truth. |
+| MS-C15 | Whole-product usability | required | Every reachable Mobile surface is understandable, operable, accessible, and visually coherent in the foreground iOS runtime; technical identifiers and module failures never replace or obstruct the user's primary task. |
 
 ## 6. Platform Matrix
 
@@ -85,10 +86,19 @@ making the device a business authority.
 
 ## 7. Completeness Rule
 
-- Required capabilities MS-C01..MS-C10 must pass every mapped acceptance row.
+- Required capabilities MS-C01..MS-C10 and MS-C15 must pass every mapped
+  acceptance row.
 - Degraded MS-C14 must expose its device-only scope before the user relies on it.
 - Deferred MS-C11..MS-C13 do not count toward readiness, but any visible entry
   must be disabled with a useful reason.
+- A narrow functional Gate cannot establish whole-product readiness. Completion
+  requires a foreground iOS walkthrough of every launch, tab, detail, overlay,
+  empty, loading, failure, recovery, and destructive-confirmation surface.
+- No required walkthrough surface may expose a raw PTID, Station URL, runtime
+  identifier, untranslated key, or internal error as its primary label when a
+  human-readable projection exists.
+- A module-local degradation must remain local. It may not cover the active
+  page, composer, navigation, or an unrelated module's usable content.
 - `product-feasibility.md` owns current foundation, missing closure, and proof.
 
 ## 8. Product Boundaries

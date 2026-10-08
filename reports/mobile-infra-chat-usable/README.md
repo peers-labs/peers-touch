@@ -5,15 +5,15 @@
 | Field | Value |
 |---|---|
 | Architecture source closure | `PASS` |
-| Product/runtime readiness | `UNPROVEN` |
-| GitHub review readiness | `false` |
-| Delivery mode | `standalone` |
-| Historical evidence source | `f9dd38b6ceddca825945212a717583d274361955` |
+| Product/runtime readiness | `PROVEN` for the MICU-03 / SAL-J06 scope |
+| GitHub review readiness | `true` |
+| Delivery mode | `tracked local delivery; push and PR denied by Plan` |
+| Formal proof source | `b0e6911a0af0a815867659cf00671be5d3bda370` |
 | Remediation base | `cf77c9376c111cf1e06e49a812e66b0dc12fc8b1` |
 
-The current source completes the architecture hard cut. It does not claim
-current-source runtime Acceptance. Historical Gate artifacts remain immutable
-evidence for their exact source only.
+The architecture hard cut and current-source MICU-03 Session-class Suite are
+complete. Historical Gate artifacts remain immutable evidence for their exact
+source only.
 
 ## Architecture Closure
 
@@ -68,7 +68,13 @@ was introduced.
 | Acceptance coverage report generation | `PASS` |
 | Standalone Acceptance plan self-check | `PASS` |
 | Hard rules | `PASS` |
-| Skill checks | `FAIL` - upstream review-rules hash drift (`e51c...` expected, `702d...` current) |
+| Skill checks | `PASS` |
+| Code structure review | `PASS` - no findings |
+| MICU-03 Gap Detector | `PROVEN` - no gaps |
+| Development Session-class Suite | `PASS` - 4/4 Scenarios |
+| Formal Session-class Suite Acceptance | `PASS / DONE / PROVEN` |
+| Suite Runtime audit | `PASS` - 1 provision, 5 launches, 0.75 warm reuse |
+| Runtime cleanup | `PASS` - clients, Appium, ports, storage, Fixture and leases released |
 | `git diff --check` | `PASS` |
 
 The stale global Federation `fedp5` Acceptance injection has been removed after
@@ -76,29 +82,72 @@ its owning worktree was deleted. Repository-wide structural Acceptance
 validation now passes; multi-Station Federation runtime behavior remains
 explicitly `UNPROVEN`.
 
-The normal Acceptance plan command reports `PLAN_MOUNT_REQUIRED`, which is
-expected for this standalone declaration. The standalone plan self-check
-passes.
+The current work uses tracked Plan
+`mobile-infra-chat-suite-closure-20261007`; its closure selects only
+`station-access-session-class-suite-e2e`.
 
-## Runtime Proof Gap
+## Runtime Suite Closure
 
-MICU-03 contains four runtime Scenarios that share expensive services, actors,
-clients, devices, storage, or login state:
+The current MICU-03 Suite runs four ordered Scenarios in one runtime:
 
-1. `chat-native-multi-device-e2e`
-2. `chat-lifecycle-mixed-client-multi-device-e2e`
-3. `mobile-simulator-station-lifecycle-e2e`
-4. `station-access-session-class-e2e`
+1. `same-station-chat`
+2. `cross-class-coexistence`
+3. `desktop-takeover`
+4. `mobile-takeover`
 
-The immutable MICU-03 Task Slice has no `runtimeReuse` declaration. No
-`acceptance-suite-runtime-report` binds one Suite Runtime ID, one Fixture
-Epoch, lifecycle budgets, attach-only Scenario execution, receiver-visible
-proof, and terminal cleanup. Under Acceptance Framework D-21, MICU-03 Task
-lifecycle proof is `UNPROVEN`.
+The Suite Runtime contract and audit both pass:
 
-The current remediation source did not rerun the complete two-device runtime
-Acceptance. Static checks, unit tests, builds, targeted validation, and
-historical child Gate results do not substitute for that proof.
+- Suite Runtime ID: `17f44ad041297fe3`
+- Fixture Epoch: `20261007T151740934218Z-37748a6c3065788f4a6f8afe3d095d6d`
+- Provisioning runs: `1`
+- Client launches: `5`
+- Completed Scenarios: `4`
+- Warm reuse rate: `0.75`
+- Final lifecycle event: `cleanup-complete`
+
+The Desktop takeover Scenario includes one bounded Mobile runtime-graph
+recovery only when the Session is valid, write admission is open, and the
+visible route reports a pure `deferred-capability` failure. Persistent or mixed
+recovery states still fail closed. The Mobile takeover Scenario follows the
+accepted SAL-J06 boundary: it proves predecessor Mobile revocation and
+receiver-visible continuity on the surviving Desktop, without inventing a
+requirement that a fresh Mobile installation already owns historical local
+Conversation projection.
+
+### Current Formal Evidence
+
+```json
+{
+  "artifactKind": "acceptance-artifact-ref",
+  "gateId": "acceptance-run",
+  "runId": "20261007T151740787164Z-f6fa440ad7d7b3dbb74ea8dccf1c357f",
+  "path": "reports/run.json",
+  "sha256": "f5418341e847db501593c69522a8c4a0ab33d77918714a89de3765dc45b367e9",
+  "workspaceId": "293b40f94701d443"
+}
+```
+
+Child Gate report:
+
+```json
+{
+  "gateId": "station-access-session-class-suite-e2e",
+  "runId": "20261007T151740934218Z-37748a6c3065788f4a6f8afe3d095d6d",
+  "path": "reports/station-access-session-class-suite-e2e.json",
+  "sha256": "2c6f7d36a48cb3e0f8a03851f95a79aa7897d9b5fa3a91eb6029e35cef721bcc"
+}
+```
+
+Suite Runtime report:
+
+```json
+{
+  "gateId": "station-access-session-class-suite-e2e",
+  "runId": "20261007T151740934218Z-37748a6c3065788f4a6f8afe3d095d6d",
+  "path": "evidence/station-access-session-class-suite-e2e-suite-runtime.json",
+  "sha256": "6b4726973c04819ebade337bba2966df202b4fc92120faf68c89381dd201edb5"
+}
+```
 
 ## Immutable Historical Evidence
 
@@ -119,8 +168,8 @@ historical child Gate results do not substitute for that proof.
 
 Historical manifest status: `passed / PROVEN / DONE`.
 
-Current classification: `UNPROVEN` at Task lifecycle level because the
-required Suite Runtime contract and current-source report are absent.
+Current classification: historical regression evidence only. The current
+authoritative proof is the Suite run recorded above.
 
 ```json
 {
@@ -148,10 +197,10 @@ required Suite Runtime contract and current-source report are absent.
 
 This report does not claim:
 
-- current-source product or runtime Acceptance readiness;
-- valid MICU-03 Suite Runtime reuse;
 - cross-Station or Relay-backed Mobile Chat;
 - Android or physical-device behavior;
 - live third-party OAuth behavior;
 - Agent or Moments readiness; or
-- merge, push, or pull-request readiness.
+- Linux or Windows Desktop behavior.
+
+No push or pull request was performed.

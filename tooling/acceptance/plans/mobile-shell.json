@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "plan": "docs/architecture/platform/client/mobile/execution-plans/20260827-mobile-shell-implementation/plan.md",
-  "description": "Mobile Shell Acceptance bundle for MS-PA01 through MS-PA27. Required runtime proof uses source-bound iOS Simulator cells, with two isolated iOS clients where independent sessions or actors are required; Android and physical-device Gates are optional diagnostics.",
+  "plan": "docs/architecture/platform/client/mobile/execution-plans/20261008-mobile-whole-product-usability/plan.md",
+  "description": "Mobile Shell Acceptance bundle for MS-PA01 through MS-PA29. Required runtime proof includes a complete foreground iOS surface walkthrough; Android and physical-device Gates remain optional diagnostics.",
   "selected_gates": [
     "mobile-contract-static",
     "mobile-identity-contract",
@@ -9,6 +9,7 @@
     "mobile-simulator-runtime-lifecycle-e2e",
     "mobile-simulator-station-lifecycle-e2e",
     "mobile-ios-simulator-layout-accessibility-e2e",
+    "mobile-simulator-whole-product-usability-e2e",
     "mobile-simulator-social-convergence-e2e",
     "mobile-simulator-chat-contacts-e2e",
     "mobile-simulator-recovery-e2e",
@@ -46,6 +47,8 @@
     "MS-PA24",
     "MS-PA25",
     "MS-PA26",
-    "MS-PA27"
+    "MS-PA27",
+    "MS-PA28",
+    "MS-PA29"
   ]
 }

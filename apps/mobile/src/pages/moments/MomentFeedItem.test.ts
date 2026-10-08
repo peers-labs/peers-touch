@@ -30,7 +30,9 @@ describe('Moment feed item', () => {
     expect(source).toContain('<Trash2');
     expect(source).toContain('moments-post-action-sheet');
     expect(source).toContain('setShowActions(true)');
-    expect(source).not.toContain('Share2');
+    expect(source).toContain('<Share2');
+    expect(source).toContain('className="moments-action moments-action--share"');
+    expect(source).toMatch(/moments-action--share"[\s\S]*?disabled/);
     expect(source).not.toContain('moments-comment-input-row');
     expect(source).not.toContain('onOpenDetail');
   });

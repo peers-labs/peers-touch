@@ -68,12 +68,12 @@ const { Text } = Typography;
 
 export function ProfileSection({
   profile,
-  actorPtid,
+  actorIdentity,
   disabled,
   onPatch,
 }: {
   profile: EditableProfileDraft | null;
-  actorPtid: string | undefined;
+  actorIdentity: string | undefined;
   disabled: boolean;
   onPatch: (patch: Partial<EditableProfileDraft>) => void;
 }) {
@@ -86,7 +86,7 @@ export function ProfileSection({
       </div>
       <div className="settings-row">
         <Text type="secondary">{t('mobile.settings.profile.userId')}</Text>
-        <Text copyable>{actorPtid || t('mobile.settings.notLoggedIn')}</Text>
+        <Text>{actorIdentity || t('mobile.settings.notLoggedIn')}</Text>
       </div>
       <label className="settings-profile-field">
         <Text type="secondary">{t('mobile.settings.profile.displayName')}</Text>
@@ -572,6 +572,21 @@ export function StorageSection({
   const retentionSaving = projection.retention.status === 'saving';
   const retentionPreset = snapshot?.retentionPolicy?.retentionPreset
     ?? ChatRetentionPreset.CHAT_RETENTION_PRESET_FOREVER;
+  const storageProductSurface = confirmingBatchClear
+    ? 'settings.storage-confirm'
+    : batchRunning
+      ? 'settings.storage-progress'
+      : batchResult?.status === 'partial_failure'
+        ? 'settings.storage-partial-failure'
+        : confirmingChatCacheClear
+          ? 'settings.storage-clear-confirm'
+          : projection.cleanup.status === 'failed'
+            ? 'settings.storage-clear-failed'
+            : projection.retention.status === 'succeeded'
+              ? 'settings.storage-retention'
+              : batchMode
+                ? 'settings.storage-manage'
+                : undefined;
 
   const conversations = useMemo(() => {
     if (!snapshot) return [];
@@ -683,6 +698,7 @@ export function StorageSection({
       className="settings-section"
       variant="borderless"
       data-chat-storage-surface
+      data-product-surface={storageProductSurface}
     >
       <div className="settings-section-header">
         <HardDrive size={16} />
@@ -1154,8 +1170,17 @@ export function PermissionsSection({
   onRequest: (kind: DevicePermission['kind']) => Promise<void>;
 }) {
   const { t } = useMobileI18n();
+  const productSurface = loading
+    ? 'settings.permission-loading'
+    : permissions.some((permission) => permission.status === 'denied')
+      ? 'settings.permission-denied'
+      : undefined;
   return (
-    <Card className="settings-section" variant="borderless">
+    <Card
+      className="settings-section"
+      variant="borderless"
+      data-product-surface={productSurface}
+    >
       <div className="settings-section-header">
         <Shield size={16} />
         <Text strong>{t('mobile.settings.section.permissions')}</Text>
@@ -1353,9 +1378,23 @@ export function DirtyBar({
   const { t } = useMobileI18n();
 
   if (!dirty && !conflict && saveStatus !== 'saved') return null;
+  const productSurface = conflict
+    ? 'settings.detail-conflict'
+    : saveStatus === 'saving'
+      ? 'settings.detail-saving'
+      : saveStatus === 'saved'
+        ? 'settings.detail-saved'
+        : saveStatus === 'error'
+          ? 'settings.detail-failed'
+          : dirty
+            ? 'settings.detail-dirty'
+            : undefined;
 
   return (
-    <div className="settings-dirty-bar">
+    <div
+      className="settings-dirty-bar"
+      data-product-surface={productSurface}
+    >
       {conflict && (
         <div className="settings-dirty-conflict">
           <Text type="warning">{t('mobile.settings.dirty.conflict')}</Text>

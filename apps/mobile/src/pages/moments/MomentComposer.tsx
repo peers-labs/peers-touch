@@ -23,6 +23,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+
 import { useMobileI18n } from '../../app/mobileI18n';
 import type { MobileAuthSession } from '../../features/auth/authSession';
 import type { SocialIntentPort } from '../../features/social/socialIntents';
@@ -134,8 +135,10 @@ export function canPublishMoment(
   uploadingCount: number,
   errorCount: number,
   publishing: boolean,
+  audienceReady: boolean,
 ): boolean {
   return Boolean(text.trim() || successfulMediaCount > 0)
+    && audienceReady
     && uploadingCount === 0
     && errorCount === 0
     && !publishing;
@@ -330,7 +333,8 @@ export function MomentComposer({
     uploadingCount,
     errorCount,
     publishing,
-  ) && Boolean(audience) && !saving && !discarding && !pendingDraftRemoval;
+    Boolean(audience),
+  ) && !saving && !discarding && !pendingDraftRemoval;
   const hasComposerDraft = hasDraft || Boolean(text.trim()) || pendingImages.length > 0;
   const editingDisabled = publishing || Boolean(pendingDraftRemoval);
   const audienceLabel = t(
@@ -654,6 +658,7 @@ export function MomentComposer({
   return (
     <div
       className="moments-sheet-backdrop moments-composer-backdrop"
+      data-product-surface="moments.composer"
       role="presentation"
     >
       <section
@@ -687,7 +692,10 @@ export function MomentComposer({
           </button>
         </header>
       {draftRestored && (
-        <div className="moments-draft-banner">
+        <div
+          className="moments-draft-banner"
+          data-product-surface="moments.composer-draft-restored"
+        >
           <Save size={14} />
           <Text className="moments-draft-text">{t('mobile.moments.composer.draftRestored')}</Text>
         </div>
@@ -697,6 +705,7 @@ export function MomentComposer({
         <div
           className="moments-state moments-state--error"
           data-draft-failure={persistenceFailure.operation}
+          data-product-surface="moments.composer-draft-failed"
           role="alert"
         >
           <AlertTriangle size={18} aria-hidden="true" />
@@ -728,7 +737,13 @@ export function MomentComposer({
       {pendingImages.length > 0 && (
         <div className="moments-image-grid">
           {pendingImages.map((item) => (
-            <div className={`moments-image-tile ${item.status}`} key={item.localId}>
+            <div
+              className={`moments-image-tile ${item.status}`}
+              data-product-surface={`moments.composer-media-${
+                item.status === 'done' ? 'ready' : item.status
+              }`}
+              key={item.localId}
+            >
               {item.source === 'local-upload' ? (
                 <div className="moments-restored-image-reference">
                   <ImagePlus size={22} />
@@ -764,6 +779,7 @@ export function MomentComposer({
         type="button"
         className="moments-composer-audience"
         data-acceptance-id="social-audience-select"
+        data-product-surface="moments.composer-audience"
         disabled={editingDisabled}
         onClick={() => setAudienceOpen(true)}
       >

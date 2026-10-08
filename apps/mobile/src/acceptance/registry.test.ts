@@ -117,6 +117,12 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('build.identity');
     expect(actionNames).toContain('runtime.prepareActorIdentity');
     expect(actionNames).toContain('station.select');
+    expect(actionNames).toContain('entry.fixture');
+    expect(actionNames).toContain('recovery.fixture');
+    expect(actionNames).toContain('chat.fixture');
+    expect(actionNames).toContain('contacts.fixture');
+    expect(actionNames).toContain('moments.fixture');
+    expect(actionNames).toContain('settings.fixture');
     expect(actionNames).toContain('oauth.replayHandle');
     expect(actionNames).toContain('oauth.negativeCallback');
     expect(actionNames).toContain('lifecycle.snapshot');
@@ -158,6 +164,184 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('moments.private.reconcile');
     expect(actionNames).toContain('moments.private.snapshot');
     expect(actionNames).toContain('storage.conversation-clear.seed');
+  });
+
+  it('projects only declared entry surface fixtures', async () => {
+    const harness = createMobileAcceptanceHarness();
+
+    await expect(harness['entry.fixture']({
+      surfaceId: 'entry.access-pending',
+    })).resolves.toMatchObject({
+      surfaceId: 'entry.access-pending',
+    });
+    await expect(harness['entry.fixture']({
+      surfaceId: 'entry.not-real',
+    } as never)).rejects.toThrow(
+      'acceptance.mobile.invalidInput:entry.fixture.surfaceId',
+    );
+    await expect(harness['entry.fixture']({
+      surfaceId: null,
+    })).resolves.toMatchObject({
+      surfaceId: null,
+    });
+  });
+
+  it('projects only declared recovery surface fixtures', async () => {
+    const harness = createMobileAcceptanceHarness();
+
+    await expect(harness['recovery.fixture']({
+      surfaceId: 'recovery.projection-stale',
+    })).resolves.toMatchObject({
+      surfaceId: 'recovery.projection-stale',
+    });
+    await expect(harness['recovery.fixture']({
+      surfaceId: 'recovery.not-real',
+    } as never)).rejects.toThrow(
+      'acceptance.mobile.invalidInput:recovery.fixture.surfaceId',
+    );
+    await expect(harness['recovery.fixture']({
+      surfaceId: null,
+    })).resolves.toMatchObject({
+      surfaceId: null,
+    });
+  });
+
+  it('projects only declared Chat surfaces through production navigation', async () => {
+    const harness = createMobileAcceptanceHarness();
+
+    await expect(harness['chat.fixture']({
+      surfaceId: 'chat.group-management',
+    })).resolves.toMatchObject({
+      surfaceId: 'chat.group-management',
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:chat',
+      detailKeys: ['detail:group-conversation:acceptance-group'],
+    });
+    await expect(harness['chat.fixture']({
+      surfaceId: 'chat.not-real',
+    } as never)).rejects.toThrow(
+      'acceptance.mobile.invalidInput:chat.fixture.surfaceId',
+    );
+    await expect(harness['chat.fixture']({
+      surfaceId: null,
+    })).resolves.toMatchObject({
+      surfaceId: null,
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:chat',
+      detailKeys: [],
+    });
+  });
+
+  it('projects only declared Contacts surfaces through production navigation', async () => {
+    const harness = createMobileAcceptanceHarness();
+
+    await expect(harness['contacts.fixture']({
+      surfaceId: 'contacts.profile',
+    })).resolves.toMatchObject({
+      surfaceId: 'contacts.profile',
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:contacts',
+      detailKeys: ['detail:contact-profile:ptid:acceptance-contact'],
+      overlayRouteId: null,
+    });
+    await expect(harness['contacts.fixture']({
+      surfaceId: 'contacts.group-role-denied',
+    })).resolves.toMatchObject({
+      surfaceId: 'contacts.group-role-denied',
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:contacts',
+      detailKeys: [],
+      overlayRouteId: 'overlay:create-group',
+    });
+    await expect(harness['contacts.fixture']({
+      surfaceId: 'contacts.not-real',
+    } as never)).rejects.toThrow(
+      'acceptance.mobile.invalidInput:contacts.fixture.surfaceId',
+    );
+    await expect(harness['contacts.fixture']({
+      surfaceId: null,
+    })).resolves.toMatchObject({
+      surfaceId: null,
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:contacts',
+      detailKeys: [],
+      overlayRouteId: null,
+    });
+  });
+
+  it('projects only declared Moments surfaces through production navigation', async () => {
+    const harness = createMobileAcceptanceHarness();
+
+    await expect(harness['moments.fixture']({
+      surfaceId: 'moments.detail-comments',
+    })).resolves.toMatchObject({
+      surfaceId: 'moments.detail-comments',
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:moments',
+      detailKeys: ['detail:moment:acceptance-moment'],
+      overlayRouteId: null,
+    });
+    await expect(harness['moments.fixture']({
+      surfaceId: 'moments.composer-media-ready',
+    })).resolves.toMatchObject({
+      surfaceId: 'moments.composer-media-ready',
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:moments',
+      detailKeys: [],
+      overlayRouteId: null,
+    });
+    await expect(harness['moments.fixture']({
+      surfaceId: 'moments.not-real',
+    } as never)).rejects.toThrow(
+      'acceptance.mobile.invalidInput:moments.fixture.surfaceId',
+    );
+    await expect(harness['moments.fixture']({
+      surfaceId: null,
+    })).resolves.toMatchObject({
+      surfaceId: null,
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:moments',
+      detailKeys: [],
+      overlayRouteId: null,
+    });
+  });
+
+  it('projects only declared Settings surfaces through production navigation', async () => {
+    const harness = createMobileAcceptanceHarness();
+
+    await expect(harness['settings.fixture']({
+      surfaceId: 'settings.storage-confirm',
+    })).resolves.toMatchObject({
+      surfaceId: 'settings.storage-confirm',
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:settings',
+      detailKeys: ['detail:setting:chat-settings'],
+      overlayRouteId: null,
+    });
+    await expect(harness['settings.fixture']({
+      surfaceId: 'settings.not-real',
+    } as never)).rejects.toThrow(
+      'acceptance.mobile.invalidInput:settings.fixture.surfaceId',
+    );
+    await expect(harness['settings.fixture']({
+      surfaceId: null,
+    })).resolves.toMatchObject({
+      surfaceId: null,
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:settings',
+      detailKeys: [],
+      overlayRouteId: null,
+    });
   });
 
   it('routes conversation-clear fixture creation through the active Rust owner', async () => {

@@ -4,6 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   existsSync,
+  fstatSync,
   lstatSync,
   mkdtempSync,
   mkdirSync,
@@ -1264,6 +1265,7 @@ function runDevelopmentClosure(
   inspectSource = actualSource,
   spawnTaskCheck = spawnSync,
   resolveRunnerPython = resolveDevelopmentRunnerPython,
+  environment = process.env,
 ) {
   const expectedGates =
     plan.acceptance?.closures?.[plan.currentTask.closureId] ?? [];
@@ -1369,8 +1371,8 @@ function runDevelopmentClosure(
       workspaceRoot,
       workspaceId: plan.executionBinding.workspaceId,
     });
-    const runnerEnvironment = {
-      ...process.env,
+    const childEnvironment = {
+      ...environment,
       ...(options.home
         ? {
             HOME: options.home,
@@ -1384,14 +1386,16 @@ function runDevelopmentClosure(
     };
     if (path.isAbsolute(runnerPython)) {
       const runnerBin = path.dirname(runnerPython);
-      runnerEnvironment.PATH = runnerEnvironment.PATH
-        ? `${runnerBin}${path.delimiter}${runnerEnvironment.PATH}`
+      childEnvironment.PATH = childEnvironment.PATH
+        ? `${runnerBin}${path.delimiter}${childEnvironment.PATH}`
         : runnerBin;
     }
+    const leaseStdio = inheritedMachineLeaseStdio(childEnvironment);
     const completed = spawnDevelopmentRunner(runnerPython, arguments_, {
       cwd: workspaceRoot,
       encoding: 'utf8',
-      env: runnerEnvironment,
+      env: childEnvironment,
+      ...(leaseStdio === null ? {} : { stdio: leaseStdio }),
       maxBuffer: 16 * 1024 * 1024,
     });
     if (completed.error || completed.status !== 0) {
@@ -1417,6 +1421,36 @@ function runDevelopmentClosure(
   } finally {
     rmSync(controlDirectory, { recursive: true, force: true });
   }
+}
+
+function inheritedMachineLeaseStdio(environment) {
+  const rawLeaseFd = environment.PT_MACHINE_LEASE_FD;
+  if (rawLeaseFd === undefined || rawLeaseFd === '') return null;
+  if (!/^[0-9]+$/.test(rawLeaseFd)) {
+    sessionFail(
+      'SESSION_RUNTIME_REQUIRED',
+      'inherited machine lease file descriptor is invalid',
+    );
+  }
+  const leaseFd = Number(rawLeaseFd);
+  if (!Number.isSafeInteger(leaseFd) || leaseFd < 3) {
+    sessionFail(
+      'SESSION_RUNTIME_REQUIRED',
+      'inherited machine lease file descriptor is invalid',
+    );
+  }
+  try {
+    fstatSync(leaseFd);
+  } catch {
+    sessionFail(
+      'SESSION_RUNTIME_REQUIRED',
+      'inherited machine lease file descriptor is not open',
+    );
+  }
+  const stdio = ['ignore', 'pipe', 'pipe'];
+  while (stdio.length <= leaseFd) stdio.push('ignore');
+  stdio[leaseFd] = leaseFd;
+  return stdio;
 }
 
 function validateAggregateReport(report, expectedGates) {
@@ -1986,6 +2020,7 @@ export async function commitFunctionalResult(options, dependencies = {}) {
         dependencies.spawnTaskCheck ?? spawnSync,
         dependencies.resolveDevelopmentRunnerPython ??
           resolveDevelopmentRunnerPython,
+        dependencies.environment ?? process.env,
       );
   let prepared = null;
   return transitionSessionSequenceStore({

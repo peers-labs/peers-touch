@@ -414,6 +414,21 @@
       "tier": "ci-cheap",
       "description": "Require current-source native receiver proof for Desktop-Mobile coexistence and independent Desktop and Mobile same-class takeover."
     },
+    "station-access-session-class-suite-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.session_class_suite_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.simulator.appium-session"
+      ],
+      "timeout_seconds": 5400,
+      "environment": "chat-mixed-native",
+      "provisioner": "chat-mixed-native",
+      "tier": "env-evidence",
+      "description": "Prove same-Station Chat, Desktop-Mobile coexistence, Desktop takeover, and Mobile takeover in one exact-source reusable Suite Runtime with UI and receiver-visible evidence."
+    },
     "station-access-federation-boundary-e2e": {
       "argv": [
         "python3",
@@ -1729,6 +1744,14 @@
       "provisioner": "mobile-ios-layout-simulator",
       "tier": "env-evidence",
       "description": "Prove the current iPhone 17 Simulator launch-surface layout, keyboard avoidance, localization, accessible naming, orientation, and cleanup."
+    },
+    "mobile-simulator-whole-product-usability-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e",
+      "timeout_seconds": 10800,
+      "environment": "mobile-direct-simulator",
+      "provisioner": "mobile-direct-simulator",
+      "tier": "env-evidence",
+      "description": "Walk the complete registered Mobile surface inventory in a foreground iOS Simulator and prove human-readable identity, valid actions, accessibility, viewport containment, and non-occlusion."
     },
     "mobile-simulator-social-convergence-e2e": {
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario social-convergence",

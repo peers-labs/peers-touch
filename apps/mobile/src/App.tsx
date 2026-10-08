@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Modal } from 'antd';
+import { Modal, Typography } from 'antd';
 
 import { AppProviders } from './app/AppProviders';
 import {
@@ -21,12 +21,23 @@ import {
   isAccessGranted,
   loadRememberedLoginAccounts,
   rememberLoginAccount,
+  type AccessDecision,
   type RememberedLoginAccount,
   type StationLoginInput,
 } from './features/auth/authSession';
-import { AccessGateHost } from './features/auth/AccessGateHost';
+import { AccessGateHost, authStationLabel } from './features/auth/AccessGateHost';
 import { useAuthStore } from './features/auth/authStore';
-import { probeStation, verifyStationIdentity, type StationIdentityResult } from './features/station/stationConnection';
+import {
+  setEntrySurfaceFixture,
+  useEntrySurfaceFixture,
+  type EntrySurfaceFixtureId,
+} from './acceptance/entrySurfaceFixture';
+import {
+  setRecoverySurfaceFixture,
+  useRecoverySurfaceFixture,
+} from './acceptance/recoverySurfaceFixture';
+import { probeStation, verifyStationIdentity } from './features/station/stationConnection';
+import { EntryProgressScreen } from './features/station/EntryProgressScreen';
 import { StationLaunchScreen } from './features/station/StationLaunchScreen';
 import {
   applyAccessGateRuntimeResult,
@@ -48,6 +59,7 @@ import {
   activeStationEntry,
   addStationEntry,
   buildStationUrl,
+  emptyStationRegistry,
   removeStationEntry,
   replaceStationEntryIdentity,
   requireMatchingStationIdentity,
@@ -57,6 +69,7 @@ import {
   type MobileStationEntry,
   type StoredStationRegistry,
 } from './features/station/stationRegistry';
+import type { AuthRuntimeSnapshot } from './runtimes/authRuntime';
 import {
   readStationRegistryProjection,
   replaceStationRegistryProjection,
@@ -71,6 +84,8 @@ import {
 } from './runtimes/commandRuntime';
 import type { DraftDisposition } from './app/lifecycle/types';
 
+const { Text, Title } = Typography;
+
 interface PendingScopeExitRequest {
   readonly reason: ScopeExitDecisionReason;
   readonly draftCount: number;
@@ -78,6 +93,11 @@ interface PendingScopeExitRequest {
   readonly run: (disposition: DraftDisposition) => Promise<void>;
   readonly cancel: () => Promise<void>;
   readonly canCancel: boolean;
+}
+
+interface PendingStationIdentityReplacement {
+  readonly station: MobileStationEntry;
+  readonly resolve: (replace: boolean) => void;
 }
 
 
@@ -113,8 +133,30 @@ function MobileAppRoot() {
   const pendingScopeExitRef = useRef<PendingScopeExitRequest | null>(null);
   const [pendingScopeExit, setPendingScopeExit] =
     useState<PendingScopeExitRequest | null>(null);
+  const [pendingIdentityReplacement, setPendingIdentityReplacement] =
+    useState<PendingStationIdentityReplacement | null>(null);
+  const entryFixture = useEntrySurfaceFixture();
+  const recoveryFixture = useRecoverySurfaceFixture();
   const stationUrlsKey = stationRegistry.entries.map((entry) => entry.url).join('\n');
   const activeStation = activeStationEntry(stationRegistry);
+  const renderedLaunchState = fixtureLaunchState(entryFixture.surfaceId) ?? launchState;
+  const renderedStationRegistry = fixtureStationRegistry(
+    entryFixture.surfaceId,
+    stationRegistry,
+  );
+  const renderedAccessDecision = fixtureAccessDecision(entryFixture.surfaceId, t)
+    ?? accessDecision;
+  const renderedStationError = fixtureStationError(entryFixture.surfaceId, t)
+    ?? stationError;
+  const renderedAuthError = entryFixture.surfaceId === 'entry.login-failed'
+    ? t('mobile.auth.loginFailed')
+    : authError;
+  const renderedOAuth = fixtureOAuthProjection(entryFixture.surfaceId);
+  const friendlyStationLabel = authStationLabel(
+    activeStation?.label ?? '',
+    activeStation?.url ?? '',
+    t('common.stationPicker.fallbackLabel'),
+  );
 
   // The lifecycle-owned auth descriptor restores and revalidates credentials.
   // React only loads the device-local Station projection for rendering.
@@ -184,18 +226,22 @@ function MobileAppRoot() {
     station: MobileStationEntry,
   ): Promise<boolean> {
     return new Promise((resolve) => {
-      Modal.confirm({
-        title: t('mobile.launch.stationReplaceConfirmTitle'),
-        content: t('mobile.launch.stationReplaceConfirmBody', {
-          station: station.label,
-        }),
-        okText: t('mobile.launch.stationReplace'),
-        cancelText: t('common.action.cancel'),
-        okButtonProps: { danger: true },
-        onOk: () => resolve(true),
-        onCancel: () => resolve(false),
+      setPendingIdentityReplacement({
+        station,
+        resolve,
       });
     });
+  }
+
+  function resolveStationIdentityReplacement(replace: boolean) {
+    if (pendingIdentityReplacement) {
+      pendingIdentityReplacement.resolve(replace);
+      setPendingIdentityReplacement(null);
+      return;
+    }
+    if (entryFixture.surfaceId === 'entry.station-identity-mismatch') {
+      setEntrySurfaceFixture('entry.station-selection');
+    }
   }
 
   async function runUserScopeTransition(
@@ -578,6 +624,19 @@ function MobileAppRoot() {
   // --- Render based on launch state ---
 
   function renderWithRecovery(content: ReactNode) {
+    const replacementStation = pendingIdentityReplacement?.station
+      ?? (
+        entryFixture.surfaceId === 'entry.station-identity-mismatch'
+          ? activeStation
+          : null
+      );
+    const replacementStationLabel = replacementStation
+      ? authStationLabel(
+          replacementStation.label,
+          replacementStation.url,
+          t('common.stationPicker.fallbackLabel'),
+        )
+      : t('common.stationPicker.fallbackLabel');
     return (
       <>
         {content}
@@ -597,11 +656,66 @@ function MobileAppRoot() {
             canCancel={pendingScopeExit.canCancel}
           />
         )}
+        {!pendingScopeExit
+          && recoveryFixture.surfaceId === 'recovery.scope-exit'
+          && (
+            <ScopeExitDraftDecisionOverlay
+              key={recoveryFixture.revision}
+              reason="logout"
+              draftCount={2}
+              committedDisposition={null}
+              t={t}
+              onDecision={async () => {
+                setRecoverySurfaceFixture(null);
+              }}
+              onCancel={async () => {
+                setRecoverySurfaceFixture(null);
+              }}
+              canCancel
+            />
+          )}
+        <Modal
+          open={replacementStation !== null}
+          footer={null}
+          closable={false}
+          onCancel={() => resolveStationIdentityReplacement(false)}
+          destroyOnClose
+        >
+          <section
+            className="entry-confirmation entry-trust-confirmation"
+            data-product-surface="entry.station-identity-mismatch"
+          >
+            <Title level={1}>
+              {t('mobile.launch.stationReplaceConfirmTitle')}
+            </Title>
+            <Text type="secondary">
+              {t('mobile.launch.stationReplaceConfirmBody', {
+                station: replacementStationLabel,
+              })}
+            </Text>
+            <div className="entry-confirmation-actions">
+              <button
+                type="button"
+                className="entry-confirmation-button"
+                onClick={() => resolveStationIdentityReplacement(false)}
+              >
+                {t('common.action.cancel')}
+              </button>
+              <button
+                type="button"
+                className="entry-confirmation-button danger"
+                onClick={() => resolveStationIdentityReplacement(true)}
+              >
+                {t('mobile.launch.stationReplace')}
+              </button>
+            </div>
+          </section>
+        </Modal>
       </>
     );
   }
 
-  if (launchState === 'shell') {
+  if (renderedLaunchState === 'shell' || renderedLaunchState === 'resume') {
     return renderWithRecovery(
       <MobileShell
         stationRegistry={stationRegistry}
@@ -611,15 +725,56 @@ function MobileAppRoot() {
     );
   }
 
-  if (launchState === 'access-gate-chain') {
+  if (renderedLaunchState === 'app-boot') {
+    return renderWithRecovery(
+      <EntryProgressScreen
+        kind="boot"
+        onRetry={async () => {
+          await getMobileLifecycleKernel().restartRuntimeGraph('reliability-recovery');
+        }}
+      />,
+    );
+  }
+
+  if (renderedLaunchState === 'station-handshake') {
+    return renderWithRecovery(
+      <EntryProgressScreen
+        kind="station-handshake"
+        stationLabel={friendlyStationLabel}
+        onBack={showStationSelection}
+      />,
+    );
+  }
+
+  if (renderedLaunchState === 'runtime-critical') {
+    const runtimeFailed = entryFixture.surfaceId === 'entry.runtime-critical'
+      || Array.from(lifecycle.runtimes.values()).some(
+        (runtime) => runtime.status === 'failed' || runtime.readiness?.status === 'failed',
+      );
+    return renderWithRecovery(
+      <EntryProgressScreen
+        kind="runtime"
+        stationLabel={friendlyStationLabel}
+        failed={runtimeFailed}
+        onBack={leaveCurrentStationForSelection}
+        onRetry={async () => {
+          await getMobileLifecycleKernel().restartRuntimeGraph('reliability-recovery');
+        }}
+      />,
+    );
+  }
+
+  if (renderedLaunchState === 'access-gate-chain') {
     return renderWithRecovery(
       <AccessGateHost
-        decision={accessDecision}
+        decision={renderedAccessDecision}
         stationLabel={activeStation?.label || t('mobile.launch.station')}
         stationUrl={activeStation?.url || ''}
-        error={authError}
+        error={renderedAuthError}
         loading={authLoading}
         rememberedAccounts={rememberedAccounts}
+        oauthOverride={renderedOAuth ?? undefined}
+        forceSessionExpired={entryFixture.surfaceId === 'entry.session-expired'}
         onBack={cancelAccessGateAttemptAndChangeStation}
         onRefresh={refreshAccessGateDecision}
         onLogin={login}
@@ -631,10 +786,16 @@ function MobileAppRoot() {
 
   return renderWithRecovery(
     <StationLaunchScreen
-      registry={stationRegistry}
-      error={stationError}
+      key={`station-launch-${entryFixture.revision}`}
+      registry={renderedStationRegistry}
+      error={renderedStationError}
       checking={stationChecking}
-      verifyingUrls={verifyingStationUrls}
+      verifyingUrls={
+        entryFixture.surfaceId === 'entry.station-verifying'
+          ? renderedStationRegistry.entries.map((entry) => entry.url)
+          : verifyingStationUrls
+      }
+      surfaceFixture={fixtureStationSelectorSurface(entryFixture.surfaceId)}
       onAddStation={async (protocol: StationProtocol, address: string) => {
         const normalizedUrl = buildStationUrl({ protocol, address });
         if (!normalizedUrl) {
@@ -774,6 +935,209 @@ function MobileAppRoot() {
       }}
     />,
   );
+}
+
+function fixtureLaunchState(
+  surfaceId: EntrySurfaceFixtureId | null,
+) {
+  if (!surfaceId) return null;
+  if (surfaceId === 'entry.app-boot') return 'app-boot' as const;
+  if (surfaceId === 'entry.station-handshake') return 'station-handshake' as const;
+  if (surfaceId.startsWith('entry.station-')) return 'station-selection' as const;
+  if (
+    surfaceId.startsWith('entry.access-')
+    || surfaceId === 'entry.login-failed'
+    || surfaceId === 'entry.session-expired'
+    || surfaceId.startsWith('entry.oauth-')
+  ) {
+    return 'access-gate-chain' as const;
+  }
+  if (surfaceId.startsWith('entry.runtime-')) return 'runtime-critical' as const;
+  return null;
+}
+
+function fixtureStationRegistry(
+  surfaceId: EntrySurfaceFixtureId | null,
+  registry: StoredStationRegistry,
+): StoredStationRegistry {
+  if (
+    surfaceId === 'entry.station-empty'
+    || surfaceId === 'entry.station-address'
+    || surfaceId === 'entry.station-address-invalid'
+  ) {
+    return emptyStationRegistry();
+  }
+  if (surfaceId === 'entry.station-selection') {
+    return { ...registry, activeStationPeerId: '' };
+  }
+  if (surfaceId === 'entry.station-unavailable') {
+    return {
+      ...registry,
+      entries: registry.entries.map((entry) => ({ ...entry, online: false })),
+    };
+  }
+  if (surfaceId === 'entry.station-verifying') {
+    return {
+      ...registry,
+      entries: registry.entries.map((entry) => ({ ...entry, online: undefined })),
+    };
+  }
+  return registry;
+}
+
+function fixtureStationSelectorSurface(
+  surfaceId: EntrySurfaceFixtureId | null,
+): 'address' | 'address-invalid' | 'remove-confirm' | undefined {
+  if (surfaceId === 'entry.station-address') return 'address';
+  if (surfaceId === 'entry.station-address-invalid') return 'address-invalid';
+  if (surfaceId === 'entry.station-remove-confirm') return 'remove-confirm';
+  return undefined;
+}
+
+function fixtureStationError(
+  surfaceId: EntrySurfaceFixtureId | null,
+  t: (key: string) => string,
+): string | null {
+  if (surfaceId === 'entry.station-address-invalid') {
+    return t('mobile.launch.validAddressHint');
+  }
+  if (surfaceId === 'entry.station-unavailable') {
+    return t('mobile.launch.stationUnavailable');
+  }
+  return null;
+}
+
+function fixtureAccessDecision(
+  surfaceId: EntrySurfaceFixtureId | null,
+  t: (key: string) => string,
+): AccessDecision | null {
+  if (surfaceId === 'entry.access-pending') {
+    return {
+      state: 'ACCESS_DECISION_STATE_PENDING',
+      attemptId: 'entry-fixture-attempt',
+      gates: [],
+    };
+  }
+  if (surfaceId === 'entry.access-failed') {
+    return {
+      state: 'ACCESS_DECISION_STATE_FAILED',
+      attemptId: 'entry-fixture-attempt',
+      gates: [],
+    };
+  }
+
+  const actionRequired = [
+    'entry.access-login',
+    'entry.login-failed',
+    'entry.session-expired',
+    'entry.access-oauth',
+    'entry.oauth-progress',
+    'entry.oauth-failed',
+    'entry.access-schema',
+    'entry.access-unavailable',
+  ].includes(surfaceId ?? '');
+  if (!actionRequired) return null;
+
+  if (surfaceId === 'entry.access-schema') {
+    return {
+      state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+      attemptId: 'entry-fixture-attempt',
+      currentGateId: 'terms.acceptance',
+      gates: [{
+        gateId: 'terms.acceptance',
+        type: 'ACCESS_GATE_TYPE_TERMS_ACCEPTANCE',
+        state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
+        title: t('mobile.auth.termsTitle'),
+        description: t('mobile.auth.termsSubtitle'),
+        actionId: 'terms.acceptance',
+        submitAction: 'submit_schema',
+        inputSchemaJson: JSON.stringify({
+          fields: [{
+            name: 'accepted',
+            type: 'checkbox',
+            label: t('mobile.auth.termsAccept'),
+            required: true,
+          }],
+        }),
+        alternativeActions: [],
+        schemaRevision: 1,
+        schemaDigest: 'a'.repeat(64),
+      }],
+    };
+  }
+
+  if (surfaceId === 'entry.access-unavailable') {
+    return {
+      state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+      attemptId: 'entry-fixture-attempt',
+      currentGateId: 'device.trust',
+      gates: [{
+        gateId: 'device.trust',
+        type: 'ACCESS_GATE_TYPE_DEVICE_TRUST',
+        state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
+        title: t('mobile.auth.deviceApprovalTitle'),
+        description: t('mobile.auth.deviceApprovalSubtitle'),
+        actionId: 'device.trust',
+        submitAction: 'approve_device',
+        alternativeActions: [],
+        schemaRevision: 1,
+        schemaDigest: 'a'.repeat(64),
+      }],
+    };
+  }
+
+  const oauthOnly = [
+    'entry.access-oauth',
+    'entry.oauth-progress',
+    'entry.oauth-failed',
+  ].includes(surfaceId ?? '');
+  return {
+    state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+    attemptId: 'entry-fixture-attempt',
+    currentGateId: 'auth.login',
+    gates: [{
+      gateId: 'auth.login',
+      type: 'ACCESS_GATE_TYPE_AUTH_LOGIN',
+      state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
+      title: t('mobile.auth.signInTitle'),
+      description: t('mobile.auth.subtitle'),
+      actionId: oauthOnly ? 'auth.oauth' : 'auth.password',
+      submitAction: oauthOnly ? 'start_oauth' : 'submit_login',
+      alternativeActions: [{
+        actionId: oauthOnly ? 'auth.oauth' : 'auth.password',
+        type: oauthOnly
+          ? 'ACCESS_GATE_TYPE_AUTH_OAUTH'
+          : 'ACCESS_GATE_TYPE_AUTH_LOGIN',
+        submitAction: oauthOnly ? 'start_oauth' : 'submit_login',
+        schemaRevision: 1,
+        schemaDigest: 'a'.repeat(64),
+      }],
+      schemaRevision: 1,
+      schemaDigest: 'a'.repeat(64),
+    }],
+  };
+}
+
+function fixtureOAuthProjection(
+  surfaceId: EntrySurfaceFixtureId | null,
+): Partial<AuthRuntimeSnapshot> | null {
+  if (surfaceId === 'entry.oauth-progress') {
+    return {
+      phase: 'awaiting_provider',
+      provider: 'github',
+      errorKey: null,
+      recovery: 'none',
+    };
+  }
+  if (surfaceId === 'entry.oauth-failed') {
+    return {
+      phase: 'failed',
+      provider: 'github',
+      errorKey: 'mobile.auth.oauthExpired',
+      recovery: 'restart',
+    };
+  }
+  return null;
 }
 
 export function App() {

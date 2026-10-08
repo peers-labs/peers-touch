@@ -24,6 +24,7 @@ import {
   Repeat2,
   Search,
   Send,
+  Share2,
   ShieldCheck,
   SlidersHorizontal,
   Trash2,
@@ -640,6 +641,15 @@ function MomentArticle({
           <button type="button" disabled={interactionsDisabled} className={moment.myReaction ? 'mp-moment-action reacted' : 'mp-moment-action'} aria-label="React" onClick={onTogglePicker}><Heart size={18} fill={moment.myReaction ? 'currentColor' : 'none'} /></button>
           <button type="button" disabled={hidesPlaintext} className={commentComposerOpen ? 'mp-moment-action active' : 'mp-moment-action'} aria-label={commentComposerOpen ? 'Hide comment composer' : 'Add comment'} onClick={onToggleCommentComposer}>
             <MessageCircle size={18} /><span>{moment.comments.length}</span>
+          </button>
+          <button
+            type="button"
+            className="mp-moment-action mp-moment-action--share"
+            aria-label="Share unavailable"
+            title="Share unavailable"
+            disabled
+          >
+            <Share2 size={18} />
           </button>
         </div>
         {pickerOpen && !interactionsDisabled ? <ReactionPicker active={moment.myReaction} onReact={onReact} /> : null}

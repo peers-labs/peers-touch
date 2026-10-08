@@ -89,7 +89,11 @@ export function ChatMessageSectionBoundary({
   const { t } = useMobileI18n();
 
   return (
-    <section className={`message-list chat-background-${background}`} data-message-viewport>
+    <section
+      className={`message-list chat-background-${background}`}
+      data-message-viewport
+      data-product-surface={messages.length === 0 ? 'chat.thread-empty' : undefined}
+    >
       {messages.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.chat.emptyThread')} />
       ) : (

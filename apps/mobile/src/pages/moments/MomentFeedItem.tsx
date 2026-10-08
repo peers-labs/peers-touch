@@ -25,6 +25,7 @@ import {
   MoreHorizontal,
   Play,
   Repeat2,
+  Share2,
   ShieldAlert,
   Trash2,
   X,
@@ -200,7 +201,11 @@ export function MomentFeedItem({
   if (policyState !== 'visible') {
     const blocked = policyState === 'blocked';
     return (
-      <Card className="moments-card moments-card--policy" variant="borderless">
+      <Card
+        className="moments-card moments-card--policy"
+        data-product-surface="moments.policy-hidden"
+        variant="borderless"
+      >
         <div className="moments-policy-inline" role="alert">
           <ShieldAlert size={24} strokeWidth={1.5} />
           <Text strong>
@@ -454,9 +459,19 @@ export function MomentFeedItem({
             data-acceptance-id="social-thread-open"
             data-post-id={post.id}
             onClick={() => onOpenComments(post.id)}
+            aria-label={t('mobile.moments.comment.title')}
           >
             <MessageCircle size={18} />
             {commentCount > 0 && <span>{commentCount}</span>}
+          </button>
+          <button
+            type="button"
+            className="moments-action moments-action--share"
+            disabled
+            aria-label={t('common.state.unavailable')}
+            title={t('common.state.unavailable')}
+          >
+            <Share2 size={18} />
           </button>
         </div>
 
@@ -483,6 +498,9 @@ export function MomentFeedItem({
       {reactionMutation && (
         <Text
           className={`moments-reaction-status moments-reaction-status--${reactionMutation.status}`}
+          data-product-surface={reactionBusy
+            ? 'moments.reaction-pending'
+            : 'moments.reaction-rollback'}
           type={
             reactionMutation.status === 'rolled-back'
             || reactionMutation.status === 'rejected'

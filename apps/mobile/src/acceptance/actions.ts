@@ -168,6 +168,34 @@ import {
 } from '../services/mobileCommands';
 import type { CommandOutcome } from '../services/gateways/gatewayTypes';
 import { readSharedBuildIdentity } from './buildIdentity';
+import {
+  isEntrySurfaceFixtureId,
+  setEntrySurfaceFixture,
+} from './entrySurfaceFixture';
+import {
+  chatSurfaceFixtureRouteKind,
+  isChatSurfaceFixtureId,
+  setChatSurfaceFixture,
+} from './chatSurfaceFixture';
+import {
+  contactsSurfaceFixtureRouteKind,
+  isContactsSurfaceFixtureId,
+  setContactsSurfaceFixture,
+} from './contactsSurfaceFixture';
+import {
+  isMomentsSurfaceFixtureId,
+  momentsSurfaceFixtureRouteKind,
+  setMomentsSurfaceFixture,
+} from './momentsSurfaceFixture';
+import {
+  isSettingsSurfaceFixtureId,
+  setSettingsSurfaceFixture,
+  settingsSurfaceFixtureRoute,
+} from './settingsSurfaceFixture';
+import {
+  isRecoverySurfaceFixtureId,
+  setRecoverySurfaceFixture,
+} from './recoverySurfaceFixture';
 import type {
   LifecycleWaitReadyInput,
   LifecycleWaitReadyOutput,
@@ -312,6 +340,126 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       ...sanitizeStationRegistry(next),
       sessionRevocation: sanitizeSessionRevocation(sessionRevocation),
     };
+  },
+
+  'entry.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isEntrySurfaceFixtureId(surfaceId)) {
+      throw new Error('acceptance.mobile.invalidInput:entry.fixture.surfaceId');
+    }
+    return setEntrySurfaceFixture(surfaceId);
+  },
+
+  'recovery.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isRecoverySurfaceFixtureId(surfaceId)) {
+      throw new Error(
+        'acceptance.mobile.invalidInput:recovery.fixture.surfaceId',
+      );
+    }
+    return setRecoverySurfaceFixture(surfaceId);
+  },
+
+  'chat.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isChatSurfaceFixtureId(surfaceId)) {
+      throw new Error('acceptance.mobile.invalidInput:chat.fixture.surfaceId');
+    }
+    const routeKind = chatSurfaceFixtureRouteKind(surfaceId);
+    applyMobileNavigationIntent({
+      kind: 'primary',
+      routeId: 'tab:chat',
+    });
+    if (routeKind !== 'list') {
+      applyMobileNavigationIntent({
+        kind: 'detail.push',
+        route: routeKind === 'group'
+          ? {
+              routeId: 'detail:group-conversation',
+              groupUlid: 'acceptance-group',
+            }
+          : {
+              routeId: 'detail:chat-conversation',
+              sessionUlid: 'acceptance-direct',
+            },
+      });
+    }
+    return setChatSurfaceFixture(surfaceId);
+  },
+
+  'contacts.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isContactsSurfaceFixtureId(surfaceId)) {
+      throw new Error('acceptance.mobile.invalidInput:contacts.fixture.surfaceId');
+    }
+    const routeKind = contactsSurfaceFixtureRouteKind(surfaceId);
+    applyMobileNavigationIntent({
+      kind: 'primary',
+      routeId: 'tab:contacts',
+    });
+    if (routeKind === 'profile') {
+      applyMobileNavigationIntent({
+        kind: 'detail.push',
+        route: {
+          routeId: 'detail:contact-profile',
+          actorPtid: 'ptid:acceptance-contact',
+        },
+      });
+    } else if (routeKind === 'people' || routeKind === 'group') {
+      applyMobileNavigationIntent({
+        kind: 'overlay.open',
+        route: {
+          routeId: routeKind === 'group'
+            ? 'overlay:create-group'
+            : 'overlay:add-friend',
+        },
+      });
+    }
+    return setContactsSurfaceFixture(surfaceId);
+  },
+
+  'moments.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isMomentsSurfaceFixtureId(surfaceId)) {
+      throw new Error('acceptance.mobile.invalidInput:moments.fixture.surfaceId');
+    }
+    const routeKind = momentsSurfaceFixtureRouteKind(surfaceId);
+    applyMobileNavigationIntent({
+      kind: 'primary',
+      routeId: 'tab:moments',
+    });
+    if (routeKind === 'detail') {
+      applyMobileNavigationIntent({
+        kind: 'detail.push',
+        route: {
+          routeId: 'detail:moment',
+          postId: 'acceptance-moment',
+        },
+      });
+    }
+    return setMomentsSurfaceFixture(surfaceId);
+  },
+
+  'settings.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isSettingsSurfaceFixtureId(surfaceId)) {
+      throw new Error('acceptance.mobile.invalidInput:settings.fixture.surfaceId');
+    }
+    const route = settingsSurfaceFixtureRoute(surfaceId);
+    applyMobileNavigationIntent({
+      kind: 'primary',
+      routeId: 'tab:settings',
+    });
+    if (route.kind === 'detail' && route.settingId) {
+      applyMobileNavigationIntent({
+        kind: 'detail.push',
+        route: {
+          routeId: 'detail:setting',
+          settingId: route.settingId,
+        },
+      });
+    }
+    return setSettingsSurfaceFixture(surfaceId);
   },
 
   'access.submit': async (input) => {
@@ -1464,6 +1612,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   },
 
   cleanup: async () => {
+    setEntrySurfaceFixture(null);
+    setRecoverySurfaceFixture(null);
+    setChatSurfaceFixture(null);
     let oauthPurge: Awaited<ReturnType<typeof purgeNativeOAuth>> | null = null;
     await getMobileLifecycleKernel().transitionScope(
       'logout',

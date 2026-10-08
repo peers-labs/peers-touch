@@ -3,7 +3,10 @@
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
-import { visibleRecoveryStates } from './RecoveryOverlayHost';
+import {
+  bindDeferredCapabilityProjection,
+  visibleRecoveryStates,
+} from './RecoveryOverlayHost';
 
 describe('Mobile reliability recovery surfaces', () => {
   const appSource = readFileSync(
@@ -20,6 +23,14 @@ describe('Mobile reliability recovery surfaces', () => {
   );
   const hostSource = readFileSync(
     new URL('./RecoveryOverlayHost.tsx', import.meta.url),
+    'utf8',
+  );
+  const deferredSource = readFileSync(
+    new URL('./DeferredCapabilityNotice.tsx', import.meta.url),
+    'utf8',
+  );
+  const stylesSource = readFileSync(
+    new URL('../../styles.css', import.meta.url),
     'utf8',
   );
 
@@ -88,5 +99,60 @@ describe('Mobile reliability recovery surfaces', () => {
       'access-gate-chain',
     )).toEqual([offline]);
     expect(visibleRecoveryStates([expired], 'shell')).toEqual([expired]);
+  });
+
+  it('keeps deferred capability recovery synchronized with every kernel update', () => {
+    let current = { launchState: 'shell', revision: 1 };
+    let listener: (() => void) | null = null;
+    const observed: unknown[] = [];
+    const unbind = bindDeferredCapabilityProjection(
+      () => current,
+      (next) => {
+        listener = next;
+        return () => {
+          listener = null;
+        };
+      },
+      (state) => observed.push(state),
+    );
+
+    current = { launchState: 'shell', revision: 2 };
+    listener?.();
+
+    expect(observed).toEqual([
+      { launchState: 'shell', revision: 1 },
+      { launchState: 'shell', revision: 2 },
+    ]);
+    unbind();
+    expect(listener).toBeNull();
+  });
+
+  it('keeps shell degradation compact and explicitly non-blocking', () => {
+    expect(hostSource).toContain('bindDeferredCapabilityProjection');
+    expect(deferredSource).toContain('data-blocks-unrelated-content="false"');
+    expect(stylesSource).toMatch(
+      /\.recovery-overlay-host:is\(\s*\[data-launch-state='shell'\],\s*\[data-launch-state='resume'\]\s*\)\s*\{[^}]*padding-bottom:\s*calc\(var\(--tabbar-height\)/s,
+    );
+    expect(stylesSource).toMatch(
+      /\.recovery-overlay-host:is\(\s*\[data-launch-state='shell'\],\s*\[data-launch-state='resume'\]\s*\)\s*\.recovery-deferred-capability/s,
+    );
+  });
+
+  it('keeps shared shell controls at the 44px mobile touch minimum', () => {
+    expect(stylesSource).toMatch(
+      /\.header-action\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/s,
+    );
+    expect(stylesSource).toMatch(
+      /\.chat-search-bar \.ant-input-affix-wrapper\s*\{[^}]*height:\s*44px;/s,
+    );
+    expect(stylesSource).toMatch(
+      /\.mobile-notice-close\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/s,
+    );
+    expect(stylesSource).toMatch(
+      /\.recovery-btn--compact\s*\{[^}]*min-height:\s*44px;/s,
+    );
+    expect(stylesSource).toMatch(
+      /\.header-title\s*\{[^}]*letter-spacing:\s*0;/s,
+    );
   });
 });
