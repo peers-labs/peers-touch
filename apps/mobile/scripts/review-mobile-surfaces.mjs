@@ -272,6 +272,26 @@ function selfTest() {
     if (!resolved.surfaceEvidence?.['shell.chat-tab']) {
       fail('development artifact resolution self-test failed');
     }
+    const validationEnv = validationEnvironment(
+      {
+        PATH: '/usr/bin',
+        PT_ACCEPTANCE_GATE_ID: 'outer-gate',
+        PT_ACCEPTANCE_RUN_ID: 'outer-run',
+        PT_ACCEPTANCE_WORKSPACE_ID: 'fedcba9876543210',
+        PT_ACCEPTANCE_EPHEMERAL_CONTEXT_FD: '9',
+      },
+      artifactRoot,
+    );
+    if (
+      validationEnv.PATH !== '/usr/bin'
+      || validationEnv.PT_ACCEPTANCE_ARTIFACT_ROOT !== artifactRoot
+      || 'PT_ACCEPTANCE_GATE_ID' in validationEnv
+      || 'PT_ACCEPTANCE_RUN_ID' in validationEnv
+      || 'PT_ACCEPTANCE_WORKSPACE_ID' in validationEnv
+      || 'PT_ACCEPTANCE_EPHEMERAL_CONTEXT_FD' in validationEnv
+    ) {
+      fail('validation environment isolation self-test failed');
+    }
   } finally {
     rmSync(artifactRoot, { force: true, recursive: true });
   }
@@ -403,6 +423,32 @@ function developmentArtifactRoot(workItem, workspaceId) {
   );
 }
 
+function defaultArtifactRoot() {
+  return execFileSync(
+    'python3',
+    ['tooling/scripts/acceptance-artifact.py', 'root'],
+    { cwd: repoRoot, encoding: 'utf8' },
+  ).trim();
+}
+
+export function validationEnvironment(environment, artifactRoot) {
+  const result = { ...environment };
+  for (const key of [
+    'PT_ACCEPTANCE_GATE_ID',
+    'PT_ACCEPTANCE_RUN_ID',
+    'PT_ACCEPTANCE_WORKSPACE_ID',
+    'PT_ACCEPTANCE_EPHEMERAL_CONTEXT_FD',
+    'PT_ACCEPTANCE_EPHEMERAL_CONTEXT_WORKSPACE_ID',
+    'PT_ACCEPTANCE_EPHEMERAL_CONTEXT_GATE_ID',
+    'PT_ACCEPTANCE_EPHEMERAL_CONTEXT_EVIDENCE_RUN_ID',
+    'PT_ACCEPTANCE_EPHEMERAL_CONTEXT_PROVISIONING_RUN_ID',
+  ]) {
+    delete result[key];
+  }
+  result.PT_ACCEPTANCE_ARTIFACT_ROOT = path.resolve(artifactRoot);
+  return result;
+}
+
 function readArtifactReference(artifactRoot, reference) {
   if (
     reference?.artifactKind !== 'acceptance-artifact-ref'
@@ -455,7 +501,12 @@ function readFunctionalResult(
   return readArtifactReference(artifactRoot, evidence);
 }
 
-function validateLatest(result, surfaceSet, requireVisualReview) {
+function validateLatest(
+  result,
+  surfaceSet,
+  requireVisualReview,
+  artifactRoot,
+) {
   const args = [
     '-m',
     'tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e',
@@ -469,6 +520,7 @@ function validateLatest(result, surfaceSet, requireVisualReview) {
     args,
     {
       cwd: repoRoot,
+      env: validationEnvironment(process.env, artifactRoot),
       input: JSON.stringify(result),
       encoding: 'utf8',
     },
@@ -521,6 +573,7 @@ if (typeof gateId !== 'string' || !gateId) {
 }
 
 let result;
+let artifactRoot;
 if (options.mode === 'functional') {
   const identity = resolveFunctionalIdentity(options.workItem);
   const runReference = runFunctional(
@@ -528,22 +581,28 @@ if (options.mode === 'functional') {
     gateId,
     identity.workItem,
   );
+  artifactRoot = developmentArtifactRoot(
+    identity.workItem,
+    identity.workspaceId,
+  );
   result = readFunctionalResult(
     gateId,
     identity.workItem,
     identity.workspaceId,
     runReference,
+    artifactRoot,
   );
 } else {
+  artifactRoot = defaultArtifactRoot();
   result = readLatestResult(gateId);
 }
-validateLatest(result, options.surfaceSet, false);
+validateLatest(result, options.surfaceSet, false, artifactRoot);
 if (options.mode === 'review') {
   const screenshots = collectScreenshotRefs(result, surfaceIds);
   process.stdout.write(
     `${JSON.stringify({ surfaceSet: options.surfaceSet, screenshots })}\n`,
   );
-  validateLatest(result, options.surfaceSet, true);
+  validateLatest(result, options.surfaceSet, true, artifactRoot);
 }
 
 process.stdout.write(
