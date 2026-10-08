@@ -1170,8 +1170,45 @@
   }
   .mp-people-handle { overflow-wrap: anywhere; }
 
+  .mp-create-group-sheet {
+    max-height: 100%;
+  }
+  .mp-create-group-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 16px 16px;
+  }
+  .mp-create-group-content .ant-input,
+  .mp-create-group-content .ant-input-affix-wrapper,
+  .mp-create-group-content .ant-checkbox-wrapper,
+  .mp-create-group-content .ant-btn {
+    min-height: 44px;
+  }
+  .mp-create-group-members {
+    min-height: 0;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+  .mp-create-group-avatar {
+    display: grid;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: var(--mp-r-md);
+    color: #fff;
+    font-weight: 700;
+  }
+  .mp-create-group-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .mp-find-people-sheet { animation: none; }
+    .mp-create-group-sheet { animation: none; }
   }
 
   /* ── Reaction bar in action sheet (Feishu-style) ── */

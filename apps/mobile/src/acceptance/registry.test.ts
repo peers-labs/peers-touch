@@ -119,6 +119,7 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('entry.fixture');
     expect(actionNames).toContain('recovery.fixture');
     expect(actionNames).toContain('chat.fixture');
+    expect(actionNames).toContain('contacts.fixture');
     expect(actionNames).toContain('oauth.replayHandle');
     expect(actionNames).toContain('oauth.negativeCallback');
     expect(actionNames).toContain('lifecycle.snapshot');
@@ -227,6 +228,46 @@ describe('Mobile Acceptance Harness', () => {
     await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
       primaryRouteId: 'tab:chat',
       detailKeys: [],
+    });
+  });
+
+  it('projects only declared Contacts surfaces through production navigation', async () => {
+    const harness = createMobileAcceptanceHarness();
+
+    await expect(harness['contacts.fixture']({
+      surfaceId: 'contacts.profile',
+    })).resolves.toMatchObject({
+      surfaceId: 'contacts.profile',
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:contacts',
+      detailKeys: ['detail:contact-profile:ptid:acceptance-contact'],
+      overlayRouteId: null,
+    });
+    await expect(harness['contacts.fixture']({
+      surfaceId: 'contacts.group-role-denied',
+    })).resolves.toMatchObject({
+      surfaceId: 'contacts.group-role-denied',
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:contacts',
+      detailKeys: [],
+      overlayRouteId: 'overlay:create-group',
+    });
+    await expect(harness['contacts.fixture']({
+      surfaceId: 'contacts.not-real',
+    } as never)).rejects.toThrow(
+      'acceptance.mobile.invalidInput:contacts.fixture.surfaceId',
+    );
+    await expect(harness['contacts.fixture']({
+      surfaceId: null,
+    })).resolves.toMatchObject({
+      surfaceId: null,
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:contacts',
+      detailKeys: [],
+      overlayRouteId: null,
     });
   });
 

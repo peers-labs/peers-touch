@@ -3271,6 +3271,220 @@ select,
   overflow-y: auto;
 }
 
+.contacts-acceptance-fixture {
+  min-height: 100%;
+}
+
+.contacts-acceptance-fixture .ant-btn,
+.contacts-fixture-sheet .ant-btn,
+.contacts-fixture-sheet .ant-input,
+.contacts-fixture-sheet .ant-input-affix-wrapper,
+.contacts-fixture-sheet .ant-input-search-button,
+.contacts-fixture-sheet .ant-checkbox-wrapper {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.contacts-fixture-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.contacts-fixture-state {
+  display: flex;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+}
+
+.contacts-fixture-contact {
+  width: 100%;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  color: inherit;
+  text-align: left;
+}
+
+.contacts-fixture-avatar,
+.contacts-fixture-profile-avatar {
+  display: grid;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 14px;
+  background: #e9eef9;
+  color: #3156a3;
+  font-weight: 700;
+}
+
+.contacts-fixture-request,
+.contacts-fixture-person,
+.contacts-fixture-member {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 10px 16px;
+  border-bottom: 0.5px solid rgba(15, 23, 42, 0.08);
+  background: #fff;
+}
+
+.contacts-fixture-copy,
+.contacts-fixture-request-state {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  overflow-wrap: anywhere;
+}
+
+.contacts-fixture-request-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.contacts-fixture-profile {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+  overflow-y: auto;
+}
+
+.contacts-fixture-profile-avatar {
+  width: 76px;
+  height: 76px;
+  border-radius: 20px;
+  font-size: 28px;
+}
+
+.contacts-fixture-trust {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(35, 120, 74, 0.1);
+  color: #23784a;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.contacts-fixture-profile-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: min(100%, 360px);
+}
+
+.contacts-fixture-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 360;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-top: var(--safe-area-top);
+  background: rgba(12, 18, 32, 0.38);
+}
+
+.contacts-fixture-sheet {
+  display: flex;
+  width: min(100%, 640px);
+  max-height: calc(100dvh - var(--safe-area-top));
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 16px calc(var(--safe-area-bottom) + 16px);
+  overflow-y: auto;
+  border-radius: 18px 18px 0 0;
+  background: #fff;
+  box-shadow: 0 -12px 36px rgba(12, 18, 32, 0.16);
+}
+
+.contacts-fixture-sheet .mobile-notice {
+  margin: 0;
+}
+
+.contacts-fixture-sheet-header {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.contacts-fixture-sheet-header h2,
+.contacts-fixture-confirm h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 18px;
+}
+
+.contacts-fixture-sheet-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.contacts-fixture-confirm {
+  gap: 14px;
+}
+
+.contacts-fixture-federation {
+  min-width: 0;
+  margin: 0;
+  padding: 8px 10px 10px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 8px;
+}
+
+.contacts-fixture-federation-choice {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(49, 86, 163, 0.08);
+  color: #3156a3;
+  text-align: left;
+}
+
+.contacts-fixture-group .social-section-title {
+  padding: 2px 0;
+}
+
+.contacts-fixture-member {
+  padding-inline: 0;
+}
+
+@media (orientation: landscape) {
+  .contacts-fixture-sheet {
+    max-height: 100dvh;
+    padding-bottom: calc(var(--safe-area-bottom) + 10px);
+  }
+
+  .contacts-fixture-profile {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr) minmax(220px, 0.7fr);
+    align-content: center;
+  }
+
+  .contacts-fixture-profile-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
 .settings-profile {
   display: flex;
   align-items: center;
