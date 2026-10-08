@@ -1,6 +1,16 @@
 import { useState } from 'react';
 import { Avatar, Card, Typography } from 'antd';
-import { Heart, ImagePlus, MessageCircle, Send, Share2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  Globe2,
+  Heart,
+  ImagePlus,
+  Lock,
+  MessageCircle,
+  Send,
+  Share2,
+  X,
+} from 'lucide-react';
 import type { Moment, MomentComment, ReactionKind } from '../types';
 import { GRADIENTS, REACTION_EMOJI } from '../types';
 import { demoMoments } from '../data';
@@ -10,9 +20,11 @@ const { Text } = Typography;
 export function MomentsPage() {
   const [moments, setMoments] = useState<Moment[]>(demoMoments);
   const [reactionPickerId, setReactionPickerId] = useState<string | null>(null);
-  const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
+  const [selectedMomentId, setSelectedMomentId] = useState<string | null>(null);
   const [showNewPost, setShowNewPost] = useState(false);
   const [newPostText, setNewPostText] = useState('');
+  const [audience, setAudience] = useState<'followers' | 'self' | null>(null);
+  const [mediaAttached, setMediaAttached] = useState(false);
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
 
   function toggleReaction(id: string, kind: ReactionKind) {
@@ -35,30 +47,25 @@ export function MomentsPage() {
     setReactionPickerId(null);
   }
 
-  function toggleComments(id: string) {
-    setExpandedComments((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
-
   function handleNewPost() {
     const text = newPostText.trim();
-    if (!text) return;
+    if ((!text && !mediaAttached) || !audience) return;
     const newMoment: Moment = {
       id: `mo-${Date.now()}`,
       name: 'Alice Chen',
       avatar: 'AC',
       avatarGradient: GRADIENTS[0],
       time: 'Just now',
-      text,
+      text: text || 'Shared a new image.',
+      images: mediaAttached ? [GRADIENTS[0]] : undefined,
       likes: 0,
       reactionCounts: {},
       comments: [],
     };
     setMoments((prev) => [newMoment, ...prev]);
     setNewPostText('');
+    setAudience(null);
+    setMediaAttached(false);
     setShowNewPost(false);
   }
 
@@ -99,6 +106,77 @@ export function MomentsPage() {
   }
 
   const reactionList: ReactionKind[] = ['like', 'love', 'laugh', 'wow', 'celebrate'];
+  const selectedMoment = moments.find((moment) => moment.id === selectedMomentId);
+
+  if (selectedMoment) {
+    return (
+      <div className="mp-page">
+        <header className="mp-header">
+          <button
+            type="button"
+            className="mp-header-action"
+            aria-label="Back to Moments"
+            onClick={() => setSelectedMomentId(null)}
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <h1 className="mp-header-title">Post</h1>
+        </header>
+        <main className="mp-moment-detail">
+          <Card className="mp-moment-card mp-moment-detail-card" variant="borderless">
+            <div className="mp-moment-header">
+              <Avatar size={42} style={{ background: selectedMoment.avatarGradient, borderRadius: 14 }}>
+                {selectedMoment.avatar}
+              </Avatar>
+              <div className="mp-moment-author">
+                <Text strong className="mp-moment-name">{selectedMoment.name}</Text>
+                <Text type="secondary" className="mp-moment-time">{selectedMoment.time}</Text>
+              </div>
+            </div>
+            <p className="mp-moment-text">{selectedMoment.text}</p>
+            {selectedMoment.images && renderImageGrid(selectedMoment.images)}
+            <div className="mp-moment-comments mp-moment-detail-comments">
+              <Text strong>Comments</Text>
+              {selectedMoment.comments.length > 0 ? selectedMoment.comments.map((comment) => (
+                <div key={comment.id} className="mp-moment-comment">
+                  <Avatar size={28} style={{ background: comment.avatarGradient, borderRadius: 8 }}>
+                    {comment.avatar}
+                  </Avatar>
+                  <div className="mp-moment-comment-body">
+                    <Text strong className="mp-moment-comment-name">{comment.name}</Text>
+                    <span className="mp-moment-comment-text">{comment.text}</span>
+                    <Text type="secondary" className="mp-moment-comment-time">{comment.time}</Text>
+                  </div>
+                </div>
+              )) : (
+                <Text type="secondary">No comments yet. Be the first to comment.</Text>
+              )}
+            </div>
+            <div className="mp-moment-comment-input-row">
+              <input
+                type="text"
+                className="mp-moment-comment-input"
+                placeholder="Add a comment..."
+                value={commentInputs[selectedMoment.id] ?? ''}
+                onChange={(event) => setCommentInputs((current) => ({
+                  ...current,
+                  [selectedMoment.id]: event.target.value,
+                }))}
+              />
+              <button
+                type="button"
+                className={`mp-moment-comment-send ${(commentInputs[selectedMoment.id] ?? '').trim() ? 'active' : ''}`}
+                onClick={() => handleAddComment(selectedMoment.id)}
+                aria-label="Send comment"
+              >
+                <Send size={14} />
+              </button>
+            </div>
+          </Card>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="mp-page">
@@ -109,26 +187,9 @@ export function MomentsPage() {
         </button>
       </header>
 
-      {showNewPost && (
-        <div className="mp-new-post-card">
-          <textarea
-            className="mp-new-post-textarea"
-            placeholder="What's on your mind?"
-            value={newPostText}
-            onChange={(e) => setNewPostText(e.target.value)}
-            rows={3}
-          />
-          <div className="mp-new-post-actions">
-            <button type="button" className="mp-new-post-cancel" onClick={() => { setShowNewPost(false); setNewPostText(''); }}>Cancel</button>
-            <button type="button" className="mp-new-post-submit" onClick={handleNewPost} disabled={!newPostText.trim()}>Post</button>
-          </div>
-        </div>
-      )}
-
       <div className="mp-moments-feed">
         {moments.map((moment) => {
-          const showComments = expandedComments.has(moment.id) || moment.comments.length <= 2;
-          const visibleComments = showComments ? moment.comments : moment.comments.slice(0, 2);
+          const visibleComments = moment.comments.slice(0, 2);
           const totalReactions = Object.values(moment.reactionCounts ?? {}).reduce((a, b) => a + (b ?? 0), 0);
           return (
             <Card key={moment.id} className="mp-moment-card" variant="borderless">
@@ -165,7 +226,7 @@ export function MomentsPage() {
                   >
                     <Heart size={18} fill={moment.myReaction ? 'currentColor' : 'none'} />
                   </button>
-                  <button type="button" className="mp-moment-action" onClick={() => toggleComments(moment.id)}>
+                  <button type="button" className="mp-moment-action" onClick={() => setSelectedMomentId(moment.id)}>
                     <MessageCircle size={18} />
                     {moment.comments.length > 0 && <span>{moment.comments.length}</span>}
                   </button>
@@ -202,8 +263,8 @@ export function MomentsPage() {
                       </div>
                     </div>
                   ))}
-                  {!showComments && moment.comments.length > 2 && (
-                    <button type="button" className="mp-moment-comment-more" onClick={() => toggleComments(moment.id)}>
+                  {moment.comments.length > 2 && (
+                    <button type="button" className="mp-moment-comment-more" onClick={() => setSelectedMomentId(moment.id)}>
                       View all {moment.comments.length} comments
                     </button>
                   )}
@@ -232,6 +293,81 @@ export function MomentsPage() {
           );
         })}
       </div>
+      {showNewPost && (
+        <div className="mp-moment-composer-backdrop">
+          <section
+            className="mp-new-post-card mp-moment-composer-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mp-moment-composer-title"
+          >
+            <header className="mp-moment-composer-header">
+              <h2 id="mp-moment-composer-title">New moment</h2>
+              <button
+                type="button"
+                className="mp-header-action"
+                aria-label="Close composer"
+                onClick={() => setShowNewPost(false)}
+              >
+                <X size={20} />
+              </button>
+            </header>
+            <div className="mp-moment-audience">
+              <Text strong>Audience</Text>
+              {!audience && <Text type="secondary">Choose who can see this moment.</Text>}
+              <div className="mp-moment-audience-options">
+                <button
+                  type="button"
+                  className={audience === 'followers' ? 'active' : ''}
+                  onClick={() => setAudience('followers')}
+                >
+                  <Globe2 size={15} /> Followers
+                </button>
+                <button
+                  type="button"
+                  className={audience === 'self' ? 'active' : ''}
+                  onClick={() => setAudience('self')}
+                >
+                  <Lock size={15} /> Only me
+                </button>
+              </div>
+            </div>
+            <textarea
+              className="mp-new-post-textarea"
+              placeholder="What's on your mind?"
+              value={newPostText}
+              onChange={(e) => setNewPostText(e.target.value)}
+              rows={4}
+            />
+            {mediaAttached && (
+              <div className="mp-moment-composer-media">
+                <ImagePlus size={28} />
+                <Text strong>Image ready</Text>
+                <button type="button" aria-label="Remove image" onClick={() => setMediaAttached(false)}>
+                  <X size={16} />
+                </button>
+              </div>
+            )}
+            <div className="mp-new-post-actions">
+              <button
+                type="button"
+                className="mp-new-post-cancel"
+                onClick={() => setMediaAttached(true)}
+              >
+                <ImagePlus size={15} /> Add image
+              </button>
+              <button
+                type="button"
+                className="mp-new-post-submit"
+                onClick={handleNewPost}
+                disabled={(!newPostText.trim() && !mediaAttached) || !audience}
+              >
+                Publish
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

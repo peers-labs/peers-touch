@@ -468,6 +468,8 @@
   "mobile.moments.composer.mixedMediaUnavailable": "Remove saved draft images before adding new ones",
   "mobile.moments.imageReadbackFailed": "Station did not confirm every image. Your draft was kept.",
   "mobile.moments.audience.label": "Audience",
+  "mobile.moments.audience.select": "Choose audience",
+  "mobile.moments.audience.required": "Choose who can see this moment",
   "mobile.moments.audience.public": "Public",
   "mobile.moments.audience.followers": "Followers only",
   "mobile.moments.audience.circle": "Circle",

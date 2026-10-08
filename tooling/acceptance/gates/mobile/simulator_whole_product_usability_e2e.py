@@ -89,6 +89,7 @@ SHELL_REQUIRED_HARNESS_ACTIONS = (
     "lifecycle.waitReady",
     "navigation.apply",
     "navigation.snapshot",
+    "moments.fixture",
     "projection.read",
     "recovery.fixture",
     "social.projection.read",
@@ -1443,6 +1444,18 @@ class SimulatorWholeProductUsabilityGate(
                     "group-creation",
                 ],
             },
+            "moments": {
+                "runtimeCell": "ios-simulator-moments",
+                "phase": "MWPU-06 Moments Usability",
+                "bom": ["MWPU-06-MOMENTS"],
+                "observedScope": [
+                    "feed-pagination-and-recovery",
+                    "composer-audience-media-and-draft",
+                    "reaction-pending-and-rollback",
+                    "detail-and-comment-continuity",
+                    "policy-and-availability-states",
+                ],
+            },
         }.get(surface_set)
         if report_scope is None:
             report_scope = {
@@ -1508,7 +1521,13 @@ class SimulatorWholeProductUsabilityGate(
                 manifest,
                 inventory,
             )
-        if surface_set not in {"shell", "recovery", "chat", "contacts"}:
+        if surface_set not in {
+            "shell",
+            "recovery",
+            "chat",
+            "contacts",
+            "moments",
+        }:
             raise SimulatorGateBlocked(
                 f"Surface adapter is not implemented for {surface_set}",
                 f"mobile-whole-product:surface-adapter:{surface_set}",
@@ -1632,6 +1651,10 @@ class SimulatorWholeProductUsabilityGate(
                 session.switch_to_app_webview()
                 session.call_action("contacts.fixture", {"surfaceId": None})
                 time.sleep(0.5)
+            elif surface_set == "moments":
+                session.switch_to_app_webview()
+                session.call_action("moments.fixture", {"surfaceId": None})
+                time.sleep(0.5)
             viewport = self._configure_cell(session, cell_id)
             for entry in entries:
                 action = (
@@ -1641,6 +1664,8 @@ class SimulatorWholeProductUsabilityGate(
                     if surface_set == "chat"
                     else self._enter_contacts_surface(session, entry)
                     if surface_set == "contacts"
+                    else self._enter_moments_surface(session, entry)
+                    if surface_set == "moments"
                     else self._enter_surface(session, entry)
                 )
                 surface_evidence[entry["id"]]["cells"][cell_id] = (
@@ -1663,6 +1688,8 @@ class SimulatorWholeProductUsabilityGate(
             session.call_action("chat.fixture", {"surfaceId": None})
         elif surface_set == "contacts":
             session.call_action("contacts.fixture", {"surfaceId": None})
+        elif surface_set == "moments":
+            session.call_action("moments.fixture", {"surfaceId": None})
         artifacts.write_json(
             "mobile-whole-product/source-runtime.json",
             {
@@ -2234,6 +2261,69 @@ class SimulatorWholeProductUsabilityGate(
             )
             session.click_element(search)
             action_kind = "native-text"
+
+        return {
+            "kind": action_kind,
+            "target": action,
+            "performed": True,
+        }
+
+    def _enter_moments_surface(
+        self,
+        session: Any,
+        entry: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        surface_id = str(entry["id"])
+        action = str(entry["entryAction"])
+        session.switch_to_app_webview()
+        observed = session.call_action(
+            "moments.fixture",
+            {"surfaceId": surface_id},
+        )
+        if (
+            not isinstance(observed, Mapping)
+            or observed.get("surfaceId") != surface_id
+        ):
+            raise GateError(
+                f"Mobile Moments fixture did not project {surface_id}"
+            )
+        self._wait_for_surface(
+            session,
+            str(entry["surfaceSelector"]),
+        )
+
+        action_kind = "system"
+        selector = {
+            "tap-moments-tab": '[data-route-id="tab:moments"]',
+            "tap-new-moment": "[data-moments-fixture-new-post]",
+            "change-moment-audience": "[data-moments-fixture-audience]",
+            "pick-moment-media": "[data-moments-fixture-attach]",
+            "tap-discard-moment-draft": "[data-moments-fixture-discard]",
+            "react-with-delayed-readback": "[data-moments-fixture-react]",
+            "fixture-reaction-failure": "[data-moments-fixture-react]",
+            "tap-moment-comments": "[data-moments-fixture-comments]",
+            "tap-load-more-moments": "[data-moments-fixture-load-more]",
+            "tap-load-more-comments": (
+                "[data-moments-fixture-load-more-comments]"
+            ),
+            "send-comment-with-delayed-readback": (
+                "[data-moments-fixture-comment]"
+            ),
+            "fixture-comment-send-failure": (
+                "[data-moments-fixture-comment]"
+            ),
+        }.get(action)
+        if selector:
+            control = session.find_element("css selector", selector)
+            session.click_element(control)
+            action_kind = (
+                "native-text"
+                if action in {
+                    "send-comment-with-delayed-readback",
+                    "fixture-comment-send-failure",
+                }
+                else "native-touch"
+            )
 
         return {
             "kind": action_kind,

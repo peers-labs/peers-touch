@@ -153,6 +153,7 @@ class _ShellDriverSession:
         self.recovery_surface_id: str | None = None
         self.chat_surface_id: str | None = None
         self.contacts_surface_id: str | None = None
+        self.moments_surface_id: str | None = None
         self.activated_apps: list[str] = []
 
     def switch_to_native(self) -> None:
@@ -229,6 +230,12 @@ class _ShellDriverSession:
             self.contacts_surface_id = (payload or {}).get("surfaceId")
             return {
                 "surfaceId": self.contacts_surface_id,
+                "revision": 1,
+            }
+        if action == "moments.fixture":
+            self.moments_surface_id = (payload or {}).get("surfaceId")
+            return {
+                "surfaceId": self.moments_surface_id,
                 "revision": 1,
             }
         if action in {"lifecycle.suspend", "lifecycle.resume"}:
@@ -467,6 +474,24 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertEqual(report["bom"], ["MWPU-05-CONTACTS"])
         self.assertIn("federated-people-search", report["observedScope"])
         self.assertIn("group-creation", report["observedScope"])
+
+    def test_moments_gate_emits_moments_specific_acceptance_report(self) -> None:
+        report = SimulatorWholeProductUsabilityGate._result_report(
+            "PASS",
+            "moments",
+        )
+
+        self.assertEqual(report["runtimeCell"], "ios-simulator-moments")
+        self.assertEqual(report["phase"], "MWPU-06 Moments Usability")
+        self.assertEqual(report["bom"], ["MWPU-06-MOMENTS"])
+        self.assertIn(
+            "composer-audience-media-and-draft",
+            report["observedScope"],
+        )
+        self.assertIn(
+            "detail-and-comment-continuity",
+            report["observedScope"],
+        )
 
     def test_foreground_probe_requires_the_declared_booted_simulator(self) -> None:
         completed = subprocess.CompletedProcess(
@@ -713,6 +738,35 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             session.clicked,
         )
 
+    def test_moments_driver_projects_declared_surfaces_and_uses_composer(
+        self,
+    ) -> None:
+        inventory = load_surface_inventory()
+        entries = {
+            entry["id"]: entry
+            for entry in selected_surface_entries(inventory, "moments")
+        }
+        gate = SimulatorWholeProductUsabilityGate(
+            foreground_probe=lambda: {},
+        )
+        session = _ShellDriverSession()
+
+        action = gate._enter_moments_surface(
+            session,
+            entries["moments.composer-audience"],
+        )
+
+        self.assertEqual(action["kind"], "native-touch")
+        self.assertEqual(action["target"], "change-moment-audience")
+        self.assertEqual(
+            session.moments_surface_id,
+            "moments.composer-audience",
+        )
+        self.assertIn(
+            "[data-moments-fixture-audience]",
+            session.clicked,
+        )
+
     def test_resume_script_avoids_webkit_incompatible_trailing_argument_comma(
         self,
     ) -> None:
@@ -931,6 +985,33 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertIn('data-acceptance-id="create-group"', fixture_surface)
         self.assertNotIn("copyable>{selectedContact.peerPtid}", page)
         self.assertNotIn("copyable>{contact.peerPtid}", page)
+
+    def test_moments_product_selectors_are_present_in_foreground_components(
+        self,
+    ) -> None:
+        fixture = (
+            REPO_ROOT / "apps/mobile/src/acceptance/momentsSurfaceFixture.ts"
+        ).read_text(encoding="utf-8")
+        fixture_surface = (
+            REPO_ROOT
+            / "apps/mobile/src/pages/moments/MomentsAcceptanceSurface.tsx"
+        ).read_text(encoding="utf-8")
+        page = (
+            REPO_ROOT / "apps/mobile/src/pages/MomentsPage.tsx"
+        ).read_text(encoding="utf-8")
+
+        for surface_id in REQUIRED_SURFACE_IDS["moments"]:
+            self.assertIn(surface_id, fixture, surface_id)
+        self.assertIn("data-product-surface={surfaceId}", fixture_surface)
+        self.assertIn("[data-moments-fixture-comment]", (
+            REPO_ROOT
+            / "tooling/acceptance/gates/mobile/"
+            "simulator_whole_product_usability_e2e.py"
+        ).read_text(encoding="utf-8"))
+        self.assertIn(
+            'data-product-surface="moments.feed"',
+            page,
+        )
 
     def test_inventory_covers_every_surface_set_and_contract_cell(self) -> None:
         inventory = load_surface_inventory()

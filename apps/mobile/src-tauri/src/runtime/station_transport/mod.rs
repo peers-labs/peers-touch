@@ -26,6 +26,7 @@ const MAX_BINARY_REQUEST_BYTES: usize = 32 * 1024 * 1024;
 const MAX_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_REALTIME_CHUNK_BYTES: usize = 1024 * 1024;
 const REALTIME_EVENT: &str = "mobile:station-realtime";
+const MOMENTS_RESOURCE_PATH: &[&str] = &["api", "v1", "social", "moments"];
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -879,7 +880,7 @@ fn build_request(
             Method::GET,
             url_with_segments(
                 session,
-                &["api", "v1", "social", "posts"],
+                MOMENTS_RESOURCE_PATH,
                 &[clean_id(post_id, "post_id")?],
             )?,
         ),
@@ -890,7 +891,7 @@ fn build_request(
             let post_id = clean_id(post_id, "post_id")?;
             let url = url_with_segments(
                 session,
-                &["api", "v1", "social", "posts"],
+                MOMENTS_RESOURCE_PATH,
                 &[post_id.clone(), "react".to_string()],
             )?;
             authenticated_request(client, session, Method::POST, url)
@@ -910,7 +911,7 @@ fn build_request(
             let post_id = clean_id(post_id, "post_id")?;
             let url = url_with_segments(
                 session,
-                &["api", "v1", "social", "posts"],
+                MOMENTS_RESOURCE_PATH,
                 &[post_id.clone(), "unreact".to_string()],
             )?;
             authenticated_request(client, session, Method::POST, url)
@@ -931,7 +932,7 @@ fn build_request(
             bounded_limit(limit, 200, "moments_comments_list")?;
             let mut url = url_with_segments(
                 session,
-                &["api", "v1", "social", "posts"],
+                MOMENTS_RESOURCE_PATH,
                 &[clean_id(post_id, "post_id")?, "comments".to_string()],
             )?;
             url.query_pairs_mut()
@@ -954,7 +955,7 @@ fn build_request(
             )?;
             let url = url_with_segments(
                 session,
-                &["api", "v1", "social", "posts"],
+                MOMENTS_RESOURCE_PATH,
                 &[clean_id(post_id, "post_id")?, "comments".to_string()],
             )?;
             let mut body = serde_json::Map::new();
@@ -1335,6 +1336,14 @@ fn emit_realtime<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn moments_operations_use_the_station_moments_resource() {
+        assert_eq!(
+            MOMENTS_RESOURCE_PATH.join("/"),
+            "api/v1/social/moments",
+        );
+    }
 
     #[test]
     fn typed_operation_rejects_unknown_body_fields() {

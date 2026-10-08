@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Popconfirm, Select, message, Typography } from 'antd';
-import { AlertTriangle, ImagePlus, RotateCcw, Save, Send, Trash2 } from 'lucide-react';
+import { AlertTriangle, ImagePlus, RotateCcw, Save, Send, Trash2, X } from 'lucide-react';
 import { create } from '@bufbuild/protobuf';
 
 import { useMobileI18n } from '../../app/mobileI18n';
@@ -102,8 +102,10 @@ export function canPublishMoment(
   uploadingCount: number,
   errorCount: number,
   publishing: boolean,
+  audienceKind: number,
 ): boolean {
   return Boolean(text.trim() || successfulMediaCount > 0)
+    && audienceKind !== Audience_Kind.KIND_UNSPECIFIED
     && uploadingCount === 0
     && errorCount === 0
     && !publishing;
@@ -149,6 +151,7 @@ const AUDIENCE_OPTIONS: Array<{ value: number; labelKey: string }> = [
 interface MomentComposerProps {
   readonly session: MobileAuthSession;
   readonly gateway: MomentsGateway;
+  readonly onClose?: () => void;
   readonly onPublished: (post: Post) => void;
 }
 
@@ -156,11 +159,18 @@ type PendingDraftRemoval =
   | { readonly kind: 'discard' }
   | { readonly kind: 'publish'; readonly post: Post };
 
-export function MomentComposer({ session, gateway, onPublished }: MomentComposerProps) {
+export function MomentComposer({
+  session,
+  gateway,
+  onClose,
+  onPublished,
+}: MomentComposerProps) {
   const { t } = useMobileI18n();
 
   const [text, setText] = useState('');
-  const [audienceKind, setAudienceKind] = useState<number>(Audience_Kind.PUBLIC);
+  const [audienceKind, setAudienceKind] = useState<number>(
+    Audience_Kind.KIND_UNSPECIFIED,
+  );
   const [pendingImages, setPendingImages] = useState<PendingMomentImage[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [pendingDraftRemoval, setPendingDraftRemoval] =
@@ -238,6 +248,7 @@ export function MomentComposer({ session, gateway, onPublished }: MomentComposer
     uploadingCount,
     errorCount,
     publishing,
+    audienceKind,
   ) && !saving && !discarding && !pendingDraftRemoval;
   const hasComposerDraft = hasDraft || Boolean(text.trim()) || pendingImages.length > 0;
   const editingDisabled = publishing || Boolean(pendingDraftRemoval);
@@ -271,7 +282,7 @@ export function MomentComposer({ session, gateway, onPublished }: MomentComposer
     });
     setPendingImages([]);
     setText('');
-    setAudienceKind(Audience_Kind.PUBLIC);
+    setAudienceKind(Audience_Kind.KIND_UNSPECIFIED);
     setPendingDraftRemoval(null);
   }, [
     session.actorRef.ptid,
@@ -440,6 +451,10 @@ export function MomentComposer({ session, gateway, onPublished }: MomentComposer
       message.warning(t('mobile.moments.imageHasErrors'));
       return;
     }
+    if (audienceKind === Audience_Kind.KIND_UNSPECIFIED) {
+      message.warning(t('mobile.moments.audience.required'));
+      return;
+    }
     if (!await persistDraftNow(text, audienceKind, successfulMediaRefs)) {
       return;
     }
@@ -494,9 +509,29 @@ export function MomentComposer({ session, gateway, onPublished }: MomentComposer
   };
 
   return (
-    <section className="moments-composer-card">
+    <section
+      className="moments-composer-card"
+      data-product-surface="moments.composer"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="moments-composer-title"
+    >
+      <header className="moments-composer-header">
+        <h2 id="moments-composer-title">{t('mobile.moments.newPost')}</h2>
+        {onClose ? (
+          <Button
+            type="text"
+            icon={<X size={20} />}
+            aria-label={t('common.action.close')}
+            onClick={onClose}
+          />
+        ) : null}
+      </header>
       {draftRestored && (
-        <div className="moments-draft-banner">
+        <div
+          className="moments-draft-banner"
+          data-product-surface="moments.composer-draft-restored"
+        >
           <Save size={14} />
           <Text className="moments-draft-text">{t('mobile.moments.composer.draftRestored')}</Text>
         </div>
@@ -506,6 +541,7 @@ export function MomentComposer({ session, gateway, onPublished }: MomentComposer
         <div
           className="moments-state moments-state--error"
           data-draft-failure={persistenceFailure.operation}
+          data-product-surface="moments.composer-draft-failed"
           role="alert"
         >
           <AlertTriangle size={18} aria-hidden="true" />
@@ -523,10 +559,17 @@ export function MomentComposer({ session, gateway, onPublished }: MomentComposer
         </div>
       )}
 
-      <div className="moments-composer-audience">
+      <div
+        className="moments-composer-audience"
+        data-product-surface="moments.composer-audience"
+      >
         <Text className="moments-composer-eyebrow">{t('mobile.moments.audience.label')}</Text>
         <Select
-          value={audienceKind}
+          value={audienceKind === Audience_Kind.KIND_UNSPECIFIED
+            ? undefined
+            : audienceKind}
+          placeholder={t('mobile.moments.audience.select')}
+          aria-label={t('mobile.moments.audience.label')}
           onChange={(value: number) => setAudienceKind(value)}
           size="small"
           style={{ minWidth: 120 }}
@@ -553,7 +596,13 @@ export function MomentComposer({ session, gateway, onPublished }: MomentComposer
       {pendingImages.length > 0 && (
         <div className="moments-image-grid">
           {pendingImages.map((item) => (
-            <div className={`moments-image-tile ${item.status}`} key={item.localId}>
+            <div
+              className={`moments-image-tile ${item.status}`}
+              data-product-surface={`moments.composer-media-${
+                item.status === 'done' ? 'ready' : item.status
+              }`}
+              key={item.localId}
+            >
               {item.source === 'local-upload' ? (
                 <div className="moments-restored-image-reference">
                   <ImagePlus size={22} />

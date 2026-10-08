@@ -120,6 +120,7 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('recovery.fixture');
     expect(actionNames).toContain('chat.fixture');
     expect(actionNames).toContain('contacts.fixture');
+    expect(actionNames).toContain('moments.fixture');
     expect(actionNames).toContain('oauth.replayHandle');
     expect(actionNames).toContain('oauth.negativeCallback');
     expect(actionNames).toContain('lifecycle.snapshot');
@@ -266,6 +267,46 @@ describe('Mobile Acceptance Harness', () => {
     });
     await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
       primaryRouteId: 'tab:contacts',
+      detailKeys: [],
+      overlayRouteId: null,
+    });
+  });
+
+  it('projects only declared Moments surfaces through production navigation', async () => {
+    const harness = createMobileAcceptanceHarness();
+
+    await expect(harness['moments.fixture']({
+      surfaceId: 'moments.detail-comments',
+    })).resolves.toMatchObject({
+      surfaceId: 'moments.detail-comments',
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:moments',
+      detailKeys: ['detail:moment:acceptance-moment'],
+      overlayRouteId: null,
+    });
+    await expect(harness['moments.fixture']({
+      surfaceId: 'moments.composer-media-ready',
+    })).resolves.toMatchObject({
+      surfaceId: 'moments.composer-media-ready',
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:moments',
+      detailKeys: [],
+      overlayRouteId: null,
+    });
+    await expect(harness['moments.fixture']({
+      surfaceId: 'moments.not-real',
+    } as never)).rejects.toThrow(
+      'acceptance.mobile.invalidInput:moments.fixture.surfaceId',
+    );
+    await expect(harness['moments.fixture']({
+      surfaceId: null,
+    })).resolves.toMatchObject({
+      surfaceId: null,
+    });
+    await expect(harness['navigation.snapshot']()).resolves.toMatchObject({
+      primaryRouteId: 'tab:moments',
       detailKeys: [],
       overlayRouteId: null,
     });

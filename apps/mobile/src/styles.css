@@ -4056,6 +4056,524 @@ select,
   padding: 8px 0;
 }
 
+.moments-composer-backdrop,
+.moments-fixture-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 360;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-top: var(--safe-area-top);
+  background: rgba(12, 18, 32, 0.38);
+}
+
+.moments-composer-backdrop .moments-composer-card {
+  width: min(100%, 640px);
+  max-height: calc(100dvh - var(--safe-area-top));
+  margin: 0;
+  padding: 16px 16px calc(var(--safe-area-bottom) + 16px);
+  overflow-y: auto;
+  border-radius: 18px 18px 0 0;
+}
+
+.moments-composer-header,
+.moments-fixture-sheet-header {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.moments-composer-header h2,
+.moments-fixture-sheet-header h2,
+.moments-fixture-comments h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.moments-draft-banner {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(35, 120, 74, 0.09);
+  color: #23784a;
+}
+
+.moments-state {
+  display: flex;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  text-align: center;
+}
+
+.moments-state .ant-typography,
+.moments-state h5 {
+  margin: 0 !important;
+}
+
+.moments-comments-section {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.moments-comments-header {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  min-height: var(--header-height);
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 0.5px solid rgba(15, 23, 42, 0.08);
+  background: rgba(245, 246, 251, 0.96);
+  text-align: center;
+}
+
+.moments-comments-header .ant-btn {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.moments-comments-list {
+  flex: 1;
+  min-height: 0;
+  padding: 10px 12px 16px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.moments-comments-empty,
+.moments-comments-error,
+.moments-comments-loading-more,
+.moments-comments-load-more {
+  display: flex;
+  min-height: 88px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  text-align: center;
+}
+
+.moments-comment-item {
+  display: flex;
+  gap: 10px;
+  min-height: 56px;
+  padding: 10px 2px;
+  border-bottom: 0.5px solid rgba(15, 23, 42, 0.08);
+}
+
+.moments-comment-item__body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.moments-comment-item__content {
+  margin: 0 !important;
+  overflow-wrap: anywhere;
+}
+
+.moments-comment-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.moments-comment-item__actions button,
+.moments-comments-reply-indicator button {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--brand-primary);
+  font: inherit;
+}
+
+.moments-comments-reply-indicator {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 14px;
+  border-top: 0.5px solid rgba(15, 23, 42, 0.08);
+  background: rgba(76, 110, 245, 0.06);
+}
+
+.moments-comments-input {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px calc(var(--safe-area-bottom) + 10px);
+  border-top: 0.5px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.97);
+}
+
+.moments-comments-input > .ant-input,
+.moments-comments-input > .ant-btn {
+  min-height: 44px;
+}
+
+.moments-comments-input > .ant-btn {
+  align-self: flex-end;
+}
+
+.moments-inline-retry {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+}
+
+.moments-action,
+.moments-comment-send,
+.moments-reaction-picker-btn,
+.moments-image-actions button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.moments-comment-input {
+  min-height: 44px;
+}
+
+.moments-acceptance-fixture {
+  min-height: 100%;
+}
+
+.moments-acceptance-fixture .ant-btn,
+.moments-acceptance-fixture .ant-input,
+.moments-acceptance-fixture .ant-input-affix-wrapper,
+.moments-fixture-backdrop .ant-btn,
+.moments-fixture-backdrop .ant-input,
+.moments-fixture-backdrop .ant-input-affix-wrapper {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.moments-acceptance-fixture[aria-hidden="true"] {
+  pointer-events: none;
+}
+
+.moments-fixture-feed,
+.moments-fixture-thread {
+  flex: 1;
+  min-height: 0;
+  padding: 10px 12px 20px;
+  overflow-y: auto;
+}
+
+.moments-fixture-state,
+.moments-fixture-comment-state {
+  display: flex;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  text-align: center;
+}
+
+.moments-fixture-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.moments-fixture-card + .moments-fixture-card {
+  margin-top: 10px;
+}
+
+.moments-fixture-card--policy {
+  min-height: 148px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.moments-fixture-author {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.moments-fixture-avatar,
+.moments-fixture-comment-avatar {
+  display: grid;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 8px;
+  background: #e9eef9;
+  color: #3156a3;
+  font-weight: 700;
+}
+
+.moments-fixture-author-copy,
+.moments-fixture-comment-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+
+.moments-fixture-body {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.moments-fixture-media {
+  display: flex;
+  width: min(100%, 320px);
+  aspect-ratio: 4 / 3;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 6px;
+  border-radius: 8px;
+  background: #e7edf3;
+  color: #40556b;
+}
+
+.moments-fixture-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.moments-fixture-reactions span {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.06);
+  font-size: 12px;
+}
+
+.moments-fixture-actions {
+  display: flex;
+  gap: 8px;
+  border-top: 0.5px solid rgba(15, 23, 42, 0.08);
+  padding-top: 6px;
+}
+
+.moments-fixture-actions button {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: rgba(51, 56, 69, 0.82);
+  font: inherit;
+}
+
+.moments-fixture-pagination {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.moments-fixture-load-more {
+  width: 100%;
+  min-height: 44px;
+}
+
+.moments-fixture-composer {
+  display: flex;
+  width: min(100%, 640px);
+  max-height: calc(100dvh - var(--safe-area-top));
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 16px calc(var(--safe-area-bottom) + 16px);
+  overflow-y: auto;
+  border-radius: 18px 18px 0 0;
+  background: #fff;
+  box-shadow: 0 -12px 36px rgba(12, 18, 32, 0.16);
+}
+
+.moments-fixture-composer .ant-btn,
+.moments-fixture-composer .ant-input,
+.moments-fixture-composer .ant-input-affix-wrapper {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.moments-fixture-audience {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.moments-fixture-audience > button,
+.moments-fixture-audience-options button {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+}
+
+.moments-fixture-audience-options {
+  display: grid;
+  flex: 1 0 100%;
+  width: 100%;
+  min-width: 210px;
+  padding: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(12, 18, 32, 0.14);
+}
+
+.moments-fixture-audience-options button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  text-align: left;
+}
+
+.moments-fixture-media-tile {
+  display: flex;
+  min-height: 132px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 8px;
+  background: #e7edf3;
+  color: #40556b;
+}
+
+.moments-fixture-media-tile.uploading {
+  background: #edf2ff;
+  color: #3156a3;
+}
+
+.moments-fixture-media-tile.error {
+  background: #fff1f0;
+  color: #a61d24;
+}
+
+.moments-fixture-sheet-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.moments-fixture-rollback {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(166, 29, 36, 0.18);
+  border-radius: 8px;
+  background: #fff8f7;
+}
+
+.moments-fixture-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.moments-fixture-comments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 2px;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.moments-fixture-comments .moments-fixture-comment-state {
+  min-height: 112px;
+}
+
+.moments-fixture-comment {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 0.5px solid rgba(15, 23, 42, 0.08);
+}
+
+.moments-fixture-comment-avatar {
+  width: 36px;
+  height: 36px;
+}
+
+.moments-fixture-comment-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px calc(var(--safe-area-bottom) + 10px);
+  border-top: 0.5px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.moments-fixture-comment-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 8px;
+}
+
+.moments-fixture-comment-field .ant-input,
+.moments-fixture-comment-field .ant-btn {
+  min-height: 44px;
+}
+
+@media (orientation: landscape) {
+  .moments-composer-backdrop .moments-composer-card,
+  .moments-fixture-composer {
+    max-height: 100dvh;
+    padding-bottom: calc(var(--safe-area-bottom) + 10px);
+  }
+
+  .moments-fixture-thread {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .moments-fixture-state {
+    min-height: 140px;
+  }
+}
+
 /* ============================================================
    Settings / Profile — prototype-matching layout
    ============================================================ */

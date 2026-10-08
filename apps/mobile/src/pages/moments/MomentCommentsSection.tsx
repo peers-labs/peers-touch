@@ -15,6 +15,7 @@ import { ArrowLeft, MessageCircle, Send, X } from 'lucide-react';
 import { useMobileI18n } from '../../app/mobileI18n';
 import { BoundedList } from '../../components/BoundedList';
 import { MobileAvatar } from '../../components/MobileAvatar';
+import { MobileNotice } from '../../components/MobileNotice';
 import { useAuthStore } from '../../features/auth/authStore';
 import {
   type MomentPolicyState,
@@ -120,11 +121,13 @@ export function MomentCommentsSection({
   const [commentText, setCommentText] = useState('');
   const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState(false);
 
   const handleSendComment = useCallback(async () => {
     const trimmed = commentText.trim();
     if (!trimmed || sending) return;
 
+    setSendError(false);
     setSending(true);
 
     const accepted = await createMomentCommentAndReload(
@@ -141,7 +144,7 @@ export function MomentCommentsSection({
       setCommentText('');
       setReplyTarget(null);
     } else {
-      message.error(t('mobile.moments.comment.sendError'));
+      setSendError(true);
     }
   }, [commentText, sending, postId, replyTarget, gateway, reloadMoment, t]);
 
@@ -166,7 +169,10 @@ export function MomentCommentsSection({
     || '';
 
   return (
-    <div className="moments-comments-section">
+    <div
+      className="moments-comments-section"
+      data-product-surface="moments.detail-comments"
+    >
       {/* Header */}
       <div className="moments-comments-header">
         <Button
@@ -181,17 +187,23 @@ export function MomentCommentsSection({
 
       {/* Selected post and its comment thread share one continuous detail rail. */}
       <div className="moments-comments-list">
-        {detail.kind === 'loading' && <MomentsFeedLoading />}
+        {detail.kind === 'loading' && (
+          <MomentsFeedLoading productSurface="moments.detail-loading" />
+        )}
 
         {detail.kind === 'unavailable' && (
           <MomentsUnavailable
             reason={detail.reason}
             onRetry={() => void retryMomentDetailRuntime(momentsRuntime)}
+            productSurface="moments.detail-unavailable"
           />
         )}
 
         {(detail.kind === 'hidden' || detail.kind === 'blocked') && (
-          <MomentsPolicyViolation blocked={detail.kind === 'blocked'} />
+          <MomentsPolicyViolation
+            blocked={detail.kind === 'blocked'}
+            productSurface="moments.detail-hidden"
+          />
         )}
 
         {detail.kind === 'deleted' && detail.post && (
@@ -206,7 +218,11 @@ export function MomentCommentsSection({
         )}
 
         {detail.kind === 'deleted' && !detail.post && (
-          <div className="moments-comments-empty" role="status">
+          <div
+            className="moments-comments-empty"
+            data-product-surface="moments.detail-deleted"
+            role="status"
+          >
             <Text type="secondary">{t('mobile.moments.detail.deleted')}</Text>
           </div>
         )}
@@ -228,13 +244,19 @@ export function MomentCommentsSection({
         )}
 
         {detailPost && loading && comments.length === 0 && (
-          <div className="moments-comments-empty">
+          <div
+            className="moments-comments-empty"
+            data-product-surface="moments.comments-loading"
+          >
             <Text type="secondary">{t('mobile.moments.comment.loading')}</Text>
           </div>
         )}
 
         {detailPost && !loading && comments.length === 0 && !errorMessage && (
-          <div className="moments-comments-empty">
+          <div
+            className="moments-comments-empty"
+            data-product-surface="moments.comments-empty"
+          >
             <MessageCircle size={32} />
             <Text type="secondary">{t('mobile.moments.comment.empty')}</Text>
             <Text type="secondary">{t('mobile.moments.comment.emptyHint')}</Text>
@@ -242,7 +264,10 @@ export function MomentCommentsSection({
         )}
 
         {detailPost && errorMessage && (
-          <div className="moments-comments-error">
+          <div
+            className="moments-comments-error"
+            data-product-surface="moments.comments-error"
+          >
             <Text type="danger">{t('mobile.moments.comment.error')}</Text>
             <Button
               size="small"
@@ -281,7 +306,10 @@ export function MomentCommentsSection({
         )}
 
         {detailPost && loading && comments.length > 0 && (
-          <div className="moments-comments-loading-more">
+          <div
+            className="moments-comments-loading-more"
+            data-product-surface="moments.comments-loading-more"
+          >
             <Text type="secondary">{t('mobile.moments.feed.loadingMore')}</Text>
           </div>
         )}
@@ -304,10 +332,30 @@ export function MomentCommentsSection({
       )}
 
       {/* Input */}
-      {detailPost && <div className="moments-comments-input">
+      {detailPost && <div
+        className="moments-comments-input"
+        data-product-surface={sending
+          ? 'moments.comments-pending'
+          : sendError
+            ? 'moments.comments-failed'
+            : undefined}
+      >
+        {sendError ? (
+          <MobileNotice onClose={() => setSendError(false)}>
+            {t('mobile.moments.comment.sendError')}
+            <Button
+              size="small"
+              icon={<Send size={14} />}
+              onClick={() => void handleSendComment()}
+            >
+              {t('common.action.retry')}
+            </Button>
+          </MobileNotice>
+        ) : null}
         <Input
           value={commentText}
           onChange={(e) => setCommentText(e.target.value)}
+          aria-label={t('mobile.moments.comment.title')}
           placeholder={
             replyTarget
               ? t('mobile.moments.reply.placeholder', { name: replyAuthorName })
