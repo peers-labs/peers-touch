@@ -85,6 +85,7 @@
       "station.route.snapshot",
       "access.submit",
       "lifecycle.restart",
+      "lifecycle.waitReady",
       "lifecycle.scope.read",
       "settings.profile.read",
       "projection.read",

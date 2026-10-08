@@ -143,6 +143,7 @@ MOBILE_RELAY_CHILD_HARNESS_ACTIONS = frozenset(
         "cleanup",
         "lifecycle.restart",
         "lifecycle.scope.read",
+        "lifecycle.waitReady",
         "settings.profile.read",
     }
 )
