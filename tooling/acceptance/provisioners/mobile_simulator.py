@@ -5068,7 +5068,6 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
                     ),
                     session.screenshot_bytes(),
                     role="mobile-relay-route-ui",
-                    discriminator=f"{route_type}:{revision}",
                 )
                 snapshot["uiEvidence"] = screenshot.to_dict()
                 return snapshot

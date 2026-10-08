@@ -432,6 +432,26 @@ class FakeEvidenceRun:
             media_type="application/json",
         )
 
+    def write_bytes(
+        self,
+        path: str,
+        value: bytes,
+        *,
+        media_type: str = "application/octet-stream",
+        role: str | None = None,
+    ) -> ArtifactRef:
+        self.writes.append(
+            (path, {"size": len(value), "mediaType": media_type}, role)
+        )
+        return ArtifactRef(
+            workspace_id="a" * 16,
+            gate_id="mobile-simulator-station-lifecycle-e2e",
+            run_id=self.run_id,
+            path=path,
+            sha256=hashlib.sha256(value).hexdigest(),
+            media_type=media_type,
+        )
+
 
 class FakeParentSimulatorSession:
     def __init__(self, client_id: str) -> None:
