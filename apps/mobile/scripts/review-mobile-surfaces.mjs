@@ -1,7 +1,15 @@
 #!/usr/bin/env node
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -52,13 +60,35 @@ export function workItemFromActiveWork(value) {
   return workItem;
 }
 
-function resolveWorkItem(explicitWorkItem) {
-  if (explicitWorkItem) return explicitWorkItem;
+export function workspaceIdFromActiveWork(value) {
+  const workspaceId = value?.activeWork?.workspaceId;
+  if (
+    typeof workspaceId !== 'string'
+    || !/^[a-f0-9]{16}$/.test(workspaceId)
+  ) {
+    fail('current active-work has no valid workspace id');
+  }
+  return workspaceId;
+}
+
+function resolveActiveWork() {
   const output = execFileSync('make', ['active-work-status'], {
     cwd: repoRoot,
     encoding: 'utf8',
   });
-  return workItemFromActiveWork(JSON.parse(output));
+  return JSON.parse(output);
+}
+
+function resolveFunctionalIdentity(explicitWorkItem) {
+  const activeWork = resolveActiveWork();
+  const activeWorkItem = workItemFromActiveWork(activeWork);
+  if (explicitWorkItem && explicitWorkItem !== activeWorkItem) {
+    fail('explicit work item does not match current active-work');
+  }
+  return {
+    workItem: explicitWorkItem || activeWorkItem,
+    workspaceId: workspaceIdFromActiveWork(activeWork),
+  };
 }
 
 export function stationProfileFromMachine(value) {
@@ -173,6 +203,78 @@ function selfTest() {
   ) {
     fail('active-work projection self-test failed');
   }
+  if (
+    workspaceIdFromActiveWork({
+      activeWork: { workspaceId: '0123456789abcdef' },
+    }) !== '0123456789abcdef'
+  ) {
+    fail('active-work workspace projection self-test failed');
+  }
+  if (
+    runReferenceFromOutput(
+      'gate passed\nrun: {"artifactKind":"acceptance-artifact-ref"}\n',
+    ).artifactKind !== 'acceptance-artifact-ref'
+  ) {
+    fail('functional run reference parser self-test failed');
+  }
+  const artifactRoot = mkdtempSync(
+    path.join(tmpdir(), 'review-mobile-surfaces-'),
+  );
+  try {
+    const workspaceId = '0123456789abcdef';
+    const gateId = 'mobile-simulator-whole-product-usability-e2e';
+    const writeArtifact = (artifactGate, runId, artifactPath, value) => {
+      const content = Buffer.from(`${JSON.stringify(value)}\n`);
+      const destination = path.join(
+        artifactRoot,
+        workspaceId,
+        artifactGate,
+        runId,
+        artifactPath,
+      );
+      mkdirSync(path.dirname(destination), { recursive: true });
+      writeFileSync(destination, content);
+      return {
+        artifactKind: 'acceptance-artifact-ref',
+        workspaceId,
+        gateId: artifactGate,
+        runId,
+        path: artifactPath,
+        sha256: createHash('sha256').update(content).digest('hex'),
+        mediaType: 'application/json',
+      };
+    };
+    const evidence = writeArtifact(
+      gateId,
+      'gate-run',
+      'mobile-whole-product/surface-evidence.json',
+      { surfaceEvidence: { 'shell.chat-tab': {} } },
+    );
+    const gateManifest = writeArtifact(
+      gateId,
+      'gate-run',
+      'manifest.json',
+      { artifacts: { [evidenceRole]: evidence } },
+    );
+    const aggregateRun = writeArtifact(
+      'development-run',
+      'aggregate-run',
+      'reports/run.json',
+      { results: [{ id: gateId, developmentManifest: gateManifest }] },
+    );
+    const resolved = readFunctionalResult(
+      gateId,
+      'MOBILE-WHOLE-PRODUCT-USABILITY-TEST',
+      workspaceId,
+      aggregateRun,
+      artifactRoot,
+    );
+    if (!resolved.surfaceEvidence?.['shell.chat-tab']) {
+      fail('development artifact resolution self-test failed');
+    }
+  } finally {
+    rmSync(artifactRoot, { force: true, recursive: true });
+  }
   const functional = functionalCommand(
     'mobile-simulator-whole-product-usability-e2e',
     'MOBILE-WHOLE-PRODUCT-USABILITY-TEST',
@@ -242,13 +344,17 @@ function runFunctional(surfaceSet, gateId, workItem) {
         PT_MOBILE_FOREGROUND_REQUIRED: '1',
         PT_MOBILE_SURFACE_SET: surfaceSet,
       },
-      stdio: 'inherit',
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024,
     },
   );
+  process.stdout.write(result.stdout ?? '');
+  process.stderr.write(result.stderr ?? '');
   if (result.error) fail(result.error.message);
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
+  return runReferenceFromOutput(result.stdout);
 }
 
 function readLatestResult(gateId) {
@@ -265,6 +371,88 @@ function readLatestResult(gateId) {
     { cwd: repoRoot, encoding: 'utf8' },
   );
   return JSON.parse(output);
+}
+
+export function runReferenceFromOutput(output) {
+  const line = String(output)
+    .split(/\r?\n/)
+    .findLast((candidate) => candidate.startsWith('run: '));
+  if (!line) fail('functional run did not return an artifact reference');
+  try {
+    return JSON.parse(line.slice('run: '.length));
+  } catch {
+    fail('functional run returned an invalid artifact reference');
+  }
+}
+
+function developmentArtifactRoot(workItem, workspaceId) {
+  const explicitRoot = process.env.PT_ACCEPTANCE_ARTIFACT_ROOT?.trim();
+  if (explicitRoot) return path.resolve(explicitRoot);
+  const machineRoot = process.env.PT_MACHINE_DEV_ROOT?.trim()
+    || path.join(homedir(), '.peers-touch', 'dev');
+  if (!path.isAbsolute(machineRoot)) {
+    fail('PT_MACHINE_DEV_ROOT must be absolute');
+  }
+  return path.join(
+    machineRoot,
+    'workspaces',
+    workspaceId,
+    'workflow',
+    workItem,
+    'artifacts',
+  );
+}
+
+function readArtifactReference(artifactRoot, reference) {
+  if (
+    reference?.artifactKind !== 'acceptance-artifact-ref'
+    || typeof reference.workspaceId !== 'string'
+    || typeof reference.gateId !== 'string'
+    || typeof reference.runId !== 'string'
+    || typeof reference.path !== 'string'
+    || typeof reference.sha256 !== 'string'
+  ) {
+    fail('functional run returned an invalid artifact reference');
+  }
+  const runRoot = path.resolve(
+    artifactRoot,
+    reference.workspaceId,
+    reference.gateId,
+    reference.runId,
+  );
+  const artifactPath = path.resolve(runRoot, reference.path);
+  if (!artifactPath.startsWith(`${runRoot}${path.sep}`)) {
+    fail('functional run artifact escaped its immutable run directory');
+  }
+  const content = readFileSync(artifactPath);
+  const digest = createHash('sha256').update(content).digest('hex');
+  if (digest !== reference.sha256) {
+    fail('functional run artifact digest does not match its reference');
+  }
+  return JSON.parse(content.toString('utf8'));
+}
+
+function readFunctionalResult(
+  gateId,
+  workItem,
+  workspaceId,
+  runReference,
+  explicitArtifactRoot,
+) {
+  const artifactRoot = explicitArtifactRoot
+    || developmentArtifactRoot(workItem, workspaceId);
+  const report = readArtifactReference(artifactRoot, runReference);
+  const gateResult = report?.results?.find((result) => result?.id === gateId);
+  if (!gateResult?.developmentManifest) {
+    fail(`functional run has no manifest for ${gateId}`);
+  }
+  const manifest = readArtifactReference(
+    artifactRoot,
+    gateResult.developmentManifest,
+  );
+  const evidence = manifest?.artifacts?.[evidenceRole];
+  if (!evidence) fail(`functional run has no ${evidenceRole} artifact`);
+  return readArtifactReference(artifactRoot, evidence);
 }
 
 function validateLatest(result, surfaceSet, requireVisualReview) {
@@ -332,14 +520,23 @@ if (typeof gateId !== 'string' || !gateId) {
   fail(`surface set ${options.surfaceSet} has no functional Gate`);
 }
 
+let result;
 if (options.mode === 'functional') {
-  runFunctional(
+  const identity = resolveFunctionalIdentity(options.workItem);
+  const runReference = runFunctional(
     options.surfaceSet,
     gateId,
-    resolveWorkItem(options.workItem),
+    identity.workItem,
   );
+  result = readFunctionalResult(
+    gateId,
+    identity.workItem,
+    identity.workspaceId,
+    runReference,
+  );
+} else {
+  result = readLatestResult(gateId);
 }
-const result = readLatestResult(gateId);
 validateLatest(result, options.surfaceSet, false);
 if (options.mode === 'review') {
   const screenshots = collectScreenshotRefs(result, surfaceIds);
