@@ -171,6 +171,10 @@ import {
 } from '../services/mobileCommands';
 import type { CommandOutcome } from '../services/gateways/gatewayTypes';
 import { readSharedBuildIdentity } from './buildIdentity';
+import {
+  isEntrySurfaceFixtureId,
+  setEntrySurfaceFixture,
+} from './entrySurfaceFixture';
 import type {
   LifecycleWaitReadyInput,
   LifecycleWaitReadyOutput,
@@ -314,6 +318,14 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       ...sanitizeStationRegistry(next),
       sessionRevocation: sanitizeSessionRevocation(sessionRevocation),
     };
+  },
+
+  'entry.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isEntrySurfaceFixtureId(surfaceId)) {
+      throw new Error('acceptance.mobile.invalidInput:entry.fixture.surfaceId');
+    }
+    return setEntrySurfaceFixture(surfaceId);
   },
 
   'access.submit': async (input) => {
@@ -1472,6 +1484,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   },
 
   cleanup: async () => {
+    setEntrySurfaceFixture(null);
     let oauthPurge: Awaited<ReturnType<typeof purgeNativeOAuth>> | null = null;
     await getMobileLifecycleKernel().transitionScope(
       'logout',

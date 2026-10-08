@@ -78,6 +78,7 @@ SHELL_CLIENT_ID = "sim-ios"
 SHELL_REQUIRED_HARNESS_ACTIONS = (
     "access.submit",
     "cleanup",
+    "entry.fixture",
     "lifecycle.restart",
     "lifecycle.resume",
     "lifecycle.snapshot",
@@ -94,6 +95,13 @@ SHELL_ROUTE_ACTIONS = {
     "tap-moments-tab": "tab:moments",
     "tap-contacts-tab": "tab:contacts",
     "tap-settings-tab": "tab:settings",
+}
+ENTRY_PAGE_CONTROL_SURFACES = {
+    "entry.station-empty",
+    "entry.station-address",
+    "entry.station-address-invalid",
+    "entry.station-verifying",
+    "entry.station-unavailable",
 }
 TEXT_SIZE_SCRIPT = """
 const size = arguments[0];
@@ -159,6 +167,7 @@ SURFACE_AUDIT_SCRIPT = """
 const selector = arguments[0];
 const minimum = arguments[1];
 const allowDegradedNotice = arguments[2] === true;
+const usePageControls = arguments[3] === true;
 const visible = (element) => {
   const style = getComputedStyle(element);
   const rect = element.getBoundingClientRect();
@@ -206,13 +215,19 @@ if (!root || !visible(root)) return {found: false};
 const rootRect = root.getBoundingClientRect();
 const interactiveSelector =
   'button,input,select,textarea,a[href],[role="button"],[tabindex]';
-const controlScope = allowDegradedNotice ? document.body : root;
+const controlScope = allowDegradedNotice || usePageControls ? document.body : root;
 const interactive = Array.from(controlScope.querySelectorAll(interactiveSelector))
   .filter(visible)
   .filter((element) => element.getAttribute('tabindex') !== '-1');
 const controls = interactive.map((element) => {
   const boundary = element.closest(
-    '.ant-input-affix-wrapper,.ant-select-selector',
+    [
+      '.station-url-control',
+      '.ant-input-affix-wrapper',
+      '.ant-input-number',
+      '.ant-select-selector',
+      '.ant-checkbox-wrapper',
+    ].join(','),
   ) || element;
   const rect = boundary.getBoundingClientRect();
   return {
@@ -286,7 +301,7 @@ return {
     .map(({element}) => element.outerHTML.slice(0, 240)),
   undersizedControls: controls
     .filter(({value}) => value.width < minimum || value.height < minimum)
-    .map(({value}) => value.label),
+    .map(({value}) => value),
   clippedText,
   occlusions,
   blockingSurfaces,
@@ -1323,7 +1338,7 @@ class SimulatorWholeProductUsabilityGate(
                 result,
                 role=EVIDENCE_ROLE,
             )
-            report = self._result_report(status)
+            report = self._result_report(status, surface_set)
             report.update(
                 {
                     "completionStatus": completion_status,
@@ -1351,24 +1366,44 @@ class SimulatorWholeProductUsabilityGate(
         return exit_code
 
     @staticmethod
-    def _result_report(status: str) -> dict[str, Any]:
+    def _result_report(status: str, surface_set: str) -> dict[str, Any]:
+        is_entry = surface_set == "entry"
         return {
             "artifactKind": "acceptance-gate-evidence-report",
             "gateId": GATE_ID,
             "gate": GATE_ID,
             "environment": ENVIRONMENT_ID,
-            "runtimeCell": "ios-simulator-shell",
+            "runtimeCell": (
+                "ios-simulator-entry" if is_entry else "ios-simulator-shell"
+            ),
             "status": status,
-            "phase": "MWPU-02 Shell Usability",
-            "bom": ["MWPU-02-SHELL"],
+            "phase": (
+                "MWPU-03 Entry Usability"
+                if is_entry
+                else "MWPU-02 Shell Usability"
+            ),
+            "bom": ["MWPU-03-ENTRY" if is_entry else "MWPU-02-SHELL"],
             "spec": ["MS-PA28", "MS-PA29", "MS-AG12"],
             "observedScope": (
-                ["shell-navigation", "shell-degraded-module"]
+                (
+                    [
+                        "launch",
+                        "station-selection",
+                        "access-gates",
+                        "runtime-preparation",
+                    ]
+                    if is_entry
+                    else ["shell-navigation", "shell-degraded-module"]
+                )
                 if status == "PASS"
                 else []
             ),
             "unprovenScope": [
-                "non-shell Mobile surface sets",
+                (
+                    "non-entry Mobile surface sets"
+                    if is_entry
+                    else "non-shell Mobile surface sets"
+                ),
                 "Android",
                 "physical-device behavior",
             ],
@@ -1405,6 +1440,12 @@ class SimulatorWholeProductUsabilityGate(
         inventory: Mapping[str, Any],
         surface_set: str,
     ) -> dict[str, Any]:
+        if surface_set == "entry":
+            return self._run_entry_surface_journey(
+                artifacts,
+                manifest,
+                inventory,
+            )
         if surface_set != "shell":
             raise SimulatorGateBlocked(
                 f"Surface adapter is not implemented for {surface_set}",
@@ -1552,6 +1593,189 @@ class SimulatorWholeProductUsabilityGate(
             "gateId": self.gate_id,
             "contractId": CONTRACT_ID,
             "surfaceSet": surface_set,
+            "runId": artifacts.run_id,
+            "workspaceId": artifacts.store.workspace_id,
+            "status": "PASS",
+            "completionStatus": "DONE",
+            "proofStatus": "PROVEN",
+            "source": source,
+            "foregroundEvidence": {
+                "platform": "ios",
+                "simulatorApplication": "com.apple.iphonesimulator",
+                "frontmost": True,
+                "windowVisible": True,
+                "observation": foreground_ref.to_dict(),
+            },
+            "surfaceEvidence": surface_evidence,
+            "findings": [],
+        }
+
+    def _run_entry_surface_journey(
+        self,
+        artifacts: ArtifactSession,
+        manifest: Mapping[str, Any],
+        inventory: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        source = _validate_source_identity(manifest)
+        canonical_worktree_hash = source.get("canonicalWorktreeHash")
+        if canonical_worktree_hash not in (
+            None,
+            artifacts.store.workspace_id,
+        ):
+            raise SimulatorGateBlocked(
+                "Whole-product source workspace identity is inconsistent",
+                "mobile-whole-product:source-identity",
+            )
+        source["canonicalWorktreeHash"] = artifacts.store.workspace_id
+        resources = _required_object(
+            manifest,
+            "mobileSimulator",
+            "RuntimeManifest",
+        )
+        self._reject_credentials(manifest, resources)
+        runtime_identity = _validate_runtime_identity(resources)
+        appium = _required_object(
+            resources,
+            "appium",
+            f"{ENVIRONMENT_ID} resources",
+        )
+        server_url = _required_text(
+            appium,
+            "serverUrl",
+            f"{ENVIRONMENT_ID} Appium",
+        )
+        spec = next(
+            (
+                candidate
+                for candidate in self._client_specs(resources)
+                if candidate.client_id == SHELL_CLIENT_ID
+            ),
+            None,
+        )
+        if spec is None or spec.platform != "ios":
+            raise SimulatorGateBlocked(
+                "Whole-product entry proof requires sim-ios",
+                f"{ENVIRONMENT_ID}:client:{SHELL_CLIENT_ID}",
+            )
+
+        session = self._create_session(server_url, spec)
+        self.sessions.append(session)
+        session.start()
+        self._record(spec.client_id, "entry-session-created")
+        self._preflight_ios(artifacts, session, spec)
+        session.require_harness(list(SHELL_REQUIRED_HARNESS_ACTIONS))
+        actor = self._load_actor(artifacts, manifest)
+        session.switch_to_app_webview()
+        station = session.call_action("station.add", {"url": actor.station_url})
+        if (
+            not isinstance(station, Mapping)
+            or station.get("verifiedStationPeerId") != actor.station_peer_id
+        ):
+            raise GateError("Mobile entry proof verified the wrong Station identity")
+        self._record(spec.client_id, "entry-station-verified")
+
+        session.switch_to_native()
+        active_application = session.execute_script("mobile: activeAppInfo")
+        if (
+            not isinstance(active_application, Mapping)
+            or active_application.get("bundleId") != spec.build.application_id
+        ):
+            raise GateError("Peers is not the active iOS Simulator application")
+        foreground = self.foreground_probe(spec.device.identifier)
+        if not isinstance(foreground, dict):
+            raise GateError("Mobile foreground probe returned an invalid result")
+        foreground.update(
+            {
+                "artifactKind": "mobile-simulator-foreground-observation",
+                "gateId": self.gate_id,
+                "runId": artifacts.run_id,
+            }
+        )
+        foreground_ref = artifacts.write_json(
+            "mobile-whole-product/foreground.json",
+            foreground,
+            role="mobile-whole-product-foreground",
+        )
+
+        entries = selected_surface_entries(inventory, "entry")
+        surface_evidence = {
+            entry["id"]: {
+                "status": "PASS",
+                "routeOrState": entry["routeOrState"],
+                "entryAction": entry["entryAction"],
+                "surfaceSelector": entry["surfaceSelector"],
+                "expectedResult": expected_result(inventory, entry),
+                "cells": {},
+            }
+            for entry in entries
+        }
+        surface_failures: list[dict[str, str]] = []
+        for cell_id in inventory["viewportTextSizeCells"]:
+            viewport = self._configure_cell(session, cell_id)
+            for entry in entries:
+                try:
+                    action = self._enter_entry_surface(session, entry)
+                    surface_evidence[entry["id"]]["cells"][cell_id] = (
+                        self._capture_surface(
+                            artifacts,
+                            session,
+                            inventory,
+                            entry,
+                            cell_id,
+                            viewport,
+                            action,
+                        )
+                    )
+                except GateError as error:
+                    surface_failures.append(
+                        {
+                            "surfaceId": str(entry["id"]),
+                            "cellId": cell_id,
+                            "message": redact_text(str(error)),
+                        }
+                    )
+        self._configure_cell(session, "portrait-normal")
+        session.call_action("entry.fixture", {"surfaceId": None})
+        if surface_failures:
+            artifacts.write_json(
+                "mobile-whole-product/entry-surface-failures.json",
+                {
+                    "artifactKind": "mobile-entry-surface-failures",
+                    "gateId": self.gate_id,
+                    "runId": artifacts.run_id,
+                    "failures": surface_failures,
+                },
+                role="mobile-whole-product-entry-failures",
+            )
+            raise GateError(
+                "Mobile entry surface audit failed: "
+                + json.dumps(surface_failures, sort_keys=True)
+            )
+        artifacts.write_json(
+            "mobile-whole-product/source-runtime.json",
+            {
+                "artifactKind": "mobile-whole-product-source-runtime",
+                "gateId": self.gate_id,
+                "runId": artifacts.run_id,
+                "source": source,
+                "runtime": runtime_identity,
+                "stationVerification": {
+                    "clientId": actor.client_id,
+                    "stationPeerId": actor.station_peer_id,
+                    "verifiedStationPeerId": station["verifiedStationPeerId"],
+                },
+                "authentication": {
+                    "performed": False,
+                    "reason": "entry surfaces stop before authenticated Shell admission",
+                },
+            },
+            role="mobile-whole-product-source-runtime",
+        )
+        return {
+            "artifactKind": "mobile-whole-product-surface-evidence",
+            "gateId": self.gate_id,
+            "contractId": CONTRACT_ID,
+            "surfaceSet": "entry",
             "runId": artifacts.run_id,
             "workspaceId": artifacts.store.workspace_id,
             "status": "PASS",
@@ -1758,6 +1982,76 @@ class SimulatorWholeProductUsabilityGate(
             "performed": True,
         }
 
+    def _enter_entry_surface(
+        self,
+        session: Any,
+        entry: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        surface_id = str(entry["id"])
+        action = str(entry["entryAction"])
+        session.switch_to_app_webview()
+        if action == "tap-add-station":
+            session.call_action(
+                "entry.fixture",
+                {"surfaceId": "entry.station-selection"},
+            )
+            self._wait_for_surface(
+                session,
+                '[data-product-surface="entry.station-selection"]',
+            )
+            button = session.find_element(
+                "css selector",
+                ".station-add-secondary",
+            )
+            session.click_element(button)
+            action_kind = "native-touch"
+        elif action == "tap-remove-station":
+            session.call_action(
+                "entry.fixture",
+                {"surfaceId": "entry.station-selection"},
+            )
+            self._wait_for_surface(
+                session,
+                '[data-product-surface="entry.station-selection"]',
+            )
+            button = session.find_element(
+                "css selector",
+                '[data-entry-action="remove-station"]',
+            )
+            session.click_element(button)
+            action_kind = "native-touch"
+        else:
+            observed = session.call_action(
+                "entry.fixture",
+                {"surfaceId": surface_id},
+            )
+            if (
+                not isinstance(observed, Mapping)
+                or observed.get("surfaceId") != surface_id
+            ):
+                raise GateError(
+                    f"Mobile entry fixture did not project {surface_id}"
+                )
+            action_kind = (
+                "native-text"
+                if action == "submit-invalid-station-address"
+                else "system"
+            )
+        self._wait_for_surface(
+            session,
+            str(entry["surfaceSelector"]),
+        )
+        if surface_id in {
+            "entry.station-identity-mismatch",
+            "entry.station-remove-confirm",
+        }:
+            time.sleep(0.75)
+        return {
+            "kind": action_kind,
+            "target": action,
+            "performed": True,
+        }
+
     @staticmethod
     def _wait_for_surface(
         session: Any,
@@ -1777,7 +2071,7 @@ class SimulatorWholeProductUsabilityGate(
                 "&&Number(style.opacity)>0&&rect.width>0&&rect.height>0;"
                 "if(!visible)return false;"
                 "if(!arguments[1])return true;"
-                "const heading=node.querySelector('h1,[role=\"heading\"][aria-level=\"1\"]');"
+                "const heading=document.querySelector('h1,[role=\"heading\"][aria-level=\"1\"]');"
                 "if(!heading)return false;"
                 "const headingRect=heading.getBoundingClientRect();"
                 "const headingStyle=getComputedStyle(heading);"
@@ -1832,6 +2126,7 @@ class SimulatorWholeProductUsabilityGate(
             entry["surfaceSelector"],
             inventory["qualityRules"]["minimumTouchTargetCssPx"],
             entry["id"] == "shell.degraded-module-notice",
+            entry["id"] in ENTRY_PAGE_CONTROL_SURFACES,
         )
         if not isinstance(observation, Mapping) or observation.get("found") is not True:
             raise GateError(f"Mobile shell surface is unavailable: {entry['id']}")

@@ -4,7 +4,7 @@ import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { StationSelector } from '../components/StationSelector';
 import logo from '../assets/logo.png';
 
-const { Text } = Typography;
+const { Text, Title } = Typography;
 
 export function LaunchScreen({
   stations, activeUrl, onSelectStation, onRemoveStation, onAddStation, onContinue,
@@ -29,6 +29,10 @@ export function LaunchScreen({
       </div>
 
       <div className="mp-launch-body">
+        <header className="mp-launch-heading">
+          <Title level={1}>Connect Your Station</Title>
+          <Text type="secondary">Choose Station</Text>
+        </header>
         <Card className="mp-launch-card" variant="borderless">
           <StationSelector
             entries={stations}

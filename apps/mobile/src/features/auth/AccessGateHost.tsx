@@ -20,6 +20,7 @@ import {
   retryOAuthBrowser,
   startOAuth,
   useAuthRuntime,
+  type AuthRuntimeSnapshot,
   type MobileOAuthProvider,
 } from '../../runtimes/authRuntime';
 import {
@@ -43,6 +44,7 @@ import {
   type RememberedLoginAccount,
   type StationLoginInput,
 } from './authSession';
+import { stationDisplayName } from '../station/stationDisplayName';
 
 const { Text, Title } = Typography;
 
@@ -74,36 +76,12 @@ function sessionExpiredState(
   ) ?? null;
 }
 
-function stationHost(value: string): string | null {
-  const candidate = value.trim();
-  if (!candidate) return null;
-  try {
-    return new URL(
-      /^[a-z][a-z\d+.-]*:\/\//i.test(candidate)
-        ? candidate
-        : `https://${candidate}`,
-    ).host.toLowerCase();
-  } catch {
-    return null;
-  }
-}
-
 export function authStationLabel(
   stationLabel: string,
   stationUrl: string,
   fallback: string,
 ): string {
-  const candidate = stationLabel.trim();
-  if (!candidate) return fallback;
-  const candidateHost = stationHost(candidate);
-  const selectedHost = stationHost(stationUrl);
-  if (
-    /^[a-z][a-z\d+.-]*:\/\//i.test(candidate)
-    || (candidateHost && selectedHost && candidateHost === selectedHost)
-  ) {
-    return fallback;
-  }
-  return candidate;
+  return stationDisplayName(stationLabel, stationUrl, fallback);
 }
 
 function hasSchemaValue(
@@ -124,6 +102,8 @@ export function AccessGateHost({
   error,
   loading,
   rememberedAccounts,
+  oauthOverride,
+  forceSessionExpired = false,
   onBack,
   onRefresh,
   onLogin,
@@ -136,6 +116,8 @@ export function AccessGateHost({
   error: string | null;
   loading: boolean;
   rememberedAccounts: RememberedLoginAccount[];
+  oauthOverride?: Partial<AuthRuntimeSnapshot>;
+  forceSessionExpired?: boolean;
   onBack: () => Promise<void>;
   onRefresh: () => Promise<void>;
   onLogin: (input: Omit<StationLoginInput, 'stationPeerId' | 'stationUrl'>) => Promise<void>;
@@ -151,7 +133,10 @@ export function AccessGateHost({
   const [expiredSession, setExpiredSession] = useState<DeviceLocalFlagState | null>(
     () => sessionExpiredState(getRecoveryProjection().getSnapshot()),
   );
-  const oauth = useAuthRuntime();
+  const runtimeOAuth = useAuthRuntime();
+  const oauth = oauthOverride
+    ? { ...runtimeOAuth, ...oauthOverride }
+    : runtimeOAuth;
 
   const ready = Boolean(decision);
   const blocked = isAccessBlocked(decision);
@@ -195,6 +180,13 @@ export function AccessGateHost({
       !field.required || hasSchemaValue(field, schemaValues[field.name])
     ));
   const rememberedAccount = rememberedAccounts[0] ?? null;
+  const visibleExpiredSession = forceSessionExpired
+    ? {
+        kind: 'device-local-flag',
+        reason: 'session-expired',
+        since: Date.now(),
+      } satisfies DeviceLocalFlagState
+    : expiredSession;
 
   useEffect(() => {
     if (email.trim() || rememberedAccounts.length === 0) return;
@@ -255,10 +247,10 @@ export function AccessGateHost({
       ? t('mobile.auth.inviteCodeTitle')
       : showSchemaGate || showUnavailableGate
         ? currentGate?.title || t('mobile.auth.title')
-        : expiredSession
+        : visibleExpiredSession
           ? t('mobile.auth.welcomeBackTitle')
           : t('mobile.auth.signInTitle');
-  const pageSubtitle = expiredSession && showLogin
+  const pageSubtitle = visibleExpiredSession && showLogin
     ? t('mobile.auth.expiredSubtitle')
     : currentGate?.description || t('mobile.auth.subtitle');
   const hasPrimaryAction = showInviteCode
@@ -268,12 +260,32 @@ export function AccessGateHost({
     stationUrl,
     t('common.stationPicker.fallbackLabel'),
   );
+  const productSurface = visibleExpiredSession && showLogin
+    ? 'entry.session-expired'
+    : error && showLogin
+      ? 'entry.login-failed'
+      : oauth.errorKey
+        ? 'entry.oauth-failed'
+        : oauthVisible
+          ? 'entry.oauth-progress'
+          : pending
+            ? 'entry.access-pending'
+            : failed || blocked
+              ? 'entry.access-failed'
+              : showSchemaGate
+                ? 'entry.access-schema'
+                : showUnavailableGate
+                  ? 'entry.access-unavailable'
+                  : showOAuthLogin && activeLoginTab === 'quick'
+                    ? 'entry.access-oauth'
+                    : 'entry.access-login';
 
 
   return (
     <main
       className="auth-gate-screen"
-      data-session-expired={expiredSession ? 'true' : 'false'}
+      data-session-expired={visibleExpiredSession ? 'true' : 'false'}
+      data-product-surface={productSurface}
     >
       <div className="auth-gate-toolbar">
         <LanguageSwitcher />
@@ -289,7 +301,7 @@ export function AccessGateHost({
           </Text>
         </section>
 
-        {expiredSession && showLogin ? (
+        {visibleExpiredSession && showLogin ? (
           <div
             className="auth-session-notice"
             data-acceptance-id="auth-session-expired"
@@ -476,7 +488,7 @@ export function AccessGateHost({
 
               {showEmailLogin ? (
                 <div className={`auth-tab-panel auth-email-panel ${activeLoginTab === 'email' ? 'active' : ''}`}>
-                  {!expiredSession && rememberedAccounts.length > 0 ? (
+                  {!visibleExpiredSession && rememberedAccounts.length > 0 ? (
                     <div className="auth-account-history" aria-label={t('mobile.auth.recentAccounts')}>
                       <Text type="secondary">{t('mobile.auth.recentAccounts')}</Text>
                       <div className="auth-account-list">
@@ -591,7 +603,7 @@ export function AccessGateHost({
                 disabled={!canSubmitSchema || loading}
                 onClick={submitSchema}
               >
-                {t('common.continue')}
+                {t('mobile.launch.continue')}
               </Button>
             ) : null}
           </div>

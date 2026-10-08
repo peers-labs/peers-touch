@@ -116,6 +116,7 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('build.identity');
     expect(actionNames).toContain('runtime.prepareActorIdentity');
     expect(actionNames).toContain('station.select');
+    expect(actionNames).toContain('entry.fixture');
     expect(actionNames).toContain('oauth.replayHandle');
     expect(actionNames).toContain('oauth.negativeCallback');
     expect(actionNames).toContain('lifecycle.snapshot');
@@ -157,6 +158,26 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('moments.private.reconcile');
     expect(actionNames).toContain('moments.private.snapshot');
     expect(actionNames).toContain('storage.conversation-clear.seed');
+  });
+
+  it('projects only declared entry surface fixtures', async () => {
+    const harness = createMobileAcceptanceHarness();
+
+    await expect(harness['entry.fixture']({
+      surfaceId: 'entry.access-pending',
+    })).resolves.toMatchObject({
+      surfaceId: 'entry.access-pending',
+    });
+    await expect(harness['entry.fixture']({
+      surfaceId: 'entry.not-real',
+    } as never)).rejects.toThrow(
+      'acceptance.mobile.invalidInput:entry.fixture.surfaceId',
+    );
+    await expect(harness['entry.fixture']({
+      surfaceId: null,
+    })).resolves.toMatchObject({
+      surfaceId: null,
+    });
   });
 
   it('routes conversation-clear fixture creation through the active Rust owner', async () => {
