@@ -1,8 +1,9 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { RuntimeBootstrapStatus, RuntimeEntry } from '../app/lifecycle/types';
+import { setMomentsSurfaceFixture } from '../acceptance/momentsSurfaceFixture';
 
 const lifecycle = vi.hoisted(() => ({
   runtimes: new Map<string, RuntimeEntry>(),
@@ -17,6 +18,10 @@ vi.mock('../app/mobileI18n', () => ({
 }));
 
 import { MobileRouteBoundary } from './MobileRouteBoundary';
+
+afterEach(() => {
+  setMomentsSurfaceFixture(null);
+});
 
 function entry(id: string, status: RuntimeBootstrapStatus): RuntimeEntry {
   return {
@@ -69,6 +74,13 @@ describe('Mobile route owner readiness', () => {
 
   it('renders the domain only when its declared owner is ready', () => {
     expect(render('ready')).toBe('<span>domain-content</span>');
+  });
+
+  it('renders an explicit acceptance fixture without weakening production fail-closed state', () => {
+    setMomentsSurfaceFixture('moments.feed');
+    expect(render('failed', 'tab:moments')).toBe('<span>domain-content</span>');
+    setMomentsSurfaceFixture(null);
+    expect(render('failed', 'tab:moments')).not.toContain('domain-content');
   });
 
   it('shows preparation without mounting domain content', () => {
