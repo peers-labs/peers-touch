@@ -27,6 +27,7 @@ from tooling.acceptance.core import (
     ArtifactRef,
     BlockedError,
     DriverError,
+    EphemeralCapabilityBlocked,
     EphemeralLaunchContextState,
     EnvironmentContract,
     EvidenceStore,
@@ -69,6 +70,7 @@ from tooling.acceptance.provisioners.mobile_native import (
     _ParentAppiumSession,
     _ParentAppiumTransport,
     _appium_server_version,
+    _validate_harness_action_result,
     _mobile_native_manifest_resources,
     _with_mobile_resources,
     build_mobile_native_source_projection,
@@ -5373,6 +5375,61 @@ class MobileNativeContractTests(unittest.TestCase):
             "MOBILE_NATIVE_APPIUM_REQUEST_TIMEOUT_SECONDS",
             session_source,
         )
+        self.assertIn(
+            "MOBILE_NATIVE_EPHEMERAL_QUIESCE_TIMEOUT_SECONDS",
+            launch_source,
+        )
+
+    def test_station_mutation_accepts_closed_session_revocation_projection(
+        self,
+    ) -> None:
+        _validate_harness_action_result(
+            "station.add",
+            {
+                "activeStationPeerId": "station-a",
+                "verifiedStationPeerId": "station-a",
+                "canonicalOrigin": "https://station.example",
+                "entries": [],
+                "sessionRevocation": {
+                    "remoteRevocation": "not-required",
+                },
+            },
+        )
+
+    def test_station_mutation_rejects_revocation_authority_or_invalid_state(
+        self,
+    ) -> None:
+        base = {
+            "activeStationPeerId": "station-a",
+            "verifiedStationPeerId": "station-a",
+            "canonicalOrigin": "https://station.example",
+            "entries": [],
+        }
+        for session_revocation, expected in (
+            (
+                {
+                    "remoteRevocation": "confirmed",
+                    "nativePurge": {},
+                },
+                "invalid field set",
+            ),
+            (
+                {"remoteRevocation": "unknown"},
+                "remoteRevocation is invalid",
+            ),
+        ):
+            with self.subTest(session_revocation=session_revocation):
+                with self.assertRaisesRegex(
+                    EphemeralCapabilityBlocked,
+                    expected,
+                ):
+                    _validate_harness_action_result(
+                        "station.replace",
+                        {
+                            **base,
+                            "sessionRevocation": session_revocation,
+                        },
+                    )
 
     def test_parent_harness_actions_are_exact_and_disjoint(self) -> None:
         for parent_actions in (

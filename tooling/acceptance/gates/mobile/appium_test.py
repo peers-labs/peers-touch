@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from tooling.acceptance.core import ArtifactRef, DriverError
 from tooling.acceptance.gates.mobile.appium import (
     APPIUM_CAPABILITY_ID,
+    SESSION_STOP_TIMEOUT_SECONDS,
     AppiumSession,
 )
 
@@ -436,6 +437,10 @@ class AppiumChildFacadeTests(unittest.TestCase):
         self.assertEqual(
             [operation for _, operation, _, _ in self.client.calls],
             ["start", "stop"],
+        )
+        self.assertEqual(
+            self.client.calls[-1][3],
+            SESSION_STOP_TIMEOUT_SECONDS,
         )
 
 
