@@ -16,7 +16,7 @@ from tooling.scripts.deploy.windows_runtime import (
 
 
 class WindowsRuntimeScriptTest(unittest.TestCase):
-    def test_relay_config_rejects_public_port_aliases(self) -> None:
+    def test_relay_config_is_rejected_on_windows(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             environment = Path(directory) / "relay.env"
             environment.write_text(
@@ -40,37 +40,9 @@ class WindowsRuntimeScriptTest(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 ProvisioningError,
-                "must be distinct",
+                "Relay service hosts must use Linux/POSIX",
             ):
                 WindowsRuntimeConfig.load("relay", environment)
-
-    def test_station_relay_binding_requires_complete_endpoints(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            environment = Path(directory) / "station.env"
-            environment.write_text(
-                "\n".join(
-                    (
-                        "PT_DEPLOY_HOST=windows.example",
-                        "PT_DEPLOY_USER=administrator",
-                        "PT_DEPLOY_PATH=deploy/station",
-                        "PT_DEPLOY_RUNTIME_PATH=runtime/station",
-                        "PT_DEPLOY_ROLE=station",
-                        "PT_DEPLOY_PLATFORM=windows",
-                        "PT_DEPLOY_HTTP_PORT=18080",
-                        "PT_DEPLOY_PUBLIC_BASE_URL=http://station.example:18080",
-                        "PT_DEPLOY_TASK_NAME=PeersTouch-station",
-                        "PT_DEPLOY_RELAY_CLIENT_URL=https://relay.example:18081",
-                    )
-                )
-                + "\n",
-                encoding="utf-8",
-            )
-
-            with self.assertRaisesRegex(
-                ProvisioningError,
-                "must define URL, control URL",
-            ):
-                WindowsRuntimeConfig.load("station", environment)
 
     def test_remote_runtime_script_is_valid_python(self) -> None:
         compile(_remote_runtime_script(), "<windows-runtime>", "exec")
@@ -91,42 +63,6 @@ class WindowsRuntimeScriptTest(unittest.TestCase):
         self.assertIn('"GOMAXPROCS": "2"', script)
         self.assertIn('"-p=1"', script)
         self.assertIn('"-ldflags=-s -w"', script)
-
-    def test_tls_generation_ignores_broken_openssl_install_defaults(self) -> None:
-        script = _remote_runtime_script()
-        generate_tls = script[
-            script.index("def generate_tls")
-            : script.index("def apply_secret_acl")
-        ]
-
-        self.assertIn('"-config",', generate_tls)
-        self.assertIn('"NUL",', generate_tls)
-        self.assertIn("basicConstraints=critical,CA:TRUE,pathlen:0", generate_tls)
-        self.assertIn("extendedKeyUsage=serverAuth", generate_tls)
-        self.assertIn("subjectAltName=", generate_tls)
-
-    def test_relay_uses_distinct_public_internal_and_stream_ports(self) -> None:
-        script = _remote_runtime_script()
-
-        self.assertIn('"          public-listen-addr: :"', script)
-        self.assertIn(
-            '"          public-upstream-url: http://127.0.0.1:"',
-            script,
-        )
-        self.assertIn('"      address: 127.0.0.1:"', script)
-        self.assertIn(
-            'cfg["publicPort"] if role == "relay" else cfg["httpPort"]',
-            script,
-        )
-
-    def test_station_relay_client_uses_one_time_invite_file(self) -> None:
-        script = _remote_runtime_script()
-
-        self.assertIn("def prepare_station_relay_invite():", script)
-        self.assertIn("def wait_for_station_relay_mount():", script)
-        self.assertIn('"          invite-token-file: "', script)
-        self.assertIn('"          tls-insecure-skip-verify: false"', script)
-        self.assertIn("relay_invite_path.unlink(missing_ok=True)", script)
 
     def test_native_service_stderr_does_not_terminate_runner(self) -> None:
         script = _remote_runtime_script()
@@ -213,7 +149,7 @@ class WindowsRuntimeScriptTest(unittest.TestCase):
 
     def test_log_rotation_replaces_existing_previous_log(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            log_path = Path(directory) / "relay.log"
+            log_path = Path(directory) / "station.log"
             previous_log_path = log_path.with_suffix(".previous.log")
             log_path.write_text("current", encoding="utf-8")
             previous_log_path.write_text("old", encoding="utf-8")
@@ -226,19 +162,14 @@ class WindowsRuntimeScriptTest(unittest.TestCase):
                 "current",
             )
 
-    def test_secret_acl_is_applied_to_each_relay_secret_file(self) -> None:
+    def test_secret_acl_is_applied_to_station_auth_secret(self) -> None:
         script = _remote_runtime_script()
         acl = script[
             script.index("def apply_secret_acl")
             : script.index("def yaml_path")
         ]
 
-        self.assertIn('secret_root / "relay-operator.key"', acl)
-        self.assertIn('secret_root / "relay-signing.key"', acl)
-        self.assertIn('secret_root / "relay-ca.key"', acl)
-        self.assertIn('secret_root / "relay-ca.crt"', acl)
-        self.assertIn('secret_root / "relay-tls.key"', acl)
-        self.assertIn('secret_root / "relay.crt"', acl)
+        self.assertIn('secret_root / "auth-secret"', acl)
         self.assertIn("for secret_path in secret_paths:", acl)
         self.assertIn('username + ":F"', acl)
 

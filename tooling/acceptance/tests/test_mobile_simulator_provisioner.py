@@ -1204,7 +1204,7 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     service_id="relay",
                     kind="relay",
                     endpoint="https://relay.example:18081",
-                    deployment_environment="sixwin-relay",
+                    deployment_environment="relay-1",
                     producer="relay-deployment",
                 )
             },
@@ -1372,7 +1372,7 @@ class MobileSimulatorContractTests(unittest.TestCase):
             service_producer.call_args.kwargs[
                 "runtime_version_provider"
             ],
-            mobile_simulator_module.resolve_windows_service_version,
+            mobile_simulator_module.resolve_service_version,
         )
 
     def test_social_actor_fixture_defers_identity_to_real_login(

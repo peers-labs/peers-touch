@@ -22,8 +22,11 @@ from tooling.acceptance.core import (
     current_artifact_ref,
     load_runtime_manifest,
 )
+from tooling.acceptance.provisioners.posix_service_runtime import (
+    PosixServiceRuntimeConfig,
+    inspect_posix_runtime,
+)
 from tooling.acceptance.transports.ssh import SshTransport, SshTunnel
-from tooling.scripts.deploy.windows_runtime import WindowsRuntimeConfig
 
 
 GATE_ID = "relay-opaque-tunnel-e2e"
@@ -140,21 +143,28 @@ def validate_opaque_tunnel_source_contract() -> None:
 class RelayOpaqueTunnelCapabilityHandler(EphemeralCapabilityHandler):
     def __init__(
         self,
-        transport: SshTransport,
-        station_config: WindowsRuntimeConfig,
-        relay_config: WindowsRuntimeConfig,
+        station_transport: SshTransport,
+        relay_transport: SshTransport,
+        station_config: PosixServiceRuntimeConfig,
+        relay_config: PosixServiceRuntimeConfig,
     ) -> None:
-        self._transport = transport
+        self._relay_transport = relay_transport
         self._relay_config = relay_config
+        self._relay_container_id = str(
+            inspect_posix_runtime(
+                relay_config,
+                transport=relay_transport,
+            )["containerId"]
+        )
         self._closed = False
         self._tunnels: list[SshTunnel] = []
         self._marker = "opaque-" + secrets.token_hex(16)
         try:
-            station = transport.start_local_forward(
+            station = station_transport.start_local_forward(
                 remote_port=station_config.http_port
             )
             self._tunnels.append(station)
-            relay = transport.start_local_forward(
+            relay = relay_transport.start_local_forward(
                 remote_port=relay_config.http_port
             )
             self._tunnels.append(relay)
@@ -277,34 +287,13 @@ class RelayOpaqueTunnelCapabilityHandler(EphemeralCapabilityHandler):
         )
 
     def _marker_absent_from_relay_log(self) -> bool:
-        runtime = self._relay_config.runtime_path.replace("/", "\\")
-        log_path = runtime + "\\logs\\relay.log"
-        marker = self._marker.replace("'", "''")
-        script = (
-            "$path=Join-Path $env:USERPROFILE '"
-            + log_path.replace("'", "''")
-            + "';"
-            + "if(-not (Test-Path -LiteralPath $path -PathType Leaf)){"
-            + "Write-Output 'missing'; exit 2};"
-            + "$found=[bool](Select-String -LiteralPath $path "
-            + "-SimpleMatch -Quiet '"
-            + marker
-            + "');"
-            + "if($found){Write-Output 'present'; exit 3};"
-            + "Write-Output 'absent'"
-        )
-        completed = self._transport.run_argv(
-            [
-                "powershell.exe",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                script,
-            ],
+        completed = self._relay_transport.run_argv(
+            ["docker", "logs", self._relay_container_id],
             timeout=30,
             check=False,
         )
-        return completed.returncode == 0 and completed.stdout.strip() == "absent"
+        logs = completed.stdout + "\n" + completed.stderr
+        return completed.returncode == 0 and self._marker not in logs
 
 
 class RelayOpaqueTunnelGate(AcceptanceGate):
@@ -373,7 +362,7 @@ class RelayOpaqueTunnelGate(AcceptanceGate):
         for name, passed in assertions.items():
             self.assert_condition(name, passed)
         return {
-            "runtimeCell": "sixwin-station-relay",
+            "runtimeCell": "one-linux-relay",
             "markerSha256": result.get("markerSha256"),
             "assertions": assertions,
         }

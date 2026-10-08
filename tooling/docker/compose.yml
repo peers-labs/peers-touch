@@ -208,12 +208,14 @@ services:
       RELAY_OPERATOR_SCOPE: ${RELAY_OPERATOR_SCOPE:-}
       PEERS_NODE_LABEL: ${PEERS_NODE_LABEL:-}
     ports:
-      - "${RELAY_STATION_PORT:-18081}:18443"
+      - "127.0.0.1:${RELAY_CONTROL_PORT:-18082}:18080"
+      - "${RELAY_PUBLIC_PORT:-18081}:18443"
       - "${LIBP2P_PORT:-4001}:4001"
       # Relay subserver TCP stream listener for station mounts.
       - "${RELAY_STREAM_PORT:-4501}:4501"
     volumes:
       - peers_data:/app/data
+      - ${RELAY_SECRET_DIR_MOUNT:-/dev/null}:/app/relay-secrets:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -223,6 +225,18 @@ services:
       timeout: 5s
       retries: 6
       start_period: 30s
+    restart: unless-stopped
+
+  relay-proxy:
+    image: nginx:1.27-alpine
+    profiles: [relay]
+    network_mode: "service:relay"
+    volumes:
+      - ./relay-nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${RELAY_SECRET_DIR_MOUNT:-/dev/null}:/etc/nginx/tls:ro
+    depends_on:
+      relay:
+        condition: service_healthy
     restart: unless-stopped
 
   # ── LiveKit SFU (group voice/video calls) ──────────────────────

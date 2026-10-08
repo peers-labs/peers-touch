@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.0
-> **Created**: 2026-09-26 | **Updated**: 2026-10-06
+> **Created**: 2026-09-26 | **Updated**: 2026-10-08
 > **Owner**: Identity and Access
 > **Module**: `apps/desktop/`, `apps/mobile/`, `apps/station/frame/touch/`
 
@@ -24,6 +24,9 @@
 7. **统一 capability**：相同能力在双端共享协议、状态、错误和作用域。
 8. **单一 Session 类别槽**：Session 并发槽由 canonical client class 决定，
    不由安装实例或运行时标签决定。
+9. **Relay 只宿主于 Linux**：Relay service host 仅支持遵循 POSIX runtime
+   contract 的 Linux 部署；Windows 不进入 Relay 服务端的实现、部署或验收矩阵，
+   但仍可作为 Desktop 客户端平台连接 Linux Relay。
 
 ## 2. 系统架构
 
@@ -228,8 +231,20 @@ analytics、错误信息或日志。
 | `relay` | health、signed discovery、operator admin、mount control、opaque tunnel、metrics |
 
 `relay` role 禁止加载 Actor、OAuth、Chat、Social、Agent、OSS 或 Federation
-governance handler。生产模式缺少 TLS、Relay signing key、operator policy 或配额时
-启动失败。开发模式的明文例外必须显式、仅 loopback 且不能生成生产证据。
+governance handler。生产部署缺少外层 TLS boundary、Relay signing key、operator
+policy 或配额时必须失败。Relay 进程内 TLS 与经评审的外部 TLS terminator 均可满足
+transport security，但明文 upstream 必须只监听共享网络命名空间的 loopback。
+
+Linux 默认使用 NGINX 终止 Web PKI 或内网 CA TLS，再代理到 Relay loopback
+endpoint；NGINX 与 Relay 由同一 Compose owner 管理并共享网络命名空间。ACME、
+Certbot 与证书续期属于部署层，不进入 Relay binary。没有外部 terminator 的开发
+明文例外必须显式、仅 loopback 且不能生成生产证据。
+
+Relay role 的宿主边界是 Linux/POSIX。生产部署、开发模拟和 Acceptance 均复用同一
+Linux runtime contract；不得增加 Windows service adapter、Windows Relay profile、
+Windows Relay 编译门或 Windows Relay 运行证据。Windows Desktop 仍是受支持客户端，
+其 Relay journey 必须连接 Linux Relay。Windows Station 是否受支持由 Station 自身
+模块单独裁决，不能据此扩展 Relay host 矩阵。
 
 ## 9. Station-to-Station Transport
 

@@ -153,7 +153,7 @@ class RelayEnrollmentGateTest(unittest.TestCase):
             gate = RelayEnrollmentGate(FakeCapabilityClient())
             result = gate.run()
 
-        self.assertEqual(result["runtimeCell"], "sixwin-station-relay")
+        self.assertEqual(result["runtimeCell"], "one-linux-relay")
         self.assertEqual(
             gate.manifest["_manifest_ref"],
             runtime_reference,

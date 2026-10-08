@@ -20,8 +20,10 @@ from tooling.acceptance.core import (
     current_artifact_ref,
     load_runtime_manifest,
 )
+from tooling.acceptance.provisioners.posix_service_runtime import (
+    PosixServiceRuntimeConfig,
+)
 from tooling.acceptance.transports.ssh import SshTransport, SshTunnel
-from tooling.scripts.deploy.windows_runtime import WindowsRuntimeConfig
 
 
 GATE_ID = "relay-endpoint-discovery-contract"
@@ -146,9 +148,10 @@ def validate_discovery_source_contract() -> None:
 class RelayEndpointDiscoveryCapabilityHandler(EphemeralCapabilityHandler):
     def __init__(
         self,
-        transport: SshTransport,
-        station_config: WindowsRuntimeConfig,
-        relay_config: WindowsRuntimeConfig,
+        station_transport: SshTransport,
+        relay_transport: SshTransport,
+        station_config: PosixServiceRuntimeConfig,
+        relay_config: PosixServiceRuntimeConfig,
     ) -> None:
         self._closed = False
         self._tunnels: list[SshTunnel] = []
@@ -157,11 +160,11 @@ class RelayEndpointDiscoveryCapabilityHandler(EphemeralCapabilityHandler):
         )
         self._probe_binary = Path(self._temporary.name) / "probe"
         try:
-            station = transport.start_local_forward(
+            station = station_transport.start_local_forward(
                 remote_port=station_config.http_port
             )
             self._tunnels.append(station)
-            relay = transport.start_local_forward(
+            relay = relay_transport.start_local_forward(
                 remote_port=relay_config.http_port
             )
             self._tunnels.append(relay)
@@ -367,7 +370,7 @@ class RelayEndpointDiscoveryGate(AcceptanceGate):
         for name, passed in assertions.items():
             self.assert_condition(name, passed)
         return {
-            "runtimeCell": "sixwin-station-relay",
+            "runtimeCell": "one-linux-relay",
             "assertions": assertions,
         }
 

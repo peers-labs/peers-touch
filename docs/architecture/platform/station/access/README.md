@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.0
-> **Created**: 2026-09-26 | **Updated**: 2026-10-06
+> **Created**: 2026-09-26 | **Updated**: 2026-10-08
 > **Owner**: Identity and Access
 > **Module**: `apps/desktop/`, `apps/mobile/`, `apps/station/frame/touch/`
 
@@ -20,7 +20,8 @@
 - protobuf Access Gate、Station/Actor/Device scope 与 Federation context；
 - 直连与 Relay 路由切换、恢复、撤销和双端一致验收；
 - 接入能力、owner 和双端 consumer 的正向完整性；
-- Desktop/Mobile 跨类别共存与同类别 Session 接管。
+- Desktop/Mobile 跨类别共存与同类别 Session 接管；
+- Relay service host 仅支持 Linux/POSIX，Windows 只作为客户端平台。
 
 本文档集不定义：
 
@@ -51,6 +52,8 @@
 7. 所有接入接口均由当前 capability registry 声明且拥有真实 consumer。
 8. 同一 actor 每个 canonical client class 只保留一个 active Session。
 9. Desktop 与 Mobile 以相同结果、错误、安全条件和持久状态验收。
+10. Relay 服务端实现、部署和 Acceptance 仅使用 Linux/POSIX runtime；Windows
+    Desktop 通过 Linux Relay 验收。
 
 ## 4. 文档导航
 
@@ -67,7 +70,8 @@
 | [integration.md](./integration.md) | 当前实现证据、差距与切换策略 |
 | [station-access-gate-architecture.md](./station-access-gate-architecture.md) | Access Gate 链的早期架构输入 |
 | [station-access-gate-implementation-plan.md](./station-access-gate-implementation-plan.md) | Access Gate 实施记录 |
-| [execution-plans/20261006-unified-relay-station-access-v8/plan.md](./execution-plans/20261006-unified-relay-station-access-v8/plan.md) | 当前已批准的 Relay 执行 Plan |
+| [execution-plans/20261006-unified-relay-station-access-v9/plan.md](./execution-plans/20261006-unified-relay-station-access-v9/plan.md) | 当前 Relay 执行 Plan；接受 SAL-D13，Relay 服务宿主仅支持 Linux/POSIX |
+| [execution-plans/20261006-unified-relay-station-access-v8/plan.md](./execution-plans/20261006-unified-relay-station-access-v8/plan.md) | 已由 v9 替换；保留 Windows Relay 宿主范围的 frozen 历史快照 |
 | [execution-plans/20261006-unified-relay-station-access-v7/plan.md](./execution-plans/20261006-unified-relay-station-access-v7/plan.md) | 已批准的 Plan Version；v7 补齐 SAL-REL-03 Dashboard source impact 的 formal Gate |
 | [execution-plans/20261006-unified-relay-station-access-v6/plan.md](./execution-plans/20261006-unified-relay-station-access-v6/plan.md) | 已由 v7 替换；缺少 SAL-REL-03 Dashboard unit/web formal Gate |
 | [execution-plans/20261006-unified-relay-station-access-v5/plan.md](./execution-plans/20261006-unified-relay-station-access-v5/plan.md) | 已由 v6 替换；缺少 SAL-REL-03 真实生产调用面与完整生成绑定写集 |

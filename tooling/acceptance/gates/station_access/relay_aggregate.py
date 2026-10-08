@@ -19,8 +19,8 @@ from tooling.acceptance.core import (
 SECURITY_GATE_ID = "station-access-relay-security-e2e"
 UNIFIED_GATE_ID = "unified-relay-station-access-aggregate-e2e"
 SPEC = (
-    "docs/architecture/station-access-lifecycle/execution-plans/"
-    "20261006-unified-relay-station-access-v8/tasks/"
+    "docs/architecture/platform/station/access/execution-plans/"
+    "20261006-unified-relay-station-access-v9/tasks/"
     "SAL-REL-07-NATIVE-ACCEPTANCE.md"
 )
 

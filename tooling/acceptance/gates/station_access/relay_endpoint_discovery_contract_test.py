@@ -96,7 +96,7 @@ class RelayEndpointDiscoveryContractTest(unittest.TestCase):
             gate = RelayEndpointDiscoveryGate(FakeCapabilityClient())
             result = gate.run()
 
-        self.assertEqual(result["runtimeCell"], "sixwin-station-relay")
+        self.assertEqual(result["runtimeCell"], "one-linux-relay")
         self.assertTrue(all(result["assertions"].values()))
         self.assertEqual(run.call_args.kwargs["env"]["HOME"], str(Path.home()))
 

@@ -43,10 +43,8 @@ _TLS12_PROTOCOL_REJECTION_MARKERS = (
 )
 _RELAY_SECRET_FILES = frozenset(
     {
-        "auth-secret",
         "relay-operator.key",
         "relay-signing.key",
-        "relay-ca.key",
         "relay-ca.crt",
         "relay-tls.key",
         "relay.crt",
@@ -224,8 +222,23 @@ def validate_relay_role_source_contract() -> None:
             "RELAY_SIGNING_KEY_FILE:",
             "RELAY_OPERATOR_KEY_FILE:",
             '"http://127.0.0.1:18080/healthz"',
+            "relay-proxy:",
+            'network_mode: "service:relay"',
+            "relay-nginx.conf.template",
         ),
         "Docker role wiring",
+    )
+    nginx_source = _read("tooling/docker/relay-nginx.conf.template")
+    _require_tokens(
+        nginx_source,
+        (
+            "listen 18443 ssl",
+            "ssl_protocols TLSv1.3",
+            "proxy_pass http://127.0.0.1:18080",
+            "proxy_set_header Upgrade $http_upgrade",
+            "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for",
+        ),
+        "Relay NGINX TLS boundary",
     )
 
     entrypoint_source = _read("tooling/docker/entrypoint.sh")
@@ -249,6 +262,17 @@ def validate_relay_role_source_contract() -> None:
             "Station source contains undeclared debug egress: "
             + ", ".join(matches)
         )
+
+    deploy_source = _read("tooling/scripts/deploy/deploy.sh")
+    _require_tokens(
+        deploy_source,
+        (
+            'if [[ "$PT_DEPLOY_ROLE" == "relay" ]]',
+            '[[ "${PT_DEPLOY_PLATFORM:-posix}" != "posix" ]]',
+            "Relay service hosts must use Linux/POSIX",
+        ),
+        "Relay Linux-only deployment boundary",
+    )
 
 
 def validate_relay_role_security_contract() -> None:
@@ -478,19 +502,13 @@ def _required_protected_files(
             "Relay protected-file evidence",
         )
         name = record.get("name")
-        principals = record.get("principals")
         if (
             not isinstance(name, str)
             or name in names
-            or record.get("exists") is not True
             or record.get("nonEmpty") is not True
-            or record.get("aclProtected") is not True
-            or record.get("expectedPrincipalsPresent") is not True
-            or record.get("unexpectedPrincipals") != []
             or record.get("protected") is not True
-            or not isinstance(principals, list)
-            or not principals
-            or any(not isinstance(principal, str) for principal in principals)
+            or not isinstance(record.get("mode"), str)
+            or record.get("uid") != 0
         ):
             raise GateError(
                 f"Relay protected-file evidence is incomplete for {name}"
@@ -562,24 +580,33 @@ def _validate_runtime_evidence(
         "relayStorageSecurity",
         "Relay runtime security",
     )
+    tls_termination = _required_object(
+        security.get("tlsTermination"),
+        "tlsTermination",
+        "Relay runtime security",
+    )
     _required_protected_files(
         storage_security.get("requiredProtectedFiles"),
     )
     if (
         security.get("attachmentMode") != "existing-owner-managed"
+        or station_runtime.get("platform") != "linux"
+        or relay_runtime.get("platform") != "linux"
         or station_runtime.get("role") != "station"
         or relay_runtime.get("role") != "relay"
-        or station_runtime.get("taskName") == relay_runtime.get("taskName")
-        or station_runtime.get("runtimePath") == relay_runtime.get("runtimePath")
-        or set(station_runtime.get("processIds") or ())
-        & set(relay_runtime.get("processIds") or ())
-        or storage_security.get("rootAclProtected") is not True
-        or storage_security.get("unexpectedPrincipals") != []
+        or station_runtime.get("runtimeOwner")
+        == relay_runtime.get("runtimeOwner")
+        or storage_security.get("platform") != "linux"
         or storage_security.get("processBinaryMatches") is not True
-        or storage_security.get("stationDatabaseExists") is not True
-        or storage_security.get("relayDatabaseExists") is not True
-        or storage_security.get("stationDatabasePath")
-        == storage_security.get("relayDatabasePath")
+        or not storage_security.get("stationDataOwner")
+        or not storage_security.get("relayDataOwner")
+        or storage_security.get("stationDataOwner")
+        == storage_security.get("relayDataOwner")
+        or tls_termination.get("implementation") != "nginx"
+        or not str(tls_termination.get("runtimeOwner") or "").endswith(
+            "/relay-proxy"
+        )
+        or tls_termination.get("upstream") != "http://127.0.0.1:18080"
     ):
         raise GateError("Attached Station/Relay runtime security is incomplete")
     stream_endpoint = str(security.get("streamEndpoint") or "")
@@ -608,6 +635,7 @@ def _validate_runtime_evidence(
         "stationRuntime": station_runtime,
         "relayRuntime": relay_runtime,
         "relayStorageSecurity": storage_security,
+        "tlsTermination": tls_termination,
         "streamEndpoint": stream_endpoint,
         "publicEndpoint": public_endpoint,
         "tlsTrustAnchor": trust_anchor,
@@ -712,7 +740,8 @@ class RelayRoleSecurityContractGate(AcceptanceGate):
                 "exact-source isolated Station and Relay processes on the "
                 "attached profile",
                 "live TLS 1.3 negotiation with TLS 1.2 rejection",
-                "live Relay route isolation and Windows secret ACL ownership",
+                "live Relay route isolation and POSIX secret ownership",
+                "Linux-only Relay service-host deployment enforcement",
                 "absence of the undeclared hardcoded Station debug egress",
             ],
             "unproven_scope": [

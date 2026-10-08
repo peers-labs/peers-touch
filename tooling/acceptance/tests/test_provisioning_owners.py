@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import errno
 import json
 import os
@@ -276,16 +274,16 @@ class StationAttestationOwnerTests(unittest.TestCase):
         )
 
         config = MagicMock(
-            role="relay",
-            task_name="PeersTouch-sixwin-relay",
+            role="station",
+            task_name="PeersTouch-sixwin-station",
         )
         transport = MagicMock()
         transport.target.remote_platform = RemotePlatform.WINDOWS
         status = {
             "artifactKind": "windows-native-runtime-status",
-            "environmentName": "sixwin-relay",
-            "role": "relay",
-            "taskName": "PeersTouch-sixwin-relay",
+            "environmentName": "sixwin-station",
+            "role": "station",
+            "taskName": "PeersTouch-sixwin-station",
             "taskRegistered": True,
             "healthy": True,
             "sourceClean": True,
@@ -294,8 +292,8 @@ class StationAttestationOwnerTests(unittest.TestCase):
             "manifest": {
                 "sourceCommit": "abcdef123456",
                 "sourceClean": True,
-                "role": "relay",
-                "taskName": "PeersTouch-sixwin-relay",
+                "role": "station",
+                "taskName": "PeersTouch-sixwin-station",
                 "binarySha256": "sha256:" + "b" * 64,
                 "deployedAt": "2026-10-08T00:00:00Z",
             },
@@ -307,7 +305,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
         ), patch(
             "tooling.acceptance.provisioners.remote_source_identity."
             "resolve_deployment_environment_path",
-            return_value=Path("/reviewed/sixwin-relay.env.example"),
+            return_value=Path("/reviewed/sixwin-station.env.example"),
         ), patch(
             "tooling.acceptance.provisioners.remote_source_identity."
             "WindowsRuntimeConfig.load",
@@ -317,66 +315,12 @@ class StationAttestationOwnerTests(unittest.TestCase):
             "execute_windows_runtime",
             return_value=status,
         ):
-            version = resolve_windows_service_version("sixwin-relay")
+            version = resolve_windows_service_version("sixwin-station")
 
         self.assertEqual(version["build_commit"], "abcdef1234567890")
         self.assertEqual(
             version["service_id"],
-            "windows-task:PeersTouch-sixwin-relay",
-        )
-
-    def test_windows_relay_trust_anchor_is_bound_to_runtime_manifest(self) -> None:
-        from tooling.acceptance.provisioners.remote_source_identity import (
-            resolve_windows_relay_trust_anchor,
-        )
-
-        certificate = (
-            b"-----BEGIN CERTIFICATE-----\n"
-            b"YWJj\n"
-            b"-----END CERTIFICATE-----\n"
-        )
-        digest = "sha256:" + hashlib.sha256(certificate).hexdigest()
-        config = MagicMock(role="relay")
-        transport = MagicMock()
-        transport.target.remote_platform = RemotePlatform.WINDOWS
-        transport.run_argv.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout=base64.b64encode(certificate).decode("ascii"),
-            stderr="",
-        )
-        status = {
-            "manifest": {
-                "tlsCaCertificatePath": "C:\\runtime\\relay-ca.crt",
-                "tlsCaCertificateSha256": digest,
-            }
-        }
-        with patch(
-            "tooling.acceptance.provisioners.remote_source_identity."
-            "_reviewed_remote_transport",
-            return_value=(transport, {}),
-        ), patch(
-            "tooling.acceptance.provisioners.remote_source_identity."
-            "resolve_deployment_environment_path",
-            return_value=Path("/reviewed/sixwin-relay.env.example"),
-        ), patch(
-            "tooling.acceptance.provisioners.remote_source_identity."
-            "WindowsRuntimeConfig.load",
-            return_value=config,
-        ), patch(
-            "tooling.acceptance.provisioners.remote_source_identity."
-            "execute_windows_runtime",
-            return_value=status,
-        ):
-            value, observed_digest = resolve_windows_relay_trust_anchor(
-                "sixwin-relay"
-            )
-
-        self.assertEqual(value, certificate)
-        self.assertEqual(observed_digest, digest)
-        self.assertEqual(
-            transport.run_argv.call_args.args[0][-1],
-            "C:\\runtime\\relay-ca.crt",
+            "windows-task:PeersTouch-sixwin-station",
         )
 
     def test_remote_attestation_uses_strict_openssh_default_known_hosts(self) -> None:
@@ -716,7 +660,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 return_value={
                     "build_commit": "abcdef123456",
                     "build_time": "2026-10-08T00:00:00Z",
-                    "service_id": "windows-task:relay",
+                    "service_id": "docker-compose:pt-relay/relay",
                 }
             )
             with patch.dict(
@@ -735,7 +679,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
                     service_kind="relay",
                     endpoint="http://relay.example",
                     mode="remote",
-                    deployment_environment="sixwin-relay",
+                    deployment_environment="relay-1",
                     producer="relay-deployment",
                     require_runtime_identity=True,
                     remote_source_identity_provider=lambda _: (
@@ -747,10 +691,10 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 )
 
             endpoint_version.assert_not_called()
-            runtime_version.assert_called_once_with("sixwin-relay")
+            runtime_version.assert_called_once_with("relay-1")
             self.assertEqual(
                 attestation.runtime_identity,
-                "windows-task:relay",
+                "docker-compose:pt-relay/relay",
             )
             run.close()
 

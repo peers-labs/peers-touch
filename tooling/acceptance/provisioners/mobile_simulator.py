@@ -103,8 +103,10 @@ from tooling.acceptance.provisioners.mobile_native_build import (
 )
 from tooling.acceptance.provisioners.remote_source_identity import (
     resolve_remote_source_identity,
-    resolve_windows_relay_trust_anchor,
-    resolve_windows_service_version,
+    resolve_service_version,
+)
+from tooling.acceptance.provisioners.posix_service_runtime import (
+    resolve_posix_relay_trust_anchor,
 )
 
 
@@ -7266,7 +7268,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                         resolve_remote_source_identity
                     ),
                     runtime_version_provider=(
-                        resolve_windows_service_version
+                        resolve_service_version
                     ),
                 )
             services[service_id] = attestation
@@ -7570,7 +7572,7 @@ class MobileSocialSimulatorProvisioner(
         self.session_factory = session_factory
         self.relay_trust_anchor_provider = (
             relay_trust_anchor_provider
-            or resolve_windows_relay_trust_anchor
+            or resolve_posix_relay_trust_anchor
         )
         self._appium_handler: (
             MobileSimulatorAppiumCapabilityHandler | None

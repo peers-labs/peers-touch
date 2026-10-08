@@ -97,7 +97,7 @@
       "description": "Validate only acceptance_core_self_validation capabilities and generic Infra closure without consuming business Domain injection."
     },
     "acceptance-runtime-provisioning-self": {
-      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'python3 -m unittest tooling.acceptance.tests.test_tauri_smoke tooling.acceptance.tests.test_native_desktop_macos tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_station_access_relay_role tooling.acceptance.tests.test_profile_lease tooling.acceptance.tests.test_launch_context && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-report-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py && python3 tooling/scripts/quality-evidence-test.py'",
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'python3 -m unittest tooling.acceptance.tests.test_tauri_smoke tooling.acceptance.tests.test_native_desktop_macos tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_station_access_relay_role tooling.acceptance.tests.test_posix_service_runtime tooling.acceptance.tests.test_profile_lease tooling.acceptance.tests.test_launch_context && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-report-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py && python3 tooling/scripts/quality-evidence-test.py'",
       "timeout_seconds": 180,
       "environment": "local",
       "tier": "ci-cheap",
@@ -365,7 +365,7 @@
       "environment": "station-access-relay-role",
       "provisioner": "station-access-relay-role",
       "tier": "env-evidence",
-      "description": "Validate explicit Station/Relay composition and attach to exact-source owner-managed runtimes to prove isolated processes, live route inventory, TLS 1.3-only negotiation, dedicated operator protection, restricted secret ACLs, positive quotas, deployment wiring, and zero hardcoded debug egress."
+      "description": "Validate explicit Station/Relay composition and attach to exact-source Linux/POSIX owner-managed runtimes to prove isolated processes, live route inventory, TLS 1.3-only negotiation, dedicated operator protection, restricted secret modes, positive quotas, deployment wiring, and zero hardcoded debug egress."
     },
     "relay-station-enrollment-e2e": {
       "argv": [
@@ -380,7 +380,7 @@
       "environment": "station-access-relay-role",
       "provisioner": "station-access-relay-role",
       "tier": "env-evidence",
-      "description": "Prove sixwin Station host-key PoP enrollment, hash-only one-time invites, Relay EdDSA credential rotation, generation revoke, stream closure, and explicit re-enrollment."
+      "description": "Prove Linux Station host-key PoP enrollment through the one Linux Relay, hash-only one-time invites, Relay EdDSA credential rotation, generation revoke, stream closure, and explicit re-enrollment."
     },
     "relay-endpoint-discovery-contract": {
       "argv": [
@@ -440,7 +440,7 @@
         "desktop-windows-native"
       ],
       "tier": "env-evidence",
-      "description": "Prove exact-source sixwin Desktop uses the same Station-keyed Relay discovery, route switching, visible Via Relay state, and persisted route recovery contract."
+      "description": "Prove exact-source sixwin Windows Desktop uses the same Station-keyed discovery, route switching, visible Via Relay state, and persisted route recovery contract through the one Linux Relay."
     },
     "station-access-mobile-relay-native-e2e": {
       "argv": [

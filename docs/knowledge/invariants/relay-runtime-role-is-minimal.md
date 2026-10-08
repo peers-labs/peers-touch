@@ -9,6 +9,7 @@ owns:
   - apps/station/frame/core/plugin/native/subserver/relay/
   - apps/station/frame/core/runtime/role/
   - tooling/docker/
+  - tooling/scripts/deploy/
   - tooling/scripts/local-dev/relay-check.sh
   - tooling/scripts/local-dev/relay-dev.sh
   - tooling/scripts/local-dev/relay-status.sh
@@ -30,11 +31,16 @@ composition root. The `relay` role MUST exclude Touch routes, application
 business subservers, and every native plugin except the Relay plugin. New
 plugins are denied until the role allowlist is deliberately updated.
 
-Relay startup MUST fail before storage or listeners initialize when its public
-origin, TLS configuration, signing key, operator policy, or quotas are missing.
-The only plaintext exception is explicit and loopback-only. Relay operator
-routes MUST use a signing key, issuer, audience, and scope that are independent
-from Station application JWTs.
+Relay deployment MUST fail when its public origin, reviewed outer TLS boundary,
+signing key, operator policy, or quotas are missing. An external TLS terminator
+may proxy only to an explicit loopback listener in the same network namespace.
+Relay operator routes MUST use a signing key, issuer, audience, and scope that
+are independent from Station application JWTs.
+
+Relay service hosts MUST use the reviewed Linux/POSIX runtime contract.
+Windows is supported as a Desktop client platform and may be governed
+separately for Station, but it MUST NOT expose a Relay deploy profile, runtime
+adapter, compile gate, or service-host evidence.
 
 ## Why this is non-negotiable
 
@@ -56,8 +62,12 @@ Both failures are configuration mistakes that must stop the process.
 - `rg -n '192\.0\.2\.12:7784' apps/station` returns no matches.
 - `tooling/docker/entrypoint.sh` rejects a missing or unknown
   `PEERS_NODE_ROLE`.
+- `tooling/scripts/deploy/deploy.sh` rejects `relay` when
+  `PT_DEPLOY_PLATFORM` is not `posix`.
 
 ## Crosswalks
 
 - Station Access decision `SAL-D11` defines the minimal Relay role.
+- Station Access decision `SAL-D13` defines the Linux-only service-host
+  boundary.
 - `relay-readloop-discipline.md` continues to govern the allowed Relay plugin.

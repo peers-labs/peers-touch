@@ -30,8 +30,11 @@ from tooling.acceptance.core import (
     current_artifact_ref,
     load_runtime_manifest,
 )
+from tooling.acceptance.provisioners.posix_service_runtime import (
+    PosixServiceRuntimeConfig,
+    mint_posix_relay_operator_token,
+)
 from tooling.acceptance.transports.ssh import SshTransport, SshTunnel
-from tooling.scripts.deploy.windows_runtime import WindowsRuntimeConfig
 
 
 GATE_ID = "relay-station-enrollment-e2e"
@@ -244,13 +247,14 @@ def _read(relative_path: str) -> str:
 class RelayEnrollmentCapabilityHandler(EphemeralCapabilityHandler):
     def __init__(
         self,
-        transport: SshTransport,
-        station_config: WindowsRuntimeConfig,
-        relay_config: WindowsRuntimeConfig,
+        station_transport: SshTransport,
+        relay_transport: SshTransport,
+        station_config: PosixServiceRuntimeConfig,
+        relay_config: PosixServiceRuntimeConfig,
     ) -> None:
         if relay_config.stream_port is None:
             raise ValueError("Relay stream port is required")
-        self._transport = transport
+        self._relay_transport = relay_transport
         self._relay_config = relay_config
         self._sensitive: list[bytearray] = []
         self._closed = False
@@ -263,15 +267,15 @@ class RelayEnrollmentCapabilityHandler(EphemeralCapabilityHandler):
             Path(self._probe_directory.name) / "mount-credential.json"
         )
         try:
-            station = transport.start_local_forward(
+            station = station_transport.start_local_forward(
                 remote_port=station_config.http_port
             )
             self._tunnels.append(station)
-            relay = transport.start_local_forward(
+            relay = relay_transport.start_local_forward(
                 remote_port=relay_config.http_port
             )
             self._tunnels.append(relay)
-            stream = transport.start_local_forward(
+            stream = relay_transport.start_local_forward(
                 remote_port=relay_config.stream_port
             )
             self._tunnels.append(stream)
@@ -358,40 +362,10 @@ class RelayEnrollmentCapabilityHandler(EphemeralCapabilityHandler):
         return value
 
     def _operator_token(self) -> str:
-        script = r"""
-import base64, hashlib, hmac, json, pathlib, sys, time
-root = pathlib.Path.home() / sys.argv[1]
-key = (root / "secrets" / "relay-operator.key").read_text(encoding="utf-8").strip().encode()
-now = int(time.time())
-header = {"alg": "HS256", "typ": "JWT"}
-payload = {
-    "iss": "peers-relay-operator",
-    "sub": "operator:acceptance",
-    "aud": ["peers-relay-admin"],
-    "iat": now,
-    "exp": now + 300,
-    "scope": "relay.admin",
-}
-encode = lambda value: base64.urlsafe_b64encode(
-    json.dumps(value, separators=(",", ":"), sort_keys=True).encode()
-).rstrip(b"=")
-unsigned = encode(header) + b"." + encode(payload)
-signature = base64.urlsafe_b64encode(
-    hmac.new(key, unsigned, hashlib.sha256).digest()
-).rstrip(b"=")
-sys.stdout.write((unsigned + b"." + signature).decode())
-"""
-        completed = self._transport.run_argv(
-            ["python", "-c", script, self._relay_config.runtime_path],
-            timeout=15,
-            check=True,
+        token = mint_posix_relay_operator_token(
+            self._relay_config,
+            transport=self._relay_transport,
         )
-        token = completed.stdout.strip()
-        if token.count(".") != 2:
-            raise EphemeralCapabilityBlocked(
-                "Relay operator token minting failed",
-                resource=CAPABILITY_ID,
-            )
         return self._remember_secret(token)
 
     def _run_lifecycle(
@@ -1029,7 +1003,7 @@ class RelayEnrollmentGate(AcceptanceGate):
             self.assert_condition(name, passed)
         return {
             "sourceContract": "passed",
-            "runtimeCell": "sixwin-station-relay",
+            "runtimeCell": "one-linux-relay",
             "stationPeerIdSha256": result.get("stationPeerIdSha256"),
             "relayPeerIdSha256": result.get("relayPeerIdSha256"),
             "assertions": assertions,

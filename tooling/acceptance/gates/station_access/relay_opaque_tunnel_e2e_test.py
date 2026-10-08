@@ -134,7 +134,7 @@ class RelayOpaqueTunnelGateTest(unittest.TestCase):
             gate = RelayOpaqueTunnelGate(FakeCapabilityClient())
             result = gate.run()
 
-        self.assertEqual(result["runtimeCell"], "sixwin-station-relay")
+        self.assertEqual(result["runtimeCell"], "one-linux-relay")
         self.assertTrue(all(result["assertions"].values()))
 
 

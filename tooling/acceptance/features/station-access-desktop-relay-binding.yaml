@@ -45,7 +45,7 @@
       "stale transport results are fenced by the current route lease"
     ],
     "surface": [
-      "installed macOS and sixwin Windows Desktop show Via Relay for the active Relay route",
+      "installed macOS and sixwin Windows Desktop show Via Relay while connected through the one Linux Relay",
       "the persisted Relay route recovers after native process restart"
     ]
   },

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Windows-native runtime adapter for the canonical remote deploy command."""
+"""Windows-native Station adapter for the canonical remote deploy command."""
 
 from __future__ import annotations
 
@@ -29,7 +29,6 @@ from tooling.acceptance.transports.ssh import SshTarget, SshTransport
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _RELATIVE_PATH = re.compile(r"^[A-Za-z0-9._/-]+$")
 _HEALTH_PATH = re.compile(r"^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+$")
-_ROLE = {"station", "relay"}
 
 
 def _rotate_service_log(
@@ -141,11 +140,6 @@ class WindowsRuntimeConfig:
     public_port: int
     health_path: str
     public_base_url: str
-    stream_port: int | None
-    relay_client_url: str
-    relay_control_url: str
-    relay_stream_addr: str
-    relay_runtime_path: str
     task_name: str
     firewall_remote_address: str
 
@@ -163,13 +157,14 @@ class WindowsRuntimeConfig:
                 f"PT_DEPLOY_PLATFORM must be windows in {environment_path}"
             )
         role = _required(values, "PT_DEPLOY_ROLE", environment_path).lower()
-        if role not in _ROLE:
+        if role != "station":
             raise ProvisioningError(
-                f"PT_DEPLOY_ROLE must be station or relay in {environment_path}"
+                "Windows is supported for Station only; Relay service hosts "
+                "must use Linux/POSIX"
             )
         health_path = values.get(
             "PT_DEPLOY_HEALTH_PATH",
-            "/healthz" if role == "relay" else "/sub-oss/healthz",
+            "/sub-oss/healthz",
         ).strip()
         if not _HEALTH_PATH.fullmatch(health_path):
             raise ProvisioningError("PT_DEPLOY_HEALTH_PATH is invalid")
@@ -179,7 +174,7 @@ class WindowsRuntimeConfig:
             environment_path,
         )
         parsed_base_url = urlparse(public_base_url)
-        required_scheme = "https" if role == "relay" else "http"
+        required_scheme = "http"
         if (
             parsed_base_url.scheme.lower() != required_scheme
             or not parsed_base_url.hostname
@@ -214,67 +209,6 @@ class WindowsRuntimeConfig:
             raise ProvisioningError(
                 "PT_DEPLOY_FIREWALL_REMOTE_ADDRESS is invalid"
             )
-        stream_port = (
-            _port(values, "PT_DEPLOY_STREAM_PORT", environment_path)
-            if role == "relay"
-            else None
-        )
-        if role == "relay" and (
-            public_port == http_port or public_port == stream_port
-        ):
-            raise ProvisioningError(
-                "relay public, internal HTTP, and stream ports must be distinct"
-            )
-        relay_client_url = values.get("PT_DEPLOY_RELAY_CLIENT_URL", "").strip()
-        relay_control_url = values.get(
-            "PT_DEPLOY_RELAY_CONTROL_URL",
-            "",
-        ).strip()
-        relay_stream_addr = values.get(
-            "PT_DEPLOY_RELAY_STREAM_ADDR",
-            "",
-        ).strip()
-        relay_runtime_path_raw = values.get(
-            "PT_DEPLOY_RELAY_RUNTIME_PATH",
-            "",
-        ).strip()
-        relay_values = (
-            relay_client_url,
-            relay_control_url,
-            relay_stream_addr,
-            relay_runtime_path_raw,
-        )
-        if role == "station" and any(relay_values):
-            if not all(relay_values):
-                raise ProvisioningError(
-                    "station Relay client binding must define URL, control URL, "
-                    "stream address, and Relay runtime path"
-                )
-            relay_public = urlparse(relay_client_url)
-            relay_control = urlparse(relay_control_url)
-            if (
-                relay_public.scheme.lower() != "https"
-                or not relay_public.hostname
-                or relay_control.scheme.lower() != "http"
-                or relay_control.hostname not in {"127.0.0.1", "::1", "localhost"}
-            ):
-                raise ProvisioningError(
-                    "station Relay client requires public HTTPS and loopback HTTP control"
-                )
-            stream = urlparse("//" + relay_stream_addr)
-            if not stream.hostname or stream.port is None:
-                raise ProvisioningError(
-                    "PT_DEPLOY_RELAY_STREAM_ADDR must be a host and port"
-                )
-            relay_runtime_path = _relative_path(
-                relay_runtime_path_raw,
-                "PT_DEPLOY_RELAY_RUNTIME_PATH",
-            )
-        else:
-            relay_client_url = ""
-            relay_control_url = ""
-            relay_stream_addr = ""
-            relay_runtime_path = ""
         return cls(
             environment_name=environment_name,
             host=_required(values, "PT_DEPLOY_HOST", environment_path),
@@ -298,11 +232,6 @@ class WindowsRuntimeConfig:
             public_port=public_port,
             health_path=health_path,
             public_base_url=public_base_url,
-            stream_port=stream_port,
-            relay_client_url=relay_client_url,
-            relay_control_url=relay_control_url,
-            relay_stream_addr=relay_stream_addr,
-            relay_runtime_path=relay_runtime_path,
             task_name=task_name,
             firewall_remote_address=firewall_remote_address,
         )
@@ -318,11 +247,6 @@ class WindowsRuntimeConfig:
             "publicPort": self.public_port,
             "healthPath": self.health_path,
             "publicBaseUrl": self.public_base_url,
-            "streamPort": self.stream_port,
-            "relayClientUrl": self.relay_client_url,
-            "relayControlUrl": self.relay_control_url,
-            "relayStreamAddr": self.relay_stream_addr,
-            "relayRuntimePath": self.relay_runtime_path,
             "taskName": self.task_name,
             "firewallRemoteAddress": self.firewall_remote_address,
             "branch": branch,
@@ -335,10 +259,7 @@ def _remote_runtime_script() -> str:
     script = textwrap.dedent(
         r"""
         import getpass
-        import base64
         import hashlib
-        import hmac
-        import ipaddress
         import json
         import os
         import pathlib
@@ -368,9 +289,6 @@ def _remote_runtime_script() -> str:
         runner_path = runtime / "run-service.ps1"
         manifest_path = runtime / "runtime-manifest.json"
         task_name = cfg["taskName"]
-        relay_client_enabled = bool(cfg["relayClientUrl"])
-        relay_credential_path = secret_root / "relay-mount-credential.json"
-        relay_invite_path = secret_root / "relay-invite-token"
         health_url = (
             "http://127.0.0.1:"
             + str(cfg["httpPort"])
@@ -552,232 +470,6 @@ def _remote_runtime_script() -> str:
             if not path.is_file() or not path.read_text(encoding="utf-8").strip():
                 path.write_text(secrets.token_hex(32) + "\n", encoding="utf-8")
 
-        def generate_tls(ca_cert_path, ca_key_path, cert_path, key_path):
-            required = (ca_cert_path, ca_key_path, cert_path, key_path)
-            if all(path.is_file() for path in required):
-                return
-            for path in required:
-                path.unlink(missing_ok=True)
-            host = cfg["publicBaseUrl"].split("://", 1)[1].split(":", 1)[0]
-            try:
-                ipaddress.ip_address(host)
-                san = "IP:" + host
-            except ValueError:
-                san = "DNS:" + host
-            run(
-                [
-                    "openssl",
-                    "req",
-                    "-x509",
-                    "-newkey",
-                    "rsa:3072",
-                    "-sha256",
-                    "-nodes",
-                    "-config",
-                    "NUL",
-                    "-keyout",
-                    str(ca_key_path),
-                    "-out",
-                    str(ca_cert_path),
-                    "-days",
-                    "3650",
-                    "-subj",
-                    "/CN=Peers Touch Relay Acceptance CA",
-                    "-addext",
-                    "basicConstraints=critical,CA:TRUE,pathlen:0",
-                    "-addext",
-                    "keyUsage=critical,keyCertSign,cRLSign",
-                ]
-            )
-            request_path = secret_root / "relay-tls.csr"
-            extensions_path = secret_root / "relay-tls.ext"
-            serial_path = ca_cert_path.with_suffix(".srl")
-            try:
-                run(
-                    [
-                        "openssl",
-                        "req",
-                        "-new",
-                        "-newkey",
-                        "rsa:2048",
-                        "-sha256",
-                        "-nodes",
-                        "-config",
-                        "NUL",
-                        "-keyout",
-                        str(key_path),
-                        "-out",
-                        str(request_path),
-                        "-subj",
-                        "/CN=" + host,
-                    ]
-                )
-                extensions_path.write_text(
-                    "[server]\n"
-                    "basicConstraints=critical,CA:FALSE\n"
-                    "keyUsage=critical,digitalSignature,keyEncipherment\n"
-                    "extendedKeyUsage=serverAuth\n"
-                    "subjectAltName=" + san + ",IP:127.0.0.1\n",
-                    encoding="ascii",
-                )
-                run(
-                    [
-                        "openssl",
-                        "x509",
-                        "-req",
-                        "-in",
-                        str(request_path),
-                        "-CA",
-                        str(ca_cert_path),
-                        "-CAkey",
-                        str(ca_key_path),
-                        "-CAcreateserial",
-                        "-out",
-                        str(cert_path),
-                        "-days",
-                        "825",
-                        "-sha256",
-                        "-extfile",
-                        str(extensions_path),
-                        "-extensions",
-                        "server",
-                    ]
-                )
-            finally:
-                request_path.unlink(missing_ok=True)
-                extensions_path.unlink(missing_ok=True)
-                serial_path.unlink(missing_ok=True)
-
-        def install_relay_ca(ca_cert_path):
-            run(
-                [
-                    "certutil.exe",
-                    "-addstore",
-                    "-f",
-                    "Root",
-                    str(ca_cert_path),
-                ]
-            )
-
-        def request_json(url, *, payload=None, bearer=""):
-            body = (
-                json.dumps(payload, separators=(",", ":")).encode("utf-8")
-                if payload is not None
-                else None
-            )
-            request = urllib.request.Request(
-                url,
-                data=body,
-                method="POST",
-                headers={
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                    **(
-                        {"Authorization": "Bearer " + bearer}
-                        if bearer
-                        else {}
-                    ),
-                },
-            )
-            with urllib.request.urlopen(request, timeout=5) as response:
-                decoded = json.loads(response.read().decode("utf-8"))
-            if not isinstance(decoded, dict):
-                raise RuntimeError("Relay returned a non-object response")
-            return decoded
-
-        def relay_operator_token(operator_key):
-            now = int(time.time())
-            header = {"alg": "HS256", "typ": "JWT"}
-            payload = {
-                "iss": "peers-relay-operator",
-                "sub": "operator:windows-runtime",
-                "aud": ["peers-relay-admin"],
-                "iat": now,
-                "exp": now + 300,
-                "scope": "relay.admin",
-            }
-
-            def encode(value):
-                return base64.urlsafe_b64encode(
-                    json.dumps(
-                        value,
-                        separators=(",", ":"),
-                        sort_keys=True,
-                    ).encode("utf-8")
-                ).rstrip(b"=")
-
-            unsigned = encode(header) + b"." + encode(payload)
-            signature = base64.urlsafe_b64encode(
-                hmac.new(operator_key, unsigned, hashlib.sha256).digest()
-            ).rstrip(b"=")
-            return (unsigned + b"." + signature).decode("ascii")
-
-        def relay_credential_active():
-            if not relay_credential_path.is_file():
-                return False
-            try:
-                credential = json.loads(
-                    relay_credential_path.read_text(encoding="utf-8")
-                )
-                token = str(credential.get("relay_token") or "")
-                if not token:
-                    return False
-                request_json(
-                    cfg["relayControlUrl"] + "/api/v1/relay/heartbeat",
-                    payload={},
-                    bearer=token,
-                )
-                return True
-            except (
-                OSError,
-                ValueError,
-                urllib.error.HTTPError,
-                urllib.error.URLError,
-            ):
-                return False
-
-        def prepare_station_relay_invite():
-            if not relay_client_enabled:
-                return
-            if relay_credential_active():
-                relay_invite_path.unlink(missing_ok=True)
-                return
-            relay_credential_path.unlink(missing_ok=True)
-            relay_runtime = home / cfg["relayRuntimePath"]
-            operator_key = (
-                relay_runtime / "secrets" / "relay-operator.key"
-            ).read_text(encoding="utf-8").strip().encode("utf-8")
-            response = request_json(
-                cfg["relayControlUrl"] + "/api/v1/relay/invite",
-                payload={
-                    "label": cfg["environmentName"],
-                    "max_clients": 64,
-                    "bandwidth_limit": 8388608,
-                    "expires_in": "10m",
-                },
-                bearer=relay_operator_token(operator_key),
-            )
-            invite_token = str(response.get("invite_token") or "")
-            if not invite_token:
-                raise RuntimeError("Relay invite response omitted its secret")
-            relay_invite_path.write_text(
-                invite_token + "\n",
-                encoding="utf-8",
-            )
-
-        def wait_for_station_relay_mount():
-            if not relay_client_enabled:
-                return
-            deadline = time.monotonic() + 90
-            while time.monotonic() < deadline:
-                if relay_credential_active():
-                    relay_invite_path.unlink(missing_ok=True)
-                    return
-                time.sleep(1)
-            raise RuntimeError(
-                "Station Relay client did not establish an authenticated mount"
-            )
-
         def apply_secret_acl():
             username = os.environ.get("USERNAME") or getpass.getuser()
             run(
@@ -791,24 +483,6 @@ def _remote_runtime_script() -> str:
                 ]
             )
             secret_paths = [secret_root / "auth-secret"]
-            if role == "relay":
-                secret_paths.extend(
-                    [
-                        secret_root / "relay-operator.key",
-                        secret_root / "relay-signing.key",
-                        secret_root / "relay-ca.key",
-                        secret_root / "relay-ca.crt",
-                        secret_root / "relay-tls.key",
-                        secret_root / "relay.crt",
-                    ]
-                )
-            elif relay_client_enabled:
-                secret_paths.extend(
-                    [
-                        relay_invite_path,
-                        relay_credential_path,
-                    ]
-                )
             for secret_path in secret_paths:
                 if not secret_path.is_file():
                     continue
@@ -831,7 +505,7 @@ def _remote_runtime_script() -> str:
             if config_root.exists():
                 shutil.rmtree(config_root)
             shutil.copytree(source_conf, config_root)
-            database = yaml_path(data_root / (role + ".db"))
+            database = yaml_path(data_root / "station.db")
             store = config_root / "store.sqlite.yml"
             store.write_text(
                 store.read_text(encoding="utf-8").replace(
@@ -841,20 +515,12 @@ def _remote_runtime_script() -> str:
                 encoding="utf-8",
             )
             main = config_path.read_text(encoding="utf-8")
-            if role == "relay":
-                includes = (
-                    "store.sqlite.yml, sub_relay.yml, log.yml, "
-                    "server.host.local.yml, runtime.windows.yml"
-                )
-            else:
-                match = re.search(r"(?m)^  includes: (.+)$", main)
-                if match is None:
-                    raise RuntimeError("peers-sqlite.yml has no includes declaration")
-                includes = match.group(1)
-                if relay_client_enabled and "sub_relay_client.yml" not in includes:
-                    includes += ", sub_relay_client.yml"
-                if "runtime.windows.yml" not in includes:
-                    includes += ", runtime.windows.yml"
+            match = re.search(r"(?m)^  includes: (.+)$", main)
+            if match is None:
+                raise RuntimeError("peers-sqlite.yml has no includes declaration")
+            includes = match.group(1)
+            if "runtime.windows.yml" not in includes:
+                includes += ", runtime.windows.yml"
             main = re.sub(
                 r"(?m)^  includes: .+$",
                 "  includes: " + includes,
@@ -877,12 +543,7 @@ def _remote_runtime_script() -> str:
                 "        libp2p-identity-key-file: "
                 + json.dumps(yaml_path(data_root / "libp2p.key")),
                 "    server:",
-                (
-                    "      address: 127.0.0.1:"
-                    if role == "relay"
-                    else "      address: :"
-                )
-                + str(cfg["httpPort"]),
+                "      address: :" + str(cfg["httpPort"]),
                 "      subserver:",
                 "        bootstrap:",
                 "          identity-key: "
@@ -890,57 +551,6 @@ def _remote_runtime_script() -> str:
                 "        oss:",
                 "          store-path: " + json.dumps(yaml_path(runtime / "oss")),
             ]
-            if role == "relay":
-                overlay.extend(
-                    [
-                        "        relay:",
-                        "          enabled: true",
-                        "          public-listen-addr: :"
-                        + str(cfg["publicPort"]),
-                        "          public-upstream-url: http://127.0.0.1:"
-                        + str(cfg["httpPort"]),
-                        "          stream-listen-addr: :"
-                        + str(cfg["streamPort"]),
-                        "          tls-cert-file: "
-                        + json.dumps(yaml_path(secret_root / "relay.crt")),
-                        "          tls-key-file: "
-                        + json.dumps(yaml_path(secret_root / "relay-tls.key")),
-                        "          allow-insecure-loopback: false",
-                        "          signing-key-file: "
-                        + json.dumps(yaml_path(secret_root / "relay-signing.key")),
-                        "          operator-key-file: "
-                        + json.dumps(yaml_path(secret_root / "relay-operator.key")),
-                        "          operator-issuer: peers-relay-operator",
-                        "          operator-audience: peers-relay-admin",
-                        "          operator-scope: relay.admin",
-                    ]
-                )
-            elif relay_client_enabled:
-                overlay.extend(
-                    [
-                        "        relay-client:",
-                        "          enabled: true",
-                        "          relay-url: "
-                        + json.dumps(cfg["relayClientUrl"]),
-                        "          relay-stream-addr: "
-                        + json.dumps(cfg["relayStreamAddr"]),
-                        "          invite-token-file: "
-                        + json.dumps(yaml_path(relay_invite_path)),
-                        "          label: "
-                        + json.dumps(cfg["environmentName"]),
-                        "          local-http-port: " + str(cfg["httpPort"]),
-                        "          bootstrap-info-url: http://127.0.0.1:"
-                        + str(cfg["httpPort"])
-                        + "/sub-bootstrap/info",
-                        "          bootstrap-identity-url: http://127.0.0.1:"
-                        + str(cfg["httpPort"])
-                        + "/sub-bootstrap/station-identity",
-                        "          token-store-path: "
-                        + json.dumps(yaml_path(relay_credential_path)),
-                        "          use-tls: true",
-                        "          tls-insecure-skip-verify: false",
-                    ]
-                )
             (config_root / "runtime.windows.yml").write_text(
                 "\n".join(overlay) + "\n",
                 encoding="utf-8",
@@ -1103,11 +713,7 @@ def _remote_runtime_script() -> str:
             return station_tree, artifact_key, file_digest(binary)
 
         def configure_firewall():
-            ports = [
-                cfg["publicPort"] if role == "relay" else cfg["httpPort"]
-            ]
-            if role == "relay" and cfg["streamPort"] is not None:
-                ports.append(cfg["streamPort"])
+            ports = [cfg["httpPort"]]
             group = "PeersTouch-" + cfg["environmentName"]
             commands = [
                 "$ErrorActionPreference='Stop'",
@@ -1155,18 +761,6 @@ def _remote_runtime_script() -> str:
                 directory.mkdir(parents=True, exist_ok=True)
             auth_secret = secret_root / "auth-secret"
             ensure_secret(auth_secret)
-            if role == "relay":
-                ensure_secret(secret_root / "relay-signing.key")
-                ensure_secret(secret_root / "relay-operator.key")
-                generate_tls(
-                    secret_root / "relay-ca.crt",
-                    secret_root / "relay-ca.key",
-                    secret_root / "relay.crt",
-                    secret_root / "relay-tls.key",
-                )
-                install_relay_ca(secret_root / "relay-ca.crt")
-            elif relay_client_enabled:
-                prepare_station_relay_invite()
             apply_secret_acl()
             prepare_config()
             stop_owned()
@@ -1234,7 +828,6 @@ def _remote_runtime_script() -> str:
                 raise RuntimeError(
                     "runtime failed health check: " + "\n".join(tail)
                 )
-            wait_for_station_relay_mount()
             final_commit, final_digest, final_clean = source_identity()
             if (
                 final_commit != source_commit
@@ -1259,17 +852,6 @@ def _remote_runtime_script() -> str:
                 "healthUrl": health_url,
                 "httpPort": cfg["httpPort"],
                 "publicPort": cfg["publicPort"],
-                "streamPort": cfg["streamPort"],
-                "tlsCaCertificatePath": (
-                    str(secret_root / "relay-ca.crt")
-                    if role == "relay"
-                    else ""
-                ),
-                "tlsCaCertificateSha256": (
-                    file_digest(secret_root / "relay-ca.crt")
-                    if role == "relay"
-                    else ""
-                ),
                 "deployedAt": datetime.now(timezone.utc).isoformat(),
             }
             temporary = manifest_path.with_suffix(".json.tmp")
@@ -1360,7 +942,7 @@ def execute(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Operate a reviewed Windows-native Station or Relay runtime"
+        description="Operate a reviewed Windows-native Station runtime"
     )
     parser.add_argument("action", choices=("deploy", "status", "logs", "stop"))
     parser.add_argument("environment")

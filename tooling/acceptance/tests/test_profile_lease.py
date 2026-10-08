@@ -191,11 +191,11 @@ class ProfileLeaseTests(unittest.TestCase):
 class RemoteGitSourceLeaseTests(unittest.TestCase):
     def test_remote_lease_decodes_non_utf8_diagnostics_lossily(self) -> None:
         lease = RemoteGitSourceLease(
-            "sixwin-relay",
+            "sixwin-station",
             "gate-owner",
             host="windows.example",
             user="acceptance",
-            deploy_path="relay",
+            deploy_path="station",
         )
         with patch(
             "tooling.acceptance.core.lease.subprocess.Popen",

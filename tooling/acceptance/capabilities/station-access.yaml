@@ -391,7 +391,7 @@
         ],
         "surfaces": [
           "installed macOS Desktop Station picker",
-          "exact-source sixwin Windows Desktop Station picker"
+          "exact-source sixwin Windows Desktop Station picker through the one Linux Relay"
         ],
         "proven_by": [
           "station-access-desktop-relay-native-e2e",

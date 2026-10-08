@@ -73,6 +73,13 @@ RUN CGO_ENABLED=0 go build -trimpath \
 # ─── Stage 2: Runtime ──────────────────────────────────────────────────────────
 FROM ${BASE_IMAGE}
 
+ARG BUILD_COMMIT=unknown
+ARG BUILD_LABEL=dev
+ARG BUILD_TIME=unknown
+LABEL org.opencontainers.image.revision="${BUILD_COMMIT}" \
+      org.opencontainers.image.version="${BUILD_LABEL}" \
+      org.opencontainers.image.created="${BUILD_TIME}"
+
 RUN sed -i \
       -e 's|http://archive.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' \
       -e 's|http://security.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' \

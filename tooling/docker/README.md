@@ -112,7 +112,13 @@ GitHub Actions workflow [`deploy-station.yml`](../../.github/workflows/deploy-st
 
 - **Single Dockerfile**, single image. The `relay` profile and the `station`
   profile share `station.Dockerfile`; Compose sets `PEERS_NODE_ROLE` explicitly.
-  The Relay allowlist excludes all Station business subservers.
+  The Relay allowlist excludes all Station business subservers. Relay service
+  hosts are Linux/POSIX-only; Windows remains a client or separately governed
+  Station platform.
+- **Relay secret ownership**: the reviewed Linux deploy owner prepares
+  signing/operator/TLS files under its isolated runtime root and mounts only
+  the required files read-only at `/app/relay-secrets`. The CA private key is
+  never mounted into the Relay container.
 - **Official applet service closure**: Station may bundle official applet
   services via local Go module `replace` directives. The Docker build context
   therefore includes `apps/applets/` so `apps/station/app/go.mod` can resolve
@@ -120,10 +126,10 @@ GitHub Actions workflow [`deploy-station.yml`](../../.github/workflows/deploy-st
   Dockerfile edits.
 - **Healthcheck endpoint**: Station uses `/sub-oss/healthz`; Relay uses its
   role-owned `/healthz` probe. Relay `/metrics` requires an operator credential.
-- **Same-host coexistence**: `pt-station-2` and `pt-station-relay-only`
-  share `10.37.195.98`. Two compose projects, two bridge networks, two
-  postgres containers — they only share the Docker daemon. Their libp2p
-  ports use distinct host-side mappings (`4001` vs `4002`).
+- **Canonical Relay host**: profile `one` binds the Relay Compose owner to
+  Linux host `10.37.118.48`. Station and Relay may run on different hosts;
+  Acceptance opens separate reviewed transports and never assumes
+  co-location.
 - **Hierarchy-merge overlays** (no source-tree edits): `entrypoint.sh`
   emits `store.docker.yml` (DSN), `paths.docker.yml` (key paths under
   `/app/data`), and `bootstrap.docker.yml` (DHT seeds) into `/app/conf/`

@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.0
-> **Created**: 2026-09-26 | **Updated**: 2026-10-06
+> **Created**: 2026-09-26 | **Updated**: 2026-10-08
 > **Owner**: Identity and Access
 
 ---
@@ -23,6 +23,7 @@
 | SAL-D10 | Station enrollment 必须证明 host-key possession | accepted |
 | SAL-D11 | Relay 使用显式最小运行角色 | accepted |
 | SAL-D12 | 一个 actor 每个 canonical client class 只保留一个 active Session | accepted |
+| SAL-D13 | Relay 服务宿主仅支持 Linux/POSIX | accepted |
 
 ## SAL-D01：双端统一按语义和结果衡量
 
@@ -344,8 +345,9 @@ subserver。网络边界上的 Relay 不应拥有 Station 业务攻击面。
 ### Decision
 
 保留同一代码库和 binary，通过显式 `relay` role allowlist 只装配 health、discovery、
-operator admin、mount control、opaque tunnel 和 metrics。生产 Relay 缺少 TLS、
-signing key、operator policy 或配额时启动失败。
+operator admin、mount control、opaque tunnel 和 metrics。生产 Relay 缺少经评审的
+外层 TLS boundary、signing key、operator policy 或配额时部署失败；使用外部
+terminator 时，Relay 明文 upstream 只能绑定共享网络命名空间的 loopback。
 
 ### Rationale
 
@@ -411,3 +413,50 @@ fail closed。既有 `desktop-native` 行在迁移时一次性归一，不保留
 
 只有新的多实例产品合同明确允许同类并发，并同时定义 device picker、winner、
 通知、写入冲突和撤销语义时，才可替换该策略。
+
+---
+
+## SAL-D13：Relay 服务宿主仅支持 Linux/POSIX
+
+**Status**: accepted
+**Date**: 2026-10-08
+
+### Context
+
+Relay 是长期运行的公网或内网基础设施服务。为 Windows Relay 单独维护 service
+adapter、构建路径、部署 profile、密钥 ACL 和 Acceptance 会形成第二套服务端运行
+合同，而 canonical Relay 环境及反向代理、证书、观测和运维设施均基于 Linux。
+
+### Decision
+
+Relay service host 的支持矩阵仅包含遵循 POSIX runtime contract 的 Linux 部署。
+Windows 不作为 Relay 服务宿主选项，不实现 Windows Relay service adapter，不创建
+Windows Relay deploy profile，不设置 Windows Relay 编译门，也不接受 Windows
+Relay 运行证据。
+
+Windows Desktop 继续作为客户端平台，并通过 Linux Relay 完成同一 discovery、
+binding 和 tunnel journey。Windows Station 的支持边界由 Station 模块独立裁决，
+不能成为扩展 Relay host 矩阵的依据。
+
+### Rationale
+
+单一 Linux 服务端合同可以复用成熟的进程监管、NGINX/Web PKI 终止、文件权限、
+日志、指标和容量治理，避免为低概率部署形态长期维护分叉的安全与运维实现。
+
+### Alternatives Considered
+
+- 同时支持 Linux 与 Windows Relay：拒绝，会产生两套服务端部署和安全证明。
+- 保留 Windows Relay 代码但不宣称支持：拒绝，死路径会继续扩大维护与误用风险。
+- Windows 仅用于本地 Relay 模拟：拒绝，内网模拟也必须复用生产 Linux 行为。
+
+### Consequences
+
+- 所有当前执行 Plan、部署清单和 Acceptance 都必须删除 Windows Relay 宿主范围。
+- canonical Relay 运行与证明绑定到已评审的 Linux profile。
+- Windows Desktop Relay E2E 继续保留，但它证明的是 Windows 客户端连接 Linux
+  Relay，不是 Windows 服务端兼容性。
+
+### Reversal Trigger
+
+只有新的产品合同明确要求 Windows Relay 宿主，并同时承担完整的部署、安全、升级、
+观测和 Acceptance 长期成本时，才能通过新的架构决策替换本约束。
