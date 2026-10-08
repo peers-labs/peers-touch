@@ -174,7 +174,7 @@ class MobileRelayNativeGateTests(unittest.TestCase):
 
         with self.assertRaisesRegex(
             Exception,
-            "Mobile business runtimes are unavailable: social",
+            "Mobile business runtimes are unavailable: social=failed",
         ):
             gate._wait_business_runtimes(binding, "direct-login")
 

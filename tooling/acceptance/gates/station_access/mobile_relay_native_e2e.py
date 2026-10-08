@@ -368,7 +368,11 @@ class MobileRelayNativeGate(AcceptanceGate):
         checkpoint: str,
     ) -> dict[str, Any]:
         snapshot = self._mapping(
-            binding.call_action(CLIENT_ID, "lifecycle.waitReady", {}),
+            binding.call_action(
+                CLIENT_ID,
+                "lifecycle.waitReady",
+                {"includeDiagnostics": True},
+            ),
             f"{checkpoint} runtime readiness",
         )
         runtimes = snapshot.get("runtimes")
@@ -385,9 +389,30 @@ class MobileRelayNativeGate(AcceptanceGate):
             if statuses.get(runtime_id) != "ready"
         )
         if unavailable:
+            error_keys = {
+                runtime.get("id"): runtime.get("errorKey")
+                for runtime in runtimes
+                if isinstance(runtime, Mapping)
+            }
+            diagnostics = snapshot.get("runtimeErrors")
+            diagnostic_by_id = {
+                diagnostic.get("runtimeId"): redact_text(
+                    str(diagnostic.get("error") or "")
+                )
+                for diagnostic in diagnostics
+                if isinstance(diagnostic, Mapping)
+            } if isinstance(diagnostics, list) else {}
+            detail = ";".join(
+                (
+                    f"{runtime_id}={statuses.get(runtime_id)}"
+                    f":{error_keys.get(runtime_id)}"
+                    f":{diagnostic_by_id.get(runtime_id, '')}"
+                )
+                for runtime_id in unavailable
+            )
             raise GateError(
                 f"{checkpoint} Mobile business runtimes are unavailable: "
-                + ",".join(unavailable)
+                + detail
             )
         self._record(
             "business-runtimes-ready",
