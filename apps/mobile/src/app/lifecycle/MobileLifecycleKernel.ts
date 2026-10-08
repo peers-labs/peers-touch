@@ -30,6 +30,7 @@ import {
   lifecycleReducer,
   type LifecycleAction,
 } from './lifecycleReducer';
+import { readableErrorMessage } from '../../utils/errorMessage';
 import { reverseTeardownOrder, topologicalSortRuntimes } from './topologicalSort';
 import { publicRuntimeErrorKey, readRuntimeAvailability } from './runtimeAvailability';
 
@@ -351,7 +352,7 @@ export class MobileLifecycleKernel {
           clearTimeout(this.readinessTimeouts.get(descriptor.id));
           this.readinessTimeouts.delete(descriptor.id);
           const diagnosticError = failed
-            ? error instanceof Error ? error.message : String(error)
+            ? runtimeDiagnosticError(error)
             : null;
           this.dispatch({
             type: 'RUNTIME_READINESS',
@@ -843,7 +844,7 @@ async function runVoidRuntimeOperation(
     return {
       runtimeId,
       success: false,
-      errorMessage: error instanceof Error ? error.message : String(error),
+      errorMessage: runtimeDiagnosticError(error),
       durationMs: performance.now() - start,
     };
   }
@@ -869,10 +870,19 @@ async function runTeardownOperation(
     return {
       runtimeId,
       success: false,
-      errorMessage: error instanceof Error ? error.message : String(error),
+      errorMessage: runtimeDiagnosticError(error),
       durationMs: performance.now() - start,
     };
   }
+}
+
+function runtimeDiagnosticError(error: unknown): string {
+  const message = readableErrorMessage(error, 'mobile.lifecycle.runtimeFailed');
+  if (!error || typeof error !== 'object' || Array.isArray(error)) return message;
+  const code = (error as Record<string, unknown>).code;
+  return typeof code === 'string' && code && !message.includes(code)
+    ? `${code}: ${message}`
+    : message;
 }
 
 async function withTimeout<T>(
