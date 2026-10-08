@@ -960,6 +960,7 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
             package_installed: bool = True,
             package_digest: str = "b" * 64,
             consent_required: bool = False,
+            vpn_consent_hierarchy: str | None = None,
             install_confirmation_required: bool = False,
             data_plane_reachable: bool = True,
         ) -> None:
@@ -968,6 +969,7 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
             self.consent_required = consent_required
             self.consent_granted = not consent_required
             self.dialog_visible = False
+            self.vpn_consent_hierarchy = vpn_consent_hierarchy
             self.install_confirmation_required = (
                 install_confirmation_required
             )
@@ -1147,7 +1149,8 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
                     return CommandResult(1)
                 return CommandResult(
                     0,
-                    (
+                    self.vpn_consent_hierarchy
+                    or (
                         '<hierarchy><node text="Connection request" '
                         'package="com.android.vpndialogs">'
                         '<node text="Allow this app to set up a VPN?" '
@@ -1370,6 +1373,43 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
             )
         )
         transport.close("opaque-device")
+
+    def test_coloros_system_vpn_dialog_is_accepted(self) -> None:
+        executor = self.Executor(
+            consent_required=True,
+            vpn_consent_hierarchy=(
+                '<hierarchy rotation="0">'
+                '<node text="&#36830;&#25509;&#35831;&#27714;" '
+                'package="com.oplus.wirelesssettings">'
+                '<node text="&quot;Peers USB Network&quot;'
+                '&#24819;&#35201;&#35774;&#32622;&#19968;&#20010; VPN '
+                '&#36830;&#25509;" '
+                'package="com.oplus.wirelesssettings"/>'
+                '<node text="&#20801;&#35768;" '
+                'resource-id="android:id/button1" '
+                'enabled="true" clickable="true" '
+                'package="com.oplus.wirelesssettings" '
+                'bounds="[572,1358][1044,1484]"/>'
+                "</node></hierarchy>"
+            ),
+        )
+        executor.dialog_visible = True
+        transport = _AndroidUsbNetworkTransport(
+            "http://10.37.221.38:18080",
+            relay_port=49181,
+            executor=executor,
+            tool=self.tool(),
+        )
+
+        approved = transport._approve_vpn_consent_if_visible(
+            "opaque-device",
+            deadline_monotonic=time.monotonic() + 5,
+            cancellation=None,
+        )
+
+        self.assertTrue(approved)
+        self.assertTrue(executor.consent_granted)
+        self.assertFalse(executor.dialog_visible)
 
     def test_transport_requires_device_data_plane_before_ready(self) -> None:
         executor = self.Executor(data_plane_reachable=False)
