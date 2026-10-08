@@ -3888,6 +3888,33 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
                 }
             ],
         }
+        lifecycle_scope = {
+            "generation": 3,
+            "phase": "ACTIVE",
+            "launchState": "shell",
+            "activeStationPeerId": "station-a",
+            "activeActorPtid": "ptid:alice",
+            "runtimeStationPeerId": "station-a",
+            "deviceId": "device-1",
+            "social": {
+                "stationPeerId": "station-a",
+                "actorPtid": "ptid:alice",
+                "sessionCount": 1,
+                "requestCount": 0,
+                "messageThreadCount": 0,
+            },
+            "group": {
+                "stationPeerId": "station-a",
+                "actorPtid": "ptid:alice",
+                "groupCount": 0,
+                "messageThreadCount": 0,
+            },
+            "navigation": {
+                "primaryRouteId": "tab:home",
+                "detailKeys": [],
+                "overlayRouteId": None,
+            },
+        }
         values = {
             "station.add": station,
             "station.replace": station,
@@ -3896,6 +3923,7 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
             "oauth.status": oauth,
             "oauth.cancel": oauth,
             "lifecycle.restart": {"requested": True, "scope": "webview"},
+            "lifecycle.scope.read": lifecycle_scope,
             "projection.read": {
                 "station": {
                     "activeStationPeerId": "station-a",
@@ -4048,7 +4076,37 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
                 deadline_monotonic=float("inf"),
                 cancellation=threading.Event(),
             )
-            self.assertEqual(result["value"], values[action])
+            expected_value = values[action]
+            if action == "lifecycle.scope.read":
+                expected_value = {
+                    key: item
+                    for key, item in lifecycle_scope.items()
+                    if key != "deviceId"
+                }
+            self.assertEqual(result["value"], expected_value)
+
+        for forbidden_field in ("serial", "deviceSerial"):
+            with self.subTest(forbidden_field=forbidden_field):
+                values["lifecycle.scope.read"] = {
+                    **lifecycle_scope,
+                    forbidden_field: "must-not-cross",
+                }
+                with self.assertRaisesRegex(
+                    ValueError,
+                    rf"\$.{forbidden_field}",
+                ):
+                    handler.invoke(
+                        "harness_action",
+                        {
+                            "clientId": "alice-ios",
+                            "sessionRef": "opaque-session",
+                            "action": "lifecycle.scope.read",
+                            "actionPayload": {},
+                        },
+                        deadline_monotonic=float("inf"),
+                        cancellation=threading.Event(),
+                    )
+        values["lifecycle.scope.read"] = lifecycle_scope
 
         for invalid in (
             {},
