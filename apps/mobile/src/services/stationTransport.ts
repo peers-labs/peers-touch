@@ -7,6 +7,7 @@ import {
   runAfterAuthenticated401,
   type SessionAdmission,
 } from '../runtimes/sessionRuntime';
+import { secureRandomUuid } from '../utils/randomIdentity';
 
 export type StationTransportOperation =
   | { operationId: 'actor_profile_get' }
@@ -72,7 +73,7 @@ export type StationTransportOperation =
     offset: number;
   }
   | { operationId: 'social_blocked_list'; limit: number; cursor?: string }
-  | { operationId: 'social_friendship_status'; target_ptid: string }
+  | { operationId: 'social_friendship_status'; target_actor_ptid: string }
   | { operationId: 'social_circles_list'; limit: number; cursor?: string }
   | {
     operationId: 'social_circle_create';
@@ -302,7 +303,9 @@ async function invokeCancellable<T>(
   signal: AbortSignal | undefined,
 ): Promise<T> {
   throwIfAborted(signal);
-  const requestId = globalThis.crypto.randomUUID();
+  const requestId = secureRandomUuid(
+    'mobile.stationTransport.requestIdentityUnavailable',
+  );
   const cancel = () => {
     void invoke<void>('station_transport_cancel', {
       input: { requestId },

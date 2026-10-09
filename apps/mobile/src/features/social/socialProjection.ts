@@ -36,6 +36,30 @@ export interface SocialContact {
   readonly federationIds: readonly string[];
 }
 
+export function actorDisplayName(
+  displayName: string | undefined,
+  actorPtid: string,
+): string {
+  const candidate = displayName?.trim() ?? '';
+  if (candidate && !candidate.startsWith('ptid:')) return candidate;
+
+  const parts = actorPtid.split(':').filter(Boolean);
+  const handle = parts[0] === 'ptid' && parts[2] === 'actor'
+    ? parts.at(-2) ?? ''
+    : parts.length === 2 && parts[0] === 'ptid'
+      ? parts[1]
+      : '';
+  if (handle && !/^[a-f0-9]{32,}$/i.test(handle)) {
+    return `${handle.slice(0, 1).toUpperCase()}${handle.slice(1)}`;
+  }
+
+  const fallback = candidate || actorPtid.trim();
+  if (!fallback) return '';
+  return fallback.length > 22
+    ? `${fallback.slice(0, 10)}...${fallback.slice(-6)}`
+    : fallback;
+}
+
 export function projectAcceptedContacts(
   requests: readonly FriendRequest[],
   currentUserPtid: string | null,
@@ -54,8 +78,11 @@ export function projectAcceptedContacts(
     if (request.federationId.trim()) federationIds.add(request.federationId);
     contacts.set(peerPtid, {
       peerPtid,
-      peerName: (outgoing ? request.receiverDisplayName : request.senderDisplayName)
-        || existing?.peerName || peerPtid,
+      peerName: actorDisplayName(
+        (outgoing ? request.receiverDisplayName : request.senderDisplayName)
+          || existing?.peerName,
+        peerPtid,
+      ),
       peerAvatar: (outgoing ? request.receiverAvatar : request.senderAvatar)
         || existing?.peerAvatar || '',
       peerOnline: peerOnline[peerPtid] ?? false,
@@ -195,8 +222,16 @@ export function pruneTypingPeers(
 }
 
 function peerNameFromSession(session: FriendChatSession, currentUserPtid: string | null): string {
-  if (session.participantAPtid === currentUserPtid) return session.participantBDisplayName || session.participantBPtid;
-  return session.participantADisplayName || session.participantAPtid;
+  if (session.participantAPtid === currentUserPtid) {
+    return actorDisplayName(
+      session.participantBDisplayName,
+      session.participantBPtid,
+    );
+  }
+  return actorDisplayName(
+    session.participantADisplayName,
+    session.participantAPtid,
+  );
 }
 
 function peerAvatarFromSession(session: FriendChatSession, currentUserPtid: string | null): string {

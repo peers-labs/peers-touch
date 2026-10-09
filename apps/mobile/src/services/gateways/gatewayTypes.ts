@@ -234,7 +234,7 @@ function resolveGatewayOperation(
         operationId: 'actor_search',
         query: requiredString(query.q, 'q'),
       };
-    case 'GET /sub-federation/contexts':
+    case 'GET /sub-federation/federations':
       return { operationId: 'federation_contexts_list' };
     case 'GET /actor/federation/resolve':
       return {
@@ -310,7 +310,10 @@ function resolveGatewayOperation(
     case 'GET /api/v1/social/relationships/status':
       return {
         operationId: 'social_friendship_status',
-        target_ptid: requiredString(query.target_ptid, 'target_ptid'),
+        target_actor_ptid: requiredString(
+          query.target_actor_ptid,
+          'target_actor_ptid',
+        ),
       };
     case 'GET /api/v1/social/timeline':
       return {

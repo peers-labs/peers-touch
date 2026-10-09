@@ -42,6 +42,18 @@
 
   *, *::before, *::after { box-sizing: border-box; }
 
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
   /* ── Prototype frame ── */
   .mp-workbench {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
@@ -170,6 +182,7 @@
     height: 52px;
     border-radius: 13px;
     object-fit: cover;
+    filter: drop-shadow(0 7px 14px rgba(15,23,42,0.10));
   }
 
   .mp-launch-brand-copy {
@@ -330,9 +343,9 @@
   }
 
   .mp-station-input-row {
-    display: grid; grid-template-columns: minmax(0,1fr) 44px;
-    align-items: center; gap: 8px;
-    > .ant-btn { width: 44px; height: 44px; padding: 0; border-radius: var(--mp-r-md); }
+    display: grid; grid-template-columns: minmax(0,1fr); align-items: center; gap: 8px;
+    &:has(.mp-station-cancel-btn) { grid-template-columns: minmax(0,1fr) 52px; }
+    > .ant-btn { height: 44px; border-radius: var(--mp-r-md); }
   }
 
   .mp-station-cancel-btn {
@@ -343,55 +356,33 @@
   }
 
   .mp-station-url-control {
-    flex: 1; display: flex; align-items: center; min-width: 0; height: 50px;
-    padding: 4px 5px 4px 4px; border: 1px solid var(--mp-gray-200); border-radius: var(--mp-r-md);
-    background: #fff; overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s;
-    &:focus-within { border-color: var(--mp-primary); box-shadow: 0 0 0 3px rgba(99,102,241,0.10); }
-  }
-
-  .mp-station-protocol {
-    display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
-    min-width: 76px; height: 44px; gap: 4px; padding: 0 10px; border: none;
-    border-radius: var(--mp-r-sm); background: var(--mp-gray-100); font: inherit;
-    font-size: 12px; font-weight: 700; letter-spacing: 0; color: var(--mp-gray-700); cursor: pointer;
-    transition: background 0.12s;
-    &:active { background: var(--mp-gray-200); }
-  }
-
-  .mp-station-url-divider {
-    flex: 0 0 auto;
-    width: 1px;
-    height: 24px;
-    margin-inline: 4px 2px;
-    background: var(--mp-gray-200);
+    flex: 1; display: flex; align-items: center; min-width: 0; height: 52px; gap: 0;
+    padding: 0 0 0 4px; border: 1px solid var(--mp-gray-200); border-radius: var(--mp-r-md);
+    background: transparent; overflow: hidden; transition: border-color 0.15s;
+    &:focus-within { border-color: rgba(99,102,241,0.55); }
   }
 
   .mp-station-address {
-    flex: 1 1 auto; min-width: 0; height: 40px; padding: 0 6px;
+    flex: 1 1 auto; min-width: 0; height: 44px; padding: 0 10px;
     border: none; background: transparent; outline: none;
-    font: inherit; font-size: 14px; color: var(--mp-gray-800);
+    font: inherit; font-size: 16px; color: var(--mp-gray-800);
     &::placeholder { color: var(--mp-gray-400); }
   }
 
-  .mp-station-clear {
-    display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
-    width: 28px; height: 28px; border: none; background: transparent;
-    color: var(--mp-gray-400); cursor: pointer; padding: 0;
-    transition: color 0.12s;
-    &:active { color: var(--mp-gray-600); }
+  .mp-station-submit {
+    display: inline-flex; align-items: center; justify-content: center; flex: 0 0 44px;
+    width: 44px; height: 44px; padding: 0; border: 0;
+    border-left: 1px solid var(--mp-gray-200); border-radius: 0 var(--mp-r-sm) var(--mp-r-sm) 0;
+    background: transparent; color: var(--mp-primary);
+    &:disabled { color: var(--mp-gray-300); }
+    &:not(:disabled):active { background: var(--mp-primary-light); }
   }
 
-  .mp-station-add-inline {
-    display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
-    width: 44px; height: 44px; padding: 0; border: none;
-    border-radius: var(--mp-r-sm); background: var(--mp-primary); color: #fff;
-    cursor: pointer;
-
-    &:disabled {
-      background: var(--mp-gray-100);
-      color: var(--mp-gray-400);
-      cursor: default;
-    }
+  .mp-station-field-helper {
+    display: flex; align-items: center; min-width: 0; min-height: 16px; gap: 5px;
+    padding: 0 2px; color: var(--mp-warning); font-size: 11px; line-height: 16px;
+    white-space: nowrap;
+    span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   }
 
   .mp-station-list {
@@ -520,34 +511,6 @@
     color: var(--mp-primary) !important; font-weight: 600;
   }
 
-  .mp-station-protocol-options {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-
-    button {
-      display: grid;
-      grid-template-columns: 64px minmax(0, 1fr) 20px;
-      align-items: center;
-      min-height: 52px;
-      gap: 10px;
-      padding: 8px 12px;
-      border: 1px solid var(--mp-gray-200);
-      border-radius: var(--mp-r-md);
-      background: #fff;
-      color: var(--mp-gray-800);
-      font: inherit;
-      text-align: left;
-    }
-
-    button.active {
-      border-color: rgba(99,102,241,0.38);
-      background: var(--mp-primary-light);
-    }
-
-    span { font-weight: 800; }
-    small { color: var(--mp-gray-500); line-height: 1.4; }
-  }
 
   /* ── Auth gate ── */
   .mp-auth-screen {
@@ -662,6 +625,7 @@
       align-self: center; border-radius: var(--mp-r-md);
     }
   }
+
   @media (max-width: 360px) {
     .mp-runtime-notice-content {
       grid-template-columns: minmax(0,1fr);

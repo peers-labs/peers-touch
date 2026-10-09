@@ -279,6 +279,25 @@ fn generate_fresh_device_identity_for_device_from_seed(
     actor_identity_seed: &[u8; 32],
     actor_profile_version: u64,
 ) -> Result<FreshDeviceIdentityState, String> {
+    generate_device_identity_for_device_from_parts(
+        ptid,
+        device_id,
+        actor_identity_seed,
+        actor_profile_version,
+        None,
+    )
+}
+
+/// Build the device identity. When `device_signing_seed` is supplied the same
+/// device material is reconstructed (identity continuity); otherwise a fresh
+/// random device key is generated.
+pub fn generate_device_identity_for_device_from_parts(
+    ptid: &str,
+    device_id: &str,
+    actor_identity_seed: &[u8; 32],
+    actor_profile_version: u64,
+    device_signing_seed: Option<&[u8; 32]>,
+) -> Result<FreshDeviceIdentityState, String> {
     if ptid.trim().is_empty() || actor_profile_version == 0 {
         return Err("fresh messaging identity requires PTID and profile version".to_string());
     }
@@ -286,17 +305,38 @@ fn generate_fresh_device_identity_for_device_from_seed(
         return Err("fresh messaging identity requires canonical device_id".to_string());
     }
     let actor_identity = IdentityKeyPair::from_seed(actor_identity_seed);
-    let device_signing_key =
-        DeviceSigningKey::generate_cross_signed(&actor_identity, device_id, |device_key| {
-            build_device_certificate(
-                ptid,
-                device_id,
-                actor_profile_version,
-                &actor_identity,
-                device_key.as_bytes(),
-            )
-            .encode_to_vec()
-        });
+
+    let device_signing_key = match device_signing_seed {
+        Some(seed) => DeviceSigningKey::cross_signed_from_seed(
+            &actor_identity,
+            device_id,
+            seed,
+            |device_key| {
+                build_device_certificate(
+                    ptid,
+                    device_id,
+                    actor_profile_version,
+                    &actor_identity,
+                    device_key.as_bytes(),
+                )
+                .encode_to_vec()
+            },
+        ),
+        None => DeviceSigningKey::generate_cross_signed(
+            &actor_identity,
+            device_id,
+            |device_key| {
+                build_device_certificate(
+                    ptid,
+                    device_id,
+                    actor_profile_version,
+                    &actor_identity,
+                    device_key.as_bytes(),
+                )
+                .encode_to_vec()
+            },
+        ),
+    };
     let certificate = build_device_certificate(
         ptid,
         device_id,
