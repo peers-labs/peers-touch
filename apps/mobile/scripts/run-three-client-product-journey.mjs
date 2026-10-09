@@ -2009,10 +2009,11 @@ async function logoutDesktopClient(clientId, client) {
     'Confirm',
     'confirm-desktop-sign-out',
   );
+  await sleep(1000);
   const result = await waitForUi(
     clientId,
     client,
-    'Desktop entry after sign out',
+    'stable Desktop entry after sign out reload',
     `
       const loginCard = document.querySelector('[data-pt-login-card]');
       return {
