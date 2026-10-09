@@ -98,13 +98,13 @@ Non-knowledge files (`README.md`, `_TEMPLATE.md`, `glossary.md`) are exempt.
 
 ## 4. Lifecycle
 
-| Event | Action |
-|-------|--------|
-| Bug shipped, root cause identified | Add a `pitfall/` entry in the same PR as the fix |
-| Invariant discovered (e.g. during review) | Add an `invariant/` entry, link it from any subsystem `CONSTRAINTS.md` |
-| Same task done ≥ 2× with the same shape | Promote the procedure to a `playbook/` |
-| Knowledge becomes obsolete | Mark `status: superseded-by:<path>` and link to the replacement; never delete |
-| New term coined for the domain | Add to `glossary.md` |
+| Event                                     | Action                                                                        |
+| ----------------------------------------- | ----------------------------------------------------------------------------- |
+| Bug shipped, root cause identified        | Add a `pitfall/` entry in the same PR as the fix                              |
+| Invariant discovered (e.g. during review) | Add an `invariant/` entry, link it from any subsystem `CONSTRAINTS.md`        |
+| Same task done ≥ 2× with the same shape   | Promote the procedure to a `playbook/`                                        |
+| Knowledge becomes obsolete                | Mark `status: superseded-by:<path>` and link to the replacement; never delete |
+| New term coined for the domain            | Add to `glossary.md`                                                          |
 
 Promotion path:
 
@@ -174,6 +174,7 @@ Pick one based on intent:
 - [`invariants/desktop-vite-entry-readiness.md`](invariants/desktop-vite-entry-readiness.md) — Desktop startup and reuse require the Vite renderer entry module to respond successfully.
 - [`invariants/acceptance-suite-runtime-reuse.md`](invariants/acceptance-suite-runtime-reuse.md) — multi-scenario Acceptance provisions expensive resources once at Suite scope and keeps Scenarios attach-only.
 - [`invariants/desktop-sqlite-path-budget.md`](invariants/desktop-sqlite-path-budget.md) — Desktop database paths compact oversized identity-derived scopes without changing encryption identity or existing short paths.
+- [`invariants/mobile-user-identity-visual-consistency.md`](invariants/mobile-user-identity-visual-consistency.md) — Mobile user identities use one rounded-square avatar primitive and one canonical actor projection across Social surfaces.
 
 ### Pitfalls
 

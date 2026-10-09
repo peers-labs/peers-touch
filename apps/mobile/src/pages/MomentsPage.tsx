@@ -8,7 +8,7 @@
  *
  * Architecture:
  * - MomentComposer: draft save/restore via DraftRestorationPort
- * - MomentFeedItem: individual post card with reactions
+ * - MomentFeedItem: prototype-aligned feed article with reactions
  * - MomentCommentsSection: comment panel with reply support
  * - MomentsFeedStates: empty/loading/error/unavailable/policy states
  *
@@ -18,22 +18,13 @@
  * with runtime-owned projection, cursor pagination, draft recovery,
  * reaction/comment/reply flows, and bounded feed.
  *
- * W6B-sync: Visual hierarchy aligned with prototype MomentsPage.
- * Header uses ImagePlus toggle; feed uses Card-based layout.
+ * Visual ownership is split across the Moments module; this file only
+ * binds runtime projections and intents to the Home/Explore surface.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Modal, Typography } from 'antd';
-import {
-  ArrowLeft,
-  Check,
-  ImagePlus,
-  RefreshCw,
-  Search,
-  SlidersHorizontal,
-  UsersRound,
-  X,
-} from 'lucide-react';
+import { Button, Typography } from 'antd';
+import { ArrowLeft } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
 import { useMomentsSurfaceFixture } from '../acceptance/momentsSurfaceFixture';
@@ -41,9 +32,7 @@ import { BoundedList } from '../components/BoundedList';
 import { MobileNotice } from '../components/MobileNotice';
 import { useAuthStore } from '../features/auth/authStore';
 import { useSocialExperience } from '../features/social/useSocialExperience';
-import {
-  resolveMomentPolicyState,
-} from '../features/social/momentsFeedStore';
+import { resolveMomentPolicyState } from '../features/social/momentsFeedStore';
 import { isPublicSocialAudience } from '../features/social/socialAudience';
 import type { SocialIntentPort } from '../features/social/socialIntents';
 import {
@@ -53,9 +42,11 @@ import {
 } from '../gen/proto/domain/social/post_pb';
 import type { PrivateMomentReadProjection } from '../services/mobileCommands';
 
+import { ExploreSortSheet } from './moments/ExploreSortSheet';
 import { MomentComposer } from './moments/MomentComposer';
 import { MomentFeedItem } from './moments/MomentFeedItem';
 import { MomentCommentsSection } from './moments/MomentCommentsSection';
+import { MomentInlineComments } from './moments/MomentInlineComments';
 import { MomentsAcceptanceSurface } from './moments/MomentsAcceptanceSurface';
 import {
   MomentMediaOverlay,
@@ -69,39 +60,53 @@ import {
   MomentsPolicyViolation,
   MomentsUnavailable,
 } from './moments/MomentsFeedStates';
+import {
+  MomentsScopeHeader,
+  type MomentsFeedScope,
+} from './moments/MomentsScopeHeader';
+import './moments/Moments.css';
 
 const { Text } = Typography;
 const MOMENTS_FEED_WINDOW_SIZE = 100;
-type MomentsFeedScope = 'home' | 'explore';
 
 function momentPostKey(post: Post): string {
   return post.id;
 }
 
 type BlockingPrivateMomentProjection = PrivateMomentReadProjection & {
-  readonly state: 'RECOVERY_REQUIRED' | 'INTEGRITY_FAILURE' | 'DELETED_OR_REVOKED';
+  readonly state:
+    'RECOVERY_REQUIRED' | 'INTEGRITY_FAILURE' | 'DELETED_OR_REVOKED';
 };
 
 function isBlockingPrivateMoment(
   projection: PrivateMomentReadProjection,
 ): projection is BlockingPrivateMomentProjection {
-  return projection.state === 'RECOVERY_REQUIRED'
-    || projection.state === 'INTEGRITY_FAILURE'
-    || projection.state === 'DELETED_OR_REVOKED';
+  return (
+    projection.state === 'RECOVERY_REQUIRED' ||
+    projection.state === 'INTEGRITY_FAILURE' ||
+    projection.state === 'DELETED_OR_REVOKED'
+  );
 }
 
-function withValue(values: ReadonlySet<string>, value: string): ReadonlySet<string> {
+function withValue(
+  values: ReadonlySet<string>,
+  value: string,
+): ReadonlySet<string> {
   return new Set([...values, value]);
 }
 
-function withoutValue(values: ReadonlySet<string>, value: string): ReadonlySet<string> {
+function withoutValue(
+  values: ReadonlySet<string>,
+  value: string,
+): ReadonlySet<string> {
   const next = new Set(values);
   next.delete(value);
   return next;
 }
 
 function nativeErrorCode(error: unknown): string {
-  if (typeof error !== 'object' || error === null || !('code' in error)) return '';
+  if (typeof error !== 'object' || error === null || !('code' in error))
+    return '';
   return typeof error.code === 'string' ? error.code : '';
 }
 
@@ -185,7 +190,8 @@ function MomentsPageInner({
     posts: projectedFeedState?.posts ?? [],
     loadState: projectedFeedState?.loadState ?? 'idle',
     hasMore: projectedFeedState?.hasMore ?? true,
-    pageOutcome: projectedFeedState?.pageOutcome ?? TimelinePageOutcome.UNSPECIFIED,
+    pageOutcome:
+      projectedFeedState?.pageOutcome ?? TimelinePageOutcome.UNSPECIFIED,
     errorMessage: projectedFeedState?.errorMessage ?? '',
     failure: projectedFeedState?.failure ?? null,
     loadMore: () => void feedController?.loadMore(),
@@ -210,14 +216,19 @@ function MomentsPageInner({
   const [noticeError, setNoticeError] = useState('');
   const [showNewPost, setShowNewPost] = useState(false);
   const [showSort, setShowSort] = useState(false);
-  const [selectedThreadPostId, setSelectedThreadPostId] = useState<string | null>(null);
-  const [mediaSelection, setMediaSelection] = useState<MomentMediaSelection | null>(null);
+  const [selectedThreadPostId, setSelectedThreadPostId] = useState<
+    string | null
+  >(null);
+  const [mediaSelection, setMediaSelection] =
+    useState<MomentMediaSelection | null>(null);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
-  const [dismissedPrivateStates, setDismissedPrivateStates] =
-    useState<ReadonlySet<string>>(() => new Set());
+  const [dismissedPrivateStates, setDismissedPrivateStates] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
   const [privateActionKey, setPrivateActionKey] = useState<string | null>(null);
-  const [privateActionErrors, setPrivateActionErrors] =
-    useState<ReadonlySet<string>>(() => new Set());
+  const [privateActionErrors, setPrivateActionErrors] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
   const privateStateScopeKey = [
     projection?.scope?.stationPeerId ?? '',
     projection?.scope?.actorPtid ?? '',
@@ -227,28 +238,44 @@ function MomentsPageInner({
     (postId: string) => `${privateStateScopeKey}\u0000${postId}`,
     [privateStateScopeKey],
   );
-  const blockingPrivateStates = useMemo(() => (
-    Object.values(projection?.runtime.privateSocial?.postsById ?? {})
-      .filter(isBlockingPrivateMoment)
-  ), [projection?.runtime.privateSocial?.postsById]);
-  const blockingPrivateByPostId = useMemo(() => new Map(
-    blockingPrivateStates
-      .filter((privateProjection) => (
-        !dismissedPrivateStates.has(privateStateKey(privateProjection.postId))
-      ))
-      .map((privateProjection) => [privateProjection.postId, privateProjection]),
-  ), [blockingPrivateStates, dismissedPrivateStates, privateStateKey]);
+  const blockingPrivateStates = useMemo(
+    () =>
+      Object.values(projection?.runtime.privateSocial?.postsById ?? {}).filter(
+        isBlockingPrivateMoment,
+      ),
+    [projection?.runtime.privateSocial?.postsById],
+  );
+  const blockingPrivateByPostId = useMemo(
+    () =>
+      new Map(
+        blockingPrivateStates
+          .filter(
+            (privateProjection) =>
+              !dismissedPrivateStates.has(
+                privateStateKey(privateProjection.postId),
+              ),
+          )
+          .map((privateProjection) => [
+            privateProjection.postId,
+            privateProjection,
+          ]),
+      ),
+    [blockingPrivateStates, dismissedPrivateStates, privateStateKey],
+  );
   const orphanBlockingPrivateStates = useMemo(() => {
     const visiblePostIds = new Set(feed.posts.map((post) => post.id));
-    return [...blockingPrivateByPostId.values()]
-      .filter((privateProjection) => !visiblePostIds.has(privateProjection.postId));
+    return [...blockingPrivateByPostId.values()].filter(
+      (privateProjection) =>
+        privateProjection.state !== 'DELETED_OR_REVOKED' &&
+        !visiblePostIds.has(privateProjection.postId),
+    );
   }, [blockingPrivateByPostId, feed.posts]);
   useEffect(() => {
     if (!mediaSelection) return;
     const postId = mediaSelection.postId;
     if (
-      blockingPrivateByPostId.get(postId)?.state === 'DELETED_OR_REVOKED'
-      || !feed.posts.some((post) => post.id === postId)
+      blockingPrivateByPostId.get(postId)?.state === 'DELETED_OR_REVOKED' ||
+      !feed.posts.some((post) => post.id === postId)
     ) {
       setMediaSelection(null);
     }
@@ -257,23 +284,21 @@ function MomentsPageInner({
   // -- Projection availability check --
   const availability = projection?.runtime.availability;
   const isUnavailable = !availability?.available;
-  const unavailableReason = availability && !availability.available
-    ? availability.reason
-    : t('mobile.moments.unavailable.description');
+  const unavailableReason =
+    availability && !availability.available
+      ? availability.reason
+      : t('mobile.moments.unavailable.description');
 
   // -- Handlers --
 
-  const handlePublished = useCallback(
-    () => {
-      setShowNewPost(false);
-    },
-    [],
-  );
+  const handlePublished = useCallback(() => {
+    setShowNewPost(false);
+  }, []);
 
   const handleReact = useCallback(
     async (postId: string, reactionKind: number) => {
       if (!facade) return;
-      if (!await facade.intents.react(postId, reactionKind)) {
+      if (!(await facade.intents.react(postId, reactionKind))) {
         setNoticeError(t('mobile.moments.reaction.error'));
       }
     },
@@ -281,125 +306,139 @@ function MomentsPageInner({
   );
 
   const handleOpenComments = useCallback((postId: string) => {
-    setSelectedThreadPostId((current) => current === postId ? null : postId);
+    setSelectedThreadPostId((current) => (current === postId ? null : postId));
   }, []);
 
-  const handleDeleteMoment = useCallback((postId: string) => {
-    if (!facade || deletingPostId) return;
-    Modal.confirm({
-      title: t('mobile.moments.delete.confirmTitle'),
-      content: t('mobile.moments.delete.confirmDescription'),
-      okText: t('mobile.moments.delete.action'),
-      cancelText: t('common.action.cancel'),
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        setDeletingPostId(postId);
-        try {
-          if (!await facade.intents.deleteMoment(postId)) {
-            throw new Error('mobile.moments.delete.error');
-          }
-          setSelectedThreadPostId((current) => current === postId ? null : current);
-          setMediaSelection((current) => current?.postId === postId ? null : current);
-        } catch {
-          setNoticeError(t('mobile.moments.delete.error'));
+  const handleDeleteMoment = useCallback(
+    async (postId: string) => {
+      if (!facade || deletingPostId) return;
+      setDeletingPostId(postId);
+      try {
+        if (!(await facade.intents.deleteMoment(postId))) {
           throw new Error('mobile.moments.delete.error');
-        } finally {
-          setDeletingPostId(null);
         }
-      },
-    });
-  }, [deletingPostId, facade, t]);
+        setSelectedThreadPostId((current) =>
+          current === postId ? null : current,
+        );
+        setMediaSelection((current) =>
+          current?.postId === postId ? null : current,
+        );
+      } catch {
+        setNoticeError(t('mobile.moments.delete.error'));
+      } finally {
+        setDeletingPostId(null);
+      }
+    },
+    [deletingPostId, facade, t],
+  );
 
   const handleRetry = useCallback(() => {
     if (!facade) return;
     void retryMomentsRuntime(facade.intents);
   }, [facade]);
 
-  const handleExploreSort = useCallback((sort: TimelineSort) => {
-    if (!facade) return;
-    void facade.feeds.explore.setSort(sort);
-  }, [facade]);
+  const handleExploreSort = useCallback(
+    (sort: TimelineSort) => {
+      if (!facade) return;
+      void facade.feeds.explore.setSort(sort);
+    },
+    [facade],
+  );
 
-  const handlePrivateRecovery = useCallback(async (postId: string) => {
-    if (!facade || privateActionKey) return;
-    const actionKey = privateStateKey(postId);
-    setPrivateActionKey(actionKey);
-    setPrivateActionErrors((current) => withoutValue(current, actionKey));
-    try {
-      await facade.intents.recoverPrivate(postId);
-    } catch (error) {
-      if (nativeErrorCode(error) !== 'MOBILE_SECURE_INPUT_CANCELLED') {
-        setPrivateActionErrors((current) => withValue(current, actionKey));
+  const handlePrivateRecovery = useCallback(
+    async (postId: string) => {
+      if (!facade || privateActionKey) return;
+      const actionKey = privateStateKey(postId);
+      setPrivateActionKey(actionKey);
+      setPrivateActionErrors((current) => withoutValue(current, actionKey));
+      try {
+        await facade.intents.recoverPrivate(postId);
+      } catch (error) {
+        if (nativeErrorCode(error) !== 'MOBILE_SECURE_INPUT_CANCELLED') {
+          setPrivateActionErrors((current) => withValue(current, actionKey));
+        }
+      } finally {
+        setPrivateActionKey(null);
       }
-    } finally {
-      setPrivateActionKey(null);
-    }
-  }, [facade, privateActionKey, privateStateKey]);
+    },
+    [facade, privateActionKey, privateStateKey],
+  );
 
-  const handlePrivateVerificationRetry = useCallback(async (postId: string) => {
-    if (!facade || privateActionKey) return;
-    const actionKey = privateStateKey(postId);
-    setPrivateActionKey(actionKey);
-    setPrivateActionErrors((current) => withoutValue(current, actionKey));
-    try {
-      await facade.intents.readPrivate(postId);
-    } catch {
-      setPrivateActionErrors((current) => withValue(current, actionKey));
-    } finally {
-      setPrivateActionKey(null);
-    }
-  }, [facade, privateActionKey, privateStateKey]);
+  const handlePrivateVerificationRetry = useCallback(
+    async (postId: string) => {
+      if (!facade || privateActionKey) return;
+      const actionKey = privateStateKey(postId);
+      setPrivateActionKey(actionKey);
+      setPrivateActionErrors((current) => withoutValue(current, actionKey));
+      try {
+        await facade.intents.readPrivate(postId);
+      } catch {
+        setPrivateActionErrors((current) => withValue(current, actionKey));
+      } finally {
+        setPrivateActionKey(null);
+      }
+    },
+    [facade, privateActionKey, privateStateKey],
+  );
 
-  const handleOpenMedia = useCallback((
-    postId: string,
-    attachmentId: string,
-    kind: 'image' | 'video',
-    trigger: HTMLButtonElement,
-  ) => {
-    const post = feed.posts.find((candidate) => candidate.id === postId);
-    if (!post) return;
-    if (post.audience && !isPublicSocialAudience(post.audience)) {
-      const readProjection = projection?.runtime.privateSocial?.postsById[postId];
-      const media = readProjection?.content && 'media' in readProjection.content
-        ? readProjection.content.media.find((item) => (
-            item.attachmentId === attachmentId || item.objectId === attachmentId
-          ))
-        : undefined;
-      if (!media) {
-        setNoticeError(t('mobile.moments.media.previewFailed'));
+  const handleOpenMedia = useCallback(
+    (
+      postId: string,
+      attachmentId: string,
+      kind: 'image' | 'video',
+      trigger: HTMLButtonElement,
+    ) => {
+      const post = feed.posts.find((candidate) => candidate.id === postId);
+      if (!post) return;
+      if (post.audience && !isPublicSocialAudience(post.audience)) {
+        const readProjection =
+          projection?.runtime.privateSocial?.postsById[postId];
+        const media =
+          readProjection?.content && 'media' in readProjection.content
+            ? readProjection.content.media.find(
+                (item) =>
+                  item.attachmentId === attachmentId ||
+                  item.objectId === attachmentId,
+              )
+            : undefined;
+        if (!media) {
+          setNoticeError(t('mobile.moments.media.previewFailed'));
+          return;
+        }
+        setMediaSelection({
+          route: 'PRIVATE',
+          kind,
+          postId,
+          objectId: media.objectId,
+          returnFocus: trigger,
+        });
         return;
       }
+
+      const attachment =
+        post.content.case === 'imagePost'
+          ? post.content.value.images.find((item) => item.id === attachmentId)
+          : post.content.case === 'videoPost'
+            ? post.content.value.video
+            : undefined;
+      if (!attachment) return;
       setMediaSelection({
-        route: 'PRIVATE',
+        route: 'PUBLIC',
         kind,
         postId,
-        objectId: media.objectId,
+        attachment,
         returnFocus: trigger,
       });
-      return;
-    }
-
-    const attachment = post.content.case === 'imagePost'
-      ? post.content.value.images.find((item) => item.id === attachmentId)
-      : post.content.case === 'videoPost'
-        ? post.content.value.video
-        : undefined;
-    if (!attachment) return;
-    setMediaSelection({
-      route: 'PUBLIC',
-      kind,
-      postId,
-      attachment,
-      returnFocus: trigger,
-    });
-  }, [feed.posts, projection?.runtime.privateSocial?.postsById, t]);
+    },
+    [feed.posts, projection?.runtime.privateSocial?.postsById, t],
+  );
 
   const renderPrivateBlockingState = (
     privateProjection: BlockingPrivateMomentProjection,
     onBackAction = () => {
-      setDismissedPrivateStates((current) => (
-        withValue(current, privateStateKey(privateProjection.postId))
-      ));
+      setDismissedPrivateStates((current) =>
+        withValue(current, privateStateKey(privateProjection.postId)),
+      );
     },
   ) => (
     <PrivateMomentRecoveryState
@@ -408,9 +447,9 @@ function MomentsPageInner({
       error={privateActionErrors.has(privateStateKey(privateProjection.postId))}
       onBack={onBackAction}
       onRecover={() => void handlePrivateRecovery(privateProjection.postId)}
-      onRetryVerification={() => (
+      onRetryVerification={() =>
         void handlePrivateVerificationRetry(privateProjection.postId)
-      )}
+      }
     />
   );
 
@@ -427,9 +466,9 @@ function MomentsPageInner({
         className="page-container moments-page moments-route-detail"
         data-product-surface="moments.detail-comments"
       >
-        {facade && !isUnavailable && privateBlockingState
-          ? renderPrivateBlockingState(privateBlockingState, onBack)
-          : facade && !isUnavailable ? (
+        {facade && !isUnavailable && privateBlockingState ? (
+          renderPrivateBlockingState(privateBlockingState, onBack)
+        ) : facade && !isUnavailable ? (
           <MomentCommentsSection
             postId={routeDetailPostId}
             post={activePost}
@@ -437,7 +476,9 @@ function MomentsPageInner({
             intents={facade.intents}
             onReact={(postId, kind) => void handleReact(postId, kind)}
             onOpenAuthor={onOpenProfile}
-            reactionMutation={runtimeFeedState?.reactionMutations.get(routeDetailPostId)}
+            reactionMutation={runtimeFeedState?.reactionMutations.get(
+              routeDetailPostId,
+            )}
             policyState={resolveMomentPolicyState(
               runtimeFeedState?.feedExplanations.get(routeDetailPostId),
             )}
@@ -454,7 +495,9 @@ function MomentsPageInner({
               >
                 <ArrowLeft size={20} />
               </button>
-              <h1 className="header-title compact">{t('mobile.moments.detail.title')}</h1>
+              <h1 className="header-title compact">
+                {t('mobile.moments.detail.title')}
+              </h1>
             </header>
             <MomentsUnavailable
               reason={t('mobile.social.notAuthenticated')}
@@ -473,92 +516,20 @@ function MomentsPageInner({
       data-feed-scope={feedScope}
       data-product-surface="moments.feed"
     >
-      {/* Header: the confirmed prototype keeps Search, Circles and Compose together. */}
-      <header className="page-header">
-        <h1 className="header-title">{t('mobile.moments.title')}</h1>
-        <button
-          type="button"
-          className="header-action"
-          data-acceptance-id="social-search-open"
-          aria-label={t('mobile.social.search.title')}
-          onClick={onOpenSearch}
-        >
-          <Search size={20} />
-        </button>
-        <button
-          type="button"
-          className="header-action"
-          data-acceptance-id="social-circles-open"
-          aria-label={t('mobile.social.circles.title')}
-          onClick={onOpenCircles}
-        >
-          <UsersRound size={20} />
-        </button>
-        <button
-          type="button"
-          className="header-action"
-          data-acceptance-id="social-composer-open"
-          aria-label={t('mobile.moments.newPost')}
-          onClick={() => setShowNewPost(!showNewPost)}
-        >
-          <ImagePlus size={20} />
-        </button>
-      </header>
-
-      <div
-        className="moments-scope-segment"
-        role="tablist"
-        aria-label={t('mobile.moments.scope.label')}
-      >
-        {(['home', 'explore'] as const).map((scope) => (
-          <button
-            key={scope}
-            type="button"
-            role="tab"
-            data-acceptance-id={`social-feed-scope-${scope}`}
-            aria-selected={feedScope === scope}
-            className="moments-scope-control"
-            data-active={feedScope === scope}
-            onClick={() => setFeedScope(scope)}
-          >
-            {t(`mobile.moments.scope.${scope}`)}
-          </button>
-        ))}
-      </div>
-      <div className="moments-context-row">
-        <span>
-          {t(feedScope === 'home'
-            ? 'mobile.moments.scope.homeDescription'
-            : 'mobile.moments.scope.exploreDescription')}
-        </span>
-        {feedScope === 'explore' && facade ? (
-          <button
-            type="button"
-            data-acceptance-id="social-explore-sort-open"
-            onClick={() => setShowSort(true)}
-          >
-            <SlidersHorizontal size={13} />
-            {t(`mobile.moments.sort.${
-              facade.feeds.explore.sort() === TimelineSort.HOT ? 'hot' : 'recent'
-            }`)}
-          </button>
-        ) : (
-          <button
-            type="button"
-            data-acceptance-id="social-feed-refresh"
-            aria-label={t('mobile.moments.feed.refresh')}
-            aria-busy={feed.loadState === 'refreshing'}
-            disabled={isUnavailable || feed.loadState === 'refreshing'}
-            onClick={feed.refresh}
-          >
-            <RefreshCw size={13} />
-            {t('mobile.moments.sort.recent')}
-          </button>
-        )}
-      </div>
+      <MomentsScopeHeader
+        scope={feedScope}
+        exploreSort={facade?.feeds?.explore.sort() ?? TimelineSort.RECENT}
+        onChangeScope={setFeedScope}
+        onOpenSearch={onOpenSearch}
+        onOpenCircles={onOpenCircles}
+        onOpenComposer={() => setShowNewPost(true)}
+        onOpenSort={() => setShowSort(true)}
+      />
 
       {noticeError ? (
-        <MobileNotice onClose={() => setNoticeError('')}>{noticeError}</MobileNotice>
+        <MobileNotice onClose={() => setNoticeError('')}>
+          {noticeError}
+        </MobileNotice>
       ) : null}
 
       {/* Unavailable state: projection failure */}
@@ -571,43 +542,36 @@ function MomentsPageInner({
         <MomentComposer
           session={authSession}
           intents={facade.intents}
-          pickOnOpen
-          onTargetVisibilityChange={onImmersiveVisibilityChange}
           onPublished={handlePublished}
           onClose={() => setShowNewPost(false)}
         />
       )}
 
       {/* Feed states */}
-      {!isUnavailable && feed.loadState === 'loading' && feed.posts.length === 0 && (
-        <MomentsFeedLoading />
-      )}
+      {!isUnavailable &&
+        feed.loadState === 'loading' &&
+        feed.posts.length === 0 && <MomentsFeedLoading />}
 
-      {!isUnavailable && feed.loadState === 'error' && feed.posts.length === 0 && (
-        <MomentsFeedError message={feed.errorMessage} onRetry={feed.retryFailure} />
-      )}
+      {!isUnavailable &&
+        feed.loadState === 'error' &&
+        feed.posts.length === 0 && (
+          <MomentsFeedError
+            message={feed.errorMessage}
+            onRetry={feed.retryFailure}
+          />
+        )}
 
-      {!isUnavailable
-        && feed.loadState === 'idle'
-        && feed.posts.length === 0
-        && blockingPrivateByPostId.size === 0
-        && !isPolicyFilteredEmpty && (
-        <MomentsFeedEmpty />
-      )}
+      {!isUnavailable &&
+        feed.loadState === 'idle' &&
+        feed.posts.length === 0 &&
+        orphanBlockingPrivateStates.length === 0 &&
+        !isPolicyFilteredEmpty && <MomentsFeedEmpty />}
 
-      {!isUnavailable
-        && feed.loadState === 'idle'
-        && feed.posts.length === 0
-        && blockingPrivateByPostId.size === 0
-        && isPolicyFilteredEmpty && (
-        <MomentsPolicyViolation />
-      )}
-
-      {!isUnavailable && feed.posts.length > 0 && feed.loadState === 'refreshing' && (
-        <div className="moments-feed-loading-more" role="status">
-          <Text type="secondary">{t('mobile.moments.feed.loading')}</Text>
-        </div>
-      )}
+      {!isUnavailable &&
+        feed.loadState === 'idle' &&
+        feed.posts.length === 0 &&
+        orphanBlockingPrivateStates.length === 0 &&
+        isPolicyFilteredEmpty && <MomentsPolicyViolation />}
 
       {!isUnavailable && feed.posts.length > 0 && feed.failure && (
         <div
@@ -622,13 +586,16 @@ function MomentsPageInner({
         </div>
       )}
 
-      {!isUnavailable && feedScope === 'home' && orphanBlockingPrivateStates.map(
-        (privateProjection) => (
-          <div key={privateProjection.postId} data-scroll-anchor-id={privateProjection.postId}>
+      {!isUnavailable &&
+        feedScope === 'home' &&
+        orphanBlockingPrivateStates.map((privateProjection) => (
+          <div
+            key={privateProjection.postId}
+            data-scroll-anchor-id={privateProjection.postId}
+          >
             {renderPrivateBlockingState(privateProjection)}
           </div>
-        ),
-      )}
+        ))}
 
       {/* Feed list — prototype card layout */}
       {!isUnavailable && feed.posts.length > 0 && (
@@ -647,64 +614,87 @@ function MomentsPageInner({
               return (
                 <div className="moments-feed">
                   {windowedPosts.map((post) => (
-                    <div key={post.id} data-scroll-anchor-id={post.id}>
-                      {feedScope === 'home' && blockingPrivateByPostId.has(post.id)
-                        ? renderPrivateBlockingState(blockingPrivateByPostId.get(post.id)!)
-                        : (
-                          <MomentFeedItem
-                            post={post}
-                            onReact={(postId, kind) => void handleReact(postId, kind)}
-                            onOpenComments={handleOpenComments}
-                            onDelete={
-                              post.authorPtid === authSession?.actorRef.ptid
-                                ? handleDeleteMoment
-                                : undefined
-                            }
-                            deleteBusy={deletingPostId === post.id}
-                            onOpenAuthor={onOpenProfile}
-                            onOpenMedia={handleOpenMedia}
-                            reactionMutation={runtimeFeedState?.reactionMutations.get(post.id)}
-                            policyState={resolveMomentPolicyState(
-                              runtimeFeedState?.feedExplanations.get(post.id),
-                            )}
-                          />
-                        )}
-                      {selectedThreadPostId === post.id
-                        && !blockingPrivateByPostId.has(post.id)
-                        && facade && (
-                        <MomentCommentsSection
-                          postId={post.id}
+                    <div
+                      key={post.id}
+                      className="moments-feed-entry"
+                      data-scroll-anchor-id={post.id}
+                    >
+                      {feedScope === 'home' &&
+                      blockingPrivateByPostId.has(post.id) ? (
+                        renderPrivateBlockingState(
+                          blockingPrivateByPostId.get(post.id)!,
+                        )
+                      ) : (
+                        <MomentFeedItem
                           post={post}
-                          mode="inline"
-                          intents={facade.intents}
-                          onReact={(postId, kind) => void handleReact(postId, kind)}
+                          onReact={(postId, kind) =>
+                            void handleReact(postId, kind)
+                          }
+                          onOpenComments={handleOpenComments}
+                          onDelete={
+                            post.authorPtid === authSession?.actorRef.ptid
+                              ? handleDeleteMoment
+                              : undefined
+                          }
+                          deleteBusy={deletingPostId === post.id}
                           onOpenAuthor={onOpenProfile}
-                          reactionMutation={runtimeFeedState?.reactionMutations.get(post.id)}
+                          onOpenMedia={handleOpenMedia}
+                          reactionMutation={runtimeFeedState?.reactionMutations.get(
+                            post.id,
+                          )}
+                          explanation={runtimeFeedState?.feedExplanations.get(
+                            post.id,
+                          )}
                           policyState={resolveMomentPolicyState(
                             runtimeFeedState?.feedExplanations.get(post.id),
                           )}
-                        />
+                        >
+                          {selectedThreadPostId === post.id && facade && (
+                            <MomentInlineComments
+                              postId={post.id}
+                              post={post}
+                              intents={facade.intents}
+                              onReact={(postId, kind) =>
+                                void handleReact(postId, kind)
+                              }
+                              onOpenAuthor={onOpenProfile}
+                              reactionMutation={runtimeFeedState?.reactionMutations.get(
+                                post.id,
+                              )}
+                              policyState={resolveMomentPolicyState(
+                                runtimeFeedState?.feedExplanations.get(post.id),
+                              )}
+                            />
+                          )}
+                        </MomentFeedItem>
                       )}
                     </div>
                   ))}
 
-                  {isRetainedTailWindow && feed.hasMore && feed.loadState === 'idle' && (
-                    <div className="moments-feed-load-more">
-                      <Button type="text" onClick={feed.loadMore}>
-                        {t('mobile.moments.feed.loadMore')}
-                      </Button>
-                    </div>
-                  )}
+                  {isRetainedTailWindow &&
+                    feed.hasMore &&
+                    feed.loadState === 'idle' && (
+                      <div className="moments-feed-load-more">
+                        <Button type="text" onClick={feed.loadMore}>
+                          {t('mobile.moments.feed.loadMore')}
+                        </Button>
+                      </div>
+                    )}
 
-                  {isRetainedTailWindow && feed.loadState === 'loading-more' && (
-                    <div className="moments-feed-loading-more">
-                      <Text type="secondary">{t('mobile.moments.feed.loadingMore')}</Text>
-                    </div>
-                  )}
+                  {isRetainedTailWindow &&
+                    feed.loadState === 'loading-more' && (
+                      <div className="moments-feed-loading-more">
+                        <Text type="secondary">
+                          {t('mobile.moments.feed.loadingMore')}
+                        </Text>
+                      </div>
+                    )}
 
                   {isRetainedTailWindow && !feed.hasMore && (
                     <div className="moments-feed-end">
-                      <Text type="secondary">{t('mobile.moments.feed.noMore')}</Text>
+                      <Text type="secondary">
+                        {t('mobile.moments.feed.noMore')}
+                      </Text>
                     </div>
                   )}
                 </div>
@@ -720,48 +710,12 @@ function MomentsPageInner({
           onClose={() => setMediaSelection(null)}
         />
       )}
-      {showSort && facade && (
-        <div className="moments-sheet-backdrop moments-sort-backdrop" role="presentation">
-          <section
-            className="moments-bottom-sheet moments-sort-sheet"
-            role="dialog"
-            aria-modal="true"
-            aria-label={t('mobile.moments.sort.label')}
-          >
-            <div className="moments-sheet-handle" />
-            <header className="moments-sheet-header">
-              <button
-                type="button"
-                aria-label={t('common.action.close')}
-                onClick={() => setShowSort(false)}
-              >
-                <X size={20} />
-              </button>
-              <h2>{t('mobile.moments.sort.label')}</h2>
-              <span />
-            </header>
-            {([
-              [TimelineSort.RECENT, 'recent'],
-              [TimelineSort.HOT, 'hot'],
-            ] as const).map(([sort, label]) => (
-              <button
-                key={label}
-                type="button"
-                className="moments-choice-row"
-                data-acceptance-id={`social-explore-sort-${label}`}
-                onClick={() => {
-                  handleExploreSort(sort);
-                  setShowSort(false);
-                }}
-              >
-                <span>
-                  <strong>{t(`mobile.moments.sort.${label}`)}</strong>
-                </span>
-                {facade.feeds.explore.sort() === sort ? <Check size={18} /> : null}
-              </button>
-            ))}
-          </section>
-        </div>
+      {showSort && facade?.feeds?.explore && (
+        <ExploreSortSheet
+          value={facade.feeds.explore.sort()}
+          onChange={handleExploreSort}
+          onClose={() => setShowSort(false)}
+        />
       )}
     </div>
   );

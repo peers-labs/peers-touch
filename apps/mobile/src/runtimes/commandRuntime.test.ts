@@ -40,7 +40,7 @@ describe('commandRuntime draft recovery', () => {
   });
 
   it('revalidates and delivers every restored draft through its typed consumer', async () => {
-    const draft = momentDraft();
+    const draft = momentDraft('live-consumer');
     const consumer = vi.fn();
     const unregister = registerDraftRestorationConsumer(
       draft.stationPeerId,
@@ -66,13 +66,13 @@ describe('commandRuntime draft recovery', () => {
         stationPeerId: 'station-a',
         actorPtid: 'ptid:alice',
         surfaceKind: MobileDraftSurfaceKind.MOMENT_COMPOSER,
-        targetId: 'compose',
+        targetId: 'live-consumer',
       },
     });
   });
 
   it('delivers a restored draft when its non-alive composer mounts later', async () => {
-    const draft = momentDraft();
+    const draft = momentDraft('deferred-consumer');
     const consumer = vi.fn();
     invokeMock.mockResolvedValue(
       Array.from(toBinary(MobileDraftEnvelopeV2Schema, draft)),
@@ -142,9 +142,12 @@ describe('commandRuntime draft recovery', () => {
     expect(draftsRequiringRestoreDecision([candidate])).toEqual([]);
   });
 
-  it('leaves draft recovery with the currently mounted editor', () => {
+  it('keeps a claimed draft out of crash recovery after the editor closes', async () => {
     const draft = momentDraft('mounted-composer');
     const candidate = projection(draft);
+    invokeMock.mockResolvedValue(
+      Array.from(toBinary(MobileDraftEnvelopeV2Schema, draft)),
+    );
     const unregister = registerDraftRestorationConsumer(
       draft.stationPeerId,
       draft.actorPtid,
@@ -155,10 +158,16 @@ describe('commandRuntime draft recovery', () => {
 
     try {
       expect(draftsRequiringRestoreDecision([candidate])).toEqual([]);
+      await getDraftRestorationPort().load(
+        draft.stationPeerId,
+        draft.actorPtid,
+        draft.surfaceKind,
+        draft.targetId,
+      );
     } finally {
       unregister();
     }
-    expect(draftsRequiringRestoreDecision([candidate])).toEqual([candidate]);
+    expect(draftsRequiringRestoreDecision([candidate])).toEqual([]);
   });
 
   it('propagates consumer delivery failure instead of fabricating no draft', async () => {

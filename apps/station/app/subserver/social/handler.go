@@ -1356,7 +1356,8 @@ func (s *subServer) handleReact(ctx context.Context, req *model.ReactToPostReque
 	if req.PostId == "" {
 		return nil, server.BadRequest("post_id is required")
 	}
-	if req.Kind == model.ReactionKind_REACTION_UNSPECIFIED {
+	if req.Kind == model.ReactionKind_REACTION_UNSPECIFIED ||
+		model.ReactionKind_name[int32(req.Kind)] == "" {
 		return nil, server.BadRequest("reaction kind is required")
 	}
 	if _, public := canonicalPublicSocialID(req.PostId); !public &&
@@ -1406,7 +1407,8 @@ func (s *subServer) handleUnreact(ctx context.Context, req *model.UnreactToPostR
 	if req.PostId == "" {
 		return nil, server.BadRequest("post_id is required")
 	}
-	if req.Kind == model.ReactionKind_REACTION_UNSPECIFIED {
+	if req.Kind == model.ReactionKind_REACTION_UNSPECIFIED ||
+		model.ReactionKind_name[int32(req.Kind)] == "" {
 		return nil, server.BadRequest("reaction kind is required")
 	}
 	if _, public := canonicalPublicSocialID(req.PostId); !public &&

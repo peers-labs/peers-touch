@@ -21,6 +21,25 @@ export const PRIVATE_MOMENTS_COMMANDS = {
   retryReaction: 'social_private_reaction_retry',
 } as const;
 
+const SUPPORTED_REACTION_KINDS = new Set<ReactionKind>([
+  ReactionKind.REACTION_LIKE,
+  ReactionKind.REACTION_LOVE,
+  ReactionKind.REACTION_LAUGH,
+  ReactionKind.REACTION_WOW,
+  ReactionKind.REACTION_CELEBRATE,
+  ReactionKind.REACTION_CLAP,
+  ReactionKind.REACTION_FIRE,
+  ReactionKind.REACTION_THANKS,
+  ReactionKind.REACTION_SAD,
+  ReactionKind.REACTION_ANGRY,
+  ReactionKind.REACTION_THINKING,
+  ReactionKind.REACTION_HUNDRED,
+  ReactionKind.REACTION_EYES,
+  ReactionKind.REACTION_STRONG,
+  ReactionKind.REACTION_CHECK,
+  ReactionKind.REACTION_HEART_HANDS,
+]);
+
 export type PrivateMomentsPlatform = 'native' | 'unknown';
 export type PrivateAudienceKind =
   | 'FRIENDS'
@@ -534,7 +553,7 @@ function generationField(value: unknown): string {
 }
 
 function normalizeReactionSummaries(value: unknown): ReactionSummary[] {
-  if (!Array.isArray(value) || value.length > 5) {
+  if (!Array.isArray(value) || value.length > SUPPORTED_REACTION_KINDS.size) {
     throw privateProjectionContractError('private Reaction summaries are malformed');
   }
   const seen = new Set<ReactionKind>();
@@ -548,13 +567,7 @@ function normalizeReactionSummaries(value: unknown): ReactionSummary[] {
     if (
       kind === undefined
       || kind === ReactionKind.REACTION_UNSPECIFIED
-      || ![
-        ReactionKind.REACTION_LIKE,
-        ReactionKind.REACTION_LOVE,
-        ReactionKind.REACTION_LAUGH,
-        ReactionKind.REACTION_WOW,
-        ReactionKind.REACTION_CELEBRATE,
-      ].includes(kind)
+      || !SUPPORTED_REACTION_KINDS.has(kind)
       || seen.has(kind)
       || !count
       || typeof reactedByViewer !== 'boolean'

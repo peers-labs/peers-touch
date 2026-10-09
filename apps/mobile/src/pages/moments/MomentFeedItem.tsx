@@ -1,64 +1,57 @@
-/**
- * MomentFeedItem.tsx — Single moment card in the feed
- *
- * Pure renderer that displays a Post with author info, content,
- * reaction summary, reaction picker, and media triggers. Visual hierarchy aligned with the prototype
- * MomentsPage card layout (antd Card borderless, Avatar 42 px,
- * reaction tag row, 5-emoji picker, inline comment input).
- *
- * All interactions (react, comment, reply) dispatch through
- * callbacks to the parent.
- *
- * W6B: Initial implementation with reaction, comment count,
- * and policy/block state rendering.
- * W6B-sync: Restructured to prototype card layout.
- */
-
-import { useCallback, useMemo, useState } from 'react';
-import { Card, Typography } from 'antd';
 import {
-  BarChart3,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
+import { Typography } from 'antd';
+import {
+  Globe2,
   Heart,
-  Link as LinkIcon,
-  MapPin,
   MessageCircle,
   MoreHorizontal,
-  Play,
-  Repeat2,
   Share2,
   ShieldAlert,
-  Trash2,
-  X,
+  ShieldCheck,
 } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
-import { MobileAvatar } from '../../components/MobileAvatar';
+import { SocialActorAvatar } from '../../features/social/SocialActorAvatar';
 import type {
   MomentPolicyState,
   ReactionMutationState,
 } from '../../features/social/momentsFeedStore';
-import type { Post } from '../../gen/proto/domain/social/post_pb';
-import { MomentImage } from './MomentImage';
+import {
+  ActivitySource_Kind,
+  Audience_Kind,
+  ReactionKind,
+  RelationshipReason_Kind,
+  type FeedObjectExplanation,
+  type Post,
+} from '../../gen/proto/domain/social/post_pb';
+import { MomentActionsSheet } from './MomentActionsSheet';
+import { MomentContent, type OpenMomentMedia } from './MomentContent';
 
 const { Text } = Typography;
+const PRIMARY_REACTION_KIND = ReactionKind.REACTION_LOVE;
+const PRIMARY_REACTION_EMOJI = '\u{2764}\u{FE0F}';
 
-// ---------------------------------------------------------------------------
-// Reaction emoji map (matches prototype REACTION_EMOJI)
-// ---------------------------------------------------------------------------
-
-const REACTION_EMOJI: Record<number, string> = {
-  1: '\u{1F44D}', // like (thumbs up)
-  2: '\u{2764}\u{FE0F}',  // love (heart)
-  3: '\u{1F602}', // laugh
-  4: '\u{1F62E}', // wow
-  5: '\u{1F389}', // celebrate
-};
-
-const REACTION_KINDS: number[] = [1, 2, 3, 4, 5];
-
-function reactionStatusKey(
-  status: ReactionMutationState['status'],
+function formatRelativeTime(
+  timestampMs: number,
+  t: (key: string, params?: Record<string, string | number>) => string,
 ): string {
+  const diffMs = Date.now() - timestampMs;
+  const diffMinutes = Math.floor(diffMs / 60_000);
+  const diffHours = Math.floor(diffMs / 3_600_000);
+  const diffDays = Math.floor(diffMs / 86_400_000);
+  if (diffMinutes < 1) return t('mobile.moments.time.justNow');
+  if (diffMinutes < 60)
+    return t('mobile.moments.time.minutesAgo', { count: diffMinutes });
+  if (diffHours < 24)
+    return t('mobile.moments.time.hoursAgo', { count: diffHours });
+  return t('mobile.moments.time.daysAgo', { count: diffDays });
+}
+
+function reactionStatusKey(status: ReactionMutationState['status']): string {
   switch (status) {
     case 'pending':
       return 'mobile.moments.reaction.pending';
@@ -73,49 +66,71 @@ function reactionStatusKey(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Time formatting
-// ---------------------------------------------------------------------------
-
-function formatRelativeTime(
-  timestampMs: number,
-  t: (key: string, params?: Record<string, string | number>) => string,
-): string {
-  const now = Date.now();
-  const diffMs = now - timestampMs;
-  const diffMinutes = Math.floor(diffMs / 60_000);
-  const diffHours = Math.floor(diffMs / 3_600_000);
-  const diffDays = Math.floor(diffMs / 86_400_000);
-
-  if (diffMinutes < 1) return t('mobile.moments.time.justNow');
-  if (diffMinutes < 60) return t('mobile.moments.time.minutesAgo', { count: diffMinutes });
-  if (diffHours < 24) return t('mobile.moments.time.hoursAgo', { count: diffHours });
-  return t('mobile.moments.time.daysAgo', { count: diffDays });
+function audienceLabelKey(kind: Audience_Kind): string {
+  switch (kind) {
+    case Audience_Kind.PUBLIC:
+      return 'mobile.moments.audience.public';
+    case Audience_Kind.FOLLOWERS:
+      return 'mobile.moments.audience.followers';
+    case Audience_Kind.CIRCLE:
+      return 'mobile.moments.audience.circle';
+    case Audience_Kind.GROUP:
+      return 'mobile.moments.audience.group';
+    case Audience_Kind.SELF:
+      return 'mobile.moments.audience.self';
+    case Audience_Kind.CUSTOM_ALLOW:
+      return 'mobile.moments.audience.customAllow';
+    case Audience_Kind.CUSTOM_DENY:
+      return 'mobile.moments.audience.customDeny';
+    case Audience_Kind.FRIENDS:
+      return 'mobile.moments.audience.friends';
+    default:
+      return 'mobile.moments.audience.public';
+  }
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+function relationshipReasonLabelKey(
+  kind: RelationshipReason_Kind,
+): string | null {
+  switch (kind) {
+    case RelationshipReason_Kind.RELATIONSHIP_REASON_SELF:
+      return 'mobile.moments.reason.self';
+    case RelationshipReason_Kind.RELATIONSHIP_REASON_FOLLOWING:
+      return 'mobile.moments.reason.following';
+    case RelationshipReason_Kind.RELATIONSHIP_REASON_FOLLOWER:
+      return 'mobile.moments.reason.follower';
+    case RelationshipReason_Kind.RELATIONSHIP_REASON_MUTUAL:
+      return 'mobile.moments.reason.mutual';
+    case RelationshipReason_Kind.RELATIONSHIP_REASON_CIRCLE:
+      return 'mobile.moments.reason.circle';
+    case RelationshipReason_Kind.RELATIONSHIP_REASON_MENTIONED:
+      return 'mobile.moments.reason.mentioned';
+    case RelationshipReason_Kind.RELATIONSHIP_REASON_PUBLIC_FEDERATED:
+      return 'mobile.moments.reason.publicFederated';
+    case RelationshipReason_Kind.RELATIONSHIP_REASON_PROFILE_VIEW:
+      return 'mobile.moments.reason.profileView';
+    default:
+      return null;
+  }
+}
 
 interface MomentFeedItemProps {
   readonly post: Post;
+  readonly children?: ReactNode;
   readonly onReact: (postId: string, reactionKind: number) => void;
   readonly onOpenComments: (postId: string) => void;
   readonly onDelete?: (postId: string) => void;
   readonly deleteBusy?: boolean;
   readonly onOpenAuthor?: (actorPtid: string, federationId: string) => void;
-  readonly onOpenMedia?: (
-    postId: string,
-    attachmentId: string,
-    kind: 'image' | 'video',
-    trigger: HTMLButtonElement,
-  ) => void;
+  readonly onOpenMedia?: OpenMomentMedia;
   readonly reactionMutation?: ReactionMutationState;
+  readonly explanation?: FeedObjectExplanation;
   readonly policyState?: MomentPolicyState;
 }
 
 export function MomentFeedItem({
   post,
+  children,
   onReact,
   onOpenComments,
   onDelete,
@@ -123,283 +138,125 @@ export function MomentFeedItem({
   onOpenAuthor,
   onOpenMedia,
   reactionMutation,
+  explanation,
   policyState = 'visible',
 }: MomentFeedItemProps) {
   const { t } = useMobileI18n();
-
-  const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [showActions, setShowActions] = useState(false);
+  const createdAtMs = post.createdAt
+    ? Number(post.createdAt.seconds) * 1000
+    : 0;
+  const timeLabel = createdAtMs > 0 ? formatRelativeTime(createdAtMs, t) : '';
+  const authorName =
+    post.author?.displayName ||
+    post.author?.username ||
+    post.authorPtid ||
+    t('mobile.moments.time.justNow');
+  const source = explanation?.source;
+  const sourceLabel =
+    source?.stationDomain || post.author?.homeStationDomain || '';
+  const sourceAndTime = [sourceLabel, timeLabel].filter(Boolean).join(' · ');
+  const isRemote =
+    source?.kind === ActivitySource_Kind.ACTIVITY_SOURCE_REMOTE ||
+    Boolean(post.author?.homeStationDomain);
+  const audienceKind =
+    explanation?.audienceExplanation?.kind ??
+    post.audience?.kind ??
+    Audience_Kind.PUBLIC;
+  const reasonKey = explanation?.relationshipReason
+    ? relationshipReasonLabelKey(explanation.relationshipReason.kind)
+    : null;
+  const trustLabel = [
+    t(audienceLabelKey(audienceKind)),
+    reasonKey ? t(reasonKey) : sourceLabel,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
-  const createdAtMs = useMemo(() => {
-    if (!post.createdAt) return 0;
-    return Number(post.createdAt.seconds) * 1000;
-  }, [post.createdAt]);
-
-  const timeLabel = createdAtMs > 0
-    ? formatRelativeTime(createdAtMs, t)
-    : '';
-
-  const authorName = post.author?.displayName || post.author?.username || t('mobile.moments.time.justNow');
-
-  // Extract text content from post content union
-  const textContent = useMemo(() => {
-    if (post.content.case === 'textPost') return post.content.value.text;
-    if (post.content.case === 'imagePost') return post.content.value.text;
-    if (post.content.case === 'videoPost') return post.content.value.text;
-    if (post.content.case === 'linkPost') return post.content.value.text;
-    if (post.content.case === 'pollPost') return post.content.value.text;
-    if (post.content.case === 'repostPost') return post.content.value.comment;
-    if (post.content.case === 'locationPost') return post.content.value.text;
-    return '';
-  }, [post.content]);
-
-  // Extract images if image post
-  const images = useMemo(() => {
-    if (post.content.case === 'imagePost') {
-      return post.content.value.images ?? [];
-    }
-    return [];
-  }, [post.content]);
-  const contentKind = post.content.case ?? 'unknown';
-
-  // Reaction state — build per-kind counts from the reactions array
-  const reactionCounts = useMemo(() => {
-    const counts: Record<number, number> = {};
-    let viewerReactionKind: number | undefined;
-    for (const r of post.reactions) {
-      const count = Number(r.count ?? 0);
-      if (count > 0) counts[r.kind] = count;
-      if (r.reactedByViewer) viewerReactionKind = r.kind;
-    }
-    return { counts, viewerReactionKind };
-  }, [post.reactions]);
-
-  const totalReactions = useMemo(
-    () => Object.values(reactionCounts.counts).reduce((sum, n) => sum + n, 0),
-    [reactionCounts.counts],
+  const heartReaction = useMemo(
+    () => post.reactions.find(({ kind }) => kind === PRIMARY_REACTION_KIND),
+    [post.reactions],
   );
-  const reactionBusy = reactionMutation?.status === 'pending'
-    || reactionMutation?.status === 'retrying'
-    || reactionMutation?.status === 'unknown-outcome';
-
+  const heartCount = Number(heartReaction?.count ?? 0);
+  const viewerReacted = heartReaction?.reactedByViewer ?? false;
+  const reactionBusy =
+    reactionMutation?.status === 'pending' ||
+    reactionMutation?.status === 'retrying' ||
+    reactionMutation?.status === 'unknown-outcome';
   const commentCount = Number(post.stats?.commentsCount ?? 0);
 
-  // Handlers
-  const toggleReactionPicker = useCallback(() => {
-    setShowReactionPicker((prev) => !prev);
-  }, []);
-
-  const handlePickReaction = useCallback(
-    (kind: number) => {
-      onReact(post.id, kind);
-      setShowReactionPicker(false);
-    },
-    [post.id, onReact],
-  );
-
-  // Policy / block states
   if (policyState !== 'visible') {
     const blocked = policyState === 'blocked';
     return (
-      <Card
-        className="moments-card moments-card--policy"
+      <article
+        className="moments-article moments-article--policy"
         data-product-surface="moments.policy-hidden"
-        variant="borderless"
       >
         <div className="moments-policy-inline" role="alert">
           <ShieldAlert size={24} strokeWidth={1.5} />
           <Text strong>
-            {blocked
-              ? t('mobile.moments.policy.blocked')
-              : t('mobile.moments.policy.violation')
-            }
+            {t(
+              blocked
+                ? 'mobile.moments.policy.blocked'
+                : 'mobile.moments.policy.violation',
+            )}
           </Text>
           <Text type="secondary">
-            {blocked
-              ? t('mobile.moments.policy.blockedHint')
-              : t('mobile.moments.policy.violationHint')
-            }
+            {t(
+              blocked
+                ? 'mobile.moments.policy.blockedHint'
+                : 'mobile.moments.policy.violationHint',
+            )}
           </Text>
         </div>
-      </Card>
+      </article>
     );
   }
 
   if (post.isDeleted) {
     return (
-      <Card className="moments-card" variant="borderless">
+      <article className="moments-article">
         <Text type="secondary">{t('mobile.moments.detail.deleted')}</Text>
-      </Card>
+      </article>
     );
   }
 
-  // Image grid renderer
-  const renderImageGrid = () => {
-    if (images.length === 0) return null;
-    if (images.length === 1) {
-      return (
-        <button
-          type="button"
-          className="moments-image-single moments-media-trigger"
-          data-acceptance-id="social-media-open"
-          data-post-id={post.id}
-          onClick={(event) => onOpenMedia?.(
-            post.id,
-            images[0].id,
-            'image',
-            event.currentTarget,
-          )}
-          aria-label={t('mobile.moments.media.open')}
-        >
-          <MomentImage
-            attachment={images[0]}
-            alt={images[0].altText || ''}
-          />
-        </button>
-      );
-    }
-    const gridClass = images.length === 2 ? 'moments-image-grid-2' : 'moments-image-grid-3';
-    return (
-      <div className={gridClass}>
-        {images.map((img, idx) => (
-          <button
-            type="button"
-            className="moments-grid-image moments-media-trigger"
-            key={img.id || idx}
-            data-acceptance-id="social-media-open"
-            data-post-id={post.id}
-            onClick={(event) => onOpenMedia?.(
-              post.id,
-              img.id,
-              'image',
-              event.currentTarget,
-            )}
-            aria-label={t('mobile.moments.media.open')}
-          >
-            <MomentImage
-              attachment={img}
-              alt={img.altText || ''}
-            />
-          </button>
-        ))}
-      </div>
-    );
-  };
-
-  const renderStructuredContent = () => {
-    switch (post.content.case) {
-      case 'videoPost': {
-        const video = post.content.value.video;
-        return (
-          <button
-            type="button"
-            className="moments-content-detail moments-content-video moments-media-trigger"
-            data-acceptance-id="social-media-open"
-            data-post-id={post.id}
-            onClick={(event) => video && onOpenMedia?.(
-              post.id,
-              video.id,
-              'video',
-              event.currentTarget,
-            )}
-            disabled={!video}
-          >
-            <Play size={18} aria-hidden="true" />
-            <span>
-              {video
-                ? `${video.width || 0}\u00d7${video.height || 0} \u00b7 ${video.durationSeconds || 0}s`
-                : t('mobile.moments.content.video')}
-            </span>
-          </button>
-        );
-      }
-      case 'linkPost': {
-        const link = post.content.value.link;
-        return link ? (
-          <div className="moments-content-detail moments-content-link">
-            <LinkIcon size={18} aria-hidden="true" />
-            <div>
-              <strong>{link.title || link.url}</strong>
-              <span>{link.url}</span>
-            </div>
-          </div>
-        ) : null;
-      }
-      case 'pollPost': {
-        const poll = post.content.value.poll;
-        return poll ? (
-          <div className="moments-content-detail moments-content-poll">
-            <BarChart3 size={18} aria-hidden="true" />
-            <div>
-              {poll.options.map((option, index) => (
-                <div key={`${index}:${option.text}`} className="moments-poll-option">
-                  {option.text}
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null;
-      }
-      case 'repostPost':
-        return (
-          <div className="moments-content-detail moments-content-repost">
-            <Repeat2 size={18} aria-hidden="true" />
-            <span>{post.content.value.originalPostId}</span>
-          </div>
-        );
-      case 'locationPost': {
-        const location = post.content.value.location;
-        return location ? (
-          <div className="moments-content-detail moments-content-location">
-            <MapPin size={18} aria-hidden="true" />
-            <div>
-              <strong>{location.name}</strong>
-              <span>{location.address}</span>
-            </div>
-          </div>
-        ) : null;
-      }
-      case 'textPost':
-      case 'imagePost':
-      default:
-        return null;
-    }
-  };
-
   return (
-    <Card
-      className="moments-card"
-      variant="borderless"
+    <article
+      className="moments-article"
       data-acceptance-id="social-moment-card"
       data-post-id={post.id}
-      data-moment-content-kind={contentKind}
+      data-moment-content-kind={post.content.case ?? 'unknown'}
     >
-      {/* Author header — Avatar 42px + name + time */}
-      <div className="moments-card-header">
+      <div className="moments-author-row">
         <button
           type="button"
-          className="moments-author-trigger"
+          className="moments-author"
           data-acceptance-id="social-moment-author"
-          onClick={() => onOpenAuthor?.(
-            post.authorPtid || post.author?.id || '',
-            post.author?.homeStationDomain || '',
-          )}
+          onClick={() =>
+            onOpenAuthor?.(
+              post.authorPtid || post.author?.id || '',
+              post.author?.homeStationDomain || '',
+            )
+          }
           disabled={!onOpenAuthor}
         >
-          <MobileAvatar
-            src={post.author?.avatarUrl}
+          <SocialActorAvatar
+            actorPtid={post.authorPtid || post.author?.id || ''}
+            avatar={post.author?.avatarUrl}
+            displayName={authorName}
             size={42}
-            style={{ borderRadius: 14 }}
+            username={post.author?.username}
           />
-          <div className="moments-card-author">
-            <Text strong className="moments-card-name">{authorName}</Text>
-            <Text type="secondary" className="moments-card-time">{timeLabel}</Text>
-          </div>
+          <span>
+            <strong>{authorName}</strong>
+            {sourceAndTime ? <small>{sourceAndTime}</small> : null}
+          </span>
         </button>
         {onDelete ? (
           <button
             type="button"
-            className="moments-card-more"
+            className="moments-more"
             aria-label={t('mobile.moments.actions')}
             onClick={() => setShowActions(true)}
           >
@@ -408,50 +265,49 @@ export function MomentFeedItem({
         ) : null}
       </div>
 
-      {/* Text content */}
-      {textContent && (
-        <p className="moments-card-text">{textContent}</p>
-      )}
+      <MomentContent post={post} onOpenMedia={onOpenMedia} />
 
-      {/* Image grid (1/2/3+ layout) */}
-      {renderImageGrid()}
-      {renderStructuredContent()}
+      <div className="moments-trust-meta">
+        {isRemote ? <Globe2 size={13} /> : <ShieldCheck size={13} />}
+        <span>{trustLabel}</span>
+      </div>
 
-      {/* Reaction summary tags */}
-      {totalReactions > 0 && (
-        <div className="moments-reaction-summary">
-          {REACTION_KINDS.map((kind) => {
-            const count = reactionCounts.counts[kind] ?? 0;
-            if (count === 0) return null;
-            return (
-              <span
-                key={kind}
-                className={`moments-reaction-tag ${reactionCounts.viewerReactionKind === kind ? 'mine' : ''}`}
-              >
-                {REACTION_EMOJI[kind]} {count}
-              </span>
-            );
-          })}
+      <div
+        className="moments-actions"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="moments-reaction-summary" aria-hidden={heartCount === 0}>
+          {heartCount > 0 ? (
+            <span
+              className={viewerReacted
+                ? 'moments-reaction-tag mine'
+                : 'moments-reaction-tag'}
+            >
+              {PRIMARY_REACTION_EMOJI} {heartCount}
+            </span>
+          ) : null}
         </div>
-      )}
-
-      {/* Action row — repeated feed actions stay visible and compact. */}
-      <div className="moments-card-actions" onClick={(e) => e.stopPropagation()}>
         <div className="moments-action-group">
           <button
             type="button"
             className={[
               'moments-action',
-              reactionCounts.viewerReactionKind ? 'reacted' : '',
+              viewerReacted ? 'reacted' : '',
               reactionMutation?.status ?? '',
-            ].filter(Boolean).join(' ')}
+            ]
+              .filter(Boolean)
+              .join(' ')}
             data-acceptance-id="social-reaction-open"
-            onClick={toggleReactionPicker}
+            data-reaction-kind={PRIMARY_REACTION_KIND}
+            onClick={() => onReact(post.id, PRIMARY_REACTION_KIND)}
             disabled={reactionBusy}
             aria-busy={reactionBusy}
-            aria-label={t('mobile.moments.reaction.reacted')}
+            aria-label={t('mobile.moments.reaction.love')}
           >
-            <Heart size={18} fill={reactionCounts.viewerReactionKind ? 'currentColor' : 'none'} />
+            <Heart
+              size={18}
+              fill={viewerReacted ? 'currentColor' : 'none'}
+            />
           </button>
           <button
             type="button"
@@ -462,48 +318,35 @@ export function MomentFeedItem({
             aria-label={t('mobile.moments.comment.title')}
           >
             <MessageCircle size={18} />
-            {commentCount > 0 && <span>{commentCount}</span>}
+            {commentCount > 0 ? (
+              <span className="moments-action-count">{commentCount}</span>
+            ) : null}
           </button>
           <button
             type="button"
             className="moments-action moments-action--share"
             disabled
-            aria-label={t('common.state.unavailable')}
-            title={t('common.state.unavailable')}
+            aria-label={t('mobile.moments.share.unavailable')}
+            title={t('mobile.moments.share.unavailable')}
           >
             <Share2 size={18} />
           </button>
         </div>
-
-        {/* Reaction picker — 5 emoji buttons */}
-        {showReactionPicker && (
-          <div className="moments-reaction-picker">
-            {REACTION_KINDS.map((kind) => (
-              <button
-                key={kind}
-                type="button"
-                className={`moments-reaction-picker-btn ${reactionCounts.viewerReactionKind === kind ? 'active' : ''}`}
-                data-acceptance-id="social-reaction-choice"
-                data-reaction-kind={kind}
-                onClick={() => handlePickReaction(kind)}
-                disabled={reactionBusy}
-              >
-                {REACTION_EMOJI[kind]}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
-      {reactionMutation && (
+      {reactionMutation ? (
         <Text
-          className={`moments-reaction-status moments-reaction-status--${reactionMutation.status}`}
-          data-product-surface={reactionBusy
-            ? 'moments.reaction-pending'
-            : 'moments.reaction-rollback'}
+          className={`moments-reaction-status moments-reaction-status--${
+            reactionMutation.status
+          }`}
+          data-product-surface={
+            reactionBusy
+              ? 'moments.reaction-pending'
+              : 'moments.reaction-rollback'
+          }
           type={
-            reactionMutation.status === 'rolled-back'
-            || reactionMutation.status === 'rejected'
+            reactionMutation.status === 'rolled-back' ||
+            reactionMutation.status === 'rejected'
               ? 'danger'
               : 'secondary'
           }
@@ -512,40 +355,17 @@ export function MomentFeedItem({
         >
           {t(reactionStatusKey(reactionMutation.status))}
         </Text>
-      )}
-      {showActions && onDelete ? (
-        <div className="moments-sheet-backdrop" role="presentation">
-          <section
-            className="moments-bottom-sheet moments-post-action-sheet"
-            role="dialog"
-            aria-modal="true"
-            aria-label={t('mobile.moments.actions')}
-          >
-            <div className="moments-sheet-handle" />
-            <button
-              type="button"
-              className="moments-choice-row danger"
-              disabled={deleteBusy}
-              aria-busy={deleteBusy}
-              onClick={() => {
-                setShowActions(false);
-                onDelete(post.id);
-              }}
-            >
-              <span><strong>{t('mobile.moments.delete.action')}</strong></span>
-              <Trash2 size={18} />
-            </button>
-            <button
-              type="button"
-              className="moments-choice-row"
-              onClick={() => setShowActions(false)}
-            >
-              <span><strong>{t('common.action.cancel')}</strong></span>
-              <X size={18} />
-            </button>
-          </section>
-        </div>
       ) : null}
-    </Card>
+
+      {children}
+
+      {showActions && onDelete ? (
+        <MomentActionsSheet
+          busy={deleteBusy}
+          onClose={() => setShowActions(false)}
+          onDelete={() => onDelete(post.id)}
+        />
+      ) : null}
+    </article>
   );
 }

@@ -14,8 +14,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// ReactionService handles typed reactions (LIKE / LOVE / LAUGH / WOW /
-// CELEBRATE — see `model.ReactionKind`). Toggling a reaction also
+// ReactionService handles the typed `model.ReactionKind` catalog. Toggling a
+// reaction also
 // updates the parent post's denormalised `reactions_count_json`
 // snapshot so list queries don't pay an N+1 aggregation cost.
 type ReactionService struct {
@@ -46,7 +46,8 @@ func (s *ReactionService) React(ctx context.Context, postIDStr, viewerPTID strin
 	if viewerPTID == "" {
 		return nil, fmt.Errorf("authentication required to react")
 	}
-	if kind == model.ReactionKind_REACTION_UNSPECIFIED {
+	if kind == model.ReactionKind_REACTION_UNSPECIFIED ||
+		model.ReactionKind_name[int32(kind)] == "" {
 		return nil, fmt.Errorf("reaction kind is required")
 	}
 	postID, publicPostID, postAuthorPTID, postClass, err :=
@@ -112,7 +113,8 @@ func (s *ReactionService) Unreact(ctx context.Context, postIDStr, viewerPTID str
 	if viewerPTID == "" {
 		return nil, fmt.Errorf("authentication required to unreact")
 	}
-	if kind == model.ReactionKind_REACTION_UNSPECIFIED {
+	if kind == model.ReactionKind_REACTION_UNSPECIFIED ||
+		model.ReactionKind_name[int32(kind)] == "" {
 		return nil, fmt.Errorf("reaction kind is required")
 	}
 	postID, publicPostID, postAuthorPTID, postClass, err :=

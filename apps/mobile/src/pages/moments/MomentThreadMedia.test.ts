@@ -22,9 +22,9 @@ describe('mobile Moment thread and media ownership', () => {
   it('routes private comments through the private runtime projection without public fallback', () => {
     const comments = source('./MomentCommentsSection.tsx');
 
-    expect(comments).toContain('privateRoute ? null : facade?.feed');
-    expect(comments).toContain('intents.readPrivateComments');
-    expect(comments).toContain('intents.submitPrivateComment');
+    expect(comments).toContain('privateRoute ? null : (facade?.feed ?? null)');
+    expect(comments).toMatch(/intents\s*\.\s*readPrivateComments/);
+    expect(comments).toMatch(/intents\s*\.\s*submitPrivateComment/);
   });
 
   it('uses temporary media sources and releases public object URLs on close', () => {

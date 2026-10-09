@@ -76,21 +76,21 @@ the implementation reference; Native, Station, crypto, lifecycle and cross-platf
 
 The Portal ran at `http://localhost:3200/` from branch `feat/mobile-social-parity`.
 
-| Layer | State | Viewport | Evidence |
-|---|---|---|---|
-| L2 | Home and Explore | 390x844, 1440x1100 | `evidence-l2/{390,1440}-social-parity.png`, `evidence-l2/390-explore.png` |
-| L2 | default 10 comments, overflow and composer | 390x844, 1440x1100 | `evidence-l2/{390,1440}-{comments-default-10,comments-expanded,comment-composer}.png` |
-| L2 | publish-in-Feed | 390x844 | `evidence-l2/390-published-feed.png` |
-| L2 | image/video temporary overlays | 390x844, 1440x1100 | `evidence-l2/{390,1440}-{image-overlay,video-overlay}.png` |
-| L2 | Search, Profile and Block | 390x844 | `evidence-l2/390-{search,profile,profile-block-confirm,profile-blocked}.png` |
-| L2 | Circles CRUD/member surfaces | 390x844 | `evidence-l2/390-{circles,circle-detail,circle-member-picker}.png` |
-| L2 | Composer, full Audience and target picker | 390x844 | `evidence-l2/390-{composer,audience,audience-target}.png` |
-| L2 | seven canonical content kinds | 390x844, 1440x1100 | `evidence-l2/{390,1440}-content-types-{primary,secondary,tertiary}.png` |
-| L2 | remote delivery pending | 390x844, 1440x1100 | `evidence-l2/{390,1440}-social-private-pending.png` |
-| L2 | recovery required | 390x844, 1440x1100 | `evidence-l2/{390,1440}-social-recovery-required.png` |
-| L2 | source unavailable | 390x844, 1440x1100 | `evidence-l2/{390,1440}-social-source-unavailable.png` |
-| L2 | deleted/revoked | 390x844, 1440x1100 | `evidence-l2/{390,1440}-social-revoked.png` |
-| L3 | density and continuity | 390x844, 1440x1100 | 6 assertions prove 36px segment, 32px tab buttons, 10/12 comment folding, route-free media and exact anchor restoration |
+| Layer | State                                      | Viewport           | Evidence                                                                                                                |
+| ----- | ------------------------------------------ | ------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| L2    | Home and Explore                           | 390x844, 1440x1100 | `evidence-l2/{390,1440}-social-parity.png`, `evidence-l2/390-explore.png`                                               |
+| L2    | default 10 comments, overflow and composer | 390x844, 1440x1100 | `evidence-l2/{390,1440}-{comments-default-10,comments-expanded,comment-composer}.png`                                   |
+| L2    | publish-in-Feed                            | 390x844            | `evidence-l2/390-published-feed.png`                                                                                    |
+| L2    | image/video temporary overlays             | 390x844, 1440x1100 | `evidence-l2/{390,1440}-{image-overlay,video-overlay}.png`                                                              |
+| L2    | Search, Profile and Block                  | 390x844            | `evidence-l2/390-{search,profile,profile-block-confirm,profile-blocked}.png`                                            |
+| L2    | Circles CRUD/member surfaces               | 390x844            | `evidence-l2/390-{circles,circle-detail,circle-member-picker}.png`                                                      |
+| L2    | Composer, full Audience and target picker  | 390x844            | `evidence-l2/390-{composer,audience,audience-target}.png`                                                               |
+| L2    | seven canonical content kinds              | 390x844, 1440x1100 | `evidence-l2/{390,1440}-content-types-{primary,secondary,tertiary}.png`                                                 |
+| L2    | remote delivery pending                    | 390x844, 1440x1100 | `evidence-l2/{390,1440}-social-private-pending.png`                                                                     |
+| L2    | recovery required                          | 390x844, 1440x1100 | `evidence-l2/{390,1440}-social-recovery-required.png`                                                                   |
+| L2    | source unavailable                         | 390x844, 1440x1100 | `evidence-l2/{390,1440}-social-source-unavailable.png`                                                                  |
+| L2    | deleted/revoked                            | 390x844, 1440x1100 | `evidence-l2/{390,1440}-social-revoked.png`                                                                             |
+| L3    | density and continuity                     | 390x844, 1440x1100 | 6 assertions prove 36px segment, 32px tab buttons, 10/12 comment folding, route-free media and exact anchor restoration |
 
 `evidence-l2/captures.json` records 35 captures, 6 density/continuity assertions, zero geometry,
 horizontal-overflow, unexpected text-clipping, continuity or console defects. The screenshots above were
@@ -104,11 +104,13 @@ Tab, while true full-screen routes remain selected-only.
 The Portal ran at `http://localhost:3200/` from branch
 `feat/mobile-social-parity-implementation`.
 
-| Layer | State | Viewport | Evidence |
-|---|---|---|---|
-| L2 | bottom-anchored dominant composer | 390x844, 1440x1100 | `evidence-l2/{390,1440}-composer.png` |
-| L2 | compact Audience and publish controls | 390x844, 1440x1100 | `evidence-l2/{390,1440}-composer.png` |
-| L3 | geometry and surrounding-flow regression | 390x844, 554x954, 1440x1100 | `packages/prototypes/mobile/chat/scripts/check-layout.mjs`, `check-residual-parity.mjs`, `check-long-lists.mjs` |
+This geometry was superseded by the 2026-10-09 Owner correction below.
+
+| Layer | State                                    | Viewport                    | Evidence                                                                                                        |
+| ----- | ---------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| L2    | bottom-anchored dominant composer        | 390x844, 1440x1100          | `evidence-l2/{390,1440}-composer.png`                                                                           |
+| L2    | compact Audience and publish controls    | 390x844, 1440x1100          | `evidence-l2/{390,1440}-composer.png`                                                                           |
+| L3    | geometry and surrounding-flow regression | 390x844, 554x954, 1440x1100 | `packages/prototypes/mobile/chat/scripts/check-layout.mjs`, `check-residual-parity.mjs`, `check-long-lists.mjs` |
 
 The updated composer uses a 310-322px text input, 42px Audience row, 44px
 header, 32px publish action, and a 62px bottom-navigation clearance with zero
@@ -118,6 +120,35 @@ at all three viewports. The 390px and 1440px screenshots were opened and
 visually inspected. This is prototype evidence only; the matching production
 geometry is enforced by the Android RC02 Native Gate and remains unproven until
 the exact-source OPPO run completes.
+
+## 2026-10-09 Avatar And Composer Density Correction
+
+Owner review identified two prototype defects:
+
+- Social people used ad hoc multi-letter `antd` Avatar fallbacks instead of the
+  shared rounded-square user avatar contract.
+- The fixed 610px Composer left excessive empty height between short text and
+  the selected photo.
+
+The Social prototype now uses one `UserSquareAvatar` presentation primitive:
+single-letter fallback, full-bleed source/fallback surface, and a component-owned
+radius of `max(8px, floor(size * 0.25))`. The Composer is 380-400px tall with a
+96-120px text region and a measured 4-12px layout gap between the textarea box
+and media slot. Opening the Composer shows an explicit add-image slot; an image
+preview appears only after that control is activated.
+
+| Layer | State                                             | Viewport                    | Evidence                                                   |
+| ----- | ------------------------------------------------- | --------------------------- | ---------------------------------------------------------- |
+| L2    | rounded-square Moment avatar and compact Composer | 390x844                     | `evidence-l2/390-composer-avatar-spacing-20261009.png`     |
+| L2    | rounded-square Moment avatar and compact Composer | 1440x1100                   | `evidence-l2/1440-composer-avatar-spacing-20261009.png`    |
+| L3    | Composer geometry and surrounding-flow regression | 390x844, 554x954, 1440x1100 | `packages/prototypes/mobile/chat/scripts/check-layout.mjs` |
+
+`check-layout.mjs` produced 120 captures with zero geometry, overflow, overlap,
+touch-target, recovery, or console defects. It asserts rounded-square avatar
+geometry for every rendered Social identity, one-character fallback, 10px
+comment input/send radius, the initial add-image slot, and post-selection
+preview. Both Composer screenshots above were opened and visually inspected.
+Native Android proof remains separate.
 
 ## 2026-10-08 Auth Entry Evidence
 

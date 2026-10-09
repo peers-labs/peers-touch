@@ -156,13 +156,15 @@ describe('Moments Station protobuf JSON decoding', () => {
             scanned_count: 1,
             filtered_count: 0,
           },
-          explanations: [{
-            object_id: 'post-1',
-            source: {
-              kind: 'ACTIVITY_SOURCE_LOCAL',
-              station_peer_id: 'station-a',
+          explanations: [
+            {
+              object_id: 'post-1',
+              source: {
+                kind: 'ACTIVITY_SOURCE_LOCAL',
+                station_peer_id: 'station-a',
+              },
             },
-          }],
+          ],
         },
       })
       .mockResolvedValueOnce({
@@ -182,11 +184,13 @@ describe('Moments Station protobuf JSON decoding', () => {
         ok: true,
         data: {
           success: true,
-          reactions: [{
-            kind: 'REACTION_LOVE',
-            count: '3',
-            reacted_by_viewer: true,
-          }],
+          reactions: [
+            {
+              kind: 'REACTION_LOVE',
+              count: '3',
+              reacted_by_viewer: true,
+            },
+          ],
         },
       })
       .mockResolvedValueOnce({
@@ -209,9 +213,16 @@ describe('Moments Station protobuf JSON decoding', () => {
     const gateway = createMomentsGateway(session);
     const feed = await gateway.fetchFeed('', 20);
     const detail = await gateway.getPost('post-1');
-    const reaction = await gateway.reactToPost('post-1', ReactionKind.REACTION_LOVE);
+    const reaction = await gateway.reactToPost(
+      'post-1',
+      ReactionKind.REACTION_LOVE,
+    );
     const comments = await gateway.fetchComments('post-1', '', 15);
-    const created = await gateway.createComment('post-1', 'Reply', 'comment-root');
+    const created = await gateway.createComment(
+      'post-1',
+      'Reply',
+      'comment-root',
+    );
     const deleted = await gateway.deleteComment('comment-1');
 
     expect(feed).toMatchObject({
@@ -224,27 +235,33 @@ describe('Moments Station protobuf JSON decoding', () => {
           scannedCount: 1,
           filteredCount: 0,
         },
-        posts: [{
-          id: 'post-1',
-          authorPtid: 'ptid:alice',
-          type: PostType.TEXT,
-          content: { case: 'textPost', value: { text: 'Hello' } },
-          stats: { commentsCount: 4n },
-          author: { displayName: 'Alice' },
-          audience: { kind: Audience_Kind.PUBLIC },
-          reactions: [{
-            kind: ReactionKind.REACTION_LIKE,
-            count: 2n,
-            reactedByViewer: true,
-          }],
-        }],
-        explanations: [{
-          objectId: 'post-1',
-          source: {
-            kind: ActivitySource_Kind.ACTIVITY_SOURCE_LOCAL,
-            stationPeerId: 'station-a',
+        posts: [
+          {
+            id: 'post-1',
+            authorPtid: 'ptid:alice',
+            type: PostType.TEXT,
+            content: { case: 'textPost', value: { text: 'Hello' } },
+            stats: { commentsCount: 4n },
+            author: { displayName: 'Alice' },
+            audience: { kind: Audience_Kind.PUBLIC },
+            reactions: [
+              {
+                kind: ReactionKind.REACTION_LIKE,
+                count: 2n,
+                reactedByViewer: true,
+              },
+            ],
           },
-        }],
+        ],
+        explanations: [
+          {
+            objectId: 'post-1',
+            source: {
+              kind: ActivitySource_Kind.ACTIVITY_SOURCE_LOCAL,
+              stationPeerId: 'station-a',
+            },
+          },
+        ],
       },
     });
     expect(detail).toMatchObject({
@@ -259,11 +276,13 @@ describe('Moments Station protobuf JSON decoding', () => {
       ok: true,
       data: {
         success: true,
-        reactions: [{
-          kind: ReactionKind.REACTION_LOVE,
-          count: 3n,
-          reactedByViewer: true,
-        }],
+        reactions: [
+          {
+            kind: ReactionKind.REACTION_LOVE,
+            count: 3n,
+            reactedByViewer: true,
+          },
+        ],
       },
     });
     expect(comments).toMatchObject({
@@ -271,40 +290,50 @@ describe('Moments Station protobuf JSON decoding', () => {
       data: {
         nextCursor: 'comment-cursor',
         hasMore: true,
-        comments: [{
-          id: 'comment-1',
-          postId: 'post-1',
-          authorPtid: 'ptid:bob',
-          likesCount: 1n,
-          replyToCommentId: 'comment-root',
-        }],
+        comments: [
+          {
+            id: 'comment-1',
+            postId: 'post-1',
+            authorPtid: 'ptid:bob',
+            author: {
+              displayName: '',
+              username: 'bob@example.test',
+            },
+            likesCount: 1n,
+            replyToCommentId: 'comment-root',
+          },
+        ],
       },
     });
     expect(created).toMatchObject({
       ok: true,
       data: { comment: { id: 'comment-1', postId: 'post-1' } },
     });
-    expect(deleted).toEqual(expect.objectContaining({
-      ok: true,
-      data: expect.objectContaining({ success: true }),
-    }));
+    expect(deleted).toEqual(
+      expect.objectContaining({
+        ok: true,
+        data: expect.objectContaining({ success: true }),
+      }),
+    );
   });
 
   it('rejects private Comment resources at the public Mobile projection boundary', async () => {
     commandMock.mockResolvedValueOnce({
       ok: true,
       data: {
-        comments: [{
-          metadata: {
-            comment_id: 'comment-private',
-            post_id: 'post-private',
-            author: {
-              ptid: 'ptid:bob',
-              acct: 'bob@example.test',
+        comments: [
+          {
+            metadata: {
+              comment_id: 'comment-private',
+              post_id: 'post-private',
+              author: {
+                ptid: 'ptid:bob',
+                acct: 'bob@example.test',
+              },
             },
+            private_content: {},
           },
-          private_content: {},
-        }],
+        ],
       },
     });
 
@@ -449,11 +478,13 @@ function snakePost() {
     audience: {
       kind: 'PUBLIC',
     },
-    reactions: [{
-      kind: 'REACTION_LIKE',
-      count: '2',
-      reacted_by_viewer: true,
-    }],
+    reactions: [
+      {
+        kind: 'REACTION_LIKE',
+        count: '2',
+        reacted_by_viewer: true,
+      },
+    ],
   };
 }
 

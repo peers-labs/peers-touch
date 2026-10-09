@@ -174,6 +174,14 @@ export interface RecoveryProjectionController {
   /** Clear draft restore state after user confirms or dismisses. */
   clearDraftRestore(): void;
 
+  /** Remove one draft claimed or discarded by its active editor. */
+  resolveDraftRestore(
+    stationPeerId: string,
+    actorPtid: string,
+    surfaceKind: DraftProjection['envelope']['surfaceKind'],
+    targetId: string,
+  ): void;
+
   /** Report durable commands requiring status or an explicit recovery action. */
   reportCommandRecovery(commands: readonly CommandProjection[]): void;
 
@@ -355,6 +363,26 @@ export function createRecoveryProjection(): RecoveryProjectionController {
     clearDraftRestore(): void {
       if (!draftRestore) return;
       draftRestore = null;
+      rebuild();
+    },
+
+    resolveDraftRestore(
+      stationPeerId,
+      actorPtid,
+      surfaceKind,
+      targetId,
+    ): void {
+      if (!draftRestore) return;
+      const drafts = draftRestore.drafts.filter((draft) => (
+        draft.envelope.stationPeerId !== stationPeerId
+        || draft.envelope.actorPtid !== actorPtid
+        || draft.envelope.surfaceKind !== surfaceKind
+        || draft.envelope.targetId !== targetId
+      ));
+      if (drafts.length === draftRestore.drafts.length) return;
+      draftRestore = drafts.length > 0
+        ? { ...draftRestore, drafts }
+        : null;
       rebuild();
     },
 

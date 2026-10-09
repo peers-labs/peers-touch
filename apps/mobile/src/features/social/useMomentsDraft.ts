@@ -21,6 +21,7 @@ import {
   registerDraftRestorationConsumer,
   type DraftRestorationPort,
 } from '../../runtimes/commandRuntime';
+import { getRecoveryProjection } from '../../runtimes/recoveryProjection';
 import {
   EncryptedBlobReferenceSchema,
   MobileDraftEnvelopeV2Schema,
@@ -394,7 +395,15 @@ export function useMomentsDraft(
       MobileDraftSurfaceKind.MOMENT_COMPOSER,
       DRAFT_DOMAIN_KEY,
     );
-    return envelope ? applyRestoredEnvelope(envelope) : null;
+    if (!envelope) return null;
+    const payload = applyRestoredEnvelope(envelope);
+    getRecoveryProjection().resolveDraftRestore(
+      stationPeerId,
+      actorPtid,
+      MobileDraftSurfaceKind.MOMENT_COMPOSER,
+      DRAFT_DOMAIN_KEY,
+    );
+    return payload;
   }, [actorPtid, applyRestoredEnvelope, stationPeerId]);
 
   const discardDraft = useCallback(async (): Promise<boolean> => {
@@ -434,6 +443,12 @@ export function useMomentsDraft(
         setDraftRestored(false);
         setHasDraft(false);
         updatePersistenceFailure(null);
+        getRecoveryProjection().resolveDraftRestore(
+          stationPeerId,
+          actorPtid,
+          MobileDraftSurfaceKind.MOMENT_COMPOSER,
+          DRAFT_DOMAIN_KEY,
+        );
         return true;
       } catch (error) {
         if (isCurrent()) {
