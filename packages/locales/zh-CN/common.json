@@ -141,7 +141,7 @@
   "mobile.launch.enterStation": "进入站点",
   "mobile.launch.enterStationWithName": "进入 {{station}}",
   "mobile.launch.helperAutoSave": "最近使用会自动保存",
-  "mobile.launch.helperHttpWarning": "HTTP 不加密，不建议公网使用",
+  "mobile.launch.helperHttpWarning": "HTTP 未加密，仅限可信网络",
   "mobile.launch.placeholder": "域名 / IP:端口",
   "mobile.launch.stationAddress": "Station 地址",
   "mobile.launch.stationIdentityUnverified": "身份未验证",

@@ -122,6 +122,7 @@ function MobileAppRoot() {
   const [stationError, setStationError] = useState<string | null>(null);
   const [stationChecking, setStationChecking] = useState(false);
   const [verifyingStationUrls, setVerifyingStationUrls] = useState<string[]>([]);
+  const [checkedStationUrls, setCheckedStationUrls] = useState<string[]>([]);
   const [rememberedAccounts, setRememberedAccounts] = useState<RememberedLoginAccount[]>([]);
   const authError = useAuthStore((state) => state.error);
   const authLoading = useAuthStore((state) => state.loading);
@@ -129,7 +130,7 @@ function MobileAppRoot() {
   const setAuthError = useAuthStore((state) => state.setError);
   const setAuthLoading = useAuthStore((state) => state.setLoading);
   const setAccessDecision = useAuthStore((state) => state.setAccessDecision);
-  const autoVerifiedStationUrls = useRef<Set<string>>(new Set());
+  const verifiedStationKeysForSelection = useRef<Set<string>>(new Set());
   const pendingScopeExitRef = useRef<PendingScopeExitRequest | null>(null);
   const [pendingScopeExit, setPendingScopeExit] =
     useState<PendingScopeExitRequest | null>(null);
@@ -137,7 +138,9 @@ function MobileAppRoot() {
     useState<PendingStationIdentityReplacement | null>(null);
   const entryFixture = useEntrySurfaceFixture();
   const recoveryFixture = useRecoverySurfaceFixture();
-  const stationUrlsKey = stationRegistry.entries.map((entry) => entry.url).join('\n');
+  const stationEntriesKey = stationRegistry.entries
+    .map((entry) => `${entry.stationPeerId}\u0000${entry.url}`)
+    .join('\n');
   const activeStation = activeStationEntry(stationRegistry);
   const renderedLaunchState = fixtureLaunchState(entryFixture.surfaceId) ?? launchState;
   const renderedStationRegistry = fixtureStationRegistry(
@@ -169,13 +172,17 @@ function MobileAppRoot() {
 
   // --- Auto-probe station URLs ---
   useEffect(() => {
-    if (launchState !== 'station-selection') return;
-
-    const stationUrls = stationUrlsKey ? stationUrlsKey.split('\n') : [];
-    for (const url of stationUrls) {
-      autoProbeStation(url);
+    if (launchState !== 'station-selection') {
+      verifiedStationKeysForSelection.current.clear();
+      setCheckedStationUrls([]);
+      setVerifyingStationUrls([]);
+      return;
     }
-  }, [launchState, stationUrlsKey]);
+
+    for (const entry of stationRegistry.entries) {
+      autoProbeStation(entry);
+    }
+  }, [launchState, stationEntriesKey]);
 
   // --- Load remembered accounts when active station changes ---
   useEffect(() => {
@@ -329,27 +336,51 @@ function MobileAppRoot() {
     });
   }
 
-  function autoProbeStation(url: string) {
-    if (autoVerifiedStationUrls.current.has(url)) return;
-    autoVerifiedStationUrls.current.add(url);
-    setVerifyingStationUrls((urls) => (urls.includes(url) ? urls : [...urls, url]));
+  function autoProbeStation(entry: MobileStationEntry) {
+    const verificationKey = `${entry.stationPeerId}\u0000${entry.url}`;
+    if (verifiedStationKeysForSelection.current.has(verificationKey)) return;
+    verifiedStationKeysForSelection.current.add(verificationKey);
+    setCheckedStationUrls((urls) => urls.filter((url) => url !== entry.url));
+    setVerifyingStationUrls((urls) => (
+      urls.includes(entry.url) ? urls : [...urls, entry.url]
+    ));
 
-    probeStation(url)
+    probeStation(entry.url)
       .then(async (probe) => {
+        let online = false;
+        if (probe.online) {
+          const identity = await verifyStationIdentity(entry.url);
+          online = identity.stationPeerId === entry.stationPeerId;
+        }
         await updateStationRegistryProjection((current) => {
-          const entry = current.entries.find((candidate) => candidate.url === url);
-          if (!entry) return current;
+          const currentEntry = current.entries.find(
+            (candidate) => candidate.stationPeerId === entry.stationPeerId,
+          );
+          if (!currentEntry || currentEntry.url !== entry.url) return current;
           const next = updateStationEntryStatus(current, entry.stationPeerId, {
             checkedAt: probe.checkedAt,
             label: probe.label,
-            online: probe.online,
+            online,
           });
           if (next === current) return current;
           return next;
         });
       })
+      .catch(async () => {
+        await updateStationRegistryProjection((current) => (
+          updateStationEntryStatus(current, entry.stationPeerId, {
+            checkedAt: Date.now(),
+            online: false,
+          })
+        ));
+      })
       .finally(() => {
-        setVerifyingStationUrls((urls) => urls.filter((entryUrl) => entryUrl !== url));
+        setCheckedStationUrls((urls) => (
+          urls.includes(entry.url) ? urls : [...urls, entry.url]
+        ));
+        setVerifyingStationUrls((urls) => (
+          urls.filter((entryUrl) => entryUrl !== entry.url)
+        ));
       });
   }
 
@@ -795,6 +826,11 @@ function MobileAppRoot() {
           ? renderedStationRegistry.entries.map((entry) => entry.url)
           : verifyingStationUrls
       }
+      checkedUrls={
+        entryFixture.surfaceId === 'entry.station-unavailable'
+          ? renderedStationRegistry.entries.map((entry) => entry.url)
+          : checkedStationUrls
+      }
       surfaceFixture={fixtureStationSelectorSurface(entryFixture.surfaceId)}
       onAddStation={async (protocol: StationProtocol, address: string) => {
         const normalizedUrl = buildStationUrl({ protocol, address });
@@ -844,7 +880,12 @@ function MobileAppRoot() {
                 setStationError(t(replacement.error));
                 return false;
               }
-              autoVerifiedStationUrls.current.add(normalizedUrl);
+              verifiedStationKeysForSelection.current.add(
+                `${identity.stationPeerId}\u0000${normalizedUrl}`,
+              );
+              setCheckedStationUrls((urls) => (
+                urls.includes(normalizedUrl) ? urls : [...urls, normalizedUrl]
+              ));
               setStationError(null);
               await commitStationScope(replacement.registry);
               return true;
@@ -852,7 +893,12 @@ function MobileAppRoot() {
             setStationError(t(next.error));
             return false;
           }
-          autoVerifiedStationUrls.current.add(normalizedUrl);
+          verifiedStationKeysForSelection.current.add(
+            `${identity.stationPeerId}\u0000${normalizedUrl}`,
+          );
+          setCheckedStationUrls((urls) => (
+            urls.includes(normalizedUrl) ? urls : [...urls, normalizedUrl]
+          ));
           setStationError(null);
           await commitStationScope(next.registry);
           return true;
@@ -883,13 +929,41 @@ function MobileAppRoot() {
 
         setStationChecking(true);
         setStationError(null);
+        let probe: Awaited<ReturnType<typeof probeStation>>;
+        let identity: Awaited<ReturnType<typeof verifyStationIdentity>>;
         try {
-          const probe = await probeStation(selectedStation.url);
+          probe = await probeStation(selectedStation.url);
+          setCheckedStationUrls((urls) => (
+            urls.includes(selectedStation.url) ? urls : [...urls, selectedStation.url]
+          ));
           if (!probe.online) {
+            await updateStationRegistryProjection((registry) => (
+              updateStationEntryStatus(registry, selectedStation.stationPeerId, {
+                checkedAt: probe.checkedAt,
+                label: probe.label,
+                online: false,
+              })
+            ));
             setStationError(probe.error ?? t('mobile.launch.stationUnavailable'));
             return;
           }
-          const identity = await verifyStationIdentity(selectedStation.url);
+          identity = await verifyStationIdentity(selectedStation.url);
+        } catch (error) {
+          setCheckedStationUrls((urls) => (
+            urls.includes(selectedStation.url) ? urls : [...urls, selectedStation.url]
+          ));
+          await updateStationRegistryProjection((registry) => (
+            updateStationEntryStatus(registry, selectedStation.stationPeerId, {
+              checkedAt: Date.now(),
+              online: false,
+            })
+          ));
+          const msg = error instanceof Error ? error.message : '';
+          setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
+          return;
+        }
+
+        try {
           let verifiedRegistry = current;
           let verifiedStation = selectedStation;
           if (identity.stationPeerId !== selectedStation.stationPeerId) {

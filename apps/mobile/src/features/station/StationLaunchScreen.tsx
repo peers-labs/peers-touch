@@ -16,6 +16,7 @@ export function StationLaunchScreen({
   error,
   checking,
   verifyingUrls,
+  checkedUrls,
   surfaceFixture,
   onAddStation,
   onSelectStation,
@@ -26,6 +27,7 @@ export function StationLaunchScreen({
   error: string | null;
   checking: boolean;
   verifyingUrls: string[];
+  checkedUrls: string[];
   surfaceFixture?: StationSelectorSurfaceFixture;
   onAddStation: (protocol: StationProtocol, address: string) => boolean | Promise<boolean>;
   onSelectStation: (stationPeerId: string) => void | Promise<void>;
@@ -34,6 +36,14 @@ export function StationLaunchScreen({
 }) {
   const { t } = useMobileI18n();
   const activeStation = activeStationEntry(registry);
+  const activeStationChecked = Boolean(
+    activeStation
+      && checkedUrls.includes(activeStation.url)
+      && !verifyingUrls.includes(activeStation.url),
+  );
+  const activeStationUnavailable = Boolean(
+    activeStationChecked && activeStation?.online !== true,
+  );
 
   return (
     <main
@@ -60,14 +70,22 @@ export function StationLaunchScreen({
             error={error}
             checking={checking}
             verifyingUrls={verifyingUrls}
+            checkedUrls={checkedUrls}
             surfaceFixture={surfaceFixture}
             onAdd={onAddStation}
             onSelect={onSelectStation}
             onRemove={onRemoveStation}
           />
           <div className="launch-actions">
-            <Button block size="large" type="primary" loading={checking} disabled={!activeStation} onClick={onContinue}>
-              {t('mobile.launch.continue')}
+            <Button
+              block
+              size="large"
+              type="primary"
+              loading={checking}
+              disabled={!activeStation || !activeStationChecked}
+              onClick={onContinue}
+            >
+              {t(activeStationUnavailable ? 'common.action.retry' : 'mobile.launch.continue')}
             </Button>
           </div>
         </Card>

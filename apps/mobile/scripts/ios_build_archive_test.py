@@ -25,6 +25,7 @@ class IOSSimulatorArchiveBuildTest(unittest.TestCase):
         inline_dev: bool = False,
         fail: bool = False,
         arch: str = "arm64",
+        device: bool = False,
     ) -> tuple[subprocess.CompletedProcess[str], list[str], str]:
         with tempfile.TemporaryDirectory(prefix="mobile-ios-archive-") as directory:
             root = Path(directory)
@@ -37,9 +38,17 @@ class IOSSimulatorArchiveBuildTest(unittest.TestCase):
             toolchain = root / "tools"
             toolchain.mkdir()
             target = (
-                "aarch64-apple-ios-sim" if arch == "arm64" else "x86_64-apple-ios"
+                "aarch64-apple-ios"
+                if device
+                else (
+                    "aarch64-apple-ios-sim"
+                    if arch == "arm64"
+                    else "x86_64-apple-ios"
+                )
             )
-            external_arch = "arm64-sim" if arch == "arm64" else "x86_64"
+            external_arch = (
+                "arm64" if device else ("arm64-sim" if arch == "arm64" else "x86_64")
+            )
             cargo_target = root / "cargo target"
             archive = cargo_target / target / configuration / "libpeers_touch_mobile_lib.a"
             archive.parent.mkdir(parents=True)
@@ -62,8 +71,10 @@ class IOSSimulatorArchiveBuildTest(unittest.TestCase):
             environment = {
                 **os.environ,
                 "PATH": f"{toolchain}{os.pathsep}{os.environ['PATH']}",
-                "SDKROOT": "/sdk/iPhoneSimulator.sdk",
-                "PLATFORM_DISPLAY_NAME": "iOS Simulator",
+                "SDKROOT": (
+                    "/sdk/iPhoneOS.sdk" if device else "/sdk/iPhoneSimulator.sdk"
+                ),
+                "PLATFORM_DISPLAY_NAME": "iOS" if device else "iOS Simulator",
                 "FRAMEWORK_SEARCH_PATHS": ".",
                 "HEADER_SEARCH_PATHS": ".",
                 "CONFIGURATION": configuration,
@@ -113,8 +124,13 @@ class IOSSimulatorArchiveBuildTest(unittest.TestCase):
                         configuration=configuration, arch=arch
                     )
                     self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(args[0], "rustc")
                     self.assertIn("--target", args)
                     self.assertEqual(args[args.index("--target") + 1], target)
+                    self.assertEqual(
+                        args[args.index("--crate-type") + 1],
+                        "staticlib",
+                    )
                     self.assertIn("custom-protocol", args[args.index("--features") + 1])
                     self.assertNotIn(
                         "acceptance-harness",
@@ -142,6 +158,19 @@ class IOSSimulatorArchiveBuildTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("custom-protocol", args[args.index("--features") + 1])
         self.assertIn("acceptance-harness", args[args.index("--features") + 1])
+        self.assertEqual(archive, "current archive")
+
+    def test_packaged_device_builds_only_the_static_library(self) -> None:
+        result, args, archive = self.run_build(
+            configuration="release",
+            device=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(args[0], "rustc")
+        self.assertEqual(args[args.index("--target") + 1], "aarch64-apple-ios")
+        self.assertEqual(args[args.index("--crate-type") + 1], "staticlib")
+        self.assertIn("custom-protocol", args[args.index("--features") + 1])
+        self.assertIn("--release", args)
         self.assertEqual(archive, "current archive")
 
     def test_compile_failure_never_copies_stale_archive(self) -> None:
