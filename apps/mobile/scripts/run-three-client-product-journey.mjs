@@ -1882,7 +1882,7 @@ async function logoutMobileClient(clientId, client) {
   );
   await clickVisibleSelector(
     client,
-    '.ant-modal-content .ant-modal-footer .ant-btn-dangerous',
+    '.ant-modal-container .ant-modal-footer .ant-btn-dangerous',
     'confirm-mobile-logout',
   );
   const result = await waitForUi(
