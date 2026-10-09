@@ -356,6 +356,15 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
         BGTaskScheduler.shared.cancel(
           taskRequestWithIdentifier: inactiveIdentifier
         )
+        #if targetEnvironment(simulator)
+          invoke.resolve(
+            ScheduledReconcileRegistration(
+              identifier: identifier,
+              registered: true
+            )
+          )
+          return
+        #else
         do {
           try self.submitScheduledReconcile(identifier)
           invoke.resolve(
@@ -373,6 +382,7 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
             code: "PLATFORM_SCHEDULE_FAILED"
           )
         }
+        #endif
       }
     } catch {
       invoke.reject(

@@ -363,6 +363,23 @@ class NativePushSchedulerAndPickerSourceContractTest(unittest.TestCase):
         self.assertIn("failure.domain", swift)
         self.assertIn("failure.code", swift)
 
+    def test_ios_simulator_does_not_degrade_foreground_runtime(self) -> None:
+        swift = SWIFT_PLUGIN_PATH.read_text(encoding="utf-8")
+        scheduler = swift.split(
+            "@objc public func scheduleReconcile",
+            maxsplit=1,
+        )[1].split(
+            "@objc public func drainScheduledCallbacks",
+            maxsplit=1,
+        )[0]
+
+        self.assertIn("#if targetEnvironment(simulator)", scheduler)
+        self.assertIn("registered: true", scheduler)
+        self.assertLess(
+            scheduler.index("#if targetEnvironment(simulator)"),
+            scheduler.index("self.submitScheduledReconcile(identifier)"),
+        )
+
     def test_push_registration_is_ptid_device_bound_and_native_only(self) -> None:
         proto = NOTIFICATION_PROTO_PATH.read_text(encoding="utf-8")
         handler = NOTIFICATION_HANDLER_PATH.read_text(encoding="utf-8")
