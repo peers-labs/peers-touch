@@ -10,8 +10,10 @@ import (
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/p2p/muxer/yamux"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/driver/sqlite"
@@ -52,6 +54,10 @@ func TestBootstrapServer_StartAndConnect(t *testing.T) {
 	// 1. Setup Mock Store
 	err := setupMockStore()
 	assert.NoError(t, err)
+	federation.SetForTest(federation.Policy{
+		DirectOutbound: true,
+		DirectInbound:  true,
+	})
 
 	// 2. Initialize SubServer
 	// Random port
@@ -89,7 +95,10 @@ func TestBootstrapServer_StartAndConnect(t *testing.T) {
 	t.Logf("Server Addresses: %v", serverAddrs)
 
 	// 4. Create Client Host
-	clientHost, err := libp2p.New(libp2p.NoSecurity)
+	clientHost, err := libp2p.New(
+		libp2p.NoSecurity,
+		libp2p.Muxer(yamux.ID, yamux.DefaultTransport),
+	)
 	assert.NoError(t, err)
 	defer clientHost.Close()
 
