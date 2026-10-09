@@ -44,6 +44,7 @@
 | DEV-A33 | Criterion coverage | DWF-D42 | Omit a criterion or map it to unknown/mismatched Task, closure, or Gate IDs | `PLAN_CRITERION_COVERAGE_INVALID` rejects the Plan; ordinary valid remapping preserves North Star approval | Plan package and amendment tests |
 | DEV-A34 | Worktree main-session provenance | DWF-D43 | Create an authorized Agent worktree and start Development from it | Creation, registration, declaration, Session, active-work, and Snapshot expose the verified root-chat OWNER; missing or conflicting current ownership fails closed | Worktree creation, binding, declaration, Session, active-work, and Snapshot tests |
 | DEV-A35 | Action workspace confinement | DWF-D44 | Submit one mutation spanning two worktrees, a shell with foreign cwd, and a symlink escape | Typed denial before mutation; separate single-workspace OWNER actions remain legal | Kernel negative tests |
+| DEV-A36 | Workspace-isolated ledger adoption | DWF-D45 | Migrate one selected workspace while unrelated legacy work remains live | Selected records adopt the current schema; foreign records remain byte-stable and still participate in conflict admission | Ledger and Plan-mount migration tests |
 
 ## Acceptance Rules
 

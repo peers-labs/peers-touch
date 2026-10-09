@@ -10,17 +10,31 @@ import {
   developmentWorkLockPath,
   isDirectInvocation,
   machineDevRoot,
+  workspaceIdForRoot,
 } from '../lib/machine-dev-paths.mjs';
 import {
   acquireDevelopmentWorkLedgerLock,
 } from '../local-dev/dev-work-ledger.mjs';
 import {
+  adoptActiveWorkOwner,
+  readActiveWorkRecord,
+} from '../local-dev/active-work-store.mjs';
+import {
+  adoptSessionWorkflowOwner,
+} from '../local-dev/dev-session-store.mjs';
+import {
   resolveWorkflowOwnerCommandContext,
 } from '../local-dev/workflow-owner-context.mjs';
 import {
+  sameWorkflowOwnerReference,
+  validateWorkflowOwnerReference,
+} from '../local-dev/workflow-owner-reference.mjs';
+import {
   LEDGER_KIND as DEVELOPMENT_LEDGER_KIND,
   SCHEMA_VERSION as DEVELOPMENT_SCHEMA_VERSION,
+  declarationPlanSchema,
   digestDeclaration,
+  validateCoordinationDeclaration,
   validateDeclaration,
 } from '../local-dev/dev-work-schema.mjs';
 import { atomicReplaceFile } from './plan-package.mjs';
@@ -31,7 +45,6 @@ import {
   validatePlanMountLedger,
 } from './plan-mount.mjs';
 
-const LIVE_DECLARATION_STATES = new Set(['DECLARED', 'ACTIVE', 'RELEASING']);
 const SHA256 = /^[0-9a-f]{64}$/;
 const WORKSPACE_ID = /^[0-9a-f]{16}$/;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -201,9 +214,8 @@ function validateWorkLedger(ledger) {
         { id },
       );
     }
-    if (Object.hasOwn(declaration, 'planVersionDigest')) {
+    if (declarationPlanSchema(declaration) === 'legacy') {
       if (
-        Object.hasOwn(declaration, 'planDigest') ||
         !SHA256.test(declaration.declarationDigest ?? '') ||
         digestDeclaration(declaration) !== declaration.declarationDigest
       ) {
@@ -216,26 +228,71 @@ function validateWorkLedger(ledger) {
       const migrated = migrateDeclaration(declaration);
       validateDeclaration(migrated);
     } else {
-      validateDeclaration(declaration);
+      validateCoordinationDeclaration(declaration);
     }
   }
   return ledger;
 }
 
-function migrateDeclaration(declaration) {
-  if (!Object.hasOwn(declaration, 'planVersionDigest')) return declaration;
-  const migrated = { ...declaration, planDigest: declaration.planVersionDigest };
-  delete migrated.planVersionDigest;
+function migrateDeclaration(declaration, workflowOwner = null) {
+  const legacy = Object.hasOwn(declaration, 'planVersionDigest');
+  const adoptOwner =
+    workflowOwner !== null && declaration.workflowOwner === undefined;
+  if (!legacy && !adoptOwner) {
+    if (
+      workflowOwner !== null &&
+      !sameWorkflowOwnerReference(declaration.workflowOwner, workflowOwner)
+    ) {
+      fail(
+        'WORKFLOW_OWNER_CONTEXT_MISMATCH',
+        'selected declaration belongs to another workflow OWNER',
+        { declarationId: declaration.declarationId },
+      );
+    }
+    return declaration;
+  }
+  if (
+    workflowOwner !== null &&
+    declaration.workflowOwner !== undefined &&
+    !sameWorkflowOwnerReference(declaration.workflowOwner, workflowOwner)
+  ) {
+    fail(
+      'WORKFLOW_OWNER_CONTEXT_MISMATCH',
+      'selected declaration belongs to another workflow OWNER',
+      { declarationId: declaration.declarationId },
+    );
+  }
+  const migrated = {
+    ...declaration,
+    ...(adoptOwner ? { workflowOwner } : {}),
+    ...(legacy ? { planDigest: declaration.planVersionDigest } : {}),
+  };
+  if (legacy) delete migrated.planVersionDigest;
   migrated.declarationDigest = digestDeclaration(migrated);
   return migrated;
 }
 
 export async function migrateStablePlanState(options = {}) {
   const home = options.home ?? homedir();
+  const workflowOwner =
+    options.workflowOwner === undefined
+      ? null
+      : validateWorkflowOwnerReference(options.workflowOwner);
+  const workspaceId =
+    options.workspaceId ??
+    workspaceIdForRoot(path.resolve(options.repoRoot ?? process.cwd()));
+  if (!WORKSPACE_ID.test(workspaceId)) {
+    fail(
+      'PLAN_STATE_MIGRATION_INVALID',
+      'stable Plan migration requires a canonical workspaceId',
+      { workspaceId },
+    );
+  }
   const workFile = developmentWorkLedgerPath(home);
   const mountFile = path.join(machineDevRoot(home), 'plan-mounts', 'ledger.json');
   let releaseWork = null;
   let planLease = null;
+  let migrationResult = null;
   const replaceFile = options.atomicReplaceFile ?? atomicReplaceFile;
   try {
     releaseWork = acquireDevelopmentWorkLedgerLock({
@@ -253,36 +310,35 @@ export async function migrateStablePlanState(options = {}) {
     const mounts = readJson(mountFile);
     if (work !== null) validateWorkLedger(work.value);
     if (mounts !== null) {
-      if (Object.hasOwn(mounts.value, 'liveMountsByPlanVersion')) {
+      if (
+        Object.hasOwn(mounts.value, 'liveMountsByPlanVersion') &&
+        !Object.hasOwn(mounts.value, 'liveMountsByPlan')
+      ) {
         validateLegacyMountLedger(mounts.value);
       } else {
         validatePlanMountLedger(mounts.value);
       }
     }
 
-    const liveDeclarations = Object.values(work?.value?.declarations ?? {})
-      .filter((declaration) => LIVE_DECLARATION_STATES.has(declaration?.state))
-      .map((declaration) => declaration.declarationId);
-    const liveMounts = [
-      ...Object.values(mounts?.value?.liveMountsByWorkspace ?? {}),
-      ...Object.values(mounts?.value?.liveMountsByPlanVersion ?? {}),
-      ...Object.values(mounts?.value?.liveMountsByPlan ?? {}),
-    ];
-    if (liveDeclarations.length > 0 || liveMounts.length > 0) {
-      fail(
-        'PLAN_STATE_MIGRATION_REQUIRES_IDLE',
-        'stable Plan state migration requires all Development Runs to be closed',
-        { liveDeclarations, liveMounts },
-      );
-    }
-
     let migratedDeclarations = 0;
+    let adoptedWorkflowOwners = 0;
     if (work !== null) {
       const declarations = Object.fromEntries(
         Object.entries(work.value.declarations ?? {}).map(
           ([id, declaration]) => {
-            const migrated = migrateDeclaration(declaration);
-            if (migrated !== declaration) migratedDeclarations += 1;
+            const migrated =
+              declaration.workspaceId === workspaceId
+                ? migrateDeclaration(declaration, workflowOwner)
+                : declaration;
+            if (migrated !== declaration) {
+              migratedDeclarations += 1;
+              if (
+                declaration.workflowOwner === undefined &&
+                migrated.workflowOwner !== undefined
+              ) {
+                adoptedWorkflowOwners += 1;
+              }
+            }
             return [id, migrated];
           },
         ),
@@ -297,35 +353,91 @@ export async function migrateStablePlanState(options = {}) {
     }
 
     let migratedMountLedger = false;
-    if (
-      mounts !== null &&
-      Object.hasOwn(mounts.value, 'liveMountsByPlanVersion')
-    ) {
+    let mountLedgerMode = 'stable';
+    if (mounts !== null) {
       const migrated = {
         ...mounts.value,
-        revision: mounts.value.revision + 1,
-        liveMountsByPlan: {},
       };
-      delete migrated.liveMountsByPlanVersion;
-      migrated.recordDigest = digestRecord(migrated);
-      validatePlanMountLedger(migrated);
-      await replaceFile(
-        mountFile,
-        `${JSON.stringify(migrated, null, 2)}\n`,
-        { expectedContent: mounts.raw },
-      );
-      migratedMountLedger = true;
+      let changed = false;
+      if (!Object.hasOwn(migrated, 'liveMountsByPlan')) {
+        migrated.liveMountsByPlan = {};
+        changed = true;
+      }
+      if (
+        Object.hasOwn(migrated, 'liveMountsByPlanVersion') &&
+        Object.keys(migrated.liveMountsByPlanVersion).length === 0
+      ) {
+        delete migrated.liveMountsByPlanVersion;
+        changed = true;
+      }
+      mountLedgerMode = Object.hasOwn(
+        migrated,
+        'liveMountsByPlanVersion',
+      )
+        ? 'mixed'
+        : 'stable';
+      if (changed) {
+        migrated.revision = mounts.value.revision + 1;
+        migrated.recordDigest = digestRecord(migrated);
+        validatePlanMountLedger(migrated);
+        await replaceFile(
+          mountFile,
+          `${JSON.stringify(migrated, null, 2)}\n`,
+          { expectedContent: mounts.raw },
+        );
+        migratedMountLedger = true;
+      }
     }
 
-    return {
+    migrationResult = {
       ok: true,
+      workspaceId,
       migratedDeclarations,
+      adoptedWorkflowOwners,
       migratedMountLedger,
+      mountLedgerMode,
     };
   } finally {
     if (planLease !== null) await releasePlanMountLedgerLock(planLease);
     if (releaseWork !== null) releaseWork();
   }
+  let adoptedActiveWorkOwner = false;
+  let sessionOwnerPresent = false;
+  if (workflowOwner !== null) {
+    const existingActiveWork = readActiveWorkRecord({
+      home,
+      workspaceId,
+    });
+    if (existingActiveWork !== null) {
+      adoptedActiveWorkOwner =
+        existingActiveWork.workflowOwner === undefined;
+      const activeWork = adoptActiveWorkOwner({
+        home,
+        workspaceId,
+        workflowOwner,
+      });
+      adoptSessionWorkflowOwner({
+        home,
+        workspaceId,
+        workItemId: activeWork.workItemId,
+        workflowOwner,
+        expected: {
+          sessionId: activeWork.sessionId,
+          workItemId: activeWork.workItemId,
+          planId: activeWork.planId,
+          taskId: activeWork.currentTaskId,
+          workspaceId,
+          branch: activeWork.branch,
+        },
+      });
+      sessionOwnerPresent = true;
+    }
+  }
+  return {
+    ...migrationResult,
+    adoptedActiveWorkOwner,
+    sessionOwnerPresent,
+  };
 }
 
 function parseArguments(argv) {
@@ -333,10 +445,14 @@ function parseArguments(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     const value = argv[index + 1];
-    if (token !== '--home' || value === undefined || value.startsWith('--')) {
+    if (
+      !['--home', '--repo-root'].includes(token) ||
+      value === undefined ||
+      value.startsWith('--')
+    ) {
       fail('PLAN_STATE_MIGRATION_USAGE', `invalid option: ${token}`);
     }
-    options.home = value;
+    options[token === '--home' ? 'home' : 'repoRoot'] = value;
     index += 1;
   }
   return options;
@@ -345,13 +461,20 @@ function parseArguments(argv) {
 if (isDirectInvocation(import.meta.url)) {
   try {
     const options = parseArguments(process.argv.slice(2));
-    resolveWorkflowOwnerCommandContext('migration', 'migrate', {
-      home: options.home,
-      workspaceRoot: process.cwd(),
-    });
+    const ownerContext = resolveWorkflowOwnerCommandContext(
+      'migration',
+      'migrate',
+      {
+        home: options.home,
+        workspaceRoot: options.repoRoot ?? process.cwd(),
+      },
+    );
     process.stdout.write(
       `${JSON.stringify(
-        await migrateStablePlanState(options),
+        await migrateStablePlanState({
+          ...options,
+          workflowOwner: ownerContext.workflowOwner,
+        }),
         null,
         2,
       )}\n`,

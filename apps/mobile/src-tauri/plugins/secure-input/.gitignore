@@ -1,0 +1,8 @@
+/target
+/.tauri
+/Cargo.lock
+/android/.tauri
+/android/build
+/ios/.build
+/ios/.tauri
+/ios/Package.resolved

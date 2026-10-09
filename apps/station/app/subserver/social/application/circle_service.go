@@ -45,12 +45,12 @@ func (s *CircleService) Create(ctx context.Context, req *model.CreateCircleReque
 	if len(req.MemberPtids) > 0 {
 		added, total, err := s.repos.Circles.AddMembers(ctx, c.ID, req.MemberPtids)
 		if err != nil {
-			logger.Warn(ctx, "circle.create: initial member add partial", "circle_id", c.ID, "error", err)
+			logger.Warn(ctx, "circle.create: initial member add partial", "error", err)
 		}
 		c.MemberCount = total
 		_ = added
 	}
-	logger.Info(ctx, "circle.created", "circle_id", c.ID, "owner_ptid", ownerPTID)
+	logger.Info(ctx, "circle.created")
 	return s.conv.CircleToProto(c), nil
 }
 
@@ -85,7 +85,7 @@ func (s *CircleService) Delete(ctx context.Context, circleID uint64, ownerPTID s
 	if err := s.repos.Circles.Delete(ctx, circleID, ownerPTID); err != nil {
 		return err
 	}
-	logger.Info(ctx, "circle.deleted", "circle_id", circleID, "owner_ptid", ownerPTID)
+	logger.Info(ctx, "circle.deleted")
 	return nil
 }
 

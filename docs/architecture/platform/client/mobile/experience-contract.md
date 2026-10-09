@@ -1,8 +1,8 @@
 # Mobile Shell — 体验合同
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-27 | **Updated**: 2026-09-19
+> **Version**: v1.2
+> **Created**: 2026-08-27 | **Updated**: 2026-10-08
 > **Owner**: Mobile Product Team
 > **Module**: `apps/mobile/`
 
@@ -19,6 +19,7 @@
 | MS-J05 | Moments participation | MS-C04, MS-C08 |
 | MS-J06 | Profile, settings, and Station change | MS-C04, MS-C09, MS-C10 |
 | MS-J07 | Interrupted work and degraded recovery | MS-C05, MS-C08, MS-C10, MS-C14 |
+| MS-J08 | Whole-product foreground walkthrough | MS-C01..MS-C10, MS-C14, MS-C15 |
 
 ## 2. MS-J01 First Station Entry
 
@@ -147,3 +148,42 @@ discard, or a new explicit save after reconciliation.
 | Background freshness | Push/wakeup marks stale; resume performs authoritative sync |
 | Large lists | Virtualized or bounded rendering with preserved anchors |
 | Accessibility | Screen-reader order, dynamic text, focus restoration, reduced motion, and labeled icon actions |
+
+## 10. MS-J08 Whole-Product Foreground Walkthrough
+
+The reviewer uses a visible iOS Simulator and real application controls. The
+walkthrough starts at launch and visits every reachable surface one by one:
+
+1. Boot, Station selection, Station verification, login, access gates, and
+   runtime preparation.
+2. Chat list, Direct and Group details, search, composer, attachment/voice
+   controls, message actions, conversation settings, forwarding, and group
+   management.
+3. Contacts, requests, profile detail, Find People, Create Group, and their
+   no-result, duplicate, unavailable, permission, and destructive states.
+4. Moments feed, detail/comments, composer, media lifecycle, pagination, empty,
+   filtered, policy-hidden, unavailable, pending, and rollback states.
+5. Me and every Settings detail, including profile/privacy, notifications,
+   blocked users, device preferences, storage, language, Station change,
+   logout, dirty drafts, conflict, permission, unavailable, and failure states.
+6. Shared recovery surfaces for revocation, stale data, command capacity,
+   unknown outcome, draft restoration, and deferred module activation.
+
+At every step, a human must be able to identify the page, primary content,
+primary action, current scope, state meaning, and recovery path without
+interpreting internal identifiers. Text and controls must fit at supported
+viewport and text-size cells; the keyboard, safe area, tab bar, composer,
+sheet, modal, notice, and system status area must not obscure one another.
+
+The walkthrough fails on any reachable surface that:
+
+- uses a raw PTID, Station URL, runtime ID, command ID, untranslated key, or
+  internal exception as primary user-facing copy when a friendly projection is
+  available;
+- presents a module failure as an app-wide blocking card while unrelated work
+  remains usable;
+- clips, overlaps, truncates without recovery, hides the active control, loses
+  navigation context, or lacks a usable next action;
+- differs materially from the confirmed Mobile prototype or UI Identity
+  without a recorded product decision; or
+- has not been opened and interacted with in the foreground runtime.

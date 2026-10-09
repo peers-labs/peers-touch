@@ -30,7 +30,7 @@ use serde_json::json;
 use tauri::{AppHandle, Emitter};
 
 use crate::infrastructure::session_revocation;
-use crate::infrastructure::station_client::station_base_url;
+use crate::infrastructure::station_client::{active_station_peer_id, station_base_url};
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::model::realtime::v1::{stream_event::Kind as StreamKind, StreamEvent};
 
@@ -42,8 +42,10 @@ use crate::model::realtime::v1::{stream_event::Kind as StreamKind, StreamEvent};
 // ---------------------------------------------------------------------
 
 /// Every realtime frame the bus delivers reaches the frontend through
-/// this channel. Payload: `{ event_id, data_b64 }`. The frontend
-/// decodes `data_b64` with the generated TypeScript protobuf schema.
+/// this channel. Payload: `{ actor_ptid, session_epoch, station_peer_id,
+/// station_url, event_id, data_b64 }`. The frontend uses the stream scope as a
+/// lifecycle fence and decodes `data_b64` with the generated TypeScript
+/// protobuf schema.
 pub const EVENT_REALTIME: &str = "realtime:event";
 
 /// Connection lifecycle hint for the UI ("Connecting…", "Online",
@@ -76,7 +78,13 @@ fn registry() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
 /// running two windows of the same actor on the same machine gets
 /// independent cursor tracking on the server side. Empty string is
 /// tolerated; the server falls back to an anonymous suffix.
-pub fn start(app: AppHandle, actor_ptid: String, token: String, device_id: String) {
+pub fn start(
+    app: AppHandle,
+    actor_ptid: String,
+    session_epoch: u64,
+    token: String,
+    device_id: String,
+) {
     if token.trim().is_empty() {
         tracing::warn!(actor = %actor_ptid, "event_stream: refusing to start with empty token");
         return;
@@ -90,6 +98,9 @@ pub fn start(app: AppHandle, actor_ptid: String, token: String, device_id: Strin
     }
     let actor_for_thread = actor_ptid.clone();
     let cancel_for_thread = cancel.clone();
+    let station_url = station_base_url();
+    let station_peer_id = active_station_peer_id().unwrap_or_default();
+    let stream_cursor_path = cursor_path(&actor_ptid, &station_peer_id, &station_url);
     std::thread::Builder::new()
         .name(format!(
             "event-stream-{}",
@@ -99,6 +110,10 @@ pub fn start(app: AppHandle, actor_ptid: String, token: String, device_id: Strin
             run_supervisor(
                 app,
                 actor_for_thread.clone(),
+                session_epoch,
+                station_url,
+                station_peer_id,
+                stream_cursor_path,
                 token,
                 device_id,
                 cancel_for_thread,
@@ -144,8 +159,12 @@ pub fn is_running(actor_ptid: &str) -> bool {
 // Cursor persistence
 // ---------------------------------------------------------------------
 
-fn cursor_path(actor_ptid: &str) -> Option<PathBuf> {
-    let scope = crate::infrastructure::local_scope::user_scope_for_actor_ptid(actor_ptid);
+fn cursor_path(actor_ptid: &str, station_peer_id: &str, station_url: &str) -> Option<PathBuf> {
+    let scope = crate::infrastructure::local_scope::user_scope_for_actor_at_station(
+        actor_ptid,
+        Some(station_peer_id),
+        station_url,
+    );
     let name = format!("{scope}.txt");
     storage::app_file_path(
         "desktop",
@@ -155,8 +174,8 @@ fn cursor_path(actor_ptid: &str) -> Option<PathBuf> {
     .ok()
 }
 
-fn load_cursor(actor_ptid: &str) -> String {
-    let Some(path) = cursor_path(actor_ptid) else {
+fn load_cursor(path: Option<&PathBuf>) -> String {
+    let Some(path) = path else {
         return String::new();
     };
     match fs::read_to_string(&path) {
@@ -169,11 +188,11 @@ fn load_cursor(actor_ptid: &str) -> String {
     }
 }
 
-fn save_cursor(actor_ptid: &str, event_id: &str) {
+fn save_cursor(path: Option<&PathBuf>, event_id: &str) {
     if event_id.is_empty() {
         return;
     }
-    let Some(path) = cursor_path(actor_ptid) else {
+    let Some(path) = path else {
         return;
     };
     if let Some(parent) = path.parent() {
@@ -187,6 +206,22 @@ fn save_cursor(actor_ptid: &str, event_id: &str) {
     }
 }
 
+fn with_current_supervisor(
+    actor_ptid: &str,
+    cancel: &Arc<AtomicBool>,
+    operation: impl FnOnce(),
+) -> bool {
+    let map = registry().lock().expect("event_stream registry poisoned");
+    let current = map
+        .get(actor_ptid)
+        .is_some_and(|registered| Arc::ptr_eq(registered, cancel));
+    if !current || cancel.load(Ordering::Acquire) {
+        return false;
+    }
+    operation();
+    true
+}
+
 // ---------------------------------------------------------------------
 // Supervisor
 // ---------------------------------------------------------------------
@@ -194,6 +229,10 @@ fn save_cursor(actor_ptid: &str, event_id: &str) {
 fn run_supervisor(
     app: AppHandle,
     actor_ptid: String,
+    session_epoch: u64,
+    station_url: String,
+    station_peer_id: String,
+    cursor_path: Option<PathBuf>,
     token: String,
     device_id: String,
     cancel: Arc<AtomicBool>,
@@ -209,10 +248,21 @@ fn run_supervisor(
             return;
         }
 
-        let cursor = load_cursor(&actor_ptid);
+        let cursor = load_cursor(cursor_path.as_ref());
         emit_state(&app, &mut last_state_connected, false, "connecting");
 
-        match run_once(&app, &actor_ptid, &token, &device_id, &cursor, &cancel) {
+        match run_once(
+            &app,
+            &actor_ptid,
+            session_epoch,
+            &station_url,
+            &station_peer_id,
+            cursor_path.as_ref(),
+            &token,
+            &device_id,
+            &cursor,
+            &cancel,
+        ) {
             Ok(()) => return, // Cancelled.
             Err(err) => {
                 tracing::warn!(actor = %actor_ptid, error = %err, "event_stream: connection ended, will retry");
@@ -237,12 +287,16 @@ fn run_supervisor(
 fn run_once(
     app: &AppHandle,
     actor_ptid: &str,
+    session_epoch: u64,
+    station_url: &str,
+    station_peer_id: &str,
+    cursor_path: Option<&PathBuf>,
     token: &str,
     device_id: &str,
     cursor: &str,
     cancel: &Arc<AtomicBool>,
 ) -> Result<(), String> {
-    let url = format!("{}/events/stream", station_base_url());
+    let url = format!("{station_url}/events/stream");
     tracing::info!(url = %url, actor = %actor_ptid, cursor_len = cursor.len(), "event_stream: connecting");
 
     // Contract §2.4 wants a 30s no-frame deadline; reqwest 0.12.28
@@ -314,6 +368,11 @@ fn run_once(
                 dispatch(
                     app,
                     actor_ptid,
+                    session_epoch,
+                    station_url,
+                    station_peer_id,
+                    cursor_path,
+                    cancel,
                     current_event.as_deref(),
                     current_id.as_deref(),
                     &data_buf,
@@ -350,6 +409,11 @@ fn run_once(
 fn dispatch(
     app: &AppHandle,
     actor_ptid: &str,
+    session_epoch: u64,
+    station_url: &str,
+    station_peer_id: &str,
+    cursor_path: Option<&PathBuf>,
+    cancel: &Arc<AtomicBool>,
     event_name: Option<&str>,
     event_id: Option<&str>,
     data_b64: &str,
@@ -397,19 +461,23 @@ fn dispatch(
         }
     };
 
-    // Persist the cursor BEFORE emit so a frontend-side panic can't
-    // strand us in a state where we've shown a message but won't
-    // resume past it on reconnect. Empty event_id (heartbeats early
-    // in a session before any business event) is a no-op.
-    save_cursor(actor_ptid, &resolved_event_id);
-
     let payload = json!({
+        "actor_ptid": actor_ptid,
+        "session_epoch": session_epoch,
+        "station_url": station_url,
+        "station_peer_id": station_peer_id,
         "event_id": resolved_event_id,
         "data_b64": data_b64.trim(),
     });
-    if let Err(e) = app.emit(EVENT_REALTIME, &payload) {
-        tracing::warn!(error = %e, "event_stream: emit failed");
-    }
+    with_current_supervisor(actor_ptid, cancel, || {
+        // Cursor advancement and emit share the registration fence. Once a
+        // replacement supervisor is registered, the old generation can do
+        // neither and the replacement resumes from the unconsumed event.
+        save_cursor(cursor_path, &resolved_event_id);
+        if let Err(e) = app.emit(EVENT_REALTIME, &payload) {
+            tracing::warn!(error = %e, "event_stream: emit failed");
+        }
+    });
 }
 
 fn emit_state(app: &AppHandle, last: &mut Option<bool>, connected: bool, reason: &str) {
@@ -439,12 +507,12 @@ mod tests {
     #[test]
     fn cursor_roundtrip_via_disk() {
         let actor = "roundtrip-test-actor";
-        save_cursor(actor, "ev-abc");
-        assert_eq!(load_cursor(actor), "ev-abc");
-        save_cursor(actor, "ev-def");
-        assert_eq!(load_cursor(actor), "ev-def");
-        // Cleanup so concurrent test runs don't leak.
-        if let Some(p) = cursor_path(actor) {
+        let path = cursor_path(actor, "station-a", "https://station-a.test");
+        save_cursor(path.as_ref(), "ev-abc");
+        assert_eq!(load_cursor(path.as_ref()), "ev-abc");
+        save_cursor(path.as_ref(), "ev-def");
+        assert_eq!(load_cursor(path.as_ref()), "ev-def");
+        if let Some(p) = path {
             let _ = fs::remove_file(p);
         }
     }
@@ -452,11 +520,61 @@ mod tests {
     #[test]
     fn empty_event_id_does_not_overwrite_cursor() {
         let actor = "noop-test-actor";
-        save_cursor(actor, "ev-abc");
-        save_cursor(actor, "");
-        assert_eq!(load_cursor(actor), "ev-abc");
-        if let Some(p) = cursor_path(actor) {
+        let path = cursor_path(actor, "station-a", "https://station-a.test");
+        save_cursor(path.as_ref(), "ev-abc");
+        save_cursor(path.as_ref(), "");
+        assert_eq!(load_cursor(path.as_ref()), "ev-abc");
+        if let Some(p) = path {
             let _ = fs::remove_file(p);
+        }
+    }
+
+    #[test]
+    fn cursor_path_is_scoped_by_station_identity() {
+        let actor = "cross-station-cursor-actor";
+        let station_a = cursor_path(actor, "station-a", "https://shared.test");
+        let station_b = cursor_path(actor, "station-b", "https://shared.test");
+        let url_fallback = cursor_path(actor, "", "https://station-c.test");
+
+        assert_ne!(station_a, station_b);
+        assert_ne!(station_a, url_fallback);
+        assert_ne!(station_b, url_fallback);
+    }
+
+    #[test]
+    fn replaced_supervisor_cannot_advance_cursor() {
+        let actor = "renewed-session-cursor-actor";
+        let path = cursor_path(actor, "station-a", "https://station-a.test");
+        if let Some(path) = path.as_ref() {
+            let _ = fs::remove_file(path);
+        }
+        let old = Arc::new(AtomicBool::new(false));
+        let current = Arc::new(AtomicBool::new(false));
+        {
+            let mut map = registry().lock().unwrap();
+            map.insert(actor.to_string(), old.clone());
+            old.store(true, Ordering::Release);
+            map.insert(actor.to_string(), current.clone());
+        }
+
+        assert!(!with_current_supervisor(actor, &old, || {
+            save_cursor(path.as_ref(), "stale-event");
+        }));
+        assert_eq!(load_cursor(path.as_ref()), "");
+        assert!(with_current_supervisor(actor, &current, || {
+            save_cursor(path.as_ref(), "current-event");
+        }));
+        assert_eq!(load_cursor(path.as_ref()), "current-event");
+
+        let mut map = registry().lock().unwrap();
+        if map
+            .get(actor)
+            .is_some_and(|registered| Arc::ptr_eq(registered, &current))
+        {
+            map.remove(actor);
+        }
+        if let Some(path) = path {
+            let _ = fs::remove_file(path);
         }
     }
 }

@@ -45,6 +45,7 @@ describe('Chat logical history and rendering', () => {
     const html = renderToStaticMarkup(<ChatPage
       activeDetail={{ routeId: 'detail:chat-conversation', sessionUlid: 'conversation' }}
       onBack={() => undefined}
+      onStartConversation={() => undefined}
       onOpenConversation={() => undefined}
     />);
     expect(html.match(/data-message-ulid=/g)).toHaveLength(200);

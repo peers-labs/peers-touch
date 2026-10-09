@@ -1,8 +1,8 @@
 # Mobile Shell — 设计决策
 
-> **Status**: active; iOS simulator-canonical Acceptance amendment accepted
-> **Version**: v1.4
-> **Created**: 2026-08-27 | **Updated**: 2026-10-07
+> **Status**: active; whole-product foreground usability amendment accepted
+> **Version**: v1.5
+> **Created**: 2026-08-27 | **Updated**: 2026-10-08
 > **Owner**: Mobile Architecture Team
 
 ---
@@ -41,6 +41,7 @@
 | MS-D25 | Moments typed outcomes and native media lifecycle close as one owner-composed flow | accepted |
 | MS-D26 | Required Mobile proof uses isolated iOS Simulator cells | accepted |
 | MS-D27 | Current Mobile product proof uses one Station; cross-Station and Relay proof is deferred | accepted |
+| MS-D28 | Whole-product readiness requires a complete foreground iOS surface walkthrough | accepted |
 
 W2-E2 physical-proof refinements are isolated in
 [`native-oauth-proof/decisions.md`](./native-oauth-proof/decisions.md).
@@ -1576,3 +1577,58 @@ future topology without weakening its two-Station assertions.
 - Same-Station evidence cannot satisfy a future cross-Station/Relay claim.
 - Cross-Station scope stays visible in product, architecture, and Acceptance
   documents as deferred and unproven.
+
+## MS-D28: Whole-Product Foreground Usability Is A Release Gate
+
+**Status**: accepted
+**Date**: 2026-10-08
+
+### Context
+
+The completed MICU-03 Session-class Suite proved its narrow Session and message
+delivery contract, but its native screenshot also showed a raw PTID as the
+conversation title, oversized hierarchy, an app-obstructing
+deferred-capability card, large unused space, and a compromised composer. The
+functional oracle did not inspect every Mobile page or judge whether a person
+could understand, operate, and visually trust the product.
+
+### Decision
+
+Mobile whole-product readiness requires one source-bound foreground iOS
+walkthrough generated from the complete lifecycle, route, overlay, and recovery
+inventory. The walkthrough opens and operates each surface, captures screenshot
+and DOM/AX evidence, and applies deterministic content/layout checks plus an
+agent-led visual review.
+
+A module-local failure must remain inside its owning page or section. Raw
+technical identifiers and internal errors may appear only behind an explicit
+diagnostic affordance. A scenario-specific business Gate may prove its own
+behavior but cannot attest whole-product usability.
+
+### Rationale
+
+Runtime correctness and human usability are independent quality dimensions.
+Binding product completion to the complete surface inventory prevents a
+passing narrow path from masking unusable navigation, hierarchy, copy,
+accessibility, or recovery states elsewhere in the app.
+
+### Alternatives Considered
+
+- Reuse the Session-class Gate as the release verdict: rejected because its
+  oracle intentionally ignores unrelated pages and visual quality.
+- Review screenshots manually without an inventory: rejected because omitted
+  routes and states would remain invisible.
+- Treat prototype quality as production proof: rejected because the prototype
+  does not exercise native safe areas, runtime failures, real data, or
+  production composition.
+
+### Consequences
+
+- `mobile-simulator-whole-product-usability-e2e` must cover the full
+  descriptor/state inventory and preserve per-surface evidence; the
+  launch-only layout Gate remains independently scoped.
+- Any unvisited route or required visible state remains `UNPROVEN`.
+- Any blocker or major usability finding prevents a whole-product completion
+  claim even when feature-specific business assertions pass.
+- Historical MICU-03 evidence remains valid only for its declared Session
+  scope and cannot be relabeled as Mobile product readiness.

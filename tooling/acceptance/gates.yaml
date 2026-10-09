@@ -497,6 +497,21 @@
       "tier": "ci-cheap",
       "description": "Require current-source native receiver proof for Desktop-Mobile coexistence and independent Desktop and Mobile same-class takeover."
     },
+    "station-access-session-class-suite-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.session_class_suite_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.simulator.appium-session"
+      ],
+      "timeout_seconds": 5400,
+      "environment": "chat-mixed-native",
+      "provisioner": "chat-mixed-native",
+      "tier": "env-evidence",
+      "description": "Prove same-Station Chat, Desktop-Mobile coexistence, Desktop takeover, and Mobile takeover in one exact-source reusable Suite Runtime with UI and receiver-visible evidence."
+    },
     "station-access-federation-boundary-e2e": {
       "argv": [
         "python3",
@@ -808,6 +823,69 @@
       "environment": "local",
       "tier": "env-evidence",
       "description": "Prove Desktop Private Moments with one reusable Alice/Bob/Eve Native Suite while leaving Mobile unproven."
+    },
+    "social-cross-station-contract": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-contract",
+      "timeout_seconds": 1200,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate canonical cross-Station Social, Federation, Key Exchange, and generated-client contracts."
+    },
+    "social-cross-station-eventbus-contract": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-eventbus-contract",
+      "timeout_seconds": 900,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate typed Social wake events, one momentsRuntime projection owner, reconciliation, and teardown."
+    },
+    "social-cross-station-prekey": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-prekey",
+      "timeout_seconds": 1200,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate authenticated remote Content PreKey admission and exact replay."
+    },
+    "social-cross-station-delivery": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-delivery",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate source-atomic viewer-scoped delivery and receiver-atomic projection."
+    },
+    "social-cross-station-interaction": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-interaction",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate source-authoritative remote Comment and Reaction command/result lifecycles."
+    },
+    "social-cross-station-revocation-recovery": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-revocation-recovery",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate monotonic revocation, replay resilience, and trusted replacement-device recovery."
+    },
+    "social-cross-station-desktop-functional": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-desktop-functional",
+      "timeout_seconds": 10800,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Run the source-only development two-Station Native Social Suite and retain its non-formal evidence."
+    },
+    "social-cross-station-native-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-native-e2e",
+      "timeout_seconds": 10800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Attach formal proof to the exact-source CSS-09 Native Suite for AS17 through AS24 and same-Station regression."
+    },
+    "browser-social-zero-registration": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate browser-social-zero-registration",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Prove browser-gateway registers no Social page, runtime, module, navigation item, or action."
     },
     "social-domain-validation": {
       "command": "python3 tooling/scripts/acceptance-validate.py --domain social --require-proven",
@@ -1632,6 +1710,71 @@
       "tier": "ci-structure",
       "description": "Validate Mobile Acceptance IDs, typed service topology, Auth UI identity, contract wiring, and source-level Moments/Profile projection fencing without claiming native product behavior."
     },
+    "mobile-social-facade-contract": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.social_facade_contract",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove the generation-scoped Mobile Social facade, one typed intent family, Social-owned Tauri adapter mapping, stale-completion teardown, and retired page/runtime ownership removal without claiming a native user journey."
+    },
+    "mobile-social-feed-native": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.social_feed_native",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove one bounded Mobile Home/Explore projection, canonical Post-ID private composition, Station-owned Explore ranking, scope anchors, seven content kinds, and bounded feed states without claiming native device behavior."
+    },
+    "mobile-social-search-profile-native": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.social_search_profile_native",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove descriptor-owned Mobile Social Search/Profile, canonical PTID and Federation identity, authored timeline, authoritative relationship readback, Direct handoff, restoration metadata, and projection invalidation without claiming native device behavior."
+    },
+    "mobile-social-circles-native": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.social_circles_native",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove Station-owned Mobile Circle lifecycle, canonical protobuf identity, session-fenced pagination, authoritative member readback convergence, remote lookup failure preservation, and descriptor-owned Circle routes without claiming native device behavior."
+    },
+    "mobile-social-audience-composer-native": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.social_audience_composer_native",
+      "timeout_seconds": 2100,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove complete generated Audience selection, exact draft restoration, one public/private facade route, Native staged-media privacy, and authoritative publish completion without claiming native device behavior."
+    },
+    "mobile-social-thread-media-native": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.social_thread_media_native",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove one lazy inline comment thread, public/private comment authority separation, runtime-owned private pagination, and temporary public/private media lifecycle without claiming native device behavior."
+    },
+    "mobile-social-ios-native": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario ios-social-parity",
+      "timeout_seconds": 7200,
+      "environment": "mobile-social-ios-simulator",
+      "provisioner": "mobile-social-ios-simulator",
+      "tier": "env-evidence",
+      "description": "Prove the MPS-RC01 same-Station Social suite on one source-bound pair of isolated iOS Simulators, with reusable Home/Explore, Search/Profile, Circles/Audience/Publish, Thread/Reaction, Recovery/Lifecycle, native-quality, receiver-visible, and cleanup evidence."
+    },
+    "mobile-social-android-native": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.mobile.android_social_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.native.appium-session"
+      ],
+      "timeout_seconds": 10800,
+      "environment": "mobile-android-physical",
+      "provisioner": "mobile-android-physical",
+      "tier": "env-evidence",
+      "description": "Prove the MPS-RC02 same-Station Social suite through one USB-authorized physical Android device, sequential non-destructive Alice/Bob/Eve sessions, exact-source build and Station attestation, real UI actions, receiver-visible assertions, native evidence, and deterministic lease cleanup."
+    },
     "mobile-identity-contract": {
       "command": "python3 -m tooling.acceptance.gates.mobile.identity_contract",
       "timeout_seconds": 120,
@@ -1684,6 +1827,14 @@
       "provisioner": "mobile-ios-layout-simulator",
       "tier": "env-evidence",
       "description": "Prove the current iPhone 17 Simulator launch-surface layout, keyboard avoidance, localization, accessible naming, orientation, and cleanup."
+    },
+    "mobile-simulator-whole-product-usability-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e",
+      "timeout_seconds": 10800,
+      "environment": "mobile-direct-simulator",
+      "provisioner": "mobile-direct-simulator",
+      "tier": "env-evidence",
+      "description": "Walk the complete registered Mobile surface inventory in a foreground iOS Simulator and prove human-readable identity, valid actions, accessibility, viewport containment, and non-occlusion."
     },
     "mobile-simulator-social-convergence-e2e": {
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario social-convergence",

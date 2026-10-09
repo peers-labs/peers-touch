@@ -168,6 +168,14 @@ verify:
 - stable Plan changes preserve one `planId`, append exactly one auditable
   amendment, fence the complete manifest/Task byte set before switching the
   ExecutionRun, and invalidate affected Task closures without remounting;
+- machine-wide work and Plan-mount ledgers remain coordination projections:
+  schema/lifecycle mutation is scoped to the selected workspace, unrelated
+  workspace liveness never becomes a migration gate, foreign legacy records
+  remain validated conflict inputs, mixed Plan indexes remain disjoint with
+  one workspace-occupancy union and a mechanical removal trigger, legacy
+  mounts accept only explicitly authorized exact-owner `owner-unmount` rather
+  than executable or terminal-trust compatibility paths, and stale writers
+  fail schema/CAS fences instead of overwriting newer state;
 - CI validates explicit Plan source without consulting machine-local mounts and
   accepts completion only from an immutable repository
   `completions/<planDigest>.json` attestation;
@@ -478,6 +486,26 @@ manifest, carry `DONE` / `PROVEN` result semantics, and pass artifact identity
 and digest verification. Native Desktop claims must bind the requested runtime
 cell, clean source commit, Station commit, binary digest, platform probes, and
 reverse-order cleanup; evidence from one platform cannot prove another.
+
+For Desktop Social changes that affect Post, Comment, Reaction, relationship,
+revocation, notification, or resync freshness, the following checks are
+mandatory:
+
+- trace each committed fact through a typed producer, Station EventBus or
+  durable wake, Desktop Rust bridge, desktop-web kernel `eventBus`, the single
+  owning `momentsRuntime`, and the resulting store effect;
+- reject orphan producers, orphan consumers, dropped enum arms, duplicate
+  subscriptions, overlapping runtime owners, page/component polling used as
+  primary freshness, and module-private Tauri-to-store listeners that bypass
+  the typed kernel event catalog;
+- require both immediate event consumption and Station-backed periodic
+  reconcile; an event is only a wake/invalidation hint and must not become a
+  second business truth;
+- verify actor/session/Station scope fencing, dedup/order behavior, and teardown
+  on logout, actor switch, Station switch, runtime teardown, and failed tests;
+- require receiver-visible Native evidence while the Moments page is unopened
+  or hidden, plus duplicate-event idempotence and disconnect/missed-event
+  recovery. Static wiring checks cannot substitute for the live receiver path.
 
 ## Severity Levels
 

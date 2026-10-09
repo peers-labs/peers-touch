@@ -1,0 +1,35 @@
+surface: mobile.auth.access-gate
+scenario: normal-and-expired-login-tabs
+
+given:
+  - the Station identity has been verified at its canonical origin
+  - the Station advertises OAuth and email/password login actions
+  - the session is either new or expired
+
+when:
+  - the user selects Quick Login or Email Login
+
+then:
+  - only the selected login panel participates in card layout
+  - Change Station remains a quiet secondary action
+  - Email Login exposes one primary Sign In action
+  - a Station-authored schema gate exposes one primary Continue action
+  - expired-session identity context remains inside the same auth card
+
+visual_invariants:
+  - one auth card contains brand, Station context, fields, recovery, and actions
+  - the card is not vertically scrollable at 390x844, 554x954, or 1440x1100
+  - inactive login panels contribute zero width and height to current layout
+  - the primary action uses the full 44px primary button treatment
+  - raw Station addresses and internal protocol identifiers are not visible
+
+forbidden:
+  - a hidden Email panel determines Quick Login card height
+  - a schema Continue action inherits the transparent single-action treatment
+  - a second auth card or detached recovery panel appears
+  - changing login tabs mutates Station or session authority
+
+evidence:
+  - packages/prototypes/mobile/chat/scripts/check-layout.mjs
+  - apps/mobile/src/features/auth/AccessGateHost.test.ts
+  - before-and-after screenshots for normal/expired and quick/email states

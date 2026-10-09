@@ -14,6 +14,7 @@ import (
 
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -60,6 +61,11 @@ const (
 	PrivateContentBoundaryObjectAttachment  PrivateContentWriteBoundary = "object_attachment"
 	PrivateContentBoundaryObjectGrants      PrivateContentWriteBoundary = "object_grants"
 	PrivateContentBoundaryCommitProof       PrivateContentWriteBoundary = "commit_proof"
+	PrivateContentBoundaryFederationOutbox  PrivateContentWriteBoundary = "federation_outbox"
+	PrivateContentBoundaryRemoteResource    PrivateContentWriteBoundary = "remote_resource"
+	PrivateContentBoundaryRemoteEnvelopes   PrivateContentWriteBoundary = "remote_envelopes"
+	PrivateContentBoundaryInvalidation      PrivateContentWriteBoundary = "private_invalidation"
+	PrivateContentBoundaryRemoteTombstone   PrivateContentWriteBoundary = "remote_tombstone"
 	PrivateContentBoundaryCommandReceipt    PrivateContentWriteBoundary = "command_receipt"
 	PrivateContentBoundaryPostDeleted       PrivateContentWriteBoundary = "post_deleted"
 	PrivateContentBoundaryCommentsDeleted   PrivateContentWriteBoundary = "comments_deleted"
@@ -114,6 +120,8 @@ type SubmitPreparation struct {
 type PrivatePrepareBinding struct {
 	AudienceBytes                 []byte
 	AudienceSHA256                []byte
+	RecipientLocalitiesBytes      []byte
+	RecipientLocalitiesSHA256     []byte
 	GroupRecipientSnapshotBytes   []byte
 	GroupRecipientSnapshotSHA256  []byte
 	SubtypePrepareAuthorityBytes  []byte
@@ -182,6 +190,12 @@ type PrivateCommentPage struct {
 // transaction. Implementations never create or commit nested transactions.
 type PrivateContentTransaction interface {
 	ContentPreKeyValidationTransaction() federationdelivery.Transaction
+	Outbox() federationdelivery.OutboxWriter
+	EnqueueFederationFrame(
+		context.Context,
+		*federationdelivery.Frame,
+		time.Time,
+	) (federationdelivery.EnqueueResult, error)
 	LoadPrepareBinding(context.Context, string) (PrivatePrepareBinding, error)
 	RejectStale(context.Context) error
 	Expire(context.Context) error
@@ -240,6 +254,40 @@ type PrivateContentUnitOfWork interface {
 type PrivateContentStore interface {
 	PrivateContentUnitOfWork
 	Migrate(context.Context) error
+	StagePrivateResourceInvalidations(
+		context.Context,
+		federationdelivery.Transaction,
+		PrivateResourceInvalidationRequest,
+	) ([]*privatecontentpb.FederatedPrivateResourceInvalidation, error)
+	SuppressRemotePrivateResources(
+		context.Context,
+		federationdelivery.Transaction,
+		RemotePrivateSuppressionRequest,
+	) ([]string, error)
+	RemotePrivateResourceBlocked(
+		context.Context,
+		federationdelivery.Transaction,
+		string,
+		string,
+	) (bool, error)
+	ApplyRemotePrivateResourceInvalidation(
+		context.Context,
+		federationdelivery.Transaction,
+		*privatecontentpb.FederatedPrivateResourceInvalidation,
+		[]byte,
+	) (RemotePrivateInvalidationResult, error)
+	InspectRemotePrivateResource(
+		context.Context,
+		federationdelivery.Transaction,
+		*privatecontentpb.FederatedPrivateResourceDelivery,
+		[]byte,
+	) (bool, error)
+	ApplyRemotePrivateResource(
+		context.Context,
+		federationdelivery.Transaction,
+		*privatecontentpb.FederatedPrivateResourceDelivery,
+		[]byte,
+	) (bool, error)
 	ListRecoverablePrivateContent(
 		context.Context,
 		RecoverablePrivateContentQuery,
@@ -260,6 +308,7 @@ type PrivateContentStore interface {
 		string,
 		string,
 		time.Time,
+		...PrivatePostDeleteMutation,
 	) (bool, error)
 	ExpirePlan(context.Context, string, time.Time) error
 	GetPrivatePost(
@@ -268,6 +317,35 @@ type PrivateContentStore interface {
 		string,
 		string,
 	) (*PrivatePostReadModel, error)
+	ReadRemotePrivatePost(
+		context.Context,
+		string,
+		string,
+		string,
+		func(
+			federationdelivery.Transaction,
+			*RemotePrivatePostReadModel,
+		) error,
+	) error
+	ReadRemotePrivateComment(
+		context.Context,
+		string,
+		string,
+		string,
+		string,
+		func(
+			federationdelivery.Transaction,
+			*RemotePrivateCommentReadModel,
+		) error,
+	) error
+	ListRemotePrivateComments(
+		context.Context,
+		PrivateCommentListQuery,
+		func(
+			federationdelivery.Transaction,
+			RemotePrivateCommentPage,
+		) error,
+	) error
 	GetPrivateComment(
 		context.Context,
 		string,
@@ -287,11 +365,18 @@ type PrivateContentStore interface {
 	MarkPrepared(context.Context, PreparedPlan) (PreparedPlanResult, error)
 }
 
+type PrivatePostDeleteMutation func(
+	context.Context,
+	PrivateContentTransaction,
+	dbmodel.SocialPrivateContentPost,
+) error
+
 func (s *GORMPrivateContentStore) DeletePrivatePost(
 	ctx context.Context,
 	postID string,
 	authorPTID string,
 	deletedAt time.Time,
+	mutations ...PrivatePostDeleteMutation,
 ) (bool, error) {
 	if strings.TrimSpace(postID) == "" ||
 		strings.TrimSpace(authorPTID) == "" ||
@@ -303,12 +388,26 @@ func (s *GORMPrivateContentStore) DeletePrivatePost(
 	}
 
 	var deleted bool
+	var afterCommit []federationdelivery.AfterCommitFunc
 	err := s.withSerializedTransaction(
 		ctx,
 		[]string{"private-post:" + postID},
 		func(tx *gorm.DB) error {
+			outbox, err := federationdelivery.NewGORMRepository(
+				tx,
+				federationdelivery.SystemClock{},
+			)
+			if err != nil {
+				return err
+			}
+			bound := &gormPrivateContentTransaction{
+				db:        tx,
+				outbox:    outbox,
+				failpoint: s.failpoint,
+				parent:    s.federationTransaction,
+			}
 			var post dbmodel.SocialPrivateContentPost
-			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 				Where("post_id = ?", postID).
 				First(&post).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -322,6 +421,14 @@ func (s *GORMPrivateContentStore) DeletePrivatePost(
 			}
 			if post.AuthorPTID != authorPTID || post.DeletedAt != nil {
 				return nil
+			}
+			for _, mutate := range mutations {
+				if mutate == nil {
+					continue
+				}
+				if err := mutate(ctx, bound, post); err != nil {
+					return err
+				}
 			}
 
 			var comments []dbmodel.SocialPrivateContentComment
@@ -483,10 +590,14 @@ func (s *GORMPrivateContentStore) DeletePrivatePost(
 			}
 
 			deleted = true
+			afterCommit = append(afterCommit, bound.afterCommit...)
 			return nil
 		},
 	)
 	if err != nil {
+		return false, err
+	}
+	if err := runPrivateContentAfterCommit(ctx, afterCommit); err != nil {
 		return false, err
 	}
 	return deleted, nil
@@ -558,20 +669,26 @@ func (s *GORMPrivateContentStore) ExpirePlan(
 }
 
 type GORMPrivateContentStore struct {
-	db        *gorm.DB
-	failpoint PrivateContentFailpoint
+	db                    *gorm.DB
+	failpoint             PrivateContentFailpoint
+	federationTransaction federationdelivery.Transaction
 }
 
 type gormPrivateContentTransaction struct {
 	db             *gorm.DB
+	outbox         federationdelivery.OutboxWriter
 	failpoint      PrivateContentFailpoint
 	plan           *dbmodel.SocialPrivateContentPlan
 	domainCommitID string
 	terminalErr    error
+	parent         federationdelivery.Transaction
+	afterCommit    []federationdelivery.AfterCommitFunc
 }
 
 type privateContentValidationTransaction struct {
-	db *gorm.DB
+	db     *gorm.DB
+	outbox federationdelivery.OutboxWriter
+	parent federationdelivery.Transaction
 }
 
 var privateContentSQLiteLocks sync.Map
@@ -580,12 +697,67 @@ func (t privateContentValidationTransaction) DB() *gorm.DB {
 	return t.db
 }
 
-func (privateContentValidationTransaction) Outbox() federationdelivery.OutboxWriter {
-	return nil
+func (t privateContentValidationTransaction) Outbox() federationdelivery.OutboxWriter {
+	return t.outbox
+}
+
+func (t privateContentValidationTransaction) AfterCommit(
+	callback federationdelivery.AfterCommitFunc,
+) error {
+	registrar, ok := t.parent.(federationdelivery.AfterCommitRegistrar)
+	if !ok {
+		return fmt.Errorf("private-content transaction cannot register post-commit callback")
+	}
+	return registrar.AfterCommit(callback)
 }
 
 func (tx *gormPrivateContentTransaction) ContentPreKeyValidationTransaction() federationdelivery.Transaction {
-	return privateContentValidationTransaction{db: tx.db}
+	return tx
+}
+
+func (tx *gormPrivateContentTransaction) DB() *gorm.DB {
+	return tx.db
+}
+
+func (tx *gormPrivateContentTransaction) Outbox() federationdelivery.OutboxWriter {
+	return tx.outbox
+}
+
+func (tx *gormPrivateContentTransaction) AfterCommit(
+	callback federationdelivery.AfterCommitFunc,
+) error {
+	if callback == nil {
+		return fmt.Errorf("private-content post-commit callback is required")
+	}
+	if registrar, ok := tx.parent.(federationdelivery.AfterCommitRegistrar); ok {
+		return registrar.AfterCommit(callback)
+	}
+	tx.afterCommit = append(tx.afterCommit, callback)
+	return nil
+}
+
+func (tx *gormPrivateContentTransaction) EnqueueFederationFrame(
+	ctx context.Context,
+	frame *federationdelivery.Frame,
+	now time.Time,
+) (federationdelivery.EnqueueResult, error) {
+	if tx.outbox == nil {
+		return federationdelivery.EnqueueResult{}, fmt.Errorf(
+			"%w: Federation outbox is unavailable",
+			ErrPrivateContentInvalid,
+		)
+	}
+	result, err := tx.outbox.Enqueue(ctx, frame, now)
+	if err != nil {
+		return federationdelivery.EnqueueResult{}, err
+	}
+	if err := tx.afterWrite(
+		ctx,
+		PrivateContentBoundaryFederationOutbox,
+	); err != nil {
+		return federationdelivery.EnqueueResult{}, err
+	}
+	return result, nil
 }
 
 func (tx *gormPrivateContentTransaction) LoadPrepareBinding(
@@ -628,6 +800,9 @@ func (s *GORMPrivateContentStore) Migrate(ctx context.Context) error {
 	}
 	if err := database.AutoMigrate(models...); err != nil {
 		return fmt.Errorf("social private content migrate: %w", err)
+	}
+	if err := migrateRemotePrivateResources(database); err != nil {
+		return err
 	}
 	return nil
 }
@@ -724,13 +899,14 @@ type PrivatePostReadModel struct {
 }
 
 type PrivateCommentReadModel struct {
-	Comment             dbmodel.SocialPrivateContentComment
-	Snapshot            dbmodel.SocialPrivateAudienceSnapshot
-	Envelope            *dbmodel.SocialPrivateContentEnvelope
-	Objects             []dbmodel.SocialPrivateObjectAttachment
-	CommitProof         dbmodel.SocialPrivateCommitProof
-	AuthorDeviceID      string
-	CanonicalPlanSHA256 []byte
+	Comment                 dbmodel.SocialPrivateContentComment
+	Snapshot                dbmodel.SocialPrivateAudienceSnapshot
+	Envelope                *dbmodel.SocialPrivateContentEnvelope
+	Objects                 []dbmodel.SocialPrivateObjectAttachment
+	CommitProof             dbmodel.SocialPrivateCommitProof
+	AuthorDeviceID          string
+	AuthorHomeStationPeerID string
+	CanonicalPlanSHA256     []byte
 }
 
 func (s *GORMPrivateContentStore) GetPrivatePost(
@@ -1050,13 +1226,14 @@ func loadPrivateCommentReadModel(
 		return nil, err
 	}
 	return &PrivateCommentReadModel{
-		Comment:             comment,
-		Snapshot:            snapshot,
-		Envelope:            envelope,
-		Objects:             objects,
-		CommitProof:         proof,
-		AuthorDeviceID:      plan.AuthorDeviceID,
-		CanonicalPlanSHA256: cloneBytes(plan.CanonicalPlanSHA256),
+		Comment:                 comment,
+		Snapshot:                snapshot,
+		Envelope:                envelope,
+		Objects:                 objects,
+		CommitProof:             proof,
+		AuthorDeviceID:          plan.AuthorDeviceID,
+		AuthorHomeStationPeerID: plan.AuthorHomeStationPeerID,
+		CanonicalPlanSHA256:     cloneBytes(plan.CanonicalPlanSHA256),
 	}, nil
 }
 
@@ -1224,6 +1401,12 @@ func (s *GORMPrivateContentStore) ClaimPreparing(
 	}
 	candidate.AudienceBytes = cloneBytes(binding.AudienceBytes)
 	candidate.AudienceSHA256 = cloneBytes(binding.AudienceSHA256)
+	candidate.RecipientLocalitiesBytes = cloneBytes(
+		binding.RecipientLocalitiesBytes,
+	)
+	candidate.RecipientLocalitiesSHA256 = cloneBytes(
+		binding.RecipientLocalitiesSHA256,
+	)
 	candidate.GroupRecipientSnapshotBytes = cloneBytes(
 		binding.GroupRecipientSnapshotBytes,
 	)
@@ -1439,12 +1622,31 @@ func (s *GORMPrivateContentStore) Execute(
 	if fn == nil {
 		return fmt.Errorf("%w: transaction callback is required", ErrPrivateContentInvalid)
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return fn(&gormPrivateContentTransaction{
+	var afterCommit []federationdelivery.AfterCommitFunc
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		outbox, err := federationdelivery.NewGORMRepository(
+			tx,
+			federationdelivery.SystemClock{},
+		)
+		if err != nil {
+			return err
+		}
+		bound := &gormPrivateContentTransaction{
 			db:        tx,
+			outbox:    outbox,
 			failpoint: s.failpoint,
-		})
+			parent:    s.federationTransaction,
+		}
+		if err := fn(bound); err != nil {
+			return err
+		}
+		afterCommit = append(afterCommit, bound.afterCommit...)
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+	return runPrivateContentAfterCommit(ctx, afterCommit)
 }
 
 // ExecuteSubmit serializes the plan and receipt identities, locks both rows,
@@ -1468,6 +1670,7 @@ func (s *GORMPrivateContentStore) ExecuteSubmit(
 	var (
 		result      SubmitResult
 		terminalErr error
+		afterCommit []federationdelivery.AfterCommitFunc
 	)
 	err := s.withSerializedTransaction(
 		ctx,
@@ -1545,11 +1748,20 @@ func (s *GORMPrivateContentStore) ExecuteSubmit(
 				)
 			}
 
+			outbox, err := federationdelivery.NewGORMRepository(
+				tx,
+				federationdelivery.SystemClock{},
+			)
+			if err != nil {
+				return err
+			}
 			bound := &gormPrivateContentTransaction{
 				db:             tx,
+				outbox:         outbox,
 				failpoint:      s.failpoint,
 				plan:           &plan,
 				domainCommitID: command.DomainCommitID,
+				parent:         s.federationTransaction,
 			}
 			mutationResult, err := mutate(ctx, bound, clonePlan(plan))
 			if err != nil {
@@ -1613,14 +1825,34 @@ func (s *GORMPrivateContentStore) ExecuteSubmit(
 			if err := s.afterWrite(ctx, PrivateContentBoundaryCommandReceipt); err != nil {
 				return err
 			}
+			afterCommit = append(afterCommit, bound.afterCommit...)
 			result = SubmitResult{Receipt: cloneReceipt(receipt)}
 			return nil
 		},
 	)
+	if err == nil {
+		err = runPrivateContentAfterCommit(ctx, afterCommit)
+	}
 	if err == nil && terminalErr != nil {
 		return SubmitResult{}, terminalErr
 	}
 	return result, err
+}
+
+func runPrivateContentAfterCommit(
+	ctx context.Context,
+	callbacks []federationdelivery.AfterCommitFunc,
+) error {
+	var callbackErrors []error
+	for _, callback := range callbacks {
+		if err := callback(ctx); err != nil {
+			callbackErrors = append(callbackErrors, err)
+		}
+	}
+	if err := errors.Join(callbackErrors...); err != nil {
+		return fmt.Errorf("social private content post-commit callback: %w", err)
+	}
+	return nil
 }
 
 func (tx *gormPrivateContentTransaction) RejectStale(
@@ -1707,7 +1939,31 @@ func (tx *gormPrivateContentTransaction) PrivateCommentRetryAfter(
 	); err != nil {
 		return 0, err
 	}
+	return privateCommentRetryAfter(
+		ctx,
+		tx.db,
+		postID,
+		authorPTID,
+		admittedAt,
+		window,
+		actorLimit,
+		postLimit,
+	)
+}
+
+func privateCommentRetryAfter(
+	ctx context.Context,
+	database *gorm.DB,
+	postID string,
+	authorPTID string,
+	admittedAt time.Time,
+	window time.Duration,
+	actorLimit int64,
+	postLimit int64,
+) (time.Duration, error) {
 	if strings.TrimSpace(postID) == "" ||
+		strings.TrimSpace(authorPTID) == "" ||
+		database == nil ||
 		admittedAt.IsZero() ||
 		window <= 0 ||
 		actorLimit < 1 ||
@@ -1718,7 +1974,7 @@ func (tx *gormPrivateContentTransaction) PrivateCommentRetryAfter(
 		)
 	}
 	var parent dbmodel.SocialPrivateContentPost
-	if err := tx.db.WithContext(ctx).
+	if err := database.WithContext(ctx).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where(
 			"post_id = ? AND lifecycle_state = ? AND deleted_at IS NULL",
@@ -1742,7 +1998,7 @@ func (tx *gormPrivateContentTransaction) PrivateCommentRetryAfter(
 	loadWindow := func(author string) (commentWindow, error) {
 		var result commentWindow
 		query := func() *gorm.DB {
-			current := tx.db.WithContext(ctx).
+			current := database.WithContext(ctx).
 				Model(&dbmodel.SocialPrivateContentComment{}).
 				Where(
 					"post_id = ? AND created_at > ?",
@@ -2553,6 +2809,13 @@ func validatePrepareBinding(binding PrivatePrepareBinding) error {
 	); err != nil {
 		return err
 	}
+	if err := validateExactDigest(
+		"prepare recipient localities",
+		binding.RecipientLocalitiesBytes,
+		binding.RecipientLocalitiesSHA256,
+	); err != nil {
+		return err
+	}
 	if err := validateOptionalExactDigest(
 		"prepare Group recipient snapshot",
 		binding.GroupRecipientSnapshotBytes,
@@ -2725,6 +2988,14 @@ func samePrepareBinding(left, right PrivatePrepareBinding) bool {
 	return bytes.Equal(left.AudienceBytes, right.AudienceBytes) &&
 		bytes.Equal(left.AudienceSHA256, right.AudienceSHA256) &&
 		bytes.Equal(
+			left.RecipientLocalitiesBytes,
+			right.RecipientLocalitiesBytes,
+		) &&
+		bytes.Equal(
+			left.RecipientLocalitiesSHA256,
+			right.RecipientLocalitiesSHA256,
+		) &&
+		bytes.Equal(
 			left.GroupRecipientSnapshotBytes,
 			right.GroupRecipientSnapshotBytes,
 		) &&
@@ -2758,6 +3029,8 @@ func loadPrivatePrepareBinding(
 			"plan_id",
 			"audience_bytes",
 			"audience_sha256",
+			"recipient_localities_bytes",
+			"recipient_localities_sha256",
 			"group_recipient_snapshot_bytes",
 			"group_recipient_snapshot_sha256",
 			"subtype_prepare_authority_bytes",
@@ -2773,6 +3046,12 @@ func loadPrivatePrepareBinding(
 	binding := PrivatePrepareBinding{
 		AudienceBytes:  cloneBytes(model.AudienceBytes),
 		AudienceSHA256: cloneBytes(model.AudienceSHA256),
+		RecipientLocalitiesBytes: cloneBytes(
+			model.RecipientLocalitiesBytes,
+		),
+		RecipientLocalitiesSHA256: cloneBytes(
+			model.RecipientLocalitiesSHA256,
+		),
 		GroupRecipientSnapshotBytes: cloneBytes(
 			model.GroupRecipientSnapshotBytes,
 		),
@@ -2913,6 +3192,12 @@ func clonePlan(plan dbmodel.SocialPrivateContentPlan) dbmodel.SocialPrivateConte
 	plan.CanonicalPrepareSHA256 = cloneBytes(plan.CanonicalPrepareSHA256)
 	plan.AudienceBytes = cloneBytes(plan.AudienceBytes)
 	plan.AudienceSHA256 = cloneBytes(plan.AudienceSHA256)
+	plan.RecipientLocalitiesBytes = cloneBytes(
+		plan.RecipientLocalitiesBytes,
+	)
+	plan.RecipientLocalitiesSHA256 = cloneBytes(
+		plan.RecipientLocalitiesSHA256,
+	)
 	plan.GroupRecipientSnapshotBytes = cloneBytes(
 		plan.GroupRecipientSnapshotBytes,
 	)
@@ -2938,6 +3223,12 @@ func clonePlan(plan dbmodel.SocialPrivateContentPlan) dbmodel.SocialPrivateConte
 func clonePrepareBinding(binding PrivatePrepareBinding) PrivatePrepareBinding {
 	binding.AudienceBytes = cloneBytes(binding.AudienceBytes)
 	binding.AudienceSHA256 = cloneBytes(binding.AudienceSHA256)
+	binding.RecipientLocalitiesBytes = cloneBytes(
+		binding.RecipientLocalitiesBytes,
+	)
+	binding.RecipientLocalitiesSHA256 = cloneBytes(
+		binding.RecipientLocalitiesSHA256,
+	)
 	binding.GroupRecipientSnapshotBytes = cloneBytes(
 		binding.GroupRecipientSnapshotBytes,
 	)

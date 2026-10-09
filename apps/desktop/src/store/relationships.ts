@@ -20,6 +20,7 @@ import {
 
 const TAG = 'relationships-store';
 const RELATIONSHIP_PAGE_SIZE = 100;
+let relationshipsGeneration = 0;
 
 // Per-actor relationship cache:
 //   - `relations[actorPtid]` — the viewer's edge to that actor
@@ -149,10 +150,12 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
   ...initialState,
 
   loadRelationship: async (targetActorPtid) => {
+    const generation = relationshipsGeneration;
     if (get().loading[targetActorPtid]) return get().relations[targetActorPtid];
     set((s) => ({ loading: { ...s.loading, [targetActorPtid]: true } }));
     try {
       const resp = await socialGetRelationship(targetActorPtid);
+      if (generation !== relationshipsGeneration) return undefined;
       if (resp.relationship) {
         set((s) => ({
           relations: { ...s.relations, [targetActorPtid]: resp.relationship as Relationship },
@@ -164,12 +167,14 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
       return undefined;
     } catch (err) {
       log.warn(TAG, 'loadRelationship failed', { targetActorPtid, err: String(err) });
+      if (generation !== relationshipsGeneration) return undefined;
       set((s) => ({ loading: { ...s.loading, [targetActorPtid]: false } }));
       throw err;
     }
   },
 
   follow: async (targetActorPtid) => {
+    const generation = relationshipsGeneration;
     // Optimistic flip — server confirms via the response payload.
     set((s) => {
       const prev = s.relations[targetActorPtid];
@@ -187,6 +192,7 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
     });
     try {
       const resp = await socialFollow(targetActorPtid);
+      if (generation !== relationshipsGeneration) return;
       if (resp.relationship) {
         set((s) => ({
           relations: { ...s.relations, [targetActorPtid]: resp.relationship as Relationship },
@@ -197,6 +203,7 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
       // Roll back the optimistic flip on failure so the UI doesn't
       // show a follow button stuck in the wrong state.
       log.warn(TAG, 'follow failed; rolling back', { targetActorPtid, err: String(err) });
+      if (generation !== relationshipsGeneration) return;
       set((s) => {
         const prev = s.relations[targetActorPtid];
         if (!prev) return s;
@@ -209,6 +216,7 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
   },
 
   unfollow: async (targetActorPtid) => {
+    const generation = relationshipsGeneration;
     set((s) => {
       const prev = s.relations[targetActorPtid];
       if (!prev) return s;
@@ -218,9 +226,11 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
     });
     try {
       await socialUnfollow(targetActorPtid);
+      if (generation !== relationshipsGeneration) return;
       eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorPtid, action: 'unfollow' });
     } catch (err) {
       log.warn(TAG, 'unfollow failed; rolling back', { targetActorPtid, err: String(err) });
+      if (generation !== relationshipsGeneration) return;
       set((s) => {
         const prev = s.relations[targetActorPtid];
         if (!prev) return s;
@@ -233,6 +243,7 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
   },
 
   loadFollowers: async (actorPtid, refresh = false) => {
+    const generation = relationshipsGeneration;
     const current = get().followersByActor[actorPtid] ?? emptyList<Follower>();
     if (current.loading) return;
     set((s) => ({
@@ -246,6 +257,7 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
         actorPtid,
         refresh ? undefined : current.nextCursor || undefined,
       );
+      if (generation !== relationshipsGeneration) return;
       set((s) => {
         const prev = refresh ? [] : (s.followersByActor[actorPtid]?.items ?? []);
         const seen = new Set(prev.map((f) => f.actorPtid));
@@ -265,6 +277,7 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
       });
     } catch (err) {
       log.warn(TAG, 'loadFollowers failed', { actorPtid, err: String(err) });
+      if (generation !== relationshipsGeneration) return;
       set((s) => ({
         followersByActor: {
           ...s.followersByActor,
@@ -276,6 +289,7 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
   },
 
   loadFollowing: async (actorPtid, refresh = false) => {
+    const generation = relationshipsGeneration;
     const current = get().followingByActor[actorPtid] ?? emptyList<Following>();
     if (current.loading) return;
     set((s) => ({
@@ -289,6 +303,7 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
         actorPtid,
         refresh ? undefined : current.nextCursor || undefined,
       );
+      if (generation !== relationshipsGeneration) return;
       set((s) => {
         const prev = refresh ? [] : (s.followingByActor[actorPtid]?.items ?? []);
         const seen = new Set(prev.map((f) => f.actorPtid));
@@ -308,6 +323,7 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
       });
     } catch (err) {
       log.warn(TAG, 'loadFollowing failed', { actorPtid, err: String(err) });
+      if (generation !== relationshipsGeneration) return;
       set((s) => ({
         followingByActor: {
           ...s.followingByActor,
@@ -319,6 +335,7 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
   },
 
   loadMutualFriends: async (actorPtid, refresh = false) => {
+    const generation = relationshipsGeneration;
     const normalizedActorPtid = actorPtid.trim();
     if (!normalizedActorPtid) return;
     const current = get();
@@ -346,19 +363,36 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
         loadAllFollowers(normalizedActorPtid),
         loadAllFollowing(normalizedActorPtid),
       ]);
-      if (get().mutualFriendsActorPtid !== normalizedActorPtid) return;
-      set({
+      if (
+        generation !== relationshipsGeneration
+        || get().mutualFriendsActorPtid !== normalizedActorPtid
+      ) return;
+      const loadedAt = Date.now();
+      set((state) => ({
+        followersByActor: {
+          ...state.followersByActor,
+          [normalizedActorPtid]: {
+            items: followers,
+            nextCursor: '',
+            total: followers.length,
+            loading: false,
+            loadedAt,
+          },
+        },
         mutualFriends: projectMutualFriends(followers, following),
         mutualFriendsLoading: false,
-        mutualFriendsLoadedAt: Date.now(),
+        mutualFriendsLoadedAt: loadedAt,
         mutualFriendsError: null,
-      });
+      }));
     } catch (err) {
       log.warn(TAG, 'loadMutualFriends failed', {
         actorPtid: normalizedActorPtid,
         err: String(err),
       });
-      if (get().mutualFriendsActorPtid === normalizedActorPtid) {
+      if (
+        generation === relationshipsGeneration
+        && get().mutualFriendsActorPtid === normalizedActorPtid
+      ) {
         set({
           mutualFriendsLoading: false,
           mutualFriendsError: err instanceof Error ? err.message : String(err),
@@ -376,5 +410,8 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
     mutualFriendsError: null,
   }),
 
-  reset: () => set({ ...initialState }),
+  reset: () => {
+    relationshipsGeneration += 1;
+    set({ ...initialState });
+  },
 }));

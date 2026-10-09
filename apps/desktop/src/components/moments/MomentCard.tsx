@@ -21,6 +21,10 @@ import {
   useActivePrivateMomentsSlice,
 } from './useActiveMomentsStore';
 import {
+  isReadablePrivateMomentProjection,
+  privateDeliveryNoticeState,
+} from '../../services/privateMomentsNative';
+import {
   SocialTrustMeta,
   SocialActionBar,
   SocialPrivateState,
@@ -219,12 +223,16 @@ export function MomentCard({
     readPrivateMoment,
     recoverPrivateMoment,
     openPrivateMedia,
+    privateReaction,
+    retryPrivateReaction,
   } = useActivePrivateMomentsSlice((s) => ({
     privateProjection: s.postsById[post.id],
     privatePlatform: s.platform,
     readPrivateMoment: s.readMoment,
     recoverPrivateMoment: s.recoverMoment,
     openPrivateMedia: s.openMedia,
+    privateReaction: s.reactionsByPost[post.id],
+    retryPrivateReaction: s.retryReaction,
   }));
   const [expanded, setExpanded] = useState(false);
   const [reactionSubmitting, setReactionSubmitting] = useState(false);
@@ -243,6 +251,14 @@ export function MomentCard({
       ? 'LOADING_AUTHORIZED_RESOURCE'
       : 'PRIVATE_UNSUPPORTED_ON_DEVICE'
   );
+  const deliveryNotice = privateDeliveryNoticeState(
+    privateProjection?.remoteDeliveryState,
+  );
+  const privateReadable = privateProjection
+    ? isReadablePrivateMomentProjection(privateProjection)
+    : false;
+  const remoteSourceUnavailable =
+    privateState === 'REMOTE_SOURCE_UNAVAILABLE';
   const privateBody = privateProjection?.content?.kind === 'REPOST'
     ? privateProjection.content.comment
     : privateProjection?.content?.text ?? '';
@@ -261,6 +277,9 @@ export function MomentCard({
   const body = isPrivate ? privateBody : getBodyText(post);
   const images = isPrivate ? [] : getImages(post);
   const original = isPrivate ? undefined : getRepostOriginal(post);
+  const visibleReactions = isPrivate && privateProjection?.reactionsHydrated
+    ? privateProjection.reactions ?? []
+    : reactions ?? post.reactions ?? [];
   const longBody = body.length > 320;
   const visibleBody = expanded || !longBody ? body : `${body.slice(0, 320)}…`;
   const commentsCount = Number(post.stats?.commentsCount ?? 0n);
@@ -285,8 +304,8 @@ export function MomentCard({
     setReactionSubmitting(true);
     try {
       await onReact?.(post.id, kind);
-    } catch (err) {
-      message.error(String(err));
+    } catch {
+      message.error(t('moments.reaction.status.REACTION_REJECTED'));
     } finally {
       setReactionSubmitting(false);
     }
@@ -297,8 +316,20 @@ export function MomentCard({
     setReactionSubmitting(true);
     try {
       await onUnreact?.(post.id, kind);
-    } catch (err) {
-      message.error(String(err));
+    } catch {
+      message.error(t('moments.reaction.status.REACTION_REJECTED'));
+    } finally {
+      setReactionSubmitting(false);
+    }
+  };
+
+  const handleRetryReaction = async () => {
+    if (reactionSubmitting) return;
+    setReactionSubmitting(true);
+    try {
+      await retryPrivateReaction(post.id);
+    } catch {
+      message.error(t('moments.reaction.retryUnavailable'));
     } finally {
       setReactionSubmitting(false);
     }
@@ -396,10 +427,16 @@ export function MomentCard({
             <div onClick={(event) => event.stopPropagation()}>
               <SocialPrivateState
                 state={privateState}
+                revocationReason={privateProjection?.revocationReason}
                 compact
                 onRetry={() => void readPrivateMoment(post.id)}
                 onRecover={() => void recoverPrivateMoment(post.id)}
               />
+            </div>
+          )}
+          {isPrivate && privateState === 'CONTENT_READY' && deliveryNotice && (
+            <div onClick={(event) => event.stopPropagation()}>
+              <SocialPrivateState state={deliveryNotice} compact />
             </div>
           )}
 
@@ -437,7 +474,7 @@ export function MomentCard({
           )}
 
           {isPrivate
-            && privateState === 'CONTENT_READY'
+            && privateReadable
             && (
               privateProjection?.content?.kind === 'IMAGE'
               || privateProjection?.content?.kind === 'VIDEO'
@@ -452,7 +489,7 @@ export function MomentCard({
             )}
 
           {isPrivate
-            && privateState === 'CONTENT_READY'
+            && privateReadable
             && privateRepost
             && (
               <div
@@ -475,7 +512,7 @@ export function MomentCard({
             )}
 
           {isPrivate
-            && privateState === 'CONTENT_READY'
+            && privateReadable
             && privateLink
             && (
               <div
@@ -502,7 +539,7 @@ export function MomentCard({
             )}
 
           {isPrivate
-            && privateState === 'CONTENT_READY'
+            && privateReadable
             && privatePoll
             && (
               <div style={{ marginTop: 10 }}>
@@ -627,11 +664,21 @@ export function MomentCard({
 
           <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 10 }}>
             <SocialActionBar
-              reactions={reactions ?? post.reactions ?? []}
+              reactions={visibleReactions}
               commentCount={commentsCount}
               loading={reactionSubmitting}
-              onReact={(kind) => handleReact(kind)}
-              onUnreact={handleUnreact}
+              onReact={
+                remoteSourceUnavailable
+                  ? undefined
+                  : (kind) => handleReact(kind)
+              }
+              onUnreact={remoteSourceUnavailable ? undefined : handleUnreact}
+              reactionState={isPrivate ? privateReaction?.state : undefined}
+              onRetryReaction={
+                isPrivate && !remoteSourceUnavailable
+                  ? handleRetryReaction
+                  : undefined
+              }
               onOpenComments={() => onOpenComments?.(post.id)}
             />
           </div>

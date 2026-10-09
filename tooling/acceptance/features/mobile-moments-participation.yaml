@@ -16,10 +16,10 @@
   ],
   "truth_sources": ["Station Social post, comment, reaction, and audience state"],
   "visible_surfaces": [{"type": "mobile", "route": "moments"}],
-  "required_gates": ["mobile-contract-static", "mobile-simulator-social-convergence-e2e", "mobile-simulator-moments-e2e"],
+  "required_gates": ["mobile-contract-static", "mobile-simulator-social-convergence-e2e", "mobile-simulator-moments-e2e", "mobile-social-ios-native", "mobile-social-android-native"],
   "acceptance": {
     "product_assertions": ["MS-PA11", "MS-PA20", "MS-PA23"],
-    "visible": ["two actors on one Station observe converged feed, publish, reaction, comment, reply, rollback, and draft behavior"]
+    "visible": ["two actors on one Station observe converged feed, publish, reaction, comment, reply, rollback, and draft behavior", "Alice, Bob, and Eve complete the MPS-RC01 same-Station Social suite through two isolated iOS Simulator clients", "Alice, Bob, and Eve complete the MPS-RC02 same-Station Social suite through one USB-authorized physical Android device without account reset"]
   },
   "negative": ["optimistic rejection must not remain visible", "policy-hidden content must not be rendered as ordinary empty data", "same-Station evidence must not be promoted to cross-Station or Relay-backed delivery"]
 }

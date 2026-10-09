@@ -421,6 +421,7 @@ export async function closeDevelopment(options = {}, dependencies = {}) {
             workspaceId: identity.workspaceId,
             mountId: selectedMountId,
             allowReleased: true,
+            allowLegacyClose: true,
           });
         } else {
           const liveMountId = (

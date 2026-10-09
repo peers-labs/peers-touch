@@ -103,10 +103,7 @@
       "required_gates": [
         "station-access-capability-contract",
         "station-access-scope-isolation-e2e",
-        "chat-native-multi-device-e2e",
-        "chat-lifecycle-mixed-client-multi-device-e2e",
-        "mobile-simulator-station-lifecycle-e2e",
-        "station-access-session-class-e2e"
+        "station-access-session-class-suite-e2e"
       ],
       "synthetic_paths": [
         "apps/desktop/src/kernel/identityRuntime.ts",
@@ -132,10 +129,7 @@
         ],
         "proven_by": [
           "station-access-scope-isolation-e2e",
-          "chat-native-multi-device-e2e",
-          "chat-lifecycle-mixed-client-multi-device-e2e",
-          "mobile-simulator-station-lifecycle-e2e",
-          "station-access-session-class-e2e"
+          "station-access-session-class-suite-e2e"
         ],
         "proven_scope": [
           "Station, Actor, and Device scope remain aligned after native restart",

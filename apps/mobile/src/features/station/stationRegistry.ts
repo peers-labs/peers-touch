@@ -18,11 +18,6 @@ export interface StoredStationRegistry {
   entries: MobileStationEntry[];
 }
 
-export interface StationAddressInput {
-  protocol: StationProtocol;
-  address: string;
-}
-
 export interface StationStatusInput {
   label?: string;
   online?: boolean;
@@ -235,28 +230,17 @@ export function requireMatchingStationIdentity(
   return entry;
 }
 
-export function buildStationUrl(input: StationAddressInput): string | null {
-  const address = normalizeStationAddress(input.address);
+export function buildStationUrl(value: string): string | null {
+  const address = normalizeStationAddress(value);
   if (!address) return null;
 
   try {
-    const url = new URL(`${input.protocol}://${address}`);
+    const url = new URL(address);
     if (!isRootHttpOrigin(url)) return null;
     return url.origin;
   } catch {
     return null;
   }
-}
-
-export function splitStationInput(value: string, fallbackProtocol: StationProtocol): StationAddressInput {
-  const raw = value.trim();
-  const protocolMatch = raw.match(/^(https?):\/\/(.+)$/i);
-  if (!protocolMatch) return { protocol: fallbackProtocol, address: raw };
-
-  return {
-    protocol: protocolMatch[1].toLowerCase() === 'http' ? 'http' : 'https',
-    address: protocolMatch[2],
-  };
 }
 
 function createEmptyStationRegistry(): StoredStationRegistry {
@@ -286,10 +270,9 @@ function isRootHttpOrigin(url: URL): boolean {
 }
 
 function normalizeStationAddress(value: string): string | null {
-  const raw = value.trim().replace(/^\/+|\/+$/g, '');
-  if (!raw) return null;
-  if (/^https?:\/\//i.test(raw)) return null;
-  if (/\s/.test(raw)) return null;
+  const raw = value.trim().replace(/\/+$/g, '');
+  if (!raw || /\s/.test(raw)) return null;
+  if (!/^https?:\/\//i.test(raw)) return null;
   return raw;
 }
 

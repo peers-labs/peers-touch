@@ -144,6 +144,35 @@ For every replaced concern, name:
 Do not create an indefinite dual path unless the accepted architecture
 explicitly requires one.
 
+For a **clean-cut** replacement (the accepted architecture has no compatibility
+layer, no dual-running), rollback is a **VCS revert of the cut commit**, not a
+runtime toggle or a retained fallback path. The cut commit must be atomic and
+self-contained so reverting it restores the prior mechanism without depending
+on code that was deleted inside that same commit.
+
+### 5b. Bootstrapping When The Acceptance System Is The Work
+
+Trigger: the work changes the acceptance mechanism itself (its contract,
+executor, or evidence form). The normal rule "verify the produced closure with
+the acceptance framework" cannot apply, because that would make the new
+mechanism its own witness while the old one is being deleted.
+
+Bootstrap the verification in three ordered layers; each lower layer must hold
+before the next, and all three must hold before the old mechanism is deleted:
+
+1. **Plain unit tests for the new contract/executor** — these run outside any
+   gate and do not depend on the acceptance mechanism. They prove parsing,
+   target resolution, event dispatch, and fail-closed behavior.
+2. **Independent-oracle exemplar** — one exemplar journey is verified against
+   an oracle independent of the new system (direct human-checkable readback or
+   an authority read through a separate path), not by a gate of the new system
+   certifying itself.
+3. **Product journeys under the new mechanism** — ordinary product journeys are
+   then verified in operation language.
+
+Only after all three layers pass is the clean-cut deletion allowed. The
+bootstrap layers are part of the closure's evidence, not ad hoc debugging.
+
 ### 6. Define Verification By Risk And State
 
 For each closure, select evidence from:
@@ -169,6 +198,8 @@ Each selected scenario has:
 - observable expected result;
 - required runtime and receiver;
 - binary pass/fail oracle;
+- per-step execution channel and event mechanism (`touch` / `dom-event` /
+  `harness`) fixed in the model, not left to execution time;
 - evidence class and artifact;
 - explicit non-claim when not run.
 
@@ -215,6 +246,10 @@ Return `PLAN_MODEL_READY` only when:
 - dependencies and cutovers are explicit;
 - no required lifecycle step is unmapped;
 - deletion and rollback boundaries are complete;
+- when the acceptance system itself is the work, the three bootstrap layers
+  (plain unit tests, independent-oracle exemplar, product journeys) are mapped
+  and gate the deletion;
+- per-step channel and event mechanism are fixed in the model;
 - verification traces to product states or concrete risks;
 - no plan item redesigns architecture;
 - completion claims are bounded.

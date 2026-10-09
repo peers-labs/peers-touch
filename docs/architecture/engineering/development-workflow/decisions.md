@@ -54,6 +54,7 @@
 | DWF-D42 | Keep one stable Plan and record in-place amendments | accepted |
 | DWF-D43 | Persist main-session provenance for Agent-created worktrees | accepted |
 | DWF-D44 | Select one workspace per mutating OWNER action | accepted |
+| DWF-D45 | Isolate machine-ledger schema adoption by workspace | accepted |
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
@@ -2131,10 +2132,10 @@ bookkeeping that the Agent could validate deterministically.
   immutable repository `completions/<planDigest>.json` attestation. CI validates
   an explicit Plan and this digest-bound completion record without reading or
   reconstructing machine-local PlanMount state.
-- Repository Plan sources are converted in the same hard cut. Existing
-  machine ledgers are converted by `make plan-state-migrate` only after every
-  live declaration and mount is closed. Normal readers have no legacy fallback,
-  alias, or dual-write path.
+- Repository Plan sources are converted in the same source hard cut. Machine
+  ledger adoption follows DWF-D45: the selected workspace may migrate while
+  unrelated work remains live, and the bounded mixed envelope converges after
+  the last legacy workspace releases its records.
 
 ### Rationale
 
@@ -2153,8 +2154,8 @@ without turning every correction into a new Plan.
   is Agent-owned and only changes to accepted outcomes need product judgment.
 - Treat generated North Star text as implicitly accepted: rejected because
   Agent-authored distillation is a proposal, not evidence of user consent.
-- Allow normal readers to accept both formats: rejected because it creates two
-  active contracts and hides incomplete rollout.
+- Allow normal execution owners to run both Plan source formats: rejected
+  because it creates two active Plan contracts and hides incomplete rollout.
 
 ### Consequences
 
@@ -2313,3 +2314,103 @@ single-action scope, declarations, or child isolation.
 - Tests must prove sequential OWNER switching, target precedence, multi-root
   rejection, shell cwd confinement, symlink escape denial, and immutable child
   assignment scope.
+
+## DWF-D45: Isolate Machine-Ledger Schema Adoption By Workspace
+
+**Status**: accepted
+**Date**: 2026-10-07
+**Supersedes**: the machine-wide idle migration clause of DWF-D42
+
+### Context
+
+The stable Plan hard cut changed declaration field
+`planVersionDigest -> planDigest` and mount index
+`liveMountsByPlanVersion -> liveMountsByPlan`. Both files are machine-wide
+coordination projections, but their first migration owner required every
+Development declaration and PlanMount on the machine to close before either
+file could advance.
+
+On a machine with independent Mobile Social and Relay work, the current Mobile
+Chat workspace held no conflicting Profile, Station, slot, source branch, or
+Plan. It was still blocked solely because those foreign workspaces were live.
+This conflated global visibility with global lifecycle ownership and
+contradicted DWF-D11's claim-based conflict model.
+
+### Decision
+
+- `work.json` remains the single machine-wide resource-intent projection.
+  Each declaration is independently classified as `legacy` or `stable`; the
+  coordination reader validates the complete exact shape and digest for that
+  record before using its common source/runtime claims.
+- A normal writer creates and mutates only stable declarations owned by its
+  current `workspaceId`. Foreign legacy declarations remain value-equivalent
+  in the enclosing atomic replacement and continue to participate in
+  source/runtime conflict detection.
+- `plan-mounts/ledger.json` has one bounded migration envelope. During adoption
+  it may contain disjoint `liveMountsByPlanVersion` and
+  `liveMountsByPlan` indexes plus the shared workspace/run indexes. A mount ID
+  appears in exactly one Plan index, and the union must equal
+  `liveMountsByWorkspace`.
+- `make plan-state-migrate` derives the selected workspace from its canonical
+  root, acquires the existing short machine locks, rewrites only declarations
+  for that workspace, preserves their lifecycle state, and preserves every
+  foreign record and index entry.
+- A selected pre-DWF-D43 declaration with no `workflowOwner` may adopt only
+  the live OWNER reference carried by the exact Hook action that admitted the
+  migration. Existing ownership must match or migration fails closed; foreign
+  declarations are never adopted by another workspace.
+- A legacy mount remains close-only after adoption. Stable execution never
+  consumes its retired snapshot or trusts its terminal state. Only separately
+  authorized exact-owner `owner-unmount` may close it; close validates the
+  legacy mount/run digests and identity before removing only that workspace's
+  legacy indexes.
+- The migration owner removes `liveMountsByPlanVersion` as soon as its map is
+  empty. That condition is the mandatory removal trigger; the mixed envelope is
+  not a permanent second source of truth.
+- Stable mount admission checks both stable Plan keys and the `projectId +
+  planId` identity of foreign legacy mount records, so the migration window
+  cannot create duplicate execution ownership.
+- All writers retain lock plus compare-and-swap replacement. A stale
+  pre-adoption writer may fail schema validation after another workspace
+  adopts, but it cannot overwrite a newer ledger revision. It must synchronize
+  workflow tooling before its next machine-state mutation.
+- Global idle remains valid only for destructive machine-wide cleanup whose
+  operation explicitly owns all affected records. It is forbidden for
+  non-destructive projection, declaration, migration, status, or install work.
+
+### Rationale
+
+The shared ledger answers which resources and Plans are occupied across
+worktrees. It does not make one workspace the lifecycle owner of another.
+Record-level schema discrimination preserves coordination during rollout;
+workspace-scoped mutation preserves ownership; the short machine lock and CAS
+still serialize one physical file safely.
+
+The bounded mixed envelope is necessary because active legacy mounts already
+exist. Treating it as an explicit state with a mechanical deletion trigger is
+safer than either rewriting foreign live ownership or keeping a hidden
+compatibility reader indefinitely.
+
+### Alternatives Considered
+
+- Keep the all-machine idle hard cut: rejected because unrelated work can
+  prevent any workspace from adopting the current workflow indefinitely.
+- Rewrite every foreign live record from the current workspace: rejected
+  because it transfers lifecycle ownership and can invalidate an active
+  writer's digest.
+- Ignore foreign legacy records during conflict checks: rejected because it can
+  double-allocate source, runtime, workspace, or Plan ownership.
+- Maintain two independent ledgers: rejected because split indexes cannot
+  provide atomic conflict admission.
+
+### Consequences
+
+- Different worktrees no longer block schema adoption merely by being active.
+- Actual same-branch, same-workspace, exclusive runtime, workspace mount, and
+  Plan identity conflicts remain fail-closed.
+- Tests must prove foreign-live migration, foreign-record preservation,
+  selected live-declaration state preservation, close-only legacy mount
+  release, mixed-index disjointness, cross-schema Plan conflict, retry after
+  interruption, and stale-writer CAS rejection.
+- Operational knowledge records the invariant that machine coordination state
+  is global for visibility but workspace-scoped for lifecycle mutation.

@@ -120,6 +120,9 @@ Plan 在不改变北极星目标时可由 Agent 记录修订后继续执行。
 27. Development close 由一个可恢复协调器串行调用各资源 owner，并以
     `DevelopmentCloseReceipt` 证明完整关闭；单独释放 declaration 或 mount
     不再等价于流程完成。
+28. 机器级 ledger 只同步跨 worktree 的资源与 Plan 占用信息；短锁只保护原子
+    读改写。Schema adoption 由当前 workspace 独立执行，无关 workspace 的
+    liveness 不能成为迁移门禁。
 
 ## 4. Document Navigation
 
@@ -127,7 +130,7 @@ Plan 在不改变北极星目标时可由 Agent 记录修订后继续执行。
 |---|---|
 | [design.md](./design.md) | 控制面边界、stable Plan、amendment、mount、snapshot、Task Slice 和恢复数据流 |
 | [data-model.md](./data-model.md) | Plan、Task、Session、Checkpoint、Run 与状态机 schema |
-| [decisions.md](./decisions.md) | DWF-D01..DWF-D44 关键决策 |
+| [decisions.md](./decisions.md) | DWF-D01..DWF-D45 关键决策 |
 | [module-layout.md](./module-layout.md) | 文档、CLI、machine store 和 Skill 的文件职责 |
 | [integration.md](./integration.md) | 与 Skill、Make、Local Dev、Acceptance、Quality 的映射 |
 | [host-neutral-agent-integration.md](./host-neutral-agent-integration.md) | DWF-D21/DWF-D22/DWF-D33/DWF-D44 的 Kernel、宿主投影和 rollout 流程 |
@@ -143,7 +146,7 @@ Plan 在不改变北极星目标时可由 Agent 记录修订后继续执行。
 
 ## 5. Current Status
 
-DWF-D01..DWF-D44 已接受。仓库与 PR 可包含多个 stable Plan；Project Ledger
+DWF-D01..DWF-D45 已接受。仓库与 PR 可包含多个 stable Plan；Project Ledger
 的显式 PlanMount 是执行 worktree 唯一 Plan 占用真源。执行时以 immutable
 ExecutionPlanSnapshot 固定每次读取的内容；普通修订追加原因与影响记录，并让
 同一个 ExecutionRun 以 CAS 指向新快照，无需取消或重挂。只有修改或削弱
@@ -155,6 +158,10 @@ declaration、Session checkpoint 与消费 worktree 的 machine-local active-wor
 projection 在各自生命周期中持有。
 `peers-dev-workflow` 只负责规范实现和 rollout，不持有消费 worktree 的可变
 运行时状态。
+机器级 work/mount ledger 是协调投影，不是跨 workspace 生命周期 owner；
+workspace schema adoption 仅检查并改写当前 workspace 的记录，外部记录通过
+记录级 schema 判别继续参与冲突检测。迁移窗口内 stale writer 只能 fail closed，
+不能覆盖已推进的 ledger revision。
 一次授权可在 accepted Plan 内连续跨越多个 Task 和 agent review gate；
 精确用户授权和 Plan `authorization` 字段在这些内部边界后仍然有效，不能因
 操作类别敏感而重复询问；

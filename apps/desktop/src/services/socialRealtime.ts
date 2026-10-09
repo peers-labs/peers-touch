@@ -130,6 +130,12 @@ export async function refreshPeerPresence(peerPtids: readonly string[]): Promise
   }
 }
 
+/**
+ * Re-pull Social-owned relationship, profile, presence, and notification
+ * projections. Messaging-owned conversations and messages reconcile through
+ * messagingRealtime. Callers should never trigger a refresh from view-mount
+ * effects.
+ */
 export async function refreshSocialProjection(label: string, includeNotifications = false): Promise<void> {
   if (!currentAuthenticatedActorPtid()) return;
   if (socialRefreshInFlight) return socialRefreshInFlight;
@@ -253,8 +259,20 @@ async function startRealtimeStreamSupervisor(actorPtid: string): Promise<void> {
     await stopRealtimeStreamSupervisor();
   }
   await installEventStreamBridge();
-  await startEventStream();
+  await startEventStream(sessionEpoch);
   realtimeStreamScopeKey = scopeKey;
+}
+
+function restartRealtimeStreamForStationChange(): void {
+  realtimeStreamTransition = realtimeStreamTransition.then(async () => {
+    await stopRealtimeStreamSupervisor();
+    const actorPtid = currentAuthenticatedActorPtid();
+    if (actorPtid) {
+      await startRealtimeStreamSupervisor(actorPtid);
+    }
+  }).catch((error) => {
+    log.warn('socialRealtime', 'realtime stream Station restart failed', error);
+  });
 }
 
 function reconcileAuthenticatedRuntime(): void {
@@ -379,6 +397,7 @@ export function installSocialRealtimeBridge(): void {
     eventBus.subscribe(EVENT.REALTIME_CONNECTION_STATE, onRealtimeConnectionState),
     eventBus.subscribe(EVENT.REALTIME_SOCIAL_GRAPH_EVENT, onSocialGraphEvent),
     eventBus.subscribe(EVENT.RELATIONSHIP_CHANGED, onRelationshipChanged),
+    eventBus.subscribe(EVENT.STATION_ACTIVE_CHANGED, restartRealtimeStreamForStationChange),
     useNotificationStore.subscribe(onNotificationProjectionChanged),
   ];
 

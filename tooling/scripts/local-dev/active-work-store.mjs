@@ -626,6 +626,30 @@ export function updateActiveWorkRecord(input, options = {}) {
   }
 }
 
+export function adoptActiveWorkOwner(options = {}) {
+  const workflowOwner = requireActiveWorkOwner(options.workflowOwner, {
+    record: 'active-work',
+  });
+  const existing = readActiveWorkRecord(options);
+  if (existing === null) return null;
+  if (existing.workflowOwner !== undefined) {
+    assertActiveWorkOwner(existing.workflowOwner, workflowOwner, {
+      record: 'active-work',
+    });
+    return existing;
+  }
+  return updateActiveWorkRecord(
+    {
+      ...semanticInput(existing),
+      workflowOwner,
+    },
+    {
+      ...options,
+      expectedRevision: existing.revision,
+    },
+  );
+}
+
 function repairActiveWorkRecordUnderFence(input, options) {
   const expectedRecordSha256 = options.expectedRecordSha256;
   if (

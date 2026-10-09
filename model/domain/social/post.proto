@@ -655,6 +655,17 @@ enum ReactionKind {
   REACTION_LAUGH = 3;
   REACTION_WOW = 4;
   REACTION_CELEBRATE = 5;
+  REACTION_CLAP = 6;
+  REACTION_FIRE = 7;
+  REACTION_THANKS = 8;
+  REACTION_SAD = 9;
+  REACTION_ANGRY = 10;
+  REACTION_THINKING = 11;
+  REACTION_HUNDRED = 12;
+  REACTION_EYES = 13;
+  REACTION_STRONG = 14;
+  REACTION_CHECK = 15;
+  REACTION_HEART_HANDS = 16;
 }
 
 // Aggregated reaction count for a single ReactionKind on a Post.
@@ -678,6 +689,9 @@ message Mention {
 message ReactToPostRequest {
   string post_id = 1;
   ReactionKind kind = 2;
+  string command_id = 3;
+  string actor_signing_key_id = 4;
+  bytes actor_device_signature = 5;
 }
 
 message ReactToPostResponse {
@@ -685,16 +699,25 @@ message ReactToPostResponse {
   // Updated summary reflecting the viewer's new reaction. May contain
   // counts for all kinds, not just the one just added.
   repeated ReactionSummary reactions = 2;
+  string command_id = 3;
+  bool exact_replay = 4;
+  uint64 projection_revision = 5;
 }
 
 message UnreactToPostRequest {
   string post_id = 1;
   ReactionKind kind = 2;
+  string command_id = 3;
+  string actor_signing_key_id = 4;
+  bytes actor_device_signature = 5;
 }
 
 message UnreactToPostResponse {
   bool success = 1;
   repeated ReactionSummary reactions = 2;
+  string command_id = 3;
+  bool exact_replay = 4;
+  uint64 projection_revision = 5;
 }
 
 message ListReactionsRequest {

@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-09
-covered_docs_hash: 003b6232233a0458c4e1d97e50b92d679caba075230bf8d682eacdc7529bf07c
+last_verified_at: 2026-10-10
+covered_docs_hash: 1b6769f85782c807905cd952d64d088c6cea57650c9adce8de539d3f6eeb8163
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,15 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-10 Mobile And Relay Local Sync Review
+
+The local convergence keeps the accepted opaque inner-TLS Relay data plane and
+the Mobile Social/runtime work in one tree. Review must reject restoration of
+transparent Relay Request/Response frames or route-aware Relay plaintext
+handling. DWF-D44 remains per-action workspace selection; workspace-isolated
+machine-ledger adoption is renumbered DWF-D45. Session-class proof remains
+SAL-G08 and retains the reusable Suite Runtime requirement.
 
 ## 2026-10-09 Projection Bootstrap Review
 
@@ -83,6 +92,21 @@ OWNER receipts, and recoverable worktree creation transactions. Review rejects
 machine-state-dependent CI checks, child-session OWNER substitution,
 ownerless lifecycle mutation, unvalidated legacy migration input, and
 non-transactional provenance publication.
+
+## 2026-10-07 Workspace-Isolated Ledger Adoption Review
+
+DWF-D45 makes machine work and Plan-mount ledgers global coordination
+projections without making them global lifecycle owners. Review now rejects
+all-machine idle requirements for workspace schema adoption, foreign-record
+rewrites, ignored legacy conflict claims, overlapping legacy/stable Plan
+indexes, executable legacy snapshot fallbacks, missing exact-owner close and
+mixed-envelope removal paths, terminal-state trust without stable snapshot
+validation, and stale writers that can overwrite a newer revision.
+
+The GitHub Review Skill now checks these ownership and convergence boundaries.
+The machine-ledger workspace-isolation invariant plus focused Development work,
+Plan mount, and migration regressions provide executable coverage; no generic
+text-pattern fixture is required.
 
 ## 2026-10-07 Main-Session Worktree Provenance Review
 
@@ -302,6 +326,19 @@ The review interface now accepts one range, path/depth, or PR selector and
 derives file classification, advisory signals, source identity, rubric hash,
 verdict fields, and per-file coverage. Reviewers submit semantic findings only;
 the source-bound and fail-closed requirements are unchanged.
+
+## 2026-10-03 Social EventBus Acceptance Review
+
+Cross-Station Private Social now makes the accepted Desktop runtime projection
+contract explicit in its Plan and Acceptance Review. `pt-github-review` was
+updated because the escaped-defect pattern is reusable: a typed event may exist
+without a producer, consumer, unique runtime owner, reconcile path, scope
+teardown, or receiver-visible proof. Desktop Social review must trace the full
+producer-to-`momentsRuntime` path, reject direct module-private listener
+bypasses and duplicate owners, and require hidden-page plus missed-event
+recovery evidence. The plan-owned
+`social-cross-station-eventbus-contract` supplies the deterministic fixture;
+the Native two-client Gate remains the product-behavior proof.
 
 ## 2026-09-29 Suite Runtime Review
 

@@ -18,6 +18,82 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+func TestRemoteRecipientAdmissionUsesAcceptedFriendFederation(t *testing.T) {
+	database, err := gorm.Open(
+		sqlite.Open("file:remote_recipient_admission?mode=memory&cache=shared"),
+		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AutoMigrate(
+		&federatedRelationshipProjectionModel{},
+		&federatedFriendRequestProjectionModel{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 3, 10, 0, 0, 0, time.UTC)
+	if err := database.Create(&federatedRelationshipProjectionModel{
+		OwnerPTID:         "ptid:alice",
+		PeerPTID:          "ptid:bob",
+		RequestID:         "request-remote-friend",
+		AcceptedEventID:   "event-accepted",
+		AcceptedEventHash: privateAuthorityDigest([]byte("accepted")),
+		AcceptedAt:        now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Create(&federatedFriendRequestProjectionModel{
+		RequestID:                 "request-remote-friend",
+		FederationID:              "federation-one",
+		AuthorityStationPeerID:    "station-b",
+		SenderPTID:                "ptid:alice",
+		ReceiverPTID:              "ptid:bob",
+		SenderActorRefBytes:       []byte{1},
+		ReceiverActorRefBytes:     []byte{2},
+		SenderHomeStationPeerID:   "station-a",
+		ReceiverHomeStationPeerID: "station-b",
+		State:                     friendRequestPolicyRelationshipAccepted,
+		Sequence:                  2,
+		LastEventHash:             privateAuthorityDigest([]byte("event")),
+		LastEventBytes:            []byte{3},
+		AuthorityConfirmed:        true,
+		CreatedAt:                 now,
+		RespondedAt:               &now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	authority, err := NewGORMPrivateAudienceAuthority(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	federationID, err := authority.ResolveAcceptedFriendFederation(
+		context.Background(),
+		"ptid:alice",
+		"ptid:bob",
+		"station-a",
+		"station-b",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if federationID != "federation-one" {
+		t.Fatalf("Federation ID = %q", federationID)
+	}
+	if _, err := authority.ResolveAcceptedFriendFederation(
+		context.Background(),
+		"ptid:alice",
+		"ptid:bob",
+		"station-a",
+		"station-c",
+	); !socialdomain.IsPrivateContentCode(
+		err,
+		socialdomain.PrivateContentConflict,
+	) {
+		t.Fatalf("mismatched Station pair error = %v", err)
+	}
+}
+
 func TestPrivateAudienceAuthorityUsesAcceptedProjectionOnly(t *testing.T) {
 	database, err := gorm.Open(
 		sqlite.Open("file:private_audience?mode=memory&cache=shared"),
@@ -92,6 +168,94 @@ func TestPrivateAudienceAuthorityUsesAcceptedProjectionOnly(t *testing.T) {
 		len(snapshot.RecipientPTIDs) != 1 ||
 		snapshot.RecipientPTIDs[0] != "ptid:bob" {
 		t.Fatalf("unexpected FRIENDS snapshot: %+v", snapshot)
+	}
+}
+
+func TestPrivateCommentSnapshotAllowsRemoteAuthorWithoutOwnedFriendRows(
+	t *testing.T,
+) {
+	database, err := gorm.Open(
+		sqlite.Open("file:remote_comment_audience?mode=memory&cache=shared"),
+		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AutoMigrate(
+		&dbmodel.SocialPrivateContentPost{},
+		&dbmodel.SocialPrivateAudienceSnapshot{},
+		&dbmodel.SocialPrivateRecipientGrant{},
+		&federatedRelationshipProjectionModel{},
+		&socialDirectionalRelationshipModel{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)
+	snapshotID := "remote-comment-parent-snapshot"
+	if err := database.Create(&dbmodel.SocialPrivateContentPost{
+		PostID:                    "remote-comment-parent",
+		ContentID:                 "remote-comment-parent",
+		AuthorPTID:                "ptid:alice",
+		Generation:                1,
+		AudienceSnapshotID:        snapshotID,
+		Kind:                      actormodel.PostType_TEXT.String(),
+		EncryptedPayloadBytes:     []byte{1},
+		EncryptedPayloadSHA256:    privateAuthorityDigest([]byte("payload")),
+		ObjectDescriptorSetSHA256: privateAuthorityDigest(nil),
+		LifecycleState:            privateContentLifecycleActive,
+		CreatedAt:                 now,
+		UpdatedAt:                 now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Create(&dbmodel.SocialPrivateAudienceSnapshot{
+		SnapshotID:              snapshotID,
+		ResourceKind:            string(socialdomain.PrivateContentResourcePost),
+		ResourceID:              "remote-comment-parent",
+		PostID:                  "remote-comment-parent",
+		AudienceKind:            actormodel.Audience_FRIENDS.String(),
+		SourceRevision:          1,
+		CanonicalSnapshotSHA256: privateAuthorityDigest([]byte("parent")),
+		CreatedAt:               now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Create(&dbmodel.SocialPrivateRecipientGrant{
+		SnapshotID:    snapshotID,
+		RecipientPTID: "ptid:bob",
+		GrantedAt:     now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Create(&federatedRelationshipProjectionModel{
+		OwnerPTID:         "ptid:alice",
+		PeerPTID:          "ptid:bob",
+		RequestID:         "remote-comment-friendship",
+		AcceptedEventID:   "remote-comment-accepted",
+		AcceptedEventHash: privateAuthorityDigest([]byte("accepted")),
+		AcceptedAt:        now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	authority, err := NewGORMPrivateAudienceAuthority(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := authority.ResolvePrivateCommentSnapshot(
+		context.Background(),
+		nil,
+		"remote-comment-parent",
+		"",
+		"ptid:bob",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Audience.GetKind() != actormodel.Audience_CUSTOM_ALLOW ||
+		len(snapshot.RecipientPTIDs) != 1 ||
+		snapshot.RecipientPTIDs[0] != "ptid:alice" {
+		t.Fatalf("remote Comment snapshot = %+v", snapshot)
 	}
 }
 
@@ -249,6 +413,14 @@ func TestPrivateRepostSourceAuthorityRejectsGrantWideningAndSubmitDeletion(
 		t.Fatal(err)
 	}
 	sourceAudienceHash := privateAuthorityDigest(sourceAudienceBytes)
+	sourceRecipientLocalities, err :=
+		socialdomain.CanonicalRecipientLocalitiesBytes(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceRecipientLocalitiesHash := privateAuthorityDigest(
+		sourceRecipientLocalities,
+	)
 	emptyHash := privateAuthorityDigest(nil)
 	if err := database.Create(&dbmodel.SocialPrivateContentPlan{
 		PlanID:                        "private-source-plan",
@@ -266,6 +438,8 @@ func TestPrivateRepostSourceAuthorityRejectsGrantWideningAndSubmitDeletion(
 		CanonicalPrepareSHA256:        bytes.Repeat([]byte{0x61}, sha256.Size),
 		AudienceBytes:                 sourceAudienceBytes,
 		AudienceSHA256:                sourceAudienceHash,
+		RecipientLocalitiesBytes:      sourceRecipientLocalities,
+		RecipientLocalitiesSHA256:     sourceRecipientLocalitiesHash,
 		GroupRecipientSnapshotSHA256:  emptyHash,
 		SubtypePrepareAuthoritySHA256: emptyHash,
 		ClaimRequestBytes:             []byte{2},

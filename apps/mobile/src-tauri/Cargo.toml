@@ -13,6 +13,7 @@ tauri-build = { version = "2.0.1", features = [] }
 
 [dependencies]
 aes-gcm = "0.10"
+argon2 = "0.5"
 base64 = "0.22"
 bip39 = "2"
 ed25519-dalek = { version = "2", features = ["pem", "rand_core"] }
@@ -33,6 +34,7 @@ tauri = { version = "2.0.1", features = ["devtools"] }
 tauri-plugin-deep-link = "=2.4.9"
 tauri-plugin-opener = "=2.5.4"
 tauri-plugin-peers-platform-permissions = { path = "plugins/platform-permissions" }
+tauri-plugin-peers-secure-input = { path = "plugins/secure-input" }
 ulid = "1"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 zeroize = { version = "1", features = ["derive"] }
