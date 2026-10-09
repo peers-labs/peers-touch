@@ -341,6 +341,28 @@ class IOSNativeNetworkSourceContractTest(unittest.TestCase):
 
 
 class NativePushSchedulerAndPickerSourceContractTest(unittest.TestCase):
+    def test_ios_scheduler_registers_before_webview_load(self) -> None:
+        swift = SWIFT_PLUGIN_PATH.read_text(encoding="utf-8")
+        initialization = swift.split(
+            "override init()",
+            maxsplit=1,
+        )[1].split(
+            "override func load",
+            maxsplit=1,
+        )[0]
+        webview_load = swift.split(
+            "override func load",
+            maxsplit=1,
+        )[1].split(
+            "deinit",
+            maxsplit=1,
+        )[0]
+
+        self.assertIn("registerScheduledHandlers()", initialization)
+        self.assertNotIn("registerScheduledHandlers()", webview_load)
+        self.assertIn("failure.domain", swift)
+        self.assertIn("failure.code", swift)
+
     def test_push_registration_is_ptid_device_bound_and_native_only(self) -> None:
         proto = NOTIFICATION_PROTO_PATH.read_text(encoding="utf-8")
         handler = NOTIFICATION_HANDLER_PATH.read_text(encoding="utf-8")
@@ -383,6 +405,7 @@ class NativePushSchedulerAndPickerSourceContractTest(unittest.TestCase):
             info_plist["BGTaskSchedulerPermittedIdentifiers"],
             identifiers,
         )
+        self.assertIn("fetch", info_plist["UIBackgroundModes"])
         for identifier in identifiers:
             self.assertIn(identifier, swift)
             self.assertIn(identifier, android)
