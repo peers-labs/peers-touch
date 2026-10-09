@@ -568,7 +568,29 @@ async function restoreContext(client, context) {
 }
 
 async function activateForegroundClient(clientId, client) {
-  if (client.platform === 'desktop') return null;
+  if (client.platform === 'desktop') {
+    const result = await webdriverRequest(
+      webdriverEndpoint(client, '/execute/async'),
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          script: `
+            const done = arguments[arguments.length - 1];
+            window.__TAURI__.window.getCurrentWindow().setFocus()
+              .then(() => done({ ok: true }))
+              .catch((error) => done({ ok: false, error: String(error) }));
+          `,
+          args: [],
+        }),
+      },
+    );
+    assertContract(
+      result?.ok === true,
+      'WEBDRIVER_CLIENT_NOT_FOREGROUND',
+      `${clientId} could not focus its native window: ${result?.error || 'unknown error'}`,
+    );
+    return null;
+  }
   await webdriverRequest(
     webdriverEndpoint(client, '/appium/device/activate_app'),
     {
