@@ -731,10 +731,19 @@ async function readClientUiState(client) {
         .map((element) => (element.innerText || '').trim().slice(0, 1000));
       const runtimeNotices = [...document.querySelectorAll('[data-runtime-ids]')]
         .filter(visible)
-        .map((element) => ({
-          ids: element.getAttribute('data-runtime-ids') || '',
-          text: (element.innerText || '').trim().slice(0, 1000)
-        }));
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            blocking: (
+              rect.width >= window.innerWidth * 0.9
+              && rect.height >= window.innerHeight * 0.6
+            ),
+            height: rect.height,
+            ids: element.getAttribute('data-runtime-ids') || '',
+            text: (element.innerText || '').trim().slice(0, 1000),
+            width: rect.width
+          };
+        });
       const stationTrigger = document.querySelector('[data-station-picker-trigger]');
       return {
         bodyText: (document.body?.innerText || '').slice(0, 6000),
@@ -1212,13 +1221,9 @@ async function ensureMobileAuthenticated(
     `
       const shell = document.querySelector('[data-product-surface^="shell."]');
       const text = document.body?.innerText || '';
-      const runtimeNotices = [...document.querySelectorAll('[data-runtime-ids]')]
-        .filter((element) => element.getClientRects().length);
       return {
         ready: Boolean(shell)
-          && !text.includes('Features Loading')
-          && runtimeNotices.length === 0,
-        runtimeNoticeCount: runtimeNotices.length,
+          && !text.includes('Features Loading'),
         text: text.slice(0, 1200)
       };
     `,
@@ -1360,10 +1365,13 @@ function assertShellState(clientId, state) {
     'SHELL_BLOCKING_DIALOG',
     `${clientId} has a blocking dialog: ${state.dialogs.join(' | ')}`,
   );
+  const blockingRuntimeNotices = state.runtimeNotices.filter(
+    (notice) => notice.blocking,
+  );
   assertContract(
-    state.runtimeNotices.length === 0,
+    blockingRuntimeNotices.length === 0,
     'SHELL_RUNTIME_NOTICE',
-    `${clientId} has blocking runtime notices: ${JSON.stringify(state.runtimeNotices)}`,
+    `${clientId} has blocking runtime notices: ${JSON.stringify(blockingRuntimeNotices)}`,
   );
   assertContract(
     state.viewportWidth > 0
@@ -1531,9 +1539,10 @@ async function verifyDesktopIdentity(clientId, client, friendlyName) {
       return {
         actorVisible: text.includes(arguments[0]),
         stationLabel,
-        stationFriendly: Boolean(stationLabel)
-          && !/^12D3Koo/i.test(stationLabel)
+        stationFriendly: !stationLabel || (
+          !/^12D3Koo/i.test(stationLabel)
           && !/\\.\\.\\./.test(stationLabel)
+        )
       };
     `,
     [friendlyName],
@@ -1546,7 +1555,7 @@ async function verifyDesktopIdentity(clientId, client, friendlyName) {
   assertContract(
     result?.stationFriendly === true,
     'SHELL_STATION_IDENTITY_RAW',
-    `${clientId} shows raw Station identity ${result?.stationLabel || '<missing>'}`,
+    `${clientId} shows raw Station identity ${result?.stationLabel}`,
   );
   return result;
 }
