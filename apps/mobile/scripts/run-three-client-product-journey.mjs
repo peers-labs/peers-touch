@@ -681,6 +681,32 @@ async function clickSelector(client, selector, label) {
   return { label, selector };
 }
 
+async function clickVisibleSelector(client, selector, label) {
+  const result = await executeWebScript(
+    client,
+    `
+      const element = [...document.querySelectorAll(arguments[0])]
+        .find((candidate) => (
+          candidate instanceof HTMLElement
+          && candidate.getClientRects().length
+          && getComputedStyle(candidate).visibility !== 'hidden'
+          && getComputedStyle(candidate).display !== 'none'
+          && !candidate.hasAttribute('disabled')
+        ));
+      if (!element) return { ok: false };
+      element.click();
+      return { ok: true };
+    `,
+    [selector],
+  );
+  assertContract(
+    result?.ok === true,
+    'WEBDRIVER_VISIBLE_ELEMENT_MISSING',
+    `${label} could not find a visible ${selector}`,
+  );
+  return { label, selector };
+}
+
 async function clickXpath(client, xpath, label, optional = false) {
   const elementId = await findElement(client, 'xpath', xpath, optional);
   if (!elementId) return false;
@@ -1854,9 +1880,9 @@ async function logoutMobileClient(clientId, client) {
       return { ready: Boolean(surface?.getClientRects().length) };
     `,
   );
-  await clickXpath(
+  await clickVisibleSelector(
     client,
-    '(//button[normalize-space(.)="Log Out"])[last()]',
+    '.ant-modal-content .ant-modal-footer .ant-btn-dangerous',
     'confirm-mobile-logout',
   );
   const result = await waitForUi(
