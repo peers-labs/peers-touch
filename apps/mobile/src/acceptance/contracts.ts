@@ -947,6 +947,7 @@ export interface PublicRecoveryState {
     | 'capacity-read-only'
     | 'write-revocation'
     | 'session-mismatch'
+    | 'actor-identity-recovery'
     | 'event-overflow-reconcile'
     | 'deferred-capability'
     | 'device-local-flag';

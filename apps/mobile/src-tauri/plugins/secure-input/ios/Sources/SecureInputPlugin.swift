@@ -7,6 +7,7 @@ import WebKit
 private let acceptanceSecretFileEnvironment =
   "PEERS_TOUCH_ACCEPTANCE_RECOVERY_SECRET_FILE"
 private let privateSocialRecoveryPurpose = "private_social_recovery"
+private let actorIdentityRecoveryPurpose = "actor_identity_recovery"
 private let maximumSecretBytes = 1024
 
 private struct SecretInputArgs: Decodable {
@@ -53,7 +54,8 @@ final class SecureInputPlugin: Plugin {
       let args = try invoke.parseArgs(SecretInputArgs.self)
       guard
         !args.requestId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-        args.purpose == privateSocialRecoveryPurpose,
+        args.purpose == privateSocialRecoveryPurpose
+          || args.purpose == actorIdentityRecoveryPurpose,
         args.lifecycleGeneration > 0,
         args.deadlineMs >= 1_000,
         args.deadlineMs <= 300_000
@@ -95,9 +97,16 @@ final class SecureInputPlugin: Plugin {
       return
     }
 
+    let actorIdentityRecovery = args.purpose == actorIdentityRecoveryPurpose
     let alert = UIAlertController(
-      title: localized("recovery_title"),
-      message: localized("recovery_message"),
+      title: localized(
+        actorIdentityRecovery
+          ? "actor_identity_recovery_title" : "recovery_title"
+      ),
+      message: localized(
+        actorIdentityRecovery
+          ? "actor_identity_recovery_message" : "recovery_message"
+      ),
       preferredStyle: .alert
     )
     alert.view.accessibilityIdentifier = "peers-touch.secure-input.recovery"

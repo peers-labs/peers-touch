@@ -238,6 +238,8 @@ export interface MessagingActivateInput extends MessagingMutationScopeInput {
   sessionId: string;
 }
 
+export type MessagingIdentityRecoveryInput = MessagingActivateInput;
+
 export interface MessagingRuntimeStatus {
   active: boolean;
   profileId?: string;
@@ -552,6 +554,15 @@ export async function messagingActivate(
 
 export async function messagingStatus(): Promise<MessagingRuntimeStatus> {
   return invoke<MessagingRuntimeStatus>('messaging_status');
+}
+
+export async function messagingRecoverIdentity(
+  input: MessagingIdentityRecoveryInput,
+): Promise<MessagingRuntimeStatus> {
+  return invoke<MessagingRuntimeStatus>(
+    'messaging_recover_identity_with_native_input',
+    { input },
+  );
 }
 
 export async function messagingCallSignalSeal(

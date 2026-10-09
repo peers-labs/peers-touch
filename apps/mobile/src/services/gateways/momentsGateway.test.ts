@@ -173,7 +173,9 @@ describe('Moments Station protobuf JSON decoding', () => {
             object_id: 'post-1',
             source: { kind: 'ACTIVITY_SOURCE_LOCAL' },
           },
-          outcome: 'POST_DETAIL_OUTCOME_AVAILABLE',
+          resource: {
+            metadata: { post_id: 'post-1' },
+          },
         },
       })
       .mockResolvedValueOnce({

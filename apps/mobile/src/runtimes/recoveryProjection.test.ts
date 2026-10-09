@@ -66,6 +66,25 @@ describe('recoveryProjection', () => {
     });
   });
 
+  it('keeps actor identity recovery blocking until native enrollment succeeds', () => {
+    const projection = createRecoveryProjection();
+
+    projection.reportActorIdentityRecovery();
+    projection.reportActorIdentityRecovery();
+    expect(projection.getSnapshot()).toMatchObject({
+      hasActiveRecovery: true,
+      isWriteBlocked: true,
+      states: [{ kind: 'actor-identity-recovery' }],
+    });
+
+    projection.clearActorIdentityRecovery();
+    expect(projection.getSnapshot()).toMatchObject({
+      hasActiveRecovery: false,
+      isWriteBlocked: false,
+      states: [],
+    });
+  });
+
   it('keeps legacy reliability data write-blocking until Rust confirms cleanup', () => {
     const projection = createRecoveryProjection();
 

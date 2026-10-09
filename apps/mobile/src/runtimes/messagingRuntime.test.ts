@@ -142,6 +142,16 @@ describe('Messaging projection hydration', () => {
     expect(ports.social.loadMessages).not.toHaveBeenCalled();
   });
 
+  it('retries one transient startup cycle before exposing runtime degradation', async () => {
+    ports.reconcile.mockRejectedValueOnce(new Error('enrollment publication race'));
+
+    await start();
+
+    expect(ports.reconcile).toHaveBeenCalledTimes(2);
+    expect(ports.readinessFail).not.toHaveBeenCalled();
+    expect(ports.social.refreshSessions).toHaveBeenCalledOnce();
+  });
+
   it('refreshes active and previously materialized histories only', async () => {
     ports.social.messages = { 'direct-a': [] };
     ports.social.activeSessionUlid = 'group-b';

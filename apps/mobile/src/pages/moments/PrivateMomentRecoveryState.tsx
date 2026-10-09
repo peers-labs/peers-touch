@@ -46,7 +46,7 @@ export function PrivateMomentRecoveryState({
     ? projection.errorCode
     : null;
   const stateKey = revocationReason
-    ? `mobile.moments.private.revocation.${revocationReason}`
+    ? `moments.private.revocation.${revocationReason}`
     : `mobile.moments.private.state.${projection.state}`;
   const Icon = recoveryRequired ? KeyRound : revoked ? ShieldX : ShieldAlert;
 
@@ -67,7 +67,7 @@ export function PrivateMomentRecoveryState({
       </Text>
       {revoked ? (
         <Text type="secondary">
-          {t('mobile.moments.private.revocation.copyBoundary')}
+          {t('moments.private.revocation.copyBoundary')}
         </Text>
       ) : null}
       <Text className="private-moment-recovery__identity" code title={projection.postId}>

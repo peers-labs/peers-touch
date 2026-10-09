@@ -38,7 +38,9 @@ import {
   type RecoveryState,
   type SessionMismatchState,
 } from '../../runtimes/recoveryProjection';
+import { recoverActiveMessagingIdentity } from '../../runtimes/messagingRuntime';
 
+import { ActorIdentityRecoveryOverlay } from './ActorIdentityRecoveryOverlay';
 import { DraftRestoreOverlay } from './DraftRestoreOverlay';
 import {
   CommandRecoveryPanel,
@@ -71,6 +73,10 @@ export function visibleRecoveryStates(
   launchState: MobileLaunchState,
   domainFixtureActive = false,
 ): readonly RecoveryState[] {
+  const actorIdentityRecovery = states.find(
+    (state) => state.kind === 'actor-identity-recovery',
+  );
+  if (actorIdentityRecovery) return [actorIdentityRecovery];
   return states.filter((state) => {
     if (domainFixtureActive && state.kind === 'deferred-capability') {
       return false;
@@ -186,6 +192,12 @@ export function RecoveryOverlayHost({
     await kernel.restartRuntimeGraph('app-resume');
   }, []);
 
+  const recoverActorIdentity = useCallback(async () => {
+    await recoverActiveMessagingIdentity();
+    getRecoveryProjection().clearActorIdentityRecovery();
+    await getMobileLifecycleKernel().restartRuntimeGraph('app-resume');
+  }, []);
+
   const renderState = useCallback(
     (state: RecoveryState) => {
       const key = fixture.surfaceId
@@ -241,6 +253,15 @@ export function RecoveryOverlayHost({
               onSwitchStation={onSwitchStation}
             />
           );
+        case 'actor-identity-recovery':
+          return (
+            <ActorIdentityRecoveryOverlay
+              key={key}
+              t={t}
+              onRecover={recoverActorIdentity}
+              onSwitchStation={onSwitchStation}
+            />
+          );
         case 'event-overflow-reconcile':
           return <OverflowReconcileBar key={key} state={state} t={t} />;
         case 'deferred-capability':
@@ -279,6 +300,7 @@ export function RecoveryOverlayHost({
       onRetryDeviceLocal,
       onSwitchStation,
       retryInterruptedReliabilityReset,
+      recoverActorIdentity,
       retryDeferredCapabilities,
       t,
     ],

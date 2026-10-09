@@ -19,6 +19,7 @@ import java.nio.charset.CodingErrorAction
 private const val ACCEPTANCE_SECRET_FILE_ENVIRONMENT =
     "PEERS_TOUCH_ACCEPTANCE_RECOVERY_SECRET_FILE"
 private const val PRIVATE_SOCIAL_RECOVERY_PURPOSE = "private_social_recovery"
+private const val ACTOR_IDENTITY_RECOVERY_PURPOSE = "actor_identity_recovery"
 private const val MAXIMUM_SECRET_BYTES = 1024
 private const val AUTOFILL_ACCESSIBILITY_ID = "peers-touch.secure-input.autofill"
 
@@ -58,7 +59,10 @@ class SecureInputPlugin(private val activity: Activity) : Plugin(activity) {
         }
         if (
             args.requestId.trim().isEmpty()
-            || args.purpose != PRIVATE_SOCIAL_RECOVERY_PURPOSE
+            || (
+                args.purpose != PRIVATE_SOCIAL_RECOVERY_PURPOSE
+                    && args.purpose != ACTOR_IDENTITY_RECOVERY_PURPOSE
+                )
             || args.lifecycleGeneration <= 0
             || args.deadlineMs < 1_000
             || args.deadlineMs > 300_000
@@ -97,9 +101,23 @@ class SecureInputPlugin(private val activity: Activity) : Plugin(activity) {
         }
         val acceptanceAutofillAvailable = args.acceptanceAutofillAllowed &&
             !System.getenv(ACCEPTANCE_SECRET_FILE_ENVIRONMENT).isNullOrBlank()
+        val actorIdentityRecovery =
+            args.purpose == ACTOR_IDENTITY_RECOVERY_PURPOSE
         val builder = AlertDialog.Builder(activity)
-            .setTitle(R.string.secure_input_recovery_title)
-            .setMessage(R.string.secure_input_recovery_message)
+            .setTitle(
+                if (actorIdentityRecovery) {
+                    R.string.secure_input_actor_identity_recovery_title
+                } else {
+                    R.string.secure_input_recovery_title
+                },
+            )
+            .setMessage(
+                if (actorIdentityRecovery) {
+                    R.string.secure_input_actor_identity_recovery_message
+                } else {
+                    R.string.secure_input_recovery_message
+                },
+            )
             .setView(field)
             .setNegativeButton(R.string.secure_input_cancel, null)
             .setPositiveButton(R.string.secure_input_recover, null)

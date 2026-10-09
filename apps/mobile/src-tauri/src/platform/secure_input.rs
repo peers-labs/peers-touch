@@ -8,6 +8,7 @@ use zeroize::Zeroizing;
 use crate::error::{MobileError, MobileResult};
 
 const PRIVATE_SOCIAL_RECOVERY_PURPOSE: &str = "private_social_recovery";
+const ACTOR_IDENTITY_RECOVERY_PURPOSE: &str = "actor_identity_recovery";
 const PRIVATE_SOCIAL_RECOVERY_DEADLINE_MS: u64 = 120_000;
 
 pub struct PrivateSocialRecoveryScope<'a> {
@@ -76,6 +77,21 @@ pub async fn request_private_social_recovery_phrase<R: Runtime>(
     app: &AppHandle<R>,
     lifecycle_generation: u64,
 ) -> MobileResult<Zeroizing<String>> {
+    request_recovery_phrase(app, lifecycle_generation, PRIVATE_SOCIAL_RECOVERY_PURPOSE).await
+}
+
+pub async fn request_actor_identity_recovery_phrase<R: Runtime>(
+    app: &AppHandle<R>,
+    lifecycle_generation: u64,
+) -> MobileResult<Zeroizing<String>> {
+    request_recovery_phrase(app, lifecycle_generation, ACTOR_IDENTITY_RECOVERY_PURPOSE).await
+}
+
+async fn request_recovery_phrase<R: Runtime>(
+    app: &AppHandle<R>,
+    lifecycle_generation: u64,
+    purpose: &'static str,
+) -> MobileResult<Zeroizing<String>> {
     if lifecycle_generation == 0 {
         return Err(MobileError::coded(
             "MOBILE_SECURE_INPUT_STALE_SCOPE",
@@ -87,7 +103,7 @@ pub async fn request_private_social_recovery_phrase<R: Runtime>(
     let result = secure_input
         .request_secret(NativeSecretInputRequest {
             request_id: &request_id,
-            purpose: PRIVATE_SOCIAL_RECOVERY_PURPOSE,
+            purpose,
             lifecycle_generation,
             deadline_ms: PRIVATE_SOCIAL_RECOVERY_DEADLINE_MS,
             acceptance_autofill_allowed: cfg!(feature = "acceptance-harness"),
