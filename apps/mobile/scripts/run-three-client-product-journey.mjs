@@ -1832,11 +1832,16 @@ async function logoutMobileClient(clientId, client) {
     'settings',
     '[data-product-surface="settings.summary"]',
   );
-  await clickXpath(
+  if (!await selectorIsVisible(
     client,
-    '//button[normalize-space(.)="Sign Out"]',
-    'open-mobile-logout-confirmation',
-  );
+    '[data-product-surface="settings.logout-confirm"]',
+  )) {
+    await clickXpath(
+      client,
+      '//button[normalize-space(.)="Sign Out"]',
+      'open-mobile-logout-confirmation',
+    );
+  }
   await waitForUi(
     clientId,
     client,
@@ -1848,13 +1853,9 @@ async function logoutMobileClient(clientId, client) {
       return { ready: Boolean(surface?.getClientRects().length) };
     `,
   );
-  await clickXpath(
+  await clickSelector(
     client,
-    [
-      '//div[@data-product-surface="settings.logout-confirm"]',
-      '/ancestor::div[contains(@class,"ant-modal-content")]',
-      '//button[normalize-space(.)="Log Out"]',
-    ].join(''),
+    '.ant-modal-content .ant-modal-footer .ant-btn-dangerous',
     'confirm-mobile-logout',
   );
   const result = await waitForUi(
