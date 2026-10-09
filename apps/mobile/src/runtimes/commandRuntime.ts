@@ -592,6 +592,16 @@ export async function restoreReliabilityDrafts(
   return restored;
 }
 
+export function draftsRequiringRestoreDecision(
+  drafts: readonly DraftProjection[],
+): DraftProjection[] {
+  return drafts.filter((draft) => {
+    const key = envelopeRestorationKey(draft.envelope);
+    return !draftRestorationConsumers.has(key)
+      && !observedDraftConsumers.has(key);
+  });
+}
+
 export async function discardReliabilityDrafts(
   drafts: readonly DraftProjection[],
 ): Promise<void> {

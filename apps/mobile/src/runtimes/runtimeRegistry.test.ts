@@ -68,6 +68,16 @@ vi.mock('./commandRuntime', () => ({
 import { ACCESS_DECISION_GRANTED } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
 import {
+  clearAllScrollPositions,
+  readMobileNavigationProjection,
+  resetMobileNavigation,
+  useMobileNavigationStore,
+} from '../app/navigation';
+import {
+  readListAnchor,
+  saveListAnchor,
+} from '../app/navigation/scrollRestoration';
+import {
   createMobileRuntimeDescriptors,
   fenceMobileRuntimeProjections,
   resolveMobileLaunchStateFromState,
@@ -139,6 +149,8 @@ describe('mobile runtime registry', () => {
       restored: false,
     });
     socialRuntimeMocks.installMobileNativeEventBridge.mockReset();
+    clearAllScrollPositions();
+    resetMobileNavigation();
   });
 
   it('does not mark the native bridge bootstrapped before listener readiness', async () => {
@@ -244,12 +256,30 @@ describe('mobile runtime registry', () => {
     expect(recovery?.dependsOn).toContain('social');
   });
 
-  it('synchronously fences the private Social projection with the other scope projections', () => {
-    fenceMobileRuntimeProjections();
+  it('preserves navigation and presentation memory across an ordinary resume fence', () => {
+    useMobileNavigationStore.getState().navigatePrimary('tab:moments');
+    saveListAnchor('moments:feed:home', 'post-42');
+
+    fenceMobileRuntimeProjections(5, 'native-resume');
+
+    expect(readMobileNavigationProjection().primaryRouteId).toBe('tab:moments');
+    expect(readListAnchor('moments:feed:home')).toBe('post-42');
+    expect(
+      socialRuntimeMocks.fencePrivateMomentsRuntimeProjection,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('synchronously clears scope projections and navigation on Station replacement', () => {
+    useMobileNavigationStore.getState().navigatePrimary('tab:moments');
+    saveListAnchor('moments:feed:home', 'post-42');
+
+    fenceMobileRuntimeProjections(6, 'station-replace');
 
     expect(
       socialRuntimeMocks.fencePrivateMomentsRuntimeProjection,
     ).toHaveBeenCalledOnce();
+    expect(readMobileNavigationProjection().primaryRouteId).toBe('tab:chat');
+    expect(readListAnchor('moments:feed:home')).toBeUndefined();
   });
 
   it('owns persisted Friend Request retry wakeups in the command runtime', () => {

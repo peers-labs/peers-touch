@@ -106,6 +106,15 @@ export interface NativeMomentMediaInput {
   handle: string;
 }
 
+function stagedMomentMediaCommandInput(input: NativeMomentMediaInput) {
+  return {
+    stationPeerId: input.stationPeerId,
+    actorPtid: input.actorPtid,
+    sessionId: input.sessionId,
+    handle: input.handle,
+  };
+}
+
 export async function uploadNativeMomentMedia(
   input: NativeMomentMediaInput,
 ): Promise<ImageAttachment> {
@@ -118,14 +127,18 @@ export async function uploadNativeMomentMedia(
     ),
     'moments',
   );
-  const bytes = await invoke<number[]>('moment_media_upload', { input });
+  const bytes = await invoke<number[]>('moment_media_upload', {
+    input: stagedMomentMediaCommandInput(input),
+  });
   return fromBinary(ImageAttachmentSchema, Uint8Array.from(bytes));
 }
 
 export async function discardNativeMomentMedia(
   input: NativeMomentMediaInput,
 ): Promise<void> {
-  await invoke('moment_media_discard', { input });
+  await invoke('moment_media_discard', {
+    input: stagedMomentMediaCommandInput(input),
+  });
 }
 
 export interface MessagingAccountInput {

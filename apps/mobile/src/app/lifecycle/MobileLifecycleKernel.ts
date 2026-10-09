@@ -151,11 +151,19 @@ export class MobileLifecycleKernel {
       }
 
       const dependencies = this.requireGraphDependencies();
-      const generation = await withTimeout(
+      const observedGeneration = await withTimeout(
         dependencies.readGeneration(),
         GENERATION_OPERATION_TIMEOUT_MS,
         'mobile.lifecycle.readGenerationTimedOut',
       );
+      // Native cold start can precede the first foreground callback.
+      const generation = observedGeneration === 0
+        ? await withTimeout(
+          dependencies.advanceGeneration(),
+          GENERATION_OPERATION_TIMEOUT_MS,
+          'mobile.lifecycle.advanceGenerationTimedOut',
+        )
+        : observedGeneration;
       this.applyGeneration(generation, reason, false);
       await this.startRuntimeGraphNow();
       await this.reconcileLaunchStateAfterRuntime(reason);
@@ -777,7 +785,6 @@ export class MobileLifecycleKernel {
         this.state.launchState === 'station-selection'
         || this.state.launchState === 'access-gate-chain'
         || this.state.launchState === 'station-handshake'
-        || this.state.launchState === 'resume'
       ) {
         this.transitionLaunchState('runtime-critical');
       }

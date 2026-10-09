@@ -20,6 +20,7 @@ import {
   applyReliabilityCommandRecoveryAction,
   applyReliabilityProjectionCheckpoints,
   discardReliabilityDrafts,
+  draftsRequiringRestoreDecision,
   getDraftRestorationPort,
   nextReliabilityRetryDelay,
   notifyReliabilityCommandChanged,
@@ -121,6 +122,43 @@ describe('commandRuntime draft recovery', () => {
     } finally {
       unregister();
     }
+  });
+
+  it('does not surface a draft already consumed by an editor as crash recovery', async () => {
+    const draft = momentDraft('active-composer');
+    const candidate = projection(draft);
+    invokeMock.mockResolvedValue(
+      Array.from(toBinary(MobileDraftEnvelopeV2Schema, draft)),
+    );
+
+    expect(draftsRequiringRestoreDecision([candidate])).toEqual([candidate]);
+    await getDraftRestorationPort().load(
+      draft.stationPeerId,
+      draft.actorPtid,
+      draft.surfaceKind,
+      draft.targetId,
+    );
+
+    expect(draftsRequiringRestoreDecision([candidate])).toEqual([]);
+  });
+
+  it('leaves draft recovery with the currently mounted editor', () => {
+    const draft = momentDraft('mounted-composer');
+    const candidate = projection(draft);
+    const unregister = registerDraftRestorationConsumer(
+      draft.stationPeerId,
+      draft.actorPtid,
+      draft.surfaceKind,
+      draft.targetId,
+      vi.fn(),
+    );
+
+    try {
+      expect(draftsRequiringRestoreDecision([candidate])).toEqual([]);
+    } finally {
+      unregister();
+    }
+    expect(draftsRequiringRestoreDecision([candidate])).toEqual([candidate]);
   });
 
   it('propagates consumer delivery failure instead of fabricating no draft', async () => {

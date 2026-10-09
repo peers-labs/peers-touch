@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   loadMomentImageObjectUrl,
+  momentImageRequiresDataUrl,
   revokeMomentImageObjectUrl,
 } from './MomentImage';
 
@@ -35,9 +36,19 @@ describe('Moment image resource lifecycle', () => {
     const revokeObjectUrl = vi.fn();
 
     revokeMomentImageObjectUrl('blob:moment-image', revokeObjectUrl);
+    revokeMomentImageObjectUrl('data:image/png;base64,AA==', revokeObjectUrl);
     revokeMomentImageObjectUrl(null, revokeObjectUrl);
 
     expect(revokeObjectUrl).toHaveBeenCalledExactlyOnceWith('blob:moment-image');
+  });
+
+  it('uses a Data URL on Android WebView runtimes', () => {
+    expect(momentImageRequiresDataUrl(
+      'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36',
+    )).toBe(true);
+    expect(momentImageRequiresDataUrl(
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',
+    )).toBe(false);
   });
 
   it('renders only decrypted object URLs and keeps failure retryable', () => {

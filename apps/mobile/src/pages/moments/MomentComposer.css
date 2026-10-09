@@ -1,0 +1,329 @@
+.moments-sheet-backdrop.moment-composer-overlay {
+  --moment-composer-keyboard-overlap: 0px;
+  bottom: max(
+    calc(var(--tabbar-height) + var(--safe-area-bottom)),
+    var(--moment-composer-keyboard-overlap)
+  );
+  padding-top: var(--safe-area-top);
+}
+
+.moment-composer-overlay .moment-composer-surface {
+  display: flex;
+  flex-direction: column;
+  height: min(
+    610px,
+    calc(
+      100dvh - max(12px, var(--safe-area-top)) -
+        max(
+          calc(var(--tabbar-height) + var(--safe-area-bottom)),
+          var(--moment-composer-keyboard-overlap)
+        )
+    )
+  );
+  min-height: min(
+    520px,
+    calc(
+      100dvh - max(12px, var(--safe-area-top)) -
+        max(
+          calc(var(--tabbar-height) + var(--safe-area-bottom)),
+          var(--moment-composer-keyboard-overlap)
+        )
+    )
+  );
+  max-height: calc(
+    100dvh - max(12px, var(--safe-area-top)) -
+      max(
+        calc(var(--tabbar-height) + var(--safe-area-bottom)),
+        var(--moment-composer-keyboard-overlap)
+      )
+  );
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 0;
+  border-radius: 18px 18px 0 0;
+  background: #fff;
+  box-shadow: 0 -12px 32px rgba(15, 23, 42, 0.14);
+}
+
+.moment-composer-overlay .moments-audience-backdrop {
+  bottom: max(
+    calc(var(--tabbar-height) + var(--safe-area-bottom)),
+    var(--moment-composer-keyboard-overlap)
+  );
+}
+
+.moment-composer-overlay .moments-audience-sheet {
+  max-height: calc(
+    100dvh - max(12px, var(--safe-area-top)) -
+      max(
+        calc(var(--tabbar-height) + var(--safe-area-bottom)),
+        var(--moment-composer-keyboard-overlap)
+      )
+  );
+}
+
+.moment-composer-header {
+  flex: 0 0 auto;
+}
+
+.moment-composer-header > button.primary {
+  min-width: 60px;
+  width: auto;
+  white-space: nowrap;
+}
+
+.moment-composer-textarea {
+  display: block;
+  flex: 1 1 220px;
+  width: calc(100% - 32px);
+  min-height: 160px;
+  margin: 10px 16px 8px;
+  padding: 0;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: rgba(31, 37, 51, 0.94);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.moment-composer-textarea::placeholder {
+  color: rgba(107, 112, 128, 0.62);
+}
+
+.moment-composer-textarea:disabled {
+  opacity: 0.58;
+}
+
+.moment-composer-draft-banner {
+  flex: 0 0 auto;
+  margin: 4px 16px 8px;
+}
+
+.moment-composer-draft-banner > button {
+  display: inline-flex;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  margin: -8px -10px -8px auto;
+  border: 0;
+  background: transparent;
+  color: #23784a;
+}
+
+.moment-composer-media {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 0 16px 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.moment-composer-media::-webkit-scrollbar {
+  display: none;
+}
+
+.moment-composer-media-tile,
+.moment-composer-media-add {
+  position: relative;
+  display: flex;
+  flex: 0 0 104px;
+  width: 104px;
+  height: 104px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.moment-composer-media-tile {
+  background: rgba(76, 110, 245, 0.08);
+}
+
+.moment-composer-media-tile .moments-restored-image-reference {
+  gap: 4px;
+  padding: 8px;
+  color: rgba(51, 56, 69, 0.72);
+  font-size: 10px;
+}
+
+.moment-composer-media-tile .moments-image-status {
+  right: 5px;
+  bottom: 5px;
+  left: 5px;
+  max-width: none;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.moment-composer-media-tile .moments-image-actions {
+  top: 3px;
+  right: 3px;
+  flex-direction: column;
+  gap: 0;
+}
+
+.moment-composer-media-tile .moments-image-actions button {
+  min-width: 44px;
+  min-height: 44px;
+  width: 44px;
+  height: 44px;
+  background: rgba(19, 22, 32, 0.78);
+  color: #fff;
+}
+
+.moment-composer-media-add {
+  flex-direction: column;
+  gap: 4px;
+  border: 1px dashed rgba(76, 110, 245, 0.32);
+  background: rgba(76, 110, 245, 0.05);
+  color: var(--brand-primary);
+  font: inherit;
+}
+
+.moment-composer-media-add:disabled {
+  opacity: 0.45;
+}
+
+.moment-composer-media-add > span {
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.moment-composer-audience-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 20px;
+  flex: 0 0 auto;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 16px;
+  border: 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+  background: #fff;
+  color: rgba(51, 56, 69, 0.88);
+  text-align: left;
+}
+
+.moment-composer-audience-icon,
+.moment-audience-choice-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(76, 110, 245, 0.1);
+  color: var(--brand-primary);
+}
+
+.moment-composer-audience-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+}
+
+.moment-composer-audience-copy,
+.moment-audience-choice-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.moment-composer-audience-copy strong {
+  overflow: hidden;
+  color: rgba(31, 37, 51, 0.92);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.moment-composer-audience-copy small {
+  overflow: hidden;
+  color: rgba(107, 112, 128, 0.78);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.moment-composer-meta {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 16px max(7px, var(--safe-area-bottom));
+  color: rgba(107, 112, 128, 0.78);
+  font-size: 10px;
+}
+
+.moment-composer-meta > span:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+.moment-composer-meta svg {
+  flex: 0 0 auto;
+}
+
+.moment-composer-validation {
+  flex: 0 0 auto;
+  padding: 4px 16px;
+  font-size: 11px;
+}
+
+.moment-audience-sheet-copy {
+  margin: 0;
+  padding: 12px 16px;
+  color: rgba(75, 85, 99, 0.8);
+  font-size: 12px;
+}
+
+.moments-choice-row.moment-audience-choice {
+  grid-template-columns: 36px minmax(0, 1fr) 24px;
+}
+
+.moment-audience-choice-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+}
+
+.moment-audience-choice-copy strong {
+  color: rgba(31, 37, 51, 0.92);
+  font-size: 14px;
+}
+
+.moment-audience-choice-copy small {
+  color: rgba(107, 112, 128, 0.78);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+@media (orientation: landscape) {
+  .moment-composer-overlay .moment-composer-surface {
+    min-height: 0;
+  }
+
+  .moment-composer-textarea {
+    min-height: 96px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .moment-composer-surface,
+  .moments-audience-sheet {
+    animation: none;
+  }
+}
