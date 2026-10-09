@@ -1857,12 +1857,34 @@ async function logoutMobileClient(clientId, client) {
     '[data-product-surface="settings.logout-confirm"]',
   );
   if (!confirmationOpen) {
-    await navigateMobileShell(
-      clientId,
+    if (await selectorIsVisible(
       client,
-      'settings',
-      '[data-product-surface="settings.summary"]',
-    );
+      '[data-product-surface="settings.account-info"]',
+    )) {
+      await clickSelector(
+        client,
+        'button[aria-label="Back"]',
+        'return-to-settings-summary',
+      );
+      await waitForUi(
+        clientId,
+        client,
+        'Mobile Settings summary',
+        `
+          const surface = document.querySelector(
+            '[data-product-surface="settings.summary"]'
+          );
+          return { ready: Boolean(surface?.getClientRects().length) };
+        `,
+      );
+    } else {
+      await navigateMobileShell(
+        clientId,
+        client,
+        'settings',
+        '[data-product-surface="settings.summary"]',
+      );
+    }
     await clickXpath(
       client,
       '//button[normalize-space(.)="Sign Out"]',
