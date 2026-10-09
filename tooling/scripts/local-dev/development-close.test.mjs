@@ -243,7 +243,12 @@ test('owner-abandon closes an orphan mount after worktree deletion', async (t) =
     owner: 'test-owner',
     now: new Date('2026-10-05T00:00:00.000Z'),
   });
-  rmSync(fixture.repoRoot, { recursive: true, force: true });
+  rmSync(fixture.repoRoot, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 50,
+  });
 
   const receipt = await closeDevelopment({
     home: fixture.home,

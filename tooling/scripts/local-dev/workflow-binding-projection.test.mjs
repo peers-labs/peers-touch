@@ -57,7 +57,7 @@ test('Cursor and Codex use only their documented identity fields', () => {
   );
 });
 
-test('owner projection carries immutable authority and per-event roots', () => {
+test('owner projection keeps identity while selecting per-event workspace roots', () => {
   const projection = projectWorkflowBinding({
     binding: {
       kind: 'peers-touch-workflow-owner-binding',
@@ -77,13 +77,17 @@ test('owner projection carries immutable authority and per-event roots', () => {
   assert.equal(projection.parentBindingDigest, null);
   assert.deepEqual(projection.subjectRoots, ['/workspace/read']);
   assert.equal(projection.toolRoot, '/workspace/tool');
+  const selectedRoot = process.cwd();
   const next = projectWorkflowEventRoots(projection, {
-    subjectRoots: ['/workspace/next'],
-    toolRoot: '/workspace/next',
-    targetRoots: ['/workspace/next'],
+    executionRoot: selectedRoot,
+    subjectRoots: [selectedRoot],
+    toolRoot: selectedRoot,
+    targetRoots: [selectedRoot],
   });
   assert.equal(next.bindingDigest, projection.bindingDigest);
-  assert.deepEqual(next.subjectRoots, ['/workspace/next']);
+  assert.equal(next.executionRoot, selectedRoot);
+  assert.notEqual(next.workspaceId, projection.workspaceId);
+  assert.deepEqual(next.subjectRoots, [selectedRoot]);
 });
 
 test('expired and terminal child projections cannot appear leased', () => {
@@ -124,7 +128,7 @@ test('expired and terminal child projections cannot appear leased', () => {
   );
 });
 
-test('multi-root owner selection ignores bootstrap location and requires one subject', () => {
+test('multi-root action selection prefers mutation target then explicit root and cwd', () => {
   const roots = new Map([
     ['/workspace/bootstrap', '/workspace/bootstrap'],
     ['/workspace/target', '/workspace/target'],
@@ -150,9 +154,16 @@ test('multi-root owner selection ignores bootstrap location and requires one sub
     () =>
       selectOwnerExecutionRoot(event, {
         resolveProjectRoot,
-        targetPaths: [],
+        targetPaths: ['/workspace/bootstrap', '/workspace/target'],
       }),
     (error) => error.code === 'WORKTREE_SELECTION_REQUIRED',
+  );
+  assert.equal(
+    selectOwnerExecutionRoot(event, {
+      resolveProjectRoot,
+      targetPaths: [],
+    }),
+    '/workspace/bootstrap',
   );
   assert.equal(
     selectOwnerExecutionRoot(
@@ -169,33 +180,31 @@ test('multi-root owner selection ignores bootstrap location and requires one sub
       ),
     (error) => error.code === 'WORKTREE_SELECTION_REQUIRED',
   );
-  assert.throws(
-    () =>
-      selectOwnerExecutionRoot(
-        {
-          ...event,
-          activeEditorPath: '/workspace/other',
-        },
-        {
-          resolveProjectRoot,
-          targetPaths: ['/workspace/target'],
-        },
-      ),
-    (error) => error.code === 'WORKTREE_SELECTION_REQUIRED',
+  assert.equal(
+    selectOwnerExecutionRoot(
+      {
+        ...event,
+        activeEditorPath: '/workspace/other',
+      },
+      {
+        resolveProjectRoot,
+        targetPaths: ['/workspace/target'],
+      },
+    ),
+    '/workspace/target',
   );
-  assert.throws(
-    () =>
-      selectOwnerExecutionRoot(
-        {
-          ...event,
-          workspaceRoots: ['/workspace/target'],
-          activeEditorPath: '/workspace/other',
-        },
-        {
-          resolveProjectRoot,
-          targetPaths: ['/workspace/target'],
-        },
-      ),
-    (error) => error.code === 'WORKTREE_SELECTION_REQUIRED',
+  assert.equal(
+    selectOwnerExecutionRoot(
+      {
+        ...event,
+        workspaceRoots: ['/workspace/target'],
+        activeEditorPath: '/workspace/other',
+      },
+      {
+        resolveProjectRoot,
+        targetPaths: ['/workspace/target'],
+      },
+    ),
+    '/workspace/target',
   );
 });
