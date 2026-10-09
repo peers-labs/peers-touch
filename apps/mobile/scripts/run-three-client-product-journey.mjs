@@ -1867,8 +1867,12 @@ async function logoutMobileClient(clientId, client) {
       const surface = [...document.querySelectorAll('[data-product-surface]')]
         .find((element) => element.getClientRects().length)
         ?.getAttribute('data-product-surface') || '';
+      const transition = document.querySelector(
+        '[data-acceptance-id="recovery-scope-exit"]'
+      );
       return {
-        ready: surface.startsWith('entry.'),
+        ready: surface.startsWith('entry.')
+          && !transition?.getClientRects().length,
         surface
       };
     `,
