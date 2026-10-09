@@ -707,6 +707,33 @@ async function clickVisibleSelector(client, selector, label) {
   return { label, selector };
 }
 
+async function clickVisibleButtonText(client, text, label) {
+  const result = await executeWebScript(
+    client,
+    `
+      const button = [...document.querySelectorAll('button')]
+        .find((candidate) => (
+          candidate instanceof HTMLButtonElement
+          && candidate.getClientRects().length
+          && getComputedStyle(candidate).visibility !== 'hidden'
+          && getComputedStyle(candidate).display !== 'none'
+          && !candidate.disabled
+          && (candidate.innerText || '').trim() === arguments[0]
+        ));
+      if (!button) return { ok: false };
+      button.click();
+      return { ok: true };
+    `,
+    [text],
+  );
+  assertContract(
+    result?.ok === true,
+    'WEBDRIVER_VISIBLE_BUTTON_MISSING',
+    `${label} could not find a visible button named ${text}`,
+  );
+  return { label, text };
+}
+
 async function clickXpath(client, xpath, label, optional = false) {
   const elementId = await findElement(client, 'xpath', xpath, optional);
   if (!elementId) return false;
@@ -1941,7 +1968,7 @@ async function logoutDesktopClient(clientId, client) {
     '[data-pt-secondary-tab="general"]',
     'Settings',
   );
-  await clickSelector(
+  await clickVisibleSelector(
     client,
     '[data-pt-secondary-tab="help"]',
     'open-desktop-help-settings',
@@ -1958,9 +1985,9 @@ async function logoutDesktopClient(clientId, client) {
       };
     `,
   );
-  await clickXpath(
+  await clickVisibleButtonText(
     client,
-    '//button[normalize-space(.)="Sign Out"]',
+    'Sign Out',
     'open-desktop-sign-out-confirmation',
   );
   await waitForUi(
@@ -1977,13 +2004,9 @@ async function logoutDesktopClient(clientId, client) {
       };
     `,
   );
-  await clickXpath(
+  await clickVisibleButtonText(
     client,
-    [
-      '//div[@role="dialog"]',
-      '[.//*[contains(normalize-space(.),"Re-enter login page")]]',
-      '//button[normalize-space(.)="Confirm"]',
-    ].join(''),
+    'Confirm',
     'confirm-desktop-sign-out',
   );
   const result = await waitForUi(
