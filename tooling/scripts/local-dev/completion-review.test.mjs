@@ -10,6 +10,7 @@ import {
   CompletionReviewError,
   completionReviewPaths,
   completionReviewState,
+  digestCompletionCandidate,
   inspectForbiddenPathInventory,
   prepareCompletionReview,
   readCompletionReview,
@@ -167,8 +168,23 @@ async function makeFixture(
         recordDigest: '7'.repeat(64),
       },
       run: {
+        kind: 'peers-touch-execution-run',
         runId: 'run-review-test',
+        snapshotId: 'snapshot-review-test',
+        snapshotDigest: '7'.repeat(64),
+        mountId: 'mount-review-test',
+        state: 'active',
+        taskStates: Object.fromEntries(
+          tasks.map((task) => [
+            task.id,
+            { state: task.status, blocker: task.blocker },
+          ]),
+        ),
+        exhaustion: null,
+        currentTaskId: current.id,
+        updatedAt: FIXED_TIME,
         revision: 1,
+        recordDigest: '8'.repeat(64),
       },
     },
     acceptance: {
@@ -367,6 +383,18 @@ test('reviews a fixed-point blocked handoff without inventing a successor', asyn
       evidenceRefs: ['evidence://task-b'],
     },
   });
+  const candidateRun = structuredClone(fixture.planPackage.execution.run);
+  candidateRun.taskStates['task-a'] = {
+    state: 'done',
+    blocker: null,
+  };
+  candidateRun.state = 'blocked';
+  candidateRun.currentTaskId = null;
+  candidateRun.exhaustion = prepared.candidateTransition.exhaustion;
+  assert.equal(
+    prepared.request.candidatePlanDigest,
+    digestCompletionCandidate(candidateRun),
+  );
 
   fixture.useReviewer();
   const submitted = await submitCompletionReview(

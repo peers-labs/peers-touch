@@ -2,8 +2,11 @@ package federation
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"net/http"
+	"sort"
+	"strings"
 
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
@@ -141,6 +144,27 @@ var peerRouteSpecs = []peerRouteSpec{
 	{PeerRouteRealtimeCallResolution, "federation-realtime-call-resolution", RealtimeCallResolutionRoute, server.POST, RealtimeCallResolutionScope},
 	{PeerRouteGroupCallAuthorityJoin, "federation-group-call-authority-join", GroupCallAuthorityJoinRoute, server.POST, GroupCallAuthorityJoinScope},
 	{PeerRouteSocialPrivateObjectRead, "federation-social-private-object-read", SocialPrivateObjectReadRoute, server.POST, SocialPrivateObjectReadScope},
+}
+
+// PeerCapabilityManifestDigest binds Relay route attestations to the exact
+// typed Federation capability registry. Method, path, and scope remain inside
+// inner TLS; the Relay stores only this digest.
+func PeerCapabilityManifestDigest() []byte {
+	entries := make([]string, 0, len(peerRouteSpecs)+1)
+	entries = append(
+		entries,
+		"federation-delivery\x00POST\x00"+DeliveryRoute+"\x00"+DeliveryScope,
+	)
+	for _, spec := range peerRouteSpecs {
+		entries = append(
+			entries,
+			string(spec.id)+"\x00"+string(spec.method)+"\x00"+
+				spec.path+"\x00"+spec.scope,
+		)
+	}
+	sort.Strings(entries)
+	sum := sha256.Sum256([]byte(strings.Join(entries, "\n")))
+	return append([]byte(nil), sum[:]...)
 }
 
 // NewPeerRouteFactory validates and creates the Federation route owner.

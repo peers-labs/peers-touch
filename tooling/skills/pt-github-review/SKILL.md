@@ -182,11 +182,14 @@ verify:
 - TRAE multi-root integration projects equivalent ingress into the selected
   source root, descriptor bootstrap root, and existing TRAE-participating
   roots, never treats Hook location or folder order as execution authority,
-  and rejects task/target disagreement with `WORKTREE_SELECTION_REQUIRED`;
+  selects one workspace per OWNER mutation with target precedence, and rejects
+  only multi-root mutation or undeclared selection with
+  `WORKTREE_SELECTION_REQUIRED`;
 - ordinary integration projection is non-destructive, requires no Hook-issued
-  grant or global idle, and deletes no workflow state; only exact OWNER
-  `skills-hard-cut` and `skills-gc` grants may perform their bounded
-  global-idle cleanup, with no compatibility reader or dual writer;
+  grant, global idle, or parsing of Plan/declaration/Session state, and deletes
+  no workflow state; its projection-only audit cannot claim workflow health.
+  Only exact OWNER `skills-hard-cut` and `skills-gc` grants may perform their
+  bounded global-idle cleanup, with no compatibility reader or dual writer;
 - execution mode is justified by dependencies, write sets, generated outputs,
   shared runtime resources, verification isolation, and integration order;
 - parallel lanes reserve non-overlapping write sets and keep shared files under

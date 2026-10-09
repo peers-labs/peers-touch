@@ -175,26 +175,27 @@ async function accountStorageIdentitySha256(): Promise<string> {
 
 async function boundStation() {
   const registry = await api.stationList();
-  const activeUrl = requireText(registry.active_url, 'activeStationUrl')
-    .replace(/\/+$/, '');
-  const boundUrl = requireText(
-    registry.binding?.bound_url,
-    'boundStationUrl',
-  ).replace(/\/+$/, '');
   const active = registry.entries.find(
-    (entry) => entry.url.trim().replace(/\/+$/, '') === activeUrl,
+    (entry) => entry.station_peer_id === registry.active_station_peer_id,
   );
-  const peerId = requireText(active?.peer_id, 'stationPeerId');
+  const peerId = requireText(active?.station_peer_id, 'stationPeerId');
+  const route = active?.routes.find(
+    (candidate) => candidate.route_id === active.active_route_id,
+  );
+  const activeUrl = requireText(route?.endpoint_origin, 'activeStationUrl')
+    .replace(/\/+$/, '');
   if (
     registry.binding?.phase !== 'bound'
-    || activeUrl !== boundUrl
-    || !Number.isSafeInteger(registry.binding.generation)
+    || registry.binding.station_peer_id !== peerId
+    || registry.binding.active_route_id !== route?.route_id
+    || !Number.isSafeInteger(registry.binding.lifecycle_generation)
   ) {
     throw new Error('secureContentFixture.stationBindingIncomplete');
   }
   return {
-    generation: registry.binding.generation,
+    generation: registry.binding.lifecycle_generation,
     peerId,
+    routeId: requireText(route?.route_id, 'stationRouteId'),
     url: activeUrl,
   };
 }
@@ -314,23 +315,41 @@ export function installAcceptanceHarness(): void {
       if (secondaryUrl === primary.url) {
         throw new Error('secureContentFixture.secondaryStationMustDiffer');
       }
-      const secondary = await api.stationAdd(secondaryUrl);
-      const secondaryPeerId = requireText(
-        secondary.peer_id,
-        'secondaryStationPeerId',
+      const discovered = await api.stationAdd(secondaryUrl);
+      const secondary = discovered.entries.find((entry) => (
+        entry.routes.some(
+          (route) => route.endpoint_origin.replace(/\/+$/, '') === secondaryUrl,
+        )
+      ));
+      const secondaryRoute = secondary?.routes.find(
+        (route) => route.endpoint_origin.replace(/\/+$/, '') === secondaryUrl,
       );
+      const secondaryPeerId = requireText(secondary?.station_peer_id, 'secondaryStationPeerId');
       return {
         primaryStationUrl: primary.url,
         primaryStationPeerId: primary.peerId,
-        secondaryStationUrl: secondary.url.trim().replace(/\/+$/, ''),
+        secondaryStationUrl: requireText(
+          secondaryRoute?.endpoint_origin,
+          'secondaryStationUrl',
+        ).replace(/\/+$/, ''),
         secondaryStationPeerId: secondaryPeerId,
       };
     },
 
     async roundTripStationSwitch(input: StationSwitchInput) {
       const before = await boundStation();
-      await api.stationSetActive(
+      const registry = await api.stationList();
+      const secondarySelection = stationRouteForEndpoint(
+        registry.entries,
         requireText(input.secondaryStationUrl, 'secondaryStationUrl'),
+      );
+      const primarySelection = stationRouteForEndpoint(
+        registry.entries,
+        requireText(input.primaryStationUrl, 'primaryStationUrl'),
+      );
+      await api.stationSetActive(
+        secondarySelection.stationPeerId,
+        secondarySelection.routeId,
       );
       await replaceSessionWithPassword(
         requireText(input.account, 'account'),
@@ -338,7 +357,8 @@ export function installAcceptanceHarness(): void {
       );
       const secondary = await boundStation();
       await api.stationSetActive(
-        requireText(input.primaryStationUrl, 'primaryStationUrl'),
+        primarySelection.stationPeerId,
+        primarySelection.routeId,
       );
       await replaceSessionWithPassword(input.account, input.password);
       const restored = await boundStation();
@@ -441,4 +461,23 @@ export function installAcceptanceHarness(): void {
       };
     },
   });
+}
+
+function stationRouteForEndpoint(
+  entries: Awaited<ReturnType<typeof api.stationList>>['entries'],
+  endpoint: string,
+): { stationPeerId: string; routeId: string } {
+  const normalized = endpoint.replace(/\/+$/, '');
+  for (const entry of entries) {
+    const route = entry.routes.find(
+      (candidate) => candidate.endpoint_origin.replace(/\/+$/, '') === normalized,
+    );
+    if (route) {
+      return {
+        stationPeerId: entry.station_peer_id,
+        routeId: route.route_id,
+      };
+    }
+  }
+  throw new Error('secureContentFixture.stationRouteMissing');
 }

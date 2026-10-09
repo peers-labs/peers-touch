@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-07
-covered_docs_hash: c8c583157d9438396b6a0ff33c3b5bb4c2d213c03579374ade77921d343a34cc
+last_verified_at: 2026-10-10
+covered_docs_hash: 1b6769f85782c807905cd952d64d088c6cea57650c9adce8de539d3f6eeb8163
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,37 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-10 Mobile And Relay Local Sync Review
+
+The local convergence keeps the accepted opaque inner-TLS Relay data plane and
+the Mobile Social/runtime work in one tree. Review must reject restoration of
+transparent Relay Request/Response frames or route-aware Relay plaintext
+handling. DWF-D44 remains per-action workspace selection; workspace-isolated
+machine-ledger adoption is renumbered DWF-D45. Session-class proof remains
+SAL-G08 and retains the reusable Suite Runtime requirement.
+
+## 2026-10-09 Projection Bootstrap Review
+
+DWF-D36 now makes non-destructive integration repair independent from existing
+PlanMount, declaration, Session, and active-work schema health. Review must
+reject projection code that parses those owners, a projection-only PASS that
+claims workflow health, or a full audit that ignores workflow identity
+findings. The install wrapper uses explicit `--projection-only`; standalone
+audit remains full and fail-closed. Installer fixtures cover retired-schema
+bootstrap plus post-install full-audit failure.
+
+## 2026-10-09 Per-Action Workspace Review
+
+DWF-D44 separates stable OWNER identity from workspace selection. Review must
+reject first-action permanent worktree binding, OWNER record rebinding,
+multi-root mutations, undeclared workspace selection, shell mutation from a
+foreign `cwd`, selected-root escape, and child movement outside its assignment
+workspace. It must allow one OWNER to select different worktrees in separate
+actions while each workspace independently validates declaration, PlanMount,
+Session, active-work, Git identity, and write claims. The review Skill,
+owner-rooted invariant, binding/Kernel tests, and assignment persistence tests
+cover these boundaries; no generic review fixture is required.
 
 ## 2026-10-07 Integrated Ownership Review
 
@@ -64,7 +95,7 @@ non-transactional provenance publication.
 
 ## 2026-10-07 Workspace-Isolated Ledger Adoption Review
 
-DWF-D44 makes machine work and Plan-mount ledgers global coordination
+DWF-D45 makes machine work and Plan-mount ledgers global coordination
 projections without making them global lifecycle owners. Review now rejects
 all-machine idle requirements for workspace schema adoption, foreign-record
 rewrites, ignored legacy conflict claims, overlapping legacy/stable Plan
@@ -229,11 +260,12 @@ never loaded or migrated.
 Owner-rooted workflow binding replaced peer conversation bindings. Review now
 requires canonical OWNER/WORKER/REVIEWER lineage, exact current Action Receipt
 selection, live assigned reviewers, and no worktree-wide identity fallback.
-TRAE multi-root review also requires one descriptor-selected bootstrap,
-target-derived owner selection, active-editor mismatch rejection, global-idle
-hard-cut admission, and deletion limited to the old conversation and Action
-Receipt stores. `SKILL.md`, workflow regression fixtures, and the owner-rooted
-invariant cover the new omission, stale-child, and bootstrap-authority risks.
+The original TRAE multi-root cut also required descriptor bootstrap and
+first-root selection rules; DWF-D44's 2026-10-09 review above supersedes those
+workspace-selection details. Global-idle hard-cut admission and deletion
+limited to old conversation and Action Receipt stores remain. `SKILL.md`,
+workflow regression fixtures, and the owner-rooted invariant cover omission,
+stale-child, and bootstrap-authority risks.
 
 Resource-plan selection no longer treats healthy reusable inventory as
 Runtime Owner readiness, and incompatible non-null digest expectations cannot

@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Integration
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-07
+> **Created**: 2026-09-13 | **Updated**: 2026-10-09
 > **Owner**: Platform Team
 
 ---
@@ -103,7 +103,7 @@ requires no source refresh. Task handoff also updates the declaration's `TASK`.
 The declaration owner schema is a hard compatibility boundary. Repository
 source must be synchronized before a writer mutates its own mount/run locator.
 The machine coordination reader may validate foreign legacy declarations during
-the bounded DWF-D44 adoption window, but it neither normalizes nor rewrites
+the bounded DWF-D45 adoption window, but it neither normalizes nor rewrites
 their owner fields.
 
 `dev-resources-prepare` runs after all affected module Skills emit
@@ -253,11 +253,13 @@ transport only; the Kernel owns root selection and the single OWNER binding.
 The installer preserves unrelated host files, never edits global hooks, and
 does not depend on a grant from the Hook it installs. The machine ledger lock,
 canonical source checks, path boundaries, workspace descriptor, merged Hook
-shape, and callback proof still fail closed. Unrelated live declarations,
-child assignments, Action Receipts, and Action Store activity do not block
-this non-destructive projection. There is no separate acknowledgement command;
-restart the IDE only when the host cannot reload changed hooks, then rerun the
-audit.
+shape, and callback proof still fail closed. Install does not parse PlanMount,
+declaration, Session, or active-work state; its `--projection-only` audit
+verifies only projection-owned facts and leaves workflow identity diagnostics
+for the standalone full audit. Unrelated live or retired-schema workflow owner
+state does not block this non-destructive bootstrap. There is no separate
+acknowledgement command; restart the IDE only when the host cannot reload
+changed hooks, then rerun the full audit after workflow-state repair.
 
 `skills-hard-cut` is the only machine-store reset path. It consumes an exact
 OWNER `skills-hard-cut` grant, proves global idle, validates every reset target,
@@ -312,12 +314,13 @@ remains.
 - normalizes Codex, Cursor and TRAE lifecycle payloads into one Kernel event;
 - prewarms on Session/prompt hooks but creates authority only on the first
   blockable `PreToolUse`;
-- atomically binds one host root chat to one immutable OWNER
-  `executionRoot`;
+- atomically binds one host root chat to one immutable OWNER identity;
 - accepts only preassigned WORKER/REVIEWER child sessions and projects their
-  root/parent lineage, lease and terminal state;
-- resolves each tool action's `subjectRoot` independently, allowing
-  cross-worktree reads and denying cross-worktree writes;
+  root/parent lineage, assignment workspace, lease and terminal state;
+- resolves one workspace for each mutating OWNER action, allowing sequential
+  actions in different worktrees while denying one action that spans roots;
+- resolves each tool action's `subjectRoot` independently and checks writes
+  against the selected workspace and its declaration;
 - parses shell structure before classifying owner/read/mutation intent;
 - denies inconsistent owner state and direct runtime-owner execution without
   mutating Plan, Task, Session, declaration, active-work or evidence;

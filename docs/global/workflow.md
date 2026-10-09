@@ -80,18 +80,19 @@ creating a Plan.
 
 ---
 
-## 2) Bind the active worktree
+## 2) Select the action worktree
 
-When the user starts by saying which worktree to use, that worktree becomes the
-task's active worktree.
+When the user names a worktree, that worktree is the default for the current
+action sequence. It does not permanently bind the visible chat.
 
 The Workflow Kernel represents that authority as one canonical
-`BindingProjection`. One visible chat has one immutable `OWNER`; internal
-`WORKER` and `REVIEWER` sessions require create-once assignments with exact
-root/parent lineage and bounded leases. TRAE uses `chat_session_id` for OWNER
-and `session_id` only for execution-session identity. No host-field alias,
-legacy conversation record, process-global identity, or worktree-wide binding
-enumeration may select authority.
+`BindingProjection`. One visible chat has one immutable `OWNER` identity; each
+mutating OWNER action selects exactly one workspace. Internal `WORKER` and
+`REVIEWER` sessions require create-once assignments with exact root/parent
+lineage, one fixed assignment workspace, and bounded leases. TRAE uses
+`chat_session_id` for OWNER and `session_id` only for execution-session
+identity. No host-field alias, legacy conversation record, process-global
+identity, or worktree-wide binding enumeration may select authority.
 
 The OWNER root ID is retained only in owner-controlled machine-local state.
 Registrations, Development declarations, Sessions, active-work, and Workflow
@@ -99,19 +100,22 @@ Snapshot expose the same verified owner reference; Git author/email is never a
 conversation identity.
 
 Default rule:
-- All edits, generated files, staging, commits, and PR operations must stay
-  inside the active worktree.
-- Other worktrees are read-only unless the user explicitly grants write scope
-  for another path.
-- IDE-open files, search results, shell defaults, and previous conversation
-  context do not override the active worktree.
-- Before editing or staging, verify `pwd` and `git rev-parse --show-toplevel`
-  point to the active worktree.
-- If a required change appears to belong in another worktree, stop and ask
-  before writing.
+- Each edit, generator, staging, commit, or PR action must resolve one
+  workspace from its mutation target, explicit task root, or tool `cwd`.
+- The selected workspace's declaration, PlanMount, Session, active-work, Git
+  identity, and write claims must validate independently.
+- Before shell mutation, verify `pwd` and `git rev-parse --show-toplevel`
+  identify the selected workspace. An absolute target does not authorize a
+  shell running from a foreign worktree.
+- A later action may intentionally select another worktree without creating a
+  new chat or rebinding OWNER. Do not copy owner state between worktrees.
+- One action must not write multiple worktrees. Split it into separate actions
+  or fail with `WORKTREE_SELECTION_REQUIRED`.
 
 Cross-worktree comparison is allowed for investigation, conflict analysis, and
-PR review, but write scope remains bound to the active worktree.
+PR review. Cross-worktree mutation is allowed only as separate
+single-workspace OWNER actions; assigned children remain in their assignment
+workspace.
 
 Agents must not create a worktree merely to bypass Plan mount, lifecycle, or
 resource conflicts. A worktree is created only when the user explicitly

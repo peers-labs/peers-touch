@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Module Layout
 
 > **Status**: active
-> **Created**: 2026-09-16 | **Updated**: 2026-10-07
+> **Created**: 2026-09-16 | **Updated**: 2026-10-09
 > **Owner**: Platform Team
 
 ---
@@ -140,7 +140,7 @@ Responsibilities below describe the NBI02 PlanMount cutover result.
 |---|---|
 | `README.md` | Module scope, verified problem and navigation |
 | `design.md` | Ownership, boundaries, data flow, resume and cutover contracts |
-| `decisions.md` | DWF-D01..DWF-D43 ADR-lite decisions |
+| `decisions.md` | DWF-D01..DWF-D45 ADR-lite decisions |
 | `data-model.md` | Closed schemas and state transition guards |
 | `integration.md` | Skill, Make, Acceptance, Quality and migration mapping |
 | `execution-plans/*/plan.md` | Stable Plan, digest-bound North Star approval, criterion coverage, Amendment Log, and Acceptance contract |
@@ -174,14 +174,14 @@ Responsibilities below describe the NBI02 PlanMount cutover result.
 | `workflow-owner-reference.mjs` | Validated host-neutral main-session reference and root identity hash |
 | `workflow-owner-context.mjs` | Resolve the current main-session OWNER from the live Hook Action Receipt |
 | `workflow-host-adapters.mjs` | TRAE/Cursor/Codex event normalization and native response rendering; no cross-host identity aliases |
-| `workflow-binding-projection.mjs` | Pure host-specific root/execution identity projection plus role, lineage and subject/tool/target roots |
-| `workflow-binding-store.mjs` | Atomic OWNER binding with machine-local root chat ID, child assignment/claim/lease/terminal lifecycle, Anchor receipt and OWNER release |
+| `workflow-binding-projection.mjs` | Pure host-specific OWNER identity projection plus per-action OWNER workspace, fixed child workspace, role, lineage and subject/tool/target roots |
+| `workflow-binding-store.mjs` | Atomic OWNER identity binding with machine-local root chat ID, workspace-bound child assignment/claim/lease/terminal lifecycle, Anchor receipt and OWNER release |
 | `worktree-create.mjs` | Authorized Git worktree creation plus immutable main-session provenance |
 | `workflow-binding.mjs` | OWNER-authorized child assignment, terminalization, status, and hard-cut reset CLI |
 | `workflow-tool-intent.mjs` | Structured shell/tool intent parsing without regex command admission |
 | `workflow-anchor.mjs` | Deterministic Context Anchor rendering and response/transcript verification |
 | `workflow-state-inspector.mjs` | Read-only mount, snapshot, run, declaration, active-work, Session, Git and terminal-state validation |
-| `workflow-kernel.mjs` | Host-neutral binding, subject-root, owner-state, source-scope, Stop and release policy |
+| `workflow-kernel.mjs` | Host-neutral binding, per-action workspace selection, subject-root, owner-state, source-scope, Stop and release policy |
 | `workflow-snapshot-core.mjs` | Canonical read-only owner join consumed by workflow projections |
 | `workflow-snapshot.mjs` | Thin CLI over Workflow Snapshot core |
 | `workflow-doctor.mjs` | Executable truth matrix for public workflow promises |
@@ -203,7 +203,7 @@ Responsibilities below describe the NBI02 PlanMount cutover result.
 | `tooling/skills/pt-dev-runtime-handoff/` | Project runtime, Journey, Session result, and cleanup owner |
 | `tooling/skills/pt-{trae,cursor,codex}-host-adapter/` | Optional host tool transports with no project-state authority |
 | `tooling/scripts/install-agent-integration.sh` | Non-interactive dispatch for projection, hard-cut, and retired-projection GC |
-| `tooling/scripts/agent-integration-audit.py` | Fail-closed source, participating-root Hook, recursive catalog, binding-store, receipt, and projection audit |
+| `tooling/scripts/agent-integration-audit.py` | Fail-closed full workflow integration audit plus explicit bootstrap `--projection-only` verification for source, participating-root Hook, recursive catalog, callback, receipt, and projection |
 | `tooling/scripts/agent-integration-control.py` | Work-ledger-locked projection plus separately authorized global-idle hard-cut and retired-projection GC owners |
 | `tooling/scripts/skill-overlay-control.py` | Machine-local user Overlay install/list/enable/disable/uninstall/resolve owner with immutable-copy and digest validation |
 | `tooling/scripts/skill-overlay-control-test.py` | Overlay lifecycle, ordering, collision, symlink, registry, and tamper regression coverage |

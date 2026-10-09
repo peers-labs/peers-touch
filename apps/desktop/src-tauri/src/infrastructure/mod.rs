@@ -15,6 +15,8 @@ pub mod session_revocation;
 pub mod session_store;
 pub mod session_vault;
 pub(crate) mod station_client;
+pub(crate) mod station_discovery;
 pub(crate) mod station_registry;
+pub(crate) mod station_transport;
 pub mod storage;
 pub mod window_session_registry;

@@ -28,6 +28,7 @@ type Options struct {
 	StreamPingInterval int
 	StreamPingTimeout  int
 	StreamListenAddr   string
+	PublicBaseURL      string
 
 	// Graceful shutdown
 	GracefulDrainTimeout int
@@ -39,8 +40,14 @@ type Options struct {
 	TurnAuthSecret string
 
 	// TLS for stream listener (Block 8)
-	TLSCertFile string
-	TLSKeyFile  string
+	TLSCertFile           string
+	TLSKeyFile            string
+	AllowInsecureLoopback bool
+	SigningKeyFile        string
+	OperatorKeyFile       string
+	OperatorIssuer        string
+	OperatorAudience      string
+	OperatorScope         string
 }
 
 func WithEnabled(enabled bool) option.Option {
@@ -97,6 +104,12 @@ func WithStreamListenAddr(addr string) option.Option {
 	})
 }
 
+func WithPublicBaseURL(baseURL string) option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		o.PublicBaseURL = baseURL
+	})
+}
+
 func WithGracefulDrainTimeout(seconds int) option.Option {
 	return wrapper.Wrap(func(o *Options) {
 		o.GracefulDrainTimeout = seconds
@@ -136,5 +149,41 @@ func WithTLSCertFile(path string) option.Option {
 func WithTLSKeyFile(path string) option.Option {
 	return wrapper.Wrap(func(o *Options) {
 		o.TLSKeyFile = path
+	})
+}
+
+func WithAllowInsecureLoopback(allow bool) option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		o.AllowInsecureLoopback = allow
+	})
+}
+
+func WithSigningKeyFile(path string) option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		o.SigningKeyFile = path
+	})
+}
+
+func WithOperatorKeyFile(path string) option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		o.OperatorKeyFile = path
+	})
+}
+
+func WithOperatorIssuer(issuer string) option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		o.OperatorIssuer = issuer
+	})
+}
+
+func WithOperatorAudience(audience string) option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		o.OperatorAudience = audience
+	})
+}
+
+func WithOperatorScope(scope string) option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		o.OperatorScope = scope
 	})
 }

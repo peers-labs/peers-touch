@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "id": "station-access-relay-enrollment",
+  "domain": "station-access",
+  "status": "active",
+  "owners": [
+    "apps/station/app/conf/sub_relay_client.yml",
+    "apps/station/frame/core/plugin/native/subserver/relay/**",
+    "apps/station/frame/core/plugin/native/subserver/relay-client/**",
+    "tooling/docker/entrypoint.sh",
+    "tooling/acceptance/gates/station_access/relay_enrollment_e2e.py",
+    "tooling/acceptance/provisioners/station_access_relay_role.py"
+  ],
+  "truth_sources": [
+    "Station libp2p host identity",
+    "Relay invite and mount persistence",
+    "Relay asymmetric credential authority"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "operator",
+      "route": "Relay invite, mount rotation, revoke, and recovery API"
+    },
+    {
+      "type": "service",
+      "route": "Station relay-client readiness and TLS mount stream"
+    }
+  ],
+  "required_gates": [
+    "relay-station-enrollment-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "Relay derives station_peer_id only from a verified Station host-key proof",
+      "one-time invite plaintext is returned once and only its keyed digest is persisted",
+      "mount credentials are Relay EdDSA tokens bound to audience, scopes, jti, expiry, mount, and generation",
+      "rotation requires the current credential and a fresh proof from the enrolled Station key",
+      "revoke advances generation, closes the active stream, and rejects refresh and reconnect",
+      "a new invite restores a revoked mount at a later generation"
+    ],
+    "surface": [
+      "relay-client reports running only after the Relay accepts its active mount"
+    ]
+  },
+  "negative": [
+    "X-Station-Peer-ID and label must not establish Station identity",
+    "invite plaintext and credential values must not appear in list responses, logs, or evidence",
+    "Station application JWT secrets must not sign Relay mount credentials",
+    "an expired or revoked cached credential must not produce running readiness"
+  ]
+}

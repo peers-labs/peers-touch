@@ -131,13 +131,13 @@ export async function inspectWorkflowContext(binding, options = {}) {
   if (declarations.length === 0) {
     return mismatch(
       'WORK_DECLARATION_REQUIRED',
-      'No live Development declaration exists for the conversation execution root.',
+      'No live Development declaration exists for the selected action workspace.',
     );
   }
   if (declarations.length !== 1) {
     return mismatch(
       'WORK_DECLARATION_CONFLICT',
-      'Multiple live Development declarations exist for the execution root.',
+      'Multiple live Development declarations exist for the selected action workspace.',
       { workItemIds: declarations.map((item) => item.workItemId) },
     );
   }

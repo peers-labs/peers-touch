@@ -15,7 +15,7 @@
 //     Handle's host != local station's domain → look up the locator
 //     record in the federation DHT, find a relay we can forward
 //     through, GET /actor/federation/profile?handle=... via
-//     /relay/forward/<peer_id>/..., and verify the returned envelope
+//     a scoped opaque Relay tunnel, and verify the returned envelope
 //     against the signing_key_pem the locator record pinned (TOFU).
 //
 // Verified remote envelopes are written through to the federation profile

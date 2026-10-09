@@ -15,3 +15,9 @@ peers:
           graceful-drain-timeout: 10
           tls-cert-file: ""
           tls-key-file: ""
+          allow-insecure-loopback: false
+          signing-key-file: ""
+          operator-key-file: ""
+          operator-issuer: ""
+          operator-audience: ""
+          operator-scope: ""

@@ -1,7 +1,7 @@
-# Station 接入生命周期 - 验收矩阵
+# Station 统一接入生命周期 - 验收矩阵
 
 > **Status**: active
-> **Version**: v1.2
+> **Version**: v2.0
 > **Created**: 2026-09-26 | **Updated**: 2026-10-06
 > **Owner**: Identity and Access
 
@@ -9,66 +9,89 @@
 
 ## 1. 验收规则
 
-- 所有 required capability 必须由当前精确源码完成 Desktop 与 Mobile 原生证明。
-- 双端比较产品语义、状态、错误和持久结果，不比较组件树或 command 数量。
-- 接入失败路径必须证明不会调用 capability registry 之外的 route。
+- 所有 required capability 必须由同一精确源码完成 Desktop、Mobile、两台
+  Station 和一个 Relay 的真实运行证明。
+- 双端比较产品语义、状态、错误、安全结果和持久结果，不比较组件树。
+- 安全负向用例与 happy path 同等阻断；unit test 不能替代原生 Journey。
+- Relay 运行单元必须证明不包含 Station 业务 route，且看不到 tunnel 内明文。
 - 当前接口 inventory、owner、contract 或 consumer 任一缺口均失败。
 
 ## 2. Capability Crosswalk
 
-| Capability | Journey | 当前状态 | Gate |
+| Capability | Journey | 基线状态 | Gate |
 |---|---|---|---|
-| SAL-C01 可信 Station | SAL-J01/J03/J05 | 已完成 | SAL-G01 |
-| SAL-C02 Access Gate | SAL-J01/J02/J05 | 已完成 | SAL-G01 |
-| SAL-C03 Scope 隔离 | SAL-J02/J03 | 已完成 | SAL-G02 |
-| SAL-C04 Federation context | SAL-J04 | 已完成 | SAL-G03 |
-| SAL-C05 基础设施收口 | SAL-J04/J05 | 已完成 | SAL-G03 |
-| SAL-C06 能力完整性治理 | 全部 | 已完成 | SAL-G00/SAL-G04 |
-| SAL-C07 客户端类别会话 | SAL-J06 | 待当前项目证明 | SAL-G05 |
+| SAL-C01-C04 | SAL-J01-J05 | 直连已完成，需回归 | SAL-G01/G02 |
+| SAL-C05-C06 | 全部 | 已有边界，需扩展 inventory | SAL-G00/G07 |
+| SAL-C07 统一接入地址 | SAL-J01/J06/J07 | 未实现 | SAL-G03 |
+| SAL-C08 Route-aware binding | SAL-J02/J03/J09 | 未实现 | SAL-G04 |
+| SAL-C09 安全 Relay 隧道 | SAL-J06/J07/J09 | 未实现 | SAL-G05 |
+| SAL-C10 Station Relay 生命周期 | SAL-J08 | 原型不足 | SAL-G06 |
+| SAL-C11 客户端类别会话 | SAL-J10 | 已实现，待聚合证明 | SAL-G08 |
 
 ## 3. Gates
 
-### SAL-G00：能力契约
+### SAL-G00：能力与角色契约
 
-- 每个接入 capability 绑定产品 ID、Station owner、Proto contract 与平台适用性。
-- 客户端 registry 不复制 Station method/path。
-- 无生产 consumer 的 command、wrapper、DTO 和 mock 为零。
+- endpoint discovery、route attestation、mount enrollment、opaque tunnel 和
+  Access Gate 均有唯一 owner、Proto contract 与 consumer。
+- Relay role 的启动 allowlist 不包含 Actor、OAuth、Chat、Social、Agent 或
+  Federation governance 业务 route。
+- 无生产 consumer 的 `/api/v1/relay/client-token`、任意路径 forward、DTO 和
+  credential path 在 cutover 后为零。
 
-### SAL-G01：可信接入
+### SAL-G01：可信 Station 与 Access Gate 回归
 
-- Desktop 与 Mobile 从新安装开始验证同一签名 Station identity。
-- 两端分别通过四个 canonical protobuf endpoint 登录。
-- 签名错误、PeerID 变化、404、unknown gate 与 attempt expiry 均 fail closed。
-- 运行中只调用 registry 登记的 Access Gate capability。
-
-Stable Gate：`station-access-auth-e2e`，环境
-`station-access-native`（macOS Desktop + iOS Simulator，同一 source-attested
-Station；每个 Gate 在已授权的 `chat-native-four` 上独立重置 Alice/Bob fixture）。
+- Desktop 与 Mobile 从 clean install 验证相同签名 Station identity。
+- 两端通过 canonical protobuf Access Gate 登录。
+- 签名错误、PeerID 变化、unknown gate 与 attempt expiry 均 fail closed。
 
 ### SAL-G02：Scope 隔离
 
 - Session、Messaging、Federation 与本地 projection 的 Station/Actor/Device 一致。
-- 账号、Station 切换和重启不泄漏其他 scope 的 projection。
-- 所有持久化 key 都绑定完整 scope tuple。
+- 账号、Station 切换和重启不泄漏其他 scope。
+- route 变化只改变 `route_revision`，Station 变化才改变
+  `lifecycle_generation`。
 
-Stable Gate：`station-access-scope-isolation-e2e`，环境
-`station-access-native`。
+### SAL-G03：统一 endpoint discovery
 
-### SAL-G03：Federation 与 Relay 边界
+- 同一输入自动识别直连 Station 与 Relay。
+- Relay 一个公开候选自动选中，多个候选要求用户选择。
+- 私有 Station 不被目录枚举；有效连接材料可解析，过期/重放失败。
+- Relay 伪造、替换或降级 Station attestation 时双端均在登录前拒绝。
 
-- 双端查看或选择明确 `federation_id`，并完成 scoped search/resolve/Chat。
-- 普通客户端无 Federation create/join/leave/delete/member-station。
-- 普通客户端无 Relay token/invite/mount/endpoint。
-- Station operator flows 仍可由真实 Dashboard/CLI consumer 完成。
+### SAL-G04：双端 route continuity
 
-### SAL-G04：当前接口完整性与聚合
+- Desktop 与 Mobile registry 均以 `station_peer_id` 为主键并持有多个 route。
+- 同 Station 在 direct/relay 间切换后 actor、session、conversation 与本地数据
+  连续；旧 route 异步结果被 revision fence 丢弃。
+- 不同 Station identity 必须显式替换并完整清理 scope。
+- 安装态和开发态使用相同 discovery schema 与 migration 结果。
 
-- 四个 Access Gate capability 在 Station registry 中完整登记。
-- Desktop 与 Mobile 的 client capability registry 均引用同一 capability ID。
-- route、Proto request/response、owner root 和 consumer 均能从当前树解析。
-- 受治理前缀下发现的接口必须全部存在于正向 registry。
+### SAL-G05：Relay 数据面安全
 
-### SAL-G05：客户端类别会话矩阵
+- Client 到 Station 使用经 Station identity 绑定的端到端 TLS 1.3。
+- Relay 抓包、日志和 tracing 只包含 Relay 控制面 credential、route ID、帧大小、
+  时序、配额与错误类别，不包含客户端 Station Session credential。
+- 错误证书、错误 SPKI pin、重放 nonce、跨 Station route 与篡改 frame 均失败。
+- 请求/响应大小、并发、速率、时长和取消都受硬限制，不静默截断。
+
+### SAL-G06：Station enrollment 与撤销
+
+- invite 只显示一次并仅持久化 hash；并发注册只能成功一次。
+- Relay 从 Station host-key proof 推导 `station_peer_id`，不信任请求头。
+- mount credential 具有独立 issuer/audience/scope/jti/expiry/generation。
+- 删除或撤销 mount 原子关闭流、递增 epoch，并拒绝刷新和重连。
+- 过期缓存能进入显式重新 enrollment，不产生伪 `running` 状态。
+
+### SAL-G07：聚合与零遗产
+
+- 两台 Station、一个 Relay、Desktop、Mobile 完成 direct、relay、显式换路、
+  restart、revoke、overload 和 cross-Station 业务 Journey。
+- 删除硬编码外部 debug egress；网络出站 inventory 无未声明目的地。
+- 现有 Station-to-Station relay 只接受 typed capability manifest。
+- 架构治理、API ownership、release build 和 Acceptance aggregate 全部通过。
+
+### SAL-G08：客户端类别会话矩阵
 
 - 同一测试账号在一个 Desktop 与一个 Mobile 上同时登录后，两端 Session 均有效。
 - 两端使用不同 `device_id`，但共享相同 actor PTID，并能从同一 Station 读取、
@@ -86,8 +109,12 @@ Stable Gate：`station-access-scope-isolation-e2e`，环境
 
 | Cell | 证明 |
 |---|---|
-| Desktop native | 首次接入、恢复、切换、失败关闭 |
-| Mobile native | 首次接入、恢复、切换、失败关闭 |
+| Relay role | 最小 route allowlist、TLS、operator auth、配额与审计 |
+| Station A / B | enrollment、轮换、撤销、重连与 typed federation transport |
+| Desktop native | direct/relay 自动识别、选择、登录、换路、安装态恢复 |
+| Mobile native | 与 Desktop 相同语义的 iOS Simulator 证明 |
+| Adversarial client | forgery、replay、wrong-route、oversize、overload 与 cancellation |
+| Relay observer | 无客户端 Station Session credential、Access payload 或业务明文 |
 | Mixed same-Station | 不同账号 Desktop↔Mobile Chat；同一账号 Desktop+Mobile 并存 |
 | Same-class takeover | 双 Desktop 和双 Mobile 分别证明新 Session 接管旧同类端 |
 | Mixed cross-Station | 显式 Federation context 与 Relay 隔离 |
@@ -95,5 +122,5 @@ Stable Gate：`station-access-scope-isolation-e2e`，环境
 
 ## 5. 完成条件
 
-`STATION_ACCESS_LIFECYCLE_ACCEPTED` 仅在 SAL-G00..SAL-G05 全部通过、所有 Task
-为 `done`、`CCU-20260922` 保持 completed 且最终工作树干净时成立。
+`UNIFIED_RELAY_STATION_ACCESS_ACCEPTED` 仅在 SAL-G00..SAL-G08 对同一精确源码
+全部通过、全部 Task 为 `done`、旧任意转发入口删除、运行资源释放且工作树干净时成立。

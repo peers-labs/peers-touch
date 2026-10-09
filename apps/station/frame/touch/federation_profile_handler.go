@@ -48,7 +48,7 @@ func FederationProfile(c context.Context, ctx *app.RequestContext) {
 	}
 
 	// Federation envelopes MUST embed canonical URLs even when the
-	// request reached us via /relay/forward (where Host is 127.0.0.1).
+	// request reached us through the Station-terminated opaque tunnel.
 	// The federation identity singleton owns the canonical origin; we
 	// fall back to the request Host only if identity is not yet loaded.
 	id := fednode.LocalIdentitySnapshot()

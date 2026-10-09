@@ -12,7 +12,6 @@ export const REQUIRED_RUNNER_TEST =
 
 export const REQUIRED_GO_TESTS = Object.freeze([
   'TestFederatedPrivateReconcileCommitsSourceOutboxAndReceiverProjection',
-  'TestPeerClientPreservesPeerHopRequestIDThroughDirectAndRelayTransports',
   'TestFederatedPrivateObjectGrantBindingKnownAnswer',
   'TestFederatedPrivateObjectProtoReservations',
   'TestFederatedPrivateObjectRequestRejectsNonCanonicalWire',
@@ -25,13 +24,17 @@ export const REQUIRED_GO_TESTS = Object.freeze([
   'TestFederatedPrivateObjectRecipientRejectsRevokedEndpointBeforeMint',
   'TestFederatedPrivateObjectDenialsReturnCanonicalNotFound',
   'TestFederatedPrivateObjectRecipientProxyPartitionsAndValidatesHeaders',
-  'TestFederatedPrivateObjectRelayRejectsOversizedResponse',
-  'TestFederatedPrivateObjectRelayRejectsOversizedFrameBeforeAllocation',
-  'TestFederatedPrivateObjectRelayCancellationAcknowledgementReleasesSlot',
-  'TestFederatedPrivateObjectRelayLateCancelledResponseKeepsSharedStream',
-  'TestFederatedPrivateObjectRelayCancellationSaturationRejectsWithoutDisconnect',
-  'TestFederatedPrivateObjectRelayRequestIDWrapRequiresNewStream',
-  'TestFederatedPrivateObjectRelayRedactsLogs',
+  'TestProtocolTunnelFrameRoundTrip',
+  'TestOpaqueTunnelChainWithNetPipe',
+  'TestTunnelAdmissionEnforcesAndReleasesAllDimensions',
+  'TestTunnelRateLimiterResetsOnlyAtWindowBoundary',
+  'TestStreamEntryRateLimiterAggregatesConcurrentTunnels',
+  'TestStreamTunnelMultiplexesAndReleasesCancellation',
+  'TestStreamTunnelRejectsOversizeSequenceAndQueueGrowth',
+  'TestStreamTunnelDrainsBufferedDataBeforeTerminalState',
+  'TestInboundTunnelDrainsBufferedDataBeforeTerminalState',
+  'TestRelayTunnelURLRequiresProtectedOrLoopbackTransport',
+  'TestPeerTunnelRejectsRedirect',
 ]);
 
 export const REQUIRED_RUST_TESTS = Object.freeze([

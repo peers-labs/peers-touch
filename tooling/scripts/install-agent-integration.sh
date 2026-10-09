@@ -59,6 +59,9 @@ fi
 python3 "$root/tooling/scripts/agent-integration-control.py" "${args[@]}"
 
 audit_args=(--root "$root" --host "$host")
+if [[ "$action" == "install" ]]; then
+  audit_args+=(--projection-only)
+fi
 if [[ -n "$workspace" ]]; then
   audit_args+=(--workspace "$workspace")
 fi

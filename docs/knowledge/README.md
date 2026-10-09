@@ -151,6 +151,7 @@ Pick one based on intent:
 ### Invariants (active)
 
 - [`invariants/relay-readloop-discipline.md`](invariants/relay-readloop-discipline.md) — readLoop goroutines must dispatch blocking work asynchronously.
+- [`invariants/relay-runtime-role-is-minimal.md`](invariants/relay-runtime-role-is-minimal.md) — Relay composition is deny-by-default and fails closed on missing transport/operator security.
 - [`invariants/locator-publisher-symmetry.md`](invariants/locator-publisher-symmetry.md) — `PublishVisibility` callers split into "user-driven" (broadcast) and "maintenance" (no broadcast); no third category.
 - [`invariants/chat-message-boundaries.md`](invariants/chat-message-boundaries.md) — Chat message content must not be covered by actions, metadata, composers, safe areas, or floating layers.
 - [`invariants/mobile-chat-layout-boundaries.md`](invariants/mobile-chat-layout-boundaries.md) — Mobile Chat bottom layers must participate in one bottom clearance model.
@@ -169,7 +170,7 @@ Pick one based on intent:
 - [`invariants/continuous-plan-run.md`](invariants/continuous-plan-run.md) — one authorized Plan Run continues across Task, Goal, review, Anchor, and context boundaries until completion or a true hard stop.
 - [`invariants/host-neutral-agent-execution.md`](invariants/host-neutral-agent-execution.md) — project scheduling, runtime verification, Session, evidence, and cleanup semantics remain independent of TRAE, Cursor, Codex, or future hosts.
 - [`invariants/user-skill-overlays-are-interaction-only.md`](invariants/user-skill-overlays-are-interaction-only.md) — machine-local user overlays may shape interaction only and cannot alter project execution semantics.
-- [`invariants/conversation-bound-workflow-kernel.md`](invariants/conversation-bound-workflow-kernel.md) — one host conversation has one immutable execution root; tool subject roots cannot silently change write authority.
+- [`invariants/owner-rooted-workflow-binding.md`](invariants/owner-rooted-workflow-binding.md) — one host conversation has stable OWNER identity; each mutation selects one workspace and assigned children remain workspace-bound.
 - [`invariants/worktree-observation-is-diagnostic.md`](invariants/worktree-observation-is-diagnostic.md) — each worktree owns its opportunity report while Dev UI discovery and freshness remain non-authoritative.
 - [`invariants/desktop-vite-entry-readiness.md`](invariants/desktop-vite-entry-readiness.md) — Desktop startup and reuse require the Vite renderer entry module to respond successfully.
 - [`invariants/acceptance-suite-runtime-reuse.md`](invariants/acceptance-suite-runtime-reuse.md) — multi-scenario Acceptance provisions expensive resources once at Suite scope and keeps Scenarios attach-only.

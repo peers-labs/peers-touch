@@ -32,9 +32,9 @@ type Options struct {
 	// here after acquiring a relay_token via RelayURL.
 	RelayStreamAddr string
 
-	// InviteToken is the single-use admin-issued JWT used the FIRST TIME a
-	// station registers with this relay. After registration the relay_token
-	// is persisted to TokenStorePath and the InviteToken is no longer needed.
+	// InviteToken is the single-use opaque secret used the first time a
+	// Station registers with this Relay. After registration the structured
+	// mount credential at TokenStorePath becomes the source of truth.
 	InviteToken string
 
 	// Label is an opaque, human-readable identifier sent on /register and
@@ -56,13 +56,14 @@ type Options struct {
 	// the relay binds the resulting relay_token to that exact peer_id.
 	BootstrapInfoURL string
 
-	// TokenStorePath is a filesystem path where we persist the relay_token
-	// after a successful /register call so a station restart does not consume
-	// a fresh invite. Defaults to "/app/data/relay_token" in the docker image.
+	// BootstrapIdentityURL signs Relay enrollment and rotation challenges with
+	// the Station's libp2p host key.
+	BootstrapIdentityURL string
+
+	// TokenStorePath persists the structured, expiring mount credential.
 	TokenStorePath string
 
-	// UseTLS toggles TLS for the TCP stream connection. The relay subserver
-	// supports TLS via the same flag pair on its side; we mirror that here.
+	// UseTLS enables the mandatory TLS transport for the Relay stream.
 	UseTLS                bool
 	TLSInsecureSkipVerify bool
 
@@ -70,6 +71,10 @@ type Options struct {
 	// /api/v1/relay/heartbeat. Must be smaller than the relay subserver's
 	// HeartbeatTimeout (default 60s). Defaults to 30s when <=0.
 	HeartbeatIntervalSec int
+
+	// CredentialRefreshIntervalSec controls proactive host-key-proven
+	// credential rotation.
+	CredentialRefreshIntervalSec int
 }
 
 // WithEnabled toggles the relay-client subserver.
@@ -112,6 +117,10 @@ func WithBootstrapInfoURL(v string) option.Option {
 	return wrapper.Wrap(func(o *Options) { o.BootstrapInfoURL = v })
 }
 
+func WithBootstrapIdentityURL(v string) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.BootstrapIdentityURL = v })
+}
+
 // WithTokenStorePath sets where we persist the relay_token across restarts.
 func WithTokenStorePath(v string) option.Option {
 	return wrapper.Wrap(func(o *Options) { o.TokenStorePath = v })
@@ -130,4 +139,8 @@ func WithTLSInsecureSkipVerify(v bool) option.Option {
 // WithHeartbeatIntervalSec sets how often we POST /api/v1/relay/heartbeat.
 func WithHeartbeatIntervalSec(v int) option.Option {
 	return wrapper.Wrap(func(o *Options) { o.HeartbeatIntervalSec = v })
+}
+
+func WithCredentialRefreshIntervalSec(v int) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.CredentialRefreshIntervalSec = v })
 }

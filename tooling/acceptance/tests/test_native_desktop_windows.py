@@ -354,6 +354,27 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         self.assertIn("$env:OPENSSL_SRC_PERL = $PerlPath", source)
         self.assertIn("$env:PROTOC = $ProtocPath", source)
         self.assertIn("$env:CARGO_TARGET_DIR = $CargoTargetRoot", source)
+        self.assertIn(
+            '$env:CARGO_HOME = Join-Path $CargoTargetRoot "cargo-home"',
+            source,
+        )
+        self.assertIn("Split-Path -Parent $ProtocPath", source)
+        self.assertIn("protoc-gen-es.CMD", source)
+        self.assertIn('Get-ChildItem (', source)
+        self.assertIn('-Recurse -Filter "*.proto"', source)
+        self.assertIn('"--es_opt=target=ts"', source)
+        install = source.index(
+            'Invoke-NativeCommand "pnpm.cmd" @("install", "--frozen-lockfile")'
+        )
+        generate = source.index(
+            "Invoke-NativeCommand $ProtocPath"
+        )
+        desktop_build = source.index(
+            'Invoke-NativeCommand "pnpm.cmd" '
+            '@("--dir", "apps/desktop", "run", "build")'
+        )
+        self.assertLess(install, generate)
+        self.assertLess(generate, desktop_build)
         self.assertIn("$env:VITE_ACCEPTANCE_HARNESS = \"1\"", source)
         self.assertIn("$env:TAURI_CONFIG =", source)
 
