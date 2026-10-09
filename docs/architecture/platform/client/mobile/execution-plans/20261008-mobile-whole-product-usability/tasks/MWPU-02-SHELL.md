@@ -18,6 +18,7 @@
   "writeSet": [
     "apps/desktop/src",
     "apps/mobile/scripts",
+    "apps/mobile/src-tauri/gen/apple/peers-touch-mobile_iOS/Info.plist",
     "apps/mobile/src/App.tsx",
     "apps/mobile/src/components",
     "apps/mobile/src/pages/SettingsPage.tsx",
@@ -46,7 +47,7 @@
   "checks": [
     {
       "id": "shell-source",
-      "command": "pnpm --dir apps/desktop run check && pnpm --dir apps/mobile run check:web && pnpm --dir apps/mobile run check:recovery-ui && pnpm --dir apps/mobile exec vitest run src/runtimes/sessionRuntime.test.ts",
+      "command": "pnpm --dir apps/desktop run check && pnpm --dir apps/mobile run check:web && pnpm --dir apps/mobile run check:recovery-ui && pnpm --dir apps/mobile exec vitest run src/runtimes/sessionRuntime.test.ts && python3 apps/mobile/scripts/ios_build_archive_test.py",
       "verificationClass": "SOURCE_CHECK"
     },
     {
