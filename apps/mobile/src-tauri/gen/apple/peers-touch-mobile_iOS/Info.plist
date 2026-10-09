@@ -36,6 +36,10 @@
 		<string>com.peers.touch.mobile.reconcile.v1.development</string>
 		<string>com.peers.touch.mobile.reconcile.v1.production</string>
 	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>

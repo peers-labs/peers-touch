@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import plistlib
 import shutil
 import subprocess
 import tempfile
@@ -13,9 +14,26 @@ BUILD_SCRIPT = (
     Path(__file__).resolve().parents[1]
     / "src-tauri/gen/apple/scripts/build-rust-code.sh"
 )
+INFO_PLIST = (
+    Path(__file__).resolve().parents[1]
+    / "src-tauri/gen/apple/peers-touch-mobile_iOS/Info.plist"
+)
 
 
 class IOSSimulatorArchiveBuildTest(unittest.TestCase):
+    def test_ios_background_refresh_configuration(self) -> None:
+        with INFO_PLIST.open("rb") as source:
+            configuration = plistlib.load(source)
+
+        self.assertEqual(
+            configuration["BGTaskSchedulerPermittedIdentifiers"],
+            [
+                "com.peers.touch.mobile.reconcile.v1.development",
+                "com.peers.touch.mobile.reconcile.v1.production",
+            ],
+        )
+        self.assertIn("fetch", configuration["UIBackgroundModes"])
+
     def run_build(
         self,
         *,
