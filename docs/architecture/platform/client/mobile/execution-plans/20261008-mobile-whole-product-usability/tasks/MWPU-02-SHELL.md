@@ -19,6 +19,7 @@
     "apps/desktop/src",
     "apps/mobile/scripts",
     "apps/mobile/src-tauri/gen/apple/peers-touch-mobile_iOS/Info.plist",
+    "apps/mobile/src-tauri/plugins/platform-permissions/ios/Sources/PlatformPermissionsPlugin.swift",
     "apps/mobile/src/App.tsx",
     "apps/mobile/src/components",
     "apps/mobile/src/pages/SettingsPage.tsx",

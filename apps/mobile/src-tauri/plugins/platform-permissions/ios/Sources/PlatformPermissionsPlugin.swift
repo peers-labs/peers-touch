@@ -194,6 +194,11 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
   private var activeMediaPick: (args: MediaPickArgs, invoke: Invoke)?
   private weak var activeMediaPickerController: UIViewController?
 
+  override init() {
+    super.init()
+    registerScheduledHandlers()
+  }
+
   override func load(webview: WKWebView) {
     super.load(webview: webview)
     installLifecycleObservers()
@@ -201,7 +206,6 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
     UNUserNotificationCenter.current().delegate = self
     activePushPlugin = self
     installRemoteNotificationDelegateHook()
-    registerScheduledHandlers()
     cleanupNativePickerCache()
   }
 
@@ -361,8 +365,11 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
             )
           )
         } catch {
+          let failure = error as NSError
           invoke.reject(
-            "scheduled reconcile registration failed",
+            "scheduled reconcile registration failed: "
+              + "\(failure.domain):\(failure.code):"
+              + "\(failure.localizedDescription)",
             code: "PLATFORM_SCHEDULE_FAILED"
           )
         }
