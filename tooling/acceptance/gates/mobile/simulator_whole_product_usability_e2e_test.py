@@ -380,6 +380,16 @@ def valid_surface_evidence(
                 ],
                 "occlusions": [],
                 "blockingSurfaces": [],
+                "stationLayout": {
+                    "launchCard": None,
+                    "addressInput": None,
+                    "placeholder": None,
+                    "submit": None,
+                    "helper": None,
+                    "logo": None,
+                    "stationStatusClasses": [],
+                    "continueDisabled": None,
+                },
             }
             cells[cell_id] = {
                 "status": "PASS",
