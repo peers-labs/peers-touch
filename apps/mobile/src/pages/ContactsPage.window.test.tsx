@@ -1,10 +1,13 @@
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContactsPage } from './ContactsPage';
 import { normalizeFriendRequest } from '../features/social/socialNormalizers';
 import { useSocialStore } from '../features/social/socialStore';
 import { clearAllScrollPositions, saveListAnchor } from '../app/navigation/scrollRestoration';
+
+const styles = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
 vi.mock('../app/mobileI18n', () => ({
   useMobileI18n: () => ({ t: (key: string) => key }),
@@ -55,5 +58,26 @@ describe('Contacts bounded surface', () => {
     expect(html.match(/class="contact-item-row"/g)).toHaveLength(100);
     expect(html).toContain('Peer 239');
     expect(html).toContain('mobile.list.previous');
+  });
+});
+
+describe('Contacts short landscape layout', () => {
+  it('keeps the empty-state recovery action inside the content viewport', () => {
+    const marker = '/* Keep the Contacts recovery action visible above the tabbar on short screens. */';
+    const start = styles.indexOf(marker);
+    const end = styles.indexOf('/* ── Recovery layer ── */', start);
+    const contract = styles.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(contract).toContain('@media (orientation: landscape) and (max-height: 500px)');
+    expect(contract).toContain(".page-container[data-product-surface='contacts.list'] .contacts-body");
+    expect(contract).toContain('padding-block: 0');
+    expect(contract).toContain(".page-container[data-product-surface='contacts.list'] .ant-empty");
+    expect(contract).toContain('margin-block: 6px');
+    expect(contract).toContain(".page-container[data-product-surface='contacts.list'] .ant-empty-image");
+    expect(contract).toContain('height: 24px');
+    expect(contract).toContain(".page-container[data-product-surface='contacts.list'] .empty-copy .ant-btn");
+    expect(contract).toContain('margin-top: 2px');
   });
 });
