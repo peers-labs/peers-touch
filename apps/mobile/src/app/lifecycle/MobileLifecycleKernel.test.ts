@@ -50,6 +50,27 @@ describe('MobileLifecycleKernel runtime ownership', () => {
     });
   });
 
+  it('bootstraps generation once when native cold start has not foregrounded', async () => {
+    const calls: string[] = [];
+    const kernel = configuredKernel(
+      () => [descriptor('auth', [], calls)],
+      { current: 0 },
+      calls,
+    );
+
+    const snapshot = await kernel.startRuntimeGraph();
+
+    expect(calls).toEqual([
+      'generation:read',
+      'generation:advance',
+      'auth:bootstrap',
+    ]);
+    expect(snapshot).toMatchObject({
+      phase: 'ACTIVE',
+      generation: 1,
+    });
+  });
+
   it('owns and validates top-level launch-state transitions', () => {
     const kernel = new MobileLifecycleKernel();
     const launchEvents: string[] = [];
@@ -134,6 +155,36 @@ describe('MobileLifecycleKernel runtime ownership', () => {
     ]);
     expect(snapshot).toMatchObject({
       phase: 'ACTIVE',
+      generation: 5,
+    });
+  });
+
+  it('returns from resume directly to shell without an intermediate unmount state', async () => {
+    const calls: string[] = [];
+    const transitions: string[] = [];
+    const kernel = configuredKernel(
+      () => [descriptor('auth', [], calls)],
+      { current: 4 },
+      calls,
+      async () => 'shell',
+    );
+    kernel.transitionLaunchState('station-selection');
+    kernel.transitionLaunchState('runtime-critical');
+    kernel.transitionLaunchState('shell');
+    await kernel.startRuntimeGraph();
+    kernel.onEvent((event) => {
+      if (event.kind === 'launch-state-changed') {
+        transitions.push(event.launchState);
+      }
+    });
+
+    await kernel.suspend();
+    await kernel.resume('native-resume');
+
+    expect(transitions).toEqual(['background', 'resume', 'shell']);
+    expect(kernel.getSnapshot()).toMatchObject({
+      phase: 'ACTIVE',
+      launchState: 'shell',
       generation: 5,
     });
   });

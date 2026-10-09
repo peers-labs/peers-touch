@@ -29,4 +29,13 @@ describe('Mobile App Station identity replacement', () => {
     );
     expect(source).not.toContain("transitionLaunchState('shell')");
   });
+
+  it('keeps the Shell mounted while native system surfaces background the app', () => {
+    expect(source).toContain(
+      "renderedLaunchState === 'background'",
+    );
+    expect(source).toMatch(
+      /renderedLaunchState === 'shell'[\s\S]*renderedLaunchState === 'background'[\s\S]*renderedLaunchState === 'resume'[\s\S]*<MobileShell/,
+    );
+  });
 });

@@ -11,6 +11,7 @@
 
 import type {
   LifecycleKernelSnapshot,
+  LifecycleTransitionReason,
   MobileLaunchState,
   MobileRuntimeContext,
   MobileRuntimeDescriptor,
@@ -64,6 +65,7 @@ import {
   activateReliabilityRuntime,
   applyReliabilityProjectionCheckpoints,
   closeReliabilityScope,
+  draftsRequiringRestoreDecision,
   getDraftRestorationPort,
   listReliabilityCommands,
   nextReliabilityRetryDelay,
@@ -361,8 +363,9 @@ async function refreshReliabilityRecoveryProjection(
     ),
   );
   projection.reportCapacityReadOnly(status.commandCapacity);
-  if (drafts.length > 0) {
-    projection.reportDraftRestorePending(drafts);
+  const draftsRequiringRecovery = draftsRequiringRestoreDecision(drafts);
+  if (draftsRequiringRecovery.length > 0) {
+    projection.reportDraftRestorePending(draftsRequiringRecovery);
   } else {
     projection.clearDraftRestore();
   }
@@ -697,7 +700,22 @@ export function createMobileRuntimeDescriptors(): MobileRuntimeDescriptor[] {
   ];
 }
 
-export function fenceMobileRuntimeProjections(): void {
+const PROJECTION_CLEAR_REASONS = new Set<LifecycleTransitionReason>([
+  'app-unmount',
+  'station-replace',
+  'actor-replace',
+  'logout',
+  'revocation',
+  'reliability-recovery',
+  'acceptance-restart',
+]);
+
+export function fenceMobileRuntimeProjections(
+  _generation: number,
+  reason: LifecycleTransitionReason,
+): void {
+  if (!PROJECTION_CLEAR_REASONS.has(reason)) return;
+
   fenceAuthRuntimeProjection();
   fenceAccessRuntimeProjection();
   fenceSessionRuntimeProjection();

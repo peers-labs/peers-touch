@@ -30,12 +30,17 @@ vi.mock('../../app/mobileI18n', () => ({
   useMobileI18n: () => ({ t: (key: string) => key }),
 }));
 
+vi.mock('../../app/lifecycle', () => ({
+  useLifecycleKernel: () => ({ phase: 'ACTIVE' }),
+}));
+
 vi.mock('../../features/social/useMomentsDraft', () => ({
   useMomentsDraft: () => composerMocks.draft,
 }));
 
 import {
   canPublishMoment,
+  createMomentComposerStyle,
   createRestoredMomentImages,
   hasAuthoritativeImageReadback,
   MomentComposer,
@@ -136,7 +141,7 @@ describe('Moment composer media restoration', () => {
     )).toBe(false);
   });
 
-  it('keeps a persistence failure visible with retry and explicit discard', () => {
+  it('keeps a persistence failure visible with local retry', () => {
     composerMocks.draft.hasDraft = true;
     composerMocks.draft.persistenceFailure = {
       operation: 'save',
@@ -148,7 +153,18 @@ describe('Moment composer media restoration', () => {
     expect(markup).toContain('data-draft-failure="save"');
     expect(markup).toContain('draft store unavailable');
     expect(markup).toContain('common.action.retry');
-    expect(markup).toContain('mobile.moments.composer.discardDraft');
+  });
+
+  it('shows compact discard recovery only for a restored draft', () => {
+    composerMocks.draft.draftRestored = true;
+    composerMocks.draft.hasDraft = true;
+
+    const markup = renderMomentComposer();
+
+    expect(markup).toContain('moments.composer-draft-restored');
+    expect(markup).toContain(
+      'aria-label="mobile.moments.composer.discardDraft"',
+    );
   });
 
   it('requires durable draft persistence before starting publication', () => {
@@ -202,56 +218,59 @@ describe('Moment composer media restoration', () => {
     const markup = renderMomentComposer();
 
     expect(markup).toContain(
-      'class="moments-sheet-backdrop moments-composer-backdrop"',
+      'class="moments-sheet-backdrop moments-composer-backdrop moment-composer-overlay"',
     );
-    expect(markup).toContain('moments-bottom-sheet moments-composer-card');
+    expect(markup).toContain('moment-composer-surface');
     expect(markup).toContain('role="dialog"');
     expect(markup).toContain('data-acceptance-id="social-audience-select"');
     expect(markup).not.toContain('data-audience-option="DIRECT"');
   });
 
-  it('keeps the text input dominant before compact Audience controls', () => {
+  it('matches the confirmed composer structure without Ant form chrome', () => {
     const source = readFileSync(
       new URL('./MomentComposer.tsx', import.meta.url),
       'utf8',
     );
     const styles = readFileSync(
-      new URL('../../styles.css', import.meta.url),
+      new URL('./MomentComposer.css', import.meta.url),
       'utf8',
     );
-    const inputIndex = source.indexOf('<Input.TextArea');
+    const inputIndex = source.indexOf('<textarea');
+    const mediaIndex = source.indexOf('className="moment-composer-media"');
     const audienceIndex = source.indexOf(
       'data-acceptance-id="social-audience-select"',
     );
-    const actionsIndex = source.indexOf(
-      '<div className="moments-composer-actions">',
-    );
 
     expect(inputIndex).toBeGreaterThan(-1);
+    expect(mediaIndex).toBeGreaterThan(inputIndex);
     expect(audienceIndex).toBeGreaterThan(inputIndex);
-    expect(actionsIndex).toBeGreaterThan(audienceIndex);
-    expect(source).toContain('autoSize={{ minRows: 9, maxRows: 16 }}');
-    expect(styles).toContain('.moments-composer-backdrop,\n');
+    expect(audienceIndex).toBeGreaterThan(mediaIndex);
+    expect(source).not.toContain('<Input.TextArea');
+    expect(source).not.toContain('moments-composer-actions');
+    expect(styles).toContain('.moment-composer-textarea {');
     expect(styles).toContain(
-      'bottom: calc(var(--tabbar-height) + var(--safe-area-bottom));',
+      '--moment-composer-keyboard-overlap: 0px;',
     );
     expect(styles).toContain(
-      '.moments-composer-card {\n  display: flex;\n  flex-direction: column;',
+      'var(--moment-composer-keyboard-overlap)',
     );
     expect(styles).toContain(
-      '.moments-composer-card > .ant-input-textarea {\n' +
-        '  flex: 1 1 220px;\n' +
-        '  min-height: 220px;',
+      '.moment-composer-header > button.primary {',
     );
     expect(styles).toContain(
-      '.moments-composer-audience {\n  display: grid;\n' +
-        '  grid-template-columns: minmax(0, 1fr) 24px;\n' +
-        '  min-height: 42px;',
+      '.moment-composer-audience-row {',
     );
     expect(styles).toContain(
-      '.moments-composer-actions .ant-btn {\n' +
-        '  flex: 0 1 auto;\n' +
-        '  height: 32px;',
+      '.moment-composer-media-add {',
     );
+  });
+
+  it('projects visual keyboard overlap through one sheet variable', () => {
+    expect(createMomentComposerStyle(0)).toEqual({
+      '--moment-composer-keyboard-overlap': '0px',
+    });
+    expect(createMomentComposerStyle(318)).toEqual({
+      '--moment-composer-keyboard-overlap': '318px',
+    });
   });
 });

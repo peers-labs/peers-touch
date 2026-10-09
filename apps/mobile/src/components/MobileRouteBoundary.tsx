@@ -58,8 +58,19 @@ export function MobileRouteBoundary({
         || routeId === 'detail:setting'
       )
   );
+  const nativeTransitionPreservesTree = (
+    lifecycle.launchState === 'background'
+    || lifecycle.launchState === 'resume'
+  ) && (
+    status === 'suspended'
+    || status === 'resuming'
+  );
 
-  if (status === 'ready' || fixtureOwnsRoute) return children;
+  if (
+    status === 'ready'
+    || fixtureOwnsRoute
+    || nativeTransitionPreservesTree
+  ) return children;
 
   const starting = status === 'pending'
     || status === 'bootstrapping'

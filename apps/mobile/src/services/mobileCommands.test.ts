@@ -240,16 +240,22 @@ describe('Mobile command mutation admission', () => {
       sessionId: 'session-a',
       handle: '01K5K8F4T7Q7SYN5TGDRZ1Q9XH',
     };
+    const commandInput = {
+      stationPeerId: input.stationPeerId,
+      actorPtid: input.actorPtid,
+      sessionId: input.sessionId,
+      handle: input.handle,
+    };
 
     await expect(uploadNativeMomentMedia(input)).resolves.toEqual(attachment);
     await expect(discardNativeMomentMedia(input)).resolves.toBeUndefined();
 
     expect(invokeMock.mock.calls).toEqual([
-      ['moment_media_upload', { input }],
-      ['moment_media_discard', { input }],
+      ['moment_media_upload', { input: commandInput }],
+      ['moment_media_discard', { input: commandInput }],
     ]);
     expect(JSON.stringify(invokeMock.mock.calls)).not.toMatch(
-      /body_bytes|local_path|access_token|ciphertext|plaintext/i,
+      /body_bytes|local_path|access_token|ciphertext|plaintext|deviceId|lifecycleGeneration/i,
     );
   });
 

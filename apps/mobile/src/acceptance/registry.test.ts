@@ -578,12 +578,12 @@ describe('Mobile Acceptance Harness', () => {
         blocked: {
           phase: 'COLD',
           launchState: 'station-selection',
-          generation: 1,
+          generation: 2,
         },
         recovered: {
           phase: 'ACTIVE',
           launchState: 'station-selection',
-          generation: 2,
+          generation: 3,
         },
       });
       expect(invokeMock.mock.calls).toEqual([
