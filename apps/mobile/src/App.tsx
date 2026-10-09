@@ -137,6 +137,7 @@ function MobileAppRoot() {
     useState<PendingScopeExitRequest | null>(null);
   const [pendingIdentityReplacement, setPendingIdentityReplacement] =
     useState<PendingStationIdentityReplacement | null>(null);
+  const accessGateStartRevisionRef = useRef(0);
   const entryFixture = useEntrySurfaceFixture();
   const recoveryFixture = useRecoverySurfaceFixture();
   const stationEntriesKey = stationRegistry.entries
@@ -616,6 +617,7 @@ function MobileAppRoot() {
   }
 
   async function cancelAccessGateAttemptAndChangeStation() {
+    accessGateStartRevisionRef.current += 1;
     try {
       await cancelAccessAttemptForActiveStation();
     } catch {
@@ -625,7 +627,9 @@ function MobileAppRoot() {
   }
 
   async function startAccessGateChainFor(station: MobileStationEntry) {
-    getMobileLifecycleKernel().transitionLaunchState('station-handshake');
+    const requestRevision = ++accessGateStartRevisionRef.current;
+    const kernel = getMobileLifecycleKernel();
+    kernel.transitionLaunchState('station-handshake');
     setAuthLoading(true);
     setAuthError(null);
     let observedStationPeerId: string | null = null;
@@ -635,13 +639,28 @@ function MobileAppRoot() {
       requireMatchingStationIdentity(station, verified.stationPeerId);
       getRecoveryProjection().clearSessionMismatch();
       const decision = await startAccessAttemptForActiveStation();
+      if (
+        requestRevision !== accessGateStartRevisionRef.current
+        || kernel.getState().launchState !== 'station-handshake'
+      ) {
+        if (
+          useAuthStore.getState().accessDecision?.attemptId
+          === decision.attemptId
+        ) {
+          await cancelAccessAttemptForActiveStation().catch(() => {
+            setAccessDecision(null);
+          });
+        }
+        return;
+      }
       applyAccessGateRuntimeResult(decision);
       if (isAccessGranted(decision)) {
         await reconcileShellAdmission();
         return;
       }
-      getMobileLifecycleKernel().transitionLaunchState('access-gate-chain');
+      kernel.transitionLaunchState('access-gate-chain');
     } catch (error) {
+      if (requestRevision !== accessGateStartRevisionRef.current) return;
       const msg = error instanceof Error ? error.message : '';
       if (
         msg === 'mobile.launch.stationIdentityMismatch'
@@ -665,6 +684,7 @@ function MobileAppRoot() {
 
   function showStationSelection() {
     const kernel = getMobileLifecycleKernel();
+    accessGateStartRevisionRef.current += 1;
     if (kernel.getState().launchState === 'shell') {
       kernel.transitionLaunchState('station-change');
     }
