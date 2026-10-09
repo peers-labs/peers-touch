@@ -22,6 +22,7 @@ class IOSSimulatorArchiveBuildTest(unittest.TestCase):
         configuration: str = "debug",
         static: bool = False,
         dev: bool = False,
+        inline_dev: bool = False,
         fail: bool = False,
         arch: str = "arm64",
     ) -> tuple[subprocess.CompletedProcess[str], list[str], str]:
@@ -82,6 +83,10 @@ class IOSSimulatorArchiveBuildTest(unittest.TestCase):
                     encoding="utf-8",
                 )
                 environment["MOBILE_TAURI_DEV_CONFIG"] = str(config)
+            if inline_dev:
+                environment["TAURI_CONFIG"] = json.dumps(
+                    {"build": {"devUrl": "http://127.0.0.1:5173"}}
+                )
             result = subprocess.run(
                 ["bash", str(script)],
                 cwd=apple,
@@ -120,6 +125,13 @@ class IOSSimulatorArchiveBuildTest(unittest.TestCase):
 
     def test_dev_simulator_rebuilds_without_packaged_assets(self) -> None:
         result, args, archive = self.run_build(dev=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--features", args)
+        self.assertNotIn("custom-protocol", args[args.index("--features") + 1])
+        self.assertEqual(archive, "current archive")
+
+    def test_archive_subprocess_preserves_inline_dev_config(self) -> None:
+        result, args, archive = self.run_build(inline_dev=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--features", args)
         self.assertNotIn("custom-protocol", args[args.index("--features") + 1])

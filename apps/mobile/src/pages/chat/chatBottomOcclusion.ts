@@ -55,6 +55,21 @@ export function visualKeyboardOverlap(
   );
 }
 
+export function shouldResetChatViewport({
+  composerFocused,
+  visualViewportOffsetTop,
+  windowScrollY,
+}: {
+  readonly composerFocused: boolean;
+  readonly visualViewportOffsetTop: number;
+  readonly windowScrollY: number;
+}): boolean {
+  return composerFocused && (
+    visualViewportOffsetTop > 0
+    || windowScrollY > 0
+  );
+}
+
 export function createChatBottomOcclusionStyle({
   composerHeight,
   inputPanelHeight,
@@ -81,7 +96,7 @@ export function useChatBottomOcclusion({
   const [inputPanelElement, inputPanelRef] = useState<HTMLDivElement | null>(null);
   const composerHeight = useObservedBlockSize(composerElement);
   const inputPanelHeight = useObservedBlockSize(inputPanelElement);
-  const keyboardOverlapHeight = useVisualKeyboardOverlap();
+  const keyboardOverlapHeight = useVisualKeyboardOverlap(composerElement);
 
   const style = useMemo(
     () => createChatBottomOcclusionStyle({
@@ -133,7 +148,7 @@ function useObservedBlockSize(element: HTMLElement | null): number | null {
   return height;
 }
 
-function useVisualKeyboardOverlap(): number {
+function useVisualKeyboardOverlap(composerElement: HTMLElement | null): number {
   const [overlap, setOverlap] = useState(0);
 
   useEffect(() => {
@@ -144,6 +159,15 @@ function useVisualKeyboardOverlap(): number {
     }
 
     const update = () => {
+      if (shouldResetChatViewport({
+        composerFocused: composerElement?.contains(document.activeElement) === true,
+        visualViewportOffsetTop: viewport.offsetTop,
+        windowScrollY: window.scrollY,
+      })) {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }
       const layoutViewportHeight = Math.max(
         window.innerHeight,
         document.documentElement.clientHeight,
@@ -167,7 +191,7 @@ function useVisualKeyboardOverlap(): number {
       viewport.removeEventListener('scroll', update);
       window.removeEventListener('resize', update);
     };
-  }, []);
+  }, [composerElement]);
 
   return overlap;
 }

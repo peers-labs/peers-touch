@@ -230,6 +230,7 @@ export function RecoveryOverlayHost({
               state={state}
               t={t}
               canRetry={lifecycle.phase === 'ACTIVE'}
+              compact={lifecycle.launchState === 'shell' || lifecycle.launchState === 'resume'}
               onRetry={retryDeferredCapabilities}
             />
           );

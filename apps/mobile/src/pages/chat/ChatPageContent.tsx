@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { Badge, Empty, Input, List, Spin, Typography } from 'antd';
+import { Badge, Button, Empty, Input, List, Spin, Typography } from 'antd';
 import { BellOff, Pencil, Pin, Search, Users } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
@@ -61,6 +61,7 @@ interface ChatConversationListPageContentProps {
   readonly onDismissLocalError: () => void;
   readonly onDismissSocialError: () => void;
   readonly onDismissGroupError: () => void;
+  readonly onStartConversation: () => void;
   readonly onOpenConversation: (conversation: MobileConversation) => void;
 }
 
@@ -76,6 +77,7 @@ export function ChatConversationListPageContent({
   onDismissLocalError,
   onDismissSocialError,
   onDismissGroupError,
+  onStartConversation,
   onOpenConversation,
 }: ChatConversationListPageContentProps) {
   const { t } = useMobileI18n();
@@ -95,7 +97,12 @@ export function ChatConversationListPageContent({
     <div className="page-container" data-product-surface={productSurface}>
       <header className="page-header">
         <h1 className="header-title">{t('mobile.chat.title')}</h1>
-        <button type="button" className="header-action" aria-label={t('mobile.chat.moreActions')}>
+        <button
+          type="button"
+          className="header-action"
+          aria-label={t('mobile.chat.startConversation')}
+          onClick={onStartConversation}
+        >
           <Pencil size={20} />
         </button>
       </header>
@@ -123,6 +130,13 @@ export function ChatConversationListPageContent({
                 <div className="empty-copy">
                   <Text strong>{t('mobile.chat.emptyTitle')}</Text>
                   <Text type="secondary">{t('mobile.chat.emptySubtitle')}</Text>
+                  <Button
+                    type="primary"
+                    icon={<Pencil size={16} />}
+                    onClick={onStartConversation}
+                  >
+                    {t('mobile.chat.startConversation')}
+                  </Button>
                 </div>
               )}
             />

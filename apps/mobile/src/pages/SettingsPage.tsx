@@ -26,12 +26,9 @@ import {
   Ban,
   Bell,
   ChevronRight,
-  Fingerprint,
   Globe,
-  Image as ImageIcon,
   MessageCircle,
   Server,
-  Settings as SettingsIcon,
   Shield,
   ShieldCheck,
   User,
@@ -45,11 +42,13 @@ import {
 } from '../app/navigation';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { requestSocialCurrentUserProfile } from '../features/social/socialRuntime';
+import { projectAcceptedContacts } from '../features/social/socialProjection';
 import { useSocialStore } from '../features/social/socialStore';
 import {
   activeStationEntry,
   type StoredStationRegistry,
 } from '../features/station/stationRegistry';
+import { stationDisplayName } from '../features/station/stationDisplayName';
 import { useSettingsSurfaceFixture } from '../acceptance/settingsSurfaceFixture';
 import {
   useBlockedUsersController,
@@ -179,6 +178,11 @@ function SettingsPageContent({
 
   const activeStation = activeStationEntry(stationRegistry);
   const unavailableLabel = t('mobile.launch.unavailable');
+  const activeStationLabel = stationDisplayName(
+    activeStation?.label ?? '',
+    activeStation?.url ?? '',
+    t('common.stationPicker.fallbackLabel'),
+  );
   const currentUserProfile = useSocialStore((state) => state.currentUserProfile);
   const updateCurrentUserProfile = useSocialStore(
     (state) => state.updateCurrentUserProfile,
@@ -190,6 +194,9 @@ function SettingsPageContent({
     (state) => state.lastReconcileAt !== null && state.error === null,
   );
   const blockedUsersCount = useSocialStore((state) => state.blockedUsers.length);
+  const currentUserPtid = useSocialStore((state) => state.currentUserPtid);
+  const friendRequests = useSocialStore((state) => state.friendRequests);
+  const peerOnline = useSocialStore((state) => state.peerOnline);
   const groupCount = useSocialStore((state) => state.messagingConversations.reduce(
     (count, conversation) => count + Number(
       conversation.active && conversation.kind === 2,
@@ -197,8 +204,14 @@ function SettingsPageContent({
     0,
   ));
 
-  // Friendship status is a per-target cache, not a canonical total.
-  const friendCount = unavailableLabel;
+  const friendCount = useMemo(
+    () => projectAcceptedContacts(
+      friendRequests,
+      currentUserPtid,
+      peerOnline,
+    ).length,
+    [currentUserPtid, friendRequests, peerOnline],
+  );
 
   // Settings controller — owns dirty/save/discard/conflict lifecycle
   const controller = useSettingsController(
@@ -293,7 +306,6 @@ function SettingsPageContent({
         { id: 'account-info', labelKey: 'mobile.settings.accountInfo', icon: User, tint: '#6366f1' },
         { id: 'notifications', labelKey: 'mobile.settings.section.notifications', valueOverride: notificationController.unavailable ? unavailableLabel : undefined, icon: Bell, tint: '#f59e0b' },
         { id: 'privacy-security', labelKey: 'mobile.settings.privacySecurity', icon: Shield, tint: '#22c55e' },
-        { id: 'safety-number', labelKey: 'mobile.settings.safetyNumber', icon: Fingerprint, tint: '#0ea5e9' },
         {
           id: 'blocked-users',
           labelKey: 'mobile.settings.blockedUsers',
@@ -311,14 +323,12 @@ function SettingsPageContent({
       titleKey: 'mobile.settings.group.chat',
       items: [
         { id: 'chat-settings', labelKey: 'mobile.settings.chatSettings', icon: MessageCircle, tint: '#6366f1' },
-        { id: 'chat-background', labelKey: 'mobile.settings.chatBackground', icon: ImageIcon, tint: '#ec4899' },
       ],
     },
     {
       titleKey: 'mobile.settings.group.network',
       items: [
-        { id: 'station-connection', labelKey: 'mobile.settings.stationConnection', valueOverride: activeStation?.label || t('mobile.settings.stationNotSelected'), icon: Server, tint: '#22c55e' },
-        { id: 'encryption', labelKey: 'mobile.settings.encryption', valueOverride: unavailableLabel, icon: ShieldCheck, tint: '#6366f1' },
+        { id: 'station-connection', labelKey: 'mobile.settings.stationConnection', valueOverride: activeStation ? activeStationLabel : t('mobile.settings.stationNotSelected'), icon: Server, tint: '#22c55e' },
         { id: 'language', labelKey: 'mobile.settings.section.language', valueOverride: language === 'zh-CN' ? '简体中文' : 'English', icon: Globe, tint: '#0ea5e9' },
       ],
     },
@@ -330,6 +340,7 @@ function SettingsPageContent({
     },
   ], [
     activeStation,
+    activeStationLabel,
     controller.appVersion,
     blockedUsersCount,
     blockedUsersOwnerAvailable,
@@ -431,7 +442,7 @@ function SettingsPageContent({
       case 'station-connection':
         return (
           <StationSection
-            stationLabel={activeStation?.label || t('mobile.settings.stationNotSelected')}
+            stationLabel={activeStation ? activeStationLabel : t('mobile.settings.stationNotSelected')}
             stationUrl={activeStation?.url || ''}
             identityVerified={activeStation?.identityVerified === true}
             onChangeStation={async () => requestExit(onChangeStation)}
@@ -521,17 +532,9 @@ function SettingsPageContent({
       className="page-container settings-page"
       data-product-surface="settings.summary"
     >
-      {/* Header: "Me" + Settings gear */}
+      {/* The page is already Settings; profile details remain the first row. */}
       <header className="page-header">
         <h1 className="header-title">{t('mobile.settings.title')}</h1>
-        <button
-          type="button"
-          className="header-action"
-          aria-label={t('mobile.settings.accountInfo')}
-          onClick={() => onOpenSetting('account-info')}
-        >
-          <SettingsIcon size={20} />
-        </button>
       </header>
 
       <div className="settings-body">

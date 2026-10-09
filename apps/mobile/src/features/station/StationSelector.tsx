@@ -26,6 +26,12 @@ export type StationSelectorSurfaceFixture =
   | 'address-invalid'
   | 'remove-confirm';
 
+export function defaultStationAddress(
+  configuredUrl: string | undefined,
+): { protocol: StationProtocol; address: string } {
+  return splitStationInput(configuredUrl ?? '', 'https');
+}
+
 export function StationSelector({
   activeStationPeerId,
   entries,
@@ -48,10 +54,19 @@ export function StationSelector({
   onRemove: (stationPeerId: string) => void;
 }) {
   const { t } = useMobileI18n();
-  const [protocol, setProtocol] = useState<StationProtocol>('https');
-  const [address, setAddress] = useState(
-    surfaceFixture === 'address-invalid' ? 'not a valid station' : '',
+  const configuredDefault = defaultStationAddress(
+    surfaceFixture || entries.length > 0
+      ? undefined
+      : import.meta.env.VITE_DEFAULT_STATION_URL,
   );
+  const [protocol, setProtocol] = useState<StationProtocol>(
+    surfaceFixture === 'address-invalid' ? 'https' : configuredDefault.protocol,
+  );
+  const [address, setAddress] = useState(() => (
+    surfaceFixture === 'address-invalid'
+      ? 'not a valid station'
+      : configuredDefault.address
+  ));
   const [addingStation, setAddingStation] = useState(
     surfaceFixture === 'address' || surfaceFixture === 'address-invalid',
   );

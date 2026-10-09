@@ -17,7 +17,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { Card, Typography } from 'antd';
-import { Heart, MessageCircle, RotateCcw, Send, Share2, ShieldAlert } from 'lucide-react';
+import { Heart, MessageCircle, RotateCcw, Send, ShieldAlert } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileAvatar } from '../../components/MobileAvatar';
@@ -309,7 +309,7 @@ export function MomentFeedItem({
         </div>
       )}
 
-      {/* Action row — Heart + MessageCircle + Share2 disabled */}
+      {/* Action row — only capabilities that are usable in this build. */}
       <div className="moments-card-actions" onClick={(e) => e.stopPropagation()}>
         <div className="moments-action-group">
           <button
@@ -334,15 +334,6 @@ export function MomentFeedItem({
           >
             <MessageCircle size={18} />
             {commentCount > 0 && <span>{commentCount}</span>}
-          </button>
-          <button
-            type="button"
-            className="moments-action moments-action--share"
-            disabled
-            aria-label={t('common.state.unavailable')}
-            title={t('common.state.unavailable')}
-          >
-            <Share2 size={18} />
           </button>
         </div>
 

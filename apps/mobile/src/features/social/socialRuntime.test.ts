@@ -71,6 +71,7 @@ vi.mock('../call/callState', () => ({
   mobileCallManager: callMocks,
 }));
 
+import { wakeActiveMessagingSession } from '../../runtimes/messagingRuntime';
 import {
   reconcileSocialRuntime,
   requestSocialBlockedUsers,
@@ -124,6 +125,7 @@ describe('social runtime supervisor', () => {
     );
 
     expect(runtimeMocks.projectionRuntime.bootstrap).toHaveBeenCalledOnce();
+    expect(wakeActiveMessagingSession).toHaveBeenCalledOnce();
     expect(runtimeMocks.startRealtimeStream).toHaveBeenCalledOnce();
 
     await requestSocialCurrentUserProfile(true);
