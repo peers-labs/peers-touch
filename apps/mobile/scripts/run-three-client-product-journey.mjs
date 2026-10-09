@@ -718,6 +718,22 @@ async function setInputValue(client, selector, value, label) {
   return { label, selector, valueLength: value.length };
 }
 
+async function selectorIsVisible(client, selector) {
+  return executeWebScript(
+    client,
+    `
+      const element = document.querySelector(arguments[0]);
+      return Boolean(
+        element
+        && element.getClientRects().length
+        && getComputedStyle(element).visibility !== 'hidden'
+        && getComputedStyle(element).display !== 'none'
+      );
+    `,
+    [selector],
+  );
+}
+
 async function waitForUi(clientId, client, label, script, args = []) {
   const deadline = Date.now() + uiWaitTimeoutMs;
   let lastValue = null;
@@ -1170,11 +1186,11 @@ async function ensureMobileAuthenticated(
   }
 
   if (!state.surface.startsWith('shell.')) {
-    const hasEmailInput = await executeWebScript(
+    const emailInputVisible = await selectorIsVisible(
       client,
-      `return Boolean(document.querySelector('input[placeholder="Email address"]'));`,
+      'input[placeholder="Email address"]',
     );
-    if (!hasEmailInput) {
+    if (!emailInputVisible) {
       await clickXpath(
         client,
         '//button[normalize-space(.)="Email Login"]',
@@ -1186,10 +1202,16 @@ async function ensureMobileAuthenticated(
       client,
       'email login form',
       `
+        const visible = (element) => Boolean(
+          element
+          && element.getClientRects().length
+          && getComputedStyle(element).visibility !== 'hidden'
+          && getComputedStyle(element).display !== 'none'
+        );
         return {
-          ready: Boolean(
-            document.querySelector('input[placeholder="Email address"]')
-            && document.querySelector('input[placeholder="Password"]')
+          ready: (
+            visible(document.querySelector('input[placeholder="Email address"]'))
+            && visible(document.querySelector('input[placeholder="Password"]'))
           )
         };
       `,
