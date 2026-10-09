@@ -632,6 +632,13 @@
       > .ant-btn { grid-column: 1; grid-row: auto; margin-top: 6px; }
     }
   }
+  @media (orientation: landscape) and (max-height: 500px) {
+    .mp-runtime-notice {
+      right: 12px;
+      left: auto;
+      width: min(calc(100% - 24px), 300px);
+    }
+  }
   .mp-direct-state { margin: 0 16px; border-radius: var(--mp-r-md); }
 
   .mp-auth-card {
