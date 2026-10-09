@@ -1826,16 +1826,17 @@ async function assertEntryControlUsability(clientId, client) {
 }
 
 async function logoutMobileClient(clientId, client) {
-  await navigateMobileShell(
-    clientId,
-    client,
-    'settings',
-    '[data-product-surface="settings.summary"]',
-  );
-  if (!await selectorIsVisible(
+  const confirmationOpen = await selectorIsVisible(
     client,
     '[data-product-surface="settings.logout-confirm"]',
-  )) {
+  );
+  if (!confirmationOpen) {
+    await navigateMobileShell(
+      clientId,
+      client,
+      'settings',
+      '[data-product-surface="settings.summary"]',
+    );
     await clickXpath(
       client,
       '//button[normalize-space(.)="Sign Out"]',
