@@ -792,6 +792,7 @@ def _validate_interaction_artifact(
         "controls",
         "occlusions",
         "blockingSurfaces",
+        "stationLayout",
     }
     if set(value) != required:
         raise GateError("Mobile interaction artifact has an invalid shape")
@@ -853,6 +854,27 @@ def _validate_interaction_artifact(
         raise GateError("Mobile interaction artifact reports occluded content")
     if value.get("blockingSurfaces") != []:
         raise GateError("Mobile interaction artifact reports a blocking surface")
+    station_layout = value.get("stationLayout")
+    if (
+        not isinstance(station_layout, Mapping)
+        or set(station_layout)
+        != {
+            "launchCard",
+            "addressInput",
+            "placeholder",
+            "submit",
+            "helper",
+            "logo",
+            "stationStatusClasses",
+            "continueDisabled",
+        }
+    ):
+        raise GateError("Mobile interaction artifact has invalid Station layout")
+    validate_station_entry_layout(
+        str(entry["id"]),
+        {"stationLayout": station_layout},
+        viewport,
+    )
 
 
 def _validate_artifact_ref(
