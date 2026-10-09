@@ -1834,7 +1834,7 @@ async function logoutMobileClient(clientId, client) {
   );
   await clickXpath(
     client,
-    '//button[normalize-space(.)="Log Out"]',
+    '//button[normalize-space(.)="Sign Out"]',
     'open-mobile-logout-confirmation',
   );
   await waitForUi(
