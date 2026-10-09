@@ -1,0 +1,309 @@
+{
+  "kind": "peers-touch-three-client-product-journey-matrix",
+  "schemaVersion": 1,
+  "journeyId": "MS-J08",
+  "clients": {
+    "android-alice": {
+      "actor": "alice",
+      "platform": "android",
+      "runtime": "android-emulator",
+      "evidencePerspective": "sender-and-receiver"
+    },
+    "desktop-bob": {
+      "actor": "bob",
+      "platform": "desktop",
+      "runtime": "native-tauri",
+      "evidencePerspective": "sender-and-receiver"
+    },
+    "ios-coral": {
+      "actor": "coral",
+      "platform": "ios",
+      "runtime": "ios-simulator",
+      "evidencePerspective": "sender-and-receiver"
+    }
+  },
+  "requiredEvidence": [
+    "source-identity",
+    "interaction-trace",
+    "screenshot",
+    "accessibility-tree",
+    "receiver-visible-result"
+  ],
+  "phases": {
+    "entry": [
+      {
+        "id": "entry-station-login",
+        "clients": ["android-alice", "desktop-bob", "ios-coral"],
+        "preconditions": ["clean-isolated-storage", "station-healthy"],
+        "userActions": [
+          "launch exact-source client",
+          "select the declared Station through foreground UI",
+          "verify Station through foreground UI",
+          "enter the assigned account and passport",
+          "submit login through foreground UI"
+        ],
+        "visibleResults": [
+          "the selected Station is active and human-readable",
+          "the authenticated shell is visible",
+          "the signed-in actor matches the assigned client"
+        ]
+      },
+      {
+        "id": "entry-restore-logout-relogin",
+        "clients": ["android-alice", "desktop-bob", "ios-coral"],
+        "preconditions": ["entry-station-login"],
+        "userActions": [
+          "terminate and relaunch the client",
+          "observe restored authenticated state",
+          "logout through foreground UI",
+          "relaunch and login again"
+        ],
+        "visibleResults": [
+          "session restore does not require hidden Station activation",
+          "logout returns to the entry surface",
+          "relogin restores the correct actor"
+        ]
+      }
+    ],
+    "shell": [
+      {
+        "id": "shell-primary-navigation",
+        "clients": ["android-alice", "desktop-bob", "ios-coral"],
+        "preconditions": ["entry-station-login"],
+        "userActions": [
+          "open Chat",
+          "open Moments",
+          "open Contacts",
+          "open Settings",
+          "return to Chat"
+        ],
+        "visibleResults": [
+          "every primary destination renders without a blocking overlay",
+          "identity and Station status remain stable",
+          "navigation preserves usable content and input"
+        ]
+      },
+      {
+        "id": "shell-layout-and-accessibility",
+        "clients": ["android-alice", "desktop-bob", "ios-coral"],
+        "preconditions": ["shell-primary-navigation"],
+        "userActions": [
+          "inspect each primary destination in the foreground",
+          "focus and dismiss the primary input on each client"
+        ],
+        "visibleResults": [
+          "controls are labeled and reachable",
+          "text and controls do not overlap or clip",
+          "safe areas and window bounds do not hide content"
+        ]
+      }
+    ],
+    "contacts": [
+      {
+        "id": "contacts-discovery-and-request",
+        "clients": ["android-alice", "desktop-bob", "ios-coral"],
+        "preconditions": ["entry-station-login"],
+        "userActions": [
+          "Alice finds Bob and sends a request",
+          "Bob accepts Alice",
+          "Coral finds Alice and sends a request",
+          "Alice accepts Coral",
+          "each actor opens the resulting profile"
+        ],
+        "visibleResults": [
+          "request state changes are visible to sender and receiver",
+          "accepted contacts appear on both sides",
+          "profiles show friendly identity rather than raw identifiers"
+        ]
+      },
+      {
+        "id": "contacts-shared-group-create",
+        "clients": ["android-alice", "desktop-bob", "ios-coral"],
+        "preconditions": ["contacts-discovery-and-request"],
+        "userActions": [
+          "Alice opens Create Group",
+          "Alice selects Bob and Coral",
+          "Alice names and creates the group",
+          "Bob and Coral open the new group"
+        ],
+        "visibleResults": [
+          "the same group and membership are visible on all clients",
+          "the creator and member roles are correct",
+          "the group title and members use friendly identity"
+        ]
+      }
+    ],
+    "chat": [
+      {
+        "id": "direct-text-roundtrip",
+        "clients": ["android-alice", "desktop-bob", "ios-coral"],
+        "preconditions": ["contacts-discovery-and-request"],
+        "userActions": [
+          "Alice sends a unique text message to Bob",
+          "Bob observes and replies to Alice",
+          "Coral sends a unique text message to Alice",
+          "Alice observes and replies to Coral"
+        ],
+        "visibleResults": [
+          "every message is visible on the receiver client",
+          "delivery and read state converge",
+          "history ordering is stable after reopening the conversation"
+        ]
+      },
+      {
+        "id": "direct-rich-message-actions",
+        "clients": ["android-alice", "desktop-bob", "ios-coral"],
+        "preconditions": ["direct-text-roundtrip"],
+        "userActions": [
+          "send and open an attachment",
+          "react to a received message",
+          "reply to a received message",
+          "forward a received message to another conversation",
+          "search and reopen the original message"
+        ],
+        "visibleResults": [
+          "attachment content is receiver-visible",
+          "reaction, reply context, and forwarded content converge",
+          "search opens the correct historical message"
+        ]
+      },
+      {
+        "id": "group-message-and-administration",
+        "clients": ["android-alice", "desktop-bob", "ios-coral"],
+        "preconditions": ["contacts-shared-group-create"],
+        "userActions": [
+          "each actor sends a unique group message",
+          "Alice promotes and demotes a member",
+          "Alice mutes and unmutes a member",
+          "Alice removes and restores a member when supported",
+          "all actors reopen group history"
+        ],
+        "visibleResults": [
+          "group messages and metadata converge on all clients",
+          "role-gated controls match the active role",
+          "membership and administration outcomes are receiver-visible"
+        ]
+      },
+      {
+        "id": "voice-message-roundtrip",
+        "clients": ["android-alice", "desktop-bob", "ios-coral"],
+        "preconditions": ["direct-text-roundtrip"],
+        "userActions": [
+          "Alice records and sends a voice message to Bob",
+          "Bob plays Alice's voice message",
+          "Coral records and sends a voice message to Alice",
+          "Alice plays Coral's voice message"
+        ],
+        "visibleResults": [
+          "recording state is visible and cancellable",
+          "voice duration and playback state are visible",
+          "receiver playback succeeds without stale recording state"
+        ]
+      },
+      {
+        "id": "audio-call-lifecycle",
+        "clients": ["android-alice", "desktop-bob", "ios-coral"],
+        "preconditions": ["direct-text-roundtrip", "livekit-healthy"],
+        "userActions": [
+          "Alice starts an audio call to Bob",
+          "Bob observes ringing and answers",
+          "Bob hangs up",
+          "Coral calls Alice",
+          "Alice rejects and then completes a retry call"
+        ],
+        "visibleResults": [
+          "calling, ringing, connected, rejected, and ended states are visible",
+          "both participants converge on the same terminal state",
+          "a completed or rejected call does not leave already-active state"
+        ]
+      },
+      {
+        "id": "video-call-lifecycle",
+        "clients": ["android-alice", "desktop-bob", "ios-coral"],
+        "preconditions": ["audio-call-lifecycle", "livekit-healthy"],
+        "userActions": [
+          "Bob starts a video call to Coral",
+          "Coral answers",
+          "each participant toggles microphone and camera",
+          "Coral hangs up",
+          "both participants start another call"
+        ],
+        "visibleResults": [
+          "ringing and connected video surfaces are visible",
+          "microphone and camera controls reflect current state",
+          "hangup cleans both clients and permits another call"
+        ]
+      }
+    ],
+    "social": [
+      {
+        "id": "social-alice-publish-bob-like",
+        "clients": ["android-alice", "desktop-bob", "ios-coral"],
+        "preconditions": ["entry-station-login"],
+        "userActions": [
+          "Alice opens the composer and publishes a unique post",
+          "Bob refreshes the feed and opens Alice's post",
+          "Bob likes Alice's post",
+          "Alice and Coral refresh and reopen the post"
+        ],
+        "visibleResults": [
+          "Alice's post is visible on all clients",
+          "Bob's like is visible on Android and iOS",
+          "feed and detail show the same content and identity"
+        ]
+      },
+      {
+        "id": "social-coral-publish-three-client-convergence",
+        "clients": ["android-alice", "desktop-bob", "ios-coral"],
+        "preconditions": ["social-alice-publish-bob-like"],
+        "userActions": [
+          "Coral publishes a unique post",
+          "Alice and Bob refresh and open Coral's post",
+          "Alice likes Coral's post",
+          "all clients relaunch and reopen the feed"
+        ],
+        "visibleResults": [
+          "Coral's post is visible on Android and Desktop",
+          "Alice's like converges on Desktop and iOS",
+          "posts and reactions survive client relaunch"
+        ]
+      }
+    ],
+    "recovery": [
+      {
+        "id": "recovery-chat-and-social-relaunch",
+        "clients": ["android-alice", "desktop-bob", "ios-coral"],
+        "preconditions": [
+          "direct-rich-message-actions",
+          "social-coral-publish-three-client-convergence"
+        ],
+        "userActions": [
+          "terminate every client",
+          "relaunch every client",
+          "reopen Direct and Group history",
+          "reopen the Social feed and details"
+        ],
+        "visibleResults": [
+          "authenticated identity and Station selection recover",
+          "chat history and group membership recover",
+          "Social posts and reaction state recover"
+        ]
+      },
+      {
+        "id": "recovery-call-terminal-cleanup",
+        "clients": ["android-alice", "desktop-bob", "ios-coral"],
+        "preconditions": ["audio-call-lifecycle", "video-call-lifecycle"],
+        "userActions": [
+          "relaunch all clients after completed calls",
+          "open the call controls",
+          "start and end a fresh audio call"
+        ],
+        "visibleResults": [
+          "no stale active call blocks the controls",
+          "the new call reaches ringing and connected states",
+          "both participants return to an idle terminal state"
+        ]
+      }
+    ]
+  }
+}
