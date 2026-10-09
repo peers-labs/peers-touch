@@ -41,6 +41,24 @@ function updatePlan(options, update) {
   );
 }
 
+test('stable Plan manifest permits bounded append-only history beyond 20 KiB', async (t) => {
+  const options = scope(t);
+  const planPath = path.join(options.repoRoot, options.plan);
+  fs.appendFileSync(planPath, `\n<!-- ${'x'.repeat(24 * 1024)} -->\n`);
+
+  const result = await runPlanctl([
+    'validate',
+    '--repo-root',
+    options.repoRoot,
+    '--plan',
+    options.plan,
+  ]);
+
+  assert.equal(result.planId, 'FIXTURE-PLAN');
+  assert.ok(fs.statSync(planPath).size > 20 * 1024);
+  assert.ok(fs.statSync(planPath).size < 64 * 1024);
+});
+
 test('CLI validates a candidate and records explicit North Star approval', async (t) => {
   const options = scope(t);
   updatePlan(options, (plan) => {

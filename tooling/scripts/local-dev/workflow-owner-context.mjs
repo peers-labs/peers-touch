@@ -1,12 +1,14 @@
 import path from 'node:path';
 
 import { workspaceIdForRoot } from '../lib/machine-dev-paths.mjs';
+import { readActiveWorkRecord } from './active-work-store.mjs';
 import {
   readWorkflowOwnerByDigest,
   workflowOwnerIsReleased,
 } from './workflow-binding-store.mjs';
 import { readWorkspaceActions } from './workflow-action-store.mjs';
 import {
+  sameWorkflowOwnerReference,
   validateWorkflowOwnerReference,
   workflowOwnerReferenceFromBinding,
 } from './workflow-owner-reference.mjs';
@@ -29,6 +31,63 @@ function latestActionReceipts(receipts) {
     latest.set(receipt.actionId, receipt);
   }
   return [...latest.values()];
+}
+
+function activeWorkOwnerContext(options, workspaceId) {
+  const activeWork = (
+    options.readActiveWork ??
+    readActiveWorkRecord
+  )({
+    home: options.home,
+    workspaceId,
+    ...(options.machineRoot === undefined
+      ? {}
+      : {
+          recordPath: path.join(
+            options.machineRoot,
+            'workspaces',
+            workspaceId,
+            'workflow',
+            'active-work.json',
+          ),
+        }),
+  });
+  const reference = validateWorkflowOwnerReference(
+    activeWork?.workflowOwner ?? null,
+    { nullable: true },
+  );
+  if (reference === null) return null;
+  const owner = (options.readOwnerByDigest ?? readWorkflowOwnerByDigest)(
+    reference.rootBindingDigest,
+    {
+      home: options.home,
+      machineRoot: options.machineRoot,
+    },
+  );
+  if (
+    (options.ownerIsReleased ?? workflowOwnerIsReleased)(owner, {
+      home: options.home,
+      machineRoot: options.machineRoot,
+    })
+  ) {
+    fail(
+      'WORKFLOW_OWNER_CONTEXT_NOT_LIVE',
+      'current active-work belongs to a released OWNER',
+      { workspaceId, rootBindingDigest: owner.digest },
+    );
+  }
+  const actual = workflowOwnerReferenceFromBinding(owner);
+  if (!sameWorkflowOwnerReference(reference, actual)) {
+    fail(
+      'WORKFLOW_OWNER_CONTEXT_MISMATCH',
+      'current active-work does not match its owner binding',
+      { workspaceId, rootBindingDigest: owner.digest },
+    );
+  }
+  return {
+    workflowOwner: actual,
+    actionReceiptDigest: null,
+  };
 }
 
 export function resolveCurrentWorkflowOwnerContext(options = {}) {
@@ -59,7 +118,12 @@ export function resolveCurrentWorkflowOwnerContext(options = {}) {
         receipt.operation?.label === options.operationLabel),
   );
   if (receipts.length === 0) {
-    return { workflowOwner: null, actionReceiptDigest: null };
+    return (
+      activeWorkOwnerContext(options, workspaceId) ?? {
+        workflowOwner: null,
+        actionReceiptDigest: null,
+      }
+    );
   }
   const rootBindingDigests = [
     ...new Set(receipts.map((receipt) => receipt.actor.rootBindingDigest)),

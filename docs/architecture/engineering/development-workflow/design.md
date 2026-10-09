@@ -451,7 +451,8 @@ accepted.
 
 Mechanical bounds:
 
-- manifest: at most 300 lines and 20 KiB;
+- manifest: at most 300 lines and 64 KiB so append-only amendments do not
+  deadlock a long-lived stable Plan;
 - Task Slice: at most 200 lines and 12 KiB;
 - current snapshot section: at most 30 lines;
 - no `## Context Anchor`, dated progress appendix, raw command output or run-ID list.

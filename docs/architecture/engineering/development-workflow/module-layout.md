@@ -145,7 +145,7 @@ Responsibilities below describe the NBI02 PlanMount cutover result.
 | `planctl.test.mjs` | Package, DAG, bounds and CLI regression coverage |
 | `plan-mount.mjs` | Stable Plan mount/unmount owner, immutable snapshot history, amendment transition, live-worktree exclusion, and direct resolution |
 | `plan-mount.test.mjs` | Candidate approval, criterion coverage, idempotence, mount conflict, amendment, North Star invalidation, explicit unmount, snapshot, tamper, and concurrency regressions |
-| `stable-plan-state-migration.mjs` | Explicit global-idle hard cut for machine ledger field/index renames; normal readers contain no legacy fallback |
+| `stable-plan-state-migration.mjs` | Explicit lock-fenced, live-safe, retryable hard cut for legacy declarations, mounts, snapshots, runs, and mixed indexes; normal readers contain no legacy fallback |
 | `dev-work-schema.mjs` | Resource declaration closed schema and digest |
 | `dev-work-ledger.mjs` | Machine-wide declaration lock, conflict and lifecycle |
 | `dev-work.mjs` | Resource declaration CLI |

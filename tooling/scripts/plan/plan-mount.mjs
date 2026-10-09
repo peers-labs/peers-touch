@@ -375,11 +375,11 @@ function validateStringMap(value, field, valuePattern = IDENTIFIER) {
   }
 }
 
-function validateLedger(value) {
+export function validatePlanMountLedger(value) {
   if (isObject(value) && Object.hasOwn(value, 'liveMountsByPlanVersion')) {
     fail(
       'PLAN_STATE_MIGRATION_REQUIRED',
-      'Plan mount ledger uses the retired version-indexed schema; close live work and run plan-state-migrate',
+      'Plan mount ledger uses the retired version-indexed schema; run plan-state-migrate to convert machine state in place',
     );
   }
   if (
@@ -687,6 +687,12 @@ function validateRun(run, snapshot) {
   return run;
 }
 
+export {
+  validateMount as validatePlanMountRecord,
+  validateRun as validateExecutionRun,
+  validateSnapshot as validateExecutionSnapshot,
+};
+
 function parseJsonFile(file, code, message, validator) {
   let raw;
   try {
@@ -712,7 +718,7 @@ function readLedger(options = {}) {
       file,
       'PLAN_MOUNT_LEDGER_INVALID',
       'Plan mount ledger cannot be read',
-      validateLedger,
+      validatePlanMountLedger,
     ),
   };
 }
@@ -756,7 +762,7 @@ function lockOwnerIsLive(lock) {
   }
 }
 
-async function acquireLedgerLock(options = {}) {
+export async function acquirePlanMountLedgerLock(options = {}) {
   const file = planMountLockPath(options);
   await fsp.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   const deadline = Date.now() + (options.lockTimeoutMs ?? LOCK_TIMEOUT_MS);
@@ -797,7 +803,7 @@ async function acquireLedgerLock(options = {}) {
   }
 }
 
-async function releaseLedgerLock(lease) {
+export async function releasePlanMountLedgerLock(lease) {
   let current;
   try {
     current = JSON.parse(await fsp.readFile(lease.file, 'utf8'));
@@ -814,11 +820,11 @@ async function releaseLedgerLock(lease) {
 }
 
 async function withLedgerLock(options, operation) {
-  const lease = await acquireLedgerLock(options);
+  const lease = await acquirePlanMountLedgerLock(options);
   try {
     return await operation();
   } finally {
-    await releaseLedgerLock(lease);
+    await releasePlanMountLedgerLock(lease);
   }
 }
 
@@ -1913,7 +1919,7 @@ export async function mountPlan(options = {}) {
         },
       };
       ledger.recordDigest = digestRecord(ledger);
-      validateLedger(ledger);
+      validatePlanMountLedger(ledger);
       await writeJsonAtomic(
         currentLedger.file,
         ledger,
@@ -2119,7 +2125,7 @@ export async function releasePlanMount(options = {}) {
           liveMountsByPlan,
         };
         ledger.recordDigest = digestRecord(ledger);
-        validateLedger(ledger);
+        validatePlanMountLedger(ledger);
         await writeJsonAtomic(currentLedger.file, ledger, currentLedger.raw);
         return { mount: resolved.mount, run: resolved.run, ledger };
       }
@@ -2193,7 +2199,7 @@ export async function releasePlanMount(options = {}) {
         liveMountsByPlan,
       };
       ledger.recordDigest = digestRecord(ledger);
-      validateLedger(ledger);
+      validatePlanMountLedger(ledger);
       await writeJsonAtomic(currentLedger.file, ledger, currentLedger.raw);
       return { mount: released, run: resolved.run, ledger };
     }),

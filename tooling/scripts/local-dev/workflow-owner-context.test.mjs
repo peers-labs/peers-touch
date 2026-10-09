@@ -15,6 +15,9 @@ import { recordWorkflowAction } from './workflow-action-store.mjs';
 import {
   resolveCurrentWorkflowOwnerContext,
 } from './workflow-owner-context.mjs';
+import {
+  workflowOwnerReferenceFromBinding,
+} from './workflow-owner-reference.mjs';
 
 function fixture() {
   const root = mkdtempSync(path.join(tmpdir(), 'pt-owner-context-'));
@@ -101,6 +104,35 @@ test('returns no owner outside an active Hook action', () => {
         actionReceiptDigest: null,
       },
     );
+  } finally {
+    scope.close();
+  }
+});
+
+test('resolves the persisted active-work owner without an Action receipt', () => {
+  const scope = fixture();
+  try {
+    const owner = bindWorkflowOwner(
+      'trae',
+      'main-chat-session',
+      scope.workspaceRoot,
+      {
+        machineRoot: scope.machineRoot,
+        now: new Date('2026-10-07T00:00:00.000Z'),
+      },
+    ).binding;
+    const context = resolveCurrentWorkflowOwnerContext({
+      machineRoot: scope.machineRoot,
+      workspaceRoot: scope.workspaceRoot,
+      readActions: () => [],
+      readActiveWork: () => ({
+        workflowOwner: workflowOwnerReferenceFromBinding(owner),
+      }),
+    });
+
+    assert.equal(context.workflowOwner.rootChatId, 'main-chat-session');
+    assert.equal(context.workflowOwner.rootBindingDigest, owner.digest);
+    assert.equal(context.actionReceiptDigest, null);
   } finally {
     scope.close();
   }

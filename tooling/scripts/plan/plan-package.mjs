@@ -12,7 +12,7 @@ import {
 } from '../architecture/module-governance.mjs';
 
 const MANIFEST_MAX_LINES = 300;
-const MANIFEST_MAX_BYTES = 20 * 1024;
+const MANIFEST_MAX_BYTES = 64 * 1024;
 const TASK_MAX_LINES = 200;
 const TASK_MAX_BYTES = 12 * 1024;
 const SNAPSHOT_MAX_LINES = 30;

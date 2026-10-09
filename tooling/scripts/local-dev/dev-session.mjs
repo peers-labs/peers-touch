@@ -42,6 +42,9 @@ import {
 import {
   resolveCurrentWorkflowOwnerContext,
 } from './workflow-owner-context.mjs';
+import {
+  sameWorkflowOwnerReference,
+} from './workflow-owner-reference.mjs';
 
 export {
   DevSessionError,
@@ -329,6 +332,55 @@ function storeOptions(options, workspaceId) {
   };
 }
 
+function sameOptionalWorkflowOwner(left, right) {
+  if (left === undefined || left === null) {
+    return right === undefined || right === null;
+  }
+  if (right === undefined || right === null) return false;
+  return sameWorkflowOwnerReference(left, right);
+}
+
+function archiveSupersededSession(state, options, workspaceRoot) {
+  const store = storeOptions({ ...options, workspaceRoot }, state.workspaceId);
+  const paths = sessionStorePaths(store);
+  if (!existsSync(paths.session) && !existsSync(paths.events)) return null;
+  const existing = loadSessionStore(store);
+  const current = existing.state;
+  const superseded =
+    current.workItemId === state.workItemId &&
+    current.planId === state.planId &&
+    current.workspaceId === state.workspaceId &&
+    current.branch === state.branch &&
+    current.sessionId !== state.sessionId &&
+    current.taskId !== state.taskId &&
+    sameOptionalWorkflowOwner(
+      current.workflowOwner,
+      state.workflowOwner,
+    );
+  if (!superseded) {
+    sessionFail(
+      'SESSION_ALREADY_EXISTS',
+      'Development Session already exists and is not superseded by the current Plan Task',
+      {
+        currentSessionId: current.sessionId,
+        currentTaskId: current.taskId,
+        requestedSessionId: state.sessionId,
+        requestedTaskId: state.taskId,
+      },
+    );
+  }
+  return archiveSessionStore({
+    ...store,
+    allowNonTerminal: true,
+    expected: {
+      workItemId: current.workItemId,
+      workspaceId: current.workspaceId,
+      sessionId: current.sessionId,
+      workflowOwner: current.workflowOwner,
+    },
+  });
+}
+
 export async function startDevelopmentSession(options, dependencies = {}) {
   if (typeof options.taskId !== 'string' || typeof options.journeyId !== 'string') {
     sessionFail('INVALID_ARGUMENT', 'start requires --task and --journey');
@@ -352,6 +404,7 @@ export async function startDevelopmentSession(options, dependencies = {}) {
     },
     at,
   );
+  archiveSupersededSession(state, options, workspaceRoot);
   return createSessionStore(state, {
     ...storeOptions({ ...options, workspaceRoot }, state.workspaceId),
     reason: options.reason ?? 'Bound ACTIVE declaration to current Task',

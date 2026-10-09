@@ -50,6 +50,15 @@ consumes one canonical `BindingProjection`. The projection includes role,
 lineage, binding/release state, selected action workspace, and per-event
 subject/tool/target roots.
 
+An OWNER command uses the exact live root Action Receipt when one exists. When
+the host does not emit a receipt for the command transport, it may reuse only
+the exact `workflowOwner` stored in that workspace's current `active-work`
+projection, after resolving the referenced binding and proving it is live.
+The receipt is activity provenance, not OWNER identity. Missing both sources
+fails closed; historical declaration or binding scans are forbidden. Hook
+projection changes therefore never require an IDE reload merely to resume an
+already owner-bound Development Run.
+
 Cross-worktree reads remain allowed. Each mutating OWNER action selects exactly
 one workspace from its unique mutation target, explicit task root, tool `cwd`,
 active editor, or repository `cwd`, in that order. Separate actions may select

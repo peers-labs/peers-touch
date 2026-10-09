@@ -370,7 +370,7 @@ export function validateDeclaration(declaration) {
   ) {
     fail(
       'PLAN_STATE_MIGRATION_REQUIRED',
-      'development declaration uses the retired Plan Version schema; close live work and run plan-state-migrate',
+      'development declaration uses the retired Plan Version schema; run plan-state-migrate to convert machine state in place',
     );
   }
   if (

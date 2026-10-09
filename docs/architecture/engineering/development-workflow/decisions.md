@@ -2127,10 +2127,12 @@ bookkeeping that the Agent could validate deterministically.
 - Content and snapshot digests are internal integrity/CAS identities. They are
   observable diagnostics, never Plan versions and never user approval
   boundaries.
-- Repository Plan sources are converted in the same hard cut. Existing
-  machine ledgers are converted by `make plan-state-migrate` only after every
-  live declaration and mount is closed. Normal readers have no legacy fallback,
-  alias, or dual-write path.
+- Repository Plan sources are converted in the same hard cut. Existing machine
+  state is converted by `make plan-state-migrate` while holding every affected
+  workspace lifecycle lock and both ledgers. Live and historical declarations,
+  mounts, snapshots, runs, and mixed indexes migrate in place without requiring
+  unrelated runs to close; interrupted migration is retryable. Normal readers
+  have no legacy fallback, alias, or dual-write path.
 
 ### Rationale
 

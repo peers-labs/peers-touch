@@ -601,6 +601,17 @@ function acquireLock(
   }
 }
 
+export function acquireDevelopmentWorkLedgerLock(options = {}) {
+  const home = options.home ?? homedir();
+  const lockFile = options.lockPath ?? developmentWorkLockPath(home);
+  ensurePrivateDirectory(path.dirname(lockFile));
+  return acquireLock(
+    lockFile,
+    options.lockTimeoutMs,
+    toOperationDate(options),
+  );
+}
+
 function writeLedgerAtomic(file, ledger) {
   const directory = path.dirname(file);
   ensurePrivateDirectory(directory);
@@ -1048,7 +1059,12 @@ function mutateLedgerUnderFence(options, mutation) {
   const now = toOperationDate(options);
   ensurePrivateDirectory(path.dirname(file));
   ensurePrivateDirectory(path.dirname(lockFile));
-  const release = acquireLock(lockFile, options.lockTimeoutMs, now);
+  const release = acquireDevelopmentWorkLedgerLock({
+    ...options,
+    home,
+    lockPath: lockFile,
+    now,
+  });
   try {
     const ledger = readLedger(file, now);
     reconcileExpired(ledger, now);
@@ -1112,7 +1128,12 @@ function inspectLedger(options, inspection) {
   const now = toOperationDate(options);
   ensurePrivateDirectory(path.dirname(file));
   ensurePrivateDirectory(path.dirname(lockFile));
-  const release = acquireLock(lockFile, options.lockTimeoutMs, now);
+  const release = acquireDevelopmentWorkLedgerLock({
+    ...options,
+    home,
+    lockPath: lockFile,
+    now,
+  });
   try {
     const ledger = readLedger(file, now);
     reconcileExpired(ledger, now);

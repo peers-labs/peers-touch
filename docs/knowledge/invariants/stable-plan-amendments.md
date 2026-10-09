@@ -57,11 +57,20 @@ Mutable Plan source without append-only history has the opposite failure: the
 reason and prior execution input disappear. Stable identity plus immutable
 snapshots preserves both autonomy and auditability.
 
+The one-time machine-state migration MUST NOT require unrelated Development
+Runs to be closed. It acquires every affected workspace lifecycle lock before
+the Development and Plan-mount ledger locks, validates all legacy and stable
+records before writing, converts live and historical declarations, mounts,
+snapshots, runs, and indexes in place, and remains retryable after interruption.
+Normal readers still contain no legacy fallback.
+
 ## How to verify
 
 - `node --test tooling/scripts/plan/plan-mount.test.mjs tooling/scripts/plan/planctl.test.mjs`
   passes candidate rejection, explicit approval, stale digest, criterion
   coverage, amendment, task invalidation, and snapshot-history cases.
+- `node --test tooling/scripts/plan/stable-plan-state-migration.test.mjs`
+  passes live-run, mixed-index, tamper, and interrupted-retry migration cases.
 - `rg -n 'peers-touch-plan-version|versionId[": ]|\.planVersionDigest|planVersionDigest"\s*:|mountPlanVersion\(|\.liveMountsByPlanVersion|liveMountsByPlanVersion\s*:' tooling AGENTS.md docs/global docs/architecture/engineering --glob '!**/execution-plans/**' | rg -v "stable-plan-state-migration|plan-mount-is-run-bound|development-workflow/decisions.md"`
   returns no live contract references.
 - `make plan-validate PLAN=docs/architecture/platform/client/mobile/execution-plans/20260827-mobile-shell-implementation/plan.md`

@@ -186,6 +186,7 @@ Pick one based on intent:
 - [`pitfalls/acceptance-shared-validator-variant-assumptions.md`](pitfalls/acceptance-shared-validator-variant-assumptions.md) — shared Gate validators must derive journey and topology semantics from the active Gate variant.
 - [`pitfalls/native-chat-gates-require-federation-context.md`](pitfalls/native-chat-gates-require-federation-context.md) — Native Direct and Group creation must pass a Federation shared by every participating client.
 - [`pitfalls/public-api-owner-must-follow-resource-domain.md`](pitfalls/public-api-owner-must-follow-resource-domain.md) — public capabilities must be registered by their resource owner, never by an internal implementation namespace.
+- [`pitfalls/global-plan-migration-idle-deadlock.md`](pitfalls/global-plan-migration-idle-deadlock.md) — Plan schema migration must preserve live multi-worktree state under locks instead of requiring impossible global idle.
 
 ### Playbooks
 

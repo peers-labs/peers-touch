@@ -320,7 +320,7 @@ registered and its binding must resolve.
 | `make plan-mount PLAN=<path>` | Mount one stable Plan to this workspace |
 | `make plan-mount-status` | Resolve and validate the workspace's mount and run |
 | `make plan-amend PLAN=<path> REASON='<why>' CHANGE='<what>'` | Append an in-place Plan amendment and advance the current snapshot |
-| `make plan-state-migrate` | One-time hard cut of idle machine ledgers; refuses live declarations or mounts |
+| `make plan-state-migrate` | One-time lock-fenced hard cut of live and historical Plan machine state; retryable after interruption |
 | `make station` | Reuse a healthy source-matched Station, otherwise deploy the current commit and verify its live build identity |
 | `make desktop` | Start Desktop Tauri app |
 | `make desktop-install` | Build the current source and atomically install `~/Applications/Peers Dev.app` |

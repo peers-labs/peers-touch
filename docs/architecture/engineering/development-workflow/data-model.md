@@ -435,9 +435,12 @@ Rules:
   fallback path.
 
 The hard cut from the retired version-indexed machine schema runs only through
-`make plan-state-migrate` while every declaration and mount is non-live. It
-renames ledger keys and recomputes integrity digests once; normal readers reject
-the retired shape with `PLAN_STATE_MIGRATION_REQUIRED`.
+`make plan-state-migrate`. The migration locks every affected workspace before
+both machine ledgers, validates the complete candidate state, converts live and
+historical declarations, mounts, snapshots, runs, and mixed indexes in place,
+and is retryable after interruption. Unrelated live work remains mounted.
+Normal readers reject the retired shape with
+`PLAN_STATE_MIGRATION_REQUIRED`; they contain no compatibility reader.
 
 ## 5.2 Execution Plan Snapshot And Run
 
