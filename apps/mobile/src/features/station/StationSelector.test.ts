@@ -1,10 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import {
-  defaultStationAddress,
-  stationAvailabilityState,
-} from './StationSelector';
+import { stationAvailabilityState } from './StationSelector';
 
 const source = readFileSync(
   new URL('./StationSelector.tsx', import.meta.url),
@@ -84,21 +81,18 @@ describe('StationSelector reachability states', () => {
 });
 
 describe('StationSelector layout contract', () => {
-  it('keeps HTTP guidance outside the heading and inside the address field flow', () => {
+  it('uses one URL field with an HTTP placeholder instead of a protocol picker', () => {
     expect(source).toContain("surfaceFixture === 'address'");
-    expect(source).toContain("? 'http'");
-    expect(source).toContain("'station.local:18280'");
+    expect(source).toContain("'http://station.local:18280'");
     expect(source).toContain('className="station-field-helper warning"');
     expect(source).toContain('className="station-submit"');
-    expect(source).toContain('rootClassName="station-protocol-sheet-root"');
+    expect(source).not.toContain('<select');
+    expect(source).not.toContain('station-protocol-select');
   });
 
-  it('anchors the card and preserves a useful one-line address field', () => {
+  it('anchors the surface and preserves a useful one-line address field', () => {
     expect(styles).toMatch(/\.launch-hero\s*\{[^}]*flex:\s*1 1 auto;/s);
     expect(styles).toMatch(/\.launch-body\s*\{[^}]*flex:\s*0 0 auto;/s);
-    expect(styles).toMatch(
-      /\.station-protocol-select\s*\{[^}]*min-width:\s*62px;[^}]*height:\s*44px;/s,
-    );
     expect(styles).toMatch(
       /\.station-address-input\s*\{[^}]*height:\s*44px;[^}]*font-size:\s*16px;/s,
     );
@@ -110,17 +104,11 @@ describe('StationSelector layout contract', () => {
     );
     expect(styles).not.toMatch(/\.launch-hero-logo\s*\{[^}]*border:/s);
   });
-});
 
-describe('StationSelector development defaults', () => {
-  it('prefills the configured Station without silently connecting', () => {
-    expect(defaultStationAddress('http://10.37.94.156:18132')).toEqual({
-      protocol: 'http',
-      address: '10.37.94.156:18132',
-    });
-    expect(defaultStationAddress(undefined)).toEqual({
-      protocol: 'https',
-      address: '',
-    });
+  it('never draws an inner focus frame inside the outer control', () => {
+    expect(styles).toContain('.station-address-input:focus-visible');
+    expect(styles).toMatch(
+      /\.station-url-control\s+\.station-address-input:focus-visible\s*\{[\s\S]*?outline:\s*none\s*!important;/,
+    );
   });
 });

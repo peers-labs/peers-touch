@@ -308,8 +308,10 @@ const rectFor = (selector) => {
     height: Math.round(rect.height),
   };
 };
-const stationControl = rectFor('.station-url-control');
-const stationProtocol = rectFor('.station-protocol-select');
+const stationAddressElement = document.querySelector('.station-address-input');
+const stationPlaceholder = stationAddressElement && visible(stationAddressElement)
+  ? stationAddressElement.getAttribute('placeholder')
+  : null;
 const stationHelperElement = document.querySelector('.station-field-helper');
 const stationHelper = stationHelperElement && visible(stationHelperElement)
   ? {
@@ -351,16 +353,10 @@ return {
   blockingSurfaces,
   stationLayout: {
     launchCard: rectFor('.launch-card'),
-    protocol: stationProtocol,
     addressInput: rectFor('.station-address-input'),
+    placeholder: stationPlaceholder,
     submit: rectFor('.station-submit'),
     helper: stationHelper,
-    protocolLeftInset: stationControl && stationProtocol
-      ? stationProtocol.left - stationControl.left
-      : null,
-    protocolTopInset: stationControl && stationProtocol
-      ? stationProtocol.top - stationControl.top
-      : null,
     logo: stationLogoStyle
       ? {
           borderWidth: [
@@ -439,21 +435,15 @@ def validate_station_entry_layout(
         "entry.station-address",
         "entry.station-address-invalid",
     }:
-        protocol = layout.get("protocol")
         address_input = layout.get("addressInput")
         submit = layout.get("submit")
         if (
-            not isinstance(protocol, Mapping)
-            or protocol.get("width", 0) > 72
-            or protocol.get("height", 0) < 44
-            or not isinstance(layout.get("protocolLeftInset"), (int, float))
-            or not 4 <= layout["protocolLeftInset"] <= 12
-            or not isinstance(layout.get("protocolTopInset"), (int, float))
-            or not 4 <= layout["protocolTopInset"] <= 12
+            not isinstance(layout.get("placeholder"), str)
+            or not re.match(r"^https?://\S+$", layout["placeholder"])
         ):
             raise GateError(
-                "Mobile Station protocol control is oversized or touches the "
-                f"field boundary: {protocol!r}"
+                "Mobile Station placeholder must show a complete HTTP(S) URL: "
+                f"{layout.get('placeholder')!r}"
             )
         if (
             not isinstance(address_input, Mapping)

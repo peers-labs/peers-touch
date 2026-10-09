@@ -9,7 +9,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Checkbox, Empty, Input, List, Modal, Radio, Spin, Tag, Typography } from 'antd';
-import { ArrowLeft, Ban, Check, ChevronRight, RotateCcw, Search, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
+import { ArrowLeft, Ban, Check, ChevronRight, Globe, RotateCcw, Search, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
 import type {
@@ -655,41 +655,57 @@ function ContactsPageInner({
           className="find-people-modal"
           data-product-surface="contacts.add-friend"
         >
-          <Input.Search
+          <Input
             value={peopleQuery}
             onChange={(e) => {
               setPeopleQuery(e.target.value);
               setSubmittedPeopleQuery('');
               clearPeopleSearch();
             }}
-            onSearch={(value) => void runPeopleSearch(value)}
+            onPressEnter={() => void runPeopleSearch(peopleQuery)}
+            prefix={<Search size={16} className="people-search-prefix" />}
             placeholder={t('mobile.contacts.findPeoplePlaceholder')}
-            enterButton={t('mobile.contacts.search')}
-            loading={peopleSearching}
             allowClear
+            autoComplete="off"
             disabled={!requestFederationId}
+            suffix={(
+              <Button
+                type="link"
+                size="small"
+                className="people-search-button"
+                loading={peopleSearching}
+                disabled={!peopleQuery.trim() || !requestFederationId}
+                onClick={() => void runPeopleSearch(peopleQuery)}
+              >
+                {t('mobile.contacts.search')}
+              </Button>
+            )}
           />
           {peopleFederationsError ? (
             <MobileNotice tone="error">{t('mobile.contacts.federationsFailed')}</MobileNotice>
           ) : peopleFederations.length === 0 ? (
             <MobileNotice>{t('mobile.contacts.noFederation')}</MobileNotice>
           ) : (
-            <fieldset>
-              <legend>{t('mobile.contacts.federation')}</legend>
-              <Radio.Group
-                value={requestFederationId}
-                onChange={(event) => {
-                  setSelectedFederationId(String(event.target.value));
-                  clearPeopleSearch();
-                }}
-              >
-                {peopleFederations.map((federation) => (
-                  <Radio key={federation.federationId} value={federation.federationId}>
-                    {federation.name || federation.federationId}
-                  </Radio>
-                ))}
-              </Radio.Group>
-            </fieldset>
+            <div className="people-federation-chips" role="group" aria-label={t('mobile.contacts.federation')}>
+              {peopleFederations.map((federation) => {
+                const active = requestFederationId === federation.federationId;
+                return (
+                  <button
+                    key={federation.federationId}
+                    type="button"
+                    className={`people-federation-chip${active ? ' active' : ''}`}
+                    aria-pressed={active}
+                    onClick={() => {
+                      setSelectedFederationId(federation.federationId);
+                      clearPeopleSearch();
+                    }}
+                  >
+                    <Globe size={14} />
+                    <span>{t('mobile.contacts.federation')}: {federation.name || federation.federationId}</span>
+                  </button>
+                );
+              })}
+            </div>
           )}
           {localActionError ? <MobileNotice tone="error">{localActionError}</MobileNotice> : null}
           <Spin spinning={peopleSearching && peopleResults.length === 0}>
@@ -701,25 +717,36 @@ function ContactsPageInner({
                   const alreadyPending = pendingTargetPtids.has(receiverPtid);
                   const inboundPending = inboundTargetPtids.has(receiverPtid);
                   const alreadyFriend = contactPtids.has(receiverPtid);
+                  const handle = result.federation?.handle
+                    || (result.username ? `@${result.username}` : receiverPtid);
+                  const stationLabel = result.homeStationPeerId
+                    ? `${result.homeStationPeerId.slice(0, 18)}…`
+                    : '';
                   return (
                     <div className="people-result-card" key={receiverPtid || result.username}>
-                      <MobileAvatar src={result.avatar} size={42}>{(result.displayName || result.username || receiverPtid).slice(0, 1)}</MobileAvatar>
+                      <MobileAvatar src={result.avatar} size={44}>{(result.displayName || result.username || receiverPtid).slice(0, 1)}</MobileAvatar>
                       <div className="people-result-copy">
                         <div className="people-result-title">
                           <Text strong ellipsis>{result.displayName || result.username || receiverPtid}</Text>
                           {result.federation ? (
                             <Tag color="success" icon={<ShieldCheck size={11} />}>{t('mobile.contacts.verified')}</Tag>
                           ) : null}
-                          {result.federation?.isLocal === false ? (
-                            <Tag color="blue">{t('mobile.contacts.federatedTag')}</Tag>
-                          ) : null}
-                          {result.federation?.fromCache ? (
-                            <Tag>{t('mobile.contacts.cachedTag')}</Tag>
-                          ) : null}
                         </div>
-                        <Text type="secondary" ellipsis>{result.federation?.handle || result.username || receiverPtid}</Text>
+                        <Text type="secondary" ellipsis className="people-result-handle">{handle}</Text>
+                        {stationLabel ? (
+                          <Text type="secondary" ellipsis className="people-result-station">
+                            {t('mobile.contacts.station')}: {stationLabel}
+                          </Text>
+                        ) : null}
                       </div>
-                      <Button type="primary" size="small" loading={sendingRequest} disabled={isSelf || alreadyPending || inboundPending || alreadyFriend || peopleSearching || sendingRequest || !requestFederationId || !result.homeStationPeerId} onClick={() => sendRequestToResult(result)}>
+                      <Button
+                        type="primary"
+                        size="small"
+                        className="people-result-action"
+                        loading={sendingRequest}
+                        disabled={isSelf || alreadyPending || inboundPending || alreadyFriend || peopleSearching || sendingRequest || !requestFederationId || !result.homeStationPeerId}
+                        onClick={() => sendRequestToResult(result)}
+                      >
                         {isSelf ? t('mobile.contacts.self')
                           : alreadyFriend ? t('mobile.contacts.alreadyFriend')
                           : alreadyPending ? t('mobile.contacts.requestSent')

@@ -696,7 +696,7 @@ fn build_request(
             client,
             session,
             Method::GET,
-            fixed_url(session, "/sub-federation/contexts")?,
+            fixed_url(session, "/sub-federation/federations")?,
         ),
         StationOperation::FederationResolve {
             federation_id,

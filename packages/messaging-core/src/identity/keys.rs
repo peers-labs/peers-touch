@@ -116,6 +116,28 @@ impl DeviceSigningKey {
         }
     }
 
+    /// Rebuild a cross-signed device key from a persisted signing seed,
+    /// preserving identity continuity across local data loss.
+    pub fn cross_signed_from_seed<F>(
+        ik: &IdentityKeyPair,
+        device_id: &str,
+        device_seed: &[u8; 32],
+        certificate_bytes: F,
+    ) -> Self
+    where
+        F: FnOnce(&VerifyingKey) -> Vec<u8>,
+    {
+        let signing_key = SigningKey::from_bytes(device_seed);
+        let verifying_key = signing_key.verifying_key();
+        let cross_signature = ik.sign(&certificate_bytes(&verifying_key));
+        Self {
+            signing_key,
+            verifying_key,
+            cross_signature,
+            device_id: device_id.to_string(),
+        }
+    }
+
     pub fn verifying_key(&self) -> &VerifyingKey {
         &self.verifying_key
     }

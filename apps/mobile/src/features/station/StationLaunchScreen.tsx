@@ -7,7 +7,7 @@ import {
   StationSelector,
   type StationSelectorSurfaceFixture,
 } from './StationSelector';
-import { activeStationEntry, type StationProtocol, type StoredStationRegistry } from './stationRegistry';
+import { activeStationEntry, type StoredStationRegistry } from './stationRegistry';
 
 const { Text, Title } = Typography;
 
@@ -29,7 +29,7 @@ export function StationLaunchScreen({
   verifyingUrls: string[];
   checkedUrls: string[];
   surfaceFixture?: StationSelectorSurfaceFixture;
-  onAddStation: (protocol: StationProtocol, address: string) => boolean | Promise<boolean>;
+  onAddStation: (stationUrl: string) => boolean | Promise<boolean>;
   onSelectStation: (stationPeerId: string) => void | Promise<void>;
   onRemoveStation: (stationPeerId: string) => void;
   onContinue: () => void | Promise<void>;

@@ -146,12 +146,11 @@ export function MobilePrototype() {
     }
   }
 
-  function handleAddStation() {
-    const newUrl = 'https://new-station.peers.social';
-    if (!stations.find((s) => s.url === newUrl)) {
+  function handleAddStation(newUrl: string) {
+    if (!stations.find((station) => station.url === newUrl)) {
       setStations((prev) => [...prev, { url: newUrl, label: 'New Station', online: true }]);
-      setActiveUrl(newUrl);
     }
+    setActiveUrl(newUrl);
   }
 
   function returnToJourney(nextState: LaunchState) {
