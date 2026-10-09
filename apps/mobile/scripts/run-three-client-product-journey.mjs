@@ -1652,7 +1652,7 @@ async function runDesktopShellClient(
 ) {
   const steps = [
     ['chat', '[data-social-chat-layout]', ''],
-    ['moments', '[data-pt-primary-nav="moments"]', 'Social'],
+    ['moments', '[data-pt-primary-nav="moments"] [role="button"]', 'Social'],
   ];
   for (const [pageId, expectedSelector, expectedText] of steps) {
     sequenceRef.value += 1;
