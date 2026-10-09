@@ -1528,7 +1528,7 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertEqual(audit.returncode, 2)
         self.assertIn("integration-receipt-fields-invalid", audit.stdout)
 
-    def test_install_rejects_a_schema_invalid_work_ledger(self) -> None:
+    def test_install_bootstraps_over_a_schema_invalid_work_ledger(self) -> None:
         machine = self.root / "machine"
         machine.mkdir()
         (machine / "work.json").write_text(
@@ -1544,11 +1544,32 @@ export function processStartIdentity() { return 'fixture'; }
             env=self.environment("installing-session"),
             check=False,
         )
-        self.assertEqual(completed.returncode, 2)
-        self.assertIn("MACHINE_WORK_LEDGER_INVALID", completed.stdout)
-        self.assertFalse(
-            (self.root / ".agents/skills/pt-goal-orchestrator").exists()
+        self.assertEqual(
+            completed.returncode,
+            0,
+            completed.stdout + completed.stderr,
         )
+        self.assertTrue(
+            (self.root / ".agents/skills/pt-goal-orchestrator").is_symlink()
+        )
+
+        audit = subprocess.run(
+            [
+                "python3",
+                "tooling/scripts/agent-integration-audit.py",
+                "--root",
+                str(self.root),
+                "--host",
+                "codex",
+            ],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment("restarted-session"),
+            check=False,
+        )
+        self.assertEqual(audit.returncode, 2, audit.stdout + audit.stderr)
+        self.assertIn("work-ledger-invalid", audit.stdout)
 
     def test_install_and_audit_reject_projection_escape_or_wrong_target(self) -> None:
         external = self.root / "external"

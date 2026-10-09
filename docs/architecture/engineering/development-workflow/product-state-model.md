@@ -1,7 +1,7 @@
 # Development Workflow 产品状态模型
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-10-07
+> **Created**: 2026-09-26 | **Updated**: 2026-10-09
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/workflow-snapshot.mjs`
 
@@ -17,7 +17,9 @@
   North Star 变化先进入 `NORTH_STAR_APPROVAL_REQUIRED`，显式批准后仍需
   owner-approved amendment；coverage/Task/Gate 调整保留批准。
 - DWF-D25 Overlay 不得改变任何状态或转换。
-- Execution root 由 DWF-D33 OWNER-rooted BindingProjection 约束。
+- OWNER lineage 由 DWF-D33 约束；每个 mutating OWNER Action 的 workspace
+  由 DWF-D44 选择。切换 Action workspace 不迁移 PlanMount、declaration、
+  Session 或 active-work。
 - Workflow Snapshot、Completion Review 和 Action Receipt 分别由
   DWF-D27、DWF-D28、DWF-D29 定义；accepted 不等于 implemented 或 proven。
 - DWF-D32 的 Resource Plan 只投影跨模块 target 和资源准备状态，不替代

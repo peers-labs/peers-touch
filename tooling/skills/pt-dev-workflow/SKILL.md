@@ -151,13 +151,15 @@ are internal Run work, not user approval boundaries.
 Before mutation:
 
 1. When the Workflow Kernel reports `ENFORCED`, consume its canonical
-   `BindingProjection` and immutable OWNER `executionRoot`; tool `cwd`, target
-   paths, Skill paths, Plan paths and sibling repositories cannot replace it.
-   TRAE owner identity comes only from `chat_session_id`; internal
-   `session_id` values do not create peer owners. WORKER/REVIEWER authority
-   requires an assigned, live child projection with exact root/parent lineage.
-   The verified root ID is machine-local provenance and must appear in current
-   worktree/declaration status; never substitute the Git actor.
+   `BindingProjection`. Its OWNER identity and lineage are immutable, while
+   each mutating OWNER action selects exactly one workspace from the unique
+   mutation target, explicit task root, or tool `cwd`. TRAE owner identity
+   comes only from `chat_session_id`; internal `session_id` values do not
+   create peer owners. WORKER/REVIEWER authority requires an assigned, live
+   child projection with exact root/parent lineage and cannot leave its
+   assignment workspace. The verified root ID is machine-local provenance and
+   must appear in current worktree/declaration status; never substitute the
+   Git actor.
 2. In `OBSERVE_ONLY`, bind one explicitly selected worktree. Never infer it
    from a Skill path, branch name, Plan path, or nearby repository.
 3. Capture and verify canonical root, branch, `workspaceId`, initial HEAD,
@@ -244,9 +246,9 @@ Rules:
 - `dev-start` and `plan-mount` reject an unfinished
   `DevelopmentCloseReceipt`; resume its exact close before starting new work.
 - `peers-dev-workflow` is the canonical source and rollout owner only. Every
-  installed copy executes from the conversation-bound worktree. Workflow owner
-  state remains worktree-local; the Kernel writes only its separate
-  machine-local binding/Anchor/release receipts.
+  installed copy executes against the current action workspace. Workspace
+  owner state remains local to that workspace; the Kernel writes only its
+  separate machine-local binding/Anchor/release receipts.
 
 ## 2.1 Plan Resource Preparation
 

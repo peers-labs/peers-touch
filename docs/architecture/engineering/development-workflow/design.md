@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Architecture Design
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-07
+> **Created**: 2026-09-13 | **Updated**: 2026-10-09
 > **Owner**: Platform Team
 
 ---
@@ -49,11 +49,11 @@
 18. **Personal policy stays local**: 用户专属的语言、措辞和 coaching 偏好只
     通过 machine-local Overlay 注入；共享 Skill 与项目执行语义不携带个人策略。
 19. **Owner-rooted execution**: 一个可见开发会话只创建一个不可变 OWNER
-    binding；内部 WORKER/REVIEWER 通过显式 assignment 形成 child lineage，
-    不能升级为并列 owner。
+    identity binding；它不永久占用 worktree。内部 WORKER/REVIEWER 通过显式
+    assignment 形成 child lineage，不能升级为并列 owner。
 20. **Canonical binding projection**: 每次 hook、状态、handoff 和 completion
-    claim 都消费同一个 `BindingProjection`，其中分别给出 execution root、
-    subject roots、role、lineage、release 和 child liveness。
+    claim 都消费同一个 `BindingProjection`，其中分别给出当前 Action
+    workspace、subject roots、role、lineage、release 和 child liveness。
 21. **Capability-honest enforcement**: 只有宿主规定的稳定 root-chat identity 和可阻断
     `PreToolUse` 同时存在时才声明 `ENFORCED`；其他宿主只能明确标记为
     `OBSERVE_ONLY`。
@@ -96,6 +96,7 @@
 | 20 条冲突记录中多数 RUNNING Action Receipt lease 已过期，并不代表 live owner | `verified_fact` | workspace `95620934d3348d95` machine-store audit | high | none |
 | Mobile execution used successive Plan versions only to add missing write paths/Gates while the accepted goal and every Task state remained unchanged | `verified_fact` | MPS v4/v5 and current mount/run records | high | stable-Plan amendment regression |
 | OWNER 不按通用 TTL 过期；child 由 assignment lease 与 terminal receipt 定义 liveness | `accepted_decision` | DWF-D33 | high | owner/child lifecycle tests |
+| 同一 OWNER 可在不同 mutation Action 中选择不同 workspace，单个 Action 仍只能写一个 workspace | `accepted_decision` | DWF-D44 | high | action-workspace Kernel tests |
 | TRAE Hook 是等价事件入口而非 owner authority；参与根共享一个 canonical Kernel | `accepted_decision` | DWF-D35 | high | multi-root projection regression |
 | 非破坏性 projection 不依赖待安装 Hook 的 grant；cleanup 仍需 exact OWNER grant | `accepted_decision` | DWF-D36 | high | ungranted install and cleanup-grant tests |
 
@@ -174,9 +175,9 @@ accepted product + architecture
 | Current tracked locator | Execution Run | current Task state | workspace active-work + Context Anchor |
 | Distributed workflow implementation | `peers-dev-workflow` | canonical source and rollout receipts | installed worktree-local tools and Skills |
 | Read-only workflow projection | Workflow Snapshot | `workflow-snapshot-core.mjs` | CLI, Context Anchor, Doctor |
-| Development conversation authority | Workflow Binding Store | one machine-local immutable OWNER binding rooted in host root-chat identity | canonical `BindingProjection` |
+| Development conversation authority | Workflow Binding Store | one machine-local immutable OWNER identity binding rooted in host root-chat identity | canonical `BindingProjection` |
 | Worker/reviewer identity and liveness | Workflow Binding Store | assignment, child binding, lease and terminal receipt | canonical `BindingProjection` |
-| Tool action target | Workflow Kernel | normalized Tool Intent AST plus resolved `subjectRoot` | admission result |
+| Tool action target | Workflow Kernel | normalized Tool Intent AST plus one selected action workspace and resolved `subjectRoot` | admission result |
 | Final handoff completeness | Workflow Kernel | rendered Anchor receipt plus create-once release receipt | host-native Stop continuation |
 | Development resource closure | Dev Workflow close coordinator | machine-local `DevelopmentCloseReceipt` plus each owner readback | Completion Auditor `close-ready` |
 | User interaction preferences | user Overlay registry | `~/.peers-touch/dev/skill-overlays/registry.json` + digest-addressed installed copy | `pt-ew` resolution |
@@ -289,7 +290,7 @@ TRAE / Cursor / Codex payload
   -> BindingProjection
        OWNER | assigned WORKER | assigned REVIEWER
        rootBindingDigest + parentBindingDigest + child liveness
-       immutable executionRoot + per-event subjectRoots
+       stable OWNER identity + selected action workspace + per-event subjectRoots
   -> canonical HookEvent + ToolIntent AST
   -> independently resolved subjectRoot(s)
   -> workflow owner-state inspection
@@ -318,13 +319,22 @@ Session, and Development state.
 
 The Kernel distinguishes identity from action:
 
-- `executionRoot` comes from the OWNER binding and remains immutable for the
-  entire lineage;
+- `rootBindingDigest` identifies the immutable OWNER lineage; persisted OWNER
+  root fields are only the compatible default/origin workspace;
+- for every mutating OWNER event, `executionRoot` and `workspaceId` identify
+  the selected action workspace, resolved from the unique mutation target,
+  explicit task root, tool `cwd`, active editor, then repository `cwd`;
+- assigned children keep the execution root from their assignment and cannot
+  switch workspaces;
 - `subjectRoot` comes from structured tool paths, shell working directory and
   parsed shell arguments;
 - reads may cross roots;
-- writes must stay inside `executionRoot` and, for explicit file writes, inside
-  the active declaration's `exclusive-write` claims;
+- one mutation action may write only inside its selected `executionRoot` and,
+  for explicit file writes, inside that workspace's active declaration
+  `exclusive-write` claims;
+- mutation targets spanning multiple worktrees fail with
+  `WORKTREE_SELECTION_REQUIRED`; path escape fails with
+  `ACTION_WORKSPACE_WRITE_DENIED`;
 - multiline commands, command substitution and unsupported shell operators
   fail closed instead of passing through regex classification.
 
@@ -338,7 +348,8 @@ Child liveness is `ASSIGNED | LEASED | TERMINAL`; an expired or terminal child
 is diagnostic history and cannot participate in current ownership.
 
 Every injection contains the binding role, root/parent digests, binding digest,
-release state, execution root, subject roots, tool root and target roots.
+release state, selected action workspace, subject roots, tool root and target
+roots.
 Every status, readiness, handoff and final claim revalidates the same
 projection. Completion Review is a separate repository-native owner: it
 derives implementation context from successful Development Sessions and
@@ -351,12 +362,13 @@ TRAE multi-root startup projects equivalent event ingress into the selected
 source root, the descriptor bootstrap root, and descriptor roots with an
 existing real `.trae` directory. Every entry calls the selected source root's
 same canonical integration; Hook location is never owner authority or an
-execution-root hint. On first `PreToolUse`, an explicit host task root wins
-when it is one of the declared workspace roots; otherwise all mutation targets
-must resolve to exactly one workspace root. Ambiguous or target-less selection
-returns `WORKTREE_SELECTION_REQUIRED`. Changing the workspace descriptor or
-writing these cross-root projections remains a separately declared rollout
-operation. Descriptor roots without `.trae` remain untouched.
+action-workspace hint. On every mutating OWNER event, a unique mutation target
+wins, followed by an explicit host task root and tool `cwd`. The result must be
+one declared workspace root. Ambiguous selection returns
+`WORKTREE_SELECTION_REQUIRED`; a target-less action may use the stored default
+only when every resolved mutation path stays inside it. Changing the workspace
+descriptor or writing these cross-root projections remains a separately
+declared rollout operation. Descriptor roots without `.trae` remain untouched.
 
 Ordinary `skills` projection is non-destructive. It completes fallible
 preflight, updates equivalent host projections under the machine install lock,
@@ -801,9 +813,12 @@ The architecture is implemented only when:
   digest-verified `pt-ew` inputs;
 - with no enabled Overlay, `pt-ew` passes the original user intent to
   `pt-god-view` unchanged;
-- one root chat cannot change `executionRoot` after its first blockable tool
-  event; cross-worktree reads pass while writes fail with
-  `CROSS_WORKTREE_WRITE_DENIED`;
+- one root chat keeps one OWNER identity while sequential mutation Actions may
+  select different declared worktrees; each Action validates only its selected
+  workspace's owner state and write claims;
+- one Action spanning multiple worktrees fails with
+  `WORKTREE_SELECTION_REQUIRED`, while selected-workspace path escape fails
+  with `ACTION_WORKSPACE_WRITE_DENIED`;
 - one OWNER plus two assigned child sessions retain exact lineage; expired
   child leases and terminal child receipts never create owner ambiguity;
 - TRAE ignores `session_id` as owner identity and requires `chat_session_id`;

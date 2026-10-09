@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Data Model
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-07
+> **Created**: 2026-09-13 | **Updated**: 2026-10-09
 > **Owner**: Platform Team
 
 ---
@@ -697,6 +697,11 @@ interface WorkflowOwnerBinding {
 }
 ```
 
+For schema continuity, `WorkflowOwnerBinding.executionRoot/workspaceId` retain
+the workspace that created the binding. They are the OWNER's default/origin
+workspace, not permanent mutation authority and not part of portable
+`WorkflowOwnerReference`.
+
 The portable reference copied into worktree and Development state is:
 
 ```ts
@@ -735,6 +740,8 @@ interface WorkflowBindingAssignment {
   parentBindingDigest: string;
   workflowSessionId: string;
   operationId: string;
+  executionRoot: string;
+  workspaceId: string;
   issuedAt: string;
   leaseUntil: string;
   digest: string;
@@ -775,13 +782,14 @@ interface WorkflowChildTerminalReceipt {
 ```
 
 Assignment creation requires a current lineage projection and an active
-matching Development Session. Its `rootBindingDigest` always names the OWNER;
-its `parentBindingDigest` names the direct issuer. Before publishing a child
-binding, claim writes one assignment-keyed create-once record. The first
-execution-session hash wins; an idempotent retry by that session reuses the
-claim, while every different session is rejected. A child is live only before
-`leaseUntil` and before a terminal receipt exists. OWNER liveness has no
-generic TTL.
+matching Development Session in the projection's selected workspace. Its
+`rootBindingDigest` always names the OWNER; its `parentBindingDigest` names the
+direct issuer; `executionRoot/workspaceId` freeze the child's assignment
+workspace. Before publishing a child binding, claim writes one assignment-keyed
+create-once record. The first execution-session hash wins; an idempotent retry
+by that session reuses the claim, while every different session is rejected. A
+child is live only before `leaseUntil` and before a terminal receipt exists.
+OWNER liveness has no generic TTL.
 
 Every hook and claim consumes one read-only projection:
 
@@ -805,16 +813,23 @@ interface WorkflowBindingProjection {
 }
 ```
 
-`executionRoot` is canonicalized through Git plus `realpath` and inherited by
-the entire lineage. `subjectRoots`, `toolRoot`, and `targetRoots` are per-event
-facts and never change authority. Status, readiness, handoff, Stop, worker
-result, and Completion Review use this same projection rather than searching
-for an arbitrary unreleased binding by worktree.
+For an OWNER mutation, `executionRoot/workspaceId` are canonicalized through
+Git plus `realpath` and identify this Action's selected workspace. Resolution
+prefers one unique mutation target, then explicit host task root, tool `cwd`,
+active editor root, and repository `cwd`. A target-less event may fall back to
+the persisted OWNER default only when every mutation path remains inside it.
+For a child, these fields always equal the assignment workspace and cannot be
+overridden. `subjectRoots`, `toolRoot`, and `targetRoots` remain per-event
+facts.
 
-For a new OWNER in a multi-root workspace, every Hook projection location is
-excluded from root selection. An explicit host task root must match one
-declared workspace root; otherwise all mutation targets must resolve to one
-root. Zero or multiple candidates produce `WORKTREE_SELECTION_REQUIRED`.
+Every Hook projection location is excluded from authority selection. When a
+workspace descriptor is present, the selected root must be declared there.
+Multiple mutation roots produce `WORKTREE_SELECTION_REQUIRED`; an admitted
+Action that escapes its selected root produces
+`ACTION_WORKSPACE_WRITE_DENIED`. Status, readiness, handoff, Stop, and worker
+result use this projection rather than searching for an arbitrary unreleased
+binding by worktree. Completion Review remains repository-native and does not
+consume it.
 
 The latest Anchor receipt is atomically replaceable because it projects current
 owner state:

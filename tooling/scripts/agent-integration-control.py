@@ -1241,7 +1241,6 @@ def install(
         if host == "cursor"
         else None
     )
-    validated_work_ledger(root)
     write_installation_receipt(
         workspace_id,
         branch,

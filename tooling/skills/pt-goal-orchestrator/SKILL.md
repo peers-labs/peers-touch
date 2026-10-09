@@ -150,8 +150,8 @@ isolation.
 Workers:
 
 - receive a create-once WORKER assignment rooted in the same OWNER
-  `BindingProjection`, preserve exact root/parent lineage, and use the OWNER
-  execution root as explicit `workdir`;
+  `BindingProjection`, preserve exact root/parent lineage, and use the
+  assignment workspace as explicit `workdir`;
 - own non-overlapping source paths;
 - never stage, commit, deploy, mutate tracking, or run broad generators;
 - stop on unexpected writes in their ownership;

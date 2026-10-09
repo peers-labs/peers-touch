@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Architecture Decisions
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-07
+> **Created**: 2026-09-13 | **Updated**: 2026-10-09
 > **Owner**: Platform Team
 
 ---
@@ -35,7 +35,7 @@
 | DWF-D23 | Keep the internal Development Workflow unversioned | accepted |
 | DWF-D24 | Reopen invalidated source through one Plan-declared invalidation owner | accepted |
 | DWF-D25 | Keep user Skill overlays machine-local and interaction-only | accepted |
-| DWF-D26 | Bind workflow enforcement to one immutable conversation execution root | accepted |
+| DWF-D26 | Bind workflow enforcement to one immutable conversation execution root | superseded by DWF-D33/D44 |
 | DWF-D27 | Project workflow status through one read-only Workflow Snapshot | accepted |
 | DWF-D28 | Require independent current-source Completion Review | accepted |
 | DWF-D29 | Derive agent activity from bounded Action Receipts | accepted |
@@ -53,6 +53,7 @@
 | DWF-D41 | Coordinate Development close with one resumable receipt | accepted |
 | DWF-D42 | Keep one stable Plan and record in-place amendments | accepted |
 | DWF-D43 | Persist main-session provenance for Agent-created worktrees | accepted |
+| DWF-D44 | Select one workspace per mutating OWNER action | accepted |
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
@@ -1490,14 +1491,15 @@ history rather than a live ownership conflict.
   Child liveness comes only from assignment/lease/terminal receipts. OWNER
   liveness has no generic TTL.
 - One pure `BindingProjection` joins host identity, owner or child binding,
-  role, lineage, release state, execution root, and per-event subject/tool/
-  target roots. Hook context, status, readiness, handoff, Stop, Action Receipt,
-  and worker result consume that projection.
+  role, lineage, release state, selected action workspace, and per-event
+  subject/tool/target roots. Hook context, status, readiness, handoff, Stop,
+  Action Receipt, and worker result consume that projection.
 - Completion Review originally selected the exact OWNER or assigned REVIEWER
   from the current owner-command Action Receipt. DWF-D37 supersedes this path
   with a repository-native reviewer capability and no binding fallback.
-- `CROSS_WORKTREE_WRITE_DENIED` remains unchanged: all lineage members inherit
-  the OWNER execution root, may read sibling roots, and cannot write them.
+- DWF-D44 supersedes the original immutable OWNER execution-root clause.
+  OWNER identity remains immutable, but each mutating OWNER action selects one
+  workspace. Assigned children remain fixed to their assignment workspace.
 - TRAE multi-root hook projection was originally limited to one workspace
   bootstrap. DWF-D35 supersedes this projection detail without changing the
   single OWNER binding or canonical Kernel authority defined here.
@@ -1622,8 +1624,8 @@ needed to repair the workflow is permanently self-blocked.
 
 The descriptor's folder order is not authority, and multiple transport entries
 do not imply multiple workflow owners. Every entry dispatches to the same
-worktree-local plugin and host-neutral Kernel, which resolves the execution
-root from explicit event evidence before creating one immutable OWNER binding.
+worktree-local plugin and host-neutral Kernel. The Kernel creates one immutable
+OWNER identity and resolves one action workspace from each mutating event.
 
 ### Decision
 
@@ -1640,10 +1642,10 @@ root from explicit event evidence before creating one immutable OWNER binding.
 - Audit derives the same projection-root set, requires one exact managed entry
   per event in each participating root, rejects managed entries outside that
   set, and probes the selected source root directly.
-- Descriptor order, Hook file location, current editor, and Hook `cwd` never
-  select authority. The Kernel still requires an explicit declared task root
-  or a unique target-root resolution and otherwise returns
-  `WORKTREE_SELECTION_REQUIRED`.
+- Descriptor order and Hook file location never select authority. Under
+  DWF-D44, a unique mutation target takes precedence, followed by explicit
+  task root, tool `cwd`, active editor, and repository `cwd`; multi-root or
+  undeclared selection returns `WORKTREE_SELECTION_REQUIRED`.
 
 ### Rationale
 
@@ -1697,6 +1699,11 @@ machine-local stores or retired projections.
   It remains serialized by the machine ledger lock and fails closed on invalid
   source, workspace descriptor, host root, symlink boundary, Hook merge, or
   callback proof.
+- Non-destructive projection does not parse PlanMount, declaration, Session,
+  or active-work state. Its embedded `--projection-only` audit verifies the
+  canonical catalog, host projection, callback, and installation receipt while
+  retaining workflow-identity findings as diagnostics. The standalone full
+  integration audit still fails on invalid workflow owner state.
 - `skills` remains an `OWNER_CONTROL` label when observed through an active
   Hook so activity and root-write enforcement stay visible. The Kernel and
   Action Store do not issue a grant for that label.
@@ -1728,9 +1735,10 @@ retaining strict authority on every destructive path.
 - A clean worktree can run `make skills` before any Hook or OWNER binding
   exists, and an active window can repair stale projection without Reload.
 - The ordinary projection command cannot authorize hard cut or GC.
-- Tests must prove ungranted projection success, no `skills` grant issuance,
-  exact grants for both cleanup labels, invalid-path fail closed behavior, and
-  truthful installation receipts.
+- Tests must prove ungranted projection success over absent, live, and
+  retired-schema workflow ledgers; no `skills` grant issuance; exact grants
+  for both cleanup labels; invalid-path fail closed behavior; projection-only
+  versus full-audit separation; and truthful installation receipts.
 
 ## DWF-D37: Make Completion Review A Repository-Native Reviewer Handoff
 
@@ -1773,8 +1781,9 @@ handoff and writes an immutable receipt.
   reviewer launch remains an orchestration obligation because a repository
   capability cannot prove cognitive or process independence.
 - DWF-D33 continues to govern IDE Hook authorization, OWNER/WORKER lineage,
-  cross-worktree writes, Action Receipts, status, handoff, and compaction. This
-  decision supersedes only its Completion Review binding and assignment path.
+  Action Receipts, status, handoff, and compaction; DWF-D44 governs per-action
+  workspace selection and write confinement. This decision supersedes only
+  DWF-D33's Completion Review binding and assignment path.
 
 ### Rationale
 
@@ -2222,3 +2231,72 @@ hash-based authority chain.
 - Tests cover immutable creation provenance, legacy OWNER upgrade without
   lineage change, declaration/Session/active-work propagation, and snapshot
   visibility.
+
+## DWF-D44: Select One Workspace Per Mutating OWNER Action
+
+**Status**: accepted
+**Date**: 2026-10-09
+
+### Context
+
+DWF-D26 and the original DWF-D33 wording conflated two different identities:
+the visible chat that owns workflow authority and the worktree selected by one
+tool action. The first mutating action therefore made its worktree the
+conversation's permanent write root. A user could not continue the same chat
+against another worktree or switch to another workspace-local Plan without
+manufacturing a new host Task, even though PlanMount, declaration, Session,
+and active-work are already isolated by `workspaceId`.
+
+### Decision
+
+- The host root-chat identity creates one immutable OWNER lineage. It does not
+  permanently own one worktree.
+- Every mutating OWNER action resolves exactly one action workspace in this
+  order: unique mutation target root, explicit host task root, tool working
+  directory, active editor root, then repository working directory.
+- When the host supplies workspace roots, the selected action workspace must
+  be one of them. One action with mutation targets in multiple worktrees fails
+  closed with `WORKTREE_SELECTION_REQUIRED`.
+- `BindingProjection.executionRoot` and `workspaceId` describe the selected
+  action workspace for an OWNER event. The persisted OWNER binding keeps its
+  original root fields only as a compatible default/origin; they are not
+  permanent mutation authority.
+- A target-less mutating event may use that stored default only when every
+  resolved mutation path remains inside it. Shell actions that switch
+  worktrees must also run with the selected worktree as `cwd`; a foreign cwd
+  plus an absolute target is one multi-root action and is denied.
+- The selected workspace's declaration, source claims, PlanMount,
+  ExecutionRun, Session, active-work, and Git identity are revalidated for that
+  action. Switching workspace never copies or rebinds those records.
+- Cross-worktree reads remain legal. Cross-worktree writes are legal across
+  separate, single-workspace OWNER actions. One action may write only inside
+  its selected workspace and declared claims; escape fails with
+  `ACTION_WORKSPACE_WRITE_DENIED`.
+- Assigned WORKER and REVIEWER children remain fixed to the workspace in their
+  assignment. A child cannot select another action workspace.
+
+### Rationale
+
+The visible chat is the stable authorization principal; a worktree is the
+scope of one mutation. Keeping those identities separate lets one conversation
+move intentionally between independent workspace-local Plans without weakening
+single-action scope, declarations, or child isolation.
+
+### Alternatives Considered
+
+- Bind the chat to whichever worktree mutates first: rejected because host
+  startup order is not durable user intent and forces artificial new Tasks.
+- Rebind the persisted OWNER record on every action: rejected because it would
+  mutate identity lineage and race concurrent child/session state.
+- Permit one command to mutate multiple worktrees: rejected because no single
+  declaration, PlanMount, or write set can authorize that action atomically.
+
+### Consequences
+
+- A user may execute worktree A, then worktree B, then return to A in one
+  visible chat; each mutation independently passes B's or A's local guards.
+- Context and Action Receipts report the selected action workspace, while OWNER
+  and root binding digests remain stable.
+- Tests must prove sequential OWNER switching, target precedence, multi-root
+  rejection, shell cwd confinement, symlink escape denial, and immutable child
+  assignment scope.

@@ -30,7 +30,11 @@ import {
 } from './workflow-binding-store.mjs';
 import {
   projectWorkflowBinding,
+  projectWorkflowEventRoots,
 } from './workflow-binding-projection.mjs';
+import {
+  workspaceIdForRoot,
+} from '../lib/machine-dev-paths.mjs';
 import {
   updateActiveWorkRecord,
 } from './active-work-store.mjs';
@@ -59,13 +63,12 @@ function fixture() {
   };
 }
 
-function seedActiveSession(scope, sessionId = 'DEV-SESSION') {
-  const workspaceId = ownerProjection(
-    bindWorkflowOwner('trae', 'session-seed', scope.root, {
-      machineRoot: scope.machineRoot,
-      now: new Date('2026-10-01T00:00:00.000Z'),
-    }).binding,
-  ).workspaceId;
+function seedActiveSession(
+  scope,
+  sessionId = 'DEV-SESSION',
+  executionRoot = scope.root,
+) {
+  const workspaceId = workspaceIdForRoot(executionRoot);
   const workItemId = 'WORK-1';
   const at = '2026-10-01T00:00:00.000Z';
   const state = createInitialSessionState(
@@ -403,6 +406,64 @@ test('one OWNER issues WORKER and REVIEWER children with exact lineage', () => {
     );
     assert.equal(reviewerView.role, 'REVIEWER');
     assert.equal(reviewerView.childState, 'LEASED');
+  } finally {
+    scope.close();
+  }
+});
+
+test('child assignment is fixed to the OWNER action workspace', () => {
+  const scope = fixture();
+  try {
+    const secondRoot = path.join(path.dirname(scope.root), 'second-root');
+    mkdirSync(secondRoot);
+    seedActiveSession(scope, 'SECOND-SESSION', secondRoot);
+    const owner = bindWorkflowOwner('trae', 'visible-chat', scope.root, {
+      machineRoot: scope.machineRoot,
+      now: new Date('2026-10-01T00:00:00.000Z'),
+    }).binding;
+    const issuer = projectWorkflowEventRoots(ownerProjection(owner), {
+      executionRoot: secondRoot,
+    });
+    const assignment = createWorkflowBindingAssignment(
+      issuer,
+      {
+        assignmentId: 'worker-second-root',
+        role: 'WORKER',
+        workflowSessionId: 'SECOND-SESSION',
+        operationId: 'worker-second-root-op',
+        leaseUntil: '2026-10-01T00:10:00.000Z',
+      },
+      {
+        machineRoot: scope.machineRoot,
+        now: new Date('2026-10-01T00:00:01.000Z'),
+      },
+    ).assignment;
+    const child = claimWorkflowChild(
+      'trae',
+      'worker-second-root-session',
+      owner,
+      assignment,
+      {
+        machineRoot: scope.machineRoot,
+        now: new Date('2026-10-01T00:00:02.000Z'),
+      },
+    ).binding;
+
+    assert.equal(assignment.executionRoot, issuer.executionRoot);
+    assert.equal(child.executionRoot, issuer.executionRoot);
+    assert.equal(child.workspaceId, assignment.workspaceId);
+    assert.throws(
+      () =>
+        projectWorkflowEventRoots(
+          projectWorkflowBinding({
+            binding: child,
+            assignment,
+            now: new Date('2026-10-01T00:00:03.000Z'),
+          }),
+          { executionRoot: scope.root },
+        ),
+      (error) => error.code === 'WORKFLOW_CHILD_ROOT_MISMATCH',
+    );
   } finally {
     scope.close();
   }

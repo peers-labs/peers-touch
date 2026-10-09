@@ -8,6 +8,12 @@ import {
   readWorkflowBindingContextByActor,
   terminalizeWorkflowChild,
 } from './workflow-binding-store.mjs';
+import {
+  projectWorkflowEventRoots,
+} from './workflow-binding-projection.mjs';
+import {
+  resolveProjectRoot,
+} from './workflow-state-inspector.mjs';
 
 function fail(code, message) {
   throw Object.assign(new Error(message), { code });
@@ -75,11 +81,23 @@ export function runWorkflowBindingCli(argv, dependencies = {}) {
     if (!Number.isInteger(leaseSeconds) || leaseSeconds < 1) {
       fail('WORKFLOW_BINDING_USAGE', '--lease-seconds must be positive');
     }
+    const executionRoot = resolveProjectRoot(
+      options['execution-root'] ?? process.cwd(),
+    );
+    if (executionRoot === null) {
+      fail(
+        'WORKTREE_IDENTITY_UNAVAILABLE',
+        'assign requires a canonical project execution root',
+      );
+    }
+    const issuerProjection = projectWorkflowEventRoots(context.projection, {
+      executionRoot,
+    });
     const result = (
       dependencies.createWorkflowBindingAssignment ??
       createWorkflowBindingAssignment
     )(
-      context.projection,
+      issuerProjection,
       {
         assignmentId: options.assignment,
         role: options.role,
