@@ -8,7 +8,7 @@
   "planId": "mobile-whole-product-usability-20261008",
   "taskId": "MWPU-03-ENTRY",
   "workstreamId": "MWPU-PAGES",
-  "title": "Close launch, Station selection, login, and access-gate usability",
+  "title": "Close Mobile and Desktop launch, Station selection, login, and access usability",
   "workClass": "product-behavior",
   "completionClass": "functional",
   "executionMode": "build",
@@ -16,10 +16,14 @@
   "journeyId": "MS-J01",
   "runtimeClass": "native-mobile",
   "writeSet": [
+    "apps/desktop/src/components/common/StationPicker.tsx",
+    "apps/desktop/src/pages/login",
+    "apps/desktop/src/services",
     "apps/mobile/src/App.tsx",
     "apps/mobile/src/features/auth",
     "apps/mobile/src/features/station",
     "apps/mobile/src/styles.css",
+    "apps/station/app/subserver/actor_identity",
     "packages/prototypes/mobile/chat",
     "tooling/acceptance/gates/mobile"
   ],
@@ -38,12 +42,12 @@
   "checks": [
     {
       "id": "entry-source",
-      "command": "pnpm --dir apps/mobile exec vitest run src/features/auth src/features/station src/App.stationIdentity.test.ts",
+      "command": "pnpm --dir apps/desktop exec vitest run src/pages/login src/components/common && pnpm --dir apps/mobile exec vitest run src/features/auth src/features/station src/App.stationIdentity.test.ts",
       "verificationClass": "SOURCE_CHECK"
     },
     {
       "id": "mobile-simulator-access-e2e",
-      "command": "node apps/mobile/scripts/review-mobile-surfaces.mjs --surface-set entry --mode functional",
+      "command": "node apps/mobile/scripts/run-three-client-product-journey.mjs --phase entry",
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
@@ -60,19 +64,20 @@
   "runtimeReuse": {
     "scope": "suite",
     "entryCheckId": "mobile-simulator-access-e2e",
-    "scenarioIds": ["station-selection", "access-gate"],
+    "scenarioIds": ["android-alice-entry", "desktop-bob-entry", "ios-coral-entry"],
     "maxProvisioningRuns": 1,
-    "maxClientLaunches": 1,
-    "minWarmReuseRate": 0.5,
+    "maxClientLaunches": 3,
+    "minWarmReuseRate": 0.66,
     "requireAttachOnlyScenarios": true,
     "requireReceiverVisibleProof": true,
     "allowClientReplacement": false
   },
   "doneWhen": [
-    "boot, Station selection, address entry, verification, identity mismatch, login, OAuth progress, access gates, and runtime preparation are each usable in foreground iOS",
+    "Android Alice, Desktop Bob, and iOS Coral each complete boot, Station selection, verification, login, session restore, logout, and relaunch in foreground UI",
     "one primary next action, friendly Station identity, field-level recovery, keyboard safety, and accessible labels are visible in every state",
     "no raw URL, peer ID, internal gate name, or untranslated key dominates the interface",
-    "foreground evidence records every declared entry-state inventory row"
+    "a single configured healthy Station becomes active without an extra hidden activation step while multiple Station selection remains explicit",
+    "foreground evidence records every declared entry state on all three clients"
   ],
   "failureBehavior": [
     "do not bypass Station identity or access gates for visual proof",

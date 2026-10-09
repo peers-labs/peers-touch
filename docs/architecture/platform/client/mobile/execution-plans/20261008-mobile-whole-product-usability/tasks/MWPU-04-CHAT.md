@@ -8,7 +8,7 @@
   "planId": "mobile-whole-product-usability-20261008",
   "taskId": "MWPU-04-CHAT",
   "workstreamId": "MWPU-PAGES",
-  "title": "Close Chat list, Direct, Group, composer, and action surfaces",
+  "title": "Close three-client Direct, Group, voice, call, composer, and action workflows",
   "workClass": "product-behavior",
   "completionClass": "functional",
   "executionMode": "build",
@@ -16,11 +16,17 @@
   "journeyId": "MS-J03",
   "runtimeClass": "native-mobile",
   "writeSet": [
+    "apps/desktop/src/components/chat",
+    "apps/desktop/src/modules/p2p",
+    "apps/desktop/src/pages/SocialChatPage.tsx",
+    "apps/desktop/src/services",
     "apps/mobile/src/pages/ChatPage.tsx",
     "apps/mobile/src/pages/chat",
     "apps/mobile/src/features/chat",
     "apps/mobile/src/components/call",
     "apps/mobile/src/styles.css",
+    "apps/station/app/subserver/conversation",
+    "apps/station/app/subserver/envelope",
     "packages/prototypes/mobile/chat",
     "tooling/acceptance/gates/mobile"
   ],
@@ -38,12 +44,12 @@
   "checks": [
     {
       "id": "chat-source",
-      "command": "pnpm --dir apps/mobile exec vitest run src/pages/ChatPage.history.test.tsx src/pages/ChatPage.localFlag.test.ts src/pages/chat src/features/chat",
+      "command": "pnpm --dir apps/desktop exec vitest run src/components/chat src/pages/SocialChatPage.test.tsx src/modules/p2p && pnpm --dir apps/mobile exec vitest run src/pages/ChatPage.history.test.tsx src/pages/ChatPage.localFlag.test.ts src/pages/chat src/features/chat",
       "verificationClass": "SOURCE_CHECK"
     },
     {
       "id": "chat-foreground-functional",
-      "command": "node apps/mobile/scripts/review-mobile-surfaces.mjs --surface-set chat --mode functional",
+      "command": "node apps/mobile/scripts/run-three-client-product-journey.mjs --phase chat",
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
@@ -60,20 +66,22 @@
   "runtimeReuse": {
     "scope": "suite",
     "entryCheckId": "chat-foreground-functional",
-    "scenarioIds": ["chat-list", "direct-thread", "group-thread", "chat-overlays"],
+    "scenarioIds": ["three-client-direct", "three-client-group", "voice-message", "voice-video-call", "chat-recovery"],
     "maxProvisioningRuns": 1,
-    "maxClientLaunches": 2,
+    "maxClientLaunches": 3,
     "minWarmReuseRate": 0.75,
     "requireAttachOnlyScenarios": true,
     "requireReceiverVisibleProof": true,
     "allowClientReplacement": false
   },
   "doneWhen": [
-    "Chat list, empty/search states, Direct and Group details, history, composer, keyboard, attachments, voice, message actions, forwarding, conversation settings, and group management are each operated in foreground iOS",
+    "Android Alice, Desktop Bob, and iOS Coral exchange receiver-visible Direct messages in every required direction using text, attachment, reaction, reply, forward, voice message, history, and recovery actions",
+    "all three actors create and use one Group, exercise membership and administration, and receive converged messages and metadata",
+    "voice and video call start, ringing, answer, reject, hangup, retry, and stale-state cleanup are operated through foreground client controls",
     "conversation titles use friendly identity and never raw PTID",
     "messages remain readable and all bottom/floating layers are non-occluding",
     "degraded runtime state is local and the composer remains usable whenever writes are admitted",
-    "foreground screenshots and interaction traces cover every declared Chat row"
+    "foreground screenshots and interaction traces cover every declared Chat workflow on all three clients"
   ],
   "failureBehavior": [
     "do not accept message delivery alone as Chat usability proof",
