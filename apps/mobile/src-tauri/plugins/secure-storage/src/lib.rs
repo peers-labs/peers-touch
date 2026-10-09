@@ -37,9 +37,16 @@ impl std::error::Error for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Clone)]
 pub struct SecureStorage<R: Runtime> {
     plugin_handle: PluginHandle<R>,
+}
+
+impl<R: Runtime> Clone for SecureStorage<R> {
+    fn clone(&self) -> Self {
+        Self {
+            plugin_handle: self.plugin_handle.clone(),
+        }
+    }
 }
 
 impl<R: Runtime> SecureStorage<R> {
@@ -115,6 +122,11 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[allow(dead_code)]
+    fn clone_without_runtime_clone<R: Runtime>(storage: &SecureStorage<R>) -> SecureStorage<R> {
+        storage.clone()
+    }
 
     #[test]
     fn plugin_errors_name_the_operation_without_secret_material() {
