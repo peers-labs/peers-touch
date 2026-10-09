@@ -8,8 +8,10 @@ import { MobileNotice } from '../../components/MobileNotice';
 import { useSocialCirclesStore } from '../../features/social/socialCircles';
 import { useSocialStore } from '../../features/social/socialStore';
 import { requestSocialPeerProfile } from '../../features/social/socialRuntime';
+import type { CircleMember } from '../../gen/proto/domain/social/circle_pb';
 
 const { Text } = Typography;
+const EMPTY_CIRCLE_MEMBERS: readonly CircleMember[] = [];
 
 interface SocialCircleDetailPageProps {
   readonly circleId: string;
@@ -27,7 +29,9 @@ export function SocialCircleDetailPage({
 }: SocialCircleDetailPageProps) {
   const { t } = useMobileI18n();
   const circles = useSocialCirclesStore((state) => state.circles);
-  const members = useSocialCirclesStore((state) => state.membersByCircle[circleId] ?? []);
+  const members = useSocialCirclesStore(
+    (state) => state.membersByCircle[circleId] ?? EMPTY_CIRCLE_MEMBERS,
+  );
   const loadingMembers = useSocialCirclesStore(
     (state) => Boolean(state.loadingMembers[circleId]),
   );

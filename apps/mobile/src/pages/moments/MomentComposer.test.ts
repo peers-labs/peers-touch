@@ -41,6 +41,7 @@ vi.mock('../../features/social/useMomentsDraft', () => ({
 import {
   canPublishMoment,
   createMomentComposerStyle,
+  createMomentMediaPreviewStyle,
   createRestoredMomentImages,
   hasAuthoritativeImageReadback,
   MomentComposer,
@@ -155,16 +156,14 @@ describe('Moment composer media restoration', () => {
     expect(markup).toContain('common.action.retry');
   });
 
-  it('shows compact discard recovery only for a restored draft', () => {
+  it('restores a draft without adding prototype-external chrome', () => {
     composerMocks.draft.draftRestored = true;
     composerMocks.draft.hasDraft = true;
 
     const markup = renderMomentComposer();
 
-    expect(markup).toContain('moments.composer-draft-restored');
-    expect(markup).toContain(
-      'aria-label="mobile.moments.composer.discardDraft"',
-    );
+    expect(markup).not.toContain('moments.composer-draft-restored');
+    expect(markup).not.toContain('mobile.moments.composer.discardDraft');
   });
 
   it('requires durable draft persistence before starting publication', () => {
@@ -202,16 +201,27 @@ describe('Moment composer media restoration', () => {
       new URL('./MomentComposer.tsx', import.meta.url),
       'utf8',
     );
+    const targetSource = readFileSync(
+      new URL('./MomentAudienceTargetPicker.tsx', import.meta.url),
+      'utf8',
+    );
 
     expect(source).toContain('VISIBLE_SOCIAL_AUDIENCE_CHOICES.map');
     expect(source).toContain("choice.id !== 'DIRECT'");
-    expect(source).toContain("audienceChoice === 'CIRCLE'");
-    expect(source).toContain("audienceChoice === 'GROUP'");
-    expect(source).toContain("audienceChoice === 'DIRECT'");
+    expect(source).toContain('isMomentAudienceTargetChoice(option.id)');
+    expect(source).toContain('<MomentAudienceTargetPicker');
+    expect(targetSource).toContain("choice === 'CIRCLE'");
+    expect(targetSource).toContain("choice === 'GROUP'");
+    expect(targetSource).toContain("choice === 'CUSTOM_ALLOW'");
+    expect(targetSource).toContain("choice === 'CUSTOM_DENY'");
+    expect(targetSource).toContain("if (choice === 'CIRCLE') void refreshCircles()");
+    expect(targetSource).toContain('searchPeople(trimmed, federationId)');
     expect(source).toContain('persistDraftNow(text, audience,');
     expect(source).toContain('privateFiles: privateFiles.filter');
     expect(source).not.toContain('AUDIENCE_OPTIONS');
     expect(source).not.toContain('publishPublic');
+    expect(source).not.toContain('<Select');
+    expect(source).not.toContain('<Input');
   });
 
   it('renders authoring and Audience as selected-only bottom sheets', () => {
@@ -247,6 +257,9 @@ describe('Moment composer media restoration', () => {
     expect(audienceIndex).toBeGreaterThan(mediaIndex);
     expect(source).not.toContain('<Input.TextArea');
     expect(source).not.toContain('moments-composer-actions');
+    expect(source).not.toContain('moment-composer-media-add');
+    expect(source).not.toContain('moments-draft-banner');
+    expect(source).toContain('pickOnOpen');
     expect(styles).toContain('.moment-composer-textarea {');
     expect(styles).toContain(
       '--moment-composer-keyboard-overlap: 0px;',
@@ -261,8 +274,16 @@ describe('Moment composer media restoration', () => {
       '.moment-composer-audience-row {',
     );
     expect(styles).toContain(
-      '.moment-composer-media-add {',
+      'min-height: 42px;',
     );
+    expect(styles).toContain('height: min(610px, 90%);');
+    expect(styles).toContain('min-height: 220px;');
+    expect(styles).toContain('flex: 0 0 112px;');
+    expect(styles).toContain('--moment-primary: #6366f1;');
+    expect(styles).toContain('.moment-audience-target-page {');
+    expect(styles).toContain('.moment-audience-target-list button {');
+    expect(styles).not.toContain('.moment-composer-media-add');
+    expect(styles).not.toContain('.moments-audience-target .ant-select');
   });
 
   it('projects visual keyboard overlap through one sheet variable', () => {
@@ -272,5 +293,15 @@ describe('Moment composer media restoration', () => {
     expect(createMomentComposerStyle(318)).toEqual({
       '--moment-composer-keyboard-overlap': '318px',
     });
+  });
+
+  it('uses the confirmed prototype media preview treatment', () => {
+    expect(createMomentMediaPreviewStyle(0)).toEqual({
+      '--moment-media-preview-bg':
+        'linear-gradient(135deg, #fccb90 0%, #d57eeb 100%)',
+    });
+    expect(createMomentMediaPreviewStyle(3)).toEqual(
+      createMomentMediaPreviewStyle(0),
+    );
   });
 });

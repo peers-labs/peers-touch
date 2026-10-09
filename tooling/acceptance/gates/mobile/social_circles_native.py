@@ -30,6 +30,7 @@ class MobileSocialCirclesNativeGate(AcceptanceGate):
                 "vitest",
                 "run",
                 "src/features/social/socialCircles.test.ts",
+                "src/pages/moments/SocialCirclePages.test.ts",
                 "src/services/stationTransport.test.ts",
                 "src/services/socialNativeAdapter.test.ts",
                 "src/app/navigation/navigationDescriptors.test.ts",
@@ -55,7 +56,7 @@ class MobileSocialCirclesNativeGate(AcceptanceGate):
                 "member writes pending until list and member-count readback converge",
                 "remote lookup failure preserves the member-picker edit surface",
                 "descriptor-owned Circle list, editor, and full-screen member picker",
-                "composer Circle Audience consumes the Station-owned Circle projection",
+                "composer Circle Audience refreshes and explicitly selects from the Station-owned Circle projection",
             ],
             "unproven_scope": [
                 "native iOS visual and interaction journey",
@@ -82,6 +83,9 @@ class MobileSocialCirclesNativeGate(AcceptanceGate):
         )
         composer = self._read(
             "apps/mobile/src/pages/moments/MomentComposer.tsx"
+        )
+        audience_target = self._read(
+            "apps/mobile/src/pages/moments/MomentAudienceTargetPicker.tsx"
         )
 
         operations = (
@@ -141,10 +145,19 @@ class MobileSocialCirclesNativeGate(AcceptanceGate):
             (
                 "useSocialCirclesStore",
                 'data-acceptance-id="social-audience-select"',
-                'data-acceptance-id="social-audience-circle"',
-                "circles[0].id.toString()",
+                "<MomentAudienceTargetPicker",
+                "isMomentAudienceTargetChoice(option.id)",
             ),
             "Moment composer Circle Audience",
+        )
+        self._require_markers(
+            audience_target,
+            (
+                'data-acceptance-id="social-audience-circle"',
+                "if (choice === 'CIRCLE') void refreshCircles()",
+                "onSelectCircle(circle.id.toString())",
+            ),
+            "Moment Audience target picker",
         )
 
     def _read(self, relative_path: str) -> str:

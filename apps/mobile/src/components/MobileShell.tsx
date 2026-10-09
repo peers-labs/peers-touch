@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Badge } from 'antd';
 import { Image, MessageCircle, User, Users } from 'lucide-react';
 
@@ -86,6 +86,7 @@ function renderPage(
   onOpenOverlay: (route: MobileOverlayRoute) => void,
   onCloseOverlay: () => void,
   onBack: () => void,
+  onMomentsImmersiveVisibilityChange: (visible: boolean) => void,
 ) {
   switch (tabId) {
     case 'chat':
@@ -163,6 +164,7 @@ function renderPage(
           onOpenCircles={() => onOpenDetail({
             routeId: 'detail:social-circles',
           })}
+          onImmersiveVisibilityChange={onMomentsImmersiveVisibilityChange}
           onBack={onBack}
         />
       );
@@ -236,6 +238,7 @@ export function MobileShell(props: MobileShellProps) {
   const openOverlay = useMobileNavigationStore((state) => state.openOverlay);
   const closeOverlay = useMobileNavigationStore((state) => state.closeOverlay);
   const contentRef = useRef<HTMLDivElement>(null);
+  const [momentsImmersive, setMomentsImmersive] = useState(false);
 
   const sessions = useSocialStore((state) => state.sessions);
   const currentUserPtid = useSocialStore((state) => state.currentUserPtid);
@@ -320,7 +323,7 @@ export function MobileShell(props: MobileShellProps) {
     restoreLocation(nextRoute);
   }, [popDetail, restoreLocation, saveCurrentLocation]);
 
-  const hideTabbar = activeDetail !== null;
+  const hideTabbar = activeDetail !== null || momentsImmersive;
 
   return (
     <div
@@ -342,6 +345,7 @@ export function MobileShell(props: MobileShellProps) {
             openOverlay,
             closeOverlay,
             closeDetail,
+            setMomentsImmersive,
           )}
         </MobileRouteBoundary>
       </div>

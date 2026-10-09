@@ -18,19 +18,16 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
-import { Button, Input, Popconfirm, Select, message, Typography } from 'antd';
+import { Button, message, Typography } from 'antd';
 import {
   AlertTriangle,
   ArrowLeft,
   Check,
   ChevronRight,
   Globe2,
-  ImagePlus,
   LockKeyhole,
   RotateCcw,
-  Save,
   ShieldCheck,
-  Trash2,
   UserMinus,
   UserRound,
   UsersRound,
@@ -66,6 +63,10 @@ import {
 } from '../../features/social/socialAudience';
 import { useSocialCirclesStore } from '../../features/social/socialCircles';
 import { useSocialStore } from '../../features/social/socialStore';
+import {
+  MomentAudienceTargetPicker,
+  type MomentAudienceTargetChoice,
+} from './MomentAudienceTargetPicker';
 import './MomentComposer.css';
 
 const { Text } = Typography;
@@ -73,6 +74,21 @@ const MAX_IMAGES_PER_POST = 9;
 const VISIBLE_SOCIAL_AUDIENCE_CHOICES = SOCIAL_AUDIENCE_CHOICES.filter(
   (choice) => choice.id !== 'DIRECT',
 );
+const MOMENT_MEDIA_PREVIEW_GRADIENTS = [
+  'linear-gradient(135deg, #fccb90 0%, #d57eeb 100%)',
+  'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
+  'linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%)',
+] as const;
+
+function isMomentAudienceTargetChoice(
+  choice: SocialAudienceChoice,
+): choice is MomentAudienceTargetChoice {
+  return choice === 'CIRCLE'
+    || choice === 'GROUP'
+    || choice === 'CUSTOM_ALLOW'
+    || choice === 'CUSTOM_DENY';
+}
+
 const SOCIAL_AUDIENCE_PRESENTATION: Record<
   SocialAudienceChoice,
   { readonly detailKey: string; readonly icon: LucideIcon }
@@ -124,6 +140,21 @@ export function createMomentComposerStyle(
 ): MomentComposerStyle {
   return {
     '--moment-composer-keyboard-overlap': `${keyboardOverlapHeight}px`,
+  };
+}
+
+export interface MomentMediaPreviewStyle extends CSSProperties {
+  '--moment-media-preview-bg': string;
+}
+
+export function createMomentMediaPreviewStyle(
+  index: number,
+): MomentMediaPreviewStyle {
+  return {
+    '--moment-media-preview-bg':
+      MOMENT_MEDIA_PREVIEW_GRADIENTS[
+        index % MOMENT_MEDIA_PREVIEW_GRADIENTS.length
+      ],
   };
 }
 
@@ -276,17 +307,19 @@ function actorPtidsFromInput(value: string): string[] {
 interface MomentComposerProps {
   readonly session: MobileAuthSession;
   readonly intents: Pick<SocialIntentPort, 'publishMoment'>;
+  readonly pickOnOpen?: boolean;
+  readonly onTargetVisibilityChange?: (visible: boolean) => void;
   readonly onPublished: () => void;
   readonly onClose: () => void;
 }
 
-type PendingDraftRemoval =
-  | { readonly kind: 'discard' }
-  | { readonly kind: 'publish' };
+type PendingDraftRemoval = { readonly kind: 'publish' };
 
 export function MomentComposer({
   session,
   intents,
+  pickOnOpen = false,
+  onTargetVisibilityChange,
   onPublished,
   onClose,
 }: MomentComposerProps) {
@@ -304,12 +337,18 @@ export function MomentComposer({
   const [circleId, setCircleId] = useState('');
   const [groupConversationId, setGroupConversationId] = useState('');
   const [actorPtidsInput, setActorPtidsInput] = useState('');
+  const [audienceActorLabels, setAudienceActorLabels] = useState<
+    Record<string, string>
+  >({});
   const [pendingImages, setPendingImages] = useState<PendingMomentImage[]>([]);
   const [audienceOpen, setAudienceOpen] = useState(false);
+  const [targetAudienceChoice, setTargetAudienceChoice] =
+    useState<MomentAudienceTargetChoice | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [pendingDraftRemoval, setPendingDraftRemoval] =
     useState<PendingDraftRemoval | null>(null);
   const pendingImagesRef = useRef<PendingMomentImage[]>([]);
+  const initialPickStartedRef = useRef(false);
   const draftIdRef = useRef(globalThis.crypto.randomUUID());
   const circles = useSocialCirclesStore((state) => state.circles);
   const messagingConversations = useSocialStore(
@@ -321,22 +360,29 @@ export function MomentComposer({
     ),
     [messagingConversations],
   );
+  const selectedActorPtids = useMemo(
+    () => actorPtidsFromInput(actorPtidsInput),
+    [actorPtidsInput],
+  );
   const audience = useMemo<Audience | null>(() => {
     try {
       return buildSocialAudience(audienceChoice, {
         circleId,
         groupConversationId,
-        actorPtids: actorPtidsFromInput(actorPtidsInput),
+        actorPtids: selectedActorPtids,
       });
     } catch {
       return null;
     }
-  }, [actorPtidsInput, audienceChoice, circleId, groupConversationId]);
+  }, [
+    audienceChoice,
+    circleId,
+    groupConversationId,
+    selectedActorPtids,
+  ]);
 
   // Draft management
   const {
-    draftRestored,
-    hasDraft,
     saveDraft,
     persistDraftNow,
     discardDraft,
@@ -352,10 +398,16 @@ export function MomentComposer({
       setAudienceChoice(restoredChoice);
       setCircleId(restoredTarget.circleId ?? '');
       setGroupConversationId(restoredTarget.groupConversationId ?? '');
-      setActorPtidsInput((restoredTarget.actorPtids ?? []).join(', '));
+      const restoredActorPtids = restoredTarget.actorPtids ?? [];
+      setActorPtidsInput(restoredActorPtids.join(', '));
+      setAudienceActorLabels(Object.fromEntries(
+        restoredActorPtids.map((actorPtid) => [actorPtid, actorPtid]),
+      ));
       setPendingImages((current) => {
         current.forEach((item) => revokePreviewUrl(item.previewUrl));
-        return createRestoredMomentImages(payload.mediaRefs);
+        const restoredImages = createRestoredMomentImages(payload.mediaRefs);
+        pendingImagesRef.current = restoredImages;
+        return restoredImages;
       });
     }, []),
   );
@@ -364,6 +416,11 @@ export function MomentComposer({
   useEffect(() => {
     pendingImagesRef.current = pendingImages;
   }, [pendingImages]);
+
+  useEffect(
+    () => () => onTargetVisibilityChange?.(false),
+    [onTargetVisibilityChange],
+  );
 
   // Cleanup preview URLs on unmount
   useEffect(() => () => {
@@ -411,7 +468,6 @@ export function MomentComposer({
     publishing,
     Boolean(audience),
   ) && !saving && !discarding && !pendingDraftRemoval;
-  const hasComposerDraft = hasDraft || Boolean(text.trim()) || pendingImages.length > 0;
   const editingDisabled = publishing || Boolean(pendingDraftRemoval);
   const audienceLabel = t(
     SOCIAL_AUDIENCE_CHOICES.find((choice) => choice.id === audienceChoice)?.labelKey
@@ -419,7 +475,31 @@ export function MomentComposer({
   );
   const audiencePresentation = SOCIAL_AUDIENCE_PRESENTATION[audienceChoice];
   const AudienceIcon = audiencePresentation.icon;
-  const showDiscardDraft = draftRestored && hasComposerDraft;
+  const selectedCircle = circles.find(
+    (circle) => circle.id.toString() === circleId,
+  );
+  const selectedGroup = groups.find(
+    (group) => group.conversationId === groupConversationId,
+  );
+  const selectedActorNames = selectedActorPtids.map(
+    (actorPtid) => audienceActorLabels[actorPtid] ?? actorPtid,
+  );
+  const audienceDetail = audienceChoice === 'CIRCLE' && selectedCircle
+    ? `${selectedCircle.name} · ${t('mobile.social.circles.memberCount', {
+        count: selectedCircle.memberCount.toString(),
+      })}`
+    : audienceChoice === 'GROUP' && selectedGroup
+      ? `${selectedGroup.name || selectedGroup.conversationId} · ${t(
+          'mobile.moments.audience.activeMembers',
+          { count: selectedGroup.memberPtids.length },
+        )}`
+      : audienceChoice === 'CUSTOM_ALLOW' && selectedActorNames.length > 0
+        ? selectedActorNames.join(', ')
+        : audienceChoice === 'CUSTOM_DENY' && selectedActorNames.length > 0
+          ? t('mobile.moments.audience.followersExceptSelection', {
+              names: selectedActorNames.join(', '),
+            })
+          : t(audiencePresentation.detailKey);
 
   // Auto-save text, audience, and generated-contract media references.
   useEffect(() => {
@@ -459,6 +539,10 @@ export function MomentComposer({
     setCircleId('');
     setGroupConversationId('');
     setActorPtidsInput('');
+    setAudienceActorLabels({});
+    setAudienceOpen(false);
+    setTargetAudienceChoice(null);
+    onTargetVisibilityChange?.(false);
     draftIdRef.current = globalThis.crypto.randomUUID();
     setPendingDraftRemoval(null);
   }, [
@@ -467,6 +551,7 @@ export function MomentComposer({
     session.lifecycleGeneration,
     session.sessionId,
     session.stationPeerId,
+    onTargetVisibilityChange,
   ]);
 
   const completePublishedMoment = useCallback(() => {
@@ -475,25 +560,15 @@ export function MomentComposer({
     onPublished();
   }, [onPublished, resetComposer, t]);
 
-  const handleDiscardDraft = useCallback(async () => {
-    setPendingDraftRemoval({ kind: 'discard' });
-    if (await discardDraft()) {
-      resetComposer();
-    }
-  }, [discardDraft, resetComposer]);
-
   const handlePersistenceRetry = useCallback(async () => {
     if (!await retryPersistence()) return;
 
     if (pendingDraftRemoval?.kind === 'publish') {
       completePublishedMoment();
-    } else if (pendingDraftRemoval?.kind === 'discard') {
-      resetComposer();
     }
   }, [
     completePublishedMoment,
     pendingDraftRemoval,
-    resetComposer,
     retryPersistence,
   ]);
 
@@ -585,6 +660,17 @@ export function MomentComposer({
     });
     setPendingImages((current) => [...current, ...drafts]);
   };
+
+  useEffect(() => {
+    if (!pickOnOpen || initialPickStartedRef.current) return undefined;
+    initialPickStartedRef.current = true;
+    const timer = setTimeout(() => {
+      if (pendingImagesRef.current.length === 0) {
+        void handlePickImages();
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [pickOnOpen]);
 
   const removeImage = (localId: string) => {
     if (editingDisabled) return;
@@ -739,6 +825,43 @@ export function MomentComposer({
     }
   };
 
+  if (targetAudienceChoice) {
+    return (
+      <MomentAudienceTargetPicker
+        choice={targetAudienceChoice}
+        selectedActorLabels={audienceActorLabels}
+        selectedActorPtids={selectedActorPtids}
+        onBack={() => {
+          onTargetVisibilityChange?.(false);
+          setTargetAudienceChoice(null);
+          setAudienceOpen(true);
+        }}
+        onSelectCircle={(nextCircleId) => {
+          setCircleId(nextCircleId);
+          setAudienceChoice('CIRCLE');
+          onTargetVisibilityChange?.(false);
+          setTargetAudienceChoice(null);
+          setAudienceOpen(false);
+        }}
+        onSelectGroup={(nextGroupConversationId) => {
+          setGroupConversationId(nextGroupConversationId);
+          setAudienceChoice('GROUP');
+          onTargetVisibilityChange?.(false);
+          setTargetAudienceChoice(null);
+          setAudienceOpen(false);
+        }}
+        onSelectActors={(actorPtids, actorLabels) => {
+          setActorPtidsInput(actorPtids.join(', '));
+          setAudienceActorLabels({ ...actorLabels });
+          setAudienceChoice(targetAudienceChoice);
+          onTargetVisibilityChange?.(false);
+          setTargetAudienceChoice(null);
+          setAudienceOpen(false);
+        }}
+      />
+    );
+  }
+
   return (
     <div
       className="moments-sheet-backdrop moments-composer-backdrop moment-composer-overlay"
@@ -779,35 +902,6 @@ export function MomentComposer({
           </button>
         </header>
 
-        {draftRestored && (
-          <div
-            className="moments-draft-banner moment-composer-draft-banner"
-            data-product-surface="moments.composer-draft-restored"
-          >
-            <Save size={14} />
-            <Text className="moments-draft-text">
-              {t('mobile.moments.composer.draftRestored')}
-            </Text>
-            {showDiscardDraft && (
-              <Popconfirm
-                title={t('mobile.moments.composer.rollbackConfirm')}
-                okText={t('mobile.moments.composer.rollbackYes')}
-                cancelText={t('mobile.moments.composer.rollbackNo')}
-                onConfirm={handleDiscardDraft}
-                disabled={editingDisabled}
-              >
-                <button
-                  type="button"
-                  aria-label={t('mobile.moments.composer.discardDraft')}
-                  disabled={editingDisabled}
-                >
-                  <Trash2 size={16} />
-                </button>
-              </Popconfirm>
-            )}
-          </div>
-        )}
-
         {persistenceFailure && (
           <div
             className="moments-state moments-state--error"
@@ -841,59 +935,44 @@ export function MomentComposer({
           disabled={editingDisabled}
         />
 
-        <div className="moment-composer-media">
-          {pendingImages.map((item) => (
+        {pendingImages.length > 0 && (
+          <div
+            className="moment-composer-media"
+            aria-label={t('mobile.moments.composer.restoredImageReference')}
+          >
+          {pendingImages.map((item, index) => (
             <div
-              className={`moments-image-tile moment-composer-media-tile ${item.status}`}
+              className={`moment-composer-media-preview ${item.status}`}
               data-product-surface={`moments.composer-media-${
                 item.status === 'done' ? 'ready' : item.status
               }`}
               key={item.localId}
+              style={createMomentMediaPreviewStyle(index)}
             >
-              {item.source === 'local-upload' ? (
-                <div className="moments-restored-image-reference">
-                  <ImagePlus size={22} />
-                  <span>{item.stagedHandle?.mimeType}</span>
-                </div>
-              ) : (
-                <div className="moments-restored-image-reference">
-                  <ImagePlus size={22} />
-                  <span>{t('mobile.moments.composer.restoredImageReference')}</span>
-                </div>
-              )}
-              <div className="moments-image-status">
-                {item.status === 'uploading' && t('mobile.moments.imageUploadingShort')}
-                {item.status === 'done' && t('mobile.moments.imageReady')}
-                {item.status === 'error' && t('mobile.moments.imageFailed')}
-              </div>
-              <div className="moments-image-actions">
-                {item.status === 'error' && item.stagedHandle && (
-                  <button type="button" disabled={editingDisabled} onClick={() => retryImage(item.localId)} aria-label={t('mobile.moments.retryImage')}>
-                    <RotateCcw size={14} />
-                  </button>
-                )}
-                <button type="button" disabled={editingDisabled} onClick={() => removeImage(item.localId)} aria-label={t('mobile.moments.removeImage')}>
-                  <Trash2 size={14} />
+              {item.status === 'error' && item.stagedHandle && (
+                <button
+                  type="button"
+                  className="moment-composer-media-retry"
+                  disabled={editingDisabled}
+                  onClick={() => retryImage(item.localId)}
+                  aria-label={t('mobile.moments.retryImage')}
+                >
+                  <RotateCcw size={15} />
                 </button>
-              </div>
+              )}
+              <button
+                type="button"
+                className="moment-composer-media-remove"
+                disabled={editingDisabled}
+                onClick={() => removeImage(item.localId)}
+                aria-label={t('mobile.moments.removeImage')}
+              >
+                <X size={15} />
+              </button>
             </div>
           ))}
-          {slotsLeft > 0 && (
-            <button
-              type="button"
-              className="moment-composer-media-add"
-              aria-label={t('mobile.moments.attachImage', {
-                count: pendingImages.length,
-                max: MAX_IMAGES_PER_POST,
-              })}
-              disabled={editingDisabled}
-              onClick={() => void handlePickImages()}
-            >
-              <ImagePlus size={22} />
-              <span>{pendingImages.length}/{MAX_IMAGES_PER_POST}</span>
-            </button>
-          )}
-        </div>
+          </div>
+        )}
 
         <button
           type="button"
@@ -908,7 +987,7 @@ export function MomentComposer({
           </span>
           <span className="moment-composer-audience-copy">
             <strong>{audienceLabel}</strong>
-            <small>{t(audiencePresentation.detailKey)}</small>
+            <small>{audienceDetail}</small>
           </span>
           <ChevronRight size={17} />
         </button>
@@ -966,16 +1045,14 @@ export function MomentComposer({
                     className="moments-choice-row moment-audience-choice"
                     data-audience-option={option.id}
                     onClick={() => {
-                      setAudienceChoice(option.id);
-                      if (option.id === 'CIRCLE' && !circleId && circles[0]) {
-                        setCircleId(circles[0].id.toString());
-                      }
-                      if (option.id === 'GROUP' && !groupConversationId && groups[0]) {
-                        setGroupConversationId(groups[0].conversationId);
-                      }
-                      if (!['CIRCLE', 'GROUP', 'CUSTOM_ALLOW', 'CUSTOM_DENY', 'DIRECT'].includes(option.id)) {
+                      if (isMomentAudienceTargetChoice(option.id)) {
                         setAudienceOpen(false);
+                        onTargetVisibilityChange?.(true);
+                        setTargetAudienceChoice(option.id);
+                        return;
                       }
+                      setAudienceChoice(option.id);
+                      setAudienceOpen(false);
                     }}
                   >
                     <span className="moment-audience-choice-icon">
@@ -992,77 +1069,6 @@ export function MomentComposer({
                 );
               })}
             </div>
-            {audienceChoice === 'CIRCLE' && (
-              <div className="moments-audience-target">
-                <Select
-                  value={circleId || undefined}
-                  data-acceptance-id="social-audience-circle"
-                  onChange={setCircleId}
-                  placeholder={t('mobile.moments.audience.selectCircle')}
-                  disabled={editingDisabled}
-                  options={circles.map((circle) => ({
-                    label: circle.name,
-                    value: circle.id.toString(),
-                  }))}
-                />
-                <Button
-                  type="primary"
-                  data-acceptance-id="social-audience-target-done"
-                  disabled={!audience}
-                  onClick={() => setAudienceOpen(false)}
-                >
-                  {t('common.action.done')}
-                </Button>
-              </div>
-            )}
-            {audienceChoice === 'GROUP' && (
-              <div className="moments-audience-target">
-                <Select
-                  value={groupConversationId || undefined}
-                  data-acceptance-id="social-audience-group"
-                  onChange={setGroupConversationId}
-                  placeholder={t('mobile.moments.audience.selectGroup')}
-                  disabled={editingDisabled}
-                  options={groups.map((group) => ({
-                    label: group.name || group.conversationId,
-                    value: group.conversationId,
-                  }))}
-                />
-                <Button
-                  type="primary"
-                  data-acceptance-id="social-audience-target-done"
-                  disabled={!audience}
-                  onClick={() => setAudienceOpen(false)}
-                >
-                  {t('common.action.done')}
-                </Button>
-              </div>
-            )}
-            {(audienceChoice === 'CUSTOM_ALLOW'
-              || audienceChoice === 'CUSTOM_DENY'
-              || audienceChoice === 'DIRECT') && (
-              <div className="moments-audience-target">
-                <Input
-                  value={actorPtidsInput}
-                  data-acceptance-id="social-audience-actors"
-                  onChange={(event) => setActorPtidsInput(event.target.value)}
-                  placeholder={t(
-                    audienceChoice === 'DIRECT'
-                      ? 'mobile.moments.audience.directPlaceholder'
-                      : 'mobile.moments.audience.recipientsPlaceholder',
-                  )}
-                  disabled={editingDisabled}
-                  status={audience ? undefined : 'error'}
-                />
-                <Button
-                  type="primary"
-                  disabled={!audience}
-                  onClick={() => setAudienceOpen(false)}
-                >
-                  {t('common.action.done')}
-                </Button>
-              </div>
-            )}
           </section>
         </div>
       )}
