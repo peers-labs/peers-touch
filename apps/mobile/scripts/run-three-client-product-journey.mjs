@@ -483,14 +483,28 @@ function webdriverEndpoint(client, suffix) {
 }
 
 async function webdriverRequest(url, options = {}) {
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'content-type': 'application/json',
-      ...(options.headers || {}),
-    },
-    signal: AbortSignal.timeout(15000),
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers: {
+        'content-type': 'application/json',
+        ...(options.headers || {}),
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch (error) {
+    if (
+      error?.name === 'AbortError'
+      || error?.name === 'TimeoutError'
+    ) {
+      throw new JourneyContractError(
+        'WEBDRIVER_REQUEST_TIMEOUT',
+        `WebDriver request timed out at ${url}`,
+      );
+    }
+    throw error;
+  }
   const text = await response.text();
   let payload = null;
   if (text) {
@@ -516,6 +530,12 @@ async function selectWebContext(client) {
   const current = await webdriverRequest(
     webdriverEndpoint(client, '/context'),
   ).catch(() => null);
+  if (
+    typeof current === 'string'
+    && current.toUpperCase().includes('WEBVIEW')
+  ) {
+    return null;
+  }
   const contexts = await webdriverRequest(
     webdriverEndpoint(client, '/contexts'),
   );
