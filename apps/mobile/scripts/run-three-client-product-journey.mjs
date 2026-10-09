@@ -547,6 +547,14 @@ function sleep(delayMs) {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
+function retryableUiPollError(error) {
+  return error instanceof JourneyContractError
+    && [
+      'WEBDRIVER_REQUEST_FAILED',
+      'WEBDRIVER_REQUEST_TIMEOUT',
+    ].includes(error.code);
+}
+
 function evidenceFileSegment(value) {
   return value.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
 }
@@ -738,8 +746,15 @@ async function waitForUi(clientId, client, label, script, args = []) {
   const deadline = Date.now() + uiWaitTimeoutMs;
   let lastValue = null;
   while (Date.now() < deadline) {
-    lastValue = await executeWebScript(client, script, args);
-    if (lastValue?.ready === true || lastValue === true) return lastValue;
+    try {
+      lastValue = await executeWebScript(client, script, args);
+      if (lastValue?.ready === true || lastValue === true) return lastValue;
+    } catch (error) {
+      if (!retryableUiPollError(error)) throw error;
+      lastValue = {
+        webdriverError: error.message,
+      };
+    }
     await sleep(uiPollIntervalMs);
   }
   throw new JourneyContractError(
@@ -1967,6 +1982,18 @@ function selfTest(matrix) {
     cycleRejected,
     'SELF_TEST_PRECONDITION_CYCLE',
     'matrix did not reject a precondition cycle',
+  );
+  assertContract(
+    retryableUiPollError(new JourneyContractError(
+      'WEBDRIVER_REQUEST_FAILED',
+      'transient WebView execution failure',
+    )) === true
+      && retryableUiPollError(new JourneyContractError(
+        'SHELL_LAYOUT_OVERFLOW',
+        'product assertion failure',
+      )) === false,
+    'SELF_TEST_UI_POLL_RETRY',
+    'UI polling retry classification is invalid',
   );
   return {
     status: 'PASS',
