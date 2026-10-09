@@ -673,6 +673,9 @@ func isBindableLocalAddr(m multiaddr.Multiaddr) bool {
 // return means the baseurl was missing or did not parse; callers MUST treat
 // that as "federation publishing disabled" rather than guess a default.
 func stationDomainFromConfig() string {
+	if !cfg.IsInitialized() {
+		return ""
+	}
 	raw := strings.TrimSpace(cfg.Get("peers", "node", "server", "baseurl").String(""))
 	if raw == "" {
 		return ""
