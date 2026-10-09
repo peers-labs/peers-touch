@@ -30,6 +30,19 @@ describe('Mobile App Station identity replacement', () => {
     expect(source).not.toContain("transitionLaunchState('shell')");
   });
 
+  it('fences a late access attempt after returning to Station selection', () => {
+    expect(source).toContain('const accessGateStartRevisionRef = useRef(0)');
+    expect(source).toContain(
+      'const requestRevision = ++accessGateStartRevisionRef.current',
+    );
+    expect(source).toMatch(
+      /requestRevision !== accessGateStartRevisionRef\.current[\s\S]*kernel\.getState\(\)\.launchState !== 'station-handshake'/,
+    );
+    expect(source).toMatch(
+      /function showStationSelection\(\)[\s\S]*accessGateStartRevisionRef\.current \+= 1/,
+    );
+  });
+
   it('keeps the Shell mounted while native system surfaces background the app', () => {
     expect(source).toContain(
       "renderedLaunchState === 'background'",
