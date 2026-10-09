@@ -1046,7 +1046,8 @@
           "enum": [
             "mobile-native-access-e2e",
             "mobile-native-lifecycle-e2e",
-            "mobile-native-platform-e2e"
+            "mobile-native-platform-e2e",
+            "mobile-social-android-native"
           ]
         },
         "clientId": {
@@ -1268,7 +1269,8 @@
           "enum": [
             "mobile-native-access-e2e",
             "mobile-native-lifecycle-e2e",
-            "mobile-native-platform-e2e"
+            "mobile-native-platform-e2e",
+            "mobile-social-android-native"
           ]
         },
         "leaseId": {

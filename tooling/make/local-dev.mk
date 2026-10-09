@@ -133,7 +133,7 @@ plan-unmount:
 		--owner "$(DEV_OWNER_ARG)"
 
 plan-state-migrate:
-	@node $(PLAN_STATE_MIGRATION_SCRIPT)
+	@node $(PLAN_STATE_MIGRATION_SCRIPT) --repo-root "$(CURDIR)"
 
 plan-validate:
 	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-validate PLAN=<package-plan.md>"; exit 1; fi

@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  closeSync,
   copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   rmSync,
   statSync,
@@ -32,6 +34,7 @@ import {
   createTransitionEvent,
   DevSessionError,
   readSessionJournal,
+  resolveDevelopmentRunnerPython,
   runCli,
   sessionStorePaths,
   startDevelopmentSession,
@@ -43,6 +46,8 @@ import {
   writeDurableFileAtomic,
 } from './dev-session.mjs';
 import {
+  adoptSessionWorkflowOwner,
+  createSessionStore,
   inspectSessionJournal,
   summarizeSessionJournal,
 } from './dev-session-store.mjs';
@@ -239,6 +244,9 @@ function fixture({
         stable: true,
         workspaceDigest: 'clean',
       };
+    },
+    resolveDevelopmentRunnerPython() {
+      return 'python3';
     },
   };
   const baseOptions = {
@@ -673,8 +681,11 @@ async function commitStandardizedFunctionalPass(scope, overrides = {}) {
     },
     {
       ...scope.dependencies,
-      spawnDevelopmentRunner(_command, arguments_) {
-        assert.equal(_command, 'python3');
+      spawnDevelopmentRunner(_command, arguments_, spawnOptions) {
+        assert.equal(
+          _command,
+          overrides.expectedRunnerPython ?? 'python3',
+        );
         assert.notEqual(arguments_.indexOf('--execution-plan'), -1);
         assert.equal(arguments_.includes('--gate'), false);
         assert.equal(arguments_.includes('--result-file'), false);
@@ -684,7 +695,11 @@ async function commitStandardizedFunctionalPass(scope, overrides = {}) {
           arguments_[outputIndex + 1],
           `${JSON.stringify(aggregateManifestRef)}\n`,
         );
-        overrides.beforeRunnerReturn?.(arguments_);
+        overrides.beforeRunnerReturn?.(
+          arguments_,
+          spawnOptions,
+          _command,
+        );
         return { status: 0, stdout: '', stderr: '' };
       },
       ...(overrides.dependencies ?? {}),
@@ -790,6 +805,62 @@ test('legacy Session state without host request history remains readable', () =>
       updatedAt: '2026-09-16T12:00:00.000Z',
     };
     assert.equal(validateSessionState(state), state);
+  } finally {
+    scope.close();
+  }
+});
+
+test('adopts a missing legacy Session owner with one journal event', () => {
+  const scope = fixture();
+  try {
+    const owner = workflowOwner();
+    const state = createInitialSessionState(
+      {
+        sessionId: scope.sessionId,
+        workItemId: scope.workItemId,
+        planId: scope.plan.manifest.planId,
+        taskId: scope.task.taskId,
+        workspaceId: WORKSPACE_ID,
+        branch: BRANCH,
+        journeyId: scope.task.journeyId,
+        executionMode: scope.task.executionMode,
+      },
+      '2026-09-16T12:00:00.000Z',
+    );
+    createSessionStore(state, {
+      home: scope.home,
+      workspaceRoot: REPO_ROOT,
+      workspaceId: WORKSPACE_ID,
+      workItemId: scope.workItemId,
+      reason: 'Legacy Session fixture',
+    });
+
+    const options = {
+      home: scope.home,
+      workspaceRoot: REPO_ROOT,
+      workspaceId: WORKSPACE_ID,
+      workItemId: scope.workItemId,
+      workflowOwner: owner,
+      expected: {
+        sessionId: scope.sessionId,
+        workItemId: scope.workItemId,
+        planId: scope.plan.manifest.planId,
+        taskId: scope.task.taskId,
+        workspaceId: WORKSPACE_ID,
+        branch: BRANCH,
+      },
+      now: new Date('2026-09-16T12:01:00.000Z'),
+    };
+    const adopted = adoptSessionWorkflowOwner(options);
+    assert.equal(adopted.eventCount, 2);
+    assert.deepEqual(adopted.state.workflowOwner, owner);
+
+    const idempotent = adoptSessionWorkflowOwner({
+      ...options,
+      now: new Date('2026-09-16T12:02:00.000Z'),
+    });
+    assert.equal(idempotent.eventCount, 2);
+    assert.deepEqual(idempotent, adopted);
   } finally {
     scope.close();
   }
@@ -1241,6 +1312,26 @@ test('static functional result accepts and seals an emitted acceptance report', 
   }
 });
 
+test('static functional result accepts complete acceptance report traceability', async () => {
+  const scope = fixture({ gates: ['chat-gate'] });
+  try {
+    await start(scope);
+    await transition(scope, 'IMPLEMENTING');
+    await transition(scope, 'FOCUSED_CHECKING');
+    await transition(scope, 'FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK', 'PASS'),
+    });
+    await transition(scope, 'FUNCTIONAL_RUNNING');
+    const committed = await commitFunctionalPass(scope, {
+      staticEvidenceReport: true,
+      result: { traceability: { status: 'complete' } },
+    });
+    assert.equal(committed.state.state, 'FUNCTIONAL_PASS');
+  } finally {
+    scope.close();
+  }
+});
+
 test('static functional result accepts a generic source artifact without evidence claims', async () => {
   const scope = fixture({ gates: ['chat-gate'] });
   try {
@@ -1677,6 +1768,166 @@ test('functional result forwards authorized and claimed Station profiles', async
     });
     assert.equal(committed.state.state, 'FUNCTIONAL_PASS');
   } finally {
+    scope.close();
+  }
+});
+
+test('functional result uses the workspace Acceptance virtual environment', async () => {
+  const scope = fixture({
+    workClass: 'product-behavior',
+    runtimeClass: 'native-mobile',
+    deployProfiles: ['dwf-local'],
+    gates: ['chat-gate'],
+  });
+  const venvRoot = path.join(
+    scope.home,
+    '.peers-touch',
+    'dev',
+    'workspaces',
+    WORKSPACE_ID,
+    'runtime',
+    'acceptance-gate-venv',
+  );
+  const executable = path.join(
+    venvRoot,
+    process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
+  );
+  try {
+    mkdirSync(path.dirname(executable), { recursive: true });
+    if (process.platform === 'win32') {
+      copyFileSync(process.execPath, executable);
+    } else {
+      symlinkSync(process.execPath, executable);
+    }
+    writeFileSync(
+      path.join(venvRoot, 'pyvenv.cfg'),
+      `home = ${path.dirname(process.execPath)}\n` +
+        'include-system-site-packages = false\n' +
+        `version = ${process.versions.node}\n`,
+    );
+
+    assert.equal(
+      resolveDevelopmentRunnerPython({
+        home: scope.home,
+        workspaceRoot: REPO_ROOT,
+        workspaceId: WORKSPACE_ID,
+      }),
+      executable,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('functional result fails closed when the workspace Acceptance virtual environment is absent', async () => {
+  const scope = fixture({
+    workClass: 'product-behavior',
+    runtimeClass: 'native-mobile',
+    deployProfiles: ['dwf-local'],
+    gates: ['chat-gate'],
+  });
+  try {
+    assert.throws(
+      () =>
+        resolveDevelopmentRunnerPython({
+          home: scope.home,
+          workspaceRoot: REPO_ROOT,
+          workspaceId: WORKSPACE_ID,
+        }),
+      (error) => error?.code === 'SESSION_RUNTIME_REQUIRED',
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('functional result pins Gate child Python resolution to the workspace virtual environment', async () => {
+  const scope = fixture({
+    workClass: 'product-behavior',
+    runtimeClass: 'native-mobile',
+    deployProfiles: ['dwf-local'],
+    gates: ['chat-gate'],
+  });
+  const runnerPython = path.join(
+    scope.home,
+    '.peers-touch',
+    'dev',
+    'workspaces',
+    WORKSPACE_ID,
+    'runtime',
+    'acceptance-gate-venv',
+    process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
+  );
+  try {
+    await start(scope);
+    await transition(scope, 'IMPLEMENTING');
+    await transition(scope, 'FOCUSED_CHECKING');
+    await transition(scope, 'FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK', 'PASS'),
+    });
+    await advanceRuntimeToFunctionalRunning(scope);
+    await commitStandardizedFunctionalPass(scope, {
+      manifest: { clients: [{ runtime: 'tauri-android' }] },
+      expectedRunnerPython: runnerPython,
+      dependencies: {
+        resolveDevelopmentRunnerPython() {
+          return runnerPython;
+        },
+      },
+      beforeRunnerReturn(_arguments, spawnOptions, command) {
+        assert.equal(command, runnerPython);
+        assert.equal(
+          spawnOptions.env.PATH.split(path.delimiter)[0],
+          path.dirname(runnerPython),
+        );
+      },
+    });
+  } finally {
+    scope.close();
+  }
+});
+
+test('functional result forwards a live machine lease descriptor', async () => {
+  const scope = fixture({
+    workClass: 'product-behavior',
+    runtimeClass: 'native-desktop',
+    deployProfiles: ['dwf-local'],
+    gates: ['chat-gate'],
+  });
+  const leaseFd = openSync('/dev/null', 'r');
+  try {
+    await start(scope);
+    await transition(scope, 'IMPLEMENTING');
+    await transition(scope, 'FOCUSED_CHECKING');
+    await transition(scope, 'FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK', 'PASS'),
+    });
+    await advanceRuntimeToFunctionalRunning(scope);
+    const committed = await commitStandardizedFunctionalPass(scope, {
+      dependencies: {
+        environment: {
+          ...process.env,
+          PT_MACHINE_LEASE_FD: String(leaseFd),
+          PT_MACHINE_LEASE_ID: 'lease-1',
+          PT_MACHINE_LEASE_KIND: 'station.reset',
+          PT_MACHINE_LEASE_RESOURCE_ID: 'fixture-1',
+          PT_MACHINE_LEASE_RESET_SCOPE: 'fixture-1',
+        },
+      },
+      beforeRunnerReturn(_arguments, spawnOptions) {
+        assert.equal(
+          spawnOptions.env.PT_MACHINE_LEASE_FD,
+          String(leaseFd),
+        );
+        assert.equal(spawnOptions.stdio[0], 'ignore');
+        assert.equal(spawnOptions.stdio[1], 'pipe');
+        assert.equal(spawnOptions.stdio[2], 'pipe');
+        assert.equal(spawnOptions.stdio[leaseFd], leaseFd);
+      },
+    });
+    assert.equal(committed.state.state, 'FUNCTIONAL_PASS');
+  } finally {
+    closeSync(leaseFd);
     scope.close();
   }
 });

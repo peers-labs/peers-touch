@@ -112,6 +112,94 @@ PROFILE_ORDER = tuple(PROFILE_TARGETS)
 
 
 @dataclass(frozen=True)
+class ActivationWorkItemBinding:
+    work_item_id: str
+    workstream_id: str
+    task_id: str
+
+
+@dataclass(frozen=True)
+class ActivationOwnerDescriptor:
+    owner_id: str
+    plan_id: str
+    plan_path: str
+    manifest_path: str
+    source_work_item_id: str
+    source_workstream_id: str
+    source_task_id: str
+    aggregate_workstream_id: str
+    source_evidence_root: str
+    journey_id: str
+    activation_bindings: Mapping[str, ActivationWorkItemBinding]
+    allowed_intents: tuple[str, ...]
+
+
+SECURE_CONTENT_OWNER = ActivationOwnerDescriptor(
+    owner_id="secure-content",
+    plan_id=PLAN_ID,
+    plan_path=PLAN_PATH,
+    manifest_path=work_item_control.DEFAULT_MANIFEST.as_posix(),
+    source_work_item_id=SOURCE_WORK_ITEM_ID,
+    source_workstream_id=SOURCE_TASK_ID,
+    source_task_id=SOURCE_TASK_ID,
+    aggregate_workstream_id=SOURCE_TASK_ID,
+    source_evidence_root=SOURCE_EVIDENCE_ROOT,
+    journey_id=JOURNEY_ID,
+    activation_bindings=MappingProxyType(
+        {
+            profile_id: ActivationWorkItemBinding(
+                work_item_id=target.activation_work_item_id,
+                workstream_id=target.activation_workstream_id,
+                task_id=SOURCE_TASK_ID,
+            )
+            for profile_id, target in PROFILE_TARGETS.items()
+        }
+    ),
+    allowed_intents=INTENTS,
+)
+CROSS_STATION_SOCIAL_OWNER = ActivationOwnerDescriptor(
+    owner_id="cross-station-social",
+    plan_id="CROSS-STATION-SOCIAL-NATIVE-20261003",
+    plan_path=(
+        "docs/architecture/domains/social/cross-station/execution-plans/"
+        "20261003-native-private-social/plan.md"
+    ),
+    manifest_path=(
+        "docs/architecture/domains/social/cross-station/execution-plans/"
+        "20261003-native-private-social/work-items.yaml"
+    ),
+    source_work_item_id="cross-station-social-source-freeze",
+    source_workstream_id="CSS-SCHEMA-SOURCE",
+    source_task_id="CSS-08A-schema-activation",
+    aggregate_workstream_id="CSS-W-ACTIVATION",
+    source_evidence_root="CSS-08A",
+    journey_id="SOC-SEC-SCHEMA-ACTIVATION",
+    activation_bindings=MappingProxyType(
+        {
+            "four": ActivationWorkItemBinding(
+                work_item_id="cross-station-social-schema-four",
+                workstream_id="CSS-SCHEMA-FOUR",
+                task_id="CSS-08A-schema-activation",
+            ),
+            "fiveArm": ActivationWorkItemBinding(
+                work_item_id="cross-station-social-schema-five-arm",
+                workstream_id="CSS-SCHEMA-FIVEARM",
+                task_id="CSS-08A-schema-activation",
+            ),
+        }
+    ),
+    allowed_intents=("SCHEMA_ACTIVATION",),
+)
+OWNER_DESCRIPTORS = MappingProxyType(
+    {
+        SECURE_CONTENT_OWNER.owner_id: SECURE_CONTENT_OWNER,
+        CROSS_STATION_SOCIAL_OWNER.owner_id: CROSS_STATION_SOCIAL_OWNER,
+    }
+)
+DEFAULT_OWNER_ID = SECURE_CONTENT_OWNER.owner_id
+
+
+@dataclass(frozen=True)
 class DatabaseTargetSpec:
     table: str
     operation: str
@@ -132,6 +220,11 @@ DATABASE_TARGET_SPECS = (
         "post_class = 'private'",
     ),
     DatabaseTargetSpec("social_moment_deliveries", "CLEAR_TABLE"),
+    DatabaseTargetSpec("social_remote_private_commands", "CLEAR_TABLE"),
+    DatabaseTargetSpec("social_remote_private_envelopes", "CLEAR_TABLE"),
+    DatabaseTargetSpec("social_remote_private_resources", "CLEAR_TABLE"),
+    DatabaseTargetSpec("social_remote_private_tombstones", "CLEAR_TABLE"),
+    DatabaseTargetSpec("social_private_resource_invalidations", "CLEAR_TABLE"),
     DatabaseTargetSpec("social_private_object_grants", "CLEAR_TABLE"),
     DatabaseTargetSpec("social_private_objects", "CLEAR_TABLE"),
     DatabaseTargetSpec("social_private_object_parts", "CLEAR_TABLE"),
@@ -422,12 +515,35 @@ def _target(profile_id: str) -> ProfileTarget:
         raise ValidationError(f"unsupported profile {profile_id!r}") from error
 
 
-def _work_item(target: ProfileTarget, intent: str) -> tuple[str, str, str]:
+def _owner_descriptor(owner_id: str) -> ActivationOwnerDescriptor:
+    try:
+        return OWNER_DESCRIPTORS[owner_id]
+    except KeyError as error:
+        raise ValidationError(
+            f"unsupported schema activation owner {owner_id!r}"
+        ) from error
+
+
+def _work_item(
+    target: ProfileTarget,
+    intent: str,
+    owner: ActivationOwnerDescriptor = SECURE_CONTENT_OWNER,
+) -> tuple[str, str, str]:
+    if intent not in owner.allowed_intents:
+        raise ValidationError(
+            f"owner {owner.owner_id!r} does not support reset intent {intent!r}"
+        )
     if intent == "SCHEMA_ACTIVATION":
+        binding = owner.activation_bindings.get(target.profile_id)
+        if binding is None:
+            raise ValidationError(
+                f"owner {owner.owner_id!r} does not support profile "
+                f"{target.profile_id!r}"
+            )
         return (
-            target.activation_work_item_id,
-            target.activation_workstream_id,
-            SOURCE_TASK_ID,
+            binding.work_item_id,
+            binding.workstream_id,
+            binding.task_id,
         )
     if intent == "FINAL_CUT":
         return (
@@ -583,6 +699,7 @@ def validate_source_receipt(
     identity: Mapping[str, Any],
     generation_id: str,
     declaration_digest: str,
+    owner: ActivationOwnerDescriptor = SECURE_CONTENT_OWNER,
 ) -> Mapping[str, Any]:
     receipt = _require_exact_keys(
         value,
@@ -607,8 +724,8 @@ def validate_source_receipt(
         "kind": SOURCE_RECEIPT_KIND,
         "state": "COMPLETE",
         "purpose": "SOURCE_OWNER_CHECKPOINT",
-        "plan_id": PLAN_ID,
-        "task_id": SOURCE_TASK_ID,
+        "plan_id": owner.plan_id,
+        "task_id": owner.source_task_id,
         "workspace_id": identity["workspaceId"],
         "source_commit": generation_id,
         "declaration_digest": declaration_digest,
@@ -632,6 +749,7 @@ def validate_source_result(
     value: Any,
     *,
     generation_id: str | None = None,
+    owner: ActivationOwnerDescriptor = SECURE_CONTENT_OWNER,
 ) -> Mapping[str, Any]:
     result = _require_exact_keys(
         value,
@@ -653,7 +771,7 @@ def validate_source_result(
     if (
         result.get("schema_version") != SCHEMA_VERSION
         or result.get("kind") != SOURCE_RESULT_KIND
-        or result.get("workstream_id") != SOURCE_TASK_ID
+        or result.get("workstream_id") != owner.source_workstream_id
         or result.get("status") != "PASS"
     ):
         raise ValidationError("source freeze result identity is invalid")
@@ -937,6 +1055,7 @@ def validate_reset_invocation(
     target: ProfileTarget,
     task_id: str,
     now: datetime | None = None,
+    owner: ActivationOwnerDescriptor = SECURE_CONTENT_OWNER,
 ) -> Mapping[str, Any]:
     invocation = _require_exact_keys(
         value,
@@ -965,7 +1084,7 @@ def validate_reset_invocation(
         "reset_id": manifest["reset_id"],
         "reset_intent": manifest["reset_intent"],
         "reset_manifest_digest": manifest["manifest_digest"],
-        "plan_id": PLAN_ID,
+        "plan_id": owner.plan_id,
         "task_id": task_id,
         "declaration_digest": declaration["declarationDigest"],
         "source_commit": manifest["source_commit"],
@@ -1300,15 +1419,16 @@ def _validate_declaration(
     task_id: str,
     generation_id: str,
     target: ProfileTarget | None,
+    owner: ActivationOwnerDescriptor = SECURE_CONTENT_OWNER,
 ) -> Mapping[str, Any]:
     declaration = _require_mapping(value, "Development declaration")
     expected = {
         "declarationId": f"{work_item_id}-{identity['workspaceId']}",
         "workItemId": work_item_id,
-        "planId": PLAN_ID,
-        "planPath": PLAN_PATH,
+        "planId": owner.plan_id,
+        "planPath": owner.plan_path,
         "taskId": task_id,
-        "journeyId": JOURNEY_ID,
+        "journeyId": owner.journey_id,
         "workspaceId": identity["workspaceId"],
         "branch": identity["branch"],
         "state": "ACTIVE",
@@ -1789,8 +1909,15 @@ class SchemaActivationOwner:
         clock: Clock | None = None,
         id_factory: IdFactory | None = None,
         command_runner: CommandRunner = subprocess.run,
+        owner_descriptor: ActivationOwnerDescriptor = SECURE_CONTENT_OWNER,
     ) -> None:
         self.repo_root = repo_root.resolve()
+        registered_owner = _owner_descriptor(owner_descriptor.owner_id)
+        if owner_descriptor != registered_owner:
+            raise ValidationError(
+                "schema activation owner descriptor is not registered exactly"
+            )
+        self.owner_descriptor = registered_owner
         self.command_runner = command_runner
         self.identity_loader = identity_loader or self._load_identity
         self.declaration_loader = declaration_loader or self._load_declaration
@@ -1842,7 +1969,7 @@ class SchemaActivationOwner:
         *,
         generation_id: str,
         budget_seconds: int,
-        work_item_id: str = SOURCE_WORK_ITEM_ID,
+        work_item_id: str | None = None,
     ) -> Mapping[str, Any]:
         generation = _require_text(
             generation_id, "generation_id", pattern=GIT_COMMIT
@@ -1851,7 +1978,7 @@ class SchemaActivationOwner:
             budget_seconds, "budget_seconds", minimum=1
         )
         source_work_item_id = _require_text(
-            work_item_id,
+            work_item_id or self.owner_descriptor.source_work_item_id,
             "work_item_id",
             pattern=IDENTIFIER,
         )
@@ -1860,9 +1987,10 @@ class SchemaActivationOwner:
             self.declaration_loader(source_work_item_id),
             identity=identity,
             work_item_id=source_work_item_id,
-            task_id=SOURCE_TASK_ID,
+            task_id=self.owner_descriptor.source_task_id,
             generation_id=generation,
             target=None,
+            owner=self.owner_descriptor,
         )
         self.clean_checker()
         directory = self._source_directory(generation)
@@ -1877,9 +2005,9 @@ class SchemaActivationOwner:
             "schema_version": SCHEMA_VERSION,
             "kind": "secure-content-source-freeze-request",
             "purpose": "SOURCE_OWNER_CHECKPOINT",
-            "plan_id": PLAN_ID,
-            "plan_path": PLAN_PATH,
-            "task_id": SOURCE_TASK_ID,
+            "plan_id": self.owner_descriptor.plan_id,
+            "plan_path": self.owner_descriptor.plan_path,
+            "task_id": self.owner_descriptor.source_task_id,
             "work_item_id": source_work_item_id,
             "workspace_id": identity["workspaceId"],
             "branch": identity["branch"],
@@ -1893,6 +2021,7 @@ class SchemaActivationOwner:
             identity=identity,
             generation_id=generation,
             declaration_digest=declaration["declarationDigest"],
+            owner=self.owner_descriptor,
         )
         receipt_path = write_immutable_json(
             directory / "source-checkpoint-receipt.json",
@@ -1904,7 +2033,7 @@ class SchemaActivationOwner:
             {
                 "schema_version": SCHEMA_VERSION,
                 "kind": SOURCE_RESULT_KIND,
-                "workstream_id": SOURCE_TASK_ID,
+                "workstream_id": self.owner_descriptor.source_workstream_id,
                 "generation_id": generation,
                 "source_commit": generation,
                 "workspace_id": identity["workspaceId"],
@@ -1915,7 +2044,11 @@ class SchemaActivationOwner:
             },
             field="result_digest",
         )
-        validate_source_result(result, generation_id=generation)
+        validate_source_result(
+            result,
+            generation_id=generation,
+            owner=self.owner_descriptor,
+        )
         write_immutable_json(directory / "result.json", result)
         return result
 
@@ -1938,7 +2071,9 @@ class SchemaActivationOwner:
         )
         target = _target(profile_id)
         work_item_id, expected_workstream, task_id = _work_item(
-            target, checked_intent
+            target,
+            checked_intent,
+            self.owner_descriptor,
         )
         if workstream_id != expected_workstream:
             raise ValidationError(
@@ -1961,6 +2096,7 @@ class SchemaActivationOwner:
             task_id=task_id,
             generation_id=generation,
             target=target,
+            owner=self.owner_descriptor,
         )
         self.clean_checker()
         source_result = self._load_source_result(generation)
@@ -1981,11 +2117,11 @@ class SchemaActivationOwner:
         request = {
             "schema_version": SCHEMA_VERSION,
             "kind": "secure-content-maintenance-boundary-request",
-            "plan_id": PLAN_ID,
+            "plan_id": self.owner_descriptor.plan_id,
             "task_id": task_id,
             "workstream_id": expected_workstream,
             "work_item_id": work_item_id,
-            "journey_id": JOURNEY_ID,
+            "journey_id": self.owner_descriptor.journey_id,
             "reset_id": reset_identifier,
             "reset_intent": checked_intent,
             "source_commit": generation,
@@ -2052,6 +2188,7 @@ class SchemaActivationOwner:
                 target=target,
                 task_id=task_id,
                 now=self.clock(),
+                owner=self.owner_descriptor,
             )
             first_invocation_directory = (
                 directory
@@ -2115,6 +2252,7 @@ class SchemaActivationOwner:
                     declaration=accepted_declaration,
                     target=target,
                     task_id=task_id,
+                    owner=self.owner_descriptor,
                 )
                 if (
                     invocation["invocation_digest"]
@@ -2159,6 +2297,7 @@ class SchemaActivationOwner:
                         target=target,
                         task_id=task_id,
                         now=self.clock(),
+                        owner=self.owner_descriptor,
                     )
                     invocation_directory = (
                         directory
@@ -2329,12 +2468,16 @@ class SchemaActivationOwner:
         aggregate_directory = self._aggregate_directory(
             checked_intent, generation
         )
-        task_id = SOURCE_TASK_ID if checked_intent == "SCHEMA_ACTIVATION" else "W12"
+        task_id = (
+            self.owner_descriptor.source_task_id
+            if checked_intent == "SCHEMA_ACTIVATION"
+            else "W12"
+        )
         result = _with_digest(
             {
                 "schema_version": SCHEMA_VERSION,
                 "kind": AGGREGATE_RESULT_KIND,
-                "workstream_id": task_id,
+                "workstream_id": self.owner_descriptor.aggregate_workstream_id,
                 "task_id": task_id,
                 "generation_id": generation,
                 "source_commit": generation,
@@ -2379,7 +2522,7 @@ class SchemaActivationOwner:
             try:
                 projection = validate_plan_lifecycle_source(
                     repo_root=self.repo_root,
-                    plan_path=PLAN_PATH,
+                    plan_path=self.owner_descriptor.plan_path,
                     runtime_source_commit=generation_id,
                     control_head=identity["head"],
                 )
@@ -2439,9 +2582,9 @@ class SchemaActivationOwner:
     ) -> Mapping[str, Any]:
         try:
             projection = work_item_control.load_projection(
-                self.repo_root / work_item_control.DEFAULT_MANIFEST,
+                self.repo_root / self.owner_descriptor.manifest_path,
                 workstream=workstream_id,
-                journey=JOURNEY_ID,
+                journey=self.owner_descriptor.journey_id,
                 repo_root=self.repo_root,
             )
             if projection.work_item_id != work_item_id:
@@ -2479,7 +2622,12 @@ class SchemaActivationOwner:
             raise ValidationError("schema activation requires a clean exact source")
 
     def _source_directory(self, generation_id: str) -> Path:
-        return self.result_root / SOURCE_EVIDENCE_ROOT / "source" / generation_id
+        return (
+            self.result_root
+            / self.owner_descriptor.source_evidence_root
+            / "source"
+            / generation_id
+        )
 
     def _source_result_ref(self, generation_id: str) -> Mapping[str, str]:
         return _relative_ref(
@@ -2490,7 +2638,11 @@ class SchemaActivationOwner:
     def _load_source_result(self, generation_id: str) -> Mapping[str, Any]:
         path = self._source_directory(generation_id) / "result.json"
         result = read_json_artifact(path, "source freeze result")
-        validate_source_result(result, generation_id=generation_id)
+        validate_source_result(
+            result,
+            generation_id=generation_id,
+            owner=self.owner_descriptor,
+        )
         receipt_path, receipt = read_referenced_artifact(
             self.result_root,
             result["checkpoint_receipt_ref"],
@@ -2506,6 +2658,7 @@ class SchemaActivationOwner:
                 "source receipt declaration_digest",
                 pattern=SHA256,
             ),
+            owner=self.owner_descriptor,
         )
         if receipt.get("receipt_digest") != result["checkpoint_receipt_digest"]:
             raise ValidationError("source checkpoint receipt identity mismatch")
@@ -2520,7 +2673,7 @@ class SchemaActivationOwner:
         if intent == "SCHEMA_ACTIVATION":
             return (
                 self.result_root
-                / SOURCE_EVIDENCE_ROOT
+                / self.owner_descriptor.source_evidence_root
                 / "activation"
                 / generation_id
                 / profile_id
@@ -2546,7 +2699,7 @@ class SchemaActivationOwner:
         if intent == "SCHEMA_ACTIVATION":
             return (
                 self.result_root
-                / SOURCE_EVIDENCE_ROOT
+                / self.owner_descriptor.source_evidence_root
                 / "activation"
                 / generation_id
                 / "aggregate"
@@ -2559,8 +2712,12 @@ class SchemaActivationOwner:
         intended_directory: Path,
     ) -> None:
         candidates = [
-            *self.result_root.glob(
-                f"{SOURCE_EVIDENCE_ROOT}/activation/*/*/{reset_id}"
+            *(
+                candidate
+                for descriptor in OWNER_DESCRIPTORS.values()
+                for candidate in self.result_root.glob(
+                    f"{descriptor.source_evidence_root}/activation/*/*/{reset_id}"
+                )
             ),
             *self.result_root.glob(f"W12/final-cut/*/*/{reset_id}"),
         ]
@@ -2623,7 +2780,7 @@ class SchemaActivationOwner:
                 "reset_id": manifest["reset_id"],
                 "reset_intent": manifest["reset_intent"],
                 "reset_manifest_digest": manifest["manifest_digest"],
-                "plan_id": PLAN_ID,
+                "plan_id": self.owner_descriptor.plan_id,
                 "task_id": task_id,
                 "declaration_digest": declaration["declarationDigest"],
                 "source_commit": manifest["source_commit"],
@@ -2662,7 +2819,7 @@ class SchemaActivationOwner:
                 "request_id": request_id,
                 "reset_id": request["reset_id"],
                 "reset_intent": request["reset_intent"],
-                "plan_id": PLAN_ID,
+                "plan_id": self.owner_descriptor.plan_id,
                 "task_id": task_id,
                 "declaration_digest": declaration["declarationDigest"],
                 "source_commit": request["source_commit"],
@@ -2748,7 +2905,11 @@ class SchemaActivationOwner:
                 "result_digest",
             },
         )
-        _, workstream_id, task_id = _work_item(target, intent)
+        _, workstream_id, task_id = _work_item(
+            target,
+            intent,
+            self.owner_descriptor,
+        )
         expected = {
             "schema_version": SCHEMA_VERSION,
             "kind": PROFILE_RESULT_KIND,
@@ -2800,7 +2961,11 @@ class SchemaActivationOwner:
             _, source_result = read_referenced_artifact(
                 self.result_root, result["source_freeze_ref"], "source freeze result"
             )
-            validate_source_result(source_result, generation_id=generation_id)
+            validate_source_result(
+                source_result,
+                generation_id=generation_id,
+                owner=self.owner_descriptor,
+            )
             if source_result["result_digest"] != result["source_freeze_digest"]:
                 raise ValidationError("profile result source freeze digest mismatch")
             _, manifest = read_referenced_artifact(
@@ -2857,6 +3022,7 @@ class SchemaActivationOwner:
                 declaration={"declarationDigest": result["declaration_digest"]},
                 target=target,
                 task_id=task_id,
+                owner=self.owner_descriptor,
             )
             if invocation["invocation_digest"] != result["invocation_digest"]:
                 raise ValidationError("profile result invocation digest mismatch")
@@ -2918,11 +3084,15 @@ class SchemaActivationOwner:
                 "result_digest",
             },
         )
-        task_id = SOURCE_TASK_ID if intent == "SCHEMA_ACTIVATION" else "W12"
+        task_id = (
+            self.owner_descriptor.source_task_id
+            if intent == "SCHEMA_ACTIVATION"
+            else "W12"
+        )
         expected = {
             "schema_version": SCHEMA_VERSION,
             "kind": AGGREGATE_RESULT_KIND,
-            "workstream_id": task_id,
+            "workstream_id": self.owner_descriptor.aggregate_workstream_id,
             "task_id": task_id,
             "generation_id": generation_id,
             "source_commit": generation_id,
@@ -2995,12 +3165,17 @@ def _parser() -> argparse.ArgumentParser:
         description="Own SC-D23/SC-D24 schema activation artifacts",
     )
     parser.add_argument("--result-root", type=Path)
+    parser.add_argument(
+        "--owner",
+        choices=tuple(OWNER_DESCRIPTORS),
+        default=DEFAULT_OWNER_ID,
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     freeze = subparsers.add_parser("source-freeze")
     freeze.add_argument("--generation-id", required=True)
     freeze.add_argument("--budget-seconds", required=True, type=int)
-    freeze.add_argument("--work-item", default=SOURCE_WORK_ITEM_ID)
+    freeze.add_argument("--work-item")
 
     run = subparsers.add_parser("run")
     run.add_argument("--workstream", required=True)
@@ -3028,6 +3203,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     owner = SchemaActivationOwner(
         repo_root=repo_root,
         result_root=arguments.result_root,
+        owner_descriptor=_owner_descriptor(arguments.owner),
         maintenance_boundary=(
             LeaseWrappedSSHMaintenanceBoundary(
                 repo_root=repo_root,

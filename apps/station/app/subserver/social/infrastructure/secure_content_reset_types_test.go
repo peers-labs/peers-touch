@@ -65,19 +65,24 @@ func TestResetTaskAllowlistMatchesIntentAndProfile(t *testing.T) {
 	now := time.Date(2026, 9, 26, 4, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name      string
+		planID    string
 		intent    ResetIntent
 		profileID string
 		taskID    string
 		wantError bool
 	}{
-		{"activation four", ResetIntentSchemaActivation, "four", "W12D", false},
-		{"activation fiveArm", ResetIntentSchemaActivation, "fiveArm", "W12D", false},
-		{"stale activation four", ResetIntentSchemaActivation, "four", "W12A", true},
-		{"stale activation fiveArm", ResetIntentSchemaActivation, "fiveArm", "W12A", true},
-		{"final four", ResetIntentFinalCut, "four", "W12", false},
-		{"final fiveArm", ResetIntentFinalCut, "fiveArm", "W12", false},
-		{"wrong final four", ResetIntentFinalCut, "four", "W12D", true},
-		{"wrong final fiveArm", ResetIntentFinalCut, "fiveArm", "W12D", true},
+		{"activation four", SecureContentResetPlanID, ResetIntentSchemaActivation, "four", "W12D", false},
+		{"activation fiveArm", SecureContentResetPlanID, ResetIntentSchemaActivation, "fiveArm", "W12D", false},
+		{"stale activation four", SecureContentResetPlanID, ResetIntentSchemaActivation, "four", "W12A", true},
+		{"stale activation fiveArm", SecureContentResetPlanID, ResetIntentSchemaActivation, "fiveArm", "W12A", true},
+		{"final four", SecureContentResetPlanID, ResetIntentFinalCut, "four", "W12", false},
+		{"final fiveArm", SecureContentResetPlanID, ResetIntentFinalCut, "fiveArm", "W12", false},
+		{"wrong final four", SecureContentResetPlanID, ResetIntentFinalCut, "four", "W12D", true},
+		{"wrong final fiveArm", SecureContentResetPlanID, ResetIntentFinalCut, "fiveArm", "W12D", true},
+		{"cross-station activation four", CrossStationSocialResetPlanID, ResetIntentSchemaActivation, "four", CrossStationSocialActivationTask, false},
+		{"cross-station activation fiveArm", CrossStationSocialResetPlanID, ResetIntentSchemaActivation, "fiveArm", CrossStationSocialActivationTask, false},
+		{"cross-station final cut denied", CrossStationSocialResetPlanID, ResetIntentFinalCut, "four", "W12", true},
+		{"unknown plan denied", "OTHER-PLAN", ResetIntentSchemaActivation, "four", CrossStationSocialActivationTask, true},
 	}
 
 	for _, test := range tests {
@@ -93,7 +98,7 @@ func TestResetTaskAllowlistMatchesIntentAndProfile(t *testing.T) {
 				RequestID:             "audit-task-allowlist",
 				ResetID:               "reset-task-allowlist",
 				ResetIntent:           test.intent,
-				PlanID:                SecureContentResetPlanID,
+				PlanID:                test.planID,
 				TaskID:                test.taskID,
 				DeclarationDigest:     strings.Repeat("a", 64),
 				SourceCommit:          strings.Repeat("b", 40),

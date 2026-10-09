@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	securecontentkernel "github.com/peers-labs/peers-touch/station/app/internal/securecontent"
+	actoridentitydomain "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
 	keyexchangedomain "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	socialdomain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
@@ -133,8 +135,8 @@ func TestPrivateContentServicePrepareSubmitReplay(t *testing.T) {
 	attestation := bobRead.GetResource().GetPrivateContent().GetVerification().
 		GetStationSigningKeyAttestation()
 	if attestation.GetStationPeerId() != "station-local" ||
-		attestation.GetProofSigningKeyId() != "station-key" ||
-		attestation.GetAttestingSigningKeyId() != "station-key" ||
+		attestation.GetProofSigningKeyId() != proof.GetStationSigningKeyId() ||
+		attestation.GetAttestingSigningKeyId() != proof.GetStationSigningKeyId() ||
 		!attestation.GetExpiresAt().AsTime().Equal(
 			attestation.GetIssuedAt().AsTime().Add(5*time.Minute),
 		) {
@@ -598,6 +600,87 @@ func TestPrivateContentServiceRejectsStalePreKeyClaimsAtomically(t *testing.T) {
 	)
 }
 
+func TestPrivateContentServiceClassifiesPreKeyValidationFailures(t *testing.T) {
+	tests := []struct {
+		name      string
+		slug      string
+		code      keyexchangedomain.ErrorCode
+		wantState string
+	}{
+		{
+			name:      "invalid material is terminal",
+			slug:      "invalid-material",
+			code:      keyexchangedomain.ErrorCodeInvalidMaterial,
+			wantState: dbmodel.SocialPrivatePlanStateRejectedStale,
+		},
+		{
+			name:      "dependency failure is retryable",
+			slug:      "dependency",
+			code:      keyexchangedomain.ErrorCodeDependency,
+			wantState: dbmodel.SocialPrivatePlanStatePrepared,
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newPrivateContentServiceFixture(t)
+			ctx := context.Background()
+			prepared, err := fixture.service.PreparePrivateMoment(
+				ctx,
+				fixture.author,
+				privateMomentPrepareRequest(
+					"prepare-validation-"+testCase.slug,
+					"content-validation-"+testCase.slug,
+				),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fixture.keyExchange.validationError = keyexchangedomain.NewError(
+				testCase.code,
+				"test.validate_content_prekey_claims",
+				"claim",
+				"validation failed",
+			)
+			submit := privateTextSubmitRequest(
+				t,
+				prepared.GetPlan(),
+				fixture.author.Endpoint,
+				fixture.authorPrivateKey,
+				"submit-validation-"+testCase.slug,
+				"ciphertext-validation-"+testCase.slug,
+			)
+			if _, err := fixture.service.SubmitPrivateMoment(
+				ctx,
+				fixture.author.Endpoint,
+				submit,
+			); err == nil {
+				t.Fatal("validation failure unexpectedly committed")
+			}
+			var plan dbmodel.SocialPrivateContentPlan
+			if err := fixture.database.First(
+				&plan,
+				"plan_id = ?",
+				prepared.GetPlan().GetPlanId(),
+			).Error; err != nil {
+				t.Fatal(err)
+			}
+			if plan.State != testCase.wantState {
+				t.Fatalf(
+					"validation failure plan state = %q, want %q",
+					plan.State,
+					testCase.wantState,
+				)
+			}
+			assertPrivateContentCount(
+				t,
+				fixture.database,
+				&dbmodel.SocialPrivateContentPost{},
+				0,
+			)
+		})
+	}
+}
+
 func TestPrivateContentServiceExpiredPreparingDoesNotClaimPreKeys(t *testing.T) {
 	fixture := newPrivateContentServiceFixture(t)
 	ctx := context.Background()
@@ -655,6 +738,14 @@ func TestPrivateContentServiceExpiredPreparingDoesNotClaimPreKeys(t *testing.T) 
 		t.Fatal(err)
 	}
 	audienceHash := sha256.Sum256(audienceBytes)
+	recipientLocalitiesBytes, err :=
+		socialdomain.CanonicalRecipientLocalitiesBytes(
+			fixture.audiences.snapshot.RecipientLocalities,
+		)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipientLocalitiesHash := sha256.Sum256(recipientLocalitiesBytes)
 	emptyGroupSnapshotHash := sha256.Sum256(nil)
 	emptySubtypeHash := sha256.Sum256(nil)
 	if _, err := fixture.store.ClaimPreparing(
@@ -685,6 +776,8 @@ func TestPrivateContentServiceExpiredPreparingDoesNotClaimPreKeys(t *testing.T) 
 		infrastructure.PrivatePrepareBinding{
 			AudienceBytes:                 audienceBytes,
 			AudienceSHA256:                audienceHash[:],
+			RecipientLocalitiesBytes:      recipientLocalitiesBytes,
+			RecipientLocalitiesSHA256:     recipientLocalitiesHash[:],
 			GroupRecipientSnapshotSHA256:  emptyGroupSnapshotHash[:],
 			SubtypePrepareAuthoritySHA256: emptySubtypeHash[:],
 		},
@@ -1043,6 +1136,26 @@ func TestPrivateContentServiceGetPrivateMomentDistinguishesEndpointFailure(
 			validation: fmt.Errorf(
 				"test endpoint inactive: %w",
 				ErrPrivateContentInactiveEndpoint,
+			),
+			wantCode: socialdomain.PrivateContentNotFound,
+		},
+		{
+			name: "missing actor identity device stays private",
+			validation: actoridentitydomain.NewError(
+				actoridentitydomain.ErrorCodeDeviceNotFound,
+				"actor_identity.get_endpoint_manifest",
+				"active_endpoints",
+				"has no active locally verified device",
+			),
+			wantCode: socialdomain.PrivateContentNotFound,
+		},
+		{
+			name: "revoked actor identity device stays private",
+			validation: actoridentitydomain.NewError(
+				actoridentitydomain.ErrorCodeDeviceRevoked,
+				"actor_identity.get_endpoint_manifest",
+				"device",
+				"is revoked",
 			),
 			wantCode: socialdomain.PrivateContentNotFound,
 		},
@@ -1723,6 +1836,7 @@ type privateContentServiceFixture struct {
 	store            *infrastructure.GORMPrivateContentStore
 	author           socialdomain.PrivateContentAuthor
 	authorPrivateKey ed25519.PrivateKey
+	stationSigner    privateContentTestSigner
 	audiences        *privateContentTestAudience
 	originalSnapshot socialdomain.FriendsSnapshot
 	clock            *privateContentTestClock
@@ -1731,6 +1845,13 @@ type privateContentServiceFixture struct {
 
 func newPrivateContentServiceFixture(
 	t *testing.T,
+) *privateContentServiceFixture {
+	return newPrivateContentServiceFixtureWithStoreOptions(t)
+}
+
+func newPrivateContentServiceFixtureWithStoreOptions(
+	t *testing.T,
+	options ...infrastructure.PrivateContentStoreOption,
 ) *privateContentServiceFixture {
 	t.Helper()
 	database, err := gorm.Open(
@@ -1752,7 +1873,7 @@ func newPrivateContentServiceFixture(
 			t.Errorf("close private-content database: %v", closeErr)
 		}
 	})
-	store, err := infrastructure.NewGORMPrivateContentStore(database)
+	store, err := infrastructure.NewGORMPrivateContentStore(database, options...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1767,6 +1888,16 @@ func newPrivateContentServiceFixture(
 		t.Fatal(err)
 	}
 	if err := friendStore.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	deliveryStore, err := federationdelivery.NewGORMRepository(
+		database,
+		federationdelivery.SystemClock{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := deliveryStore.Migrate(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if err := database.Exec(`
@@ -1796,6 +1927,13 @@ INSERT INTO social_relationship_projections (
 	if err != nil {
 		t.Fatal(err)
 	}
+	stationPublicDER, err := x509.MarshalPKIXPublicKey(
+		stationPrivateKey.Public(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stationKeyID := authfed.KidFromPubDER(stationPublicDER)
 	author := socialdomain.PrivateContentAuthor{
 		Endpoint: &actormodel.ActorDeviceRef{
 			Actor: &actormodel.ActorRef{
@@ -1822,6 +1960,11 @@ INSERT INTO social_relationship_projections (
 	clock := &privateContentTestClock{
 		now: time.Date(2026, 9, 14, 10, 0, 0, 0, time.UTC),
 	}
+	stationSigner := privateContentTestSigner{
+		stationID:  "station-local",
+		keyID:      stationKeyID,
+		privateKey: stationPrivateKey,
+	}
 	service, err := NewPrivateContentService(
 		store,
 		audiences,
@@ -1829,10 +1972,7 @@ INSERT INTO social_relationship_projections (
 		privateContentTestGroups{},
 		privateContentTestRecipients{author: author.Endpoint},
 		keyExchange,
-		privateContentTestSigner{
-			keyID:      "station-key",
-			privateKey: stationPrivateKey,
-		},
+		stationSigner,
 		privateContentTestAuthorVerifier{publicKey: authorPublicKey},
 		clock,
 	)
@@ -1845,6 +1985,7 @@ INSERT INTO social_relationship_projections (
 		store:            store,
 		author:           author,
 		authorPrivateKey: authorPrivateKey,
+		stationSigner:    stationSigner,
 		audiences:        audiences,
 		originalSnapshot: snapshot,
 		clock:            clock,
@@ -1855,6 +1996,7 @@ INSERT INTO social_relationship_projections (
 type privateContentTestAudience struct {
 	snapshot           socialdomain.FriendsSnapshot
 	postCalls          int
+	lastPostAuthorPTID string
 	repostPrepareCalls int
 	repostSubmitCalls  int
 	repostPrepareErr   error
@@ -1862,11 +2004,12 @@ type privateContentTestAudience struct {
 }
 
 func (a *privateContentTestAudience) ResolveFriendsPostSnapshot(
-	context.Context,
-	federationdelivery.Transaction,
-	string,
+	_ context.Context,
+	_ federationdelivery.Transaction,
+	authorPTID string,
 ) (socialdomain.FriendsSnapshot, error) {
 	a.postCalls++
+	a.lastPostAuthorPTID = authorPTID
 	return a.snapshot, nil
 }
 
@@ -1953,11 +2096,13 @@ func (a *privateContentTestAudience) ValidateSubmit(
 
 type privateContentTestRecipients struct {
 	author        *actormodel.ActorDeviceRef
+	devices       map[string]string
 	validationErr error
 }
 
 func (r privateContentTestRecipients) ResolveRecipientLocalities(
 	_ context.Context,
+	_ string,
 	localStationPeerID string,
 	recipients []string,
 ) ([]socialdomain.RecipientLocality, error) {
@@ -1988,7 +2133,10 @@ func (r privateContentTestRecipients) ResolveContentPreKeyTargets(
 		len(actors)*2,
 	)
 	for _, actorPTID := range actors {
-		deviceID := "bob-device"
+		deviceID := r.devices[actorPTID]
+		if deviceID == "" {
+			deviceID = "bob-device"
+		}
 		if actorPTID == r.author.GetActor().GetPtid() {
 			deviceID = r.author.GetDeviceId()
 		}
@@ -2038,22 +2186,52 @@ func (privateContentTestGroups) WithSubmitFence(
 }
 
 type privateContentTestKeyExchange struct {
-	request    *securecontentpb.ClaimContentPreKeysRequest
-	response   *securecontentpb.ClaimContentPreKeysResponse
-	stale      bool
-	claimCalls int
+	request                                   *securecontentpb.ClaimContentPreKeysRequest
+	response                                  *securecontentpb.ClaimContentPreKeysResponse
+	sourceStationPeerID                       string
+	recipientLocalities                       []socialdomain.RecipientLocality
+	publicKeysByTarget                        map[string][]byte
+	claimError                                error
+	validationError                           error
+	remoteValidationError                     error
+	remoteValidationCalls                     int
+	submitTransactionStarted                  *bool
+	remoteValidationObservedSubmitTransaction bool
+	stale                                     bool
+	claimCalls                                int
 }
 
 func (k *privateContentTestKeyExchange) ClaimContentPreKeys(
 	_ context.Context,
+	sourceStationPeerID string,
+	recipientLocalities []socialdomain.RecipientLocality,
 	request *securecontentpb.ClaimContentPreKeysRequest,
 ) (*securecontentpb.ClaimContentPreKeysResponse, error) {
 	k.claimCalls++
+	k.sourceStationPeerID = sourceStationPeerID
+	k.recipientLocalities = append(
+		[]socialdomain.RecipientLocality(nil),
+		recipientLocalities...,
+	)
+	if k.claimError != nil {
+		return nil, k.claimError
+	}
 	k.request = proto.Clone(
 		request,
 	).(*securecontentpb.ClaimContentPreKeysRequest)
 	response := &securecontentpb.ClaimContentPreKeysResponse{}
 	for index, target := range request.GetTargets() {
+		publicKey := bytes.Repeat([]byte{byte(index + 1)}, 32)
+		targetKey := fmt.Sprintf(
+			"%d:%s:%s",
+			target.GetKind(),
+			target.GetEndpoint().GetActor().GetPtid()+
+				target.GetRecoveryActor().GetPtid(),
+			target.GetEndpoint().GetDeviceId(),
+		)
+		if fixed := k.publicKeysByTarget[targetKey]; len(fixed) != 0 {
+			publicKey = clonePrivateTestBytes(fixed)
+		}
 		prekey := &securecontentpb.ContentOneTimePreKey{
 			Kind: target.GetKind(),
 			KeyId: fmt.Sprintf(
@@ -2061,7 +2239,7 @@ func (k *privateContentTestKeyExchange) ClaimContentPreKeys(
 				k.claimCalls,
 				index,
 			),
-			X25519PublicKey:        bytes.Repeat([]byte{byte(index + 1)}, 32),
+			X25519PublicKey:        publicKey,
 			ProfileOrRecoveryEpoch: uint64(index + 1),
 			IssuerSignature:        bytes.Repeat([]byte{byte(index + 11)}, 64),
 		}
@@ -2098,9 +2276,31 @@ func (k *privateContentTestKeyExchange) ClaimContentPreKeys(
 	return response, nil
 }
 
+func (k *privateContentTestKeyExchange) ValidateRemoteContentPreKeyClaims(
+	_ context.Context,
+	sourceStationPeerID string,
+	recipientLocalities []socialdomain.RecipientLocality,
+	_ *securecontentpb.ClaimContentPreKeysRequest,
+	_ *securecontentpb.ClaimContentPreKeysResponse,
+) error {
+	k.remoteValidationCalls++
+	if k.submitTransactionStarted != nil &&
+		*k.submitTransactionStarted {
+		k.remoteValidationObservedSubmitTransaction = true
+	}
+	for _, locality := range recipientLocalities {
+		if locality.HomeStationPeerID != sourceStationPeerID {
+			return k.remoteValidationError
+		}
+	}
+	return nil
+}
+
 func (k *privateContentTestKeyExchange) ValidateContentPreKeyClaims(
 	_ context.Context,
 	transaction federationdelivery.Transaction,
+	_ string,
+	_ []socialdomain.RecipientLocality,
 	request *securecontentpb.ClaimContentPreKeysRequest,
 	response *securecontentpb.ClaimContentPreKeysResponse,
 ) error {
@@ -2115,6 +2315,9 @@ func (k *privateContentTestKeyExchange) ValidateContentPreKeyClaims(
 			"is stale",
 		)
 	}
+	if k.validationError != nil {
+		return k.validationError
+	}
 	if !proto.Equal(request, k.request) || !proto.Equal(response, k.response) {
 		return fmt.Errorf("claim request or response changed")
 	}
@@ -2122,8 +2325,11 @@ func (k *privateContentTestKeyExchange) ValidateContentPreKeyClaims(
 }
 
 type privateContentTestSigner struct {
-	keyID      string
-	privateKey ed25519.PrivateKey
+	stationID         string
+	keyID             string
+	privateKey        ed25519.PrivateKey
+	importedProofKeys map[string][]byte
+	trustImportedErr  error
 }
 
 func (s privateContentTestSigner) SigningKeyID(context.Context) (string, error) {
@@ -2189,16 +2395,103 @@ func (s privateContentTestSigner) AttestContentProofVerificationKey(
 		return nil, fmt.Errorf("unexpected proof key ID")
 	}
 	publicKey := s.privateKey.Public().(ed25519.PublicKey)
-	return &securecontentpb.StationContentSigningKeyAttestation{
+	attestation := &securecontentpb.StationContentSigningKeyAttestation{
 		FormatVersion:         1,
-		StationPeerId:         "station-local",
+		StationPeerId:         s.stationID,
 		ProofSigningKeyId:     signingKeyID,
 		ProofEd25519PublicKey: append([]byte(nil), publicKey...),
 		AttestingSigningKeyId: s.keyID,
 		IssuedAt:              timestamppb.New(now),
 		ExpiresAt:             timestamppb.New(now.Add(5 * time.Minute)),
-		StationSignature:      ed25519.Sign(s.privateKey, []byte("test-attestation")),
-	}, nil
+	}
+	signingBytes, err := authfed.ContentProofKeyAttestationSigningBytes(
+		attestation,
+	)
+	if err != nil {
+		return nil, err
+	}
+	attestation.StationSignature = ed25519.Sign(s.privateKey, signingBytes)
+	return attestation, nil
+}
+
+func (s privateContentTestSigner) AttestContentProofVerificationKeyInTransaction(
+	ctx context.Context,
+	_ federationdelivery.Transaction,
+	signingKeyID string,
+	now time.Time,
+) (*securecontentpb.StationContentSigningKeyAttestation, error) {
+	return s.AttestContentProofVerificationKey(ctx, signingKeyID, now)
+}
+
+func (s privateContentTestSigner) AttestImportedContentProofVerificationKey(
+	ctx context.Context,
+	sourceStationPeerID string,
+	signingKeyID string,
+	now time.Time,
+) (*securecontentpb.StationContentSigningKeyAttestation, error) {
+	proofKey := s.importedProofKeys[sourceStationPeerID+"\x00"+signingKeyID]
+	if len(proofKey) == 0 {
+		return nil, fmt.Errorf("imported proof key is unavailable")
+	}
+	attestation, err := s.AttestContentProofVerificationKey(
+		ctx,
+		s.keyID,
+		now,
+	)
+	if err != nil {
+		return nil, err
+	}
+	attestation.ProofSigningKeyId = signingKeyID
+	attestation.ProofEd25519PublicKey = clonePrivateTestBytes(proofKey)
+	signingBytes, err := authfed.ContentProofKeyAttestationSigningBytes(
+		attestation,
+	)
+	if err != nil {
+		return nil, err
+	}
+	attestation.StationSignature = ed25519.Sign(
+		s.privateKey,
+		signingBytes,
+	)
+	return attestation, nil
+}
+
+func (s privateContentTestSigner) TrustImportedContentProofVerificationKeyInTransaction(
+	_ context.Context,
+	_ federationdelivery.Transaction,
+	sourceStationPeerID string,
+	signingKeyID string,
+	proofKey []byte,
+	_ time.Time,
+) error {
+	if s.trustImportedErr != nil {
+		return s.trustImportedErr
+	}
+	if s.importedProofKeys == nil {
+		return fmt.Errorf("imported proof-key history is unavailable")
+	}
+	identity := sourceStationPeerID + "\x00" + signingKeyID
+	if existing := s.importedProofKeys[identity]; len(existing) != 0 &&
+		!bytes.Equal(existing, proofKey) {
+		return fmt.Errorf("imported proof-key history conflict")
+	}
+	s.importedProofKeys[identity] = clonePrivateTestBytes(proofKey)
+	return nil
+}
+
+func (s privateContentTestSigner) AttestImportedContentProofVerificationKeyInTransaction(
+	ctx context.Context,
+	_ federationdelivery.Transaction,
+	sourceStationPeerID string,
+	signingKeyID string,
+	now time.Time,
+) (*securecontentpb.StationContentSigningKeyAttestation, error) {
+	return s.AttestImportedContentProofVerificationKey(
+		ctx,
+		sourceStationPeerID,
+		signingKeyID,
+		now,
+	)
 }
 
 type privateContentUnavailableVerifier struct {
@@ -2233,13 +2526,39 @@ func (v privateContentTestAuthorVerifier) Verify(
 	_ federationdelivery.Transaction,
 	_ *actormodel.ActorDeviceRef,
 	_ string,
+	_ string,
 	canonical []byte,
 	signature []byte,
+	_ time.Time,
 ) error {
 	if !ed25519.Verify(v.publicKey, canonical, signature) {
 		return fmt.Errorf("invalid author signature")
 	}
 	return nil
+}
+
+func (v privateContentTestAuthorVerifier) ResolveRetained(
+	_ context.Context,
+	_ federationdelivery.Transaction,
+	sender *actormodel.ActorDeviceRef,
+	expectedHomeStationPeerID string,
+	signingKeyID string,
+	committedAt time.Time,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	if sender == nil || sender.GetActor() == nil || committedAt.IsZero() {
+		return nil, fmt.Errorf("invalid retained author key request")
+	}
+	return &actormodel.VerifiedActorDeviceSigningKey{
+		ActorPtid:         sender.GetActor().GetPtid(),
+		ActorDeviceId:     sender.GetDeviceId(),
+		HomeStationPeerId: expectedHomeStationPeerID,
+		SigningKeyId:      signingKeyID,
+		Ed25519PublicKey:  append([]byte(nil), v.publicKey...),
+		ProfileVersion:    1,
+		VerificationSource: actormodel.
+			ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE,
+		ValidFromUnixMs: committedAt.Add(-time.Minute).UnixMilli(),
+	}, nil
 }
 
 type privateContentTestClock struct {

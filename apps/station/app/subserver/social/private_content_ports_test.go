@@ -3,18 +3,347 @@ package social
 import (
 	"context"
 	"crypto/ed25519"
+	"errors"
+	"slices"
 	"testing"
 	"time"
 
 	actoridentity "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity"
 	actoridentitydomain "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
+	federationdomain "github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	socialdomain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
+	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"google.golang.org/protobuf/proto"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+type recordingContentPreKeyPartitionProvider struct {
+	localRequests            []*securecontentpb.ClaimContentPreKeysRequest
+	remoteRequests           []*securecontentpb.ClaimContentPreKeysRequest
+	remoteValidationRequests []*securecontentpb.ClaimContentPreKeysRequest
+	remoteValidationStations []string
+	validationOrder          []string
+	remoteValidationErr      error
+	federationID             string
+	targetStation            string
+}
+
+func (p *recordingContentPreKeyPartitionProvider) ClaimContentPreKeys(
+	_ context.Context,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+) (*securecontentpb.ClaimContentPreKeysResponse, error) {
+	p.localRequests = append(
+		p.localRequests,
+		proto.Clone(request).(*securecontentpb.ClaimContentPreKeysRequest),
+	)
+	return partitionClaimResponse("local", request), nil
+}
+
+func (p *recordingContentPreKeyPartitionProvider) ClaimRemoteContentPreKeys(
+	_ context.Context,
+	federationID string,
+	targetStationPeerID string,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+) (*securecontentpb.ClaimContentPreKeysResponse, error) {
+	p.federationID = federationID
+	p.targetStation = targetStationPeerID
+	p.remoteRequests = append(
+		p.remoteRequests,
+		proto.Clone(request).(*securecontentpb.ClaimContentPreKeysRequest),
+	)
+	return partitionClaimResponse("remote", request), nil
+}
+
+func (p *recordingContentPreKeyPartitionProvider) ValidateContentPreKeyClaims(
+	context.Context,
+	federationdelivery.Transaction,
+	*securecontentpb.ClaimContentPreKeysRequest,
+	*securecontentpb.ClaimContentPreKeysResponse,
+) error {
+	p.validationOrder = append(p.validationOrder, "local")
+	return nil
+}
+
+func (p *recordingContentPreKeyPartitionProvider) ValidateRemoteContentPreKeyClaims(
+	_ context.Context,
+	_ string,
+	targetStationPeerID string,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+	_ *securecontentpb.ClaimContentPreKeysResponse,
+) error {
+	p.remoteValidationStations = append(
+		p.remoteValidationStations,
+		targetStationPeerID,
+	)
+	p.validationOrder = append(p.validationOrder, targetStationPeerID)
+	p.remoteValidationRequests = append(
+		p.remoteValidationRequests,
+		proto.Clone(request).(*securecontentpb.ClaimContentPreKeysRequest),
+	)
+	return p.remoteValidationErr
+}
+
+func TestRemoteContentPreKeyValidationUsesDeterministicStationOrder(
+	t *testing.T,
+) {
+	provider := &recordingContentPreKeyPartitionProvider{}
+	request := &securecontentpb.ClaimContentPreKeysRequest{
+		PlanId:            "plan-validation-order",
+		PlanRequestSha256: make([]byte, 32),
+		Targets: []*securecontentpb.ContentPreKeyClaimTarget{
+			contentPreKeyEndpointTarget("ptid:local", "local-device"),
+			contentPreKeyEndpointTarget("ptid:zeta", "zeta-device"),
+			contentPreKeyEndpointTarget("ptid:alpha", "alpha-device"),
+		},
+	}
+	response := partitionClaimResponse("validation", request)
+	err := validateRemoteContentPreKeyPartitions(
+		context.Background(),
+		provider,
+		"station-local",
+		[]socialdomain.RecipientLocality{
+			{
+				ActorPTID:         "ptid:zeta",
+				HomeStationPeerID: "station-zeta",
+				FederationID:      "federation-one",
+			},
+			{
+				ActorPTID:         "ptid:alpha",
+				HomeStationPeerID: "station-alpha",
+				FederationID:      "federation-one",
+			},
+		},
+		request,
+		response,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantOrder := []string{"station-alpha", "station-zeta"}
+	if !slices.Equal(provider.validationOrder, wantOrder) {
+		t.Fatalf(
+			"validation order = %v, want %v",
+			provider.validationOrder,
+			wantOrder,
+		)
+	}
+}
+
+func TestRemoteContentPreKeyValidationFailureStopsBeforeLocalValidation(
+	t *testing.T,
+) {
+	provider := &recordingContentPreKeyPartitionProvider{
+		remoteValidationErr: errors.New("remote validation unavailable"),
+	}
+	request := &securecontentpb.ClaimContentPreKeysRequest{
+		PlanId:            "plan-validation-failure",
+		PlanRequestSha256: make([]byte, 32),
+		Targets: []*securecontentpb.ContentPreKeyClaimTarget{
+			contentPreKeyEndpointTarget("ptid:local", "local-device"),
+			contentPreKeyEndpointTarget("ptid:remote", "remote-device"),
+		},
+	}
+	err := validateRemoteContentPreKeyPartitions(
+		context.Background(),
+		provider,
+		"station-local",
+		[]socialdomain.RecipientLocality{{
+			ActorPTID:         "ptid:remote",
+			HomeStationPeerID: "station-remote",
+			FederationID:      "federation-one",
+		}},
+		request,
+		partitionClaimResponse("validation", request),
+	)
+	if !errors.Is(err, provider.remoteValidationErr) {
+		t.Fatalf("validation error = %v", err)
+	}
+	if len(provider.validationOrder) != 1 ||
+		provider.validationOrder[0] != "station-remote" {
+		t.Fatalf("validation order = %v", provider.validationOrder)
+	}
+}
+
+func TestRemoteRecipientAdmissionPartitionsPreKeysByHomeStation(t *testing.T) {
+	provider := &recordingContentPreKeyPartitionProvider{}
+	request := &securecontentpb.ClaimContentPreKeysRequest{
+		PlanId:            "plan-one",
+		PlanRequestSha256: make([]byte, 32),
+		Targets: []*securecontentpb.ContentPreKeyClaimTarget{
+			contentPreKeyEndpointTarget("ptid:alice", "alice-device"),
+			contentPreKeyRecoveryTarget("ptid:alice"),
+			contentPreKeyEndpointTarget("ptid:bob", "bob-device"),
+			contentPreKeyRecoveryTarget("ptid:bob"),
+		},
+	}
+	request.PlanRequestSha256[0] = 1
+	response, err := claimContentPreKeyPartitions(
+		context.Background(),
+		provider,
+		"station-local",
+		[]socialdomain.RecipientLocality{{
+			ActorPTID:         "ptid:bob",
+			HomeStationPeerID: "station-remote",
+			FederationID:      "federation-one",
+		}},
+		request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.localRequests) != 1 ||
+		len(provider.localRequests[0].GetTargets()) != 2 ||
+		len(provider.remoteRequests) != 1 ||
+		len(provider.remoteRequests[0].GetTargets()) != 2 {
+		t.Fatalf(
+			"claim partitions local=%d/%d remote=%d/%d",
+			len(provider.localRequests),
+			len(provider.localRequests[0].GetTargets()),
+			len(provider.remoteRequests),
+			len(provider.remoteRequests[0].GetTargets()),
+		)
+	}
+	if provider.federationID != "federation-one" ||
+		provider.targetStation != "station-remote" {
+		t.Fatalf(
+			"remote route = federation %q Station %q",
+			provider.federationID,
+			provider.targetStation,
+		)
+	}
+	if len(response.GetClaims()) != len(request.GetTargets()) {
+		t.Fatalf("combined claims = %d", len(response.GetClaims()))
+	}
+	for index, claim := range response.GetClaims() {
+		if !proto.Equal(claim.GetTarget(), request.GetTargets()[index]) {
+			t.Fatalf("combined claim %d was reordered", index)
+		}
+	}
+}
+
+func TestFederatedAudienceSubmitValidationKeepsRemoteClaimsOutOfLocalAuthority(
+	t *testing.T,
+) {
+	request := &securecontentpb.ClaimContentPreKeysRequest{
+		PlanId:            "plan-mixed-audience",
+		PlanRequestSha256: make([]byte, 32),
+		Targets: []*securecontentpb.ContentPreKeyClaimTarget{
+			contentPreKeyEndpointTarget("ptid:alice", "alice-device"),
+			contentPreKeyRecoveryTarget("ptid:alice"),
+			contentPreKeyEndpointTarget("ptid:bob", "bob-device"),
+			contentPreKeyRecoveryTarget("ptid:bob"),
+			contentPreKeyEndpointTarget("ptid:carol", "carol-device"),
+			contentPreKeyRecoveryTarget("ptid:carol"),
+		},
+	}
+	response := partitionClaimResponse("mixed", request)
+	localRequest, localResponse, err := localContentPreKeyClaimPartition(
+		"station-local",
+		[]socialdomain.RecipientLocality{
+			{
+				ActorPTID:         "ptid:bob",
+				HomeStationPeerID: "station-remote",
+				FederationID:      "federation-one",
+			},
+			{
+				ActorPTID:         "ptid:carol",
+				HomeStationPeerID: "station-local",
+			},
+		},
+		request,
+		response,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(localRequest.GetTargets()) != 4 ||
+		len(localResponse.GetClaims()) != 4 {
+		t.Fatalf(
+			"local validation partition targets/claims = %d/%d, want 4/4",
+			len(localRequest.GetTargets()),
+			len(localResponse.GetClaims()),
+		)
+	}
+	for _, target := range localRequest.GetTargets() {
+		actorPTID := target.GetRecoveryActor().GetPtid()
+		if target.GetEndpoint() != nil {
+			actorPTID = target.GetEndpoint().GetActor().GetPtid()
+		}
+		if actorPTID == "ptid:bob" {
+			t.Fatal("remote recipient reached the local Key Exchange validator")
+		}
+	}
+}
+
+func partitionClaimResponse(
+	prefix string,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+) *securecontentpb.ClaimContentPreKeysResponse {
+	response := &securecontentpb.ClaimContentPreKeysResponse{}
+	for index, target := range request.GetTargets() {
+		prekey := &securecontentpb.ContentOneTimePreKey{
+			Kind:                   target.GetKind(),
+			KeyId:                  prefix + "-key-" + string(rune('a'+index)),
+			X25519PublicKey:        make([]byte, 32),
+			ProfileOrRecoveryEpoch: 1,
+			IssuerSignature:        make([]byte, ed25519.SignatureSize),
+		}
+		if target.GetEndpoint() != nil {
+			prekey.Principal = &securecontentpb.ContentOneTimePreKey_Endpoint{
+				Endpoint: proto.Clone(
+					target.GetEndpoint(),
+				).(*actormodel.ActorDeviceRef),
+			}
+		} else {
+			prekey.Principal =
+				&securecontentpb.ContentOneTimePreKey_RecoveryActor{
+					RecoveryActor: proto.Clone(
+						target.GetRecoveryActor(),
+					).(*actormodel.ActorRef),
+				}
+		}
+		response.Claims = append(
+			response.Claims,
+			&securecontentpb.ClaimedContentPreKey{
+				ClaimId:              prefix + "-claim-" + string(rune('a'+index)),
+				Target:               target,
+				Prekey:               prekey,
+				IrreversiblyConsumed: true,
+			},
+		)
+	}
+	return response
+}
+
+func contentPreKeyEndpointTarget(
+	actorPTID string,
+	deviceID string,
+) *securecontentpb.ContentPreKeyClaimTarget {
+	return &securecontentpb.ContentPreKeyClaimTarget{
+		Kind: securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ENDPOINT,
+		Principal: &securecontentpb.ContentPreKeyClaimTarget_Endpoint{
+			Endpoint: &actormodel.ActorDeviceRef{
+				Actor:    &actormodel.ActorRef{Ptid: actorPTID},
+				DeviceId: deviceID,
+			},
+		},
+	}
+}
+
+func contentPreKeyRecoveryTarget(
+	actorPTID string,
+) *securecontentpb.ContentPreKeyClaimTarget {
+	return &securecontentpb.ContentPreKeyClaimTarget{
+		Kind: securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ACTOR_RECOVERY,
+		Principal: &securecontentpb.ContentPreKeyClaimTarget_RecoveryActor{
+			RecoveryActor: &actormodel.ActorRef{Ptid: actorPTID},
+		},
+	}
+}
 
 func TestPrivateContentActorCapabilitiesMatchCanonicalActorIdentity(
 	t *testing.T,
@@ -35,10 +364,20 @@ func TestPrivateContentAuthorSignatureVerifierUsesAuthorHomeStation(
 	if err != nil {
 		t.Fatal(err)
 	}
+	committedAt := time.Now().UTC()
 	actors := &recordingPrivateContentActorCapabilities{
 		homeStationPeerID: "station-author-home",
+		homeStationError:  errors.New("current Home Station route unavailable"),
 		key: &actormodel.VerifiedActorDeviceSigningKey{
-			Ed25519PublicKey: publicKey,
+			ActorPtid:         "alice",
+			ActorDeviceId:     "alice-device",
+			HomeStationPeerId: "station-author-home",
+			SigningKeyId:      "alice-signing-key",
+			Ed25519PublicKey:  publicKey,
+			ProfileVersion:    1,
+			VerificationSource: actormodel.
+				ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE,
+			ValidFromUnixMs: committedAt.Add(-time.Minute).UnixMilli(),
 		},
 	}
 	canonical := []byte("private-content-author-signature")
@@ -54,9 +393,11 @@ func TestPrivateContentAuthorSignatureVerifierUsesAuthorHomeStation(
 		context.Background(),
 		testFederationTransaction{},
 		sender,
+		actors.homeStationPeerID,
 		"alice-signing-key",
 		canonical,
 		ed25519.Sign(privateKey, canonical),
+		committedAt,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -87,6 +428,144 @@ type recordingPrivateContentActorCapabilities struct {
 	resolvedSigningKeyID      string
 }
 
+type recordingPrivateContentFriendFederation struct {
+	federationID  string
+	err           error
+	authorPTID    string
+	recipientPTID string
+	sourceStation string
+	targetStation string
+}
+
+func (r *recordingPrivateContentFriendFederation) ResolveAcceptedFriendFederation(
+	_ context.Context,
+	authorPTID string,
+	recipientPTID string,
+	sourceStationPeerID string,
+	targetStationPeerID string,
+) (string, error) {
+	r.authorPTID = authorPTID
+	r.recipientPTID = recipientPTID
+	r.sourceStation = sourceStationPeerID
+	r.targetStation = targetStationPeerID
+	return r.federationID, r.err
+}
+
+type recordingPrivateContentFederationMembership struct {
+	err           error
+	federationID  string
+	sourceStation string
+	targetStation string
+}
+
+func (r *recordingPrivateContentFederationMembership) ValidateActiveStationPair(
+	_ context.Context,
+	federationID string,
+	sourceStationPeerID string,
+	targetStationPeerID string,
+) error {
+	r.federationID = federationID
+	r.sourceStation = sourceStationPeerID
+	r.targetStation = targetStationPeerID
+	return r.err
+}
+
+func TestRemoteRecipientAdmissionResolvesAcceptedActiveFederation(t *testing.T) {
+	friendship := &recordingPrivateContentFriendFederation{
+		federationID: "federation-one",
+	}
+	membership := &recordingPrivateContentFederationMembership{}
+	directory := &privateContentRecipientDirectory{
+		actors: &recordingPrivateContentActorCapabilities{
+			homeStationPeerID: "station-remote",
+		},
+		friendships: friendship,
+		membership:  membership,
+	}
+
+	localities, err := directory.ResolveRecipientLocalities(
+		context.Background(),
+		"ptid:author",
+		"station-local",
+		[]string{"ptid:remote"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(localities) != 1 ||
+		localities[0].ActorPTID != "ptid:remote" ||
+		localities[0].HomeStationPeerID != "station-remote" ||
+		localities[0].FederationID != "federation-one" {
+		t.Fatalf("remote locality = %+v", localities)
+	}
+	if friendship.authorPTID != "ptid:author" ||
+		friendship.recipientPTID != "ptid:remote" ||
+		friendship.sourceStation != "station-local" ||
+		friendship.targetStation != "station-remote" {
+		t.Fatalf("friendship lookup = %+v", friendship)
+	}
+	if membership.federationID != "federation-one" ||
+		membership.sourceStation != "station-local" ||
+		membership.targetStation != "station-remote" {
+		t.Fatalf("membership check = %+v", membership)
+	}
+}
+
+func TestRemoteRecipientAdmissionClassifiesFederationMembershipFailures(
+	t *testing.T,
+) {
+	dependencyFailure := errors.New("membership repository unavailable")
+	tests := []struct {
+		name              string
+		membershipError   error
+		wantPrivateCode   socialdomain.PrivateContentErrorCode
+		wantOriginalError error
+	}{
+		{
+			name:            "inactive pair is unsupported",
+			membershipError: federationdomain.ErrInactiveStationPair,
+			wantPrivateCode: socialdomain.PrivateContentUnsupported,
+		},
+		{
+			name:              "dependency failure stays retryable",
+			membershipError:   dependencyFailure,
+			wantOriginalError: dependencyFailure,
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			directory := &privateContentRecipientDirectory{
+				actors: &recordingPrivateContentActorCapabilities{
+					homeStationPeerID: "station-remote",
+				},
+				friendships: &recordingPrivateContentFriendFederation{
+					federationID: "federation-one",
+				},
+				membership: &recordingPrivateContentFederationMembership{
+					err: testCase.membershipError,
+				},
+			}
+			_, err := directory.ResolveRecipientLocalities(
+				context.Background(),
+				"ptid:author",
+				"station-local",
+				[]string{"ptid:remote"},
+			)
+			if testCase.wantPrivateCode != "" &&
+				!socialdomain.IsPrivateContentCode(
+					err,
+					testCase.wantPrivateCode,
+				) {
+				t.Fatalf("membership error = %v", err)
+			}
+			if testCase.wantOriginalError != nil &&
+				!errors.Is(err, testCase.wantOriginalError) {
+				t.Fatalf("membership dependency error = %v", err)
+			}
+		})
+	}
+}
+
 func (a *recordingPrivateContentActorCapabilities) ResolveActorHomeStationPeerID(
 	_ context.Context,
 	actorPTID string,
@@ -112,6 +591,20 @@ func (a *recordingPrivateContentActorCapabilities) ResolveVerifiedActorDeviceSig
 	return a.key, nil
 }
 
+func (a *recordingPrivateContentActorCapabilities) ResolveRetainedActorDeviceSigningKey(
+	_ context.Context,
+	_ federationdelivery.Transaction,
+	actorPTID string,
+	deviceID string,
+	signingKeyID string,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	a.resolvedActorPTID = actorPTID
+	a.resolvedHomeStationPeerID = a.homeStationPeerID
+	a.resolvedDeviceID = deviceID
+	a.resolvedSigningKeyID = signingKeyID
+	return a.key, nil
+}
+
 func TestPrivateContentRecipientDirectoryRejectsUnresolvedHomeStationAsUnsupported(
 	t *testing.T,
 ) {
@@ -129,6 +622,7 @@ func TestPrivateContentRecipientDirectoryRejectsUnresolvedHomeStationAsUnsupport
 
 	localities, err := directory.ResolveRecipientLocalities(
 		context.Background(),
+		"ptid:author",
 		"station-local",
 		[]string{"ptid:remote"},
 	)
@@ -166,6 +660,7 @@ func TestPrivateContentRecipientDirectoryPreservesActorIdentityFailures(
 
 	_, err := directory.ResolveRecipientLocalities(
 		context.Background(),
+		"ptid:author",
 		"station-local",
 		[]string{"ptid:recipient"},
 	)
@@ -363,15 +858,33 @@ type recordingPrivateContentAuthorKeyResolver struct {
 func (r *recordingPrivateContentAuthorKeyResolver) ResolveVerifiedActorDeviceSigningKey(
 	_ context.Context,
 	_ federationdelivery.Transaction,
-	_ string,
+	actorPTID string,
 	expectedHomeStationPeerID string,
-	_ string,
-	_ string,
+	deviceID string,
+	signingKeyID string,
 ) (*actormodel.VerifiedActorDeviceSigningKey, error) {
 	r.expectedHomeStationPeerID = expectedHomeStationPeerID
 	return &actormodel.VerifiedActorDeviceSigningKey{
-		Ed25519PublicKey: append([]byte(nil), r.publicKey...),
+		ActorPtid:         actorPTID,
+		ActorDeviceId:     deviceID,
+		HomeStationPeerId: expectedHomeStationPeerID,
+		SigningKeyId:      signingKeyID,
+		Ed25519PublicKey:  append([]byte(nil), r.publicKey...),
+		ProfileVersion:    1,
+		VerificationSource: actormodel.
+			ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_LOCAL_DEVICE_REGISTRATION,
+		ValidFromUnixMs: time.Now().Add(-time.Minute).UnixMilli(),
 	}, nil
+}
+
+func (r *recordingPrivateContentAuthorKeyResolver) ResolveRetainedActorDeviceSigningKey(
+	context.Context,
+	federationdelivery.Transaction,
+	string,
+	string,
+	string,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	return nil, nil
 }
 
 func (r *recordingPrivateContentAuthorKeyResolver) ResolveActorHomeStationPeerID(
@@ -401,9 +914,11 @@ func TestPrivateContentAuthorSignatureVerifierBindsLocalHomeStation(
 			Actor:    &actormodel.ActorRef{Ptid: "actor-alice"},
 			DeviceId: "device-one",
 		},
+		"station-local",
 		"signing-key-one",
 		canonical,
 		ed25519.Sign(privateKey, canonical),
+		time.Now(),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -413,6 +928,59 @@ func TestPrivateContentAuthorSignatureVerifierBindsLocalHomeStation(
 			"expected Home Station = %q, want station-local",
 			resolver.expectedHomeStationPeerID,
 		)
+	}
+}
+
+func TestPrivateContentAuthorSignatureVerifierAcceptsRetainedKeyAtCommitTime(
+	t *testing.T,
+) {
+	committedAt := time.Date(2026, 10, 3, 20, 0, 0, 0, time.UTC)
+	resolver := &recordingPrivateContentActorCapabilities{
+		homeStationPeerID: "station-author-home",
+		homeStationError:  errors.New("current Home Station route unavailable"),
+		key: &actormodel.VerifiedActorDeviceSigningKey{
+			ActorPtid:         "ptid:alice",
+			ActorDeviceId:     "alice-device",
+			HomeStationPeerId: "station-author-home",
+			SigningKeyId:      "alice-signing-key",
+			Ed25519PublicKey:  make([]byte, ed25519.PublicKeySize),
+			ProfileVersion:    7,
+			VerificationSource: actormodel.
+				ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE,
+			ValidFromUnixMs: committedAt.Add(-time.Minute).UnixMilli(),
+			RevokedAtUnixMs: committedAt.Add(time.Minute).UnixMilli(),
+		},
+	}
+	verifier := privateContentAuthorSignatureVerifier{
+		actors:             resolver,
+		localStationPeerID: "station-receiver",
+	}
+	sender := &actormodel.ActorDeviceRef{
+		Actor:    &actormodel.ActorRef{Ptid: "ptid:alice"},
+		DeviceId: "alice-device",
+	}
+
+	key, err := verifier.ResolveRetained(
+		context.Background(),
+		testFederationTransaction{},
+		sender,
+		"station-author-home",
+		"alice-signing-key",
+		committedAt,
+	)
+	if err != nil || key == nil {
+		t.Fatalf("retained key = %+v, error = %v", key, err)
+	}
+	resolver.key.RevokedAtUnixMs = committedAt.UnixMilli()
+	if _, err := verifier.ResolveRetained(
+		context.Background(),
+		testFederationTransaction{},
+		sender,
+		"station-author-home",
+		"alice-signing-key",
+		committedAt,
+	); err == nil {
+		t.Fatal("key revoked at commit time was accepted")
 	}
 }
 

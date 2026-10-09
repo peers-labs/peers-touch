@@ -7,6 +7,7 @@ import {
   runAfterAuthenticated401,
   type SessionAdmission,
 } from '../runtimes/sessionRuntime';
+import { secureRandomUuid } from '../utils/randomIdentity';
 
 export type StationTransportOperation =
   | { operationId: 'actor_profile_get' }
@@ -72,7 +73,37 @@ export type StationTransportOperation =
     offset: number;
   }
   | { operationId: 'social_blocked_list'; limit: number; cursor?: string }
-  | { operationId: 'social_friendship_status'; target_ptid: string }
+  | { operationId: 'social_friendship_status'; target_actor_ptid: string }
+  | { operationId: 'social_circles_list'; limit: number; cursor?: string }
+  | {
+    operationId: 'social_circle_create';
+    name: string;
+    description?: string;
+    member_ptids: string[];
+  }
+  | {
+    operationId: 'social_circle_update';
+    circle_id: string;
+    name: string;
+    description?: string;
+  }
+  | { operationId: 'social_circle_delete'; circle_id: string }
+  | {
+    operationId: 'social_circle_members_list';
+    circle_id: string;
+    limit: number;
+    cursor?: string;
+  }
+  | {
+    operationId: 'social_circle_members_add';
+    circle_id: string;
+    member_ptids: string[];
+  }
+  | {
+    operationId: 'social_circle_members_remove';
+    circle_id: string;
+    member_ptids: string[];
+  }
   | {
     operationId: 'moments_timeline';
     timeline_type: number;
@@ -80,6 +111,7 @@ export type StationTransportOperation =
     limit: number;
   }
   | { operationId: 'moments_post_get'; post_id: string }
+  | { operationId: 'moments_delete'; post_id: string }
   | { operationId: 'moments_react'; post_id: string; reaction_kind: number }
   | { operationId: 'moments_unreact'; post_id: string; reaction_kind: number }
   | {
@@ -148,6 +180,20 @@ export async function executeStationOperation(
   operation: StationTransportOperation,
   signal?: AbortSignal,
 ): Promise<StationTransportResponse> {
+  return executeNativeStationOperation(
+    'station_transport_execute',
+    session,
+    operation,
+    signal,
+  );
+}
+
+export async function executeNativeStationOperation(
+  command: 'station_transport_execute' | 'social_adapter_execute',
+  session: MobileAuthSession,
+  operation: StationTransportOperation,
+  signal?: AbortSignal,
+): Promise<StationTransportResponse> {
   throwIfAborted(signal);
   const admission = operationAdmission(operation);
   const response = await runAfterAuthenticated401(
@@ -155,7 +201,7 @@ export async function executeStationOperation(
       throwIfAborted(signal);
       const active = requireCurrentSession(session, admission);
       const response = await invokeCancellable<StationTransportResponse>(
-        'station_transport_execute',
+        command,
         {
           stationPeerId: active.stationPeerId,
           actorPtid: active.actorPtid,
@@ -249,12 +295,17 @@ function requireCurrentSession(
 }
 
 async function invokeCancellable<T>(
-  command: 'station_transport_execute' | 'station_realtime_start',
+  command:
+    | 'station_transport_execute'
+    | 'social_adapter_execute'
+    | 'station_realtime_start',
   input: Readonly<Record<string, unknown>>,
   signal: AbortSignal | undefined,
 ): Promise<T> {
   throwIfAborted(signal);
-  const requestId = globalThis.crypto.randomUUID();
+  const requestId = secureRandomUuid(
+    'mobile.stationTransport.requestIdentityUnavailable',
+  );
   const cancel = () => {
     void invoke<void>('station_transport_cancel', {
       input: { requestId },
@@ -295,6 +346,8 @@ function operationAdmission(
     case 'social_friend_requests_list':
     case 'social_blocked_list':
     case 'social_friendship_status':
+    case 'social_circles_list':
+    case 'social_circle_members_list':
     case 'moments_timeline':
     case 'moments_post_get':
     case 'moments_comments_list':
@@ -308,10 +361,16 @@ function operationAdmission(
     case 'notification_delete':
     case 'notification_preferences_update':
     case 'conversation_member_settings_update':
+    case 'social_circle_create':
+    case 'social_circle_update':
+    case 'social_circle_delete':
+    case 'social_circle_members_add':
+    case 'social_circle_members_remove':
     case 'moments_react':
     case 'moments_unreact':
     case 'moments_comment_create':
     case 'moments_comment_delete':
+    case 'moments_delete':
     case 'moments_create':
     case 'presence_heartbeat':
     case 'presence_offline':

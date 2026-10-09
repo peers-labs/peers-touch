@@ -67,6 +67,8 @@ class _FixturePath:
 class _FakeProductClient:
     posts: dict[str, dict[str, Any]] = {}
     published_kinds: list[str] = []
+    reaction_add_calls = 0
+    delayed_reaction_add = False
 
     def __init__(
         self,
@@ -169,6 +171,9 @@ class _FakeProductClient:
                 }
             return result
         if method == "reactToPrivateMoment":
+            type(self).reaction_add_calls += 1
+            if self.delayed_reaction_add and type(self).reaction_add_calls == 1:
+                return {"reactions": []}
             return {
                 "reactions": [{
                     "kind": 2,
@@ -187,6 +192,24 @@ class SocialSubtypeScenarioTest(unittest.TestCase):
     def setUp(self) -> None:
         _FakeProductClient.posts = {}
         _FakeProductClient.published_kinds = []
+        _FakeProductClient.reaction_add_calls = 0
+        _FakeProductClient.delayed_reaction_add = False
+
+    def test_retries_reaction_until_projection_converges(self) -> None:
+        _FakeProductClient.delayed_reaction_add = True
+        client = _FakeProductClient(_Context(), social_subtype.EXPECTED_CLIENTS[1])
+
+        with patch.object(social_subtype.time, "sleep"):
+            result = social_subtype._await_reaction_transition(
+                client,
+                method="reactToPrivateMoment",
+                post_id="post-reaction",
+                present=True,
+            )
+
+        self.assertEqual(2, _FakeProductClient.reaction_add_calls)
+        self.assertEqual(1, result["reactions"][0]["count"])
+        self.assertIs(result["reactions"][0]["reactedByViewer"], True)
 
     def test_executes_complete_private_subtype_and_reaction_matrix(
         self,

@@ -34,8 +34,18 @@ function isBusy(state: PrivateMediaState): boolean {
   ].includes(state);
 }
 
-function isRetryable(state: PrivateMediaState): boolean {
-  return state === 'MEDIA_PLACEHOLDER' || state === 'MEDIA_OFFLINE_RETRYABLE';
+function canOpen(item: PrivateMomentMediaProjection): boolean {
+  return item.state === 'MEDIA_PLACEHOLDER' || item.retryable;
+}
+
+function mediaStateLabel(item: PrivateMomentMediaProjection): string {
+  if (
+    item.accessPath === 'HOME_STATION_REMOTE_PEER_STREAM'
+    && item.state === 'MEDIA_OFFLINE_RETRYABLE'
+  ) {
+    return 'moments.private.media.remoteRetryable';
+  }
+  return `moments.private.media.${item.state}`;
 }
 
 function MediaStateIcon({ state }: { state: PrivateMediaState }) {
@@ -74,6 +84,8 @@ export function PrivateMediaGrid({ media, onOpen }: PrivateMediaGridProps) {
         <div
           key={item.objectId}
           data-private-media-state={item.state}
+          data-private-media-access-path={item.accessPath}
+          data-private-media-retryable={item.retryable || undefined}
           style={{
             position: 'relative',
             minHeight: single ? 180 : 108,
@@ -127,9 +139,9 @@ export function PrivateMediaGrid({ media, onOpen }: PrivateMediaGridProps) {
             >
               <MediaStateIcon state={item.state} />
               <Text type="secondary" style={{ fontSize: 12 }}>
-                {t(`moments.private.media.${item.state}`)}
+                {t(mediaStateLabel(item))}
               </Text>
-              {isRetryable(item.state) && (
+              {canOpen(item) && (
                 <Button
                   size="small"
                   type="text"

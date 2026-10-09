@@ -554,9 +554,13 @@ checks pass.
 
 ## 10. Federation Boundary
 
-Public Moment federation is unchanged. Private Social federation remains
-unsupported and fails before partial publish. No private ciphertext, envelope, or
-recovery material enters ActivityPub.
+Public Moment federation is unchanged. The current implementation keeps private
+Social federation disabled until the Native Desktop cross-Station cutover in
+[`../cross-station-social/`](../cross-station-social/README.md)
+passes. The target reuses Secure Content ciphertext, envelope, proof and
+recovery contracts through authenticated Federation delivery and peer routes.
+No private ciphertext, envelope or recovery material enters Federation Ledger
+or any public-content transport.
 
 ## 11. Verification Matrix
 

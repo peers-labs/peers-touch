@@ -40,7 +40,7 @@ export const DECLARATION_STATES = new Set([
   'STALE',
 ]);
 
-const DECLARATION_KEYS = new Set([
+const DECLARATION_BASE_KEYS = [
   'declarationId',
   'workItemId',
   'sessionId',
@@ -59,10 +59,17 @@ const DECLARATION_KEYS = new Set([
   'declarationDigest',
   'planPath',
   'planId',
-  'planDigest',
   'mountId',
   'runId',
   'taskId',
+];
+const DECLARATION_KEYS = new Set([
+  ...DECLARATION_BASE_KEYS,
+  'planDigest',
+]);
+const LEGACY_DECLARATION_KEYS = new Set([
+  ...DECLARATION_BASE_KEYS,
+  'planVersionDigest',
 ]);
 const DECLARATION_OPTIONAL_KEYS = new Set(['workflowOwner']);
 const SOURCE_CLAIM_KEYS = new Set(['pathPrefix', 'mode']);
@@ -363,24 +370,49 @@ function validIsoTimestamp(value) {
   );
 }
 
-export function validateDeclaration(declaration) {
-  if (
+export function declarationPlanSchema(declaration) {
+  const stable =
+    isObject(declaration) && Object.hasOwn(declaration, 'planDigest');
+  const legacy =
     isObject(declaration) &&
-    Object.hasOwn(declaration, 'planVersionDigest')
-  ) {
+    Object.hasOwn(declaration, 'planVersionDigest');
+  if (stable === legacy) {
     fail(
-      'PLAN_STATE_MIGRATION_REQUIRED',
-      'development declaration uses the retired Plan Version schema; close live work and run plan-state-migrate',
+      'MACHINE_WORK_LEDGER_INVALID',
+      'declaration must contain exactly one Plan digest field',
     );
   }
+  return legacy ? 'legacy' : 'stable';
+}
+
+export function validateCoordinationDeclaration(declaration) {
+  const schema = declarationPlanSchema(declaration);
+  return validateDeclarationShape(
+    declaration,
+    schema === 'legacy' ? 'planVersionDigest' : 'planDigest',
+    schema === 'legacy' ? LEGACY_DECLARATION_KEYS : DECLARATION_KEYS,
+  );
+}
+
+export function validateDeclaration(declaration) {
+  if (declarationPlanSchema(declaration) === 'legacy') {
+    fail(
+      'PLAN_STATE_MIGRATION_REQUIRED',
+      'the current workspace declaration uses the retired Plan Version schema; close its live work and run plan-state-migrate',
+    );
+  }
+  return validateDeclarationShape(declaration, 'planDigest', DECLARATION_KEYS);
+}
+
+function validateDeclarationShape(declaration, planDigestField, keys) {
   if (
     !isObject(declaration) ||
-    [...DECLARATION_KEYS].some(
+    [...keys].some(
       (key) => !Object.hasOwn(declaration, key),
     ) ||
     Object.keys(declaration).some(
       (key) =>
-        !DECLARATION_KEYS.has(key) &&
+        !keys.has(key) &&
         !DECLARATION_OPTIONAL_KEYS.has(key),
     )
   ) {
@@ -422,7 +454,7 @@ export function validateDeclaration(declaration) {
   const locatorFields = [
     'planPath',
     'planId',
-    'planDigest',
+    planDigestField,
     'mountId',
     'runId',
     'taskId',
@@ -459,10 +491,10 @@ export function validateDeclaration(declaration) {
         fail('MACHINE_WORK_LEDGER_INVALID', `${field} is not canonical`);
       }
     }
-    if (!/^[0-9a-f]{64}$/.test(declaration.planDigest)) {
+    if (!/^[0-9a-f]{64}$/.test(declaration[planDigestField])) {
       fail(
         'MACHINE_WORK_LEDGER_INVALID',
-        'planDigest is invalid',
+        `${planDigestField} is invalid`,
       );
     }
   }

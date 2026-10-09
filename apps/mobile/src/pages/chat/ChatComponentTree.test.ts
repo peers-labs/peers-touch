@@ -95,5 +95,10 @@ describe('Chat component ownership boundaries', () => {
     }
     expect(overlayHostSource).toContain('role="dialog"');
     expect(overlayHostSource).toContain('aria-modal="true"');
+    expect(pageSource).toContain("aria-label={t('mobile.chat.startAudioCall')}");
+    expect(pageSource).toContain("aria-label={t('mobile.chat.startVideoCall')}");
+    expect(pageSource).toContain("aria-label={t('common.action.send')}");
+    expect(pageSource).toContain("t('mobile.chat.encrypted')");
+    expect(stylesSource).toMatch(/\.chat-header-actions\s*\{[\s\S]*?display:\s*flex/);
   });
 });

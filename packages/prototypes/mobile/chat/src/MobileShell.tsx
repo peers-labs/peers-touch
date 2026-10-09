@@ -13,13 +13,14 @@ import type { SocialDemoAction, SocialDemoState, SocialEvidenceScenario } from '
 import type { SearchDemoControl } from './searchDemo';
 import { ChatPage } from './pages/ChatPage';
 import { ChatThread } from './pages/ChatThread';
-import { MomentsPage } from './pages/MomentsPage';
+import { MomentsPage, type MomentsEvidenceScenario } from './pages/MomentsPage';
 import { ContactsPage } from './pages/ContactsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { ContactDetailView } from './components/ContactDetailView';
 import { GroupDetailView } from './components/GroupDetailView';
 import { SettingDetailView } from './components/SettingDetailView';
 import { FindPeopleSheet } from './components/FindPeopleSheet';
+import { CreateGroupSheet } from './components/CreateGroupSheet';
 import {
   RequestRecoveryNotice,
   ShellRecoverySheet,
@@ -34,6 +35,7 @@ export function MobileShell({
   recoveryScenario,
   onRecoveryClose,
   socialScenario,
+  momentsScenario,
   socialDemo,
   dispatchSocialDemo,
   longLists = false,
@@ -44,6 +46,7 @@ export function MobileShell({
   recoveryScenario?: ShellEvidenceScenario;
   onRecoveryClose?: () => void;
   socialScenario?: SocialEvidenceScenario;
+  momentsScenario?: MomentsEvidenceScenario;
   socialDemo: SocialDemoState;
   dispatchSocialDemo: Dispatch<SocialDemoAction>;
   longLists?: boolean;
@@ -51,18 +54,24 @@ export function MobileShell({
 }) {
   const [listMemory] = useState(() => new PrototypeListMemory());
   const [activeTab, setActiveTab] = useState<TabId>(
-    socialScenario && socialScenario !== 'social-unavailable' ? 'contacts' : 'chat',
+    momentsScenario
+      ? 'moments'
+      : socialScenario && socialScenario !== 'social-unavailable'
+        ? 'contacts'
+        : 'chat',
   );
   const [findPeopleOpen, setFindPeopleOpen] = useState(
     socialScenario === 'find-people-member' || socialScenario === 'find-people-no-membership'
       || socialScenario === 'request-unknown',
   );
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<GroupItem | null>(null);
   const [selectedSetting, setSelectedSetting] = useState<SettingEntry | null>(null);
   const [shellToast, setShellToast] = useState<string | null>(null);
   const [shellToastKey, setShellToastKey] = useState(0);
+  const [momentsImmersiveOpen, setMomentsImmersiveOpen] = useState(false);
 
   useEffect(() => {
     if (shellToast) {
@@ -109,7 +118,13 @@ export function MobileShell({
   }
 
   function handleAddContact() {
+    setCreateGroupOpen(false);
     setFindPeopleOpen(true);
+  }
+
+  function handleCreateGroup() {
+    setFindPeopleOpen(false);
+    setCreateGroupOpen(true);
   }
 
   function handleRecoveryAction(action: 'primary' | 'secondary') {
@@ -165,27 +180,38 @@ export function MobileShell({
         onBack={() => setSelectedGroup(null)} />;
     }
     if (activeTab === 'profile' && selectedSetting) {
-      return <SettingDetailView setting={selectedSetting} onBack={() => setSelectedSetting(null)} />;
+      return (
+        <SettingDetailView
+          setting={selectedSetting}
+          onBack={() => setSelectedSetting(null)}
+          onChangeStation={onChangeStation}
+        />
+      );
     }
     switch (activeTab) {
       case 'chat': return <ChatPage conversations={longLists ? longListConversations : socialDemo.conversations}
         listMemory={listMemory} onConversationClick={handleConversationClick} />;
-      case 'moments': return <MomentsPage />;
+      case 'moments': return <MomentsPage
+        scenario={momentsScenario}
+        onImmersiveVisibilityChange={setMomentsImmersiveOpen}
+      />;
       case 'contacts': return <ContactsPage contacts={longLists ? longListContacts : socialDemo.contacts}
         groups={longLists ? longListGroups : undefined} requests={longLists ? longListRequests : undefined}
         listMemory={listMemory} request={socialDemo.request}
-        onContactClick={handleContactClick} onGroupClick={handleGroupClick} onAddContact={handleAddContact} />;
+        onContactClick={handleContactClick} onGroupClick={handleGroupClick}
+        onAddContact={handleAddContact} onCreateGroup={handleCreateGroup} />;
       case 'profile': return <ProfilePage onChangeStation={onChangeStation} onSettingClick={handleSettingClick} />;
     }
   }
 
   const showTabBar = !(activeTab === 'chat' && selectedConversation)
     && !(activeTab === 'contacts' && (selectedContact || selectedGroup))
-    && !(activeTab === 'profile' && selectedSetting);
+    && !(activeTab === 'profile' && selectedSetting)
+    && !(activeTab === 'moments' && momentsImmersiveOpen);
 
   return (
     <div className="mp-shell">
-      <div className="mp-shell-content" inert={findPeopleOpen}>{renderPage()}</div>
+      <div className="mp-shell-content" inert={findPeopleOpen || createGroupOpen}>{renderPage()}</div>
       <SocialRuntimeNotice runtime={socialDemo.runtime}
         onRetry={() => dispatchSocialDemo({ type: 'retry-runtime' })} />
       {!findPeopleOpen && (
@@ -193,7 +219,7 @@ export function MobileShell({
           onCheck={() => dispatchSocialDemo({ type: 'check-request' })} />
       )}
       {showTabBar && (
-        <nav className="mp-tabbar" inert={findPeopleOpen}>
+        <nav className="mp-tabbar" inert={findPeopleOpen || createGroupOpen}>
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -202,7 +228,7 @@ export function MobileShell({
                 key={tab.id}
                 type="button"
                 className={`mp-tabbar-item ${isActive ? 'active' : ''}`}
-                onClick={() => { dispatchSocialDemo({ type: 'close-direct' }); setFindPeopleOpen(false); setActiveTab(tab.id); setSelectedConversation(null); setSelectedContact(null); setSelectedGroup(null); setSelectedSetting(null); }}
+                onClick={() => { dispatchSocialDemo({ type: 'close-direct' }); setFindPeopleOpen(false); setCreateGroupOpen(false); setActiveTab(tab.id); setSelectedConversation(null); setSelectedContact(null); setSelectedGroup(null); setSelectedSetting(null); }}
               >
                 <Badge count={socialDemo.runtime === 'ready' ? tab.badge ?? 0 : 0} size="small" offset={[4, -2]}>
                   <Icon size={24} strokeWidth={isActive ? 2.2 : 1.7} />
@@ -218,6 +244,16 @@ export function MobileShell({
       {findPeopleOpen && socialDemo.runtime === 'ready' && (
         <FindPeopleSheet state={socialDemo} dispatch={dispatchSocialDemo}
           onClose={() => setFindPeopleOpen(false)} />
+      )}
+      {createGroupOpen && socialDemo.runtime === 'ready' && (
+        <CreateGroupSheet
+          contacts={socialDemo.contacts}
+          onClose={() => setCreateGroupOpen(false)}
+          onCreate={(name) => {
+            setCreateGroupOpen(false);
+            showShellToast(`${name} ${copy['mobile.group.create'].toLowerCase()}`);
+          }}
+        />
       )}
       {recoveryScenario && (
         <ShellRecoverySheet

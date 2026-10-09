@@ -54,7 +54,7 @@ export type ActorLocatorRecord = Message<"peers_touch.model.federation.v1.ActorL
   /**
    * Stable HTTP origin of the home station, no scheme. Receivers MUST NOT
    * dial this directly across the federation; instead it is fed through
-   * `/relay/forward/{home_station_peer_id}/...` so NAT-bound stations
+   * a scoped opaque Relay tunnel to `home_station_peer_id` so NAT-bound stations
    * remain reachable.
    *
    * @generated from field: string home_station_domain = 3 [json_name = "home_station_domain"];

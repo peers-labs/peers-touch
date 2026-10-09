@@ -298,6 +298,33 @@ export function installNativeLifecycleBridge(
     rejectInitialNetworkObservation = reject;
   });
   let initialNetworkObserved = false;
+  let nativePluginCommandQueue: Promise<void> = Promise.resolve();
+
+  const enqueueNativePluginCommand = <Result>(
+    command: () => Promise<Result>,
+  ): Promise<Result> => {
+    const runAfterCallbackRelease = async () => {
+      try {
+        return await command();
+      } finally {
+        // Tauri iOS resolves plugin commands while holding its pending-call
+        // mutex. A macrotask boundary prevents a follow-up plugin command from
+        // re-entering that mutex through the synchronous WebView callback.
+        await new Promise<void>((resolve) => {
+          globalThis.setTimeout(resolve, 0);
+        });
+      }
+    };
+    const scheduled = nativePluginCommandQueue.then(
+      runAfterCallbackRelease,
+      runAfterCallbackRelease,
+    );
+    nativePluginCommandQueue = scheduled.then(
+      () => undefined,
+      () => undefined,
+    );
+    return scheduled;
+  };
 
   const installListener = async <Payload>(
     eventName: string,
@@ -355,45 +382,52 @@ export function installNativeLifecycleBridge(
 
   const nativeLifecycleReady = (async (): Promise<void> => {
     try {
-      const listener = await addPluginListener<NativeLifecycleSignalPayload>(
-        PLATFORM_PERMISSIONS_PLUGIN,
-        PLATFORM_LIFECYCLE_EVENT,
-        (payload) => {
-          if (disposed) return;
-          let signal: NativeLifecycleSignalPayload;
-          try {
-            signal = validateNativeLifecycleSignal(payload);
-          } catch (error) {
-            reportBridgeError(
-              toBridgeError(
-                'MOBILE_NATIVE_READBACK_INVALID',
-                'native-lifecycle-signal',
-                error,
-              ),
-            );
-            return;
-          }
-
-          nativeSignalQueue = nativeSignalQueue
-            .then(async () => {
-              if (disposed) return;
-              await invokeNative('lifecycle_ingest_native_signal', {
-                input: signal,
-              });
-            })
-            .catch((error) => {
+      const listener = await enqueueNativePluginCommand(
+        () => addPluginListener<NativeLifecycleSignalPayload>(
+          PLATFORM_PERMISSIONS_PLUGIN,
+          PLATFORM_LIFECYCLE_EVENT,
+          (payload) => {
+            if (disposed) return;
+            let signal: NativeLifecycleSignalPayload;
+            try {
+              signal = validateNativeLifecycleSignal(payload);
+            } catch (error) {
               reportBridgeError(
                 toBridgeError(
-                  'MOBILE_NATIVE_INVOKE_FAILED',
-                  'lifecycle-ingest-native-signal',
+                  'MOBILE_NATIVE_READBACK_INVALID',
+                  'native-lifecycle-signal',
                   error,
                 ),
               );
-            });
-        },
+              return;
+            }
+
+            nativeSignalQueue = nativeSignalQueue
+              .then(async () => {
+                if (disposed) return;
+                await invokeNative('lifecycle_ingest_native_signal', {
+                  input: signal,
+                });
+              })
+              .catch((error) => {
+                reportBridgeError(
+                  toBridgeError(
+                    'MOBILE_NATIVE_INVOKE_FAILED',
+                    'lifecycle-ingest-native-signal',
+                    error,
+                  ),
+                );
+              });
+          },
+        ),
       );
       if (disposed) {
-        teardownPluginListener(listener, 'native-listener-late-teardown');
+        await enqueueNativePluginCommand(
+          () => teardownPluginListener(
+            listener,
+            'native-listener-late-teardown',
+          ),
+        );
         return;
       }
       nativeLifecycleListener = listener;
@@ -411,62 +445,71 @@ export function installNativeLifecycleBridge(
 
   const nativeNetworkReady = (async (): Promise<void> => {
     try {
-      const listener = await addPluginListener<NativeNetworkSignalPayload>(
-        PLATFORM_PERMISSIONS_PLUGIN,
-        PLATFORM_NETWORK_EVENT,
-        (payload) => {
-          if (disposed) return;
-          let signal: NativeNetworkSignalPayload;
-          try {
-            signal = validateNativeNetworkSignal(payload);
-          } catch (error) {
-            reportBridgeError(
-              toBridgeError(
-                'MOBILE_NATIVE_READBACK_INVALID',
-                'native-network-signal',
-                error,
-              ),
-            );
-            return;
-          }
-
-          networkSignalQueue = networkSignalQueue
-            .then(async () => {
-              if (disposed) return;
-              const result = validateNativeNetworkIngestResult(
-                await invokeNative<unknown>('network_ingest_native_signal', {
-                  input: signal,
-                }),
-              );
-              if (!result.accepted || result.generation !== currentGeneration) return;
-              await handlers.onNetworkStateChange?.(
-                result.state,
-                result.connectionRestored,
-              );
-              if (!initialNetworkObserved) {
-                initialNetworkObserved = true;
-                resolveInitialNetworkObservation();
-              }
-            })
-            .catch((error) => {
-              if (!initialNetworkObserved) rejectInitialNetworkObservation(error);
+      const listener = await enqueueNativePluginCommand(
+        () => addPluginListener<NativeNetworkSignalPayload>(
+          PLATFORM_PERMISSIONS_PLUGIN,
+          PLATFORM_NETWORK_EVENT,
+          (payload) => {
+            if (disposed) return;
+            let signal: NativeNetworkSignalPayload;
+            try {
+              signal = validateNativeNetworkSignal(payload);
+            } catch (error) {
               reportBridgeError(
                 toBridgeError(
-                  'MOBILE_NATIVE_INVOKE_FAILED',
-                  'network-ingest-native-signal',
+                  'MOBILE_NATIVE_READBACK_INVALID',
+                  'native-network-signal',
                   error,
                 ),
               );
-            });
-        },
+              return;
+            }
+
+            networkSignalQueue = networkSignalQueue
+              .then(async () => {
+                if (disposed) return;
+                const result = validateNativeNetworkIngestResult(
+                  await invokeNative<unknown>('network_ingest_native_signal', {
+                    input: signal,
+                  }),
+                );
+                if (!result.accepted || result.generation !== currentGeneration) return;
+                await handlers.onNetworkStateChange?.(
+                  result.state,
+                  result.connectionRestored,
+                );
+                if (!initialNetworkObserved) {
+                  initialNetworkObserved = true;
+                  resolveInitialNetworkObservation();
+                }
+              })
+              .catch((error) => {
+                if (!initialNetworkObserved) rejectInitialNetworkObservation(error);
+                reportBridgeError(
+                  toBridgeError(
+                    'MOBILE_NATIVE_INVOKE_FAILED',
+                    'network-ingest-native-signal',
+                    error,
+                  ),
+                );
+              });
+          },
+        ),
       );
       if (disposed) {
-        teardownPluginListener(listener, 'native-network-listener-late-teardown');
+        await enqueueNativePluginCommand(
+          () => teardownPluginListener(
+            listener,
+            'native-network-listener-late-teardown',
+          ),
+        );
         return;
       }
       nativeNetworkListener = listener;
       const initial = validateNativeNetworkIngestResult(
-        await invokeNative<unknown>('network_start_observation'),
+        await enqueueNativePluginCommand(
+          () => invokeNative<unknown>('network_start_observation'),
+        ),
       );
       if (
         initial.generation !== currentGeneration
@@ -507,39 +550,46 @@ export function installNativeLifecycleBridge(
 
   const nativePushReady = (async (): Promise<void> => {
     try {
-      const listener = await addPluginListener<NativePushAvailabilitySignal>(
-        PLATFORM_PERMISSIONS_PLUGIN,
-        PLATFORM_PUSH_AVAILABLE_EVENT,
-        (payload) => {
-          if (disposed) return;
-          let signal: NativePushAvailabilitySignal;
-          try {
-            signal = validateNativePushAvailability(payload);
-          } catch (error) {
-            reportBridgeError(
-              toBridgeError(
-                'MOBILE_NATIVE_READBACK_INVALID',
-                'native-push-availability',
-                error,
-              ),
-            );
-            return;
-          }
-          void Promise.resolve(handlers.onPushCallbacksAvailable?.(signal)).catch(
-            (error) => {
+      const listener = await enqueueNativePluginCommand(
+        () => addPluginListener<NativePushAvailabilitySignal>(
+          PLATFORM_PERMISSIONS_PLUGIN,
+          PLATFORM_PUSH_AVAILABLE_EVENT,
+          (payload) => {
+            if (disposed) return;
+            let signal: NativePushAvailabilitySignal;
+            try {
+              signal = validateNativePushAvailability(payload);
+            } catch (error) {
               reportBridgeError(
                 toBridgeError(
-                  'MOBILE_NATIVE_LIFECYCLE_TRANSITION_FAILED',
-                  'native-push-drain',
+                  'MOBILE_NATIVE_READBACK_INVALID',
+                  'native-push-availability',
                   error,
                 ),
               );
-            },
-          );
-        },
+              return;
+            }
+            void Promise.resolve(handlers.onPushCallbacksAvailable?.(signal)).catch(
+              (error) => {
+                reportBridgeError(
+                  toBridgeError(
+                    'MOBILE_NATIVE_LIFECYCLE_TRANSITION_FAILED',
+                    'native-push-drain',
+                    error,
+                  ),
+                );
+              },
+            );
+          },
+        ),
       );
       if (disposed) {
-        teardownPluginListener(listener, 'native-push-listener-late-teardown');
+        await enqueueNativePluginCommand(
+          () => teardownPluginListener(
+            listener,
+            'native-push-listener-late-teardown',
+          ),
+        );
         return;
       }
       nativePushListener = listener;
@@ -556,41 +606,45 @@ export function installNativeLifecycleBridge(
 
   const nativeScheduledReady = (async (): Promise<void> => {
     try {
-      const listener = await addPluginListener<NativePushAvailabilitySignal>(
-        PLATFORM_PERMISSIONS_PLUGIN,
-        PLATFORM_SCHEDULED_AVAILABLE_EVENT,
-        (payload) => {
-          if (disposed) return;
-          let signal: NativePushAvailabilitySignal;
-          try {
-            signal = validateNativePushAvailability(payload);
-          } catch (error) {
-            reportBridgeError(
-              toBridgeError(
-                'MOBILE_NATIVE_READBACK_INVALID',
-                'native-scheduled-availability',
-                error,
-              ),
-            );
-            return;
-          }
-          void Promise.resolve(
-            handlers.onScheduledCallbacksAvailable?.(signal),
-          ).catch((error) => {
-            reportBridgeError(
-              toBridgeError(
-                'MOBILE_NATIVE_LIFECYCLE_TRANSITION_FAILED',
-                'native-scheduled-drain',
-                error,
-              ),
-            );
-          });
-        },
+      const listener = await enqueueNativePluginCommand(
+        () => addPluginListener<NativePushAvailabilitySignal>(
+          PLATFORM_PERMISSIONS_PLUGIN,
+          PLATFORM_SCHEDULED_AVAILABLE_EVENT,
+          (payload) => {
+            if (disposed) return;
+            let signal: NativePushAvailabilitySignal;
+            try {
+              signal = validateNativePushAvailability(payload);
+            } catch (error) {
+              reportBridgeError(
+                toBridgeError(
+                  'MOBILE_NATIVE_READBACK_INVALID',
+                  'native-scheduled-availability',
+                  error,
+                ),
+              );
+              return;
+            }
+            void Promise.resolve(
+              handlers.onScheduledCallbacksAvailable?.(signal),
+            ).catch((error) => {
+              reportBridgeError(
+                toBridgeError(
+                  'MOBILE_NATIVE_LIFECYCLE_TRANSITION_FAILED',
+                  'native-scheduled-drain',
+                  error,
+                ),
+              );
+            });
+          },
+        ),
       );
       if (disposed) {
-        teardownPluginListener(
-          listener,
-          'native-scheduled-listener-late-teardown',
+        await enqueueNativePluginCommand(
+          () => teardownPluginListener(
+            listener,
+            'native-scheduled-listener-late-teardown',
+          ),
         );
         return;
       }
@@ -622,37 +676,55 @@ export function installNativeLifecycleBridge(
       initialNetworkObserved = true;
       resolveInitialNetworkObservation();
     }
+    await Promise.allSettled([
+      nativeLifecycleReady,
+      nativeNetworkReady,
+      nativePushReady,
+      nativeScheduledReady,
+    ]);
     const pendingTeardown = [...unlisteners].map((unlisten) => (
       teardownListener(unlisten, 'listener-teardown')
     ));
     unlisteners.clear();
     if (nativeLifecycleListener) {
-      pendingTeardown.push(teardownPluginListener(
-        nativeLifecycleListener,
-        'native-listener-teardown',
-      ));
+      const listener = nativeLifecycleListener;
       nativeLifecycleListener = null;
+      pendingTeardown.push(enqueueNativePluginCommand(
+        () => teardownPluginListener(
+          listener,
+          'native-listener-teardown',
+        ),
+      ));
     }
     if (nativeNetworkListener) {
-      pendingTeardown.push(teardownPluginListener(
-        nativeNetworkListener,
-        'native-network-listener-teardown',
-      ));
+      const listener = nativeNetworkListener;
       nativeNetworkListener = null;
+      pendingTeardown.push(enqueueNativePluginCommand(
+        () => teardownPluginListener(
+          listener,
+          'native-network-listener-teardown',
+        ),
+      ));
     }
     if (nativePushListener) {
-      pendingTeardown.push(teardownPluginListener(
-        nativePushListener,
-        'native-push-listener-teardown',
-      ));
+      const listener = nativePushListener;
       nativePushListener = null;
+      pendingTeardown.push(enqueueNativePluginCommand(
+        () => teardownPluginListener(
+          listener,
+          'native-push-listener-teardown',
+        ),
+      ));
     }
     if (nativeScheduledListener) {
-      pendingTeardown.push(teardownPluginListener(
-        nativeScheduledListener,
-        'native-scheduled-listener-teardown',
-      ));
+      const listener = nativeScheduledListener;
       nativeScheduledListener = null;
+      pendingTeardown.push(enqueueNativePluginCommand(
+        () => teardownPluginListener(
+          listener,
+          'native-scheduled-listener-teardown',
+        ),
+      ));
     }
     await Promise.all(pendingTeardown);
   }

@@ -17,6 +17,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
+from tooling.acceptance.core import (
+    ENVIRONMENTS_DIR,
+    EnvironmentContract,
+    ProvisioningError,
+)
 from tooling.acceptance.core.attestation import (
     PROTOCOL_SOURCE_PATHS,
     produce_station_attestation,
@@ -32,6 +37,11 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     produce_actor_manifest,
     produce_bound_actor_manifest,
     reset_fixture,
+    resolve_existing_actor_identity,
+)
+from tooling.acceptance.provisioners import (
+    CrossStationSocialNativeProvisioner,
+    get_provisioner,
 )
 
 
@@ -769,10 +779,11 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 "alice": "alice@p.t",
                 "bob": "bob@p.t",
                 "charlie": "carol@p.t",
+                "eve": "carol@p.t",
             },
         )
 
-    def test_actor_fixture_has_no_json_business_http_path(self) -> None:
+    def test_actor_fixture_http_path_is_public_profile_only(self) -> None:
         source = (
             Path(__file__).resolve().parents[3]
             / "tooling"
@@ -783,7 +794,47 @@ class ActorFixtureOwnerTests(unittest.TestCase):
         self.assertNotIn("/actor/login", source)
         self.assertNotIn("/actor/logout", source)
         self.assertNotIn("/actor/federation/resolve", source)
-        self.assertNotIn("urllib.request", source)
+        self.assertIn("resolve_existing_actor_identity", source)
+        self.assertIn('method="GET"', source)
+
+    def test_existing_actor_resolution_reads_public_profile_without_session(
+        self,
+    ) -> None:
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(
+            {
+                "username": "carol",
+                "ref": {"ptid": "ptid:eve"},
+                "federated_handle": "@carol@station.example",
+                "home_station_peer_id": "station-peer",
+            }
+        ).encode("utf-8")
+
+        with patch(
+            "tooling.acceptance.fixtures.chat_native_actors."
+            "urllib.request.urlopen",
+            return_value=response,
+        ) as urlopen:
+            actor = resolve_existing_actor_identity(
+                "http://station.example:18080",
+                "eve",
+            )
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(
+            request.full_url,
+            "http://station.example:18080/actor/carol/profile",
+        )
+        self.assertEqual(request.get_method(), "GET")
+        self.assertIsNone(request.data)
+        self.assertEqual(urlopen.call_count, 1)
+        self.assertEqual(actor.account_ref, "station-account:carol@p.t")
+        self.assertEqual(actor.ptid, "ptid:eve")
+        self.assertEqual(
+            actor.federated_handle,
+            "@carol@station.example",
+        )
+        self.assertEqual(actor.home_station_peer_id, "station-peer")
 
     def test_reset_requires_explicit_authorization(self) -> None:
         with self.assertRaisesRegex(BlockedError, "CHAT_ACCEPTANCE_RESET=1"):
@@ -1024,6 +1075,47 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 ),
             ],
         )
+
+
+class CrossStationSocialProvisioningOwnerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "cross-station-social-native.yaml"
+        )
+
+    def test_service_profiles_bind_cross_station_social_services(self) -> None:
+        bindings = {
+            "station-four": "four",
+            "station-five-arm": "fiveArm",
+        }
+
+        provisioner = get_provisioner(
+            self.contract,
+            service_profiles=bindings,
+        )
+
+        self.assertIsInstance(
+            provisioner,
+            CrossStationSocialNativeProvisioner,
+        )
+        self.assertEqual(bindings, provisioner._required_station_profiles())
+
+    def test_conflicting_profile_binding_kinds_fail_closed(self) -> None:
+        with self.assertRaisesRegex(
+            ProvisioningError,
+            "conflicting station and service profile bindings",
+        ):
+            get_provisioner(
+                self.contract,
+                station_profiles={
+                    "station-four": "four",
+                    "station-five-arm": "fiveArm",
+                },
+                service_profiles={
+                    "station-four": "fiveArm",
+                    "station-five-arm": "four",
+                },
+            )
 
 
 class ProfileActivationContractTests(unittest.TestCase):

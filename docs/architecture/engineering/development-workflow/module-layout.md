@@ -140,7 +140,7 @@ Responsibilities below describe the NBI02 PlanMount cutover result.
 |---|---|
 | `README.md` | Module scope, verified problem and navigation |
 | `design.md` | Ownership, boundaries, data flow, resume and cutover contracts |
-| `decisions.md` | DWF-D01..DWF-D44 ADR-lite decisions |
+| `decisions.md` | DWF-D01..DWF-D45 ADR-lite decisions |
 | `data-model.md` | Closed schemas and state transition guards |
 | `integration.md` | Skill, Make, Acceptance, Quality and migration mapping |
 | `execution-plans/*/plan.md` | Stable Plan, digest-bound North Star approval, criterion coverage, Amendment Log, and Acceptance contract |
@@ -151,10 +151,10 @@ Responsibilities below describe the NBI02 PlanMount cutover result.
 | `plan-package.mjs` | Structured Markdown parser, schema validation, DAG, bounds, and Task-closure progress projection |
 | `planctl.mjs` | `validate/source-status/approve-north-star/amend/seal-completion/current/next/status/activate/advance/reopen/invalidate-source` CLI |
 | `planctl.test.mjs` | Package, DAG, bounds and CLI regression coverage |
-| `plan-mount.mjs` | Stable Plan mount/unmount owner, immutable snapshot history, amendment transition, live-worktree exclusion, and direct resolution |
+| `plan-mount.mjs` | Stable Plan mount/unmount owner, immutable snapshot history, amendment transition, live-worktree exclusion, direct resolution, and exact-owner close-only legacy release |
 | `plan-mount.test.mjs` | Candidate approval, criterion coverage, idempotence, mount conflict, amendment, North Star invalidation, explicit unmount, snapshot, tamper, and concurrency regressions |
-| `stable-plan-state-migration.mjs` | Explicit global-idle hard cut for machine ledger field/index renames; normal readers contain no legacy fallback |
-| `dev-work-schema.mjs` | Resource declaration closed schema and digest |
+| `stable-plan-state-migration.mjs` | Workspace-scoped stable Plan adoption under shared ledger locks/CAS; preserves declaration lifecycle and foreign legacy records, and finalizes the mixed envelope when empty |
+| `dev-work-schema.mjs` | Stable owner schema plus exact legacy/stable coordination-record validation and digest |
 | `dev-work-ledger.mjs` | Machine-wide declaration lock, conflict and lifecycle |
 | `dev-work.mjs` | Resource declaration CLI |
 | `development-close-store.mjs` | Closed `DevelopmentCloseReceipt` schema, digest, atomic persistence, and new-work admission guard |

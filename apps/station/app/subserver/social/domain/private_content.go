@@ -42,18 +42,19 @@ const (
 type PrivateContentErrorCode string
 
 const (
-	PrivateContentInvalidArgument PrivateContentErrorCode = "SOCIAL_PRIVATE_INVALID_ARGUMENT"
-	PrivateContentUnsupported     PrivateContentErrorCode = "SOCIAL_PRIVATE_UNSUPPORTED"
-	PrivateContentUnauthorized    PrivateContentErrorCode = "SOCIAL_PRIVATE_UNAUTHORIZED"
-	PrivateContentNotFound        PrivateContentErrorCode = "SOCIAL_PRIVATE_NOT_FOUND"
-	PrivateContentConflict        PrivateContentErrorCode = "SOCIAL_PRIVATE_CONFLICT"
-	PrivateContentStalePlan       PrivateContentErrorCode = "SOCIAL_PRIVATE_STALE_PLAN"
-	PrivateContentExpiredPlan     PrivateContentErrorCode = "SOCIAL_PRIVATE_EXPIRED_PLAN"
-	PrivateContentRateLimited     PrivateContentErrorCode = "SOCIAL_PRIVATE_RATE_LIMITED"
-	PrivateContentIntegrityFailed PrivateContentErrorCode = "SOCIAL_PRIVATE_INTEGRITY_FAILED"
-	PrivateContentDependency      PrivateContentErrorCode = "SOCIAL_PRIVATE_DEPENDENCY_FAILURE"
-	PrivateContentIntegrationGap  PrivateContentErrorCode = "SOCIAL_PRIVATE_INTEGRATION_GAP"
-	PrivateContentInternal        PrivateContentErrorCode = "SOCIAL_PRIVATE_INTERNAL"
+	PrivateContentInvalidArgument         PrivateContentErrorCode = "SOCIAL_PRIVATE_INVALID_ARGUMENT"
+	PrivateContentUnsupported             PrivateContentErrorCode = "SOCIAL_PRIVATE_UNSUPPORTED"
+	PrivateContentUnauthorized            PrivateContentErrorCode = "SOCIAL_PRIVATE_UNAUTHORIZED"
+	PrivateContentNotFound                PrivateContentErrorCode = "SOCIAL_PRIVATE_NOT_FOUND"
+	PrivateContentConflict                PrivateContentErrorCode = "SOCIAL_PRIVATE_CONFLICT"
+	PrivateContentStalePlan               PrivateContentErrorCode = "SOCIAL_PRIVATE_STALE_PLAN"
+	PrivateContentExpiredPlan             PrivateContentErrorCode = "SOCIAL_PRIVATE_EXPIRED_PLAN"
+	PrivateContentRateLimited             PrivateContentErrorCode = "SOCIAL_PRIVATE_RATE_LIMITED"
+	PrivateContentRecipientKeyUnavailable PrivateContentErrorCode = "SOCIAL_PRIVATE_RECIPIENT_KEY_UNAVAILABLE"
+	PrivateContentIntegrityFailed         PrivateContentErrorCode = "SOCIAL_PRIVATE_INTEGRITY_FAILED"
+	PrivateContentDependency              PrivateContentErrorCode = "SOCIAL_PRIVATE_DEPENDENCY_FAILURE"
+	PrivateContentIntegrationGap          PrivateContentErrorCode = "SOCIAL_PRIVATE_INTEGRATION_GAP"
+	PrivateContentInternal                PrivateContentErrorCode = "SOCIAL_PRIVATE_INTERNAL"
 )
 
 // PrivateContentError is the transport-independent error returned by the W6
@@ -191,11 +192,154 @@ type FriendsSnapshot struct {
 type RecipientLocality struct {
 	ActorPTID         string
 	HomeStationPeerID string
+	FederationID      string
+}
+
+type canonicalRecipientLocalities struct {
+	FormatVersion uint32                       `json:"format_version"`
+	Recipients    []canonicalRecipientLocality `json:"recipients"`
+}
+
+type canonicalRecipientLocality struct {
+	ActorPTID         string `json:"actor_ptid"`
+	HomeStationPeerID string `json:"home_station_peer_id"`
+	FederationID      string `json:"federation_id,omitempty"`
+}
+
+// CanonicalRecipientLocalitiesBytes persists the prepare-time locality
+// projection needed to partition submit validation without re-reading mutable
+// Actor Identity state.
+func CanonicalRecipientLocalitiesBytes(
+	localities []RecipientLocality,
+) ([]byte, error) {
+	const operation = "social.private_content.canonical_recipient_localities"
+	if len(localities) > MaximumPrivateRecipientActors {
+		return nil, NewPrivateContentError(
+			PrivateContentInvalidArgument,
+			operation,
+			"recipient_localities",
+			"exceed the private recipient limit",
+		)
+	}
+	normalized := append([]RecipientLocality(nil), localities...)
+	sort.Slice(normalized, func(left int, right int) bool {
+		return normalized[left].ActorPTID < normalized[right].ActorPTID
+	})
+	recipients := make([]canonicalRecipientLocality, 0, len(normalized))
+	previousActorPTID := ""
+	for _, locality := range normalized {
+		if err := validateIdentifier(
+			locality.ActorPTID,
+			255,
+			"recipient_localities.actor_ptid",
+			operation,
+		); err != nil {
+			return nil, err
+		}
+		if locality.ActorPTID == previousActorPTID {
+			return nil, NewPrivateContentError(
+				PrivateContentConflict,
+				operation,
+				"recipient_localities.actor_ptid",
+				"must be unique",
+			)
+		}
+		if err := validateIdentifier(
+			locality.HomeStationPeerID,
+			255,
+			"recipient_localities.home_station_peer_id",
+			operation,
+		); err != nil {
+			return nil, err
+		}
+		if locality.FederationID != "" {
+			if err := validateIdentifier(
+				locality.FederationID,
+				255,
+				"recipient_localities.federation_id",
+				operation,
+			); err != nil {
+				return nil, err
+			}
+		}
+		recipients = append(recipients, canonicalRecipientLocality{
+			ActorPTID:         locality.ActorPTID,
+			HomeStationPeerID: locality.HomeStationPeerID,
+			FederationID:      locality.FederationID,
+		})
+		previousActorPTID = locality.ActorPTID
+	}
+	encoded, err := json.Marshal(canonicalRecipientLocalities{
+		FormatVersion: PrivateContentFormatVersion,
+		Recipients:    recipients,
+	})
+	if err != nil {
+		return nil, WrapPrivateContentError(
+			PrivateContentInternal,
+			operation,
+			err,
+		)
+	}
+	return encoded, nil
+}
+
+// ParseCanonicalRecipientLocalities accepts only bytes emitted by
+// CanonicalRecipientLocalitiesBytes.
+func ParseCanonicalRecipientLocalities(
+	encoded []byte,
+) ([]RecipientLocality, error) {
+	const operation = "social.private_content.parse_recipient_localities"
+	if len(encoded) == 0 {
+		return nil, NewPrivateContentError(
+			PrivateContentIntegrityFailed,
+			operation,
+			"recipient_localities",
+			"are required",
+		)
+	}
+	var persisted canonicalRecipientLocalities
+	if err := json.Unmarshal(encoded, &persisted); err != nil {
+		return nil, WrapPrivateContentError(
+			PrivateContentIntegrityFailed,
+			operation,
+			err,
+		)
+	}
+	if persisted.FormatVersion != PrivateContentFormatVersion {
+		return nil, NewPrivateContentError(
+			PrivateContentIntegrityFailed,
+			operation,
+			"format_version",
+			"is unsupported",
+		)
+	}
+	localities := make([]RecipientLocality, 0, len(persisted.Recipients))
+	for _, locality := range persisted.Recipients {
+		localities = append(localities, RecipientLocality{
+			ActorPTID:         locality.ActorPTID,
+			HomeStationPeerID: locality.HomeStationPeerID,
+			FederationID:      locality.FederationID,
+		})
+	}
+	canonical, err := CanonicalRecipientLocalitiesBytes(localities)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(encoded, canonical) {
+		return nil, NewPrivateContentError(
+			PrivateContentIntegrityFailed,
+			operation,
+			"recipient_localities",
+			"are not canonically encoded",
+		)
+	}
+	return localities, nil
 }
 
 // GroupRecipientSnapshot is Social's value-only projection of Conversation
 // membership authority. It never carries a Conversation repository or UOW.
 type GroupRecipientSnapshot struct {
+	FederationID        string
 	ConversationID      string
 	AuthorPTID          string
 	MembershipEpoch     uint64
@@ -205,6 +349,7 @@ type GroupRecipientSnapshot struct {
 
 type canonicalGroupRecipientSnapshot struct {
 	FormatVersion       uint32                          `json:"format_version"`
+	FederationID        string                          `json:"federation_id"`
 	ConversationID      string                          `json:"conversation_id"`
 	AuthorPTID          string                          `json:"author_ptid"`
 	MembershipEpoch     uint64                          `json:"membership_epoch"`
@@ -240,6 +385,7 @@ func CanonicalGroupRecipientSnapshotBytes(
 	}
 	encoded, err := json.Marshal(canonicalGroupRecipientSnapshot{
 		FormatVersion:       PrivateContentFormatVersion,
+		FederationID:        snapshot.FederationID,
 		ConversationID:      snapshot.ConversationID,
 		AuthorPTID:          snapshot.AuthorPTID,
 		MembershipEpoch:     snapshot.MembershipEpoch,
@@ -296,6 +442,7 @@ func ParseCanonicalGroupRecipientSnapshot(
 		})
 	}
 	snapshot := GroupRecipientSnapshot{
+		FederationID:        persisted.FederationID,
 		ConversationID:      persisted.ConversationID,
 		AuthorPTID:          persisted.AuthorPTID,
 		MembershipEpoch:     persisted.MembershipEpoch,
@@ -325,6 +472,14 @@ func validateGroupRecipientSnapshot(
 	operation string,
 	snapshot GroupRecipientSnapshot,
 ) error {
+	if err := validateIdentifier(
+		snapshot.FederationID,
+		255,
+		"federation_id",
+		operation,
+	); err != nil {
+		return err
+	}
 	if err := validateIdentifier(
 		snapshot.ConversationID,
 		255,
@@ -553,6 +708,16 @@ func NormalizeFriendsSnapshot(
 		); err != nil {
 			return FriendsSnapshot{}, [sha256.Size]byte{}, err
 		}
+		if locality.FederationID != "" {
+			if err := validateIdentifier(
+				locality.FederationID,
+				255,
+				"recipient_localities.federation_id",
+				operation,
+			); err != nil {
+				return FriendsSnapshot{}, [sha256.Size]byte{}, err
+			}
+		}
 		if locality.ActorPTID != normalized.RecipientPTIDs[index] {
 			return FriendsSnapshot{}, [sha256.Size]byte{}, NewPrivateContentError(
 				PrivateContentConflict,
@@ -594,6 +759,13 @@ func NormalizeFriendsSnapshot(
 			2,
 			locality.HomeStationPeerID,
 		)
+		if locality.FederationID != "" {
+			localityBytes = appendStringField(
+				localityBytes,
+				3,
+				locality.FederationID,
+			)
+		}
 		canonical = appendBytesField(canonical, 7, localityBytes)
 	}
 	return normalized, sha256.Sum256(canonical), nil

@@ -67,6 +67,18 @@ func (p *SocialGraphEventPublisher) PublishRelationshipChanged(
 	})
 }
 
+func (p *SocialGraphEventPublisher) PublishUnfriended(
+	ctx context.Context,
+	actorPTID string,
+	targetPTID string,
+) {
+	p.publish(ctx, actorPTID, &realtime.SocialGraphEvent{
+		Kind:       realtime.SocialGraphEvent_UNFRIENDED,
+		ActorPtid:  actorPTID,
+		TargetPtid: targetPTID,
+	})
+}
+
 func (p *SocialGraphEventPublisher) publish(ctx context.Context, targetPTID string, ev *realtime.SocialGraphEvent) {
 	liveBus := p.bus()
 	if liveBus == nil {
@@ -78,6 +90,13 @@ func (p *SocialGraphEventPublisher) publish(ctx context.Context, targetPTID stri
 	if _, err := liveBus.Publish(targetPTID, &realtime.StreamEvent{
 		Kind: &realtime.StreamEvent_SocialGraphEvent{SocialGraphEvent: ev},
 	}); err != nil {
-		logger.Warn(ctx, "social.realtime: publish failed", "target_ptid", targetPTID, "kind", ev.Kind.String(), "error", err)
+		logger.Warn(
+			ctx,
+			"social.realtime: publish failed",
+			"kind",
+			ev.Kind.String(),
+			"error",
+			err,
+		)
 	}
 }

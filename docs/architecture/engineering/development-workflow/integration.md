@@ -100,10 +100,11 @@ declaration source identity advances before the next mutation or runtime
 acquisition. The machine registration does not store Git HEAD and therefore
 requires no source refresh. Task handoff also updates the declaration's `TASK`.
 
-The declaration schema is a hard compatibility boundary. Repository source
-must be synchronized before a writer publishes mount/run locator fields into
-the shared machine ledger. No legacy binding reader or inferred locator bridge
-exists.
+The declaration owner schema is a hard compatibility boundary. Repository
+source must be synchronized before a writer mutates its own mount/run locator.
+The machine coordination reader may validate foreign legacy declarations during
+the bounded DWF-D45 adoption window, but it neither normalizes nor rewrites
+their owner fields.
 
 `dev-resources-prepare` runs after all affected module Skills emit
 `ModuleImpact` and before the first runtime acquisition. It resolves the
@@ -488,10 +489,16 @@ URI before source capture. Allocation rejects an existing ID instead of
 silently generating a replacement.
 
 Historical plan documents remain source history only. Normal execution accepts
-the current stable Plan contract and has no legacy reader, alias, or dual write.
-Before installing the hard cut on a machine with old state, close every live
-declaration and mount, then run `make plan-state-migrate`; the command refuses
-to run while any old owner is live and rewrites only the idle ledger schema.
+the current stable Plan contract and never executes a legacy snapshot.
+`make plan-state-migrate` adopts the selected workspace independently,
+preserves a live declaration's lifecycle state, and leaves foreign records in
+the single mixed ledger envelope as conflict inputs. A selected legacy mount is
+close-only under stable tooling: only explicitly authorized exact-owner
+`owner-unmount` removes its legacy indexes without reviving or trusting the old
+snapshot. A selected declaration that predates OWNER provenance may adopt only
+the current live Hook OWNER during this migration; existing or foreign owners
+cannot be replaced. The final legacy Plan index is deleted mechanically when
+empty.
 
 The diff-based planner may report candidate Gates but may not mutate the package
 or current closure.

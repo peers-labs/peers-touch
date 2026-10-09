@@ -43,6 +43,78 @@ func (r *GORMRepository) Enqueue(
 	return enqueueFrame(ctx, r.db, frame, now)
 }
 
+// ReadOutboxStatuses returns one bounded lifecycle projection per requested frame.
+func (r *GORMRepository) ReadOutboxStatuses(
+	ctx context.Context,
+	frameIDs []string,
+	now time.Time,
+) ([]OutboxStatus, error) {
+	if len(frameIDs) == 0 ||
+		len(frameIDs) > MaxClaimBatchSize ||
+		now.IsZero() {
+		return nil, NewError(
+			FailureInvalidArgument,
+			"read outbox statuses",
+			errorsText("frame IDs and observation time are required"),
+		)
+	}
+	unique := make(map[string]struct{}, len(frameIDs))
+	for _, frameID := range frameIDs {
+		if strings.TrimSpace(frameID) == "" ||
+			frameID != strings.TrimSpace(frameID) {
+			return nil, NewError(
+				FailureInvalidArgument,
+				"read outbox statuses",
+				errorsText("frame ID is not canonical"),
+			)
+		}
+		if _, exists := unique[frameID]; exists {
+			return nil, NewError(
+				FailureInvalidArgument,
+				"read outbox statuses",
+				errorsText("frame IDs contain duplicates"),
+			)
+		}
+		unique[frameID] = struct{}{}
+	}
+
+	var records []OutboxRecord
+	if err := r.db.WithContext(ctx).
+		Where("frame_id IN ?", frameIDs).
+		Order("frame_id ASC").
+		Find(&records).Error; err != nil {
+		return nil, NewError(FailurePersistence, "read outbox statuses", err)
+	}
+	if len(records) != len(frameIDs) {
+		return nil, NewError(
+			FailurePersistence,
+			"read outbox statuses",
+			errorsText("one or more outbox rows are missing"),
+		)
+	}
+
+	now = now.UTC()
+	statuses := make([]OutboxStatus, 0, len(records))
+	for _, record := range records {
+		state := record.State
+		if state != OutboxStateDelivered &&
+			state != OutboxStateTerminal &&
+			state != OutboxStateExpired &&
+			!record.ExpiresAt.After(now) {
+			state = OutboxStateExpired
+		}
+		statuses = append(statuses, OutboxStatus{
+			FrameID:       record.FrameID,
+			State:         state,
+			AttemptCount:  record.AttemptCount,
+			NextAttemptAt: record.NextAttemptAt,
+			ExpiresAt:     record.ExpiresAt,
+			LastFailure:   record.LastFailure,
+		})
+	}
+	return statuses, nil
+}
+
 // Claim leases a bounded set of due frames and reclaims expired leases.
 func (r *GORMRepository) Claim(
 	ctx context.Context,
@@ -144,6 +216,7 @@ func (r *GORMRepository) Claim(
 					ExpiresAt:  leaseExpiresAt,
 				},
 				AttemptCount: nextAttemptCount,
+				EnqueuedAt:   record.CreatedAt,
 			})
 		}
 		return nil

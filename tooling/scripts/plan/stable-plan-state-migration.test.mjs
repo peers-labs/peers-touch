@@ -5,9 +5,13 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { developmentWorkLedgerPath, machineDevRoot } from '../lib/machine-dev-paths.mjs';
+import {
+  developmentWorkLedgerPath,
+  machineDevRoot,
+} from '../lib/machine-dev-paths.mjs';
 import { readLedger } from '../local-dev/dev-work-ledger.mjs';
 import { digestDeclaration } from '../local-dev/dev-work-schema.mjs';
+import { atomicReplaceFile } from './plan-package.mjs';
 import {
   StablePlanMigrationError,
   migrateStablePlanState,
@@ -18,6 +22,8 @@ function scope(t) {
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   return {
     home,
+    workspaceId: '0123456789abcdef',
+    foreignWorkspaceId: 'fedcba9876543210',
     workFile: developmentWorkLedgerPath(home),
     mountFile: path.join(machineDevRoot(home), 'plan-mounts', 'ledger.json'),
   };
@@ -47,12 +53,33 @@ function canonicalize(value) {
   );
 }
 
-function legacyDeclaration(state = 'RELEASED') {
+function workflowOwner(rootChatId = 'current-owner') {
+  const host = 'trae';
+  return {
+    host,
+    kind: 'peers-touch-workflow-owner-reference',
+    rootBindingDigest: crypto
+      .createHash('sha256')
+      .update(`binding\0${rootChatId}`)
+      .digest('hex'),
+    rootChatHash: crypto
+      .createHash('sha256')
+      .update(`${host}\0root\0${rootChatId}`)
+      .digest('hex'),
+    rootChatId,
+  };
+}
+
+function legacyDeclaration(
+  state = 'RELEASED',
+  workspaceId = '0123456789abcdef',
+  workItemId = 'task',
+) {
   const declaration = {
-    declarationId: 'task-0123456789abcdef',
-    workItemId: 'task',
+    declarationId: `${workItemId}-${workspaceId}`,
+    workItemId,
     sessionId: 'session',
-    workspaceId: '0123456789abcdef',
+    workspaceId,
     branch: 'test',
     sourceHead: 'a'.repeat(40),
     owner: 'test@example.invalid',
@@ -90,7 +117,7 @@ function legacyMountLedger(overrides = {}) {
   return ledger;
 }
 
-test('migrates idle declaration and mount ledgers without dual-read state', async (t) => {
+test('migrates the selected idle workspace and finalizes an empty mount ledger', async (t) => {
   const fixture = scope(t);
   const declaration = legacyDeclaration();
   writeJson(fixture.workFile, {
@@ -101,12 +128,16 @@ test('migrates idle declaration and mount ledgers without dual-read state', asyn
   });
   writeJson(fixture.mountFile, legacyMountLedger());
 
-  const result = await migrateStablePlanState({ home: fixture.home });
+  const result = await migrateStablePlanState({
+    home: fixture.home,
+    workspaceId: fixture.workspaceId,
+  });
   const migratedWork = readLedger(fixture.workFile);
   const migratedMount = JSON.parse(fs.readFileSync(fixture.mountFile, 'utf8'));
 
   assert.equal(result.migratedDeclarations, 1);
   assert.equal(result.migratedMountLedger, true);
+  assert.equal(result.mountLedgerMode, 'stable');
   assert.equal(
     Object.hasOwn(
       migratedWork.declarations[declaration.declarationId],
@@ -122,7 +153,63 @@ test('migrates idle declaration and mount ledgers without dual-read state', asyn
   assert.equal(Object.hasOwn(migratedMount, 'liveMountsByPlanVersion'), false);
 });
 
-test('rejects migration while any declaration or Plan mount is live', async (t) => {
+test('foreign live work remains valid and does not block workspace migration', async (t) => {
+  const fixture = scope(t);
+  const own = legacyDeclaration();
+  const foreign = legacyDeclaration(
+    'ACTIVE',
+    fixture.foreignWorkspaceId,
+    'foreign-task',
+  );
+  writeJson(fixture.workFile, {
+    schemaVersion: 1,
+    kind: 'peers-touch-development-work-ledger',
+    updatedAt: '2026-10-06T00:00:00.000Z',
+    declarations: {
+      [own.declarationId]: own,
+      [foreign.declarationId]: foreign,
+    },
+  });
+  writeJson(
+    fixture.mountFile,
+    legacyMountLedger({
+      liveMountsByWorkspace: {
+        [fixture.foreignWorkspaceId]: 'mount-foreign',
+      },
+      liveMountsByPlanVersion: {
+        ['a'.repeat(64)]: 'mount-foreign',
+      },
+      runsByMount: {
+        'mount-foreign': 'run-foreign',
+      },
+    }),
+  );
+
+  const result = await migrateStablePlanState({
+    home: fixture.home,
+    workspaceId: fixture.workspaceId,
+  });
+  const work = readLedger(fixture.workFile);
+  const mounts = JSON.parse(fs.readFileSync(fixture.mountFile, 'utf8'));
+
+  assert.equal(result.migratedDeclarations, 1);
+  assert.equal(result.migratedMountLedger, true);
+  assert.equal(result.mountLedgerMode, 'mixed');
+  assert.deepEqual(work.declarations[foreign.declarationId], foreign);
+  assert.equal(
+    Object.hasOwn(work.declarations[own.declarationId], 'planVersionDigest'),
+    false,
+  );
+  assert.deepEqual(mounts.liveMountsByWorkspace, {
+    [fixture.foreignWorkspaceId]: 'mount-foreign',
+  });
+  assert.deepEqual(mounts.liveMountsByPlanVersion, {
+    ['a'.repeat(64)]: 'mount-foreign',
+  });
+  assert.deepEqual(mounts.liveMountsByPlan, {});
+});
+
+test('migrates a selected live declaration without changing its lifecycle', async (t) => {
   const fixture = scope(t);
   const declaration = legacyDeclaration('ACTIVE');
   writeJson(fixture.workFile, {
@@ -131,27 +218,116 @@ test('rejects migration while any declaration or Plan mount is live', async (t) 
     updatedAt: '2026-10-06T00:00:00.000Z',
     declarations: { [declaration.declarationId]: declaration },
   });
+
+  const result = await migrateStablePlanState({
+    home: fixture.home,
+    workspaceId: fixture.workspaceId,
+  });
+  const migrated = readLedger(fixture.workFile)
+    .declarations[declaration.declarationId];
+
+  assert.equal(result.migratedDeclarations, 1);
+  assert.equal(migrated.state, 'ACTIVE');
+  assert.equal(migrated.heartbeatAt, declaration.heartbeatAt);
+  assert.equal(
+    Object.hasOwn(migrated, 'planVersionDigest'),
+    false,
+  );
+});
+
+test('adopts the live OWNER only for selected declarations missing provenance', async (t) => {
+  const fixture = scope(t);
+  const owner = workflowOwner();
+  const own = legacyDeclaration('ACTIVE');
+  own.planDigest = own.planVersionDigest;
+  delete own.planVersionDigest;
+  own.declarationDigest = digestDeclaration(own);
+  const foreign = legacyDeclaration(
+    'ACTIVE',
+    fixture.foreignWorkspaceId,
+    'foreign-task',
+  );
+  writeJson(fixture.workFile, {
+    schemaVersion: 1,
+    kind: 'peers-touch-development-work-ledger',
+    updatedAt: '2026-10-06T00:00:00.000Z',
+    declarations: {
+      [own.declarationId]: own,
+      [foreign.declarationId]: foreign,
+    },
+  });
+
+  const result = await migrateStablePlanState({
+    home: fixture.home,
+    workspaceId: fixture.workspaceId,
+    workflowOwner: owner,
+  });
+  const declarations = readLedger(fixture.workFile).declarations;
+
+  assert.equal(result.migratedDeclarations, 1);
+  assert.equal(result.adoptedWorkflowOwners, 1);
+  assert.deepEqual(declarations[own.declarationId].workflowOwner, owner);
+  assert.deepEqual(declarations[foreign.declarationId], foreign);
+});
+
+test('rejects selected declaration ownership drift', async (t) => {
+  const fixture = scope(t);
+  const declaration = legacyDeclaration('ACTIVE');
+  declaration.workflowOwner = workflowOwner('persisted-owner');
+  declaration.declarationDigest = digestDeclaration(declaration);
+  writeJson(fixture.workFile, {
+    schemaVersion: 1,
+    kind: 'peers-touch-development-work-ledger',
+    updatedAt: '2026-10-06T00:00:00.000Z',
+    declarations: { [declaration.declarationId]: declaration },
+  });
+
+  await assert.rejects(
+    migrateStablePlanState({
+      home: fixture.home,
+      workspaceId: fixture.workspaceId,
+      workflowOwner: workflowOwner('different-owner'),
+    }),
+    (error) =>
+      error instanceof StablePlanMigrationError &&
+      error.code === 'WORKFLOW_OWNER_CONTEXT_MISMATCH',
+  );
+});
+
+test('adopts a close-only envelope while the selected workspace has a legacy mount', async (t) => {
+  const fixture = scope(t);
   writeJson(
     fixture.mountFile,
     legacyMountLedger({
       liveMountsByWorkspace: {
-        '0123456789abcdef': 'mount-1',
+        [fixture.workspaceId]: 'mount-current',
       },
       liveMountsByPlanVersion: {
-        ['a'.repeat(64)]: 'mount-1',
+        ['a'.repeat(64)]: 'mount-current',
       },
       runsByMount: {
-        'mount-1': 'run-1',
+        'mount-current': 'run-current',
       },
     }),
   );
 
-  await assert.rejects(
-    migrateStablePlanState({ home: fixture.home }),
-    (error) =>
-      error instanceof StablePlanMigrationError &&
-      error.code === 'PLAN_STATE_MIGRATION_REQUIRES_IDLE',
+  const result = await migrateStablePlanState({
+    home: fixture.home,
+    workspaceId: fixture.workspaceId,
+  });
+  const mounts = JSON.parse(fs.readFileSync(fixture.mountFile, 'utf8'));
+
+  assert.equal(result.migratedMountLedger, true);
+  assert.equal(result.mountLedgerMode, 'mixed');
+  assert.equal(
+    mounts.liveMountsByWorkspace[fixture.workspaceId],
+    'mount-current',
   );
+  assert.equal(
+    mounts.liveMountsByPlanVersion['a'.repeat(64)],
+    'mount-current',
+  );
+  assert.deepEqual(mounts.liveMountsByPlan, {});
 });
 
 test('rejects a one-sided legacy Plan index before migration', async (t) => {
@@ -169,7 +345,10 @@ test('rejects a one-sided legacy Plan index before migration', async (t) => {
   );
 
   await assert.rejects(
-    migrateStablePlanState({ home: fixture.home }),
+    migrateStablePlanState({
+      home: fixture.home,
+      workspaceId: fixture.workspaceId,
+    }),
     (error) =>
       error instanceof StablePlanMigrationError &&
       error.code === 'PLAN_STATE_MIGRATION_INVALID',
@@ -190,7 +369,10 @@ test('validates legacy digests before rewriting either ledger', async (t) => {
   writeJson(fixture.mountFile, mountLedger);
 
   await assert.rejects(
-    migrateStablePlanState({ home: fixture.home }),
+    migrateStablePlanState({
+      home: fixture.home,
+      workspaceId: fixture.workspaceId,
+    }),
     (error) =>
       error instanceof StablePlanMigrationError &&
       error.code === 'PLAN_STATE_MIGRATION_INVALID',
@@ -216,7 +398,10 @@ test('rejects a tampered legacy mount ledger before rewriting declarations', asy
   writeJson(fixture.mountFile, mountLedger);
 
   await assert.rejects(
-    migrateStablePlanState({ home: fixture.home }),
+    migrateStablePlanState({
+      home: fixture.home,
+      workspaceId: fixture.workspaceId,
+    }),
     (error) =>
       error instanceof StablePlanMigrationError &&
       error.code === 'PLAN_STATE_MIGRATION_INVALID',
@@ -242,6 +427,7 @@ test('retries after an interruption between the two ledger writes', async (t) =>
   await assert.rejects(
     migrateStablePlanState({
       home: fixture.home,
+      workspaceId: fixture.workspaceId,
       async atomicReplaceFile(file, content, options) {
         writes += 1;
         if (writes === 2) throw new Error('simulated interruption');
@@ -253,7 +439,10 @@ test('retries after an interruption between the two ledger writes', async (t) =>
     /simulated interruption/,
   );
 
-  const result = await migrateStablePlanState({ home: fixture.home });
+  const result = await migrateStablePlanState({
+    home: fixture.home,
+    workspaceId: fixture.workspaceId,
+  });
   assert.equal(result.migratedDeclarations, 0);
   assert.equal(result.migratedMountLedger, true);
   assert.equal(
@@ -262,5 +451,49 @@ test('retries after an interruption between the two ledger writes', async (t) =>
       'planVersionDigest',
     ),
     false,
+  );
+});
+
+test('stale writers cannot replace a concurrently changed global ledger', async (t) => {
+  const fixture = scope(t);
+  const declaration = legacyDeclaration();
+  const foreign = legacyDeclaration(
+    'RELEASED',
+    fixture.foreignWorkspaceId,
+    'foreign-task',
+  );
+  writeJson(fixture.workFile, {
+    schemaVersion: 1,
+    kind: 'peers-touch-development-work-ledger',
+    updatedAt: '2026-10-06T00:00:00.000Z',
+    declarations: { [declaration.declarationId]: declaration },
+  });
+  let raced = false;
+
+  await assert.rejects(
+    migrateStablePlanState({
+      home: fixture.home,
+      workspaceId: fixture.workspaceId,
+      async atomicReplaceFile(file, content, options) {
+        if (!raced && file === fixture.workFile) {
+          raced = true;
+          const ledger = JSON.parse(fs.readFileSync(file, 'utf8'));
+          ledger.declarations[foreign.declarationId] = foreign;
+          fs.writeFileSync(file, `${JSON.stringify(ledger, null, 2)}\n`);
+        }
+        return atomicReplaceFile(file, content, options);
+      },
+    }),
+    (error) => error?.code === 'PLAN_CONCURRENT_MODIFICATION',
+  );
+
+  const persisted = JSON.parse(fs.readFileSync(fixture.workFile, 'utf8'));
+  assert.deepEqual(persisted.declarations[foreign.declarationId], foreign);
+  assert.equal(
+    Object.hasOwn(
+      persisted.declarations[declaration.declarationId],
+      'planVersionDigest',
+    ),
+    true,
   );
 });

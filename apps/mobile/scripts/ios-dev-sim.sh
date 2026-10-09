@@ -95,4 +95,4 @@ if [ -f "$HOME/.cargo/env" ]; then
 fi
 
 echo "Launching Peers on iOS simulator: $SIMCTL_DEVICE_NAME"
-npx tauri ios dev --config "$DEV_CONFIG" "$SIMCTL_DEVICE_NAME"
+npx tauri ios dev --no-dev-server --config "$DEV_CONFIG" "$SIMCTL_DEVICE_NAME"

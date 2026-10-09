@@ -237,6 +237,71 @@ class EnvironmentContractTests(unittest.TestCase):
             },
         )
 
+    def test_load_cross_station_social_native_contract(self):
+        from tooling.acceptance.provisioners import (
+            CrossStationSocialNativeProvisioner,
+            NativeTauriEmbeddedWebDriverProvisioner,
+            get_provisioner,
+        )
+
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "cross-station-social-native.yaml"
+        )
+
+        self.assertEqual("cross-station-social-native", contract.id)
+        self.assertEqual(
+            {"station-four", "station-five-arm"},
+            set(contract.services),
+        )
+        bindings = {
+            client.id: (
+                client.actor,
+                client.service_bindings["station"].service_id,
+            )
+            for client in contract.clients
+        }
+        self.assertEqual(
+            {
+                "alice": ("alice", "station-four"),
+                "bob": ("bob", "station-five-arm"),
+                "eve": ("eve", "station-five-arm"),
+                "bob2": ("bob", "station-five-arm"),
+            },
+            bindings,
+        )
+        provisioner = get_provisioner(contract)
+        self.assertIsInstance(
+            provisioner,
+            CrossStationSocialNativeProvisioner,
+        )
+        self.assertEqual(
+            {
+                "station-four": "four",
+                "station-five-arm": "fiveArm",
+            },
+            provisioner._required_station_profiles(),
+        )
+        self.assertEqual(
+            ("alice", "bob", "eve"),
+            provisioner._actor_roles("social-cross-station-native-e2e"),
+        )
+        with mock.patch.object(
+            NativeTauriEmbeddedWebDriverProvisioner,
+            "_resolve_active_profile",
+            return_value=("four", Path("/tmp/four.env"), 13, {}),
+        ):
+            self.assertEqual(
+                ("four", Path("/tmp/four.env"), 13, {}),
+                provisioner._resolve_active_profile(),
+            )
+        with mock.patch.object(
+            CrossStationSocialNativeProvisioner.__mro__[1],
+            "_resolve_active_profile",
+            return_value=("four", Path("/tmp/four.env"), 12, {}),
+        ):
+            with self.assertRaises(BlockedError):
+                provisioner._resolve_active_profile()
+
     def test_load_native_tauri_current_profile_contract(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "native-tauri-current-profile.yaml"

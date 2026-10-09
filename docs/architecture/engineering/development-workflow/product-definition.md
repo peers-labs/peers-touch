@@ -57,6 +57,7 @@ Conversation 的 OWNER 身份不得静默改变；每个 mutation Action 必须�
 | DWF-D42 | Stable Plan amendments | North Star 必须显式批准；普通执行调整原地记录并继续，只有 North Star 变化需要重新批准与 owner 决策 | accepted |
 | DWF-D43 | Worktree main-session provenance | Agent 创建 worktree 时持久化创建会话，当前 Development 状态传播已验证 OWNER 引用 | accepted |
 | DWF-D44 | Per-action workspace selection | OWNER 身份与 worktree 解耦；每个 mutation Action 只选择并校验一个 workspace | accepted |
+| DWF-D45 | Workspace-isolated ledger adoption | machine ledger 保持全机冲突可见，但 schema/lifecycle 迁移只修改选中 workspace | accepted |
 
 Accepted 决策定义目标合同，不等于实现或验收已经通过。在当前源码完成验证前，
 消费者仍须把尚未证明的能力投影为 `UNPROVEN`。

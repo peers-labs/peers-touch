@@ -155,11 +155,15 @@ test('current repository satisfies the module registry', () => {
   const result = validateArchitectureRegistry({ repoRoot: REPO_ROOT });
   assert.deepEqual(result.moduleIds, [
     'agent',
+    'api-ownership',
     'architecture-module-governance',
     'chat-storage-governance',
+    'cross-station-social',
     'development-workflow',
     'local-dev-control-plane',
+    'mobile-social-parity',
     'oauth-login-broker',
+    'secure-content',
     'station-access-lifecycle',
   ]);
   assert.deepEqual(result.capabilityIds, [
@@ -167,6 +171,7 @@ test('current repository satisfies the module registry', () => {
     'agent.mcp.dual-runtime',
     'architecture.module.validate',
     'chat.storage.device-governance',
+    'mobile.social.native-parity',
     'oauth.login.broker',
   ]);
 });
