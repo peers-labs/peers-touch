@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDirectory, '..', '..', '..');
+const mobileApplicationId = 'com.peers.touch.mobile';
 const matrixPath = path.join(
   scriptDirectory,
   'three-client-product-journey.matrix.json',
@@ -546,9 +547,37 @@ async function restoreContext(client, context) {
   });
 }
 
+async function activateForegroundClient(clientId, client) {
+  if (client.platform === 'desktop') return null;
+  await webdriverRequest(
+    webdriverEndpoint(client, '/appium/device/activate_app'),
+    {
+      method: 'POST',
+      body: JSON.stringify({ appId: mobileApplicationId }),
+    },
+  );
+  const state = await webdriverRequest(
+    webdriverEndpoint(client, '/appium/device/app_state'),
+    {
+      method: 'POST',
+      body: JSON.stringify({ appId: mobileApplicationId }),
+    },
+  );
+  assertContract(
+    state === 4,
+    'WEBDRIVER_CLIENT_NOT_FOREGROUND',
+    `${clientId} native application state is ${state}, expected foreground`,
+  );
+  return state;
+}
+
 async function probeClient(clientId, client, evidenceDir) {
   const statusUrl = `${client.webdriver.serverUrl.replace(/\/$/, '')}/status`;
   await webdriverRequest(statusUrl);
+  const nativeApplicationState = await activateForegroundClient(
+    clientId,
+    client,
+  );
   const priorContext = await selectWebContext(client);
   try {
     const foreground = await webdriverRequest(
@@ -572,7 +601,10 @@ async function probeClient(clientId, client, evidenceDir) {
     assertContract(
       foreground
         && foreground.visibilityState === 'visible'
-        && foreground.hasFocus === true,
+        && (
+          client.platform !== 'desktop'
+          || foreground.hasFocus === true
+        ),
       'WEBDRIVER_CLIENT_NOT_FOREGROUND',
       `${clientId} is not visible and focused`,
     );
@@ -600,6 +632,7 @@ async function probeClient(clientId, client, evidenceDir) {
       clientId,
       foreground: {
         hasFocus: foreground.hasFocus,
+        nativeApplicationState,
         visibilityState: foreground.visibilityState,
         title: foreground.title,
       },
