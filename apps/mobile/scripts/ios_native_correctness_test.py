@@ -74,6 +74,9 @@ NOTIFICATION_HANDLER_PATH = (
     / "notification"
     / "handler.go"
 )
+SECURE_INPUT_PACKAGE_PATH = (
+    TAURI_ROOT / "plugins" / "secure-input" / "ios" / "Package.swift"
+)
 
 
 class IOSOAuthCallbackRegistrationTest(unittest.TestCase):
@@ -135,6 +138,12 @@ class IOSOAuthCallbackRegistrationTest(unittest.TestCase):
                     scheme for scheme in registered if isinstance(scheme, str)
                 )
         return schemes
+
+
+class IOSSwiftPackageLocalizationTest(unittest.TestCase):
+    def test_secure_input_declares_default_localization(self) -> None:
+        package_source = SECURE_INPUT_PACKAGE_PATH.read_text(encoding="utf-8")
+        self.assertIn('defaultLocalization: "en"', package_source)
 
 
 class IOSProjectGenerationTest(unittest.TestCase):
