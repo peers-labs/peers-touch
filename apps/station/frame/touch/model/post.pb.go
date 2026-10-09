@@ -358,17 +358,39 @@ const (
 	ReactionKind_REACTION_LAUGH       ReactionKind = 3
 	ReactionKind_REACTION_WOW         ReactionKind = 4
 	ReactionKind_REACTION_CELEBRATE   ReactionKind = 5
+	ReactionKind_REACTION_CLAP        ReactionKind = 6
+	ReactionKind_REACTION_FIRE        ReactionKind = 7
+	ReactionKind_REACTION_THANKS      ReactionKind = 8
+	ReactionKind_REACTION_SAD         ReactionKind = 9
+	ReactionKind_REACTION_ANGRY       ReactionKind = 10
+	ReactionKind_REACTION_THINKING    ReactionKind = 11
+	ReactionKind_REACTION_HUNDRED     ReactionKind = 12
+	ReactionKind_REACTION_EYES        ReactionKind = 13
+	ReactionKind_REACTION_STRONG      ReactionKind = 14
+	ReactionKind_REACTION_CHECK       ReactionKind = 15
+	ReactionKind_REACTION_HEART_HANDS ReactionKind = 16
 )
 
 // Enum value maps for ReactionKind.
 var (
 	ReactionKind_name = map[int32]string{
-		0: "REACTION_UNSPECIFIED",
-		1: "REACTION_LIKE",
-		2: "REACTION_LOVE",
-		3: "REACTION_LAUGH",
-		4: "REACTION_WOW",
-		5: "REACTION_CELEBRATE",
+		0:  "REACTION_UNSPECIFIED",
+		1:  "REACTION_LIKE",
+		2:  "REACTION_LOVE",
+		3:  "REACTION_LAUGH",
+		4:  "REACTION_WOW",
+		5:  "REACTION_CELEBRATE",
+		6:  "REACTION_CLAP",
+		7:  "REACTION_FIRE",
+		8:  "REACTION_THANKS",
+		9:  "REACTION_SAD",
+		10: "REACTION_ANGRY",
+		11: "REACTION_THINKING",
+		12: "REACTION_HUNDRED",
+		13: "REACTION_EYES",
+		14: "REACTION_STRONG",
+		15: "REACTION_CHECK",
+		16: "REACTION_HEART_HANDS",
 	}
 	ReactionKind_value = map[string]int32{
 		"REACTION_UNSPECIFIED": 0,
@@ -377,6 +399,17 @@ var (
 		"REACTION_LAUGH":       3,
 		"REACTION_WOW":         4,
 		"REACTION_CELEBRATE":   5,
+		"REACTION_CLAP":        6,
+		"REACTION_FIRE":        7,
+		"REACTION_THANKS":      8,
+		"REACTION_SAD":         9,
+		"REACTION_ANGRY":       10,
+		"REACTION_THINKING":    11,
+		"REACTION_HUNDRED":     12,
+		"REACTION_EYES":        13,
+		"REACTION_STRONG":      14,
+		"REACTION_CHECK":       15,
+		"REACTION_HEART_HANDS": 16,
 	}
 )
 
@@ -5928,14 +5961,26 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\x0fTIMELINE_PUBLIC\x10\x02*?\n" +
 	"\fTimelineSort\x12\x18\n" +
 	"\x14TIMELINE_SORT_RECENT\x10\x00\x12\x15\n" +
-	"\x11TIMELINE_SORT_HOT\x10\x01*\x8c\x01\n" +
+	"\x11TIMELINE_SORT_HOT\x10\x01*\xf0\x02\n" +
 	"\fReactionKind\x12\x18\n" +
 	"\x14REACTION_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rREACTION_LIKE\x10\x01\x12\x11\n" +
 	"\rREACTION_LOVE\x10\x02\x12\x12\n" +
 	"\x0eREACTION_LAUGH\x10\x03\x12\x10\n" +
 	"\fREACTION_WOW\x10\x04\x12\x16\n" +
-	"\x12REACTION_CELEBRATE\x10\x05BCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
+	"\x12REACTION_CELEBRATE\x10\x05\x12\x11\n" +
+	"\rREACTION_CLAP\x10\x06\x12\x11\n" +
+	"\rREACTION_FIRE\x10\a\x12\x13\n" +
+	"\x0fREACTION_THANKS\x10\b\x12\x10\n" +
+	"\fREACTION_SAD\x10\t\x12\x12\n" +
+	"\x0eREACTION_ANGRY\x10\n" +
+	"\x12\x15\n" +
+	"\x11REACTION_THINKING\x10\v\x12\x14\n" +
+	"\x10REACTION_HUNDRED\x10\f\x12\x11\n" +
+	"\rREACTION_EYES\x10\r\x12\x13\n" +
+	"\x0fREACTION_STRONG\x10\x0e\x12\x12\n" +
+	"\x0eREACTION_CHECK\x10\x0f\x12\x18\n" +
+	"\x14REACTION_HEART_HANDS\x10\x10BCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
 var (
 	file_domain_social_post_proto_rawDescOnce sync.Once

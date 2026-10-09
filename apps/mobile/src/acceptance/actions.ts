@@ -2635,7 +2635,11 @@ function requireAudienceKind(value: unknown): Audience_Kind {
 }
 
 function requireReactionKind(value: unknown): ReactionKind {
-  if (!Number.isSafeInteger(value) || Number(value) < 1 || Number(value) > 5) {
+  if (
+    !Number.isSafeInteger(value)
+    || Number(value) < ReactionKind.REACTION_LIKE
+    || Number(value) > ReactionKind.REACTION_HEART_HANDS
+  ) {
     throw new Error('acceptance.mobile.invalidInput:moments.react.reactionKind');
   }
   return Number(value) as ReactionKind;

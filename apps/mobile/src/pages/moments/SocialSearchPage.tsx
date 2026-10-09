@@ -10,8 +10,8 @@ import {
   saveListAnchor,
   saveRouteQuery,
 } from '../../app/navigation/scrollRestoration';
-import { MobileAvatar } from '../../components/MobileAvatar';
 import { MobileNotice } from '../../components/MobileNotice';
+import { SocialActorAvatar } from '../../features/social/SocialActorAvatar';
 import { classifyPeopleSearchFeedback } from '../../features/social/contactInteractionState';
 import { useSocialStore } from '../../features/social/socialStore';
 
@@ -21,10 +21,12 @@ const FEDERATED_HANDLE_RE = /^@?[a-zA-Z0-9._-]+(?:@[a-zA-Z0-9.-]+(?::\d+)?)?$/;
 
 interface SocialSearchPageProps {
   readonly onBack: () => void;
-  readonly onOpenProfile: (route: Extract<
-    MobileDetailRoute,
-    { readonly routeId: 'detail:social-profile' }
-  >) => void;
+  readonly onOpenProfile: (
+    route: Extract<
+      MobileDetailRoute,
+      { readonly routeId: 'detail:social-profile' }
+    >,
+  ) => void;
 }
 
 export function SocialSearchPage({
@@ -33,18 +35,22 @@ export function SocialSearchPage({
 }: SocialSearchPageProps) {
   const { t } = useMobileI18n();
   const [query, setQuery] = useState(() => readRouteQuery(SEARCH_ROUTE_KEY));
-  const [submittedQuery, setSubmittedQuery] = useState(() => (
-    readRouteQuery(SEARCH_ROUTE_KEY)
-  ));
+  const [submittedQuery, setSubmittedQuery] = useState(() =>
+    readRouteQuery(SEARCH_ROUTE_KEY),
+  );
   const [selectedFederationId, setSelectedFederationId] = useState('');
   const [malformedHandle, setMalformedHandle] = useState(false);
 
   const results = useSocialStore((state) => state.peopleSearchResults);
   const federations = useSocialStore((state) => state.peopleSearchFederations);
-  const federationsError = useSocialStore((state) => state.peopleSearchFederationsError);
+  const federationsError = useSocialStore(
+    (state) => state.peopleSearchFederationsError,
+  );
   const loading = useSocialStore((state) => state.peopleSearchLoading);
   const error = useSocialStore((state) => state.peopleSearchError);
-  const refreshFederations = useSocialStore((state) => state.refreshFederationContexts);
+  const refreshFederations = useSocialStore(
+    (state) => state.refreshFederationContexts,
+  );
   const searchPeople = useSocialStore((state) => state.searchPeople);
   const clearPeopleSearch = useSocialStore((state) => state.clearPeopleSearch);
 
@@ -53,7 +59,9 @@ export function SocialSearchPage({
   }, [refreshFederations]);
 
   const federationId = useMemo(() => {
-    if (federations.some((item) => item.federationId === selectedFederationId)) {
+    if (
+      federations.some((item) => item.federationId === selectedFederationId)
+    ) {
       return selectedFederationId;
     }
     return federations.length === 1 ? federations[0].federationId : '';
@@ -71,8 +79,8 @@ export function SocialSearchPage({
 
   const runSearch = async (value: string) => {
     const nextQuery = value.trim();
-    const malformed = nextQuery.startsWith('@')
-      && !FEDERATED_HANDLE_RE.test(nextQuery);
+    const malformed =
+      nextQuery.startsWith('@') && !FEDERATED_HANDLE_RE.test(nextQuery);
     setMalformedHandle(malformed);
     setSubmittedQuery(nextQuery);
     saveRouteQuery(SEARCH_ROUTE_KEY, nextQuery);
@@ -97,7 +105,9 @@ export function SocialSearchPage({
         >
           <ArrowLeft size={20} />
         </button>
-        <h1 className="header-title compact">{t('mobile.social.search.title')}</h1>
+        <h1 className="header-title compact">
+          {t('mobile.social.search.title')}
+        </h1>
       </header>
 
       <div className="mobile-detail-body">
@@ -122,7 +132,9 @@ export function SocialSearchPage({
         />
 
         {federationsError ? (
-          <MobileNotice tone="error">{t('mobile.contacts.federationsFailed')}</MobileNotice>
+          <MobileNotice tone="error">
+            {t('mobile.contacts.federationsFailed')}
+          </MobileNotice>
         ) : federations.length === 0 ? (
           <MobileNotice>{t('mobile.contacts.noFederation')}</MobileNotice>
         ) : (
@@ -168,9 +180,13 @@ export function SocialSearchPage({
                   });
                 }}
               >
-                <MobileAvatar src={result.avatar} size={42}>
-                  {(result.displayName || result.username || result.ptid).slice(0, 1)}
-                </MobileAvatar>
+                <SocialActorAvatar
+                  actorPtid={result.ptid}
+                  avatar={result.avatar}
+                  displayName={result.displayName}
+                  size={42}
+                  username={result.username}
+                />
                 <span className="people-result-copy">
                   <span className="people-result-title">
                     <Text strong ellipsis>

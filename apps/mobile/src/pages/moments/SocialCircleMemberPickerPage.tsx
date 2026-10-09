@@ -3,8 +3,8 @@ import { Button, Checkbox, Empty, Input, Select, Spin, Typography } from 'antd';
 import { ArrowLeft, Check, Search } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
-import { MobileAvatar } from '../../components/MobileAvatar';
 import { MobileNotice } from '../../components/MobileNotice';
+import { SocialActorAvatar } from '../../features/social/SocialActorAvatar';
 import { useSocialCirclesStore } from '../../features/social/socialCircles';
 import { useSocialStore } from '../../features/social/socialStore';
 import type { CircleMember } from '../../gen/proto/domain/social/circle_pb';
@@ -29,15 +29,19 @@ export function SocialCircleMemberPickerPage({
   const loading = useSocialCirclesStore((state) => state.pickerLoading);
   const error = useSocialCirclesStore((state) => state.pickerError);
   const mutationError = useSocialCirclesStore((state) => state.error);
-  const pending = useSocialCirclesStore(
-    (state) => Boolean(state.pendingCircleIds[circleId]),
+  const pending = useSocialCirclesStore((state) =>
+    Boolean(state.pendingCircleIds[circleId]),
   );
-  const searchPeople = useSocialCirclesStore((state) => state.searchPickerPeople);
+  const searchPeople = useSocialCirclesStore(
+    (state) => state.searchPickerPeople,
+  );
   const clearSearch = useSocialCirclesStore((state) => state.clearPickerSearch);
   const addMembers = useSocialCirclesStore((state) => state.addMembers);
   const refreshMembers = useSocialCirclesStore((state) => state.refreshMembers);
   const federations = useSocialStore((state) => state.peopleSearchFederations);
-  const refreshFederations = useSocialStore((state) => state.refreshFederationContexts);
+  const refreshFederations = useSocialStore(
+    (state) => state.refreshFederationContexts,
+  );
   const [query, setQuery] = useState('');
   const [federationId, setFederationId] = useState('');
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -60,7 +64,9 @@ export function SocialCircleMemberPickerPage({
       onBack();
     } catch (caught) {
       setActionError(
-        caught instanceof Error ? caught.message : 'mobile.social.circles.failed',
+        caught instanceof Error
+          ? caught.message
+          : 'mobile.social.circles.failed',
       );
     }
   };
@@ -80,7 +86,9 @@ export function SocialCircleMemberPickerPage({
         >
           <ArrowLeft size={20} />
         </button>
-        <h1 className="header-title compact">{t('mobile.social.circles.addMembers')}</h1>
+        <h1 className="header-title compact">
+          {t('mobile.social.circles.addMembers')}
+        </h1>
         <button
           type="button"
           className="header-action"
@@ -145,9 +153,13 @@ export function SocialCircleMemberPickerPage({
                     });
                   }}
                 >
-                  <MobileAvatar src={actor.avatar} size={42}>
-                    {(actor.displayName || actor.username || actor.ptid).slice(0, 1)}
-                  </MobileAvatar>
+                  <SocialActorAvatar
+                    actorPtid={actor.ptid}
+                    avatar={actor.avatar}
+                    displayName={actor.displayName}
+                    size={42}
+                    username={actor.username}
+                  />
                   <span className="circle-row-copy">
                     <Text strong ellipsis>
                       {actor.displayName || actor.username || actor.ptid}

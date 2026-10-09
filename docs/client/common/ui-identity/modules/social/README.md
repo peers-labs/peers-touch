@@ -67,6 +67,8 @@ Rules:
 - Do not visually promote station metadata above author/content unless trust is degraded.
 - Do not use strong color for routine protocol metadata.
 - Destructive actions must be secondary until explicitly invoked.
+- Posts, comments, profiles, search results, and Circle members resolve one canonical actor identity and use the same shared rounded-square avatar primitive.
+- A comment authored by the post author must not fall back to a different name, color, or avatar solely because its transport DTO is less complete.
 
 ## 6. Current Incomplete Capability As Validation
 
@@ -74,14 +76,14 @@ Social must validate UI Identity with incomplete capability because real product
 
 Use these incomplete capabilities as methodology tests:
 
-| Capability | Current/possible state | UI Identity requirement |
-| --- | --- | --- |
-| Reaction | implemented but may have runtime/pending states | count, selected state, pending state, rollback are local to reaction group |
-| Comment | partially implemented across list/detail paths | thread remains continuous; empty/pending/error states do not look like broken cards |
-| Station moderation | policy source exists, aggregate notice incomplete | UI never fabricates block state; pending and unavailable states are explicit |
-| Follow/profile relation | may be incomplete across remote actors | relationship reason remains clear; unavailable follow action is explained |
-| Circles | UI exists before full social graph maturity | empty state explains purpose and next action |
-| Search | may return partial/local data | empty, loading, remote unavailable, and permission states are distinct |
+| Capability              | Current/possible state                            | UI Identity requirement                                                             |
+| ----------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Reaction                | implemented but may have runtime/pending states   | count, selected state, pending state, rollback are local to reaction group          |
+| Comment                 | partially implemented across list/detail paths    | thread remains continuous; empty/pending/error states do not look like broken cards |
+| Station moderation      | policy source exists, aggregate notice incomplete | UI never fabricates block state; pending and unavailable states are explicit        |
+| Follow/profile relation | may be incomplete across remote actors            | relationship reason remains clear; unavailable follow action is explained           |
+| Circles                 | UI exists before full social graph maturity       | empty state explains purpose and next action                                        |
+| Search                  | may return partial/local data                     | empty, loading, remote unavailable, and permission states are distinct              |
 
 ## 7. Required Social Documents
 

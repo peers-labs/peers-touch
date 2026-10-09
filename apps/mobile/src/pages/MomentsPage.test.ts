@@ -39,6 +39,7 @@ const pageMocks = vi.hoisted(() => ({
     reactionMutations: new Map(),
   },
   projectionAvailability: { available: true },
+  privatePostsById: {},
   runtimeOverride: null,
 }));
 
@@ -47,12 +48,13 @@ vi.mock('../app/mobileI18n', () => ({
 }));
 
 vi.mock('../features/auth/authStore', () => ({
-  useAuthStore: (selector: (state: object) => unknown) => selector({
-    session: {
-      stationPeerId: 'station-a',
-      actorRef: { ptid: 'ptid:alice' },
-    },
-  }),
+  useAuthStore: (selector: (state: object) => unknown) =>
+    selector({
+      session: {
+        stationPeerId: 'station-a',
+        actorRef: { ptid: 'ptid:alice' },
+      },
+    }),
 }));
 
 vi.mock('../features/social/useMomentsFeed', () => ({
@@ -81,7 +83,12 @@ vi.mock('../features/social/useSocialExperience', () => ({
           ...pageMocks.feed,
           ...pageMocks.runtimeFeedState,
         },
-        runtime: { availability: pageMocks.projectionAvailability },
+        runtime: {
+          availability: pageMocks.projectionAvailability,
+          privateSocial: {
+            postsById: pageMocks.privatePostsById,
+          },
+        },
       },
     };
   },
@@ -90,15 +97,30 @@ vi.mock('../features/social/useSocialExperience', () => ({
 vi.mock('./moments/MomentFeedItem', async () => {
   const { createElement } = await import('react');
   return {
-    MomentFeedItem: ({ post }) => (
-      createElement('article', { 'data-moment-id': post.id })
-    ),
+    MomentFeedItem: ({ post, children }) =>
+      createElement('article', { 'data-moment-id': post.id }, children),
   };
 });
 
 describe('Moments feed-first interaction source contract', () => {
   const source = readFileSync(
     new URL('./MomentsPage.tsx', import.meta.url),
+    'utf8',
+  );
+  const scopeHeaderSource = readFileSync(
+    new URL('./moments/MomentsScopeHeader.tsx', import.meta.url),
+    'utf8',
+  );
+  const sortSheetSource = readFileSync(
+    new URL('./moments/ExploreSortSheet.tsx', import.meta.url),
+    'utf8',
+  );
+  const moduleStyles = readFileSync(
+    new URL('./moments/Moments.css', import.meta.url),
+    'utf8',
+  );
+  const globalStyles = readFileSync(
+    new URL('../styles.css', import.meta.url),
     'utf8',
   );
 
@@ -118,28 +140,76 @@ describe('Moments feed-first interaction source contract', () => {
   });
 
   it('matches the confirmed header, scope, and bottom-sheet interaction model', () => {
-    expect(source).toContain('data-acceptance-id="social-circles-open"');
-    expect(source).toContain('className="moments-context-row"');
-    expect(source).toContain('className="moments-sheet-backdrop moments-sort-backdrop"');
-    expect(source).toContain('className="moments-bottom-sheet moments-sort-sheet"');
+    expect(scopeHeaderSource).toContain(
+      'data-acceptance-id="social-circles-open"',
+    );
+    expect(scopeHeaderSource).toContain('className="moments-context-row"');
+    expect(sortSheetSource).toContain(
+      'className="moments-sheet-backdrop moments-sort-backdrop"',
+    );
+    expect(sortSheetSource).toContain(
+      'className="moments-bottom-sheet moments-sort-sheet"',
+    );
+    expect(sortSheetSource).toContain('onPointerDown={onClose}');
+    expect(sortSheetSource).toContain(
+      'onPointerDown={(event) => event.stopPropagation()}',
+    );
+    expect(sortSheetSource).not.toContain('common.action.close');
     expect(source).toContain('onClose={() => setShowNewPost(false)}');
+  });
+
+  it('owns one prototype-derived Moments stylesheet without global legacy rules', () => {
+    expect(source).toContain("import './moments/Moments.css'");
+    expect(moduleStyles).toContain('.moments-author {');
+    expect(moduleStyles).toContain('.moments-article-body {');
+    expect(moduleStyles).toContain('.moments-comments-section--inline {');
+    expect(moduleStyles).not.toContain('.moments-card {');
+    expect(globalStyles).not.toMatch(
+      /\.moments-(?:page|card|feed|scope|comments|sheet)/,
+    );
+  });
+
+  it('keeps inline comments inside their owning article', () => {
+    expect(source).toContain('className="moments-feed-entry"');
+    expect(source).toContain('</MomentFeedItem>');
+    expect(source).not.toMatch(
+      /<\/MomentFeedItem>\s*\)\}\s*\{selectedThreadPostId === post\.id/,
+    );
+  });
+
+  it('matches the prototype feed frame and native scroll ownership', () => {
+    expect(moduleStyles).toMatch(
+      /\.moments-feed\s*\{[\s\S]*?gap:\s*10px;[\s\S]*?padding:\s*10px 12px 20px;/,
+    );
+    expect(moduleStyles).toMatch(
+      /\.moments-header-actions button,[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/,
+    );
+    expect(moduleStyles).toMatch(
+      /\.page-container\.moments-page\s*\{[\s\S]*?padding-bottom:\s*0;/,
+    );
+    expect(moduleStyles).not.toContain(
+      'padding-bottom: calc(var(--tabbar-height)',
+    );
   });
 });
 
 function renderMomentsPage(): string {
-  return renderToStaticMarkup(React.createElement(MomentsPage, {
-    activePostId: null,
-    onOpenProfile: () => undefined,
-    onOpenSearch: () => undefined,
-    onOpenCircles: () => undefined,
-    onBack: () => undefined,
-  }));
+  return renderToStaticMarkup(
+    React.createElement(MomentsPage, {
+      activePostId: null,
+      onOpenProfile: () => undefined,
+      onOpenSearch: () => undefined,
+      onOpenCircles: () => undefined,
+      onBack: () => undefined,
+    }),
+  );
 }
 
 describe('Moments page inline comment intent', () => {
   it('reads back the paginated target without resetting the feed or selecting another detail', async () => {
     const gateway = {
-      fetchFeed: vi.fn()
+      fetchFeed: vi
+        .fn()
         .mockResolvedValueOnce({
           ok: true,
           data: {
@@ -167,7 +237,10 @@ describe('Moments page inline comment intent', () => {
             outcome: TimelinePageOutcome.ITEMS,
           },
         }),
-      createComment: vi.fn(async () => ({ ok: true, data: { comment: { id: 'added' } } })),
+      createComment: vi.fn(async () => ({
+        ok: true,
+        data: { comment: { id: 'added' } },
+      })),
       getPost: vi.fn(async (id: string) => ({
         ok: true,
         data: {
@@ -176,7 +249,8 @@ describe('Moments page inline comment intent', () => {
         },
       })),
       fetchComments: vi.fn(async () => ({
-        ok: true, data: { comments: [{ id: 'added' }], nextCursor: '', hasMore: false },
+        ok: true,
+        data: { comments: [{ id: 'added' }], nextCursor: '', hasMore: false },
       })),
     };
     const store = createMomentsFeedStore(gateway);
@@ -193,16 +267,16 @@ describe('Moments page inline comment intent', () => {
     };
     pageMocks.runtimeOverride = { intents, feed: store };
     try {
-      await expect(submitInlineCommentIntent(
-        intents,
-        'older',
-        'New comment',
-      )).resolves.toBe(true);
+      await expect(
+        submitInlineCommentIntent(intents, 'older', 'New comment'),
+      ).resolves.toBe(true);
       expect(gateway.getPost).toHaveBeenCalledWith('older');
       expect(gateway.fetchComments).toHaveBeenCalledWith('older', '', 15);
       expect(gateway.fetchFeed).toHaveBeenCalledTimes(2);
       expect(store.state().cursor).toBe('page-3');
-      expect(store.state().posts.find(({ id }) => id === 'older')?.commentsCount).toBe(1n);
+      expect(
+        store.state().posts.find(({ id }) => id === 'older')?.commentsCount,
+      ).toBe(1n);
       expect(store.state().selectedDetail).toBeNull();
     } finally {
       pageMocks.runtimeOverride = null;
@@ -291,38 +365,94 @@ describe('Moments retry availability', () => {
   it('marks the projection available only after successful runtime reconciliation', async () => {
     const failedRetry = vi.fn(async () => false);
 
-    await expect(retryMomentsRuntime({
-      retry: failedRetry,
-    })).resolves.toBe(false);
+    await expect(
+      retryMomentsRuntime({
+        retry: failedRetry,
+      }),
+    ).resolves.toBe(false);
     expect(failedRetry).toHaveBeenCalledOnce();
 
     const successfulRetry = vi.fn(async () => true);
-    await expect(retryMomentsRuntime({
-      retry: successfulRetry,
-    })).resolves.toBe(true);
+    await expect(
+      retryMomentsRuntime({
+        retry: successfulRetry,
+      }),
+    ).resolves.toBe(true);
     expect(successfulRetry).toHaveBeenCalledOnce();
 
-    await expect(retryMomentsRuntime({
-      retry: vi.fn(async () => {
-        throw new Error('offline');
+    await expect(
+      retryMomentsRuntime({
+        retry: vi.fn(async () => {
+          throw new Error('offline');
+        }),
       }),
-    })).resolves.toBe(false);
+    ).resolves.toBe(false);
+  });
+});
+
+describe('Moments private-state feed projection', () => {
+  beforeEach(() => {
+    pageMocks.feed.posts = [];
+    pageMocks.feed.loadState = 'idle';
+    pageMocks.feed.pageOutcome = TimelinePageOutcome.EMPTY;
+    pageMocks.projectionAvailability = { available: true };
+    pageMocks.privatePostsById = {};
+  });
+
+  it('does not render orphan deleted or revoked projections as feed cards', () => {
+    pageMocks.privatePostsById = {
+      'post-deleted': {
+        postId: 'post-deleted',
+        state: 'DELETED_OR_REVOKED',
+        errorCode: 'RESOURCE_DELETED',
+      },
+      'post-revoked': {
+        postId: 'post-revoked',
+        state: 'DELETED_OR_REVOKED',
+        errorCode: 'RELATIONSHIP_REVOKED',
+      },
+    };
+
+    const markup = renderMomentsPage();
+
+    expect(markup).not.toContain(
+      'data-private-moment-state="DELETED_OR_REVOKED"',
+    );
+    expect(markup).not.toContain('post-deleted');
+    expect(markup).not.toContain('post-revoked');
+    expect(markup).toContain('mobile.moments.feed.empty');
+  });
+
+  it('keeps actionable orphan recovery state in the Home feed', () => {
+    pageMocks.privatePostsById = {
+      'post-recovery': {
+        postId: 'post-recovery',
+        state: 'RECOVERY_REQUIRED',
+      },
+    };
+
+    const markup = renderMomentsPage();
+
+    expect(markup).toContain('data-private-moment-state="RECOVERY_REQUIRED"');
+    expect(markup).toContain('data-private-moment-post-id="post-recovery"');
+    expect(markup).not.toContain('mobile.moments.feed.emptyHint');
   });
 });
 
 describe('Moments page bounded feed', () => {
   beforeEach(() => {
     clearAllScrollPositions();
-    pageMocks.feed.posts = Array.from(
-      { length: 200 },
-      (_, index) => ({ id: `post-${index}`, reactions: [] }),
-    );
+    pageMocks.feed.posts = Array.from({ length: 200 }, (_, index) => ({
+      id: `post-${index}`,
+      reactions: [],
+    }));
     pageMocks.feed.loadState = 'idle';
     pageMocks.feed.hasMore = true;
     pageMocks.feed.pageOutcome = TimelinePageOutcome.ITEMS;
     pageMocks.runtimeFeedState.feedExplanations = new Map();
     pageMocks.runtimeFeedState.reactionMutations = new Map();
     pageMocks.projectionAvailability = { available: true };
+    pageMocks.privatePostsById = {};
   });
 
   it('does not render detail content while the Moments runtime is unavailable', () => {
@@ -331,13 +461,15 @@ describe('Moments page bounded feed', () => {
       reason: 'offline',
     };
 
-    const markup = renderToStaticMarkup(React.createElement(MomentsPage, {
-      activePostId: 'post-1',
-      onOpenMoment: () => undefined,
-      onOpenSearch: () => undefined,
-      onOpenCircles: () => undefined,
-      onBack: () => undefined,
-    }));
+    const markup = renderToStaticMarkup(
+      React.createElement(MomentsPage, {
+        activePostId: 'post-1',
+        onOpenMoment: () => undefined,
+        onOpenSearch: () => undefined,
+        onOpenCircles: () => undefined,
+        onBack: () => undefined,
+      }),
+    );
 
     expect(markup).toContain('mobile.moments.unavailable.title');
     expect(markup).not.toContain('moments-comments-section');
@@ -384,10 +516,10 @@ describe('Moments page bounded feed', () => {
     expect(beforeSlide).toContain('data-scroll-anchor-id="post-100"');
     expect(beforeSlide).toContain('data-scroll-anchor-id="post-199"');
 
-    pageMocks.feed.posts = Array.from(
-      { length: 200 },
-      (_, index) => ({ id: `post-${index + 20}`, reactions: [] }),
-    );
+    pageMocks.feed.posts = Array.from({ length: 200 }, (_, index) => ({
+      id: `post-${index + 20}`,
+      reactions: [],
+    }));
     const afterSlide = renderMomentsPage();
 
     expect(afterSlide.match(/data-moment-id=/g)).toHaveLength(100);
@@ -408,9 +540,8 @@ describe('Moments page bounded feed', () => {
 
     const markup = renderMomentsPage();
 
-    expect(markup).toContain('aria-label="mobile.moments.feed.refresh"');
-    expect(markup).toContain('aria-busy="true"');
     expect(markup.match(/data-moment-id=/g)).toHaveLength(100);
-    expect(markup).toContain('mobile.moments.feed.loading');
+    expect(markup).not.toContain('mobile.moments.feed.loading');
+    expect(markup).not.toContain('moments-feed-loading-more');
   });
 });

@@ -1,12 +1,9 @@
-import { Button, Space, Typography } from 'antd';
 import { ArrowLeft, KeyRound, RotateCcw, ShieldAlert, ShieldX } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import type { PrivateMomentReadProjection } from '../../services/mobileCommands';
 
 import './PrivateMomentRecoveryState.css';
-
-const { Text, Title } = Typography;
 
 type BlockingPrivateMomentState = Extract<
   PrivateMomentReadProjection['state'],
@@ -49,6 +46,23 @@ export function PrivateMomentRecoveryState({
     ? `moments.private.revocation.${revocationReason}`
     : `mobile.moments.private.state.${projection.state}`;
   const Icon = recoveryRequired ? KeyRound : revoked ? ShieldX : ShieldAlert;
+  const action = revoked
+    ? {
+        icon: <ArrowLeft size={15} />,
+        label: t('common.action.back'),
+        onClick: onBack,
+      }
+    : recoveryRequired
+      ? {
+          icon: <KeyRound size={15} />,
+          label: t('mobile.moments.private.recovery.action'),
+          onClick: onRecover,
+        }
+      : {
+          icon: <RotateCcw size={15} />,
+          label: t('mobile.moments.private.integrity.retry'),
+          onClick: onRetryVerification,
+        };
 
   return (
     <section
@@ -58,47 +72,25 @@ export function PrivateMomentRecoveryState({
       role="alert"
       aria-busy={busy}
     >
-      <Icon size={36} strokeWidth={1.5} aria-hidden="true" />
-      <Title level={5}>
-        {t(`${stateKey}.title`)}
-      </Title>
-      <Text type="secondary">
-        {t(`${stateKey}.description`)}
-      </Text>
-      {revoked ? (
-        <Text type="secondary">
-          {t('moments.private.revocation.copyBoundary')}
-        </Text>
-      ) : null}
-      <Text className="private-moment-recovery__identity" code title={projection.postId}>
-        {projection.postId}
-      </Text>
-      {error ? (
-        <Text type="danger">{t('mobile.moments.private.recovery.failed')}</Text>
-      ) : null}
-      <Space className="private-moment-recovery__actions" wrap>
-        <Button icon={<ArrowLeft size={14} />} disabled={busy} onClick={onBack}>
-          {t('common.action.back')}
-        </Button>
-        {revoked ? null : recoveryRequired ? (
-          <Button
-            type="primary"
-            icon={<KeyRound size={14} />}
-            loading={busy}
-            onClick={onRecover}
-          >
-            {t('mobile.moments.private.recovery.action')}
-          </Button>
-        ) : (
-          <Button
-            icon={<RotateCcw size={14} />}
-            loading={busy}
-            onClick={onRetryVerification}
-          >
-            {t('mobile.moments.private.integrity.retry')}
-          </Button>
-        )}
-      </Space>
+      <span className="private-moment-recovery__icon">
+        <Icon size={18} aria-hidden="true" />
+      </span>
+      <div className="private-moment-recovery__copy">
+        <strong>{t(`${stateKey}.title`)}</strong>
+        <p>{t(`${stateKey}.description`)}</p>
+        {revoked ? <p>{t('moments.private.revocation.copyBoundary')}</p> : null}
+        {error ? <p className="private-moment-recovery__error">
+          {t('mobile.moments.private.recovery.failed')}
+        </p> : null}
+      </div>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={action.onClick}
+      >
+        {action.icon}
+        {action.label}
+      </button>
     </section>
   );
 }

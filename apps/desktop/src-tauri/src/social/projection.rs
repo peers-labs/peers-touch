@@ -550,10 +550,11 @@ pub(super) fn remote_delivery_state(
 pub(super) fn canonical_reaction_summaries(
     reactions: &[social::ReactionSummary],
 ) -> Result<Vec<PrivateReactionSummaryProjection>, String> {
-    if reactions.len() > 5 {
+    const MAX_REACTION_KIND: usize = social::ReactionKind::ReactionHeartHands as usize;
+    if reactions.len() > MAX_REACTION_KIND {
         return Err("private Reaction summary exceeds the supported kind count".to_string());
     }
-    let mut seen = [false; 6];
+    let mut seen = [false; MAX_REACTION_KIND + 1];
     let mut projected = Vec::with_capacity(reactions.len());
     for reaction in reactions {
         let kind = social::ReactionKind::try_from(reaction.kind)

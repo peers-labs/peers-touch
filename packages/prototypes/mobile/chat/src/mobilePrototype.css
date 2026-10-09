@@ -1405,54 +1405,44 @@
 
   .mp-moment-actions {
     position: relative;
-    display: flex; align-items: center; margin-top: 12px;
-    padding-top: 10px; border-top: 0.5px solid var(--mp-gray-100);
+    display: flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 8px;
+    padding-top: 6px; border-top: 0.5px solid var(--mp-gray-100);
   }
-  .mp-moment-action-group { display: flex; align-items: center; gap: 18px; }
+  .mp-moment-action-group {
+    display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end;
+    gap: 4px; margin-left: auto;
+  }
 
   .mp-moment-action {
     position: relative;
-    display: inline-flex; align-items: center; gap: 5px; border: none; background: none;
+    display: inline-flex; align-items: center; justify-content: center; border: none; background: none;
     color: var(--mp-gray-500); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
-    padding: 4px 0; transition: color 0.12s; -webkit-tap-highlight-color: transparent;
+    width: 36px; height: 36px; min-width: 36px; min-height: 36px; flex: 0 0 36px; padding: 0;
+    transition: color 0.12s; -webkit-tap-highlight-color: transparent;
     &.liked, &.reacted { color: var(--mp-error); }
     &:active { opacity: 0.6; }
     &:disabled { color: var(--mp-gray-300); cursor: not-allowed; opacity: 1; }
   }
-  .mp-moment-action--share { margin-left: auto; }
+  .mp-moment-action-count {
+    position: absolute; top: 0; right: 0; min-width: 14px; height: 14px;
+    padding: 0 2px; border-radius: 7px; background: #fff;
+    color: var(--mp-gray-500); font-size: 10px; font-variant-numeric: tabular-nums;
+    line-height: 14px; text-align: center;
+  }
+  .mp-moment-action--share { margin-left: 0; }
 
   /* ── Moments reactions ── */
   .mp-moment-reaction-summary {
-    display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px;
+    display: flex; flex: 1 1 auto; align-items: center; gap: 4px;
+    min-width: 0; max-width: 80%; min-height: 36px; overflow: hidden;
   }
   .mp-moment-reaction-tag {
     display: inline-flex; align-items: center; gap: 3px;
     padding: 2px 8px; border-radius: var(--mp-r-pill);
     background: var(--mp-gray-100); font-size: 11px; font-weight: 600;
-    color: var(--mp-gray-600);
+    color: var(--mp-gray-600); white-space: nowrap;
     &.mine { background: var(--mp-primary-light); color: var(--mp-primary); }
   }
-
-  .mp-moment-reaction-picker {
-    position: absolute; top: -44px; left: 0;
-    display: flex; gap: 4px; padding: 6px 8px;
-    background: #fff; border-radius: var(--mp-r-pill);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.12); z-index: 10;
-    animation: mp-pop-in 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-  @keyframes mp-pop-in {
-    from { opacity: 0; transform: scale(0.85) translateY(6px); }
-    to { opacity: 1; transform: scale(1) translateY(0); }
-  }
-  .mp-moment-reaction-picker-btn {
-    display: flex; align-items: center; justify-content: center;
-    width: 36px; height: 36px; border: none; background: transparent;
-    font-size: 22px; cursor: pointer; border-radius: 10px; padding: 0;
-    transition: transform 0.12s, background 0.12s; -webkit-tap-highlight-color: transparent;
-    &:active { transform: scale(0.85); background: var(--mp-gray-100); }
-    &.active { transform: scale(1.15); }
-  }
-
   /* ── Moments comments ── */
   .mp-moment-comments {
     margin-top: 8px; padding: 8px 10px;
@@ -2150,6 +2140,10 @@
 
   /* ── antd scoped overrides ── */
   .ant-avatar { border-radius: var(--mp-r-lg) !important; font-weight: 600; }
+  .mp-user-square-avatar.ant-avatar {
+    overflow: hidden;
+    border-radius: var(--mp-user-avatar-radius) !important;
+  }
   .mp-message-avatar.ant-avatar,
   .mp-thread-contact .ant-avatar { border-radius: 10px !important; }
   .ant-avatar-string { border-radius: inherit !important; }
@@ -2309,7 +2303,7 @@
     height: 44px;
     place-items: center;
     border: 0;
-    border-radius: 50%;
+    border-radius: var(--mp-r-md);
     background: #fff;
     color: var(--mp-gray-600);
   }
@@ -2345,7 +2339,7 @@
   .mp-moment-comment-input {
     flex: 1;
     border: 1px solid var(--mp-gray-200);
-    border-radius: 18px;
+    border-radius: var(--mp-r-md);
     padding: 6px 12px;
     font-size: 13px;
     outline: none;
@@ -2358,7 +2352,7 @@
     justify-content: center;
     width: 28px;
     height: 28px;
-    border-radius: 50%;
+    border-radius: var(--mp-r-sm);
     border: none;
     background: var(--mp-gray-100);
     color: var(--mp-gray-400);
@@ -2401,10 +2395,10 @@
     border-bottom: 1px solid var(--mp-gray-100);
   }
   .mp-social-author-row {
-    display: grid; grid-template-columns: minmax(0, 1fr) 36px; align-items: center; gap: 8px;
+    display: flex; align-items: center;
   }
   .mp-social-author {
-    display: flex; align-items: center; gap: 10px; width: 100%; padding: 0;
+    display: flex; flex: 1; min-width: 0; align-items: center; gap: 10px; width: auto; padding: 0;
     border: none; background: transparent; color: inherit; text-align: left; cursor: pointer;
   }
   .mp-social-author > span {
@@ -2415,7 +2409,8 @@
     color: var(--mp-gray-400); font-size: 11px; overflow-wrap: anywhere;
   }
   .mp-social-more {
-    display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; min-width: 36px; min-height: 36px; padding: 0;
     border: none; border-radius: var(--mp-r-md); background: transparent;
     color: var(--mp-gray-400); cursor: pointer;
   }
@@ -2457,7 +2452,7 @@
   }
   .mp-social-video > span {
     display: flex; align-items: center; justify-content: center;
-    width: 52px; height: 52px; border-radius: 50%; background: rgba(255,255,255,0.18);
+    width: 52px; height: 52px; border-radius: var(--mp-r-lg); background: rgba(255,255,255,0.18);
   }
   .mp-social-video small { color: rgba(255,255,255,0.78); }
   .mp-social-poll {
@@ -2489,6 +2484,10 @@
     background: transparent; color: var(--mp-gray-600); font: inherit; cursor: pointer;
   }
   .mp-social-sheet-header button:first-child { justify-self: start; width: 32px; }
+  .mp-social-sheet-header button:first-child.mp-social-clear {
+    width: 52px; min-width: 52px; padding: 0;
+    color: var(--mp-gray-500); font-size: 13px; font-weight: 600; white-space: nowrap;
+  }
   .mp-social-sheet-header button.primary {
     justify-self: end; padding: 0 10px; background: var(--mp-primary); color: #fff; font-size: 13px; font-weight: 700;
   }
@@ -2497,10 +2496,10 @@
 
   .mp-social-composer-sheet {
     display: flex; flex-direction: column;
-    height: min(610px, 90%); min-height: min(520px, 76%);
+    height: min(400px, 66%); min-height: min(380px, 62%);
   }
   .mp-social-composer-sheet > textarea {
-    flex: 1 1 220px; width: calc(100% - 32px); min-height: 220px;
+    flex: 1 1 96px; width: calc(100% - 32px); min-height: 96px;
     margin: 10px 16px 8px; padding: 0;
     resize: none; border: none; outline: none; color: var(--mp-gray-800);
     background: transparent; font: inherit; font-size: 16px; line-height: 1.55;
@@ -2511,8 +2510,16 @@
   }
   .mp-social-media-preview > button {
     position: absolute; top: 5px; left: 81px; display: flex; align-items: center; justify-content: center;
-    width: 26px; height: 26px; border: none; border-radius: 50%; background: rgba(19,22,32,0.78);
+    width: 26px; height: 26px; border: none; border-radius: var(--mp-r-sm); background: rgba(19,22,32,0.78);
     color: #fff; cursor: pointer;
+  }
+  .mp-social-media-add {
+    display: flex; flex: 0 0 112px; width: 112px; aspect-ratio: 1;
+    align-items: center; justify-content: center; flex-direction: column; gap: 6px;
+    margin: 0 16px 12px; border: 1px dashed var(--mp-gray-300);
+    border-radius: var(--mp-r-md); background: var(--mp-gray-50);
+    color: var(--mp-gray-500); font: inherit; font-size: 11px; font-weight: 600;
+    cursor: pointer;
   }
   .mp-social-audience-row,
   .mp-social-audience-list button,
@@ -2555,6 +2562,13 @@
 
   .mp-social-audience-backdrop { z-index: 240; }
   .mp-social-audience-sheet { min-height: min(650px, 94%); }
+  .mp-social-target-backdrop {
+    z-index: 260; background: rgba(0,0,0,0.22);
+  }
+  .mp-social-target-sheet {
+    display: flex; flex-direction: column;
+    height: min(560px, 72%); min-height: min(420px, 60%); max-height: 72%;
+  }
   .mp-social-sheet-copy { margin: 0; padding: 12px 16px; color: var(--mp-gray-500); font-size: 12px; }
   .mp-social-audience-list { display: flex; flex-direction: column; }
   .mp-social-sort-backdrop { z-index: 245; }
@@ -2584,7 +2598,7 @@
   .mp-social-selection-check {
     display: flex; align-items: center; justify-content: center;
     width: 24px; height: 24px; border: 1px solid var(--mp-gray-200);
-    border-radius: 50%; color: #fff; background: var(--mp-primary);
+    border-radius: 7px; color: #fff; background: var(--mp-primary);
   }
   .mp-social-selection-check:empty { background: #fff; }
   .mp-social-header-commit {
@@ -2614,12 +2628,12 @@
   }
   .mp-social-comment-composer-inline input {
     flex: 1; min-width: 0; height: 38px; padding: 0 14px; border: 1px solid var(--mp-gray-200);
-    border-radius: var(--mp-r-pill); outline: none; font: inherit;
+    border-radius: var(--mp-r-md); outline: none; font: inherit;
   }
   .mp-social-comment-composer-inline input:focus { border-color: var(--mp-primary); }
   .mp-social-comment-composer-inline button {
     display: flex; align-items: center; justify-content: center; width: 38px; height: 38px;
-    border: none; border-radius: 50%; background: var(--mp-primary); color: #fff; cursor: pointer;
+    border: none; border-radius: var(--mp-r-md); background: var(--mp-primary); color: #fff; cursor: pointer;
   }
   .mp-social-comment-composer-inline button:disabled { background: var(--mp-gray-200); color: var(--mp-gray-400); }
   .mp-moment-action.active { color: var(--mp-primary); }
@@ -2649,7 +2663,7 @@
   }
   .mp-social-media-video > span {
     display: flex; align-items: center; justify-content: center; width: 64px; height: 64px;
-    border-radius: 50%; background: rgba(255,255,255,0.18);
+    border-radius: var(--mp-r-lg); background: rgba(255,255,255,0.18);
   }
   .mp-social-media-video small { color: rgba(255,255,255,0.78); }
   .mp-social-media-dialog > footer {
@@ -2803,8 +2817,8 @@
   @media (prefers-reduced-motion: reduce) {
     .mp-social-composer-sheet,
     .mp-social-audience-sheet,
+    .mp-social-target-sheet,
     .mp-social-sort-sheet,
-    .mp-social-circle-editor,
-    .mp-moment-reaction-picker { animation: none; }
+    .mp-social-circle-editor { animation: none; }
   }
 }

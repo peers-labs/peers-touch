@@ -21,10 +21,10 @@ import {
 import { Button, message, Typography } from 'antd';
 import {
   AlertTriangle,
-  ArrowLeft,
   Check,
   ChevronRight,
   Globe2,
+  ImagePlus,
   LockKeyhole,
   RotateCcw,
   ShieldCheck,
@@ -307,8 +307,6 @@ function actorPtidsFromInput(value: string): string[] {
 interface MomentComposerProps {
   readonly session: MobileAuthSession;
   readonly intents: Pick<SocialIntentPort, 'publishMoment'>;
-  readonly pickOnOpen?: boolean;
-  readonly onTargetVisibilityChange?: (visible: boolean) => void;
   readonly onPublished: () => void;
   readonly onClose: () => void;
 }
@@ -318,8 +316,6 @@ type PendingDraftRemoval = { readonly kind: 'publish' };
 export function MomentComposer({
   session,
   intents,
-  pickOnOpen = false,
-  onTargetVisibilityChange,
   onPublished,
   onClose,
 }: MomentComposerProps) {
@@ -345,10 +341,12 @@ export function MomentComposer({
   const [targetAudienceChoice, setTargetAudienceChoice] =
     useState<MomentAudienceTargetChoice | null>(null);
   const [publishing, setPublishing] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [pendingDraftRemoval, setPendingDraftRemoval] =
     useState<PendingDraftRemoval | null>(null);
   const pendingImagesRef = useRef<PendingMomentImage[]>([]);
-  const initialPickStartedRef = useRef(false);
+  const retainStagedMediaOnUnmountRef = useRef(false);
+  const draftRestoreRequestedRef = useRef(false);
   const draftIdRef = useRef(globalThis.crypto.randomUUID());
   const circles = useSocialCirclesStore((state) => state.circles);
   const messagingConversations = useSocialStore(
@@ -383,9 +381,11 @@ export function MomentComposer({
 
   // Draft management
   const {
+    hasDraft,
     saveDraft,
     persistDraftNow,
     discardDraft,
+    restoreDraft,
     retryPersistence,
     saving,
     discarding,
@@ -412,21 +412,27 @@ export function MomentComposer({
     }, []),
   );
 
+  useEffect(() => {
+    if (
+      lifecycle.phase !== 'ACTIVE'
+      || draftRestoreRequestedRef.current
+    ) {
+      return;
+    }
+    draftRestoreRequestedRef.current = true;
+    void restoreDraft().catch(() => undefined);
+  }, [lifecycle.phase, restoreDraft]);
+
   // Keep ref in sync
   useEffect(() => {
     pendingImagesRef.current = pendingImages;
   }, [pendingImages]);
 
-  useEffect(
-    () => () => onTargetVisibilityChange?.(false),
-    [onTargetVisibilityChange],
-  );
-
   // Cleanup preview URLs on unmount
   useEffect(() => () => {
     pendingImagesRef.current.forEach((item) => {
       revokePreviewUrl(item.previewUrl);
-      if (item.stagedHandle) {
+      if (item.stagedHandle && !retainStagedMediaOnUnmountRef.current) {
         void discardNativeMomentMedia({
           stationPeerId: session.stationPeerId,
           actorPtid: session.actorRef.ptid,
@@ -467,8 +473,13 @@ export function MomentComposer({
     errorCount,
     publishing,
     Boolean(audience),
-  ) && !saving && !discarding && !pendingDraftRemoval;
-  const editingDisabled = publishing || Boolean(pendingDraftRemoval);
+  ) && !saving && !discarding && !closing && !pendingDraftRemoval;
+  const editingDisabled =
+    publishing || closing || Boolean(pendingDraftRemoval);
+  const canClear = hasDraft
+    || Boolean(text.trim())
+    || pendingImages.length > 0
+    || audienceChoice !== 'PUBLIC';
   const audienceLabel = t(
     SOCIAL_AUDIENCE_CHOICES.find((choice) => choice.id === audienceChoice)?.labelKey
       ?? 'mobile.moments.audience.public',
@@ -542,7 +553,7 @@ export function MomentComposer({
     setAudienceActorLabels({});
     setAudienceOpen(false);
     setTargetAudienceChoice(null);
-    onTargetVisibilityChange?.(false);
+    retainStagedMediaOnUnmountRef.current = false;
     draftIdRef.current = globalThis.crypto.randomUUID();
     setPendingDraftRemoval(null);
   }, [
@@ -551,7 +562,6 @@ export function MomentComposer({
     session.lifecycleGeneration,
     session.sessionId,
     session.stationPeerId,
-    onTargetVisibilityChange,
   ]);
 
   const completePublishedMoment = useCallback(() => {
@@ -570,6 +580,46 @@ export function MomentComposer({
     completePublishedMoment,
     pendingDraftRemoval,
     retryPersistence,
+  ]);
+
+  const handleClose = useCallback(async () => {
+    if (publishing || closing || pendingDraftRemoval || !audience) return;
+    setClosing(true);
+    const persisted = await persistDraftNow(
+      text,
+      audience,
+      successfulMediaRefs,
+    );
+    if (persisted) {
+      retainStagedMediaOnUnmountRef.current = true;
+      onClose();
+      return;
+    }
+    setClosing(false);
+  }, [
+    audience,
+    closing,
+    onClose,
+    pendingDraftRemoval,
+    persistDraftNow,
+    publishing,
+    successfulMediaRefs,
+    text,
+  ]);
+
+  const handleClear = useCallback(async () => {
+    if (editingDisabled || saving || discarding || !canClear) return;
+    if (!await discardDraft()) return;
+    resetComposer();
+    message.success(t('mobile.moments.composer.draftCleared'));
+  }, [
+    canClear,
+    discardDraft,
+    discarding,
+    editingDisabled,
+    resetComposer,
+    saving,
+    t,
   ]);
 
   // -- Image upload --
@@ -660,17 +710,6 @@ export function MomentComposer({
     });
     setPendingImages((current) => [...current, ...drafts]);
   };
-
-  useEffect(() => {
-    if (!pickOnOpen || initialPickStartedRef.current) return undefined;
-    initialPickStartedRef.current = true;
-    const timer = setTimeout(() => {
-      if (pendingImagesRef.current.length === 0) {
-        void handlePickImages();
-      }
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [pickOnOpen]);
 
   const removeImage = (localId: string) => {
     if (editingDisabled) return;
@@ -825,43 +864,6 @@ export function MomentComposer({
     }
   };
 
-  if (targetAudienceChoice) {
-    return (
-      <MomentAudienceTargetPicker
-        choice={targetAudienceChoice}
-        selectedActorLabels={audienceActorLabels}
-        selectedActorPtids={selectedActorPtids}
-        onBack={() => {
-          onTargetVisibilityChange?.(false);
-          setTargetAudienceChoice(null);
-          setAudienceOpen(true);
-        }}
-        onSelectCircle={(nextCircleId) => {
-          setCircleId(nextCircleId);
-          setAudienceChoice('CIRCLE');
-          onTargetVisibilityChange?.(false);
-          setTargetAudienceChoice(null);
-          setAudienceOpen(false);
-        }}
-        onSelectGroup={(nextGroupConversationId) => {
-          setGroupConversationId(nextGroupConversationId);
-          setAudienceChoice('GROUP');
-          onTargetVisibilityChange?.(false);
-          setTargetAudienceChoice(null);
-          setAudienceOpen(false);
-        }}
-        onSelectActors={(actorPtids, actorLabels) => {
-          setActorPtidsInput(actorPtids.join(', '));
-          setAudienceActorLabels({ ...actorLabels });
-          setAudienceChoice(targetAudienceChoice);
-          onTargetVisibilityChange?.(false);
-          setTargetAudienceChoice(null);
-          setAudienceOpen(false);
-        }}
-      />
-    );
-  }
-
   return (
     <div
       className="moments-sheet-backdrop moments-composer-backdrop moment-composer-overlay"
@@ -869,6 +871,9 @@ export function MomentComposer({
       data-keyboard-overlap={keyboardOverlapHeight}
       role="presentation"
       style={composerStyle}
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) void handleClose();
+      }}
     >
       <section
         className="moments-bottom-sheet moments-composer-card moment-composer-surface"
@@ -877,17 +882,19 @@ export function MomentComposer({
         role="dialog"
         aria-modal="true"
         aria-label={t('mobile.moments.newPost')}
-        aria-busy={publishing}
+        aria-busy={publishing || closing}
+        onPointerDown={(event) => event.stopPropagation()}
       >
         <div className="moments-sheet-handle" />
         <header className="moments-sheet-header moment-composer-header">
           <button
             type="button"
-            aria-label={t('common.action.close')}
-            disabled={editingDisabled}
-            onClick={onClose}
+            className="moment-composer-clear"
+            data-acceptance-id="social-composer-clear"
+            disabled={editingDisabled || saving || discarding || !canClear}
+            onClick={() => void handleClear()}
           >
-            <X size={20} />
+            {t('mobile.moments.composer.clear')}
           </button>
           <h2>{t('mobile.moments.newPost')}</h2>
           <button
@@ -935,10 +942,13 @@ export function MomentComposer({
           disabled={editingDisabled}
         />
 
-        {pendingImages.length > 0 && (
+        {(pendingImages.length > 0 || slotsLeft > 0) && (
           <div
             className="moment-composer-media"
-            aria-label={t('mobile.moments.composer.restoredImageReference')}
+            aria-label={t('mobile.moments.attachImage', {
+              count: pendingImages.length,
+              max: MAX_IMAGES_PER_POST,
+            })}
           >
           {pendingImages.map((item, index) => (
             <div
@@ -971,6 +981,21 @@ export function MomentComposer({
               </button>
             </div>
           ))}
+          {slotsLeft > 0 && (
+            <button
+              type="button"
+              className="moment-composer-media-add"
+              data-acceptance-id="social-composer-media-add"
+              disabled={editingDisabled}
+              onClick={() => void handlePickImages()}
+              aria-label={t('mobile.moments.attachImage', {
+                count: pendingImages.length,
+                max: MAX_IMAGES_PER_POST,
+              })}
+            >
+              <ImagePlus size={24} />
+            </button>
+          )}
           </div>
         )}
 
@@ -1012,22 +1037,24 @@ export function MomentComposer({
       </section>
 
       {audienceOpen && (
-        <div className="moments-sheet-backdrop moments-audience-backdrop" role="presentation">
+        <div
+          className="moments-sheet-backdrop moments-audience-backdrop"
+          role="presentation"
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            setAudienceOpen(false);
+          }}
+        >
           <section
             className="moments-bottom-sheet moments-audience-sheet"
             role="dialog"
             aria-modal="true"
             aria-label={t('mobile.moments.audience.label')}
+            onPointerDown={(event) => event.stopPropagation()}
           >
             <div className="moments-sheet-handle" />
             <header className="moments-sheet-header">
-              <button
-                type="button"
-                aria-label={t('common.action.back')}
-                onClick={() => setAudienceOpen(false)}
-              >
-                <ArrowLeft size={20} />
-              </button>
+              <span />
               <h2>{t('mobile.moments.audience.label')}</h2>
               <span />
             </header>
@@ -1046,8 +1073,6 @@ export function MomentComposer({
                     data-audience-option={option.id}
                     onClick={() => {
                       if (isMomentAudienceTargetChoice(option.id)) {
-                        setAudienceOpen(false);
-                        onTargetVisibilityChange?.(true);
                         setTargetAudienceChoice(option.id);
                         return;
                       }
@@ -1071,6 +1096,34 @@ export function MomentComposer({
             </div>
           </section>
         </div>
+      )}
+
+      {targetAudienceChoice && (
+        <MomentAudienceTargetPicker
+          choice={targetAudienceChoice}
+          selectedActorLabels={audienceActorLabels}
+          selectedActorPtids={selectedActorPtids}
+          onDismiss={() => setTargetAudienceChoice(null)}
+          onSelectCircle={(nextCircleId) => {
+            setCircleId(nextCircleId);
+            setAudienceChoice('CIRCLE');
+            setTargetAudienceChoice(null);
+            setAudienceOpen(false);
+          }}
+          onSelectGroup={(nextGroupConversationId) => {
+            setGroupConversationId(nextGroupConversationId);
+            setAudienceChoice('GROUP');
+            setTargetAudienceChoice(null);
+            setAudienceOpen(false);
+          }}
+          onSelectActors={(actorPtids, actorLabels) => {
+            setActorPtidsInput(actorPtids.join(', '));
+            setAudienceActorLabels({ ...actorLabels });
+            setAudienceChoice(targetAudienceChoice);
+            setTargetAudienceChoice(null);
+            setAudienceOpen(false);
+          }}
+        />
       )}
     </div>
   );

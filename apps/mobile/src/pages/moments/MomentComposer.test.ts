@@ -179,6 +179,34 @@ describe('Moment composer media restoration', () => {
     expect(source).toContain('if (removed) completePublishedMoment()');
   });
 
+  it('persists the draft before backdrop dismissal and clears explicitly', () => {
+    const source = readFileSync(
+      new URL('./MomentComposer.tsx', import.meta.url),
+      'utf8',
+    );
+    const closeHandler = source.slice(
+      source.indexOf('const handleClose = useCallback'),
+      source.indexOf('const handleClear = useCallback'),
+    );
+
+    expect(closeHandler.indexOf('await persistDraftNow(')).toBeGreaterThan(-1);
+    expect(closeHandler.indexOf('onClose()')).toBeGreaterThan(
+      closeHandler.indexOf('await persistDraftNow('),
+    );
+    expect(source).toContain(
+      'onPointerDown={(event) => {',
+    );
+    expect(source).toContain(
+      'if (event.target === event.currentTarget) void handleClose();',
+    );
+    expect(source).toContain('void restoreDraft().catch(() => undefined)');
+    expect(source).toContain('data-acceptance-id="social-composer-clear"');
+    expect(source).toContain('if (!await discardDraft()) return;');
+    expect(source).toContain(
+      "message.success(t('mobile.moments.composer.draftCleared'))",
+    );
+  });
+
   it('keeps Moments authoring on the opaque native media path', () => {
     const source = readFileSync(
       new URL('./MomentComposer.tsx', import.meta.url),
@@ -210,12 +238,21 @@ describe('Moment composer media restoration', () => {
     expect(source).toContain("choice.id !== 'DIRECT'");
     expect(source).toContain('isMomentAudienceTargetChoice(option.id)');
     expect(source).toContain('<MomentAudienceTargetPicker');
+    expect(source).toContain('onDismiss={() => setTargetAudienceChoice(null)}');
+    expect(source).not.toContain('if (targetAudienceChoice) {');
     expect(targetSource).toContain("choice === 'CIRCLE'");
     expect(targetSource).toContain("choice === 'GROUP'");
     expect(targetSource).toContain("choice === 'CUSTOM_ALLOW'");
     expect(targetSource).toContain("choice === 'CUSTOM_DENY'");
     expect(targetSource).toContain("if (choice === 'CIRCLE') void refreshCircles()");
     expect(targetSource).toContain('searchPeople(trimmed, federationId)');
+    expect(targetSource).toContain(
+      'className="moments-sheet-backdrop moments-audience-target-backdrop"',
+    );
+    expect(targetSource).toContain(
+      'className="moments-bottom-sheet moment-audience-target-sheet"',
+    );
+    expect(targetSource).not.toContain('ArrowLeft');
     expect(source).toContain('persistDraftNow(text, audience,');
     expect(source).toContain('privateFiles: privateFiles.filter');
     expect(source).not.toContain('AUDIENCE_OPTIONS');
@@ -232,11 +269,12 @@ describe('Moment composer media restoration', () => {
     );
     expect(markup).toContain('moment-composer-surface');
     expect(markup).toContain('role="dialog"');
+    expect(markup).toContain('data-acceptance-id="social-composer-media-add"');
     expect(markup).toContain('data-acceptance-id="social-audience-select"');
     expect(markup).not.toContain('data-audience-option="DIRECT"');
   });
 
-  it('matches the confirmed composer structure without Ant form chrome', () => {
+  it('opens native media only from the explicit composer image slot', () => {
     const source = readFileSync(
       new URL('./MomentComposer.tsx', import.meta.url),
       'utf8',
@@ -257,9 +295,11 @@ describe('Moment composer media restoration', () => {
     expect(audienceIndex).toBeGreaterThan(mediaIndex);
     expect(source).not.toContain('<Input.TextArea');
     expect(source).not.toContain('moments-composer-actions');
-    expect(source).not.toContain('moment-composer-media-add');
+    expect(source).toContain('className="moment-composer-media-add"');
+    expect(source).toContain('onClick={() => void handlePickImages()}');
     expect(source).not.toContain('moments-draft-banner');
-    expect(source).toContain('pickOnOpen');
+    expect(source).not.toContain('pickOnOpen');
+    expect(source).not.toContain('initialPickStartedRef');
     expect(styles).toContain('.moment-composer-textarea {');
     expect(styles).toContain(
       '--moment-composer-keyboard-overlap: 0px;',
@@ -276,13 +316,14 @@ describe('Moment composer media restoration', () => {
     expect(styles).toContain(
       'min-height: 42px;',
     );
-    expect(styles).toContain('height: min(610px, 90%);');
-    expect(styles).toContain('min-height: 220px;');
+    expect(styles).toContain('height: min(400px, 66%);');
+    expect(styles).toContain('min-height: 96px;');
     expect(styles).toContain('flex: 0 0 112px;');
+    expect(styles).toContain('.moment-composer-media-add {');
     expect(styles).toContain('--moment-primary: #6366f1;');
-    expect(styles).toContain('.moment-audience-target-page {');
+    expect(styles).toContain('.moment-audience-target-sheet {');
+    expect(styles).toContain('height: min(560px, 72%);');
     expect(styles).toContain('.moment-audience-target-list button {');
-    expect(styles).not.toContain('.moment-composer-media-add');
     expect(styles).not.toContain('.moments-audience-target .ant-select');
   });
 

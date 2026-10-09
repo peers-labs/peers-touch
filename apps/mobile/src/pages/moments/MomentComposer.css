@@ -27,8 +27,8 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: min(610px, 90%);
-  min-height: min(520px, 76%);
+  height: min(400px, 66%);
+  min-height: min(380px, 62%);
   max-height: 85vh;
   gap: 0;
   margin: 0;
@@ -91,8 +91,18 @@
 }
 
 .moment-composer-header > button:first-child {
-  width: 32px;
+  width: auto;
   justify-self: start;
+}
+
+.moment-composer-header > button:first-child.moment-composer-clear {
+  width: 52px;
+  min-width: 52px;
+  padding: 0;
+  color: var(--moment-gray-500);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .moment-composer-header > button.primary {
@@ -113,9 +123,9 @@
 
 .moment-composer-textarea {
   display: block;
-  flex: 1 1 220px;
+  flex: 1 1 96px;
   width: calc(100% - 32px);
-  min-height: 220px;
+  min-height: 96px;
   margin: 10px 16px 8px;
   padding: 0;
   resize: none;
@@ -179,6 +189,23 @@
   background: var(--moment-gray-100);
 }
 
+.moment-composer-media-add {
+  display: flex;
+  flex: 0 0 112px;
+  width: 112px;
+  aspect-ratio: 1;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--moment-gray-300);
+  border-radius: 10px;
+  background: var(--moment-gray-50);
+  color: var(--moment-gray-500);
+}
+
+.moment-composer-media-add:disabled {
+  opacity: 0.45;
+}
+
 .moment-composer-media-remove,
 .moment-composer-media-retry {
   position: absolute;
@@ -186,7 +213,7 @@
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 50%;
+  border-radius: 8px;
   background: rgba(19, 22, 32, 0.78);
   color: #fff;
 }
@@ -291,11 +318,22 @@
   flex: 0 0 auto;
 }
 
-.moments-composer-backdrop.moment-composer-overlay > .moments-audience-backdrop {
+.moments-composer-backdrop.moment-composer-overlay
+  > .moments-audience-backdrop {
   position: absolute;
   inset: 0;
   z-index: 240;
   background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.moments-composer-backdrop.moment-composer-overlay
+  > .moments-audience-target-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 260;
+  background: rgba(0, 0, 0, 0.22);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -343,74 +381,34 @@
   overflow-wrap: anywhere;
 }
 
-.moment-audience-target-page {
-  --moment-primary: #6366f1;
-  --moment-primary-light: rgba(99, 102, 241, 0.1);
-  --moment-gray-50: #f7f8fa;
-  --moment-gray-100: #f0f1f4;
-  --moment-gray-200: #e4e6eb;
-  --moment-gray-400: #9ca0ab;
-  --moment-gray-500: #6b7080;
-  --moment-gray-600: #4a4f5e;
-  --moment-gray-700: #333845;
-  --moment-gray-800: #1f2330;
-  --moment-gray-900: #131620;
-  position: fixed;
-  inset: 0;
-  z-index: 1500;
+.moment-audience-target-sheet {
   display: flex;
   width: 100%;
-  height: 100dvh;
+  height: min(560px, 72%);
+  min-height: min(420px, 60%);
+  max-height: 72dvh;
   box-sizing: border-box;
   flex-direction: column;
-  padding-top: var(--safe-area-top);
-  padding-bottom: var(--safe-area-bottom);
+  padding: 0 0 max(10px, var(--safe-area-bottom));
   overflow-x: hidden;
   overflow-y: auto;
-  background: var(--moment-gray-50);
+  border-radius: 16px 16px 0 0;
+  background: #fff;
   -webkit-overflow-scrolling: touch;
 }
 
 .moment-audience-target-header {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  flex: 0 0 52px;
-  min-height: 52px;
-  align-items: center;
-  gap: 4px;
-  padding: 0 8px 0 4px;
-  border-bottom: 0.5px solid var(--moment-gray-200);
-  background: rgba(255, 255, 255, 0.96);
+  flex: 0 0 44px;
 }
 
-.moment-audience-target-header h1 {
-  flex: 1;
+.moment-audience-target-header h2 {
   overflow: hidden;
-  margin: 0;
-  color: var(--moment-gray-900);
-  font-size: 16px;
-  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.moment-audience-target-header > button {
-  display: inline-flex;
-  min-width: 44px;
-  min-height: 44px;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--moment-gray-700);
-  font: inherit;
-}
-
-.moment-audience-target-header > button:first-child {
-  flex: 0 0 44px;
+.moment-audience-target-header > span {
+  width: 32px;
 }
 
 .moment-audience-target-header > .moment-audience-target-commit {
@@ -422,10 +420,6 @@
   color: #fff;
   font-size: 12px;
   font-weight: 700;
-}
-
-.moment-audience-target-header > button:disabled {
-  opacity: 0.45;
 }
 
 .moment-audience-target-copy {
@@ -493,7 +487,11 @@
   text-align: left;
 }
 
-.moment-audience-target-list button > span:not(.moment-audience-choice-icon):not(.moment-audience-selection-check) {
+.moment-audience-target-list
+  button
+  > span:not(.moment-audience-choice-icon):not(
+    .moment-audience-selection-check
+  ) {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -523,7 +521,7 @@
   align-items: center;
   justify-content: center;
   border: 1px solid var(--moment-gray-200);
-  border-radius: 50%;
+  border-radius: 7px;
   background: #fff;
   color: #fff;
 }
@@ -551,7 +549,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .moment-composer-surface,
-  .moments-audience-sheet {
+  .moments-audience-sheet,
+  .moment-audience-target-sheet {
     animation: none;
   }
 }

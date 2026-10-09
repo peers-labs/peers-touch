@@ -1636,6 +1636,51 @@ func TestHandler_React_AcceptsReactionFromAuthor(t *testing.T) {
 	}
 }
 
+func TestHandler_React_ExpandedKindRoundTrips(t *testing.T) {
+	f := newHandlerFixture(t)
+	created, err := f.subserver.handleCreatePost(
+		f.withViewer(1),
+		textPostReq(
+			&model.Audience{Kind: model.Audience_PUBLIC},
+			"expanded reaction",
+		),
+	)
+	if err != nil {
+		t.Fatalf("seed create: %v", err)
+	}
+	reacted, err := f.subserver.handleReact(
+		f.withViewer(1),
+		&model.ReactToPostRequest{
+			PostId: created.Post.Id,
+			Kind:   model.ReactionKind_REACTION_HEART_HANDS,
+		},
+	)
+	if err != nil {
+		t.Fatalf("react with expanded kind: %v", err)
+	}
+	if len(reacted.Reactions) != 1 ||
+		reacted.Reactions[0].Kind !=
+			model.ReactionKind_REACTION_HEART_HANDS ||
+		reacted.Reactions[0].Count != 1 ||
+		!reacted.Reactions[0].ReactedByViewer {
+		t.Fatalf("expanded reaction response = %+v", reacted.Reactions)
+	}
+
+	unreacted, err := f.subserver.handleUnreact(
+		f.withViewer(1),
+		&model.UnreactToPostRequest{
+			PostId: created.Post.Id,
+			Kind:   model.ReactionKind_REACTION_HEART_HANDS,
+		},
+	)
+	if err != nil {
+		t.Fatalf("unreact expanded kind: %v", err)
+	}
+	if len(unreacted.Reactions) != 0 {
+		t.Fatalf("expanded unreact response = %+v", unreacted.Reactions)
+	}
+}
+
 func TestHandler_GetPostComments_NotFoundOnUnreadablePost(t *testing.T) {
 	f := newHandlerFixture(t)
 

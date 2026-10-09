@@ -254,7 +254,6 @@ export function registerDraftRestorationConsumer(
   return () => {
     if (draftRestorationConsumers.get(key) === consumer) {
       draftRestorationConsumers.delete(key);
-      observedDraftConsumers.delete(key);
     }
   };
 }
