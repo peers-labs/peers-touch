@@ -1941,6 +1941,23 @@ async function logoutDesktopClient(clientId, client) {
     '[data-pt-secondary-tab="general"]',
     'Settings',
   );
+  await clickSelector(
+    client,
+    '[data-pt-secondary-tab="help"]',
+    'open-desktop-help-settings',
+  );
+  await waitForUi(
+    clientId,
+    client,
+    'Desktop Danger Zone',
+    `
+      const text = document.body?.innerText || '';
+      return {
+        ready: text.includes('Danger Zone')
+          && text.includes('Sign Out')
+      };
+    `,
+  );
   await clickXpath(
     client,
     '//button[normalize-space(.)="Sign Out"]',
