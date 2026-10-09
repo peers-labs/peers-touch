@@ -50,4 +50,10 @@ describe('LoginPage OAuth lifecycle contract', () => {
     expect(mainSource).toContain("colorPrimaryBorder: '#6f87f5'");
     expect(mainSource).toContain('lineWidthFocus: 2');
   });
+
+  it('gives the icon-only email submit action an accessible name', () => {
+    expect(formViewSource).toMatch(
+      /aria-label=\{t\('auth\.login\.submit'\)\}[\s\S]*data-login-submit/,
+    );
+  });
 });
