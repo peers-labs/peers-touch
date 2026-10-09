@@ -561,6 +561,25 @@ async function executeWebScript(client, script, args = []) {
   );
 }
 
+async function waitForVisualFrame(client) {
+  await webdriverRequest(
+    webdriverEndpoint(client, '/execute/async'),
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        script: `
+          const done = arguments[arguments.length - 1];
+          const nextFrame = typeof requestAnimationFrame === 'function'
+            ? requestAnimationFrame
+            : (callback) => setTimeout(callback, 16);
+          nextFrame(() => nextFrame(() => setTimeout(() => done(true), 50)));
+        `,
+        args: [],
+      }),
+    },
+  );
+}
+
 async function selectWebContext(client) {
   if (client.platform === 'desktop') return null;
   const current = await webdriverRequest(
@@ -778,6 +797,7 @@ async function captureJourneyStep(
     evidenceFileSegment(clientId),
     evidenceFileSegment(stepId),
   ].join('-');
+  await waitForVisualFrame(client);
   const screenshot = await webdriverRequest(
     webdriverEndpoint(client, '/screenshot'),
   );
