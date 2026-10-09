@@ -511,8 +511,9 @@ const sessionRuntime = createSessionRuntimeController({
   native: nativeSessionPort,
   clock: runtimeClock,
   onSessionChanged: (session) => {
+    const previous = useAuthStore.getState().session;
     useAuthStore.getState().setSession(
-      session ? mobileAuthSessionFromProjection(session) : null,
+      session ? mobileAuthSessionFromProjection(session, previous) : null,
     );
   },
 });
@@ -806,9 +807,13 @@ export function isMobileSessionProjectionValid(
   return Number.isFinite(expiresAt) && expiresAt > now;
 }
 
-function mobileAuthSessionFromProjection(
+export function mobileAuthSessionFromProjection(
   session: MobileSessionProjection,
+  previous: MobileAuthSession | null = null,
 ): MobileAuthSession {
+  const previousActorRef = previous?.actorRef.ptid === session.actorPtid
+    ? previous.actorRef
+    : null;
   return {
     stationPeerId: session.stationPeerId,
     stationUrl: session.stationUrl,
@@ -816,7 +821,11 @@ function mobileAuthSessionFromProjection(
     deviceId: session.deviceId,
     lifecycleGeneration: session.lifecycleGeneration,
     expiresAt: session.expiresAt,
-    actorRef: { ptid: session.actorPtid },
+    actorRef: {
+      ptid: session.actorPtid,
+      acct: previousActorRef?.acct,
+      kind: previousActorRef?.kind,
+    },
     authenticatedAt: Date.now(),
   };
 }

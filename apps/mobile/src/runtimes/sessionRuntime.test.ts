@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AccessDecision } from '../features/auth/authSession';
 import {
   createSessionRuntimeController,
+  mobileAuthSessionFromProjection,
   type NativeSessionProjection,
 } from './sessionRuntime';
 
@@ -89,6 +90,51 @@ function runtime(options: {
 }
 
 describe('sessionRuntime', () => {
+  it('preserves the matching visible account identity across native projection refreshes', () => {
+    const projection = {
+      stationPeerId: 'station-a',
+      stationUrl: 'https://station.example',
+      sessionId: 'session-refreshed',
+      actorPtid: 'ptid:alice',
+      deviceId: 'device-a',
+      lifecycleGeneration: 2,
+      expiresAt: '2026-09-17T00:20:00.000Z',
+      credentialOwner: 'native-oauth',
+    } as const;
+    const previous = {
+      stationPeerId: 'station-a',
+      stationUrl: 'https://station.example',
+      sessionId: 'session-a',
+      deviceId: 'device-a',
+      lifecycleGeneration: 1,
+      actorRef: {
+        ptid: 'ptid:alice',
+        acct: 'alice@p.t',
+      },
+      authenticatedAt: NOW,
+    };
+
+    expect(mobileAuthSessionFromProjection(projection, previous))
+      .toMatchObject({
+        actorRef: {
+          ptid: 'ptid:alice',
+          acct: 'alice@p.t',
+        },
+      });
+    expect(mobileAuthSessionFromProjection(projection, {
+      ...previous,
+      actorRef: {
+        ptid: 'ptid:bob',
+        acct: 'bob@p.t',
+      },
+    })).toMatchObject({
+      actorRef: {
+        ptid: 'ptid:alice',
+        acct: undefined,
+      },
+    });
+  });
+
   it('activates native OAuth metadata without projecting credential material', async () => {
     const { controller, timers } = runtime();
 

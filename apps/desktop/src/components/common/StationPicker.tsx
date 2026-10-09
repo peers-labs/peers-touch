@@ -237,9 +237,8 @@ export function StationPicker() {
   const currentStatus = checkingStationPeerId === activeEntry?.station_peer_id
     ? 'checking'
     : statusFromRoute(currentRoute);
-  const displayLabel = activeEntry?.display_name
-    || shortPeerId(activeEntry?.station_peer_id)
-    || t('common.stationPicker.fallbackLabel');
+  const fallbackLabel = t('common.stationPicker.fallbackLabel');
+  const displayLabel = activeEntry?.display_name?.trim() || fallbackLabel;
 
   return (
     <>
@@ -288,6 +287,7 @@ export function StationPicker() {
               <StationRow
                 key={entry.station_peer_id}
                 entry={entry}
+                fallbackLabel={fallbackLabel}
                 active={entry.station_peer_id === activeStationPeerId}
                 hovered={entry.station_peer_id === hoveredStationPeerId}
                 checking={entry.station_peer_id === checkingStationPeerId}
@@ -297,7 +297,7 @@ export function StationPicker() {
                 relayLabel={t('common.stationPicker.viaRelay')}
                 verifyLabel={t('common.stationPicker.verify')}
                 removeLabel={t('common.stationPicker.removeLabel', {
-                  station: entry.display_name || shortPeerId(entry.station_peer_id),
+                  station: entry.display_name?.trim() || fallbackLabel,
                 })}
                 copyLabel={t('common.stationPicker.copyEndpoint')}
                 statusText={statusLabel(
@@ -440,6 +440,7 @@ function StationPickerTrigger(props: {
 
 function StationRow(props: {
   entry: StationEntry;
+  fallbackLabel: string;
   active: boolean;
   hovered: boolean;
   checking: boolean;
@@ -460,7 +461,7 @@ function StationRow(props: {
 }) {
   const { entry, token } = props;
   const route = activeRoute(entry);
-  const title = entry.display_name || shortPeerId(entry.station_peer_id);
+  const title = entry.display_name?.trim() || props.fallbackLabel;
   const status = props.checking ? 'checking' : statusFromRoute(route);
   return (
     <div

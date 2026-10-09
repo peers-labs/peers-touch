@@ -62,6 +62,24 @@ const externalPreconditions = Object.freeze(new Set([
   'livekit-healthy',
   'station-healthy',
 ]));
+const webdriverElementKey = 'element-6066-11e4-a52e-4f735466cecf';
+const clientAccounts = Object.freeze({
+  'android-alice': Object.freeze({
+    email: 'alice@p.t',
+    friendlyName: 'Alice',
+  }),
+  'desktop-bob': Object.freeze({
+    email: 'bob@p.t',
+    friendlyName: 'Bob',
+  }),
+  'ios-coral': Object.freeze({
+    email: 'carol@p.t',
+    friendlyName: 'Carol',
+  }),
+});
+const demoPassport = '1';
+const uiWaitTimeoutMs = 45_000;
+const uiPollIntervalMs = 250;
 
 class JourneyContractError extends Error {
   constructor(code, message) {
@@ -525,6 +543,24 @@ async function webdriverRequest(url, options = {}) {
   return payload?.value ?? payload;
 }
 
+function sleep(delayMs) {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+function evidenceFileSegment(value) {
+  return value.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+async function executeWebScript(client, script, args = []) {
+  return webdriverRequest(
+    webdriverEndpoint(client, '/execute/sync'),
+    {
+      method: 'POST',
+      body: JSON.stringify({ script, args }),
+    },
+  );
+}
+
 async function selectWebContext(client) {
   if (client.platform === 'desktop') return null;
   const current = await webdriverRequest(
@@ -565,6 +601,274 @@ async function restoreContext(client, context) {
     method: 'POST',
     body: JSON.stringify({ name: context }),
   });
+}
+
+async function withWebContext(client, operation) {
+  const priorContext = await selectWebContext(client);
+  try {
+    return await operation();
+  } finally {
+    await restoreContext(client, priorContext);
+  }
+}
+
+async function findElement(client, using, value, optional = false) {
+  try {
+    const result = await webdriverRequest(
+      webdriverEndpoint(client, '/element'),
+      {
+        method: 'POST',
+        body: JSON.stringify({ using, value }),
+      },
+    );
+    const elementId = result?.[webdriverElementKey] ?? result?.ELEMENT;
+    assertContract(
+      typeof elementId === 'string' && elementId,
+      'WEBDRIVER_ELEMENT_INVALID',
+      `WebDriver did not return an element for ${using}=${value}`,
+    );
+    return elementId;
+  } catch (error) {
+    if (optional && error instanceof JourneyContractError) return null;
+    throw error;
+  }
+}
+
+async function clickElement(client, elementId) {
+  await webdriverRequest(
+    webdriverEndpoint(client, `/element/${encodeURIComponent(elementId)}/click`),
+    {
+      method: 'POST',
+      body: '{}',
+    },
+  );
+}
+
+async function clickSelector(client, selector, label) {
+  const elementId = await findElement(client, 'css selector', selector);
+  await clickElement(client, elementId);
+  return { label, selector };
+}
+
+async function clickXpath(client, xpath, label, optional = false) {
+  const elementId = await findElement(client, 'xpath', xpath, optional);
+  if (!elementId) return false;
+  await clickElement(client, elementId);
+  return { label, xpath };
+}
+
+async function setInputValue(client, selector, value, label) {
+  const result = await executeWebScript(
+    client,
+    `
+      const selector = arguments[0];
+      const value = arguments[1];
+      const element = document.querySelector(selector);
+      if (!(element instanceof HTMLInputElement)
+        && !(element instanceof HTMLTextAreaElement)) {
+        return { ok: false, reason: 'missing-input' };
+      }
+      const prototype = element instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype;
+      const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
+      if (!descriptor?.set) {
+        return { ok: false, reason: 'missing-native-setter' };
+      }
+      element.focus();
+      descriptor.set.call(element, value);
+      element.dispatchEvent(new InputEvent('input', {
+        bubbles: true,
+        data: value,
+        inputType: 'insertText'
+      }));
+      element.dispatchEvent(new Event('change', { bubbles: true }));
+      return {
+        ok: element.value === value,
+        active: document.activeElement === element,
+        value: element.value
+      };
+    `,
+    [selector, value],
+  );
+  assertContract(
+    result?.ok === true,
+    'WEBDRIVER_INPUT_FAILED',
+    `${label} could not set ${selector}: ${result?.reason || 'unknown error'}`,
+  );
+  return { label, selector, valueLength: value.length };
+}
+
+async function waitForUi(clientId, client, label, script, args = []) {
+  const deadline = Date.now() + uiWaitTimeoutMs;
+  let lastValue = null;
+  while (Date.now() < deadline) {
+    lastValue = await executeWebScript(client, script, args);
+    if (lastValue?.ready === true || lastValue === true) return lastValue;
+    await sleep(uiPollIntervalMs);
+  }
+  throw new JourneyContractError(
+    'WEBDRIVER_UI_TIMEOUT',
+    `${clientId} timed out waiting for ${label}: ${JSON.stringify(lastValue).slice(0, 600)}`,
+  );
+}
+
+async function readClientUiState(client) {
+  return executeWebScript(
+    client,
+    `
+      const visible = (element) => Boolean(
+        element
+        && element.getClientRects().length
+        && getComputedStyle(element).visibility !== 'hidden'
+        && getComputedStyle(element).display !== 'none'
+      );
+      const visibleSurfaces = [...document.querySelectorAll('[data-product-surface]')]
+        .filter(visible)
+        .map((element) => element.getAttribute('data-product-surface'));
+      const dialogs = [...document.querySelectorAll('[aria-modal="true"], [role="dialog"]')]
+        .filter(visible)
+        .map((element) => (element.innerText || '').trim().slice(0, 1000));
+      const runtimeNotices = [...document.querySelectorAll('[data-runtime-ids]')]
+        .filter(visible)
+        .map((element) => ({
+          ids: element.getAttribute('data-runtime-ids') || '',
+          text: (element.innerText || '').trim().slice(0, 1000)
+        }));
+      const stationTrigger = document.querySelector('[data-station-picker-trigger]');
+      return {
+        bodyText: (document.body?.innerText || '').slice(0, 6000),
+        dialogs,
+        documentHeight: document.documentElement.scrollHeight,
+        documentWidth: document.documentElement.scrollWidth,
+        navCount: document.querySelectorAll('[data-pt-primary-nav]').length,
+        stationLabel: stationTrigger
+          ? (stationTrigger.innerText || '').trim().split('\\n')[0]
+          : '',
+        surface: visibleSurfaces.find((surface) => surface?.startsWith('shell.'))
+          || visibleSurfaces[0]
+          || '',
+        runtimeNotices,
+        viewportHeight: window.innerHeight,
+        viewportWidth: window.innerWidth,
+        visibleSurfaces
+      };
+    `,
+  );
+}
+
+async function captureJourneyStep(
+  clientId,
+  client,
+  evidenceDir,
+  sequence,
+  stepId,
+) {
+  const fileStem = [
+    String(sequence).padStart(3, '0'),
+    evidenceFileSegment(clientId),
+    evidenceFileSegment(stepId),
+  ].join('-');
+  const screenshot = await webdriverRequest(
+    webdriverEndpoint(client, '/screenshot'),
+  );
+  const source = await webdriverRequest(
+    webdriverEndpoint(client, '/source'),
+  );
+  const state = await readClientUiState(client);
+  assertContract(
+    typeof screenshot === 'string' && screenshot.length > 100,
+    'WEBDRIVER_SCREENSHOT_INVALID',
+    `${clientId} screenshot is missing at ${stepId}`,
+  );
+  assertContract(
+    typeof source === 'string' && source.trim(),
+    'WEBDRIVER_SOURCE_INVALID',
+    `${clientId} source is missing at ${stepId}`,
+  );
+  const screenshotPath = path.join(evidenceDir, `${fileStem}.png`);
+  const sourcePath = path.join(evidenceDir, `${fileStem}.source.txt`);
+  const statePath = path.join(evidenceDir, `${fileStem}.state.json`);
+  writeFileSync(screenshotPath, Buffer.from(screenshot, 'base64'));
+  writeFileSync(sourcePath, source);
+  writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+  return {
+    screenshot: {
+      path: screenshotPath,
+      sha256: createHash('sha256')
+        .update(Buffer.from(screenshot, 'base64'))
+        .digest('hex'),
+    },
+    source: {
+      path: sourcePath,
+      sha256: createHash('sha256').update(source).digest('hex'),
+    },
+    state: {
+      path: statePath,
+      sha256: createHash('sha256')
+        .update(JSON.stringify(state))
+        .digest('hex'),
+      value: state,
+    },
+  };
+}
+
+async function recordJourneyStep({
+  action,
+  client,
+  clientId,
+  evidenceDir,
+  interactionTrace,
+  sequence,
+  stepId,
+}) {
+  const startedAt = new Date().toISOString();
+  try {
+    const result = await action();
+    const evidence = await captureJourneyStep(
+      clientId,
+      client,
+      evidenceDir,
+      sequence,
+      stepId,
+    );
+    const record = {
+      clientId,
+      evidence,
+      result,
+      sequence,
+      startedAt,
+      status: 'PASS',
+      stepId,
+      completedAt: new Date().toISOString(),
+    };
+    interactionTrace.push(record);
+    return record;
+  } catch (error) {
+    let evidence = null;
+    try {
+      evidence = await captureJourneyStep(
+        clientId,
+        client,
+        evidenceDir,
+        sequence,
+        `${stepId}-failed`,
+      );
+    } catch {
+      // Preserve the first actionable interaction failure.
+    }
+    interactionTrace.push({
+      clientId,
+      evidence,
+      error: error instanceof Error ? error.message : String(error),
+      sequence,
+      startedAt,
+      status: 'FAIL',
+      stepId,
+      completedAt: new Date().toISOString(),
+    });
+    throw error;
+  }
 }
 
 async function activateForegroundClient(clientId, client) {
@@ -747,6 +1051,787 @@ async function runPreflight(matrix, phase, runtimeManifestPath, evidenceDir) {
   return report;
 }
 
+async function ensureMobileAuthenticated(
+  clientId,
+  client,
+  stationUrl,
+  account,
+) {
+  let state = await readClientUiState(client);
+  if (
+    state.surface.startsWith('shell.')
+    && state.bodyText.includes('Restore Account Identity')
+  ) {
+    await clickXpath(
+      client,
+      '//button[normalize-space(.)="Switch Station"]',
+      'switch-station-from-identity-recovery',
+    );
+    await waitForUi(
+      clientId,
+      client,
+      'Station selection after identity recovery',
+      `
+        const surface = document.querySelector('[data-product-surface="entry.station-selection"]');
+        return { ready: Boolean(surface) };
+      `,
+    );
+    state = await readClientUiState(client);
+  }
+
+  if (state.surface === 'entry.station-selection') {
+    const stationState = await executeWebScript(
+      client,
+      `
+        return {
+          active: Boolean(document.querySelector('.station-entry.active')),
+          input: Boolean(document.querySelector(
+            'input[aria-label="Station or private connection"]'
+          ))
+        };
+      `,
+    );
+    if (!stationState?.active) {
+      assertContract(
+        stationState?.input === true,
+        'MOBILE_STATION_INPUT_MISSING',
+        `${clientId} has no active Station or Station input`,
+      );
+      await setInputValue(
+        client,
+        'input[aria-label="Station or private connection"]',
+        stationUrl,
+        'station-address',
+      );
+      await clickSelector(
+        client,
+        'button[aria-label="Add Station"]',
+        'add-station',
+      );
+      await waitForUi(
+        clientId,
+        client,
+        'verified active Station',
+        `
+          const entry = document.querySelector('.station-entry.active');
+          const status = entry?.querySelector('.station-entry-status');
+          return {
+            ready: Boolean(entry && status?.classList.contains('online')),
+            status: status?.innerText || ''
+          };
+        `,
+      );
+    }
+    await clickXpath(
+      client,
+      '//button[normalize-space(.)="Continue"]',
+      'continue-with-station',
+    );
+    await waitForUi(
+      clientId,
+      client,
+      'access gate or authenticated shell',
+      `
+        const shell = document.querySelector('[data-product-surface^="shell."]');
+        const access = document.querySelector('[data-product-surface^="entry.access-"]');
+        return { ready: Boolean(shell || access) };
+      `,
+    );
+    state = await readClientUiState(client);
+  }
+
+  if (!state.surface.startsWith('shell.')) {
+    const hasEmailInput = await executeWebScript(
+      client,
+      `return Boolean(document.querySelector('input[placeholder="Email address"]'));`,
+    );
+    if (!hasEmailInput) {
+      await clickXpath(
+        client,
+        '//button[normalize-space(.)="Email Login"]',
+        'open-email-login',
+      );
+    }
+    await waitForUi(
+      clientId,
+      client,
+      'email login form',
+      `
+        return {
+          ready: Boolean(
+            document.querySelector('input[placeholder="Email address"]')
+            && document.querySelector('input[placeholder="Password"]')
+          )
+        };
+      `,
+    );
+    await setInputValue(
+      client,
+      'input[placeholder="Email address"]',
+      account.email,
+      'login-email',
+    );
+    await setInputValue(
+      client,
+      'input[placeholder="Password"]',
+      demoPassport,
+      'login-password',
+    );
+    await clickXpath(
+      client,
+      '//button[normalize-space(.)="Sign In"]',
+      'submit-login',
+    );
+    const loginResult = await waitForUi(
+      clientId,
+      client,
+      'authenticated shell',
+      `
+        const surface = [...document.querySelectorAll('[data-product-surface]')]
+          .find((element) => element.getClientRects().length)
+          ?.getAttribute('data-product-surface') || '';
+        const text = document.body?.innerText || '';
+        return {
+          ready: surface.startsWith('shell.') || surface === 'entry.login-failed',
+          surface,
+          text: text.slice(0, 1200)
+        };
+      `,
+    );
+    assertContract(
+      loginResult.surface.startsWith('shell.'),
+      'MOBILE_LOGIN_FAILED',
+      `${clientId} login failed: ${loginResult.text}`,
+    );
+  }
+
+  await waitForUi(
+    clientId,
+    client,
+    'ready mobile shell',
+    `
+      const shell = document.querySelector('[data-product-surface^="shell."]');
+      const text = document.body?.innerText || '';
+      const runtimeNotices = [...document.querySelectorAll('[data-runtime-ids]')]
+        .filter((element) => element.getClientRects().length);
+      return {
+        ready: Boolean(shell)
+          && !text.includes('Features Loading')
+          && runtimeNotices.length === 0,
+        runtimeNoticeCount: runtimeNotices.length,
+        text: text.slice(0, 1200)
+      };
+    `,
+  );
+  return readClientUiState(client);
+}
+
+async function ensureDesktopAuthenticated(clientId, client, stationUrl, account) {
+  const sessionEnded = await findElement(
+    client,
+    'xpath',
+    '//button[normalize-space(.)="Confirm"]',
+    true,
+  );
+  if (sessionEnded) {
+    await clickElement(client, sessionEnded);
+    await sleep(uiPollIntervalMs);
+  }
+
+  let state = await readClientUiState(client);
+  if (state.navCount > 0) return state;
+
+  const accountChooser = await findElement(
+    client,
+    'xpath',
+    '//button[normalize-space(.)="Sign in with another account"]',
+    true,
+  );
+  if (accountChooser) {
+    await clickElement(client, accountChooser);
+    await sleep(uiPollIntervalMs);
+  }
+
+  const stationTrigger = await findElement(
+    client,
+    'css selector',
+    '[data-station-picker-trigger]',
+    true,
+  );
+  if (stationTrigger) {
+    const stationLabel = (
+      await executeWebScript(
+        client,
+        `
+          return (
+            document.querySelector('[data-station-picker-trigger]')?.innerText
+            || ''
+          ).trim().split('\\n')[0];
+        `,
+      )
+    );
+    if (!stationLabel) {
+      await clickElement(client, stationTrigger);
+      await setInputValue(
+        client,
+        'input[aria-label="Station or private connection"]',
+        stationUrl,
+        'desktop-station-address',
+      );
+      await clickSelector(
+        client,
+        'button[aria-label="Add Station"]',
+        'desktop-add-station',
+      );
+    }
+  }
+
+  await clickSelector(
+    client,
+    '[data-login-tab="email"]',
+    'desktop-open-email-login',
+  );
+  await setInputValue(
+    client,
+    '[data-login-email]',
+    account.email,
+    'desktop-login-email',
+  );
+  await setInputValue(
+    client,
+    '[data-login-password]',
+    demoPassport,
+    'desktop-login-password',
+  );
+  await clickSelector(
+    client,
+    '[data-login-submit]',
+    'desktop-submit-login',
+  );
+  await waitForUi(
+    clientId,
+    client,
+    'Desktop PIN decision or shell',
+    `
+      return {
+        ready: Boolean(
+          document.querySelector('[data-login-pin-skip]')
+          || document.querySelector('[data-pt-primary-nav]')
+        )
+      };
+    `,
+  );
+  const pinSkip = await findElement(
+    client,
+    'css selector',
+    '[data-login-pin-skip]',
+    true,
+  );
+  if (pinSkip) await clickElement(client, pinSkip);
+  await waitForUi(
+    clientId,
+    client,
+    'authenticated Desktop shell',
+    `
+      return {
+        ready: document.querySelectorAll('[data-pt-primary-nav]').length > 0
+      };
+    `,
+  );
+  state = await readClientUiState(client);
+  return state;
+}
+
+async function ensureAuthenticated(clientId, client, stationUrl) {
+  const account = clientAccounts[clientId];
+  assertContract(
+    account,
+    'CLIENT_ACCOUNT_MISSING',
+    `${clientId} has no assigned foreground account`,
+  );
+  return client.platform === 'desktop'
+    ? ensureDesktopAuthenticated(clientId, client, stationUrl, account)
+    : ensureMobileAuthenticated(clientId, client, stationUrl, account);
+}
+
+function assertShellState(clientId, state) {
+  assertContract(
+    state.dialogs.length === 0,
+    'SHELL_BLOCKING_DIALOG',
+    `${clientId} has a blocking dialog: ${state.dialogs.join(' | ')}`,
+  );
+  assertContract(
+    state.runtimeNotices.length === 0,
+    'SHELL_RUNTIME_NOTICE',
+    `${clientId} has blocking runtime notices: ${JSON.stringify(state.runtimeNotices)}`,
+  );
+  assertContract(
+    state.viewportWidth > 0
+      && state.viewportHeight > 0
+      && state.documentWidth <= state.viewportWidth + 2,
+    'SHELL_LAYOUT_OVERFLOW',
+    `${clientId} layout exceeds viewport: ${state.documentWidth}x${state.documentHeight} in ${state.viewportWidth}x${state.viewportHeight}`,
+  );
+}
+
+async function navigateMobileShell(clientId, client, routeId, pageSelector) {
+  await clickSelector(
+    client,
+    `button[data-route-id="tab:${routeId}"]`,
+    `open-${routeId}`,
+  );
+  const result = await waitForUi(
+    clientId,
+    client,
+    `${routeId} page`,
+    `
+      const shell = document.querySelector(arguments[0]);
+      const page = document.querySelector(arguments[1]);
+      return {
+        ready: Boolean(
+          shell
+          && shell.getClientRects().length
+          && page
+          && page.getClientRects().length
+        )
+      };
+    `,
+    [
+      `[data-product-surface="shell.${routeId}-tab"]`,
+      pageSelector,
+    ],
+  );
+  const state = await readClientUiState(client);
+  assertShellState(clientId, state);
+  return result;
+}
+
+async function navigateDesktopPrimary(
+  clientId,
+  client,
+  pageId,
+  expectedSelector,
+  expectedText = '',
+) {
+  await clickSelector(
+    client,
+    `[data-pt-primary-nav="${pageId}"] [role="button"]`,
+    `open-${pageId}`,
+  );
+  const result = await waitForUi(
+    clientId,
+    client,
+    `Desktop ${pageId}`,
+    `
+      const target = document.querySelector(arguments[0]);
+      const text = document.body?.innerText || '';
+      return {
+        ready: Boolean(target?.getClientRects().length)
+          && (!arguments[1] || text.includes(arguments[1])),
+        text: text.slice(0, 1800)
+      };
+    `,
+    [expectedSelector, expectedText],
+  );
+  const state = await readClientUiState(client);
+  assertShellState(clientId, state);
+  return result;
+}
+
+async function focusAndDismissPrimaryInput(clientId, client, selector) {
+  const result = await executeWebScript(
+    client,
+    `
+      const input = document.querySelector(arguments[0]);
+      if (!(input instanceof HTMLInputElement)
+        && !(input instanceof HTMLTextAreaElement)) {
+        return { ok: false, reason: 'missing-input' };
+      }
+      input.focus();
+      const focused = document.activeElement === input;
+      input.blur();
+      return {
+        ok: focused && document.activeElement !== input,
+        focused,
+        dismissed: document.activeElement !== input
+      };
+    `,
+    [selector],
+  );
+  assertContract(
+    result?.ok === true,
+    'SHELL_INPUT_FOCUS_FAILED',
+    `${clientId} could not focus and dismiss ${selector}`,
+  );
+  return result;
+}
+
+async function verifyMobileIdentity(clientId, client, account) {
+  const summary = await executeWebScript(
+    client,
+    `
+      const surface = document.querySelector('[data-product-surface="settings.summary"]');
+      const name = document.querySelector('.settings-profile-name')?.innerText.trim() || '';
+      return {
+        ready: Boolean(surface?.getClientRects().length && name),
+        friendly: Boolean(name)
+          && !/^ptid:/i.test(name)
+          && !/^12D3Koo/i.test(name),
+        name
+      };
+    `,
+  );
+  assertContract(
+    summary?.ready === true && summary.friendly === true,
+    'SHELL_ACTOR_IDENTITY_MISMATCH',
+    `${clientId} shows non-human identity ${summary?.name || '<missing>'}`,
+  );
+  await clickSelector(
+    client,
+    '.settings-profile-trigger',
+    'open-account-info',
+  );
+  const detail = await waitForUi(
+    clientId,
+    client,
+    'visible account identity',
+    `
+      const surface = document.querySelector(
+        '[data-product-surface="settings.account-info"]'
+      );
+      const text = document.body?.innerText || '';
+      return {
+        ready: Boolean(surface?.getClientRects().length)
+          && text.includes(arguments[0]),
+        text: text.slice(0, 1800)
+      };
+    `,
+    [account.email],
+  );
+  assertContract(
+    detail?.ready === true,
+    'SHELL_ACTOR_ACCOUNT_MISSING',
+    `${clientId} does not visibly show ${account.email}`,
+  );
+  return {
+    account: account.email,
+    detail,
+    displayName: summary.name,
+  };
+}
+
+async function verifyDesktopIdentity(clientId, client, friendlyName) {
+  const result = await executeWebScript(
+    client,
+    `
+      const text = document.body?.innerText || '';
+      const stationLabel = (
+        document.querySelector('[data-station-picker-trigger]')?.innerText || ''
+      ).trim().split('\\n')[0];
+      return {
+        actorVisible: text.includes(arguments[0]),
+        stationLabel,
+        stationFriendly: Boolean(stationLabel)
+          && !/^12D3Koo/i.test(stationLabel)
+          && !/\\.\\.\\./.test(stationLabel)
+      };
+    `,
+    [friendlyName],
+  );
+  assertContract(
+    result?.actorVisible === true,
+    'SHELL_ACTOR_IDENTITY_MISMATCH',
+    `${clientId} does not show ${friendlyName} in Settings`,
+  );
+  assertContract(
+    result?.stationFriendly === true,
+    'SHELL_STATION_IDENTITY_RAW',
+    `${clientId} shows raw Station identity ${result?.stationLabel || '<missing>'}`,
+  );
+  return result;
+}
+
+async function runMobileShellClient(
+  clientId,
+  client,
+  evidenceDir,
+  interactionTrace,
+  sequenceRef,
+) {
+  const account = clientAccounts[clientId];
+  const steps = [
+    ['chat', '[data-product-surface^="chat.list"]'],
+    ['moments', '[data-product-surface="moments.feed"]'],
+    ['contacts', '[data-product-surface="contacts.list"]'],
+    ['settings', '[data-product-surface="settings.summary"]'],
+  ];
+  for (const [routeId, pageSelector] of steps) {
+    sequenceRef.value += 1;
+    await recordJourneyStep({
+      clientId,
+      client,
+      evidenceDir,
+      interactionTrace,
+      sequence: sequenceRef.value,
+      stepId: `shell-${routeId}`,
+      action: () => navigateMobileShell(
+        clientId,
+        client,
+        routeId,
+        pageSelector,
+      ),
+    });
+    if (routeId === 'settings') {
+      sequenceRef.value += 1;
+      await recordJourneyStep({
+        clientId,
+        client,
+        evidenceDir,
+        interactionTrace,
+        sequence: sequenceRef.value,
+        stepId: 'shell-settings-identity',
+        action: () => verifyMobileIdentity(clientId, client, account),
+      });
+    }
+  }
+  sequenceRef.value += 1;
+  await recordJourneyStep({
+    clientId,
+    client,
+    evidenceDir,
+    interactionTrace,
+    sequence: sequenceRef.value,
+    stepId: 'shell-return-chat-and-focus',
+    action: async () => {
+      await clickSelector(
+        client,
+        'button[aria-label="Back"]',
+        'close-account-info',
+      );
+      await waitForUi(
+        clientId,
+        client,
+        'Settings summary',
+        `
+          const surface = document.querySelector(
+            '[data-product-surface="settings.summary"]'
+          );
+          return { ready: Boolean(surface?.getClientRects().length) };
+        `,
+      );
+      await navigateMobileShell(
+        clientId,
+        client,
+        'chat',
+        '[data-product-surface^="chat.list"]',
+      );
+      return focusAndDismissPrimaryInput(
+        clientId,
+        client,
+        'input[placeholder="Search chats"]',
+      );
+    },
+  });
+}
+
+async function runDesktopShellClient(
+  clientId,
+  client,
+  evidenceDir,
+  interactionTrace,
+  sequenceRef,
+) {
+  const steps = [
+    ['chat', '[data-social-chat-layout]', ''],
+    ['moments', '[data-pt-primary-nav="moments"]', 'Social'],
+  ];
+  for (const [pageId, expectedSelector, expectedText] of steps) {
+    sequenceRef.value += 1;
+    await recordJourneyStep({
+      clientId,
+      client,
+      evidenceDir,
+      interactionTrace,
+      sequence: sequenceRef.value,
+      stepId: `shell-${pageId}`,
+      action: () => navigateDesktopPrimary(
+        clientId,
+        client,
+        pageId,
+        expectedSelector,
+        expectedText,
+      ),
+    });
+  }
+
+  sequenceRef.value += 1;
+  await recordJourneyStep({
+    clientId,
+    client,
+    evidenceDir,
+    interactionTrace,
+    sequence: sequenceRef.value,
+    stepId: 'shell-contacts',
+    action: async () => {
+      await navigateDesktopPrimary(
+        clientId,
+        client,
+        'chat',
+        '[data-social-chat-layout]',
+      );
+      await clickSelector(
+        client,
+        '[data-chat-subpage="contacts"]',
+        'open-contacts',
+      );
+      const result = await waitForUi(
+        clientId,
+        client,
+        'Desktop Contacts',
+        `
+          const contacts = document.querySelector('[data-chat-subpage="contacts"]');
+          const text = document.body?.innerText || '';
+          return {
+            ready: Boolean(contacts?.getClientRects().length)
+              && getComputedStyle(contacts).backgroundColor !== 'rgba(0, 0, 0, 0)'
+              && text.includes('Contacts'),
+            text: text.slice(0, 1600)
+          };
+        `,
+      );
+      assertShellState(clientId, await readClientUiState(client));
+      return result;
+    },
+  });
+
+  sequenceRef.value += 1;
+  await recordJourneyStep({
+    clientId,
+    client,
+    evidenceDir,
+    interactionTrace,
+    sequence: sequenceRef.value,
+    stepId: 'shell-settings',
+    action: async () => {
+      const result = await navigateDesktopPrimary(
+        clientId,
+        client,
+        'settings',
+        '[data-pt-secondary-tab="general"]',
+        'Settings',
+      );
+      await verifyDesktopIdentity(
+        clientId,
+        client,
+        clientAccounts[clientId].friendlyName,
+      );
+      return result;
+    },
+  });
+
+  sequenceRef.value += 1;
+  await recordJourneyStep({
+    clientId,
+    client,
+    evidenceDir,
+    interactionTrace,
+    sequence: sequenceRef.value,
+    stepId: 'shell-return-chat-and-focus',
+    action: async () => {
+      await navigateDesktopPrimary(
+        clientId,
+        client,
+        'chat',
+        '[data-social-chat-layout]',
+      );
+      await clickSelector(
+        client,
+        '[data-chat-subpage="chats"]',
+        'open-chats',
+      );
+      await waitForUi(
+        clientId,
+        client,
+        'Desktop conversation list',
+        `
+          return {
+            ready: Boolean(
+              document.querySelector('input[placeholder="Search..."]')
+            )
+          };
+        `,
+      );
+      return focusAndDismissPrimaryInput(
+        clientId,
+        client,
+        'input[placeholder="Search..."]',
+      );
+    },
+  });
+}
+
+async function runShellPhase(manifest, evidenceDir, preflight) {
+  const interactionTrace = [];
+  const sequenceRef = { value: 0 };
+  for (const clientId of requiredClientIds) {
+    const client = manifest.clients[clientId];
+    await activateForegroundClient(clientId, client);
+    await withWebContext(client, async () => {
+      sequenceRef.value += 1;
+      await recordJourneyStep({
+        clientId,
+        client,
+        evidenceDir,
+        interactionTrace,
+        sequence: sequenceRef.value,
+        stepId: 'entry-authenticated-precondition',
+        action: () => ensureAuthenticated(
+          clientId,
+          client,
+          manifest.stationUrl,
+        ),
+      });
+      if (client.platform === 'desktop') {
+        await runDesktopShellClient(
+          clientId,
+          client,
+          evidenceDir,
+          interactionTrace,
+          sequenceRef,
+        );
+      } else {
+        await runMobileShellClient(
+          clientId,
+          client,
+          evidenceDir,
+          interactionTrace,
+          sequenceRef,
+        );
+      }
+    });
+  }
+  const report = {
+    kind: 'peers-touch-three-client-product-journey-result',
+    schemaVersion: 1,
+    phase: 'shell',
+    status: 'PASS',
+    source: preflight.source,
+    stationUrl: manifest.stationUrl,
+    scenarioIds: preflight.scenarioIds,
+    preflight: path.join(evidenceDir, 'preflight.json'),
+    interactionTrace,
+    observedAt: new Date().toISOString(),
+  };
+  const reportPath = path.join(evidenceDir, 'result.json');
+  const tracePath = path.join(evidenceDir, 'interaction-trace.json');
+  writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  writeFileSync(
+    tracePath,
+    `${JSON.stringify(interactionTrace, null, 2)}\n`,
+  );
+  return { ...report, reportPath, tracePath };
+}
+
 function selfTest(matrix) {
   const matrixSummary = validateMatrix(matrix);
   assertContract(
@@ -876,7 +1961,11 @@ async function main() {
     options.runtimeManifest,
     evidenceDir,
   );
-  if (!options.preflightOnly) {
+  if (options.preflightOnly) {
+    process.stdout.write(`${JSON.stringify(preflight, null, 2)}\n`);
+    return;
+  }
+  if (options.phase !== 'shell') {
     throw new JourneyContractError(
       'PHASE_UI_BINDING_REQUIRED',
       [
@@ -886,7 +1975,12 @@ async function main() {
       ].join('; '),
     );
   }
-  process.stdout.write(`${JSON.stringify(preflight, null, 2)}\n`);
+  const manifest = readJson(
+    path.resolve(options.runtimeManifest),
+    'runtime manifest',
+  );
+  const result = await runShellPhase(manifest, evidenceDir, preflight);
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
 main().catch((error) => {
