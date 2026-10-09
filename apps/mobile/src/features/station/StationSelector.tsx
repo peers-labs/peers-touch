@@ -3,7 +3,6 @@ import { Button, Input, Modal, Tag, Typography } from 'antd';
 import {
   AlertTriangle,
   Check,
-  ChevronDown,
   LoaderCircle,
   Plus,
   Server,
@@ -14,9 +13,7 @@ import {
 import { useMobileI18n } from '../../app/mobileI18n';
 import {
   buildStationUrl,
-  splitStationInput,
   type MobileStationEntry,
-  type StationProtocol,
 } from './stationRegistry';
 import { stationDisplayName } from './stationDisplayName';
 
@@ -26,12 +23,6 @@ export type StationSelectorSurfaceFixture =
   | 'address'
   | 'address-invalid'
   | 'remove-confirm';
-
-export function defaultStationAddress(
-  configuredUrl: string | undefined,
-): { protocol: StationProtocol; address: string } {
-  return splitStationInput(configuredUrl ?? '', 'https');
-}
 
 export function StationSelector({
   activeStationPeerId,
@@ -52,38 +43,26 @@ export function StationSelector({
   verifyingUrls: string[];
   checkedUrls: string[];
   surfaceFixture?: StationSelectorSurfaceFixture;
-  onAdd: (protocol: StationProtocol, address: string) => boolean | Promise<boolean>;
+  onAdd: (stationUrl: string) => boolean | Promise<boolean>;
   onSelect: (stationPeerId: string) => void | Promise<void>;
   onRemove: (stationPeerId: string) => void;
 }) {
   const { t } = useMobileI18n();
-  const configuredDefault = defaultStationAddress(
-    surfaceFixture || entries.length > 0
-      ? undefined
-      : import.meta.env.VITE_DEFAULT_STATION_URL,
-  );
-  const [protocol, setProtocol] = useState<StationProtocol>(
+  const [stationUrl, setStationUrl] = useState(() => (
     surfaceFixture === 'address'
-      ? 'http'
+      ? 'http://station.local:18280'
       : surfaceFixture === 'address-invalid'
-        ? 'https'
-        : configuredDefault.protocol,
-  );
-  const [address, setAddress] = useState(() => (
-    surfaceFixture === 'address'
-      ? 'station.local:18280'
-      : surfaceFixture === 'address-invalid'
-        ? 'not a valid station'
-        : configuredDefault.address
+        ? 'station.local'
+        : ''
   ));
   const [addingStation, setAddingStation] = useState(
     surfaceFixture === 'address' || surfaceFixture === 'address-invalid',
   );
-  const [protocolPickerOpen, setProtocolPickerOpen] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState<MobileStationEntry | null>(null);
   const hasEntries = entries.length > 0;
   const showStationInput = !hasEntries || addingStation;
-  const canAdd = useMemo(() => Boolean(buildStationUrl({ protocol, address })), [address, protocol]);
+  const normalizedUrl = useMemo(() => buildStationUrl(stationUrl), [stationUrl]);
+  const canAdd = Boolean(normalizedUrl);
 
   useEffect(() => {
     if (surfaceFixture === 'remove-confirm' && entries[0]) {
@@ -91,25 +70,17 @@ export function StationSelector({
     }
   }, [entries, surfaceFixture]);
 
-  function updateAddress(value: string) {
-    const next = splitStationInput(value, protocol);
-    setProtocol(next.protocol);
-    setAddress(next.address);
-  }
-
   async function submit() {
-    if (!canAdd || checking) return;
-    const added = await onAdd(protocol, address);
-    if (added) setAddress('');
-    if (added && hasEntries) setAddingStation(false);
+    if (!normalizedUrl || checking) return;
+    const added = await onAdd(normalizedUrl);
+    if (added) {
+      setStationUrl('');
+      if (hasEntries) setAddingStation(false);
+    }
   }
-
-  const isHttp = protocol === 'http';
 
   function closeStationInput() {
-    setAddress('');
-    setProtocol('https');
-    setProtocolPickerOpen(false);
+    setStationUrl('');
     setAddingStation(false);
   }
 
@@ -118,6 +89,8 @@ export function StationSelector({
     onRemove(pendingRemoval.stationPeerId);
     setPendingRemoval(null);
   }
+
+  const showsHttpWarning = buildStationUrl(stationUrl)?.startsWith('http://');
 
   return (
     <section className="station-selector">
@@ -145,27 +118,17 @@ export function StationSelector({
                 : 'entry.station-address'
             }
           >
-            <button
-              type="button"
-              className="station-protocol-select"
-              aria-label={t('mobile.launch.protocol')}
-              aria-expanded={protocolPickerOpen}
-              onClick={() => setProtocolPickerOpen(true)}
-            >
-              <span>{protocol.toUpperCase()}</span>
-              <ChevronDown size={14} aria-hidden="true" />
-            </button>
             <Input
               className="station-address-input"
-              value={address}
+              value={stationUrl}
               placeholder={t('mobile.launch.placeholder')}
-              aria-label={t('mobile.launch.stationAddress')}
+              aria-label={t('common.stationPicker.inputLabel')}
               inputMode="url"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
               variant="borderless"
-              onChange={(event) => updateAddress(event.target.value)}
+              onChange={(event) => setStationUrl(event.target.value)}
               onPressEnter={submit}
             />
             <button
@@ -191,7 +154,7 @@ export function StationSelector({
         </div>
       ) : null}
 
-      {showStationInput && isHttp ? (
+      {showStationInput && showsHttpWarning ? (
         <Text className="station-field-helper warning">
           <AlertTriangle size={12} aria-hidden="true" />
           <span>{t('mobile.launch.helperHttpWarning')}</span>
@@ -318,41 +281,6 @@ export function StationSelector({
             </button>
           </div>
         </section>
-      </Modal>
-
-      <Modal
-        open={protocolPickerOpen}
-        onCancel={() => setProtocolPickerOpen(false)}
-        footer={null}
-        className="station-protocol-sheet"
-        rootClassName="station-protocol-sheet-root"
-        title={t('mobile.launch.protocol')}
-        destroyOnClose
-      >
-        <div className="station-protocol-options">
-          {(['https', 'http'] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              className={option === protocol ? 'active' : ''}
-              aria-pressed={option === protocol}
-              onClick={() => {
-                setProtocol(option);
-                setProtocolPickerOpen(false);
-              }}
-            >
-              <span>{option.toUpperCase()}</span>
-              <small>
-                {t(
-                  option === 'https'
-                    ? 'mobile.launch.protocolHttps'
-                    : 'mobile.launch.protocolHttp',
-                )}
-              </small>
-              {option === protocol ? <Check size={17} aria-hidden="true" /> : null}
-            </button>
-          ))}
-        </div>
       </Modal>
     </section>
   );

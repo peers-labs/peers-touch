@@ -65,7 +65,6 @@ import {
   requireMatchingStationIdentity,
   stationEntryAtUrl,
   updateStationEntryStatus,
-  type StationProtocol,
   type MobileStationEntry,
   type StoredStationRegistry,
 } from './features/station/stationRegistry';
@@ -832,8 +831,8 @@ function MobileAppRoot() {
           : checkedStationUrls
       }
       surfaceFixture={fixtureStationSelectorSurface(entryFixture.surfaceId)}
-      onAddStation={async (protocol: StationProtocol, address: string) => {
-        const normalizedUrl = buildStationUrl({ protocol, address });
+      onAddStation={async (stationUrl: string) => {
+        const normalizedUrl = buildStationUrl(stationUrl);
         if (!normalizedUrl) {
           setStationError(t('mobile.launch.validAddressHint'));
           return false;

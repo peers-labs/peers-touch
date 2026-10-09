@@ -589,15 +589,31 @@ pub fn resolve_trusted_station_signing_key(
     require_authenticated_transport(&scope.station_origin)?;
     let client = http_client()?;
     let profile = get_actor_profile_at(&client, scope, access_token)?;
-    if profile.home_station_peer_id != scope.station_peer_id
-        || profile.r#ref.as_ref().map(|actor| actor.ptid.as_str())
-            != Some(scope.actor_ptid.as_str())
-        || profile.federated_handle.trim().is_empty()
+    // The actor PTID binding is the security-critical precondition. The
+    // Station's home peer id is re-proven independently by the signed profile
+    // envelope below, so an empty value in this legacy profile projection does
+    // not invalidate the identity.
+    if profile
+        .r#ref
+        .as_ref()
+        .map(|actor| actor.ptid.as_str())
+        != Some(scope.actor_ptid.as_str())
     {
         return Err("private Social Actor profile identity is inconsistent".to_string());
     }
+    // Resolve the canonical handle: prefer the profile projection, then fall
+    // back to the actor ref's canonical acct. This keeps activation working
+    // against deployed Stations whose `/actor/profile` build does not yet emit
+    // federated_handle; `verify_profile_envelope` proves the handle belongs to
+    // the expected Station.
     let handle = canonical_federated_handle(&profile.federated_handle)
-        .ok_or_else(|| "private Social Actor profile handle is invalid".to_string())?;
+        .or_else(|| {
+            profile
+                .r#ref
+                .as_ref()
+                .and_then(|actor| canonical_federated_handle(&actor.acct))
+        })
+        .ok_or_else(|| "private Social Actor profile handle is unavailable".to_string())?;
     let envelope: federation::ActorProfileEnvelope = get_proto_at(
         &client,
         scope,

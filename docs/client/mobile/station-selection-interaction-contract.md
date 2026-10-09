@@ -18,21 +18,25 @@ then:
   - saved reachability is shown as unchecked until this process verifies it
   - Available is shown only after a current signed Station identity check
   - an unavailable selected Station exposes Retry instead of implying readiness
-  - protocol, address, and add action read as one composite field
+  - the full Station URL and add action read as one quiet field on the page background
 
 visual_invariants:
-  - the protocol prefix has a calm inset and never touches the field boundary
-  - the address input keeps useful width on the narrow supported viewport
+  - the placeholder shows a complete HTTP(S) URL example
+  - the URL input keeps useful width on the narrow supported viewport
   - the HTTP warning stays on one line below the field
   - the logo edge is legible through a soft shadow without a visible border
-  - the card and its controls do not wrap, clip, overlap, or leave a large gap below
+  - the Station and Sign In surfaces share one page background and spacing rhythm
+  - the controls do not wrap, clip, overlap, or leave a large gap below
+  - focusing the field changes the outer border only; no inner focus frame
 
 forbidden:
   - persisted online state rendered as current availability
   - a selected but unchecked Station enabling Continue
   - a multiline warning squeezing the address field
-  - independent outer borders around protocol and address
-  - a heavy outline around the logo
+  - splitting the URL into protocol and address controls
+  - a dropdown, modal, or card solely for choosing HTTPS or HTTP
+  - an inner focus outline/box around the input inside the outer control
+  - a heavy floating card or outline around the logo
 
 evidence:
   - focused unit assertions

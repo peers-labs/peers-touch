@@ -231,7 +231,7 @@ function resolveGatewayOperation(
         operationId: 'actor_search',
         query: requiredString(query.q, 'q'),
       };
-    case 'GET /sub-federation/contexts':
+    case 'GET /sub-federation/federations':
       return { operationId: 'federation_contexts_list' };
     case 'GET /actor/federation/resolve':
       return {

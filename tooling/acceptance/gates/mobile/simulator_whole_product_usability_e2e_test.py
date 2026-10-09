@@ -940,7 +940,7 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             SURFACE_AUDIT_SCRIPT,
         )
         self.assertIn("stationLayout:", SURFACE_AUDIT_SCRIPT)
-        self.assertIn("protocolLeftInset:", SURFACE_AUDIT_SCRIPT)
+        self.assertIn("placeholder: stationPlaceholder", SURFACE_AUDIT_SCRIPT)
         self.assertIn("stationStatusClasses:", SURFACE_AUDIT_SCRIPT)
 
     def test_station_entry_layout_requires_human_usable_geometry_and_states(
@@ -954,12 +954,10 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         }
         layout = {
             "launchCard": {"bottom": 820},
-            "protocol": {"width": 66, "height": 44},
             "addressInput": {"width": 168, "height": 44},
+            "placeholder": "http://station.local:18080",
             "submit": {"width": 44, "height": 44},
             "helper": {"whiteSpace": "nowrap", "wrapped": False},
-            "protocolLeftInset": 5,
-            "protocolTopInset": 5,
             "logo": {
                 "borderWidth": 0,
                 "filter": "drop-shadow(rgba(15, 23, 42, 0.1) 0px 7px 14px)",
@@ -988,6 +986,10 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         )
 
         invalid_cases = (
+            (
+                "entry.station-address",
+                {**layout, "placeholder": "station.local:18080"},
+            ),
             (
                 "entry.station-address",
                 {**layout, "addressInput": {"width": 96, "height": 44}},
