@@ -1237,11 +1237,15 @@
 }
 
 .moments-fixture-sheet-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   min-height: 44px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  background: #fff;
 }
 
 .moments-fixture-sheet-header h2 {

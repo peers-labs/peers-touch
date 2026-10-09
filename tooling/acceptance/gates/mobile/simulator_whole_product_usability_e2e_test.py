@@ -1069,10 +1069,11 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         )
         self.assertNotIn("ptidDisplay", settings)
         self.assertIn("settings-profile-subtitle", settings)
-        self.assertIn(
-            "renderedLaunchState === 'shell' || renderedLaunchState === 'resume'",
-            app,
-        )
+        for launch_state in ("shell", "background", "resume"):
+            self.assertIn(
+                f"renderedLaunchState === '{launch_state}'",
+                app,
+            )
 
     def test_entry_product_selectors_are_present_in_production(self) -> None:
         app = (REPO_ROOT / "apps/mobile/src/App.tsx").read_text(
@@ -1349,36 +1350,67 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         )
 
     def test_landscape_moments_composer_preserves_top_safe_area(self) -> None:
-        styles = (
+        production_styles = (
             REPO_ROOT
             / "apps"
             / "mobile"
             / "src"
-            / "styles.css"
+            / "pages"
+            / "moments"
+            / "MomentComposer.css"
         ).read_text(encoding="utf-8")
-        landscape_rule = re.search(
+        fixture_styles = (
+            REPO_ROOT
+            / "apps"
+            / "mobile"
+            / "src"
+            / "pages"
+            / "moments"
+            / "Moments.css"
+        ).read_text(encoding="utf-8")
+        production_landscape_rule = re.search(
             r"@media \(orientation: landscape\) \{\s*"
-            r"\.moments-composer-backdrop \.moments-composer-card,\s*"
-            r"\.moments-fixture-composer \{(?P<body>.*?)\n  \}",
-            styles,
+            r"\.moments-composer-backdrop\.moment-composer-overlay\s*"
+            r">\s*\.moments-composer-card\.moment-composer-surface "
+            r"\{(?P<body>.*?)\n  \}",
+            production_styles,
             flags=re.DOTALL,
         )
-
-        self.assertIsNotNone(landscape_rule)
+        fixture_landscape_rule = re.search(
+            r"@media \(orientation: landscape\) \{\s*"
+            r"\.moments-fixture-composer \{(?P<body>.*?)\n  \}",
+            fixture_styles,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(production_landscape_rule)
+        self.assertIsNotNone(fixture_landscape_rule)
         self.assertIn(
             "max-height: calc(100dvh - var(--safe-area-top));",
-            landscape_rule.group("body"),
+            production_landscape_rule.group("body"),
         )
-        composer_header_rule = re.search(
-            r"\.moments-composer-header,\s*"
-            r"\.moments-fixture-sheet-header \{(?P<body>.*?)\n\}",
-            styles,
+        self.assertIn(
+            "max-height: calc(100dvh - var(--safe-area-top));",
+            fixture_landscape_rule.group("body"),
+        )
+        production_header_rule = re.search(
+            r"\.moment-composer-header \{(?P<body>.*?)\n\}",
+            production_styles,
             flags=re.DOTALL,
         )
-        self.assertIsNotNone(composer_header_rule)
+        fixture_header_rule = re.search(
+            r"\.moments-fixture-sheet-header \{(?P<body>.*?)\n\}",
+            fixture_styles,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(production_header_rule)
+        self.assertIsNotNone(fixture_header_rule)
         self.assertIn(
             "position: sticky;",
-            composer_header_rule.group("body"),
+            production_header_rule.group("body"),
+        )
+        self.assertIn(
+            "position: sticky;",
+            fixture_header_rule.group("body"),
         )
 
     def test_all_surface_report_names_final_frontier_scope(self) -> None:
