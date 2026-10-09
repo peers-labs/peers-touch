@@ -36,7 +36,7 @@ pub use double_ratchet::{
 pub use error::CryptoError;
 pub use identity::{
     fingerprint_hex, fingerprint_numeric, get_or_create_identity, load_identity_key,
-    store_identity_key, DeviceSigningKey, IdentityKeyPair, X25519KeyPair,
+    set_identity_file_root, store_identity_key, DeviceSigningKey, IdentityKeyPair, X25519KeyPair,
 };
 pub use recovery::{generate_recovery_mnemonic, validate_mnemonic};
 pub use session_manager::{

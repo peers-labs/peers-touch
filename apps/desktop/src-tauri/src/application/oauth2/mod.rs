@@ -594,7 +594,8 @@ fn save_oauth_callback(
                         BrokerOAuthBridgeResponse,
                     >("/actor/oauth-bridge", &bridge_req)
                     .map_err(|error| {
-                        internal_error(format!("Station OAuth bridge failed: {error}"))
+                        let message = format!("Station OAuth bridge failed: {error}");
+                        error.into_app_result(message)
                     })?
                     .completion
                     .ok_or_else(|| internal_error("OAuth bridge response missing completion"))?
@@ -1166,17 +1167,17 @@ fn acknowledge_persisted_broker_login(
     };
     reconcile_broker_acknowledgement(
         || {
-            station_client::post_peers_proto_no_auth::<
+            station_client::request_proto_no_auth::<
                 AcknowledgeOAuthCredentialRequest,
                 AcknowledgeOAuthCredentialResponse,
-            >("/oauth/mobile/acknowledge", &acknowledgement)
+            >(Method::POST, "/oauth/mobile/acknowledge", &acknowledgement)
             .map_err(|error| error.to_string())
         },
         || {
-            station_client::post_peers_proto_no_auth::<
+            station_client::request_proto_no_auth::<
                 GetOAuthAttemptRequest,
                 GetOAuthAttemptResponse,
-            >("/oauth/mobile/status", &status)
+            >(Method::POST, "/oauth/mobile/status", &status)
             .map_err(|error| error.to_string())
         },
         BROKER_ACK_RETRY_DELAY,
@@ -1354,7 +1355,11 @@ fn read_broker_acknowledgement_recoveries() -> Result<BrokerAcknowledgementRecov
         .get_or_create_key(&key_ref)
         .map_err(|error| format!("load OAuth acknowledgement recovery key: {error}"))?;
     if envelope.key_id != key_material.key_id || envelope.key_version != key_material.key_version {
-        return Err("OAuth acknowledgement recovery key binding is invalid".to_string());
+        tracing::warn!(
+            path = %path.display(),
+            "OAuth acknowledgement recovery key is unavailable in this context; resetting recovery state"
+        );
+        return Ok(BrokerAcknowledgementRecoveryStore::default());
     }
     let key: [u8; 32] = key_material
         .key_bytes
@@ -1370,8 +1375,16 @@ fn read_broker_acknowledgement_recoveries() -> Result<BrokerAcknowledgementRecov
         .decode(envelope.ciphertext.as_bytes())
         .map_err(|_| "OAuth acknowledgement recovery ciphertext is invalid".to_string())?;
     let aad = broker_acknowledgement_recovery_aad(&envelope.key_id, envelope.key_version, &path);
-    let mut plaintext = aes_gcm_decrypt(&key, &nonce, &ciphertext, &aad)
-        .map_err(|_| "decrypt OAuth acknowledgement recovery state".to_string())?;
+    let mut plaintext = match aes_gcm_decrypt(&key, &nonce, &ciphertext, &aad) {
+        Ok(plaintext) => plaintext,
+        Err(_) => {
+            tracing::warn!(
+                path = %path.display(),
+                "OAuth acknowledgement recovery state could not be decrypted; resetting recovery state"
+            );
+            return Ok(BrokerAcknowledgementRecoveryStore::default());
+        }
+    };
     let decoded = serde_json::from_slice::<BrokerAcknowledgementRecoveryStore>(&plaintext)
         .map_err(|error| format!("decode OAuth acknowledgement recovery state: {error}"));
     plaintext.zeroize();
