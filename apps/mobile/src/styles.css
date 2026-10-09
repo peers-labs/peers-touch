@@ -4712,6 +4712,17 @@ select,
   box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
 }
 
+/* Keep compact recovery clear of centered primary actions on short screens. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .recovery-overlay-host:is(
+    [data-launch-state='shell'],
+    [data-launch-state='resume']
+  ) .recovery-deferred-capability.compact {
+    width: min(100%, 300px);
+    margin-inline: auto 0;
+  }
+}
+
 .recovery-overlay-host:is(
   [data-launch-state='shell'],
   [data-launch-state='resume']
