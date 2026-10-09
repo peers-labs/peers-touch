@@ -21,6 +21,8 @@
     "apps/mobile/src/App.tsx",
     "apps/mobile/src/components",
     "apps/mobile/src/pages/SettingsPage.tsx",
+    "apps/mobile/src/runtimes/sessionRuntime.ts",
+    "apps/mobile/src/runtimes/sessionRuntime.test.ts",
     "apps/mobile/src/styles.css",
     "apps/mobile/src/app/mobileI18n.tsx",
     "apps/station/app/subserver/actor_identity",
@@ -44,7 +46,7 @@
   "checks": [
     {
       "id": "shell-source",
-      "command": "pnpm --dir apps/desktop run check && pnpm --dir apps/mobile run check:web && pnpm --dir apps/mobile run check:recovery-ui",
+      "command": "pnpm --dir apps/desktop run check && pnpm --dir apps/mobile run check:web && pnpm --dir apps/mobile run check:recovery-ui && pnpm --dir apps/mobile exec vitest run src/runtimes/sessionRuntime.test.ts",
       "verificationClass": "SOURCE_CHECK"
     },
     {

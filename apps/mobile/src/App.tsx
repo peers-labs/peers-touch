@@ -123,12 +123,14 @@ function MobileAppRoot() {
   const [verifyingStationUrls, setVerifyingStationUrls] = useState<string[]>([]);
   const [checkedStationUrls, setCheckedStationUrls] = useState<string[]>([]);
   const [rememberedAccounts, setRememberedAccounts] = useState<RememberedLoginAccount[]>([]);
+  const authSession = useAuthStore((state) => state.session);
   const authError = useAuthStore((state) => state.error);
   const authLoading = useAuthStore((state) => state.loading);
   const accessDecision = useAuthStore((state) => state.accessDecision);
   const setAuthError = useAuthStore((state) => state.setError);
   const setAuthLoading = useAuthStore((state) => state.setLoading);
   const setAccessDecision = useAuthStore((state) => state.setAccessDecision);
+  const setAuthSession = useAuthStore((state) => state.setSession);
   const verifiedStationKeysForSelection = useRef<Set<string>>(new Set());
   const pendingScopeExitRef = useRef<PendingScopeExitRequest | null>(null);
   const [pendingScopeExit, setPendingScopeExit] =
@@ -202,6 +204,24 @@ function MobileAppRoot() {
       mounted = false;
     };
   }, [activeStation?.stationPeerId]);
+
+  useEffect(() => {
+    if (!authSession || authSession.actorRef.acct) return;
+    const remembered = rememberedAccounts.find(
+      (account) => (
+        account.stationPeerId === authSession.stationPeerId
+        && account.ptid === authSession.actorRef.ptid
+      ),
+    );
+    if (!remembered) return;
+    setAuthSession({
+      ...authSession,
+      actorRef: {
+        ...authSession.actorRef,
+        acct: remembered.email,
+      },
+    });
+  }, [authSession, rememberedAccounts, setAuthSession]);
 
   async function commitStationRegistry(registry: StoredStationRegistry) {
     await replaceStationRegistryProjection(registry);
