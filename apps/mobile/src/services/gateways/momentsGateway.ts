@@ -280,10 +280,20 @@ export function createMomentsGateway(session: MobileAuthSession): MomentsGateway
 
     getPost: async (postId) => {
       const path = `/api/v1/social/moments/${encodeURIComponent(postId)}`;
-      const result = await commandProtoJson({
+      const raw = await command<JsonValue>({
         method: 'GET',
         path,
-      }, GetPostResponseSchema, 'mobile.moments.feed.error');
+      });
+      const result = decodeProtoJsonOutcome(
+        projectAvailablePublicMomentOutcome(raw),
+        GetPostResponseSchema,
+        {
+          code: 'INVALID_MOMENTS_RESPONSE',
+          message: 'mobile.moments.feed.error',
+          method: 'GET',
+          path,
+        },
+      );
       return validateDetailOutcome(result, path);
     },
 
@@ -342,6 +352,29 @@ export function createMomentsGateway(session: MobileAuthSession): MomentsGateway
         path: `/api/v1/social/comments/${encodeURIComponent(commentId)}`,
       }, DeleteCommentResponseSchema, 'mobile.moments.comment.error'),
   };
+}
+
+function projectAvailablePublicMomentOutcome(
+  result: CommandOutcome<JsonValue>,
+): CommandOutcome<JsonValue> {
+  if (!result.ok || !isJsonRecord(result.data) || 'outcome' in result.data) {
+    return result;
+  }
+  if (!isJsonRecord(result.data.post) || !isJsonRecord(result.data.explanation)) {
+    return result;
+  }
+  return {
+    ok: true,
+    data: {
+      post: result.data.post,
+      explanation: result.data.explanation,
+      outcome: 'POST_DETAIL_OUTCOME_AVAILABLE',
+    },
+  };
+}
+
+function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function validateTimelineOutcome(

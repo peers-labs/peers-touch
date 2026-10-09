@@ -72,9 +72,9 @@ describe('PrivateMomentRecoveryState', () => {
     );
 
     expect(markup).toContain(
-      'mobile.moments.private.revocation.RECIPIENT_BLOCKED.title',
+      'moments.private.revocation.RECIPIENT_BLOCKED.title',
     );
-    expect(markup).toContain('mobile.moments.private.revocation.copyBoundary');
+    expect(markup).toContain('moments.private.revocation.copyBoundary');
     expect(markup).not.toContain('mobile.moments.private.recovery.action');
     expect(markup).not.toContain('mobile.moments.private.integrity.retry');
   });

@@ -123,6 +123,19 @@ describe('Mobile reliability recovery surfaces', () => {
     )).toEqual([degraded]);
   });
 
+  it('renders actor identity recovery as the only blocking recovery surface', () => {
+    const identity = {
+      kind: 'actor-identity-recovery',
+      detectedAtMs: 1,
+    } as const;
+    const degraded = {
+      kind: 'deferred-capability',
+      unavailableRuntimes: [],
+    } as const;
+
+    expect(visibleRecoveryStates([identity, degraded], 'shell')).toEqual([identity]);
+  });
+
   it('keeps deferred capability recovery synchronized with every kernel update', () => {
     let current = { launchState: 'shell', revision: 1 };
     let listener: (() => void) | null = null;

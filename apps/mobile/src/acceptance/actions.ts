@@ -1843,6 +1843,14 @@ function publicRecoveryState(state: RecoveryState): PublicRecoveryState {
           detectedAtMs: state.detectedAtMs,
         },
       };
+    case 'actor-identity-recovery':
+      return {
+        kind: state.kind,
+        actions: ['recover', 'switch-station'],
+        detail: {
+          detectedAtMs: state.detectedAtMs,
+        },
+      };
     case 'event-overflow-reconcile':
       return {
         kind: state.kind,

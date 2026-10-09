@@ -8,7 +8,9 @@ use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
 use messaging_core::attachment::AttachmentTransferControl;
 use messaging_core::contracts::ConversationProjection;
-use messaging_core::identity::DeviceEnrollmentRepository;
+use messaging_core::identity::{
+    generate_fresh_device_identity_for_device, DeviceEnrollmentRepository,
+};
 use messaging_core::inbox::DrainProgress;
 use messaging_core::outbox::CommandDispatchProgress;
 use messaging_core::store::MessagingRepository;
@@ -247,6 +249,103 @@ impl MobileMessagingRuntime {
             .as_ref()
             .map(|runtime| status_for_active(runtime).map_err(MobileError::messaging))
             .unwrap_or_else(|| Ok(MessagingRuntimeStatus::inactive()))
+    }
+
+    pub fn recover_fresh_install_identity<R: Runtime>(
+        &self,
+        app: AppHandle<R>,
+        data_root: &Path,
+        storage: &SecureStorage,
+        station_peer_id: String,
+        station_origin: String,
+        actor_ptid: String,
+        device_id: String,
+        actor_identity_seed: [u8; 32],
+        actor_profile_version: u64,
+        access_token: String,
+    ) -> MobileResult<MessagingRuntimeStatus> {
+        validate_account_scope(&station_peer_id, &station_origin, &actor_ptid)
+            .map_err(MobileError::messaging)?;
+        if device_id.trim().is_empty() || actor_profile_version == 0 {
+            return Err(MobileError::coded(
+                "MOBILE_MESSAGING_IDENTITY_RECOVERY_INVALID",
+                "recovered messaging identity is incomplete",
+            ));
+        }
+        let recovered = generate_fresh_device_identity_for_device(
+            &actor_ptid,
+            &device_id,
+            actor_identity_seed,
+            actor_profile_version,
+        )
+        .map_err(MobileError::messaging)?;
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| MobileError::messaging("mobile messaging runtime lock poisoned"))?;
+        let current = active
+            .as_ref()
+            .ok_or_else(|| MobileError::messaging("mobile messaging runtime is not active"))?;
+        validate_active_scope(&current.engine, &station_peer_id, &actor_ptid)?;
+        if current.engine.scope().device_id != device_id {
+            return Err(MobileError::coded(
+                "MOBILE_MESSAGING_IDENTITY_RECOVERY_STALE_SCOPE",
+                "recovered messaging identity does not match the active Session device",
+            ));
+        }
+        let current = active
+            .take()
+            .ok_or_else(|| MobileError::messaging("mobile messaging runtime is not active"))?;
+        drop(active);
+        current.worker.stop().map_err(MobileError::messaging)?;
+
+        let user_scope = format!("{station_peer_id}|{actor_ptid}");
+        let previous_seed = identity_keys::replace_identity_seed(
+            storage,
+            &user_scope,
+            &actor_ptid,
+            &actor_identity_seed,
+        )?;
+        if let Err(error) = current
+            .engine
+            .store()
+            .replace_fresh_install_identity(&recovered)
+        {
+            let rollback = identity_keys::restore_identity_seed(
+                storage,
+                &user_scope,
+                &actor_ptid,
+                previous_seed.as_deref(),
+            );
+            drop(current.engine);
+            let _ = self.activate(
+                app,
+                data_root,
+                storage,
+                station_peer_id,
+                station_origin,
+                actor_ptid,
+                device_id,
+                access_token,
+            );
+            if let Err(rollback_error) = rollback {
+                return Err(MobileError::messaging(format!(
+                    "{error}; failed to roll back actor identity: {rollback_error}"
+                )));
+            }
+            return Err(MobileError::messaging(error));
+        }
+        drop(current.engine);
+        self.activate(
+            app,
+            data_root,
+            storage,
+            station_peer_id,
+            station_origin,
+            actor_ptid,
+            device_id,
+            access_token,
+        )
     }
 
     pub fn conversations(

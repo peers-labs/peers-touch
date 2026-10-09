@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="secure_input_recovery_title">Recover private posts</string>
+    <string name="secure_input_actor_identity_recovery_title">Restore account identity</string>
+    <string name="secure_input_actor_identity_recovery_message">Enter your 24-word recovery phrase to connect this device. It stays on this device.</string>
     <string name="secure_input_recovery_message">Enter your 24-word recovery phrase. It stays on this device.</string>
     <string name="secure_input_recovery_placeholder">Recovery phrase</string>
     <string name="secure_input_recover">Recover</string>

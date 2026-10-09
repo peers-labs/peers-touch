@@ -4,6 +4,7 @@ pub mod commands;
 pub mod engine;
 pub mod lifecycle;
 pub mod mls_leave_intent;
+pub mod recovery;
 #[cfg(test)]
 mod storage_governance_test;
 pub mod transport;
