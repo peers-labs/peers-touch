@@ -1854,9 +1854,9 @@ async function logoutMobileClient(clientId, client) {
       return { ready: Boolean(surface?.getClientRects().length) };
     `,
   );
-  await clickSelector(
+  await clickXpath(
     client,
-    '.ant-modal-content .ant-modal-footer .ant-btn-dangerous',
+    '(//button[normalize-space(.)="Log Out"])[last()]',
     'confirm-mobile-logout',
   );
   const result = await waitForUi(
