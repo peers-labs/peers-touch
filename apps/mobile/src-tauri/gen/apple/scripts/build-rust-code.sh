@@ -9,6 +9,18 @@ if [ -n "${MOBILE_TAURI_DEV_CONFIG:-}" ] && [ -f "${MOBILE_TAURI_DEV_CONFIG}" ];
   export TAURI_CONFIG="$(cat "${MOBILE_TAURI_DEV_CONFIG}")"
 fi
 
+is_tauri_dev_build() {
+  [ -n "${TAURI_CONFIG:-}" ] || return 1
+  node -e '
+    try {
+      const config = JSON.parse(process.env.TAURI_CONFIG);
+      process.exit(config?.build?.devUrl ? 0 : 1);
+    } catch {
+      process.exit(1);
+    }
+  '
+}
+
 if [ "${MOBILE_TAURI_STATIC_BUNDLE_BUILD:-0}" != "1" ]; then
   pnpm tauri ios xcode-script -v \
     --platform "${PLATFORM_DISPLAY_NAME:?}" \
@@ -55,8 +67,7 @@ for arch in ${ARCHS:?}; do
     cargo_features="custom-protocol,tauri/rustls-tls"
     if [ "${MOBILE_TAURI_STATIC_BUNDLE_BUILD:-0}" = "1" ]; then
       cargo_features="acceptance-harness,custom-protocol,tauri/rustls-tls"
-    elif [ -n "${MOBILE_TAURI_DEV_CONFIG:-}" ] \
-      && [ -f "$MOBILE_TAURI_DEV_CONFIG" ]; then
+    elif is_tauri_dev_build; then
       cargo_features="tauri/rustls-tls"
     fi
     cargo_args=(

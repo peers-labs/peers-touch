@@ -285,7 +285,7 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
       const raw = await command<JsonValue>({
         method: 'GET',
         path: '/api/v1/social/relationships/status',
-        query: { target_ptid: targetPtid },
+        query: { target_actor_ptid: targetPtid },
       });
       const result = decodeProtoJsonOutcome(
         raw,

@@ -98,7 +98,6 @@ import {
   conversationAvatar,
   conversationTitle,
   formatRelativeTime,
-  stationHostFromUrl,
   friendSettingsToActionState,
   messageTimestampMillis,
   chatMessageAttachments,
@@ -118,6 +117,7 @@ import { MemberRole } from '../gen/proto/domain/chat/conversation_pb';
 import { ChatStorageOperationState } from '../gen/proto/domain/chat/storage_pb';
 import { MobileDraftSurfaceKind } from '../gen/proto/domain/mobile/reliability_pb';
 import { getDraftRestorationPort } from '../runtimes/commandRuntime';
+import { secureRandomUuid } from '../utils/randomIdentity';
 import {
   chatStorageReleasedBytes,
   mobileChatStorageProjectionRuntime,
@@ -226,6 +226,7 @@ class ChatMountGuard extends Component<{
 
 interface ChatPageProps {
   readonly activeDetail: MobileChatDetailRoute | null;
+  readonly onStartConversation: () => void;
   readonly onOpenConversation: (route: MobileChatDetailRoute) => void;
   readonly onBack: () => void;
 }
@@ -257,6 +258,7 @@ export function ChatPage(props: ChatPageProps) {
 
 function ChatPageInner({
   activeDetail,
+  onStartConversation,
   onOpenConversation,
   onBack,
 }: ChatPageProps) {
@@ -1091,7 +1093,7 @@ function ChatPageInner({
     setLocalActionError('');
     try {
       const selected = Array.from(files).map((file) => ({
-        id: globalThis.crypto.randomUUID(),
+        id: secureRandomUuid('mobile.chat.attachmentIdentityUnavailable'),
         file,
         filename: file.name,
         mimeType: file.type || 'application/octet-stream',
@@ -1119,7 +1121,7 @@ function ChatPageInner({
       || Boolean(pendingAttachmentSubmission),
     onRecorded: ({ file, metadata }) => {
       const item: MobileChatAttachmentDraft = {
-        id: globalThis.crypto.randomUUID(),
+        id: secureRandomUuid('mobile.chat.attachmentIdentityUnavailable'),
         file,
         filename: file.name,
         mimeType: file.type || metadata.codec,
@@ -1398,14 +1400,13 @@ function ChatPageInner({
       ? Boolean(friendshipStatus[activeConversation.peerPtid]?.blocked)
       : false;
     const peerMessageAvatar = peerProfile?.avatar || activeConversation?.peerAvatar || '';
-    const stationName = stationHostFromUrl(authSession?.stationUrl);
     const conversationSubtitle = peerTyping
       ? t('mobile.chat.typing')
       : activeGroupConversation
         ? t('mobile.group.memberCount', {
             count: activeGroupConversation.projection.memberPtids.length,
           })
-        : t('mobile.chat.peerAtStation', { station: stationName });
+        : t('mobile.chat.encrypted');
 
     const visibleMessages = history.visible;
     const messageCommandOutcomes = friendMessageCommandOutcomes;
@@ -1489,10 +1490,10 @@ function ChatPageInner({
                               activeConversation.peerPtid,
                               'audio',
                             ),
-                            'mobile.call.operationFailed',
+                            'mobile.chat.callFailed',
                           );
                         }}
-                        aria-label={t('mobile.call.startAudio')}
+                        aria-label={t('mobile.chat.startAudioCall')}
                       >
                         <Phone size={19} />
                       </button>
@@ -1505,10 +1506,10 @@ function ChatPageInner({
                               activeConversation.peerPtid,
                               'video',
                             ),
-                            'mobile.call.operationFailed',
+                            'mobile.chat.callFailed',
                           );
                         }}
-                        aria-label={t('mobile.call.startVideo')}
+                        aria-label={t('mobile.chat.startVideoCall')}
                       >
                         <Video size={20} />
                       </button>
@@ -2004,6 +2005,7 @@ function ChatPageInner({
                   onKeyDown={handleComposerKeyDown} placeholder={t(threadRootMessageUlid ? 'mobile.chat.threadReplyPlaceholder' : 'mobile.chat.messagePlaceholder')} disabled={voiceRecorder.recording || Boolean(pendingAttachmentSubmission)} autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} />
                 <button type="button" className={`message-composer-tool ${composerMoreOpen ? 'active' : ''}`} aria-label={t('mobile.chat.composerMore')} onClick={() => { composerInputRef.current?.blur(); setComposerMoreOpen((o) => !o); setComposerEmojiOpen(false); }} disabled={voiceRecorder.recording || Boolean(editingMessage) || Boolean(pendingAttachmentSubmission)}><Plus size={18} /></button>
                 <Button className="message-send-button" type="primary" icon={<Send size={16} />}
+                  aria-label={t('common.action.send')}
                   disabled={voiceRecorder.recording || !canSubmitChatComposerDraft({ text: draft, attachmentCount: readyChatAttachmentStages(attachmentDrafts).length, capabilities: MOBILE_THREAD_COMPOSER_CAPABILITIES }) || attachmentUploading || attachmentStagingFailed || encryptedAttachmentRefs.length > 0 || Boolean(pendingAttachmentSubmission)}
                   loading={attachmentUploading || Boolean(pendingAttachmentSubmission)}
                   onClick={() => void runChatOperation(submitMessage, 'mobile.chat.operationSendFailed')} />
@@ -2035,6 +2037,7 @@ function ChatPageInner({
       onDismissLocalError={() => setLocalActionError('')}
       onDismissSocialError={clearSocialError}
       onDismissGroupError={() => undefined}
+      onStartConversation={onStartConversation}
       onOpenConversation={openConversation}
     />
   );

@@ -15,6 +15,7 @@ interface DeferredCapabilityNoticeProps {
   readonly t: (key: string, params?: Record<string, string | number>) => string;
   readonly onRetry: () => Promise<void>;
   readonly canRetry: boolean;
+  readonly compact?: boolean;
 }
 
 export function DeferredCapabilityNotice({
@@ -22,6 +23,7 @@ export function DeferredCapabilityNotice({
   t,
   onRetry,
   canRetry,
+  compact = false,
 }: DeferredCapabilityNoticeProps) {
   const failed = state.unavailableRuntimes.some((entry) => entry.status === 'failed');
   const [retrying, setRetrying] = useState(false);
@@ -29,6 +31,11 @@ export function DeferredCapabilityNotice({
   const titleKey = failed
     ? 'mobile.recovery.deferredCapability.failedTitle'
     : 'mobile.recovery.deferredCapability.title';
+  const body = t(failed
+    ? 'mobile.recovery.deferredCapability.failedBody'
+    : 'mobile.recovery.deferredCapability.body', {
+    count: state.unavailableRuntimes.length,
+  });
 
   async function retry() {
     if (!canRetry || retrying) return;
@@ -45,14 +52,15 @@ export function DeferredCapabilityNotice({
 
   return (
     <section
-      className="recovery-notice recovery-deferred-capability"
+      className={`recovery-notice recovery-deferred-capability${compact ? ' compact' : ''}`}
       data-acceptance-id="recovery-deferred-capability"
       data-product-surface="shell.degraded-module-notice"
       role="status"
-      aria-label={t(titleKey)}
+      aria-label={`${t(titleKey)}. ${body}`}
       aria-busy={!failed || retrying}
       data-blocks-unrelated-content="false"
       data-runtime-count={state.unavailableRuntimes.length}
+      data-runtime-ids={state.unavailableRuntimes.map((entry) => entry.runtimeId).join(',')}
     >
       <span className="recovery-notice__icon" aria-hidden="true">
         {failed && !retrying
@@ -63,20 +71,16 @@ export function DeferredCapabilityNotice({
         <strong className="recovery-notice__title">
           {t(titleKey)}
         </strong>
-        <span className="recovery-notice__text">
-          {t(failed
-            ? 'mobile.recovery.deferredCapability.failedBody'
-            : 'mobile.recovery.deferredCapability.body', {
-            count: state.unavailableRuntimes.length,
-          })}
-        </span>
+        {!compact ? <span className="recovery-notice__text">{body}</span> : null}
         {failed && (
           <div className="recovery-notice__actions">
             <button
               type="button"
               data-acceptance-id="recovery-deferred-capability-retry"
-              className="recovery-btn recovery-btn--compact recovery-btn--primary"
+              className={`recovery-btn recovery-btn--compact recovery-btn--primary${compact ? ' icon-only' : ''}`}
               disabled={!canRetry || retrying}
+              aria-label={t('common.action.retry')}
+              title={t('common.action.retry')}
               onClick={() => { void retry(); }}
             >
               <RefreshCw
@@ -84,7 +88,7 @@ export function DeferredCapabilityNotice({
                 className={retrying ? 'recovery-icon--spinning' : undefined}
                 aria-hidden="true"
               />
-              {t('common.action.retry')}
+              {!compact ? t('common.action.retry') : null}
             </button>
           </div>
         )}

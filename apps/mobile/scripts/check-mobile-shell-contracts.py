@@ -482,7 +482,7 @@ def validate_auth_ui_identity(repo_root: Path = REPO_ROOT) -> None:
 
     required_mobile_tokens = (
         'className="auth-gate-logo"',
-        'data-session-expired={expiredSession ? \'true\' : \'false\'}',
+        'data-session-expired={visibleExpiredSession ? \'true\' : \'false\'}',
         'data-acceptance-id="auth-session-expired"',
         "t('mobile.settings.connected')",
         "authStationLabel(",

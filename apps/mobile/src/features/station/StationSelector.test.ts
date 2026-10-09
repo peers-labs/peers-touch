@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
+import { defaultStationAddress } from './StationSelector';
+
 const source = readFileSync(
   new URL('./StationSelector.tsx', import.meta.url),
   'utf8',
@@ -29,5 +31,18 @@ describe('StationSelector reachability states', () => {
     expect(source).toContain('if (entry.online === undefined) {');
     expect(source).toContain("className: 'unknown'");
     expect(source).toContain("t('mobile.launch.unknown')");
+  });
+});
+
+describe('StationSelector development defaults', () => {
+  it('prefills the configured Station without silently connecting', () => {
+    expect(defaultStationAddress('http://10.37.94.156:18132')).toEqual({
+      protocol: 'http',
+      address: '10.37.94.156:18132',
+    });
+    expect(defaultStationAddress(undefined)).toEqual({
+      protocol: 'https',
+      address: '',
+    });
   });
 });

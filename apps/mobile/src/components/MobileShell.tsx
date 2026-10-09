@@ -72,6 +72,7 @@ function renderPage(
   authSession: MobileAuthSession | null,
   activeDetail: MobileDetailRoute | null,
   activeOverlay: MobileOverlayRoute | null,
+  onStartConversation: () => void,
   onOpenDetail: (route: MobileDetailRoute) => void,
   onOpenOverlay: (route: MobileOverlayRoute) => void,
   onCloseOverlay: () => void,
@@ -87,6 +88,7 @@ function renderPage(
               ? activeDetail
               : null
           }
+          onStartConversation={onStartConversation}
           onBack={onBack}
           onOpenConversation={onOpenDetail}
         />
@@ -242,6 +244,16 @@ export function MobileShell(props: MobileShellProps) {
     });
   }, [navigatePrimary, restoreLocation, saveCurrentLocation]);
 
+  const startConversation = useCallback(() => {
+    const routeId: MobilePrimaryRouteId = 'tab:contacts';
+    requestSettingsExit(() => {
+      saveCurrentLocation();
+      navigatePrimary(routeId);
+      openOverlay({ routeId: 'overlay:add-friend' });
+      restoreLocation(routeId);
+    });
+  }, [navigatePrimary, openOverlay, restoreLocation, saveCurrentLocation]);
+
   const openDetail = useCallback((route: MobileDetailRoute) => {
     saveCurrentLocation();
     pushDetail(route);
@@ -274,6 +286,7 @@ export function MobileShell(props: MobileShellProps) {
             authSession,
             activeDetail,
             activeOverlay,
+            startConversation,
             openDetail,
             openOverlay,
             closeOverlay,

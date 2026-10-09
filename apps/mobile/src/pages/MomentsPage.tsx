@@ -370,6 +370,7 @@ function MomentsPageInner({
                         onOpenComments={handleOpenComments}
                         onOpenDetail={handleOpenDetail}
                         onSubmitComment={handleSubmitInlineComment}
+                        showInlineComment={false}
                         reactionMutation={runtimeFeedState?.reactionMutations.get(post.id)}
                         policyState={resolveMomentPolicyState(
                           runtimeFeedState?.feedExplanations.get(post.id),
