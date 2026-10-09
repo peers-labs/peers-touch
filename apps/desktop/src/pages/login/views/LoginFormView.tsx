@@ -555,6 +555,7 @@ export const LoginFormView = memo(function LoginFormView({
                   required
                 />
                 <Button
+                  aria-label={t('auth.login.submit')}
                   data-login-submit
                   type="primary"
                   htmlType="submit"
