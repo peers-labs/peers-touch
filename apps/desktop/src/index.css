@@ -1,7 +1,3 @@
-:root {
-  --pt-focus-ring-color: #6f87f5;
-}
-
 * {
   margin: 0;
   padding: 0;
@@ -23,13 +19,29 @@ input, textarea, [contenteditable="true"] {
   user-select: auto;
 }
 
-:where(button, [role="button"], a[href]):focus {
+:where(button, [role="button"]):focus,
+:where(button, [role="button"]):focus-visible {
+  outline: none !important;
+}
+
+:where(button, [role="button"]):focus-visible {
+  /* Button focus is tonal, never a browser/component-library border ring. */
+  box-shadow: inset 0 0 0 9999px color-mix(in srgb, currentColor 8%, transparent) !important;
+}
+
+:where(.ant-btn-text, .ant-btn-link) {
+  border-color: transparent !important;
+}
+
+:where(a[href]):focus {
   outline: none;
 }
 
-:where(button, [role="button"], a[href]):focus-visible {
-  outline: 2px solid var(--pt-focus-ring-color);
-  outline-offset: 2px;
+:where(a[href]):focus-visible {
+  outline: none;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
 }
 
 .selectable {
