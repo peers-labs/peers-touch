@@ -3,7 +3,7 @@ use std::sync::{Mutex, OnceLock, TryLockError};
 
 use crate::infrastructure::event_stream;
 use crate::infrastructure::station_client;
-use crate::infrastructure::station_registry::StationRegistry;
+use crate::infrastructure::station_registry::{StationEntry, StationRegistry};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -36,71 +36,99 @@ impl StationBindingError {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct StationBindingState {
     pub phase: StationBindingPhase,
-    pub selected_url: Option<String>,
-    pub bound_url: Option<String>,
-    pub target_url: Option<String>,
-    pub generation: u64,
+    pub station_peer_id: Option<String>,
+    pub active_route_id: Option<String>,
+    pub target_station_peer_id: Option<String>,
+    pub target_route_id: Option<String>,
+    pub route_revision: u64,
+    pub lifecycle_generation: u64,
     pub error: Option<StationBindingError>,
 }
 
 impl StationBindingState {
-    fn from_persisted_selection(selected_url: Option<String>) -> Self {
-        let has_selection = selected_url.is_some();
-        Self {
-            phase: if has_selection {
-                StationBindingPhase::Connecting
-            } else {
-                StationBindingPhase::Unbound
+    fn from_persisted_entry(entry: Option<StationEntry>) -> Self {
+        match entry {
+            Some(entry) => Self {
+                phase: StationBindingPhase::Connecting,
+                station_peer_id: Some(entry.station_peer_id.clone()),
+                active_route_id: None,
+                target_station_peer_id: Some(entry.station_peer_id),
+                target_route_id: Some(entry.active_route_id),
+                route_revision: entry.route_revision,
+                lifecycle_generation: entry.lifecycle_generation,
+                error: None,
             },
-            bound_url: None,
-            target_url: selected_url.clone(),
-            selected_url,
-            generation: 0,
-            error: None,
+            None => Self {
+                phase: StationBindingPhase::Unbound,
+                station_peer_id: None,
+                active_route_id: None,
+                target_station_peer_id: None,
+                target_route_id: None,
+                route_revision: 0,
+                lifecycle_generation: 0,
+                error: None,
+            },
         }
+    }
+
+    pub fn transport_scope(&self) -> Option<(&str, &str, u64)> {
+        if !matches!(
+            self.phase,
+            StationBindingPhase::AccessGate | StationBindingPhase::Bound
+        ) {
+            return None;
+        }
+        Some((
+            self.station_peer_id.as_deref()?,
+            self.active_route_id.as_deref()?,
+            self.route_revision,
+        ))
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct StationHandshake {
-    pub label: Option<String>,
-    pub peer_id: Option<String>,
-    pub peers_count: Option<u32>,
-}
-
 pub trait StationBindingHooks: Send + Sync {
-    fn handshake(&self, target_url: &str) -> Result<StationHandshake, StationBindingError>;
+    fn verify_route(&self, entry: &StationEntry) -> Result<(), StationBindingError>;
 
-    fn teardown_old(
+    fn teardown_transport(
         &self,
-        old_url: Option<&str>,
-        target_url: &str,
+        previous: Option<&StationEntry>,
+        target: &StationEntry,
+    ) -> Result<(), StationBindingError>;
+
+    fn teardown_scope(
+        &self,
+        previous: Option<&StationEntry>,
+        target: &StationEntry,
     ) -> Result<(), StationBindingError>;
 }
 
 struct SystemStationBindingHooks;
 
 impl StationBindingHooks for SystemStationBindingHooks {
-    fn handshake(&self, target_url: &str) -> Result<StationHandshake, StationBindingError> {
-        let (online, label, peer_id, peers_count) = station_client::probe_station(target_url);
-        if !online {
+    fn verify_route(&self, entry: &StationEntry) -> Result<(), StationBindingError> {
+        if entry.active_route().is_none() {
             return Err(StationBindingError::new(
-                "station_unreachable",
-                "The selected Station is unavailable",
-                true,
+                "station_route_unavailable",
+                "The selected Station has no active verified route",
+                false,
             ));
         }
-        Ok(StationHandshake {
-            label,
-            peer_id,
-            peers_count,
-        })
+        Ok(())
     }
 
-    fn teardown_old(
+    fn teardown_transport(
         &self,
-        _old_url: Option<&str>,
-        _target_url: &str,
+        _previous: Option<&StationEntry>,
+        _target: &StationEntry,
+    ) -> Result<(), StationBindingError> {
+        event_stream::stop_all();
+        Ok(())
+    }
+
+    fn teardown_scope(
+        &self,
+        _previous: Option<&StationEntry>,
+        _target: &StationEntry,
     ) -> Result<(), StationBindingError> {
         event_stream::stop_all();
         Ok(())
@@ -113,9 +141,9 @@ pub struct StationBindingService {
 }
 
 impl StationBindingService {
-    pub fn new(selected_url: Option<String>) -> Self {
+    pub fn new(active_entry: Option<StationEntry>) -> Self {
         Self {
-            state: Mutex::new(StationBindingState::from_persisted_selection(selected_url)),
+            state: Mutex::new(StationBindingState::from_persisted_entry(active_entry)),
             transition: Mutex::new(()),
         }
     }
@@ -127,25 +155,42 @@ impl StationBindingService {
             .clone()
     }
 
-    pub fn selection_changes(&self, registry: &StationRegistry, target_url: &str) -> bool {
-        let target_url = normalize_url(target_url);
-        let persisted_active_url = registry.active_url();
+    pub fn station_changes(&self, registry: &StationRegistry, station_peer_id: &str) -> bool {
         let state = self.state();
-        let current_url = state
-            .bound_url
-            .as_deref()
-            .or(persisted_active_url.as_deref());
-        current_url
-            .map(|url| normalize_url(url) != target_url)
-            .unwrap_or(true)
+        let current_station_peer_id = state
+            .station_peer_id
+            .clone()
+            .or_else(|| registry.active_station_peer_id());
+        current_station_peer_id.as_deref() != Some(station_peer_id)
+    }
+
+    pub fn route_changes(
+        &self,
+        registry: &StationRegistry,
+        station_peer_id: &str,
+        route_id: Option<&str>,
+    ) -> bool {
+        let Some(entry) = registry.entry(station_peer_id) else {
+            return true;
+        };
+        let target_route_id = route_id.unwrap_or(&entry.active_route_id);
+        let state = self.state();
+        state.station_peer_id.as_deref() != Some(station_peer_id)
+            || state.active_route_id.as_deref() != Some(target_route_id)
     }
 
     pub fn switch(
         &self,
         registry: &StationRegistry,
-        target_url: &str,
+        station_peer_id: &str,
+        route_id: Option<&str>,
     ) -> Result<StationBindingState, StationBindingError> {
-        self.switch_with_hooks(registry, target_url, &SystemStationBindingHooks)
+        self.switch_with_hooks(
+            registry,
+            station_peer_id,
+            route_id,
+            &SystemStationBindingHooks,
+        )
     }
 
     pub fn resume_persisted(
@@ -160,10 +205,10 @@ impl StationBindingService {
             .state
             .lock()
             .expect("StationBindingService state lock poisoned");
-        if state.phase == StationBindingPhase::Bound && state.bound_url.is_some() {
+        if state.phase == StationBindingPhase::Bound && state.transport_scope().is_some() {
             return Ok(state.clone());
         }
-        if state.phase != StationBindingPhase::AccessGate || state.bound_url.is_none() {
+        if state.phase != StationBindingPhase::AccessGate || state.transport_scope().is_none() {
             return Err(StationBindingError::new(
                 "station_binding_not_ready",
                 "The Station access gate has not been completed",
@@ -178,43 +223,21 @@ impl StationBindingService {
     pub fn remove_station(
         &self,
         registry: &StationRegistry,
-        url: &str,
+        station_peer_id: &str,
     ) -> Result<(StationBindingState, bool), StationBindingError> {
-        let url = normalize_url(url);
-        let _transition = self.transition.try_lock().map_err(|error| match error {
-            TryLockError::WouldBlock => StationBindingError::new(
-                "station_switch_in_progress",
-                "Another Station switch is already in progress",
-                true,
-            ),
-            TryLockError::Poisoned(_) => StationBindingError::new(
-                "station_switch_failed",
-                "The Station switch coordinator is unavailable",
-                true,
-            ),
-        })?;
-
+        let _transition = self.transition_guard("Another Station switch is already in progress")?;
         let current = self.state();
-        let was_selected = current.selected_url.as_deref() == Some(url.as_str())
-            || current.bound_url.as_deref() == Some(url.as_str());
-        registry.remove(&url).map_err(|error| {
+        let was_selected = current.station_peer_id.as_deref() == Some(station_peer_id);
+        registry.remove(station_peer_id).map_err(|error| {
             StationBindingError::new(
                 "station_switch_failed",
                 format!("Could not remove the Station: {}", error.kind()),
                 true,
             )
         })?;
-
         if was_selected {
             event_stream::stop_all();
-            self.update_state(|state| {
-                state.generation += 1;
-                state.phase = StationBindingPhase::Unbound;
-                state.selected_url = None;
-                state.bound_url = None;
-                state.target_url = None;
-                state.error = None;
-            });
+            self.replace_state(StationBindingState::from_persisted_entry(None));
         }
         Ok((self.state(), was_selected))
     }
@@ -224,39 +247,20 @@ impl StationBindingService {
         registry: &StationRegistry,
         hooks: &dyn StationBindingHooks,
     ) -> Result<StationBindingState, StationBindingError> {
-        let _transition = self.transition.try_lock().map_err(|error| match error {
-            TryLockError::WouldBlock => StationBindingError::new(
-                "station_switch_in_progress",
-                "Another Station binding transition is already in progress",
-                true,
-            ),
-            TryLockError::Poisoned(_) => StationBindingError::new(
-                "station_switch_failed",
-                "The Station binding coordinator is unavailable",
-                true,
-            ),
-        })?;
-
+        let _transition =
+            self.transition_guard("Another Station binding transition is already in progress")?;
         let current = self.state();
         if matches!(
             current.phase,
             StationBindingPhase::AccessGate | StationBindingPhase::Bound
-        ) && current.bound_url.is_some()
+        ) && current.transport_scope().is_some()
         {
             return Ok(current);
         }
-
-        let target_url = current.selected_url.clone().ok_or_else(|| {
-            StationBindingError::new(
-                "station_unselected",
-                "Select a Station before continuing",
-                false,
-            )
-        })?;
         if !matches!(
             current.phase,
             StationBindingPhase::Connecting | StationBindingPhase::Failed
-        ) || current.bound_url.is_some()
+        ) || current.active_route_id.is_some()
         {
             return Err(StationBindingError::new(
                 "station_binding_not_ready",
@@ -264,184 +268,166 @@ impl StationBindingService {
                 false,
             ));
         }
-        if registry.active_url().as_deref() != Some(target_url.as_str()) {
+        let target_station_peer_id = current.target_station_peer_id.clone().ok_or_else(|| {
+            StationBindingError::new(
+                "station_unselected",
+                "Select a Station before continuing",
+                false,
+            )
+        })?;
+        let target_route_id = current.target_route_id.clone().ok_or_else(|| {
+            StationBindingError::new(
+                "station_route_unavailable",
+                "The persisted Station route is unavailable",
+                false,
+            )
+        })?;
+        let target = registry.entry(&target_station_peer_id).ok_or_else(|| {
+            StationBindingError::new(
+                "station_selection_changed",
+                "The persisted Station selection no longer exists",
+                false,
+            )
+        })?;
+        if registry.active_station_peer_id().as_deref() != Some(target_station_peer_id.as_str())
+            || target.active_route_id != target_route_id
+        {
             return Err(StationBindingError::new(
                 "station_selection_changed",
-                "The persisted Station selection no longer matches the active registry entry",
+                "The persisted Station route no longer matches the active registry binding",
                 false,
             ));
         }
-
         self.update_state(|state| {
-            state.generation += 1;
             state.phase = StationBindingPhase::Connecting;
-            state.target_url = Some(target_url.clone());
             state.error = None;
         });
-
-        let handshake = match hooks.handshake(&target_url) {
-            Ok(handshake) => handshake,
-            Err(error) => {
-                self.update_state(|state| {
-                    state.phase = StationBindingPhase::Failed;
-                    state.bound_url = None;
-                    state.target_url = Some(target_url.clone());
-                    state.error = Some(error.clone());
-                });
-                return Err(error);
-            }
-        };
-
-        if let Err(error) = registry.update_probe(
-            &target_url,
-            handshake.label,
-            handshake.peer_id,
-            handshake.peers_count,
-            true,
-        ) {
-            let binding_error = StationBindingError::new(
-                "station_switch_failed",
-                format!("Could not persist Station metadata: {}", error.kind()),
-                true,
-            );
+        if let Err(error) = hooks.verify_route(&target) {
             self.update_state(|state| {
                 state.phase = StationBindingPhase::Failed;
-                state.bound_url = None;
-                state.target_url = Some(target_url.clone());
-                state.error = Some(binding_error.clone());
+                state.error = Some(error.clone());
             });
-            return Err(binding_error);
+            return Err(error);
         }
-
-        self.update_state(|state| {
-            state.phase = StationBindingPhase::AccessGate;
-            state.bound_url = Some(target_url);
-            state.target_url = None;
-            state.error = None;
-        });
+        self.commit_target(&target);
         Ok(self.state())
     }
 
     fn switch_with_hooks(
         &self,
         registry: &StationRegistry,
-        target_url: &str,
+        station_peer_id: &str,
+        route_id: Option<&str>,
         hooks: &dyn StationBindingHooks,
     ) -> Result<StationBindingState, StationBindingError> {
-        let target_url = normalize_url(target_url);
-        if target_url.is_empty() {
+        let station_peer_id = station_peer_id.trim();
+        if station_peer_id.is_empty() {
             return Err(StationBindingError::new(
                 "station_unselected",
                 "Select a Station before continuing",
                 false,
             ));
         }
-        if !registry.list().iter().any(|entry| entry.url == target_url) {
-            return Err(StationBindingError::new(
+        let mut target = registry.entry(station_peer_id).ok_or_else(|| {
+            StationBindingError::new(
                 "station_not_registered",
                 "Add the Station before selecting it",
                 false,
-            ));
+            )
+        })?;
+        if let Some(route_id) = route_id {
+            target = registry
+                .set_active_route(station_peer_id, route_id)
+                .map_err(registry_switch_error)?;
         }
 
-        let _transition = match self.transition.try_lock() {
-            Ok(guard) => guard,
-            Err(TryLockError::WouldBlock) => {
-                return Err(StationBindingError::new(
-                    "station_switch_in_progress",
-                    "Another Station switch is already in progress",
-                    true,
-                ));
-            }
-            Err(TryLockError::Poisoned(_)) => {
-                return Err(StationBindingError::new(
-                    "station_switch_failed",
-                    "The Station switch coordinator is unavailable",
-                    true,
-                ));
-            }
-        };
-
-        let previous = self.state();
-        if previous.bound_url.as_deref() == Some(target_url.as_str())
-            && previous.phase == StationBindingPhase::Bound
+        let _transition = self.transition_guard("Another Station switch is already in progress")?;
+        let previous_state = self.state();
+        if previous_state.station_peer_id.as_deref() == Some(station_peer_id)
+            && previous_state.active_route_id.as_deref() == Some(target.active_route_id.as_str())
+            && previous_state.phase == StationBindingPhase::Bound
         {
-            return Ok(previous);
+            return Ok(previous_state);
         }
+        let previous_entry = previous_state
+            .station_peer_id
+            .as_deref()
+            .and_then(|peer_id| registry.entry(peer_id));
+        let station_changed = previous_entry
+            .as_ref()
+            .is_some_and(|entry| entry.station_peer_id != target.station_peer_id);
 
         self.update_state(|state| {
-            state.generation += 1;
-            state.phase = if state.bound_url.is_some() {
+            state.phase = if state.transport_scope().is_some() {
                 StationBindingPhase::Switching
             } else {
                 StationBindingPhase::Connecting
             };
-            state.target_url = Some(target_url.clone());
+            state.target_station_peer_id = Some(target.station_peer_id.clone());
+            state.target_route_id = Some(target.active_route_id.clone());
             state.error = None;
         });
 
-        let handshake = match hooks.handshake(&target_url) {
-            Ok(handshake) => handshake,
-            Err(error) => {
-                if previous.bound_url.is_some() {
-                    self.replace_state(previous);
-                } else {
-                    self.update_state(|state| {
-                        state.phase = StationBindingPhase::Failed;
-                        state.selected_url = None;
-                        state.bound_url = None;
-                        state.target_url = Some(target_url.clone());
-                        state.error = Some(error.clone());
-                    });
-                }
-                return Err(error);
-            }
-        };
-
-        if let Err(error) = registry.update_probe(
-            &target_url,
-            handshake.label,
-            handshake.peer_id,
-            handshake.peers_count,
-            true,
-        ) {
-            self.replace_state(previous);
-            return Err(StationBindingError::new(
-                "station_switch_failed",
-                format!("Could not persist Station metadata: {}", error.kind()),
-                true,
-            ));
-        }
-
-        if let Err(error) = hooks.teardown_old(previous.bound_url.as_deref(), &target_url) {
-            self.replace_state(previous);
+        if let Err(error) = hooks.verify_route(&target) {
+            self.restore_or_fail(previous_state, error.clone());
             return Err(error);
         }
-
-        if let Err(error) = registry.set_active(&target_url) {
-            let binding_error = StationBindingError::new(
-                "station_switch_failed",
-                format!("Could not persist the Station selection: {}", error.kind()),
-                true,
-            );
-            self.update_state(|state| {
-                state.phase = StationBindingPhase::Failed;
-                state.selected_url = None;
-                state.bound_url = None;
-                state.target_url = Some(target_url.clone());
-                state.error = Some(binding_error.clone());
-            });
-            return Err(binding_error);
+        let teardown = if station_changed {
+            hooks.teardown_scope(previous_entry.as_ref(), &target)
+        } else {
+            hooks.teardown_transport(previous_entry.as_ref(), &target)
+        };
+        if let Err(error) = teardown {
+            self.replace_state(previous_state);
+            return Err(error);
         }
+        target = registry
+            .set_active_station(station_peer_id)
+            .map_err(registry_switch_error)?;
+        self.commit_target(&target);
+        Ok(self.state())
+    }
 
+    fn commit_target(&self, target: &StationEntry) {
         self.update_state(|state| {
             state.phase = StationBindingPhase::AccessGate;
-            state.selected_url = Some(target_url.clone());
-            state.bound_url = Some(target_url.clone());
-            state.target_url = None;
+            state.station_peer_id = Some(target.station_peer_id.clone());
+            state.active_route_id = Some(target.active_route_id.clone());
+            state.target_station_peer_id = None;
+            state.target_route_id = None;
+            state.route_revision = target.route_revision;
+            state.lifecycle_generation = target.lifecycle_generation;
             state.error = None;
         });
-        Ok(self.state())
+    }
+
+    fn restore_or_fail(&self, previous: StationBindingState, error: StationBindingError) {
+        if previous.transport_scope().is_some() {
+            self.replace_state(previous);
+        } else {
+            self.update_state(|state| {
+                state.phase = StationBindingPhase::Failed;
+                state.station_peer_id = None;
+                state.active_route_id = None;
+                state.error = Some(error);
+            });
+        }
+    }
+
+    fn transition_guard(
+        &self,
+        message: &str,
+    ) -> Result<std::sync::MutexGuard<'_, ()>, StationBindingError> {
+        self.transition.try_lock().map_err(|error| match error {
+            TryLockError::WouldBlock => {
+                StationBindingError::new("station_switch_in_progress", message, true)
+            }
+            TryLockError::Poisoned(_) => StationBindingError::new(
+                "station_switch_failed",
+                "The Station switch coordinator is unavailable",
+                true,
+            ),
+        })
     }
 
     fn replace_state(&self, next: StationBindingState) {
@@ -460,62 +446,77 @@ impl StationBindingService {
     }
 }
 
-fn normalize_url(url: &str) -> String {
-    url.trim().trim_end_matches('/').to_string()
+fn registry_switch_error(error: std::io::Error) -> StationBindingError {
+    StationBindingError::new(
+        "station_switch_failed",
+        format!("Could not persist the Station binding: {}", error.kind()),
+        true,
+    )
 }
 
 pub fn service() -> &'static StationBindingService {
     static SERVICE: OnceLock<StationBindingService> = OnceLock::new();
-    SERVICE
-        .get_or_init(|| StationBindingService::new(station_client::station_registry().active_url()))
+    SERVICE.get_or_init(|| {
+        StationBindingService::new(station_client::station_registry().active_entry())
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::infrastructure::station_registry::StationEntry;
+    use crate::infrastructure::station_discovery::VerifiedStationRoute;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{Arc, Barrier};
 
     struct TestHooks {
-        handshake_error: Option<StationBindingError>,
+        verify_error: Option<StationBindingError>,
         teardown_error: Option<StationBindingError>,
-        teardown_called: AtomicBool,
+        transport_teardown_called: AtomicBool,
+        scope_teardown_called: AtomicBool,
     }
 
     impl TestHooks {
         fn success() -> Self {
             Self {
-                handshake_error: None,
+                verify_error: None,
                 teardown_error: None,
-                teardown_called: AtomicBool::new(false),
+                transport_teardown_called: AtomicBool::new(false),
+                scope_teardown_called: AtomicBool::new(false),
             }
         }
     }
 
     impl StationBindingHooks for TestHooks {
-        fn handshake(&self, _target_url: &str) -> Result<StationHandshake, StationBindingError> {
-            if let Some(error) = &self.handshake_error {
-                return Err(error.clone());
+        fn verify_route(&self, _entry: &StationEntry) -> Result<(), StationBindingError> {
+            match &self.verify_error {
+                Some(error) => Err(error.clone()),
+                None => Ok(()),
             }
-            Ok(StationHandshake {
-                label: Some("Target".to_string()),
-                peer_id: Some("peer-target".to_string()),
-                peers_count: Some(1),
-            })
         }
 
-        fn teardown_old(
+        fn teardown_transport(
             &self,
-            _old_url: Option<&str>,
-            _target_url: &str,
+            _previous: Option<&StationEntry>,
+            _target: &StationEntry,
         ) -> Result<(), StationBindingError> {
-            self.teardown_called.store(true, Ordering::SeqCst);
-            if let Some(error) = &self.teardown_error {
-                return Err(error.clone());
+            self.transport_teardown_called.store(true, Ordering::SeqCst);
+            match &self.teardown_error {
+                Some(error) => Err(error.clone()),
+                None => Ok(()),
             }
-            Ok(())
+        }
+
+        fn teardown_scope(
+            &self,
+            _previous: Option<&StationEntry>,
+            _target: &StationEntry,
+        ) -> Result<(), StationBindingError> {
+            self.scope_teardown_called.store(true, Ordering::SeqCst);
+            match &self.teardown_error {
+                Some(error) => Err(error.clone()),
+                None => Ok(()),
+            }
         }
     }
 
@@ -531,126 +532,112 @@ mod tests {
         path
     }
 
-    fn entry(url: &str) -> StationEntry {
-        StationEntry {
-            url: url.to_string(),
-            label: None,
-            peer_id: None,
-            peers_count: None,
-            last_probe: None,
-            online: false,
+    fn route(station_peer_id: &str, route_id: &str, origin: &str) -> VerifiedStationRoute {
+        VerifiedStationRoute {
+            station_peer_id: station_peer_id.to_string(),
+            station_host_public_key: vec![1, 2, 3],
+            route_id: route_id.to_string(),
+            route_generation: 1,
+            endpoint_origin: origin.to_string(),
+            relay_peer_id: None,
+            inner_tls_spki_sha256: None,
+            attestation_bytes: None,
+            connection_grant: None,
+            expires_at_unix_ms: None,
         }
     }
 
-    fn registry_with(urls: &[&str]) -> StationRegistry {
+    fn registry_with(routes: &[(&str, &str, &str)]) -> StationRegistry {
         let registry = StationRegistry::new(&temp_dir("registry"));
-        for url in urls {
-            registry.add(entry(url)).unwrap();
+        for (station_peer_id, route_id, origin) in routes {
+            registry
+                .upsert_verified_route(
+                    &route(station_peer_id, route_id, origin),
+                    Some((*station_peer_id).to_string()),
+                )
+                .unwrap();
         }
         registry
     }
 
-    fn bound_service(registry: &StationRegistry, url: &str) -> StationBindingService {
+    fn bound_service(
+        registry: &StationRegistry,
+        station_peer_id: &str,
+        route_id: Option<&str>,
+    ) -> StationBindingService {
         let service = StationBindingService::new(None);
         service
-            .switch_with_hooks(registry, url, &TestHooks::success())
+            .switch_with_hooks(registry, station_peer_id, route_id, &TestHooks::success())
             .unwrap();
         service.mark_bound().unwrap();
         service
     }
 
     #[test]
-    fn successful_switch_commits_target_and_enters_access_gate() {
-        let registry = registry_with(&["http://a.example", "http://b.example"]);
-        let service = bound_service(&registry, "http://a.example");
+    fn station_switch_commits_identity_and_enters_access_gate() {
+        let registry = registry_with(&[
+            ("peer-a", "route-a", "https://a.example"),
+            ("peer-b", "route-b", "https://b.example"),
+        ]);
+        let service = bound_service(&registry, "peer-a", None);
         let hooks = TestHooks::success();
 
         let state = service
-            .switch_with_hooks(&registry, "http://b.example/", &hooks)
+            .switch_with_hooks(&registry, "peer-b", None, &hooks)
             .unwrap();
 
-        assert_eq!(registry.active_url().as_deref(), Some("http://b.example"));
+        assert_eq!(registry.active_station_peer_id().as_deref(), Some("peer-b"));
         assert_eq!(state.phase, StationBindingPhase::AccessGate);
-        assert_eq!(state.bound_url.as_deref(), Some("http://b.example"));
-        assert!(hooks.teardown_called.load(Ordering::SeqCst));
+        assert_eq!(state.station_peer_id.as_deref(), Some("peer-b"));
+        assert!(hooks.scope_teardown_called.load(Ordering::SeqCst));
+        assert!(!hooks.transport_teardown_called.load(Ordering::SeqCst));
     }
 
     #[test]
-    fn persisted_selection_starts_connecting_not_bound() {
-        let registry = registry_with(&["http://a.example"]);
-        registry.set_active("http://a.example").unwrap();
-        let service = StationBindingService::new(registry.active_url());
-        let state = service.state();
-
-        assert_eq!(state.phase, StationBindingPhase::Connecting);
-        assert_eq!(state.selected_url.as_deref(), Some("http://a.example"));
-        assert_eq!(state.target_url.as_deref(), Some("http://a.example"));
-        assert_eq!(state.bound_url, None);
-        assert!(!service.selection_changes(&registry, "http://a.example/"));
-        assert!(service.selection_changes(&registry, "http://b.example"));
-    }
-
-    #[test]
-    fn live_binding_takes_precedence_over_persisted_selection() {
-        let registry = registry_with(&["http://a.example", "http://b.example"]);
-        let service = bound_service(&registry, "http://a.example");
-        registry.set_active("http://b.example").unwrap();
-
-        assert!(!service.selection_changes(&registry, "http://a.example"));
-        assert!(service.selection_changes(&registry, "http://b.example"));
-    }
-
-    #[test]
-    fn persisted_selection_resumes_without_switch_teardown() {
-        let registry = registry_with(&["http://a.example"]);
-        registry.set_active("http://a.example").unwrap();
-        let service = StationBindingService::new(Some("http://a.example".to_string()));
+    fn same_station_route_switch_preserves_lifecycle_generation() {
+        let registry = registry_with(&[
+            ("peer-a", "direct", "https://direct.example"),
+            ("peer-a", "relay", "https://relay.example"),
+        ]);
+        let service = bound_service(&registry, "peer-a", Some("direct"));
+        let before = service.state();
         let hooks = TestHooks::success();
 
         let state = service
-            .resume_persisted_with_hooks(&registry, &hooks)
+            .switch_with_hooks(&registry, "peer-a", Some("relay"), &hooks)
             .unwrap();
 
-        assert_eq!(state.phase, StationBindingPhase::AccessGate);
-        assert_eq!(state.bound_url.as_deref(), Some("http://a.example"));
-        assert_eq!(registry.active_url().as_deref(), Some("http://a.example"));
-        assert!(!hooks.teardown_called.load(Ordering::SeqCst));
+        assert_eq!(state.active_route_id.as_deref(), Some("relay"));
+        assert_eq!(state.lifecycle_generation, before.lifecycle_generation);
+        assert!(state.route_revision > before.route_revision);
+        assert!(hooks.transport_teardown_called.load(Ordering::SeqCst));
+        assert!(!hooks.scope_teardown_called.load(Ordering::SeqCst));
     }
 
     #[test]
-    fn persisted_selection_resume_can_retry_after_handshake_failure() {
-        let registry = registry_with(&["http://a.example"]);
-        registry.set_active("http://a.example").unwrap();
-        let service = StationBindingService::new(Some("http://a.example".to_string()));
-        let failing_hooks = TestHooks {
-            handshake_error: Some(StationBindingError::new(
-                "station_unreachable",
-                "offline",
-                true,
-            )),
-            ..TestHooks::success()
-        };
+    fn persisted_binding_starts_connecting_and_resumes() {
+        let registry = registry_with(&[("peer-a", "route-a", "https://a.example")]);
+        let entry = registry.set_active_station("peer-a").unwrap();
+        let service = StationBindingService::new(Some(entry));
+        assert_eq!(service.state().phase, StationBindingPhase::Connecting);
 
-        service
-            .resume_persisted_with_hooks(&registry, &failing_hooks)
-            .unwrap_err();
-        let failed = service.state();
-        assert_eq!(failed.phase, StationBindingPhase::Failed);
-        assert_eq!(failed.selected_url.as_deref(), Some("http://a.example"));
-
-        let resumed = service
+        let state = service
             .resume_persisted_with_hooks(&registry, &TestHooks::success())
             .unwrap();
-        assert_eq!(resumed.phase, StationBindingPhase::AccessGate);
-        assert_eq!(resumed.bound_url.as_deref(), Some("http://a.example"));
+        assert_eq!(state.phase, StationBindingPhase::AccessGate);
+        assert_eq!(state.station_peer_id.as_deref(), Some("peer-a"));
+        assert_eq!(state.active_route_id.as_deref(), Some("route-a"));
     }
 
     #[test]
-    fn handshake_failure_keeps_old_binding() {
-        let registry = registry_with(&["http://a.example", "http://b.example"]);
-        let service = bound_service(&registry, "http://a.example");
+    fn route_verification_failure_keeps_old_binding() {
+        let registry = registry_with(&[
+            ("peer-a", "route-a", "https://a.example"),
+            ("peer-b", "route-b", "https://b.example"),
+        ]);
+        let service = bound_service(&registry, "peer-a", None);
         let hooks = TestHooks {
-            handshake_error: Some(StationBindingError::new(
+            verify_error: Some(StationBindingError::new(
                 "station_unreachable",
                 "offline",
                 true,
@@ -659,90 +646,26 @@ mod tests {
         };
 
         let error = service
-            .switch_with_hooks(&registry, "http://b.example", &hooks)
+            .switch_with_hooks(&registry, "peer-b", None, &hooks)
             .unwrap_err();
 
         assert_eq!(error.code, "station_unreachable");
-        assert_eq!(registry.active_url().as_deref(), Some("http://a.example"));
-        assert_eq!(
-            service.state().bound_url.as_deref(),
-            Some("http://a.example")
-        );
-        assert!(!hooks.teardown_called.load(Ordering::SeqCst));
-    }
-
-    #[test]
-    fn first_handshake_failure_keeps_retry_target() {
-        let registry = registry_with(&["http://a.example"]);
-        let service = StationBindingService::new(None);
-        let hooks = TestHooks {
-            handshake_error: Some(StationBindingError::new(
-                "station_unreachable",
-                "offline",
-                true,
-            )),
-            ..TestHooks::success()
-        };
-
-        service
-            .switch_with_hooks(&registry, "http://a.example", &hooks)
-            .unwrap_err();
-
-        let state = service.state();
-        assert_eq!(state.phase, StationBindingPhase::Failed);
-        assert_eq!(state.target_url.as_deref(), Some("http://a.example"));
-        assert_eq!(
-            state.error.as_ref().map(|error| error.code.as_str()),
-            Some("station_unreachable")
-        );
-    }
-
-    #[test]
-    fn teardown_failure_keeps_old_binding() {
-        let registry = registry_with(&["http://a.example", "http://b.example"]);
-        let service = bound_service(&registry, "http://a.example");
-        let hooks = TestHooks {
-            teardown_error: Some(StationBindingError::new(
-                "station_switch_failed",
-                "teardown failed",
-                true,
-            )),
-            ..TestHooks::success()
-        };
-
-        let error = service
-            .switch_with_hooks(&registry, "http://b.example", &hooks)
-            .unwrap_err();
-
-        assert_eq!(error.code, "station_switch_failed");
-        assert_eq!(registry.active_url().as_deref(), Some("http://a.example"));
-        assert_eq!(service.state().phase, StationBindingPhase::Bound);
-    }
-
-    #[test]
-    fn unknown_target_is_rejected_before_transition() {
-        let registry = registry_with(&["http://a.example"]);
-        let service = StationBindingService::new(None);
-
-        let error = service
-            .switch_with_hooks(&registry, "http://missing.example", &TestHooks::success())
-            .unwrap_err();
-
-        assert_eq!(error.code, "station_not_registered");
-        assert_eq!(service.state().phase, StationBindingPhase::Unbound);
+        assert_eq!(service.state().station_peer_id.as_deref(), Some("peer-a"));
+        assert_eq!(registry.active_station_peer_id().as_deref(), Some("peer-a"));
     }
 
     #[test]
     fn binding_becomes_ready_only_after_access_gate_completion() {
-        let registry = registry_with(&["http://a.example"]);
+        let registry = registry_with(&[("peer-a", "route-a", "https://a.example")]);
         let service = StationBindingService::new(None);
         let state = service
-            .switch_with_hooks(&registry, "http://a.example", &TestHooks::success())
+            .switch_with_hooks(&registry, "peer-a", None, &TestHooks::success())
             .unwrap();
         assert_eq!(state.phase, StationBindingPhase::AccessGate);
-
-        let state = service.mark_bound().unwrap();
-        assert_eq!(state.phase, StationBindingPhase::Bound);
+        assert_eq!(
+            service.mark_bound().unwrap().phase,
+            StationBindingPhase::Bound
+        );
     }
 
     struct BlockingHooks {
@@ -751,20 +674,24 @@ mod tests {
     }
 
     impl StationBindingHooks for BlockingHooks {
-        fn handshake(&self, _target_url: &str) -> Result<StationHandshake, StationBindingError> {
+        fn verify_route(&self, _entry: &StationEntry) -> Result<(), StationBindingError> {
             self.entered.wait();
             self.release.wait();
-            Ok(StationHandshake {
-                label: None,
-                peer_id: None,
-                peers_count: None,
-            })
+            Ok(())
         }
 
-        fn teardown_old(
+        fn teardown_transport(
             &self,
-            _old_url: Option<&str>,
-            _target_url: &str,
+            _previous: Option<&StationEntry>,
+            _target: &StationEntry,
+        ) -> Result<(), StationBindingError> {
+            Ok(())
+        }
+
+        fn teardown_scope(
+            &self,
+            _previous: Option<&StationEntry>,
+            _target: &StationEntry,
         ) -> Result<(), StationBindingError> {
             Ok(())
         }
@@ -773,11 +700,11 @@ mod tests {
     #[test]
     fn concurrent_switch_is_rejected_deterministically() {
         let registry = Arc::new(registry_with(&[
-            "http://a.example",
-            "http://b.example",
-            "http://c.example",
+            ("peer-a", "route-a", "https://a.example"),
+            ("peer-b", "route-b", "https://b.example"),
+            ("peer-c", "route-c", "https://c.example"),
         ]));
-        let service = Arc::new(bound_service(&registry, "http://a.example"));
+        let service = Arc::new(bound_service(&registry, "peer-a", None));
         let entered = Arc::new(Barrier::new(2));
         let release = Arc::new(Barrier::new(2));
 
@@ -788,7 +715,8 @@ mod tests {
         let worker = std::thread::spawn(move || {
             worker_service.switch_with_hooks(
                 &worker_registry,
-                "http://b.example",
+                "peer-b",
+                None,
                 &BlockingHooks {
                     entered: worker_entered,
                     release: worker_release,
@@ -798,12 +726,12 @@ mod tests {
 
         entered.wait();
         let error = service
-            .switch_with_hooks(&registry, "http://c.example", &TestHooks::success())
+            .switch_with_hooks(&registry, "peer-c", None, &TestHooks::success())
             .unwrap_err();
         assert_eq!(error.code, "station_switch_in_progress");
 
         release.wait();
         worker.join().unwrap().unwrap();
-        assert_eq!(registry.active_url().as_deref(), Some("http://b.example"));
+        assert_eq!(registry.active_station_peer_id().as_deref(), Some("peer-b"));
     }
 }

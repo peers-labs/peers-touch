@@ -1,5 +1,6 @@
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_registry::StationRegistry;
+use crate::infrastructure::station_transport;
 use crate::model::common::PeersResponse;
 use prost::Message;
 use reqwest::blocking::Client;
@@ -297,25 +298,27 @@ fn merge_safe_error_detail_header(
 }
 
 pub(crate) fn station_base_url() -> String {
-    // Prefer the registry's active URL if initialized and set.
-    // Falls back to PEERS_STATION_URL env var when registry has no active
-    // station (fresh install, or user hasn't selected one yet).
-    let from_registry = STATION_REGISTRY.get().and_then(|reg| reg.active_url());
-    from_registry.unwrap_or_else(|| {
-        std::env::var("PEERS_STATION_URL")
-            .unwrap_or_default()
-            .trim_end_matches('/')
-            .to_string()
-    })
+    if let Some(registry) = STATION_REGISTRY.get() {
+        if registry.active_entry().is_some() {
+            return station_transport::active_transport_origin(registry).unwrap_or_else(|error| {
+                tracing::warn!(error = %error, "station transport route is unavailable");
+                String::new()
+            });
+        }
+        if let Some(seed) = registry.discovery_seed() {
+            return seed;
+        }
+    }
+    std::env::var("PEERS_STATION_URL")
+        .unwrap_or_default()
+        .trim_end_matches('/')
+        .to_string()
 }
 
 pub(crate) fn active_station_peer_id() -> Option<String> {
-    let reg = STATION_REGISTRY.get()?;
-    let active = reg.active_url()?;
-    reg.list()
-        .into_iter()
-        .find(|entry| entry.url.trim_end_matches('/') == active.trim_end_matches('/'))
-        .and_then(|entry| entry.peer_id)
+    STATION_REGISTRY
+        .get()?
+        .active_station_peer_id()
         .filter(|peer_id| !peer_id.trim().is_empty())
 }
 

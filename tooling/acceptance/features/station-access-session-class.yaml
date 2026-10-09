@@ -39,6 +39,7 @@
     "device_id, window labels, runtime labels, and OS models must not create additional Session class slots",
     "one simulator or one storage root must not represent two same-class Mobile installations",
     "independent regression Gates must not replace the one reusable Suite Runtime or its native receiver proof",
-    "stale or dirty-source proof must not satisfy SAL-G05"
+    "aggregate evidence must not replace any native receiver proof",
+    "stale or dirty-source proof must not satisfy SAL-G08"
   ]
 }

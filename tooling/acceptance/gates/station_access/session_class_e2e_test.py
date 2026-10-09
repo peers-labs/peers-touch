@@ -121,12 +121,12 @@ class StationAccessSessionClassGateTest(unittest.TestCase):
                 for spec in session_class_e2e.PRECEDING_GATES
             ],
             [
-                ("SAL-G05", "chat-native-multi-device-e2e"),
+                ("SAL-G08", "chat-native-multi-device-e2e"),
                 (
-                    "SAL-G05",
+                    "SAL-G08",
                     "chat-lifecycle-mixed-client-multi-device-e2e",
                 ),
-                ("SAL-G05", "mobile-simulator-station-lifecycle-e2e"),
+                ("SAL-G08", "mobile-simulator-station-lifecycle-e2e"),
             ],
         )
 

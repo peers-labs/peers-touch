@@ -1,7 +1,7 @@
 # Host-Neutral Agent Integration
 
 > **Status**: accepted
-> **Created**: 2026-09-19 | **Updated**: 2026-10-06
+> **Created**: 2026-09-19 | **Updated**: 2026-10-09
 > **Owner**: Platform Team
 
 ## Goal
@@ -20,15 +20,14 @@ distribution contract. It is not the runtime-state source for consuming
 worktrees. Each installed adapter contributes a canonical integration candidate.
 Equivalent Hooks in participating multi-root folders dispatch to the selected
 source root's same canonical integration. The Kernel resolves the explicit
-target worktree before the first blockable event creates the immutable OWNER
-`executionRoot`.
+target worktree for each mutating OWNER event; the first blockable event creates
+only the immutable OWNER identity.
 
-The Hook's own filesystem location is never an execution-root hint. The
-first `PreToolUse` uses a host-provided task root only when it matches one
-declared workspace root. Without that field, every mutation target must map to
-the same single workspace root. Missing or conflicting evidence returns
-`WORKTREE_SELECTION_REQUIRED`; folder order and active-editor guesses are not
-authority.
+The Hook's own filesystem location is never an action-workspace hint. A unique
+mutation target wins, followed by a host-provided task root, tool `cwd`, active
+editor root, and repository `cwd`. The selected root must match one declared
+workspace root. Multiple mutation roots return `WORKTREE_SELECTION_REQUIRED`;
+folder order is never authority.
 
 The canonical source includes repository-owned `tooling/skills/pt-*` and the
 thin `tooling/plugins/pt-ew-plugin/` adapter. Machine-local user Overlays are
@@ -46,7 +45,7 @@ The adapter and Kernel deliberately distinguish five identities:
 | execution session | host-internal owner/worker/reviewer invocation, persisted only for assigned children | per invocation |
 | binding role | `OWNER`, `WORKER`, or `REVIEWER` | assignment-bound |
 | binding lineage | root, parent, and assignment digests | create-once |
-| `executionRoot` | the worktree authorized for writes by the OWNER lineage | create-once |
+| `executionRoot` | selected workspace for one OWNER mutation, or the fixed assignment workspace for a child | per OWNER mutation / create-once child |
 | `subjectRoot` | the repository targeted by one read/write/tool invocation | per event |
 
 `SessionStart` is optional prewarming. It cannot establish authority. Cursor
@@ -54,8 +53,10 @@ Cloud has no `sessionStart`, so local and cloud correctness both begin at the
 first `preToolUse`. If the host has no host-specific root-chat identity or
 cannot block that event, the mode is `OBSERVE_ONLY`.
 
-Cross-worktree reads are legal. A write whose subject root differs from the
-conversation execution root fails with `CROSS_WORKTREE_WRITE_DENIED`.
+Cross-worktree reads are legal. One OWNER chat may perform separate mutations
+in different worktrees without rebinding. A single mutation spanning roots
+fails with `WORKTREE_SELECTION_REQUIRED`; a path escaping the selected action
+workspace fails with `ACTION_WORKSPACE_WRITE_DENIED`.
 
 | Host | OWNER identity key | Assigned-child identity key | Blocking boundary |
 |---|---|---|---|
@@ -70,10 +71,10 @@ value, or a mutable workspace pointer.
 An execution session without an assignment uses the OWNER projection for
 admission and cannot claim child independence. WORKER/REVIEWER assignment is
 create-once, carries root/parent binding digests plus the Development Session
-and operation IDs, and has a bounded lease. Creation requires the exact current
-`active-work.json` and `session.json` identity. Terminal receipts close child
-liveness; expired or terminal children never participate in current owner
-selection.
+and operation IDs, freezes one assignment workspace, and has a bounded lease.
+Creation requires the exact current `active-work.json` and `session.json`
+identity in that workspace. Terminal receipts close child liveness; expired or
+terminal children never participate in current owner selection.
 
 TRAE `SubagentStart` and `SubagentStop` are the lifecycle boundaries for
 assignment claim and terminalization. `PreCompact` records the current
@@ -107,11 +108,13 @@ authority.
    make agent-integration-audit ROOT=<worktree-root>
    ```
 
-   This source audit must report `PASS`. It fails closed on missing canonical
-   Skills, missing canonical Acceptance registry matchers, legacy source/live
-   references, and workflow identity mismatches. A bound workspace requires a
-   tracked declaration locator; only an unbound pre-Plan workspace may carry an
-   untracked declaration during this source-only audit.
+   This full audit normally reports `PASS`. It fails closed on missing
+   canonical Skills, missing canonical Acceptance registry matchers, legacy
+   source/live references, and workflow identity mismatches. During bootstrap,
+   projection may continue only when canonical source, registry, and catalog
+   checks pass and the remaining findings are existing machine workflow
+   identity/schema diagnostics. Projection does not claim those diagnostics
+   repaired.
 5. Install the current non-destructive host projection without prompting. This
    step does not release the active declaration and does not depend on a Hook
    grant:
@@ -138,20 +141,25 @@ authority.
    Hook-merge, symlink-boundary, and callback-proof checks remain fail closed.
    Unrelated live declarations, child assignments, workflow actions, and
    Action Store activity do not participate in projection admission.
+   The install wrapper runs an explicit `--projection-only` audit; that scope
+   ignores workflow-identity findings only for its PASS calculation and still
+   includes them in output. A later full `make agent-integration-audit` remains
+   required after Plan/declaration state migration or repair.
    `skills-hard-cut` and `skills-gc` use separate OWNER_CONTROL labels and
    create-once OWNER grants. Only those cleanup commands reject every live machine
    declaration, child assignment, unrelated canonical workflow action, and
-   Action Store lock as `GLOBAL_WORKFLOW_NOT_IDLE`. The control plane validates
-   the ledger, binding, and Action stores through their canonical owners while
-   holding the lock,
-   never reclaims another owner's stale ledger lock, waits while a live ledger
-   owner holds an inode-bound recovery claim, reclaims only a dead recovery
-   owner through PID/start identity, rejects host-root, retirement-root, reset,
-   and canonical-source symlink escape, and validates every reset target before
-   deleting any store. It completes fallible path, workspace, catalog, and hook
-   planning before consuming a grant. After consumption it immediately writes
-   one strict current machine receipt for the selected operation, performs
-   only that operation's bounded mutation,
+   Action Store lock as `GLOBAL_WORKFLOW_NOT_IDLE`. Every mode holds the
+   machine lock, never reclaims another owner's stale ledger lock, waits while
+   a live ledger owner holds an inode-bound recovery claim, and reclaims only a
+   dead recovery owner through PID/start identity. Destructive cleanup
+   validates ledger, binding, and Action stores through their canonical owners,
+   rejects host-root, retirement-root, reset, and canonical-source symlink
+   escape, and validates every reset target before deleting any store.
+   Projection does not parse those unrelated owner stores. Each operation
+   completes fallible path, workspace, catalog, and hook planning before any
+   destructive grant consumption. After consumption cleanup immediately writes
+   one strict current machine receipt and performs only that operation's
+   bounded mutation,
    reset inside the guarded lifecycle, runs the host-aware audit and exact
    installed callback proof, then publishes `INSTALLED` or `BLOCKED`. A reset
    failure therefore cannot leave an absent or stale lifecycle receipt. The
@@ -229,18 +237,20 @@ Required report fields:
 - `CURSOR_HOOKS_INVALID`: repair the project hook file without replacing
   unrelated hook entries.
 - `WORKFLOW_BINDING_INVALID`: repair the owner-controlled current binding
-  store; never infer a replacement execution root from the current tool `cwd`
-  or read a legacy conversation record.
-- `CROSS_WORKTREE_WRITE_DENIED`: execute the write from a conversation bound
-  to that worktree; a read from the current conversation remains legal.
+  store; never infer OWNER identity from the current tool `cwd` or read a
+  legacy conversation record.
+- `WORKTREE_SELECTION_REQUIRED`: split a multi-root mutation into separate
+  actions or supply one declared task root/tool `cwd`.
+- `ACTION_WORKSPACE_WRITE_DENIED`: run the action inside its selected
+  workspace and keep every mutation path inside that root and declaration.
 
 ## Completion
 
 Fleet integration is complete only when every selected active worktree reports
 audit `PASS`, no host discovery root exposes the legacy scheduler, the
 multi-root workspace has one exact managed Hook per event in every participating
-root, each owner lineage
-proves immutable execution-root binding and cross-root write denial, global
-hooks remain unchanged, and each resumed Plan advances at least one legal
-owner-controlled action. Stop proof additionally requires the exact
+root, each owner lineage proves stable OWNER identity, per-action workspace
+selection, single-root mutation confinement, and assignment-bound children,
+global hooks remain unchanged, and each resumed Plan advances at least one
+legal owner-controlled action. Stop proof additionally requires the exact
 machine-rendered Anchor and its create-once OWNER release receipt.

@@ -1,8 +1,8 @@
 # Federation Architecture — 数据模型
 
-> **Status**: accepted
-> **Version**: v0.2
-> **Created**: 2026-05-31 | **Updated**: 2026-07-21
+> **Status**: active
+> **Version**: v1.0
+> **Created**: 2026-05-31 | **Updated**: 2026-10-06
 > **Owner**: Architecture Team
 
 ---
@@ -421,6 +421,7 @@ model/domain/federation/federation_policy.proto
 model/domain/federation/federation_manifest.proto
 model/domain/federation/federation_sync.proto
 model/domain/federation/federation_discovery.proto
+model/domain/federation/relay_transport.proto
 ```
 
 跨 Station 同步 API 使用 proto bytes，不使用 JSON。
@@ -438,3 +439,124 @@ FederationCatalogSearchRequest
 ```
 
 没有 `federation_id` 的 Catalog API 只能作为 legacy / advanced handle discovery，不能作为 Federation scoped 发现的默认入口。
+
+---
+
+## 13. Relay Invite 与 Mount
+
+```text
+relay_invite
+  invite_id
+  secret_hash
+  intended_station_peer_id?
+  allowed_visibility
+  requested_limits
+  status
+  expires_at
+  consumed_at?
+
+relay_mount
+  mount_id
+  station_peer_id
+  station_host_public_key
+  generation
+  credential_jti
+  visibility
+  limits
+  status
+  last_heartbeat_at
+  revoked_at?
+```
+
+约束：
+
+- invite 明文只在创建响应中出现一次，查询接口不能返回；
+- `secret_hash` 使用适合随机高熵 token 的 keyed digest，并绑定 Relay issuer；
+- invite consume、Station PeerID binding 和 mount generation create 是原子事务；
+- `(station_peer_id, generation)` 唯一；
+- revoke 先使 generation 无效，再关闭 stream；
+- heartbeat 更新 liveness，不能用初始 `mounted_at` 判定健康连接。
+
+## 14. Relay Credential
+
+```text
+relay_mount_credential
+  issuer_relay_peer_id
+  audience
+  scopes[]
+  jti
+  station_peer_id
+  mount_id
+  generation
+  issued_at
+  expires_at
+  signature
+```
+
+允许 scope 示例：
+
+```text
+relay.mount.connect
+relay.mount.rotate
+relay.route.publish
+relay.peer.tunnel
+```
+
+Relay operator credential 使用独立 audience/scope，不能与 Station app session 或
+mount credential 互换。`jti + generation + expires_at` 必须在每次连接、刷新和
+route publish 时验证。
+
+## 15. Route Attestation 与 Connection Grant
+
+```text
+station_route_attestation
+  station_peer_id
+  relay_peer_id
+  route_id
+  mount_generation
+  inner_tls_spki_sha256
+  capabilities_digest
+  visibility
+  issued_at
+  expires_at
+  station_host_public_key
+  station_signature
+
+relay_connection_grant
+  grant_id
+  grant_digest
+  route_id
+  mount_generation
+  remaining_uses
+  expires_at
+```
+
+attestation 由 Station host key 签名；Relay 只能缓存、过滤过期值和按 grant
+返回。grant 原文由 Station 签发给用户，Relay 只存 digest 与使用计数。
+
+## 16. Opaque Tunnel
+
+```text
+relay_tunnel
+  tunnel_id
+  route_id
+  mount_generation
+  source_class: CLIENT | STATION
+  opened_at
+  last_activity_at
+  bytes_up
+  bytes_down
+  state
+  close_reason
+```
+
+Relay 不持久化 inner TLS plaintext、HTTP metadata 或 Station credential。
+`TunnelData.ciphertext` 只在有界内存队列中存在。状态为：
+
+```text
+opening -> active -> draining -> closed
+opening | active -> rejected | revoked | timed_out | overloaded
+```
+
+所有 limit 必须在入队前检查。取消 frame 释放 Station dispatcher、pending request
+和 Relay queue；超限不能通过截断后继续发送。

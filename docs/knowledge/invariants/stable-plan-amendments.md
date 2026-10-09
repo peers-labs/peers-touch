@@ -70,7 +70,7 @@ stale completion record fails closed.
   passes candidate rejection, explicit approval, stale digest, criterion
   coverage, amendment, task invalidation, and snapshot-history cases.
 - `rg -n 'peers-touch-plan-version|versionId[": ]|\.planVersionDigest|planVersionDigest"\s*:|mountPlanVersion\(|\.liveMountsByPlanVersion|liveMountsByPlanVersion\s*:' tooling AGENTS.md docs/global docs/architecture/engineering --glob '!**/execution-plans/**' | rg -v "stable-plan-state-migration|plan-mount-is-run-bound|development-workflow/decisions.md"`
-  returns only the DWF-D44 mixed-envelope validator/tests in
+  returns only the DWF-D45 mixed-envelope validator/tests in
   `plan-mount.mjs`, its tests, and migration documentation; no Plan source or
   execution snapshot consumes the legacy identity.
 - `make plan-validate PLAN=docs/architecture/platform/client/mobile/execution-plans/20260827-mobile-shell-implementation/plan.md`
@@ -79,7 +79,7 @@ stale completion record fails closed.
 ## Crosswalks
 
 - DWF-D42 in `docs/architecture/engineering/development-workflow/decisions.md`.
-- DWF-D44 and
+- DWF-D45 and
   `docs/knowledge/invariants/machine-ledger-workspace-isolation.md` govern
   machine-state adoption without changing stable Plan identity.
 - Supersedes `docs/knowledge/invariants/plan-mount-is-run-bound.md`.

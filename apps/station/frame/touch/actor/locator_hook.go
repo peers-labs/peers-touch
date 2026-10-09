@@ -320,8 +320,8 @@ func publishInvalidationAsync(handle string, seq uint64, reason invpb.Federation
 	}()
 }
 
-// currentInboxRelayMounts returns the relay-mount labels (today: a
-// single relay base URL) the station is reachable through right now,
+// currentInboxRelayMounts returns the Relay origins (today: one configured
+// origin) through which the Station is reachable right now,
 // for embedding into the next signed locator record.
 //
 // Tier B2 — the locator's inbox_relay_mounts field is a hint that
@@ -341,17 +341,17 @@ func publishInvalidationAsync(handle string, seq uint64, reason invpb.Federation
 //     re-emit with mounts populated, see frame/touch/federation/
 //     republisher).
 //
-// We deliberately use BaseURL — a stable canonical identifier —
+// We deliberately use RelayOrigin — a stable canonical identifier —
 // rather than the human label (`opts.Label` is the *station's* name
 // on the relay, not the relay's identity). Two stations mounted on
-// the same relay produce the same BaseURL, which is the comparison
+// the same relay produce the same origin, which is the comparison
 // the resolver needs.
 func currentInboxRelayMounts() []string {
 	rc := fednode.RelayClient()
-	if rc == nil {
+	if rc == nil || !rc.Available() {
 		return nil
 	}
-	base := strings.TrimSpace(rc.BaseURL())
+	base := strings.TrimSpace(rc.RelayOrigin())
 	if base == "" {
 		return nil
 	}

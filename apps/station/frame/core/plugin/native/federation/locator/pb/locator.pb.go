@@ -49,7 +49,7 @@ type ActorLocatorRecord struct {
 	HomeStationPeerId string `protobuf:"bytes,2,opt,name=home_station_peer_id,proto3" json:"home_station_peer_id,omitempty"`
 	// Stable HTTP origin of the home station, no scheme. Receivers MUST NOT
 	// dial this directly across the federation; instead it is fed through
-	// `/relay/forward/{home_station_peer_id}/...` so NAT-bound stations
+	// a scoped opaque Relay tunnel to `home_station_peer_id` so NAT-bound stations
 	// remain reachable.
 	HomeStationDomain string `protobuf:"bytes,3,opt,name=home_station_domain,proto3" json:"home_station_domain,omitempty"`
 	// Optional list of relay-mount labels through which this actor's home

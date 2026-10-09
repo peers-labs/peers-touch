@@ -45,6 +45,7 @@ from .oauth2_client_local import (
 from .station_access_desktop_oauth_native import (
     StationAccessDesktopOAuthNativeProvisioner,
 )
+from .station_access_relay_role import StationAccessRelayRoleProvisioner
 
 
 _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
@@ -82,6 +83,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ),
     StationAccessDesktopOAuthNativeProvisioner.environment_id: (
         StationAccessDesktopOAuthNativeProvisioner
+    ),
+    StationAccessRelayRoleProvisioner.environment_id: (
+        StationAccessRelayRoleProvisioner
     ),
     NativeTauriEmbeddedWebDriverProvisioner.environment_id: NativeTauriEmbeddedWebDriverProvisioner,
     NativeTauriCurrentProfileProvisioner.environment_id: NativeTauriCurrentProfileProvisioner,
@@ -193,6 +197,7 @@ __all__ = [
     "MobileStationLifecycleSimulatorProvisioner",
     "StationAccessDesktopOAuthNativeProvisioner",
     "StationAccessNativeProvisioner",
+    "StationAccessRelayRoleProvisioner",
     "NativeDesktopLinuxProvisioner",
     "NativeDesktopMacOSProvisioner",
     "NativeDesktopWindowsProvisioner",

@@ -74,4 +74,4 @@ newer ledger.
 ## Crosswalks
 
 - DWF-D11 owns machine-wide resource-intent visibility.
-- DWF-D44 owns workspace-scoped schema adoption and mixed-envelope removal.
+- DWF-D45 owns workspace-scoped schema adoption and mixed-envelope removal.

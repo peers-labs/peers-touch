@@ -120,6 +120,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--root", required=True)
     parser.add_argument("--host", choices=("trae", "cursor", "codex"))
     parser.add_argument("--all-worktrees", action="store_true")
+    parser.add_argument("--projection-only", action="store_true")
     parser.add_argument("--workspace")
     return parser.parse_args()
 
@@ -1004,6 +1005,7 @@ def audit_root(
     root: Path,
     host: str | None = None,
     workspace: str | None = None,
+    projection_only: bool = False,
 ) -> dict[str, object]:
     if not (root / ".git").exists():
         return {"root": str(root), "status": "BLOCKED", "error": "not-a-worktree"}
@@ -1057,7 +1059,10 @@ def audit_root(
         or report["legacySourcePresent"]
         or report["legacyReferences"]
         or report["hostProjectionFindings"]
-        or report["workflowIdentity"]["identityFindings"]
+        or (
+            not projection_only
+            and report["workflowIdentity"]["identityFindings"]
+        )
         or report["acceptanceRegistry"]["status"] == "BLOCKED"
         or report["installedCallbackProbe"]["status"] == "BLOCKED"
         or report["integrationReceipt"]["findings"]
@@ -1086,7 +1091,12 @@ def main() -> int:
     root = Path(os.path.realpath(os.path.abspath(options.root)))
     if options.all_worktrees:
         reports = [
-            audit_root(item, options.host, options.workspace)
+            audit_root(
+                item,
+                options.host,
+                options.workspace,
+                options.projection_only,
+            )
             for item in worktree_roots(root)
         ]
         payload = {
@@ -1098,7 +1108,12 @@ def main() -> int:
             "worktrees": reports,
         }
     else:
-        payload = audit_root(root, options.host, options.workspace)
+        payload = audit_root(
+            root,
+            options.host,
+            options.workspace,
+            options.projection_only,
+        )
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0 if payload["status"] == "PASS" else 2
 

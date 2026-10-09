@@ -1,7 +1,7 @@
 # Development Workflow Acceptance Matrix
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-10-07
+> **Created**: 2026-09-26 | **Updated**: 2026-10-09
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`, `tooling/scripts/plan/`
 
@@ -9,8 +9,8 @@
 
 | ID | Capability / Journey | Decision | Action | Observable Result | Evidence |
 |---|---|---|---|---|---|
-| DEV-A01 | DEV-J01 integration | DWF-D33/D35/D36 | Install without an existing Hook grant | Canonical integration projects and callback proof passes | Integration audit |
-| DEV-A02 | Owner lineage | DWF-D33 | OWNER assigns worker/reviewer children across roots | One execution root; exact lineage; cross-root write denied | Binding/Kernel tests |
+| DEV-A01 | DEV-J01 integration | DWF-D33/D35/D36/D44 | Install without an existing Hook grant | Canonical integration projects and callback proof passes | Integration audit |
+| DEV-A02 | Owner lineage | DWF-D33/D44 | OWNER assigns worker/reviewer children, then performs sequential actions in two worktrees | OWNER digest stays stable; each Action selects one workspace; children stay assignment-bound | Binding/Kernel tests |
 | DEV-A03 | Host fail-closed | DWF-D33 | Omit root identity, blocking hook, or child assignment | Typed denial with no mutation | Host-adapter negative tests |
 | DEV-A04 | Completion review | DWF-D28 | Complete without current review | ExecutionRun transition is rejected | Plan/run tests |
 | DEV-A05 | Review drift | DWF-D24/D28 | Change source or obligations after PASS | Receipt becomes stale; completion remains open | Review invalidation tests |
@@ -43,6 +43,8 @@
 | DEV-A32 | Explicit North Star approval | DWF-D42 | Generate and validate a new Plan without a user decision | Validation reports `candidate`; mount is denied until `approve-north-star` binds actor, time, decision ref, Plan ID, and digest | Plan mount and CLI tests |
 | DEV-A33 | Criterion coverage | DWF-D42 | Omit a criterion or map it to unknown/mismatched Task, closure, or Gate IDs | `PLAN_CRITERION_COVERAGE_INVALID` rejects the Plan; ordinary valid remapping preserves North Star approval | Plan package and amendment tests |
 | DEV-A34 | Worktree main-session provenance | DWF-D43 | Create an authorized Agent worktree and start Development from it | Creation, registration, declaration, Session, active-work, and Snapshot expose the verified root-chat OWNER; missing or conflicting current ownership fails closed | Worktree creation, binding, declaration, Session, active-work, and Snapshot tests |
+| DEV-A35 | Action workspace confinement | DWF-D44 | Submit one mutation spanning two worktrees, a shell with foreign cwd, and a symlink escape | Typed denial before mutation; separate single-workspace OWNER actions remain legal | Kernel negative tests |
+| DEV-A36 | Workspace-isolated ledger adoption | DWF-D45 | Migrate one selected workspace while unrelated legacy work remains live | Selected records adopt the current schema; foreign records remain byte-stable and still participate in conflict admission | Ledger and Plan-mount migration tests |
 
 ## Acceptance Rules
 
