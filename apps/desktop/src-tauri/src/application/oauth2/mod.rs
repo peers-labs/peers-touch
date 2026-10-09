@@ -152,6 +152,8 @@ const BROKER_ACK_RECOVERY_RETRY_SECONDS: i64 = 2;
 const BROKER_ACK_RECOVERY_SCHEMA_VERSION: u32 = 1;
 const BROKER_ACK_RECOVERY_KEY_PREFIX: &str = "oauth-acknowledgement-recovery";
 const BROKER_ACK_RECOVERY_AAD_DOMAIN: &str = "peers-touch/oauth-acknowledgement-recovery";
+const OAUTH_BROKER_BASE_URL_ENV: &str = "PEERS_OAUTH_BROKER_BASE_URL";
+const DEFAULT_OAUTH_BROKER_BASE_URL: &str = "https://peers-touch-oauth.vercel.app";
 
 #[derive(Debug, Clone)]
 pub struct OAuthConnectorAuthorization {
@@ -1756,7 +1758,29 @@ fn unix_to_rfc3339(ts: i64) -> String {
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
 }
 
+fn resolve_oauth_broker_base_url(configured: Option<&str>) -> String {
+    configured
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.trim_end_matches('/').to_string())
+        .unwrap_or_else(|| DEFAULT_OAUTH_BROKER_BASE_URL.to_string())
+}
+
+fn oauth_broker_base_url() -> String {
+    let configured = std::env::var(OAUTH_BROKER_BASE_URL_ENV).ok();
+    resolve_oauth_broker_base_url(configured.as_deref())
+}
+
+fn oauth_provider_callback_url(broker_base_url: &str, provider_id: &str) -> String {
+    format!("{broker_base_url}/api/oauth/{provider_id}/callback")
+}
+
 fn provider_catalog() -> Vec<ProviderCatalogItem> {
+    let broker_base_url = oauth_broker_base_url();
+    provider_catalog_for_base_url(&broker_base_url)
+}
+
+fn provider_catalog_for_base_url(broker_base_url: &str) -> Vec<ProviderCatalogItem> {
     vec![
         ProviderCatalogItem {
             id: "github".to_string(),
@@ -1767,7 +1791,7 @@ fn provider_catalog() -> Vec<ProviderCatalogItem> {
             category: "Developer Tools".to_string(),
             enabled: true,
             status: "active".to_string(),
-            callback_url: "https://peers-touch.vercel.app/api/oauth/github/callback".to_string(),
+            callback_url: oauth_provider_callback_url(broker_base_url, "github"),
             authorize_url: "https://github.com/login/oauth/authorize".to_string(),
             token_url: "https://github.com/login/oauth/access_token".to_string(),
             userinfo_url: Some("https://api.github.com/user".to_string()),
@@ -1787,7 +1811,7 @@ fn provider_catalog() -> Vec<ProviderCatalogItem> {
             category: "Office".to_string(),
             enabled: true,
             status: "active".to_string(),
-            callback_url: "https://peers-touch.vercel.app/api/oauth/google/callback".to_string(),
+            callback_url: oauth_provider_callback_url(broker_base_url, "google"),
             authorize_url: "https://accounts.google.com/o/oauth2/v2/auth".to_string(),
             token_url: "https://oauth2.googleapis.com/token".to_string(),
             userinfo_url: Some("https://openidconnect.googleapis.com/v1/userinfo".to_string()),
@@ -1811,7 +1835,7 @@ fn provider_catalog() -> Vec<ProviderCatalogItem> {
             category: "Collaboration".to_string(),
             enabled: true,
             status: "coming_soon".to_string(),
-            callback_url: "https://peers-touch.vercel.app/api/oauth/weixin/callback".to_string(),
+            callback_url: oauth_provider_callback_url(broker_base_url, "weixin"),
             authorize_url: "https://open.weixin.qq.com/connect/qrconnect".to_string(),
             token_url: "https://api.weixin.qq.com/sns/oauth2/access_token".to_string(),
             userinfo_url: Some("https://api.weixin.qq.com/sns/userinfo".to_string()),
@@ -1831,7 +1855,7 @@ fn provider_catalog() -> Vec<ProviderCatalogItem> {
             category: "Collaboration".to_string(),
             enabled: true,
             status: "active".to_string(),
-            callback_url: "https://peers-touch.vercel.app/api/oauth/lark/callback".to_string(),
+            callback_url: oauth_provider_callback_url(broker_base_url, "lark"),
             authorize_url: "https://open.larksuite.com/open-apis/authen/v1/authorize".to_string(),
             token_url: "https://open.larksuite.com/open-apis/authen/v1/oidc/access_token"
                 .to_string(),
@@ -3523,6 +3547,36 @@ mod tests {
     use std::cell::Cell;
 
     static OAUTH_STORAGE_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn oauth_broker_base_url_uses_config_or_dedicated_default_bits_ut() {
+        assert_eq!(
+            resolve_oauth_broker_base_url(None),
+            DEFAULT_OAUTH_BROKER_BASE_URL
+        );
+        assert_eq!(
+            resolve_oauth_broker_base_url(Some("   ")),
+            DEFAULT_OAUTH_BROKER_BASE_URL
+        );
+        assert_eq!(
+            resolve_oauth_broker_base_url(Some(" https://oauth.example.test/ ")),
+            "https://oauth.example.test"
+        );
+    }
+
+    #[test]
+    fn oauth_provider_catalog_derives_callbacks_from_broker_base_url_bits_ut() {
+        let catalog = provider_catalog_for_base_url("https://oauth.example.test");
+        for provider in catalog {
+            assert_eq!(
+                provider.callback_url,
+                format!(
+                    "https://oauth.example.test/api/oauth/{}/callback",
+                    provider.id
+                )
+            );
+        }
+    }
 
     #[test]
     fn oauth_local_rollback_restores_account_session_and_connection_bits_ut() {
