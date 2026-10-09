@@ -22,6 +22,7 @@
     "apps/mobile/src-tauri/plugins/platform-permissions/ios/Sources/PlatformPermissionsPlugin.swift",
     "apps/mobile/src/App.tsx",
     "apps/mobile/src/components",
+    "apps/mobile/src/pages/ContactsPage.window.test.tsx",
     "apps/mobile/src/pages/SettingsPage.tsx",
     "apps/mobile/src/runtimes/sessionRuntime.ts",
     "apps/mobile/src/runtimes/sessionRuntime.test.ts",
@@ -85,7 +86,7 @@
     "do not keep a global blocking overlay for a degradable module",
     "do not change Mobile tab lifetime or projection ownership without a reviewed architecture amendment"
   ],
-  "updatedAt": "2026-10-08T00:00:00.000Z"
+  "updatedAt": "2026-10-10T05:27:00.000Z"
 }
 ```
 

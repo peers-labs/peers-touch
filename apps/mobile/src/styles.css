@@ -4428,6 +4428,38 @@ select,
   min-width: 0;
 }
 
+/* Keep the Contacts recovery action visible above the tabbar on short screens. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .page-container[data-product-surface='contacts.list'] .contacts-body {
+    padding-block: 0;
+  }
+
+  .page-container[data-product-surface='contacts.list'] .contact-section {
+    margin-bottom: 0;
+  }
+
+  .page-container[data-product-surface='contacts.list'] .section-header {
+    padding-block: 4px;
+  }
+
+  .page-container[data-product-surface='contacts.list'] .ant-empty {
+    margin-block: 6px;
+  }
+
+  .page-container[data-product-surface='contacts.list'] .ant-empty-image {
+    height: 24px;
+    margin-bottom: 2px;
+  }
+
+  .page-container[data-product-surface='contacts.list'] .empty-copy {
+    gap: 2px;
+  }
+
+  .page-container[data-product-surface='contacts.list'] .empty-copy .ant-btn {
+    margin-top: 2px;
+  }
+}
+
 /* ── Recovery layer ── */
 
 .recovery-overlay-host {
