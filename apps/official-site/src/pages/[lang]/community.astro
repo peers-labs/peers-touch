@@ -1,0 +1,136 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getDict, localeParams, isLocale, DEFAULT_LOCALE, type Locale } from '../../i18n';
+
+export function getStaticPaths() {
+  return localeParams();
+}
+
+const { lang } = Astro.params;
+const locale: Locale = isLocale(lang) ? lang : DEFAULT_LOCALE;
+const t = getDict(locale);
+const GITHUB_URL = 'https://github.com/peers-labs/peers-touch';
+---
+
+<Base locale={locale} page="community" currentPath={Astro.url.pathname}>
+  <section class="pt-shell page-head">
+    <p class="pt-eyebrow">{t.community.eyebrow}</p>
+    <h1 class="page-head__title">{t.community.title}</h1>
+    <p class="page-head__subtitle">{t.community.subtitle}</p>
+  </section>
+
+  <section class="pt-shell vision">
+    <h2 class="vision__title">{t.community.visionTitle}</h2>
+    <p class="vision__body">{t.community.vision}</p>
+  </section>
+
+  <section class="pt-shell ways">
+    <h2 class="ways__title">{t.community.waysTitle}</h2>
+    <div class="ways__grid">
+      {t.community.ways.map((way) => (
+        <article class="way">
+          <h3 class="way__title">{way.title}</h3>
+          <p class="way__body">{way.body}</p>
+        </article>
+      ))}
+    </div>
+  </section>
+
+  <section class="pt-shell involve">
+    <h2 class="involve__title">{t.community.involveTitle}</h2>
+    <p class="involve__body">{t.community.involve}</p>
+    <a class="pt-btn pt-btn--primary involve__cta" href={GITHUB_URL} rel="noopener">
+      {t.community.involveCta}
+    </a>
+  </section>
+</Base>
+
+<style>
+  .page-head {
+    padding-block: var(--pt-space-2xl) var(--pt-space-lg);
+    max-width: 820px;
+  }
+  .page-head__title {
+    font-size: clamp(2rem, 4.4vw, 3rem);
+    font-weight: 800;
+    margin-top: var(--pt-space-sm);
+  }
+  .page-head__subtitle {
+    font-size: clamp(1.02rem, 1.5vw, 1.2rem);
+    color: var(--pt-text-secondary);
+    margin-top: var(--pt-space-md);
+  }
+
+  .vision {
+    background: var(--pt-surface-card);
+    border: 1px solid var(--pt-border-hairline);
+    border-left: 3px solid var(--pt-accent);
+    border-radius: var(--pt-radius-lg);
+    padding: var(--pt-space-lg);
+    box-shadow: var(--pt-shadow-soft);
+  }
+  .vision__title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin-bottom: var(--pt-space-xs);
+  }
+  .vision__body {
+    color: var(--pt-text-secondary);
+  }
+
+  .ways {
+    margin-top: var(--pt-space-2xl);
+  }
+  .ways__title {
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 700;
+    margin-bottom: var(--pt-space-lg);
+  }
+  .ways__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--pt-space-md);
+  }
+  .way {
+    background: var(--pt-surface-card);
+    border: 1px solid var(--pt-border-hairline);
+    border-radius: var(--pt-radius-lg);
+    padding: var(--pt-space-lg);
+    box-shadow: var(--pt-shadow-soft);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  .way__title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: var(--pt-space-xs);
+  }
+  .way__body {
+    color: var(--pt-text-secondary);
+    font-size: 0.95rem;
+  }
+
+  .involve {
+    margin-top: var(--pt-space-2xl);
+    background: var(--pt-surface-card);
+    border: 1px solid var(--pt-border-hairline);
+    border-left: 3px solid var(--pt-relay);
+    border-radius: var(--pt-radius-lg);
+    padding: var(--pt-space-lg);
+    box-shadow: var(--pt-shadow-soft);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .involve__title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin-bottom: var(--pt-space-xs);
+  }
+  .involve__body {
+    color: var(--pt-text-secondary);
+  }
+  .involve__cta {
+    margin-top: var(--pt-space-lg);
+  }
+</style>

@@ -1,0 +1,255 @@
+{
+  "meta": {
+    "siteName": "Peers-Touch",
+    "tagline": "Your social world belongs in your own hands.",
+    "description": "Peers-Touch is a decentralized, federated social network and intelligent runtime. Your identity, relationships, and data live in a Station you own; stations interoperate through open protocols, with native apps for desktop and mobile — and no company at the center."
+  },
+  "nav": {
+    "home": "Home",
+    "product": "How it works",
+    "roadmap": "Roadmap",
+    "community": "Community",
+    "github": "GitHub"
+  },
+  "langSwitch": {
+    "label": "Language",
+    "en": "English",
+    "zh": "中文"
+  },
+  "home": {
+    "eyebrow": "Your relationships · Your data · Your station",
+    "title": "Your social world belongs in your own hands.",
+    "subtitle": "Who you know and what you post should belong to you — not sit on a tech giant's servers as data to be mined. On Peers-Touch your identity, relationships, and data live in a Station you own. Stations connect through open protocols into a federated network with no center, and native apps plus an AI runtime put real capability on your devices.",
+    "ctaPrimary": "How it works",
+    "ctaSecondary": "GitHub",
+    "valuesTitle": "What makes it different",
+    "values": [
+      {
+        "title": "Your identity, your call",
+        "body": "Your identity is yours to keep, and you can take it to any station. Move somewhere new and you're still you, with the same people around you."
+      },
+      {
+        "title": "Your station, your rules",
+        "body": "You and your community can run your own station and set your own rules. Your data and relationships stay here, not on someone else's servers."
+      },
+      {
+        "title": "Connected without walls",
+        "body": "No matter which station each of us is on, we can still follow, message, and see each other — the way different email providers just talk to one another. No single company at the center."
+      },
+      {
+        "title": "Native, intelligent, every platform",
+        "body": "Purpose-built desktop and mobile apps are fast, capable, and offline-ready, with an AI runtime and applets on top. Your station syncs everything quietly in the background."
+      }
+    ],
+    "stepsTitle": "Understand it in three steps",
+    "steps": [
+      {
+        "title": "You get a station",
+        "body": "Your identity, relationships, messages, and content live in a station you own — self-host it on a NAS or Raspberry Pi, or join a station you trust."
+      },
+      {
+        "title": "Stations connect",
+        "body": "Through open protocols, stations follow, message, and federate the way email providers do. People on different stations still reach each other, with no company in the middle."
+      },
+      {
+        "title": "Your devices come alive",
+        "body": "Native desktop and mobile apps work offline and sync in the background. AI assistants and applets add capability on top, all against data you own."
+      }
+    ],
+    "trustTitle": "Built in the open",
+    "trust": [
+      {
+        "title": "Open development",
+        "body": "Every design document and line of code is public on GitHub."
+      },
+      {
+        "title": "Self-hostable",
+        "body": "Run your own station with Docker on a NAS, Raspberry Pi, or any server."
+      },
+      {
+        "title": "Native clients",
+        "body": "Purpose-built desktop and mobile apps that are fast and offline-ready."
+      },
+      {
+        "title": "Open protocols",
+        "body": "Proto-first contracts and federation mean interoperability, not lock-in."
+      }
+    ]
+  },
+  "product": {
+    "eyebrow": "How it works",
+    "title": "A network with no center. Every piece is yours.",
+    "subtitle": "Peers-Touch isn't another app living on someone else's servers. You run a Station that holds your identity, relationships, and data. Stations speak open protocols to form one network, and native apps plus an AI runtime bring it to life on your devices.",
+    "network": {
+      "eyebrow": "The network",
+      "title": "Many Stations, one network — and no landlord.",
+      "note": "Run your own Station, or join one you trust. Either way, you're on the same open network.",
+      "diagram": {
+        "you": "You",
+        "station": "Station",
+        "friend": "Friend",
+        "openProtocol": "Open protocol"
+      },
+      "points": [
+        {
+          "title": "Everyone runs a Station",
+          "body": "It holds your identity, relationships, messages, and media — on a NAS or Raspberry Pi at home, or with a host you trust."
+        },
+        {
+          "title": "Stations talk, like email",
+          "body": "Open protocols let Stations follow, message, and reshare across one another as easily as email between different providers."
+        },
+        {
+          "title": "Reach anyone, no middleman",
+          "body": "A message leaves your Station and lands on a friend's. Nothing is routed through a company in between."
+        }
+      ]
+    },
+    "layers": {
+      "eyebrow": "Architecture",
+      "title": "Three layers, one contract.",
+      "note": "Clients own the experience, the model is the shared language, and Stations own the truth — clean seams, no hidden coupling.",
+      "items": [
+        {
+          "name": "Client",
+          "tag": "Your devices",
+          "body": "The desktop and mobile apps you actually use. They own the interface, device features, offline cache, and the AI and applet runtimes."
+        },
+        {
+          "name": "Model",
+          "tag": "Defined once",
+          "body": "The shared language between every end. Each object is specified once in protobuf and generated for all platforms — never hand-written, never out of sync."
+        },
+        {
+          "name": "Station",
+          "tag": "Source of truth",
+          "body": "Your social home base. Storage, permissions, business rules, and federation with other Stations all live here."
+        }
+      ]
+    },
+    "agents": {
+      "eyebrow": "AI runtime",
+      "title": "An AI that works on your data — not a vendor's cloud.",
+      "note": "The agent runtime lives on your devices and Station. It reasons over data you own, calls tools, and talks to other agents.",
+      "diagram": {
+        "agent": "Agent",
+        "data": "Your data",
+        "tools": "Tools",
+        "applets": "Applets",
+        "memory": "Memory",
+        "otherAgents": "Other agents",
+        "a2a": "Agent-to-agent · open network",
+        "boundary": "Your devices & Station"
+      },
+      "points": [
+        {
+          "title": "Grounded in your data",
+          "body": "Conversations, contacts, and files come straight from your Station — private by default, not copied into someone else's cloud."
+        },
+        {
+          "title": "Tools and applets",
+          "body": "Take real action and add new skills through portable applets, without touching the core."
+        },
+        {
+          "title": "Agents that talk to agents",
+          "body": "Negotiate and collaborate with agents on other Stations over the same open network."
+        }
+      ]
+    },
+    "capabilities": {
+      "title": "What you can do",
+      "items": [
+        {
+          "title": "Direct & group messages",
+          "status": "In progress",
+          "body": "One-to-one and group chats with reactions and rich media, delivered across Stations and devices."
+        },
+        {
+          "title": "Private feed — Moments",
+          "status": "In progress",
+          "body": "Share with exactly who you choose; posts stay private and end-to-end encrypted."
+        },
+        {
+          "title": "AI assistants & agents",
+          "status": "In progress",
+          "body": "A local-capable assistant with tools and agent-to-agent protocols, grounded in data you own."
+        },
+        {
+          "title": "End-to-end encryption",
+          "status": "In progress",
+          "body": "Keys and encrypted envelopes keep content private, with recovery across your devices and Stations."
+        },
+        {
+          "title": "Voice & video calls",
+          "status": "Planned",
+          "body": "Live one-to-one and group calls, with privacy carried across the federated network."
+        },
+        {
+          "title": "Applets",
+          "status": "Planned",
+          "body": "Portable mini-apps on your Station turn it into a workspace, not just a social space."
+        }
+      ]
+    }
+  },
+  "roadmap": {
+    "eyebrow": "Roadmap",
+    "title": "The road we're on.",
+    "subtitle": "Peers-Touch builds the foundation first, then grows social and intelligent capabilities on top. Each phase ships something real — no vaporware.",
+    "phases": [
+      {
+        "phase": "Foundation",
+        "status": "In progress",
+        "body": "Connecting clients to stations, establishing a unified protobuf contract, completing identity and authentication, and the basic inter-station pipe."
+      },
+      {
+        "phase": "Social & Messaging",
+        "status": "In progress",
+        "body": "Follow, message, and see each other across stations without a center — direct and group chat, a private feed, and end-to-end encryption, on desktop and mobile."
+      },
+      {
+        "phase": "AI & Applets",
+        "status": "Planned",
+        "body": "An AI assistant and agents on your own data, plus portable applets that make a station not just social but a personal workspace."
+      },
+      {
+        "phase": "Open Federation",
+        "status": "Planned",
+        "body": "More stations joining the network with mutual identity recognition and shared agreements — a social network genuinely operated by its users."
+      }
+    ]
+  },
+  "community": {
+    "eyebrow": "Community",
+    "title": "Built by people who want a social network that belongs to its users.",
+    "subtitle": "Peers-Touch is an open engineering effort. We believe a social network can have no center, identity can belong to individuals, and intelligence doesn't have to take your data.",
+    "visionTitle": "Vision",
+    "vision": "A world where your social presence isn't rented from any platform. Your identity is portable, your community sets its own rules, AI helps on your terms, and the network stays open because no one owns the center.",
+    "waysTitle": "Ways to join",
+    "ways": [
+      {
+        "title": "Join the conversation",
+        "body": "Ask questions and share ideas in GitHub issues and discussions — decentralized social and AI are both on the table."
+      },
+      {
+        "title": "Run your own station",
+        "body": "Self-host with Docker and become part of the federation, or invite your community to run one together."
+      },
+      {
+        "title": "Contribute code & design",
+        "body": "From a one-line fix to a cross-platform feature, follow the development workflow and ship with the rest of us."
+      },
+      {
+        "title": "Shape the roadmap",
+        "body": "Propose the capabilities you want to see — messaging, AI agents, applets, or federation — and help prioritize them."
+      }
+    ],
+    "involveTitle": "Everyone is welcome",
+    "involve": "Peers-Touch is developed entirely in the open. Read the design docs, explore the code, and join on GitHub — we welcome everyone who cares about user-owned social and intelligent software.",
+    "involveCta": "Go to GitHub"
+  },
+  "footer": {
+    "rights": "Peers-Touch. Open, federated, and yours.",
+    "builtWith": "Your social world belongs in your own hands."
+  }
+}

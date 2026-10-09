@@ -1,88 +1,163 @@
-# [WIP] Peers-Touch-Go
+<div align="center">
 
-Peers 是一款去中心化的社交网络与个人的 AI 服务开发框架。它提供了一个基于 ActivityPub 协议的社交网络，允许用户在网络中创建个人账号、发布内容、与其他用户互动。同时，Peers 还提供了一个 AI 扩展，该AI
+# Peers-Touch
 
-An implementation of the [W3C ActivityPub](https://www.w3.org/TR/activitypub/) protocol in Go.
+### A social network you actually own.
 
-## Monorepo Domains
+Your identity, relationships, conversations, and memories — running on infrastructure you control, connected to everyone else, with an AI that works for you.
 
-- `station`: Go backend domain
-- `desktop`: Tauri + TypeScript + CSS desktop domain
-- `mobile`: mobile domain root, current Flutter app in `client/mobile`
-- `model`: shared contracts and proto definitions
-- `tooling`: unified task orchestration
+[How it works](#what-were-building) · [See it in action](#see-it-in-action) · [Roadmap](#roadmap) · [GitHub](https://github.com/peers-labs/peers-touch)
 
-## Unified Commands
+</div>
 
-```powershell
-make list
-make station-test
-make desktop-build
-make desktop-tauri-dev
-make mobile-lint
+---
+
+## What we're building
+
+We are building **a social network with no company at the center** — one where a person's social life is theirs, not a platform's.
+
+Today, leaving a social network means leaving your identity, your friends, your posts, and your history behind. A company holds the keys, sets the rules, and decides what you see. Peers-Touch exists to change that:
+
+- **You own your social world.** It runs in a place you control, not someone else's cloud. Your data isn't mined, sold, or held hostage.
+- **You keep your identity.** Your identity is portable. Move it, run it yourself, and you are still you — with the same relationships and history.
+- **You connect with everyone.** Independent servers interconnect the way email providers do. There is no central gatekeeper between you and anyone on any other server.
+- **You define your personal Agent.** Choose its model, context, tools, and permissions; it joins the network as an identity you control.
+- **You get real products, not a protocol hobby.** Fast, native desktop and mobile apps that work offline, stay in sync, and feel as polished as the best closed apps.
+
+The goal is simple and ambitious: **the full social experience people love — messaging, group chat, a private feed, voice and video, and intelligent assistants — without giving up ownership.**
+
+## What you can do
+
+A single product across desktop and mobile:
+
+- **Talk** — direct and group conversations, reactions, and rich messages, with end-to-end encryption where it matters.
+- **Share** — a personal feed for the people in your life, not a public square run by an algorithm.
+- **Call** — voice and video, peer-to-peer where possible.
+- **Ask** — an Agent you configure, using the context and tools you choose.
+- **Extend** — lightweight apps that add new capabilities to your social world.
+- **Federate** — reach people on servers other than your own, with no central service in between.
+
+## See it in action
+
+Product screenshots for Desktop, Mobile, and cross-Station federation will be
+published here as the corresponding release surfaces stabilize.
+
+## Who it's for
+
+- People who want a **daily-use social app** without surrendering their data.
+- Self-hosters and small communities who want to **run their own social space**.
+- Developers who want to **build on an open, owned social substrate** — including AI agents and apps.
+- Anyone who believes their relationships and memories **shouldn't belong to a platform**.
+
+---
+
+<div align="center">
+
+## For the technically curious
+
+*Everything below is for builders. As a user, the product just works.*
+
+</div>
+
+## Project status
+
+**Active development.** The foundation and social/messaging layers are runnable in development; AI agents and extensions are being built on top. Phases and dates will be tracked in the [Roadmap](#roadmap).
+
+## Architecture
+
+The product is three layers with clear responsibilities:
+
+```text
+┌──────────────────────────────────────────────┐
+│ CLIENT   Desktop · Mobile                    │  experience, device
+│                                              │  capabilities, AI /
+│                                              │  extension runtimes
+└───────────────────┬──────────────────────────┘
+                    │ consumes generated contracts
+┌───────────────────▼──────────────────────────┐
+│ MODEL    model/domain/*.proto                │  protobuf contracts,
+│                                              │  defined once
+└───────────────────┬──────────────────────────┘
+                    │ generated code + protocol contracts
+┌───────────────────▼──────────────────────────┐
+│ STATION  apps/station (frame + app)          │  storage, federation,
+│                                              │  permissions, shared
+│                                              │  business truth
+└──────────────────────────────────────────────┘
 ```
 
-## Why This Project
+- **Client** owns UI, interaction, device capabilities, and local orchestration — it is not the source of shared business truth.
+- **Model** is the proto-first contract layer: shared structures are defined once and generated for every platform.
+- **Station** owns shared business state, federation, persistence, and server-side policy.
 
-We currently inhabit a world dominated by vast corporations, where our personal information is often a compulsory submission. Our vision is for a world devoid of coercive, hegemonic AI and Big Data—a place where human dignity and privacy are paramount. In this envisioned world, everyone respects each other's personal information. No hidden entities analyze our data, and no one invades our personal lives or traces our private activities. This is a call for a return to privacy, where personal boundaries are honored and safeguarded, emphasizing the use of AI in a voluntary, non-coercive manner.
+Full picture: [docs/global/architecture.md](docs/global/architecture.md).
 
-## Vision
+## Try it
 
-In building a world free from intrusive, pervasive AI and Big Data, our primary goal is to meet the fundamental human needs, particularly in terms of privacy and personal freedom. This world will be dedicated to upholding the following core values: <br />
+Runtimes are started through the profile-driven scripts rather than launched by hand.
 
-* **Freedom**: Ensuring that everyone can express themselves and act freely without being monitored or analyzed. <br />
-* **Respect**: In this network, everyone’s personal information is respected and not accessed or used without permission. <br /> 
-* **Security**: Protecting individuals from threats of data breaches and privacy invasions, ensuring the safety of personal information. <br />
-* **Belonging**: By safeguarding individual privacy and encouraging respect, we promote healthier and more cohesive social relationships. <br />
-* **Purpose**: Allowing every individual to freely pursue their personal meaning and goals in an environment free from external surveillance constraints. <br />
-* **Achievement**: Supporting individuals in their pursuit of achievements and realization of potential in an environment that guarantees privacy and freedom. <br />
+```bash
+make station   # Build and run the Station (local / compose / remote profile)
+make desktop   # Start the Desktop app (native Tauri)
+make mobile    # Start the Mobile client (iOS simulator)
+```
 
-Through such a privacy-focused network, we aim to create a society that respects and protects individual rights, where everyone can safely realize their potential without unnecessary external interference. This is a direct response to the current technological infringements on privacy and a pursuit of a more humane society.
+Prerequisites (pnpm 9, Go, Rust/Tauri, Docker) and profiles are covered in [docs/global/local-dev-environment.md](docs/global/local-dev-environment.md). Use `make profile <name>` to select a mode and `make config` to inspect it.
 
-## Design
+### Verification
 
-### Structure Model
-> Here only representative modules are listed.
+| Platform | Command |
+|----------|---------|
+| Desktop | `cd apps/desktop && pnpm run check && pnpm run test && pnpm run build` |
+| Station | `cd apps/station && go test ./...` |
+| Mobile  | `pnpm mobile:check` |
 
-### MVP Flow
+## Roadmap
 
-## Features
+<!-- TODO: publish the phase plan and dates here; the product site carries the current working view. -->
 
-## How to Contribute
+The phase plan is being finalized. The working view — foundation, social & messaging, intelligence & extensions, and voice/video — is on the product site's Roadmap. Milestones and dates will be published here as they settle.
 
-Peers-Touch uses a structured development workflow that supports both human
-developers and AI agents working together.
+## Repository layout
 
-**For developers**: pick a worktree, read the platform docs for the area you
-want to change, and follow the unified workflow. Every change — from a one-line
-fix to a cross-platform feature — follows the same control flow: understand
-intent, bind a worktree, execute, prove behavior, and deliver.
+```text
+apps/
+  station/        Go backend — frame (framework) + app (DDD subservers)
+  desktop/        Tauri + React/TypeScript + Rust
+  mobile/         Tauri v2 Mobile — web UI + Rust kernel + native plugins
+  applets/        official extensions
+  official-site/  product website (Astro, static, English/中文)
+  oauth2-client/  OAuth login broker client
+model/domain/     protobuf contract sources (single source of truth)
+packages/         extension SDK/kernel, chat & secure-content cores, storage, UI, locales
+docs/             architecture, platform, and specification documents
+tooling/          scripts, Make modules, and canonical agent skills
+```
 
-**For AI agents**: read `AGENTS.md` on session start, then the platform-specific
-entry under `docs/.agent/`. The project ships a skill system under
-`tooling/skills/` that handles routing, planning, acceptance, and delivery.
+## Documentation
 
-Key entry points:
+Start at [docs/README.md](docs/README.md).
 
 | What you need | Where to look |
-|---------------|--------------|
-| Full contributing guide | [`docs/global/contributing.md`](docs/global/contributing.md) |
-| Agent behavioral contract | [`AGENTS.md`](AGENTS.md) |
-| Document navigation | [`docs/README.md`](docs/README.md) |
-| Development workflow | [`docs/global/workflow.md`](docs/global/workflow.md) |
-| Local environment setup | [`docs/global/local-dev-environment.md`](docs/global/local-dev-environment.md) |
+|---------------|---------------|
+| What & why | [docs/global/project-identity.md](docs/global/project-identity.md) |
+| System architecture | [docs/global/architecture.md](docs/global/architecture.md) |
+| Architecture catalog | [docs/architecture/README.md](docs/architecture/README.md) |
+| Local environment | [docs/global/local-dev-environment.md](docs/global/local-dev-environment.md) |
+| Development workflow | [docs/global/workflow.md](docs/global/workflow.md) |
+| Contributing guide | [docs/global/contributing.md](docs/global/contributing.md) |
 
-## References
+## Contributing
 
-Thanks for those friend projects:  <br />
-* [go-fed](https://github.com/go-fed/activity): I learn some implementation ideas from this project. <br />
-  * [apcore](https://github.com/go-fed/apcore) 
-* [go-ap](https://github.com/go-ap/activitypub): This has truly inspired me to design innovative models and has significantly streamlined my workflow, saving me an immense amount of time. <br />
-* [go-micro](https://github.com/micro/go-micro): An excellent framework with powerful design. And earlier years, I was a maintainer of it. Reference to this design saves us a lot of time on How I Should Design The Network Interface. Actually, distributed terminals that running in cloud are also parts of a Cloud-Microservice system.  <br />
-* [hertz](https://github.com/cloudwego/hertz) : A high-performance HTTP framework serves as our default federation HTTP server, optimized for efficient and robust handling of network traffic. <br />
-* [taipei-torrent](https://github.com/jackpal/Taipei-Torrent): A Torrent client in golang. <br />
-* [libp2p](https://github.com/libp2p/go-libp2p): A famous peer-to-peer networking stack. <br />
-* [some-papers-docs](https://xorro-p2p.github.io/resources/): Some papers and docs. <br />
+Peers-Touch supports human developers and AI agents working together.
+
+- **Developers:** use a worktree, read the platform docs for the area you change, and follow the development workflow.
+- **AI agents:** read [AGENTS.md](AGENTS.md) on startup, then the platform entry under `docs/.agent/`. Canonical skills live in `tooling/skills/`.
+
+Before non-trivial work, publish intent with `make dev-start`; see the [contributing guide](docs/global/contributing.md) for details.
 
 ## Acknowledgements
 
+Peers-Touch draws inspiration from open projects in decentralized social,
+messaging, and federation, including the ecosystems around ActivityPub,
+Hertz, libp2p, and the broader self-hosting community.

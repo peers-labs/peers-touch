@@ -1,0 +1,163 @@
+/*
+ * Peers-Touch Official Site — design tokens.
+ *
+ * Values ported from the product login shell (apps/desktop/src/index.css and
+ * StationNetworkIntro.tsx) so the site matches the real brand, not an
+ * approximation. Roles follow docs/client/common/ui-identity/tokens.md.
+ */
+
+:root {
+  /* Accent — disciplined single-accent system (Quiet Protocol Minimalism). */
+  --pt-accent: #667eea;
+  --pt-accent-strong: #5568d6;
+  --pt-relay: #765aa2;
+
+  /* Canvas — the calm federated backdrop. */
+  --pt-canvas-1: #fbfcff;
+  --pt-canvas-2: #f5f7fd;
+  --pt-canvas-3: #eef1fb;
+
+  /* Text hierarchy — body stronger than metadata. */
+  --pt-text-primary: #282c4e;
+  --pt-text-secondary: rgba(60, 66, 110, 0.72);
+  --pt-text-muted: rgba(60, 66, 110, 0.5);
+  --pt-text-on-accent: #ffffff;
+
+  /* Surfaces & borders — boundary ownership, not decoration. */
+  --pt-surface-base: #ffffff;
+  --pt-surface-card: rgba(255, 255, 255, 0.86);
+  --pt-surface-subtle: rgba(102, 126, 234, 0.06);
+  --pt-border-hairline: rgba(102, 126, 234, 0.18);
+  --pt-shadow-soft: 0 8px 24px rgba(60, 66, 110, 0.12);
+  --pt-shadow-float: 0 12px 40px rgba(60, 66, 110, 0.16);
+
+  /* Radius roles. */
+  --pt-radius-sm: 8px;
+  --pt-radius-md: 12px;
+  --pt-radius-lg: 18px;
+  --pt-radius-xl: 28px;
+  --pt-radius-full: 999px;
+
+  /* Spacing rhythm. */
+  --pt-space-2xs: 4px;
+  --pt-space-xs: 8px;
+  --pt-space-sm: 12px;
+  --pt-space-md: 20px;
+  --pt-space-lg: 32px;
+  --pt-space-xl: 56px;
+  --pt-space-2xl: 96px;
+
+  /* Type. */
+  --pt-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --pt-font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+
+  /* Layout. */
+  --pt-content-max: 1120px;
+  --pt-rail-gutter: clamp(20px, 5vw, 64px);
+
+  /* Motion. */
+  --pt-motion-fast: 140ms;
+  --pt-motion-normal: 260ms;
+  --pt-ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: var(--pt-font-sans);
+  color: var(--pt-text-primary);
+  background:
+    radial-gradient(circle at 22% 18%, rgba(102, 126, 234, 0.08), transparent 42%),
+    radial-gradient(circle at 82% 8%, rgba(118, 90, 162, 0.06), transparent 40%),
+    linear-gradient(160deg, var(--pt-canvas-1), var(--pt-canvas-2) 55%, var(--pt-canvas-3));
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  line-height: 1.6;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+h1, h2, h3 {
+  color: var(--pt-text-primary);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+.pt-shell {
+  width: min(100%, var(--pt-content-max));
+  margin: 0 auto;
+  padding-inline: var(--pt-rail-gutter);
+}
+
+.pt-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pt-space-xs);
+  height: 40px;
+  padding-inline: var(--pt-space-md);
+  border-radius: var(--pt-radius-full);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: transform var(--pt-motion-fast) var(--pt-ease),
+    background var(--pt-motion-fast) var(--pt-ease),
+    box-shadow var(--pt-motion-fast) var(--pt-ease);
+}
+
+.pt-btn--primary {
+  background: var(--pt-accent);
+  color: var(--pt-text-on-accent);
+  box-shadow: var(--pt-shadow-soft);
+}
+
+.pt-btn--primary:hover {
+  background: var(--pt-accent-strong);
+  transform: translateY(-1px);
+}
+
+.pt-btn--ghost {
+  background: transparent;
+  color: var(--pt-text-primary);
+  border-color: var(--pt-border-hairline);
+}
+
+.pt-btn--ghost:hover {
+  background: var(--pt-surface-subtle);
+}
+
+.pt-eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pt-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

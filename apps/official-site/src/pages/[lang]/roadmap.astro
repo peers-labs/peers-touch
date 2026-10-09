@@ -1,0 +1,130 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getDict, localeParams, isLocale, DEFAULT_LOCALE, type Locale } from '../../i18n';
+
+export function getStaticPaths() {
+  return localeParams();
+}
+
+const { lang } = Astro.params;
+const locale: Locale = isLocale(lang) ? lang : DEFAULT_LOCALE;
+const t = getDict(locale);
+---
+
+<Base locale={locale} page="roadmap" currentPath={Astro.url.pathname}>
+  <section class="pt-shell page-head">
+    <p class="pt-eyebrow">{t.roadmap.eyebrow}</p>
+    <h1 class="page-head__title">{t.roadmap.title}</h1>
+    <p class="page-head__subtitle">{t.roadmap.subtitle}</p>
+  </section>
+
+  <section class="pt-shell timeline">
+    <ol class="timeline__list">
+      {t.roadmap.phases.map((phase) => (
+        <li class="phase">
+          <span class="phase__dot" aria-hidden="true"></span>
+          <div class="phase__body">
+            <div class="phase__head">
+              <h3 class="phase__name">{phase.phase}</h3>
+              <span class={`phase__status phase__status--${phase.status.trim().replace(/\s+/g, '-').toLowerCase()}`}>
+                {phase.status}
+              </span>
+            </div>
+            <p class="phase__desc">{phase.body}</p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  </section>
+</Base>
+
+<style>
+  .page-head {
+    padding-block: var(--pt-space-2xl) var(--pt-space-lg);
+    max-width: 760px;
+  }
+  .page-head__title {
+    font-size: clamp(2rem, 4.4vw, 3rem);
+    font-weight: 800;
+    margin-top: var(--pt-space-sm);
+  }
+  .page-head__subtitle {
+    font-size: clamp(1.02rem, 1.5vw, 1.2rem);
+    color: var(--pt-text-secondary);
+    margin-top: var(--pt-space-md);
+  }
+
+  .timeline__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    position: relative;
+  }
+  .timeline__list::before {
+    content: '';
+    position: absolute;
+    left: 7px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: linear-gradient(var(--pt-accent), var(--pt-relay));
+    opacity: 0.4;
+  }
+  .phase {
+    position: relative;
+    display: flex;
+    gap: var(--pt-space-md);
+    padding-bottom: var(--pt-space-lg);
+  }
+  .phase:last-child {
+    padding-bottom: 0;
+  }
+  .phase__dot {
+    position: relative;
+    z-index: 1;
+    flex: none;
+    width: 16px;
+    height: 16px;
+    margin-top: 4px;
+    border-radius: var(--pt-radius-full);
+    background: radial-gradient(circle at 35% 35%, var(--pt-accent), var(--pt-relay));
+    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.14);
+  }
+  .phase__body {
+    background: var(--pt-surface-card);
+    border: 1px solid var(--pt-border-hairline);
+    border-radius: var(--pt-radius-lg);
+    padding: var(--pt-space-md) var(--pt-space-lg);
+    box-shadow: var(--pt-shadow-soft);
+    flex: 1;
+  }
+  .phase__head {
+    display: flex;
+    align-items: center;
+    gap: var(--pt-space-sm);
+    margin-bottom: var(--pt-space-2xs);
+    flex-wrap: wrap;
+  }
+  .phase__name {
+    font-size: 1.2rem;
+    font-weight: 700;
+  }
+  .phase__status {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    padding: 3px 10px;
+    border-radius: var(--pt-radius-full);
+    color: var(--pt-text-secondary);
+    background: var(--pt-surface-subtle);
+    border: 1px solid var(--pt-border-hairline);
+  }
+  .phase__status--in-progress,
+  .phase__status--进行中 {
+    color: var(--pt-accent);
+    background: rgba(102, 126, 234, 0.12);
+  }
+  .phase__desc {
+    color: var(--pt-text-secondary);
+  }
+</style>

@@ -1,0 +1,254 @@
+---
+import Base from '../../layouts/Base.astro';
+import DecentralizedGlobe from '../../components/DecentralizedGlobe.tsx';
+import { getDict, localePath, localeParams, isLocale, DEFAULT_LOCALE, type Locale } from '../../i18n';
+
+export function getStaticPaths() {
+  return localeParams();
+}
+
+const { lang } = Astro.params;
+const locale: Locale = isLocale(lang) ? lang : DEFAULT_LOCALE;
+const t = getDict(locale);
+const GITHUB_URL = 'https://github.com/peers-labs/peers-touch';
+---
+
+<Base locale={locale} page="home" currentPath={Astro.url.pathname}>
+  <section class="hero">
+    <div class="hero__globe">
+      <DecentralizedGlobe client:only="react" />
+    </div>
+    <div class="hero__scrim" aria-hidden="true"></div>
+    <div class="pt-shell hero__content">
+      <div class="hero__copy">
+        <p class="pt-eyebrow">{t.home.eyebrow}</p>
+        <h1 class="hero__title">{t.home.title}</h1>
+        <p class="hero__subtitle">{t.home.subtitle}</p>
+        <div class="hero__cta">
+          <a class="pt-btn pt-btn--primary" href={localePath(locale, 'product')}>{t.home.ctaPrimary}</a>
+          <a class="pt-btn pt-btn--ghost" href={GITHUB_URL} rel="noopener">{t.home.ctaSecondary}</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="pt-shell values">
+    <h2 class="values__title">{t.home.valuesTitle}</h2>
+    <div class="values__grid">
+      {t.home.values.map((v) => (
+        <article class="value-card">
+          <h3 class="value-card__title">{v.title}</h3>
+          <p class="value-card__body">{v.body}</p>
+        </article>
+      ))}
+    </div>
+  </section>
+
+  <section class="pt-shell steps">
+    <h2 class="steps__title">{t.home.stepsTitle}</h2>
+    <ol class="steps__list">
+      {t.home.steps.map((step, i) => (
+        <li class="step">
+          <span class="step__num" aria-hidden="true">{i + 1}</span>
+          <h3 class="step__title">{step.title}</h3>
+          <p class="step__body">{step.body}</p>
+        </li>
+      ))}
+    </ol>
+  </section>
+
+  <section class="pt-shell trust">
+    <h2 class="trust__title">{t.home.trustTitle}</h2>
+    <div class="trust__grid">
+      {t.home.trust.map((item) => (
+        <article class="trust-item">
+          <h3 class="trust-item__title">{item.title}</h3>
+          <p class="trust-item__body">{item.body}</p>
+        </article>
+      ))}
+    </div>
+  </section>
+</Base>
+
+<style>
+  .hero {
+    position: relative;
+    min-height: clamp(480px, 68vh, 700px);
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+  }
+  /* Globe container: left edge starts at 30vw, stretches to right edge + overflow.
+     Globe.gl centers the sphere in this box → sphere center at ~65% viewport width. */
+  .hero__globe {
+    position: absolute;
+    top: -15%;
+    bottom: -15%;
+    left: 30%;
+    right: -20%;
+    z-index: 0;
+  }
+  .hero__scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: linear-gradient(
+      95deg,
+      rgba(251, 252, 255, 0.95) 0%,
+      rgba(251, 252, 255, 0.88) 18%,
+      rgba(248, 250, 254, 0.55) 36%,
+      rgba(245, 247, 253, 0.15) 52%,
+      rgba(238, 241, 251, 0) 68%
+    );
+  }
+  .hero__content {
+    position: relative;
+    z-index: 2;
+    padding-block: var(--pt-space-xl) var(--pt-space-lg);
+    pointer-events: none;
+  }
+  .hero__copy {
+    max-width: 520px;
+  }
+  .hero__title {
+    font-size: clamp(1.9rem, 4.2vw, 2.8rem);
+    font-weight: 800;
+    margin-top: var(--pt-space-xs);
+    background: linear-gradient(120deg, var(--pt-text-primary), var(--pt-relay));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    line-height: 1.2;
+  }
+  .hero__subtitle {
+    font-size: clamp(0.95rem, 1.4vw, 1.1rem);
+    color: var(--pt-text-secondary);
+    margin-top: var(--pt-space-sm);
+    max-width: 32em;
+    line-height: 1.7;
+  }
+  .hero__cta {
+    display: flex;
+    gap: var(--pt-space-sm);
+    margin-top: var(--pt-space-md);
+    flex-wrap: wrap;
+    pointer-events: auto;
+  }
+
+  .values {
+    margin-top: var(--pt-space-2xl);
+  }
+  .values__title {
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 700;
+    margin-bottom: var(--pt-space-lg);
+  }
+  .values__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--pt-space-md);
+  }
+  .value-card {
+    background: var(--pt-surface-card);
+    border: 1px solid var(--pt-border-hairline);
+    border-radius: var(--pt-radius-lg);
+    padding: var(--pt-space-lg);
+    box-shadow: var(--pt-shadow-soft);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    transition: transform var(--pt-motion-normal) var(--pt-ease),
+      box-shadow var(--pt-motion-normal) var(--pt-ease);
+  }
+  .value-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--pt-shadow-float);
+  }
+  .value-card__title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: var(--pt-space-xs);
+  }
+  .value-card__body {
+    color: var(--pt-text-secondary);
+    font-size: 0.95rem;
+  }
+
+  .steps {
+    margin-top: var(--pt-space-2xl);
+  }
+  .steps__title {
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 700;
+    margin-bottom: var(--pt-space-lg);
+  }
+  .steps__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--pt-space-md);
+  }
+  .step {
+    position: relative;
+    background: var(--pt-surface-card);
+    border: 1px solid var(--pt-border-hairline);
+    border-radius: var(--pt-radius-lg);
+    padding: var(--pt-space-lg);
+    box-shadow: var(--pt-shadow-soft);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  .step__num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: var(--pt-radius-full);
+    font-weight: 800;
+    font-size: 1rem;
+    color: var(--pt-text-on-accent);
+    background: linear-gradient(135deg, var(--pt-accent), var(--pt-relay));
+    margin-bottom: var(--pt-space-sm);
+  }
+  .step__title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: var(--pt-space-xs);
+  }
+  .step__body {
+    color: var(--pt-text-secondary);
+    font-size: 0.95rem;
+  }
+
+  .trust {
+    margin-top: var(--pt-space-2xl);
+  }
+  .trust__title {
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 700;
+    margin-bottom: var(--pt-space-lg);
+  }
+  .trust__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--pt-space-md);
+  }
+  .trust-item {
+    padding: var(--pt-space-md) var(--pt-space-lg);
+    border-radius: var(--pt-radius-md);
+    background: var(--pt-surface-subtle);
+    border: 1px solid var(--pt-border-hairline);
+  }
+  .trust-item__title {
+    font-size: 1.02rem;
+    font-weight: 700;
+    margin-bottom: var(--pt-space-2xs);
+  }
+  .trust-item__body {
+    color: var(--pt-text-secondary);
+    font-size: 0.92rem;
+  }
+</style>
