@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Button, Modal, Typography } from 'antd';
 import {
+  AlertTriangle,
   Check,
-  ChevronDown,
   Plus,
   Server,
   Trash2,
@@ -19,13 +19,11 @@ export function StationSelector({
   activeUrl: string;
   onSelect: (url: string) => void;
   onRemove: (url: string) => void;
-  onAdd: () => void;
+  onAdd: (url: string) => void;
   showRemovalConfirmation?: boolean;
 }) {
-  const [protocol, setProtocol] = useState<'http' | 'https'>('https');
-  const [address, setAddress] = useState('');
+  const [stationUrl, setStationUrl] = useState('');
   const [addingStation, setAddingStation] = useState(false);
-  const [protocolPickerOpen, setProtocolPickerOpen] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState<StationEntry | null>(
     showRemovalConfirmation
       ? entries.find((entry) => entry.url === activeUrl) ?? entries[0] ?? null
@@ -33,6 +31,7 @@ export function StationSelector({
   );
   const hasEntries = entries.length > 0;
   const showStationInput = !hasEntries || addingStation;
+  const canAdd = /^https?:\/\/\S+$/i.test(stationUrl.trim());
 
   function getStatus(entry: StationEntry): { className: string; label: string } {
     if (entry.online === undefined) return { className: 'validating', label: 'Validating' };
@@ -41,12 +40,13 @@ export function StationSelector({
   }
 
   function closeStationInput() {
-    setAddress('');
+    setStationUrl('');
     setAddingStation(false);
   }
 
   function handleAdd() {
-    onAdd();
+    if (!canAdd) return;
+    onAdd(stationUrl.trim());
     closeStationInput();
   }
 
@@ -67,41 +67,28 @@ export function StationSelector({
       {showStationInput && (
         <div className="mp-station-input-row">
           <div className="mp-station-url-control">
-            <button
-              type="button"
-              className="mp-station-protocol"
-              aria-label="Station protocol"
-              aria-expanded={protocolPickerOpen}
-              onClick={() => setProtocolPickerOpen(true)}
-            >
-              <span>{protocol.toUpperCase()}</span>
-              <ChevronDown size={14} aria-hidden="true" />
-            </button>
-            <span className="mp-station-url-divider" aria-hidden="true" />
             <input
               className="mp-station-address"
-              value={address}
-              placeholder="localhost:9000"
+              value={stationUrl}
+              placeholder="http://station.local:18080"
               inputMode="url"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
               autoFocus
-              onChange={(e) => setAddress(e.target.value)}
+              onChange={(e) => setStationUrl(e.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') handleAdd();
+              }}
             />
-            {address && (
-              <button type="button" className="mp-station-clear" aria-label="Clear" onClick={() => setAddress('')}>
-                <X size={16} />
-              </button>
-            )}
             <button
               type="button"
-              className="mp-station-add-inline"
+              className="mp-station-submit"
               aria-label="Add Station"
-              disabled={!address.trim()}
+              disabled={!canAdd}
               onClick={handleAdd}
             >
-              <Plus size={18} aria-hidden="true" />
+              <Plus size={17} aria-hidden="true" />
             </button>
           </div>
           {hasEntries && (
@@ -114,6 +101,13 @@ export function StationSelector({
             />
           )}
         </div>
+      )}
+
+      {showStationInput && stationUrl.trim().toLowerCase().startsWith('http://') && (
+        <Text className="mp-station-field-helper">
+          <AlertTriangle size={12} aria-hidden="true" />
+          <span>HTTP is unencrypted. Trusted networks only.</span>
+        </Text>
       )}
 
       <div className="mp-station-list">
@@ -183,36 +177,6 @@ export function StationSelector({
           </Modal>
         </div>
       )}
-
-      <Modal
-        open={protocolPickerOpen}
-        title="Station protocol"
-        footer={null}
-        onCancel={() => setProtocolPickerOpen(false)}
-      >
-        <div className="mp-station-protocol-options">
-          {(['https', 'http'] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              className={option === protocol ? 'active' : ''}
-              aria-pressed={option === protocol}
-              onClick={() => {
-                setProtocol(option);
-                setProtocolPickerOpen(false);
-              }}
-            >
-              <span>{option.toUpperCase()}</span>
-              <small>
-                {option === 'https'
-                  ? 'Encrypted and recommended.'
-                  : 'Unencrypted. Use only on a trusted local network.'}
-              </small>
-              {option === protocol ? <Check size={17} aria-hidden="true" /> : null}
-            </button>
-          ))}
-        </div>
-      </Modal>
     </section>
   );
 }

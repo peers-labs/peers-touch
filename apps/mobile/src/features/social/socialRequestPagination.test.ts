@@ -120,7 +120,7 @@ describe('Social request pagination', () => {
     expect(projectAcceptedContacts(state.friendRequests, state.currentUserPtid, state.peerOnline))
       .toEqual([{
         peerPtid: 'ptid:peer-119',
-        peerName: 'ptid:peer-119',
+        peerName: 'Peer-119',
         peerAvatar: '',
         peerOnline: false,
         federationIds: ['fed-a'],

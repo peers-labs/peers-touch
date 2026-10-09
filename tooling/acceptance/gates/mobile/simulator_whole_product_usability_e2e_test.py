@@ -36,6 +36,7 @@ from tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e impor
     load_surface_inventory,
     record_visual_review,
     selected_surface_entries,
+    validate_station_entry_layout,
     validate_surface_evidence,
 )
 
@@ -938,6 +939,99 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             "element.matches('.chat-action-sheet-backdrop')",
             SURFACE_AUDIT_SCRIPT,
         )
+        self.assertIn("stationLayout:", SURFACE_AUDIT_SCRIPT)
+        self.assertIn("placeholder: stationPlaceholder", SURFACE_AUDIT_SCRIPT)
+        self.assertIn("stationStatusClasses:", SURFACE_AUDIT_SCRIPT)
+
+    def test_station_entry_layout_requires_human_usable_geometry_and_states(
+        self,
+    ) -> None:
+        viewport = {
+            "width": 393,
+            "height": 852,
+            "orientation": "portrait",
+            "textSize": "normal",
+        }
+        layout = {
+            "launchCard": {"bottom": 820},
+            "addressInput": {"width": 168, "height": 44},
+            "placeholder": "http://station.local:18080",
+            "submit": {"width": 44, "height": 44},
+            "helper": {"whiteSpace": "nowrap", "wrapped": False},
+            "logo": {
+                "borderWidth": 0,
+                "filter": "drop-shadow(rgba(15, 23, 42, 0.1) 0px 7px 14px)",
+            },
+            "stationStatusClasses": [
+                ["station-entry-status", "offline"],
+            ],
+            "continueDisabled": False,
+        }
+        observation = {"stationLayout": layout}
+
+        validate_station_entry_layout(
+            "entry.station-address",
+            observation,
+            viewport,
+        )
+        validate_station_entry_layout(
+            "entry.station-address-invalid",
+            observation,
+            viewport,
+        )
+        validate_station_entry_layout(
+            "entry.station-unavailable",
+            observation,
+            viewport,
+        )
+
+        invalid_cases = (
+            (
+                "entry.station-address",
+                {**layout, "placeholder": "station.local:18080"},
+            ),
+            (
+                "entry.station-address",
+                {**layout, "addressInput": {"width": 96, "height": 44}},
+            ),
+            (
+                "entry.station-address",
+                {
+                    **layout,
+                    "helper": {"whiteSpace": "normal", "wrapped": True},
+                },
+            ),
+            (
+                "entry.station-unavailable",
+                {
+                    **layout,
+                    "stationStatusClasses": [
+                        ["station-entry-status", "online"],
+                    ],
+                },
+            ),
+            (
+                "entry.station-selection",
+                {**layout, "launchCard": {"bottom": 740}},
+            ),
+            (
+                "entry.station-selection",
+                {
+                    **layout,
+                    "logo": {"borderWidth": 4, "filter": "none"},
+                },
+            ),
+        )
+        for surface_id, invalid_layout in invalid_cases:
+            with (
+                self.subTest(surface_id=surface_id, layout=invalid_layout),
+                self.assertRaises(GateError),
+            ):
+                validate_station_entry_layout(
+                    surface_id,
+                    {"stationLayout": invalid_layout},
+                    viewport,
+                )
 
     def test_surface_wait_accepts_any_visible_primary_heading(self) -> None:
         source = (

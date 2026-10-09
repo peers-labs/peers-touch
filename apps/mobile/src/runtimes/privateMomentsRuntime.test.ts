@@ -945,7 +945,7 @@ describe('privateMomentsRuntime projection', () => {
     expect(ready).not.toHaveBeenCalled();
   });
 
-  it('restarts independently of failed degradable messaging and social runtimes', async () => {
+  it('fences private-social behind failed messaging on restart', async () => {
     commandMocks.activate
       .mockResolvedValueOnce(activeStatus(1))
       .mockResolvedValueOnce(activeStatus(2));
@@ -1004,16 +1004,26 @@ describe('privateMomentsRuntime projection', () => {
 
       const restarted = await kernel.restartRuntimeGraph();
 
+      // Private-social activation obtains its signer from the messaging
+      // runtime (secure_content_runtime_identity), so it must fence behind a
+      // failed messaging runtime rather than report a false "ready".
       expect(restarted.runtimes).toEqual(expect.arrayContaining([
         expect.objectContaining({ id: 'messaging', status: 'failed' }),
         expect.objectContaining({ id: 'social', status: 'failed' }),
-        expect.objectContaining({ id: 'private-social', status: 'ready' }),
+        expect.objectContaining({
+          id: 'private-social',
+          status: 'failed',
+          errorKey: 'mobile.lifecycle.dependencyFailed:messaging',
+        }),
       ]));
-      expect(commandMocks.activate).toHaveBeenCalledTimes(2);
+      // On restart the kernel marks dependents failed without invoking
+      // private-social's bootstrap, so its module snapshot stays in the torn
+      // down empty state; the failed dependency is visible at kernel level.
+      expect(commandMocks.activate).toHaveBeenCalledTimes(1);
       expect(readPrivateMomentsSnapshot()).toEqual(expect.objectContaining({
-        active: true,
-        stationPeerId: 'station-1',
-        actorPtid: 'ptid:alice',
+        active: false,
+        stationPeerId: null,
+        actorPtid: null,
         errorMessage: null,
       }));
     } finally {

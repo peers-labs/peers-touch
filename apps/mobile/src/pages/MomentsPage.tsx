@@ -614,60 +614,60 @@ function MomentsPageInner({
               return (
                 <div className="moments-feed">
                   {windowedPosts.map((post) => (
-                    <div
-                      key={post.id}
-                      className="moments-feed-entry"
-                      data-scroll-anchor-id={post.id}
-                    >
-                      {feedScope === 'home' &&
-                      blockingPrivateByPostId.has(post.id) ? (
-                        renderPrivateBlockingState(
-                          blockingPrivateByPostId.get(post.id)!,
-                        )
-                      ) : (
-                        <MomentFeedItem
-                          post={post}
-                          onReact={(postId, kind) =>
-                            void handleReact(postId, kind)
-                          }
-                          onOpenComments={handleOpenComments}
-                          onDelete={
-                            post.authorPtid === authSession?.actorRef.ptid
-                              ? handleDeleteMoment
-                              : undefined
-                          }
-                          deleteBusy={deletingPostId === post.id}
-                          onOpenAuthor={onOpenProfile}
-                          onOpenMedia={handleOpenMedia}
-                          reactionMutation={runtimeFeedState?.reactionMutations.get(
-                            post.id,
-                          )}
-                          explanation={runtimeFeedState?.feedExplanations.get(
-                            post.id,
-                          )}
-                          policyState={resolveMomentPolicyState(
-                            runtimeFeedState?.feedExplanations.get(post.id),
-                          )}
-                        >
-                          {selectedThreadPostId === post.id && facade && (
-                            <MomentInlineComments
-                              postId={post.id}
-                              post={post}
-                              intents={facade.intents}
-                              onReact={(postId, kind) =>
-                                void handleReact(postId, kind)
-                              }
-                              onOpenAuthor={onOpenProfile}
-                              reactionMutation={runtimeFeedState?.reactionMutations.get(
-                                post.id,
-                              )}
-                              policyState={resolveMomentPolicyState(
-                                runtimeFeedState?.feedExplanations.get(post.id),
-                              )}
-                            />
-                          )}
-                        </MomentFeedItem>
-                      )}
+                      <div
+                        key={post.id}
+                        className="moments-feed-entry"
+                        data-scroll-anchor-id={post.id}
+                      >
+                        {feedScope === 'home' &&
+                        blockingPrivateByPostId.has(post.id) ? (
+                          renderPrivateBlockingState(
+                            blockingPrivateByPostId.get(post.id)!,
+                          )
+                        ) : (
+                          <MomentFeedItem
+                            post={post}
+                            onReact={(postId, kind) =>
+                              void handleReact(postId, kind)
+                            }
+                            onOpenComments={handleOpenComments}
+                            onDelete={
+                              post.authorPtid === authSession?.actorRef.ptid
+                                ? handleDeleteMoment
+                                : undefined
+                            }
+                            deleteBusy={deletingPostId === post.id}
+                            onOpenAuthor={onOpenProfile}
+                            onOpenMedia={handleOpenMedia}
+                            reactionMutation={runtimeFeedState?.reactionMutations.get(
+                              post.id,
+                            )}
+                            explanation={runtimeFeedState?.feedExplanations.get(
+                              post.id,
+                            )}
+                            policyState={resolveMomentPolicyState(
+                              runtimeFeedState?.feedExplanations.get(post.id),
+                            )}
+                          >
+                            {selectedThreadPostId === post.id && facade && (
+                              <MomentInlineComments
+                                postId={post.id}
+                                post={post}
+                                intents={facade.intents}
+                                onReact={(postId, kind) =>
+                                  void handleReact(postId, kind)
+                                }
+                                onOpenAuthor={onOpenProfile}
+                                reactionMutation={runtimeFeedState?.reactionMutations.get(
+                                  post.id,
+                                )}
+                                policyState={resolveMomentPolicyState(
+                                  runtimeFeedState?.feedExplanations.get(post.id),
+                                )}
+                              />
+                            )}
+                          </MomentFeedItem>
+                        )}
                     </div>
                   ))}
 

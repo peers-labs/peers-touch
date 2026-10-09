@@ -389,15 +389,25 @@ function ContactsFixturePeople({
             aria-label={t('common.action.close')}
           />
         </header>
-        <Input.Search
+        <Input
           data-contacts-fixture-people-search
           aria-label={t('mobile.contacts.findPeoplePlaceholder')}
           placeholder={t('mobile.contacts.findPeoplePlaceholder')}
           value={surfaceId === 'contacts.add-friend'
             ? ''
-            : '@alexandria@design.peers'}
+            : 'Alexandria'}
           readOnly
-          enterButton={t('mobile.contacts.search')}
+          prefix={<Search size={16} />}
+          suffix={(
+            <Button
+              type="link"
+              size="small"
+              tabIndex={-1}
+              className="people-search-button"
+            >
+              {t('mobile.contacts.search')}
+            </Button>
+          )}
         />
         <fieldset className="contacts-fixture-federation">
           <legend>{t('mobile.contacts.federation')}</legend>

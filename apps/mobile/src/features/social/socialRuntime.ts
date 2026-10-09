@@ -366,6 +366,7 @@ export async function startSocialRuntime(
   );
   await mobileCallManager.activate(session);
   await projectionRuntime.bootstrap();
+  await wakeMessaging();
 
   const runtimeRef: ActiveSocialRuntime = {
     sessionKey: getSocialStore().sessionKey,

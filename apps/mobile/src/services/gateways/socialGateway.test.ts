@@ -282,7 +282,7 @@ describe('createSocialGateway Friend Request routes', () => {
       {
         method: 'GET',
         path: '/api/v1/social/relationships/status',
-        query: { target_ptid: 'ptid:bob' },
+        query: { target_actor_ptid: 'ptid:bob' },
       },
     ]);
     expect(status).toMatchObject({

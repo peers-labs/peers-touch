@@ -27,6 +27,7 @@ const MAX_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_REALTIME_CHUNK_BYTES: usize = 1024 * 1024;
 const REALTIME_EVENT: &str = "mobile:station-realtime";
 const MOMENTS_RESOURCE_PATH: &[&str] = &["api", "v1", "social", "moments"];
+const SOCIAL_RELATIONSHIP_TARGET_QUERY: &str = "target_actor_ptid";
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -170,7 +171,7 @@ enum StationOperation {
         cursor: Option<String>,
     },
     SocialFriendshipStatus {
-        target_ptid: String,
+        target_actor_ptid: String,
     },
     SocialCirclesList {
         limit: u32,
@@ -736,7 +737,7 @@ fn build_request(
             client,
             session,
             Method::GET,
-            fixed_url(session, "/sub-federation/contexts")?,
+            fixed_url(session, "/sub-federation/federations")?,
         ),
         StationOperation::FederationResolve {
             federation_id,
@@ -894,10 +895,12 @@ fn build_request(
             }
             authenticated_request(client, session, Method::GET, url)
         }
-        StationOperation::SocialFriendshipStatus { target_ptid } => {
+        StationOperation::SocialFriendshipStatus { target_actor_ptid } => {
             let mut url = fixed_url(session, "/api/v1/social/relationships/status")?;
-            url.query_pairs_mut()
-                .append_pair("target_ptid", &clean_id(target_ptid, "target_ptid")?);
+            url.query_pairs_mut().append_pair(
+                SOCIAL_RELATIONSHIP_TARGET_QUERY,
+                &clean_id(target_actor_ptid, SOCIAL_RELATIONSHIP_TARGET_QUERY)?,
+            );
             authenticated_request(client, session, Method::GET, url)
         }
         StationOperation::SocialCirclesList { limit, cursor } => {
@@ -1596,10 +1599,12 @@ mod tests {
 
     #[test]
     fn moments_operations_use_the_station_moments_resource() {
-        assert_eq!(
-            MOMENTS_RESOURCE_PATH.join("/"),
-            "api/v1/social/moments",
-        );
+        assert_eq!(MOMENTS_RESOURCE_PATH.join("/"), "api/v1/social/moments",);
+    }
+
+    #[test]
+    fn relationship_status_uses_the_proto_query_field() {
+        assert_eq!(SOCIAL_RELATIONSHIP_TARGET_QUERY, "target_actor_ptid",);
     }
 
     #[test]

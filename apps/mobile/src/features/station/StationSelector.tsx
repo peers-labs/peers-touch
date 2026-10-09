@@ -3,7 +3,7 @@ import { Button, Input, Modal, Typography } from 'antd';
 import {
   AlertTriangle,
   Check,
-  ChevronDown,
+  LoaderCircle,
   Plus,
   Server,
   Trash2,
@@ -13,9 +13,7 @@ import {
 import { useMobileI18n } from '../../app/mobileI18n';
 import {
   buildStationUrl,
-  splitStationInput,
   type MobileStationEntry,
-  type StationProtocol,
 } from './stationRegistry';
 import { stationDisplayName } from './stationDisplayName';
 
@@ -32,6 +30,7 @@ export function StationSelector({
   error,
   checking,
   verifyingUrls,
+  checkedUrls,
   surfaceFixture,
   onAdd,
   onSelect,
@@ -42,24 +41,28 @@ export function StationSelector({
   error: string | null;
   checking: boolean;
   verifyingUrls: string[];
+  checkedUrls: string[];
   surfaceFixture?: StationSelectorSurfaceFixture;
-  onAdd: (protocol: StationProtocol, address: string) => boolean | Promise<boolean>;
+  onAdd: (stationUrl: string) => boolean | Promise<boolean>;
   onSelect: (stationPeerId: string) => void | Promise<void>;
   onRemove: (stationPeerId: string) => void;
 }) {
   const { t } = useMobileI18n();
-  const [protocol, setProtocol] = useState<StationProtocol>('https');
-  const [address, setAddress] = useState(
-    surfaceFixture === 'address-invalid' ? 'not a valid station' : '',
-  );
+  const [stationUrl, setStationUrl] = useState(() => (
+    surfaceFixture === 'address'
+      ? 'http://station.local:18280'
+      : surfaceFixture === 'address-invalid'
+        ? 'station.local'
+        : ''
+  ));
   const [addingStation, setAddingStation] = useState(
     surfaceFixture === 'address' || surfaceFixture === 'address-invalid',
   );
-  const [protocolPickerOpen, setProtocolPickerOpen] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState<MobileStationEntry | null>(null);
   const hasEntries = entries.length > 0;
   const showStationInput = !hasEntries || addingStation;
-  const canAdd = useMemo(() => Boolean(buildStationUrl({ protocol, address })), [address, protocol]);
+  const normalizedUrl = useMemo(() => buildStationUrl(stationUrl), [stationUrl]);
+  const canAdd = Boolean(normalizedUrl);
 
   useEffect(() => {
     if (surfaceFixture === 'remove-confirm' && entries[0]) {
@@ -67,25 +70,17 @@ export function StationSelector({
     }
   }, [entries, surfaceFixture]);
 
-  function updateAddress(value: string) {
-    const next = splitStationInput(value, protocol);
-    setProtocol(next.protocol);
-    setAddress(next.address);
-  }
-
   async function submit() {
-    if (!canAdd || checking) return;
-    const added = await onAdd(protocol, address);
-    if (added) setAddress('');
-    if (added && hasEntries) setAddingStation(false);
+    if (!normalizedUrl || checking) return;
+    const added = await onAdd(normalizedUrl);
+    if (added) {
+      setStationUrl('');
+      if (hasEntries) setAddingStation(false);
+    }
   }
-
-  const isHttp = protocol === 'http';
 
   function closeStationInput() {
-    setAddress('');
-    setProtocol('https');
-    setProtocolPickerOpen(false);
+    setStationUrl('');
     setAddingStation(false);
   }
 
@@ -95,15 +90,18 @@ export function StationSelector({
     setPendingRemoval(null);
   }
 
+  const showsHttpWarning = buildStationUrl(stationUrl)?.startsWith('http://');
+
   return (
     <section className="station-selector">
       <div className="station-selector-header">
         <div>
           <Text strong>{t('mobile.launch.station')}</Text>
-          <Text className={`station-helper-line ${isHttp ? 'warning' : ''}`}>
-            {isHttp ? <AlertTriangle size={13} /> : null}
-            <span>{isHttp ? t('mobile.launch.helperHttpWarning') : t('mobile.launch.changeTarget')}</span>
-          </Text>
+          {hasEntries && !showStationInput ? (
+            <Text className="station-helper-line">
+              {t('mobile.launch.changeTarget')}
+            </Text>
+          ) : null}
         </div>
         <span className={`station-selection-state ${activeStationPeerId ? 'selected' : ''}`}>
           {activeStationPeerId ? t('mobile.launch.selected') : t('mobile.launch.required')}
@@ -120,38 +118,29 @@ export function StationSelector({
                 : 'entry.station-address'
             }
           >
-            <button
-              type="button"
-              className="station-protocol-select"
-              aria-label={t('mobile.launch.protocol')}
-              aria-expanded={protocolPickerOpen}
-              onClick={() => setProtocolPickerOpen(true)}
-            >
-              <span>{protocol.toUpperCase()}</span>
-              <ChevronDown size={14} aria-hidden="true" />
-            </button>
-            <span className="station-url-divider" aria-hidden="true" />
             <Input
               className="station-address-input"
-              value={address}
+              value={stationUrl}
               placeholder={t('mobile.launch.placeholder')}
-              aria-label={t('mobile.launch.stationAddress')}
+              aria-label={t('common.stationPicker.inputLabel')}
               inputMode="url"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
               variant="borderless"
-              onChange={(event) => updateAddress(event.target.value)}
+              onChange={(event) => setStationUrl(event.target.value)}
               onPressEnter={submit}
             />
             <button
               type="button"
-              className="station-add-inline"
+              className="station-submit"
               aria-label={t('mobile.launch.addStation')}
               disabled={!canAdd || checking}
-              onClick={() => void submit()}
+              onClick={submit}
             >
-              <Plus size={18} aria-hidden="true" />
+              {checking
+                ? <LoaderCircle className="station-submit-spinner" size={17} aria-hidden="true" />
+                : <Plus size={17} aria-hidden="true" />}
             </button>
           </div>
           {hasEntries ? (
@@ -163,6 +152,13 @@ export function StationSelector({
             />
           ) : null}
         </div>
+      ) : null}
+
+      {showStationInput && showsHttpWarning ? (
+        <Text className="station-field-helper warning">
+          <AlertTriangle size={12} aria-hidden="true" />
+          <span>{t('mobile.launch.helperHttpWarning')}</span>
+        </Text>
       ) : null}
 
       {error ? (
@@ -183,7 +179,12 @@ export function StationSelector({
         ) : (
           entries.map((entry) => {
             const isActive = entry.stationPeerId === activeStationPeerId;
-            const status = getStationStatus(entry, verifyingUrls.includes(entry.url), t);
+            const status = getStationStatus(
+              entry,
+              verifyingUrls.includes(entry.url),
+              checkedUrls.includes(entry.url),
+              t,
+            );
             const displayName = stationDisplayName(
               entry.label,
               entry.url,
@@ -282,58 +283,37 @@ export function StationSelector({
           </div>
         </section>
       </Modal>
-
-      <Modal
-        open={protocolPickerOpen}
-        onCancel={() => setProtocolPickerOpen(false)}
-        footer={null}
-        className="station-protocol-sheet"
-        title={t('mobile.launch.protocol')}
-        destroyOnClose
-      >
-        <div className="station-protocol-options">
-          {(['https', 'http'] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              className={option === protocol ? 'active' : ''}
-              aria-pressed={option === protocol}
-              onClick={() => {
-                setProtocol(option);
-                setProtocolPickerOpen(false);
-              }}
-            >
-              <span>{option.toUpperCase()}</span>
-              <small>
-                {t(
-                  option === 'https'
-                    ? 'mobile.launch.protocolHttps'
-                    : 'mobile.launch.protocolHttp',
-                )}
-              </small>
-              {option === protocol ? <Check size={17} aria-hidden="true" /> : null}
-            </button>
-          ))}
-        </div>
-      </Modal>
     </section>
   );
+}
+
+export function stationAvailabilityState(
+  entry: MobileStationEntry,
+  verifying: boolean,
+  checked: boolean,
+): 'validating' | 'unknown' | 'online' | 'offline' {
+  if (verifying) return 'validating';
+  if (!checked) return 'unknown';
+  return entry.online ? 'online' : 'offline';
 }
 
 function getStationStatus(
   entry: MobileStationEntry,
   verifying: boolean,
+  checked: boolean,
   t: (key: string) => string,
 ): { className: string; label: string } {
+  const state = stationAvailabilityState(entry, verifying, checked);
+
   if (verifying) {
     return { className: 'validating', label: t('mobile.launch.validating') };
   }
 
-  if (entry.online === undefined) {
+  if (!checked) {
     return { className: 'unknown', label: t('mobile.launch.unknown') };
   }
 
-  if (entry.online) {
+  if (state === 'online') {
     return { className: 'online', label: t('mobile.launch.verified') };
   }
 

@@ -295,6 +295,36 @@ const blockingSurfaces = Array.from(
   || element.getAttribute('data-acceptance-id')
   || element.tagName.toLowerCase()
 ));
+const rectFor = (selector) => {
+  const element = document.querySelector(selector);
+  if (!element || !visible(element)) return null;
+  const rect = element.getBoundingClientRect();
+  return {
+    left: Math.round(rect.left),
+    top: Math.round(rect.top),
+    right: Math.round(rect.right),
+    bottom: Math.round(rect.bottom),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height),
+  };
+};
+const stationAddressElement = document.querySelector('.station-address-input');
+const stationPlaceholder = stationAddressElement && visible(stationAddressElement)
+  ? stationAddressElement.getAttribute('placeholder')
+  : null;
+const stationHelperElement = document.querySelector('.station-field-helper');
+const stationHelper = stationHelperElement && visible(stationHelperElement)
+  ? {
+      whiteSpace: getComputedStyle(stationHelperElement).whiteSpace,
+      wrapped: stationHelperElement.scrollHeight
+        > stationHelperElement.clientHeight + 1,
+    }
+  : null;
+const stationLogoElement = document.querySelector('.launch-hero-logo');
+const stationLogoStyle = stationLogoElement && visible(stationLogoElement)
+  ? getComputedStyle(stationLogoElement)
+  : null;
+const continueButton = document.querySelector('.launch-actions button');
 return {
   found: true,
   viewport: {
@@ -321,8 +351,146 @@ return {
   clippedText,
   occlusions,
   blockingSurfaces,
+  stationLayout: {
+    launchCard: rectFor('.launch-card'),
+    addressInput: rectFor('.station-address-input'),
+    placeholder: stationPlaceholder,
+    submit: rectFor('.station-submit'),
+    helper: stationHelper,
+    logo: stationLogoStyle
+      ? {
+          borderWidth: [
+            stationLogoStyle.borderTopWidth,
+            stationLogoStyle.borderRightWidth,
+            stationLogoStyle.borderBottomWidth,
+            stationLogoStyle.borderLeftWidth,
+          ].reduce((total, value) => total + Number.parseFloat(value || '0'), 0),
+          filter: stationLogoStyle.filter,
+        }
+      : null,
+    stationStatusClasses: Array.from(
+      document.querySelectorAll('.station-entry-status'),
+    ).filter(visible).map((element) => Array.from(element.classList)),
+    continueDisabled: continueButton instanceof HTMLButtonElement
+      ? continueButton.disabled
+      : null,
+  },
 };
 """
+
+
+def validate_station_entry_layout(
+    surface_id: str,
+    observation: Mapping[str, Any],
+    viewport: Mapping[str, Any],
+) -> None:
+    if surface_id not in {
+        "entry.station-selection",
+        "entry.station-address",
+        "entry.station-address-invalid",
+        "entry.station-verifying",
+        "entry.station-unavailable",
+    }:
+        return
+
+    layout = observation.get("stationLayout")
+    if not isinstance(layout, Mapping):
+        raise GateError(f"Mobile Station surface {surface_id} has no layout evidence")
+
+    logo = layout.get("logo")
+    if (
+        not isinstance(logo, Mapping)
+        or not isinstance(logo.get("borderWidth"), (int, float))
+        or logo["borderWidth"] > 0.5
+        or not isinstance(logo.get("filter"), str)
+        or logo["filter"] == "none"
+    ):
+        raise GateError(
+            f"Mobile Station surface {surface_id} has an unproven logo edge: "
+            f"{logo!r}"
+        )
+
+    if (
+        viewport.get("orientation") == "portrait"
+        and viewport.get("textSize") == "normal"
+    ):
+        card = layout.get("launchCard")
+        viewport_height = viewport.get("height")
+        if (
+            not isinstance(card, Mapping)
+            or not isinstance(card.get("bottom"), (int, float))
+            or not isinstance(viewport_height, (int, float))
+        ):
+            raise GateError(
+                f"Mobile Station surface {surface_id} has no card position evidence"
+            )
+        bottom_gap = viewport_height - card["bottom"]
+        if bottom_gap < 8 or bottom_gap > 72:
+            raise GateError(
+                f"Mobile Station surface {surface_id} is not bottom anchored: "
+                f"gap={bottom_gap}"
+            )
+
+    if surface_id in {
+        "entry.station-address",
+        "entry.station-address-invalid",
+    }:
+        address_input = layout.get("addressInput")
+        submit = layout.get("submit")
+        if (
+            not isinstance(layout.get("placeholder"), str)
+            or not re.match(r"^https?://\S+$", layout["placeholder"])
+        ):
+            raise GateError(
+                "Mobile Station placeholder must show a complete HTTP(S) URL: "
+                f"{layout.get('placeholder')!r}"
+            )
+        if (
+            not isinstance(address_input, Mapping)
+            or address_input.get("width", 0) < 120
+        ):
+            raise GateError(
+                "Mobile Station address input is too narrow: "
+                f"{address_input!r}"
+            )
+        if (
+            not isinstance(submit, Mapping)
+            or submit.get("width", 0) < 44
+            or submit.get("height", 0) < 44
+        ):
+            raise GateError(
+                f"Mobile Station submit control is too small: {submit!r}"
+            )
+
+    if surface_id == "entry.station-address":
+        helper = layout.get("helper")
+        if (
+            not isinstance(helper, Mapping)
+            or helper.get("whiteSpace") != "nowrap"
+            or helper.get("wrapped") is not False
+        ):
+            raise GateError(
+                f"Mobile Station HTTP guidance wrapped or disappeared: {helper!r}"
+            )
+
+    if surface_id == "entry.station-unavailable":
+        status_classes = layout.get("stationStatusClasses")
+        if (
+            not isinstance(status_classes, list)
+            or not any(
+                isinstance(classes, list) and "offline" in classes
+                for classes in status_classes
+            )
+            or any(
+                isinstance(classes, list) and "online" in classes
+                for classes in status_classes
+            )
+            or layout.get("continueDisabled") is not False
+        ):
+            raise GateError(
+                "Mobile unavailable Station did not expose offline + retry "
+                f"semantics: {layout!r}"
+            )
 
 
 def _validate_lifecycle_readiness(value: Any) -> dict[str, Any]:
@@ -2840,6 +3008,7 @@ class SimulatorWholeProductUsabilityGate(
                     f"Mobile shell surface {entry['id']} failed {field}: "
                     f"{findings!r}"
                 )
+        validate_station_entry_layout(str(entry["id"]), observation, viewport)
         actual_viewport = observation.get("viewport")
         if not isinstance(actual_viewport, Mapping):
             raise GateError(f"Mobile viewport changed while capturing {entry['id']}")
@@ -2907,6 +3076,7 @@ class SimulatorWholeProductUsabilityGate(
             "controls": list(observation["controls"]),
             "occlusions": list(observation["occlusions"]),
             "blockingSurfaces": list(observation["blockingSurfaces"]),
+            "stationLayout": dict(observation["stationLayout"]),
         }
         interaction_ref = artifacts.write_json(
             f"{prefix}/interaction.json",
