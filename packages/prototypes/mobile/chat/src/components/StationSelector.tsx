@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button, Modal, Tag, Typography } from 'antd';
-import { Check, ChevronDown, Plus, Server, X } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, Plus, Server, X } from 'lucide-react';
 import type { StationEntry } from '../types';
 
 const { Text } = Typography;
@@ -79,12 +79,27 @@ export function StationSelector({
                 <X size={16} />
               </button>
             )}
+            <button
+              type="button"
+              className="mp-station-submit"
+              aria-label="Add Station"
+              disabled={!address.trim()}
+              onClick={handleAdd}
+            >
+              <Plus size={17} aria-hidden="true" />
+            </button>
           </div>
-          <Button type="primary" icon={<Plus size={16} />} onClick={handleAdd} />
           {hasEntries && (
             <Button type="text" className="mp-station-cancel-btn" onClick={closeStationInput}>Cancel</Button>
           )}
         </div>
+      )}
+
+      {showStationInput && protocol === 'http' && (
+        <Text className="mp-station-field-helper">
+          <AlertTriangle size={12} aria-hidden="true" />
+          <span>HTTP is unencrypted. Trusted networks only.</span>
+        </Text>
       )}
 
       <div className="mp-station-list">
@@ -157,6 +172,8 @@ export function StationSelector({
 
       <Modal
         open={protocolPickerOpen}
+        className="mp-station-protocol-sheet"
+        rootClassName="mp-station-protocol-sheet-root"
         title="Station protocol"
         footer={null}
         onCancel={() => setProtocolPickerOpen(false)}
