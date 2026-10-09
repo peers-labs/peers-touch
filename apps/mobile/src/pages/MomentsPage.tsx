@@ -114,6 +114,7 @@ interface MomentsPageProps {
   readonly onOpenProfile: (actorPtid: string, federationId: string) => void;
   readonly onOpenSearch: () => void;
   readonly onOpenCircles: () => void;
+  readonly onImmersiveVisibilityChange: (visible: boolean) => void;
   readonly onBack: () => void;
 }
 
@@ -140,6 +141,7 @@ export function MomentsPage({
   onOpenProfile,
   onOpenSearch,
   onOpenCircles,
+  onImmersiveVisibilityChange,
   onBack,
 }: MomentsPageProps) {
   const fixture = useMomentsSurfaceFixture();
@@ -157,6 +159,7 @@ export function MomentsPage({
       onOpenProfile={onOpenProfile}
       onOpenSearch={onOpenSearch}
       onOpenCircles={onOpenCircles}
+      onImmersiveVisibilityChange={onImmersiveVisibilityChange}
       onBack={onBack}
     />
   );
@@ -167,6 +170,7 @@ function MomentsPageInner({
   onOpenProfile,
   onOpenSearch,
   onOpenCircles,
+  onImmersiveVisibilityChange,
   onBack,
 }: MomentsPageProps) {
   const { t } = useMobileI18n();
@@ -567,6 +571,8 @@ function MomentsPageInner({
         <MomentComposer
           session={authSession}
           intents={facade.intents}
+          pickOnOpen
+          onTargetVisibilityChange={onImmersiveVisibilityChange}
           onPublished={handlePublished}
           onClose={() => setShowNewPost(false)}
         />

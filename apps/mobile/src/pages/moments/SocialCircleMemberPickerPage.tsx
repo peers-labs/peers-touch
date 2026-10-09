@@ -7,8 +7,10 @@ import { MobileAvatar } from '../../components/MobileAvatar';
 import { MobileNotice } from '../../components/MobileNotice';
 import { useSocialCirclesStore } from '../../features/social/socialCircles';
 import { useSocialStore } from '../../features/social/socialStore';
+import type { CircleMember } from '../../gen/proto/domain/social/circle_pb';
 
 const { Text } = Typography;
+const EMPTY_CIRCLE_MEMBERS: readonly CircleMember[] = [];
 
 interface SocialCircleMemberPickerPageProps {
   readonly circleId: string;
@@ -20,7 +22,9 @@ export function SocialCircleMemberPickerPage({
   onBack,
 }: SocialCircleMemberPickerPageProps) {
   const { t } = useMobileI18n();
-  const members = useSocialCirclesStore((state) => state.membersByCircle[circleId] ?? []);
+  const members = useSocialCirclesStore(
+    (state) => state.membersByCircle[circleId] ?? EMPTY_CIRCLE_MEMBERS,
+  );
   const results = useSocialCirclesStore((state) => state.pickerResults);
   const loading = useSocialCirclesStore((state) => state.pickerLoading);
   const error = useSocialCirclesStore((state) => state.pickerError);
