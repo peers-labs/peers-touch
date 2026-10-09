@@ -23,11 +23,12 @@ detected: 2026-10-01
 
 ## What must hold
 
-One visible development chat creates exactly one immutable OWNER binding.
-TRAE derives that root only from `chat_session_id`; an internal `session_id`
-never creates peer owner authority. Cursor and Codex use only their documented
-host-specific root fields. Missing root identity is `OBSERVE_ONLY`; aliases and
-process-global identity fallbacks are forbidden.
+One visible development chat creates exactly one immutable OWNER identity
+binding. It does not permanently bind that chat to one worktree. TRAE derives
+the OWNER only from `chat_session_id`; an internal `session_id` never creates
+peer owner authority. Cursor and Codex use only their documented host-specific
+root fields. Missing root identity is `OBSERVE_ONLY`; aliases and process-global
+identity fallbacks are forbidden.
 
 The canonical root ID is retained only in owner-controlled machine-local
 state together with its hash. An authorized Agent-created worktree must use
@@ -37,21 +38,28 @@ conversation identity.
 
 WORKER and REVIEWER sessions exist only through a create-once assignment that
 records role, root and parent binding digests, Development Session identity,
-operation identity, and lease. Assignment creation validates the exact current
-active-work and Development Session records. Child claim atomically publishes
-one assignment-keyed owner record before the child binding; only its winning
-execution-session hash may retry or use the assignment. Child liveness comes
-from assignment, lease, and terminal receipts. OWNER liveness never comes from
-a generic TTL.
+operation identity, selected workspace, and lease. Assignment creation
+validates the exact current active-work and Development Session records in that
+workspace. Child claim atomically publishes one assignment-keyed owner record
+before the child binding; only its winning execution-session hash may retry or
+use the assignment. Child liveness comes from assignment, lease, and terminal
+receipts. OWNER liveness never comes from a generic TTL.
 
 Every hook, Action Receipt, status, readiness, handoff, Stop, and worker result
 consumes one canonical `BindingProjection`. The projection includes role,
-lineage, binding/release state, immutable `executionRoot`, and per-event
+lineage, binding/release state, selected action workspace, and per-event
 subject/tool/target roots.
 
-Cross-worktree reads remain allowed. Every lineage member may write only
-inside the OWNER execution root and the active declaration's source claims.
-Dynamic or unparseable shell structure fails closed.
+Cross-worktree reads remain allowed. Each mutating OWNER action selects exactly
+one workspace from its unique mutation target, explicit task root, tool `cwd`,
+active editor, or repository `cwd`, in that order. Separate actions may select
+different worktrees. One action spanning multiple worktrees fails closed.
+Writes must stay inside the selected workspace and its active declaration's
+source claims. Dynamic or unparseable shell structure fails closed.
+
+Assignment creation freezes the current projection's
+`executionRoot/workspaceId`. WORKER and REVIEWER children inherit that
+assignment workspace and cannot switch it.
 
 Completion Review is outside the IDE write-authorization boundary. Under
 DWF-D37 it binds immutable review requests to successful Development Session
@@ -61,22 +69,24 @@ only `completion-reviews-v3`; earlier namespaces are not read or migrated.
 
 `PreCompact` writes one bounded receipt keyed by the current binding digest.
 `PostCompact` must re-resolve that exact binding, root, parent, assignment,
-Development Session, workspace, and execution root before context is restored.
-Concurrent OWNER, WORKER, and REVIEWER compactions never share a receipt slot.
+Development Session, and selected or assigned workspace before context is
+restored. Concurrent OWNER, WORKER, and REVIEWER compactions never share a
+receipt slot.
 
 TRAE multi-root installations expose equivalent canonical Hook entries in the
 selected source root, descriptor bootstrap root, and descriptor roots with an
 existing real `.trae` directory. Their locations are not authority hints, and
 the entries are not parallel authorities. They dispatch to the same selected
-source integration and one host-neutral Kernel. The first mutating tool event
-must name one declared task root or have all mutation targets resolve to one
-workspace root; otherwise it fails with `WORKTREE_SELECTION_REQUIRED`.
+source integration and one host-neutral Kernel. Every mutating OWNER event
+must resolve exactly one declared workspace root; otherwise it fails with
+`WORKTREE_SELECTION_REQUIRED`.
 Descriptor roots without `.trae` remain untouched.
 Projection and cleanup are separate actions. Ordinary `skills` consumes one
 machine-lock-serialized, strictly validated projection path and does not
 depend on a grant from the Hook it installs. It may update the selected host
 projection while unrelated worktrees remain active and never deletes workflow
-state.
+state. It does not parse PlanMount, declaration, Session, or active-work
+records; its projection-only audit cannot claim those owners healthy.
 `skills-hard-cut` is the only legacy conversation/action-store reset owner, and
 `skills-gc` is the only retired-projection cleanup owner. Each consumes its own
 exact create-once OWNER grant and proves global idle before deletion. No legacy
@@ -123,13 +133,17 @@ authority because a timer elapsed.
   receipt on failure.
 - BeforePrompt injects role, lineage, release, execution, subject, tool, and
   target roots; wrong-binding status/final claims fail closed.
-- Sibling-worktree reads pass and writes fail with
-  `CROSS_WORKTREE_WRITE_DENIED`.
+- One OWNER can mutate worktree A and then worktree B in separate actions
+  without changing its binding digest.
+- A mutation spanning two worktrees fails with
+  `WORKTREE_SELECTION_REQUIRED`; symlink or path escape fails with
+  `ACTION_WORKSPACE_WRITE_DENIED`.
+- A child assignment created in worktree B remains in B even when the OWNER's
+  origin workspace is A.
 - Every participating root in the active multi-root workspace contains exactly
   one managed TRAE Hook per supported event; untouched roots remain untouched.
-- Active-editor mismatch and explicit New Task target fixtures bind the
-  selected worktree or fail `WORKTREE_SELECTION_REQUIRED`; folder order never
-  decides authority.
+- Mutation targets take precedence over active editor and task hints; folder
+  order never decides authority.
 - Explicit hard cut removes the old conversation/action stores; ordinary
   install does not. Tree-wide search finds no runtime import of
   `workflow-conversation-binding.mjs`.
@@ -147,3 +161,5 @@ authority because a timer elapsed.
 - DWF-D37 removes Completion Review from host binding authorization while
   preserving request-scoped delegated assessment provenance; independent
   reviewer launch remains a Dev Workflow obligation.
+- DWF-D44 separates stable OWNER identity from per-action workspace selection
+  while preserving single-root mutation and assignment-bound children.

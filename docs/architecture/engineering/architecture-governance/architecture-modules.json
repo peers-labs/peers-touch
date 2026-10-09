@@ -170,7 +170,6 @@
         "DWF-D23",
         "DWF-D24",
         "DWF-D25",
-        "DWF-D26",
         "DWF-D27",
         "DWF-D28",
         "DWF-D29",
@@ -185,7 +184,8 @@
         "DWF-D40",
         "DWF-D41",
         "DWF-D42",
-        "DWF-D43"
+        "DWF-D43",
+        "DWF-D44"
       ],
       "governedPaths": [
         "docs/architecture/engineering/development-workflow",

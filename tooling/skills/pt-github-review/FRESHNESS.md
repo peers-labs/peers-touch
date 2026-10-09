@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-07
-covered_docs_hash: 857f93829dc273d8744c92c7080b38badbca3c2ca922dac7a733ef7cca45ae79
+last_verified_at: 2026-10-09
+covered_docs_hash: 003b6232233a0458c4e1d97e50b92d679caba075230bf8d682eacdc7529bf07c
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,28 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-09 Projection Bootstrap Review
+
+DWF-D36 now makes non-destructive integration repair independent from existing
+PlanMount, declaration, Session, and active-work schema health. Review must
+reject projection code that parses those owners, a projection-only PASS that
+claims workflow health, or a full audit that ignores workflow identity
+findings. The install wrapper uses explicit `--projection-only`; standalone
+audit remains full and fail-closed. Installer fixtures cover retired-schema
+bootstrap plus post-install full-audit failure.
+
+## 2026-10-09 Per-Action Workspace Review
+
+DWF-D44 separates stable OWNER identity from workspace selection. Review must
+reject first-action permanent worktree binding, OWNER record rebinding,
+multi-root mutations, undeclared workspace selection, shell mutation from a
+foreign `cwd`, selected-root escape, and child movement outside its assignment
+workspace. It must allow one OWNER to select different worktrees in separate
+actions while each workspace independently validates declaration, PlanMount,
+Session, active-work, Git identity, and write claims. The review Skill,
+owner-rooted invariant, binding/Kernel tests, and assignment persistence tests
+cover these boundaries; no generic review fixture is required.
 
 ## 2026-10-07 Integrated Ownership Review
 
@@ -214,11 +236,12 @@ never loaded or migrated.
 Owner-rooted workflow binding replaced peer conversation bindings. Review now
 requires canonical OWNER/WORKER/REVIEWER lineage, exact current Action Receipt
 selection, live assigned reviewers, and no worktree-wide identity fallback.
-TRAE multi-root review also requires one descriptor-selected bootstrap,
-target-derived owner selection, active-editor mismatch rejection, global-idle
-hard-cut admission, and deletion limited to the old conversation and Action
-Receipt stores. `SKILL.md`, workflow regression fixtures, and the owner-rooted
-invariant cover the new omission, stale-child, and bootstrap-authority risks.
+The original TRAE multi-root cut also required descriptor bootstrap and
+first-root selection rules; DWF-D44's 2026-10-09 review above supersedes those
+workspace-selection details. Global-idle hard-cut admission and deletion
+limited to old conversation and Action Receipt stores remain. `SKILL.md`,
+workflow regression fixtures, and the owner-rooted invariant cover omission,
+stale-child, and bootstrap-authority risks.
 
 Resource-plan selection no longer treats healthy reusable inventory as
 Runtime Owner readiness, and incompatible non-null digest expectations cannot

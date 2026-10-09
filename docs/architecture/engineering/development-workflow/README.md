@@ -1,7 +1,7 @@
 # Development Workflow Control Plane
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-07
+> **Created**: 2026-09-13 | **Updated**: 2026-10-09
 > **Owner**: Platform Team
 
 ---
@@ -40,7 +40,7 @@
 PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
 ```
 
-当前 binding 和 Plan 修订路径有四个已验证问题：
+当前 binding 和 Plan 修订路径有五个已验证问题：
 
 1. 宿主字段被跨 host 等价归一，TRAE 内部 reviewer、retry 或 subtask 的
    `session_id` 会创建新的顶层 owner binding。
@@ -50,6 +50,9 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
    强制全局唯一，使过期 child 历史阻断当前 reviewer。
 4. 旧的冻结版本模型把补充 write set、Gate 或依赖等执行修正变成新版本、
    cancel/unmount/remount 和重复确认，虽然北极星目标并未改变。
+5. 旧 Kernel 把首个 mutation Action 的 worktree 固化为 conversation
+   `executionRoot`，导致同一 OWNER 无法在后续 Action 中切换到另一个
+   workspace-local Plan，只能制造新的宿主 Task。
 
 这些问题共同把内部执行历史误当成用户决策边界。目标设计必须把一个可见开发会话
 固定为唯一 OWNER，让 worker child identity/liveness 显式可校验，并让
@@ -87,8 +90,8 @@ Plan 在不改变北极星目标时可由 Agent 记录修订后继续执行。
 17. 个人交互习惯通过 machine-local Overlay 选择性叠加；共享 `pt-ew` 与
     canonical Skill rollout 不携带任何用户专属策略。
 18. 每个 IDE conversation 在首次可阻断 `PreToolUse` 时原子绑定一个不可变
-    `executionRoot`；工具目标作为独立 `subjectRoot` 校验，跨 worktree 只读
-    允许、写入拒绝。
+    OWNER identity；每个 mutating OWNER Action 独立选择一个 workspace，
+    单个 Action 跨 worktree 写入拒绝。
 19. Workflow Snapshot 是 CLI、Context Anchor 与 Doctor 的统一只读投影；
     它不启动 HTTP 服务或浏览器；Action Receipt 只描述活动，不替代 Task
     进度。
@@ -103,7 +106,8 @@ Plan 在不改变北极星目标时可由 Agent 记录修订后继续执行。
 23. 一个可见开发会话只有一个 OWNER binding；WORKER/REVIEWER 必须由
     assignment 创建 child binding，并以 lease/terminal receipt 管理生命周期。
     状态和完成声明只能消费当前事件的 `BindingProjection`，不能枚举同
-    worktree 的历史 binding 猜 owner。
+    worktree 的历史 binding 猜 owner。OWNER 可在不同 Action 间切换
+    workspace；child 仍固定在 assignment workspace。
 24. 普通 Agent integration 投影不依赖由待安装 Hook 签发的 grant，只使用短期
     机器锁与严格投影校验，且不要求无关 worktree idle；机器级 legacy store
     hard cut 与 retired projection GC 使用独立命令、独立 OWNER grant，并且
@@ -123,10 +127,10 @@ Plan 在不改变北极星目标时可由 Agent 记录修订后继续执行。
 |---|---|
 | [design.md](./design.md) | 控制面边界、stable Plan、amendment、mount、snapshot、Task Slice 和恢复数据流 |
 | [data-model.md](./data-model.md) | Plan、Task、Session、Checkpoint、Run 与状态机 schema |
-| [decisions.md](./decisions.md) | DWF-D01..DWF-D43 关键决策 |
+| [decisions.md](./decisions.md) | DWF-D01..DWF-D44 关键决策 |
 | [module-layout.md](./module-layout.md) | 文档、CLI、machine store 和 Skill 的文件职责 |
 | [integration.md](./integration.md) | 与 Skill、Make、Local Dev、Acceptance、Quality 的映射 |
-| [host-neutral-agent-integration.md](./host-neutral-agent-integration.md) | DWF-D21/DWF-D22/DWF-D33 的 Kernel、宿主投影和 rollout 流程 |
+| [host-neutral-agent-integration.md](./host-neutral-agent-integration.md) | DWF-D21/DWF-D22/DWF-D33/DWF-D44 的 Kernel、宿主投影和 rollout 流程 |
 | [product-definition.md](./product-definition.md) | Development Workflow 产品能力、用户和 Journey |
 | [experience-contract.md](./experience-contract.md) | Development Workflow 可见状态与交互合同 |
 | [product-state-model.md](./product-state-model.md) | Stage、Plan、Task、Review 与 Agent activity 状态 |
@@ -139,7 +143,7 @@ Plan 在不改变北极星目标时可由 Agent 记录修订后继续执行。
 
 ## 5. Current Status
 
-DWF-D01..DWF-D43 已接受。仓库与 PR 可包含多个 stable Plan；Project Ledger
+DWF-D01..DWF-D44 已接受。仓库与 PR 可包含多个 stable Plan；Project Ledger
 的显式 PlanMount 是执行 worktree 唯一 Plan 占用真源。执行时以 immutable
 ExecutionPlanSnapshot 固定每次读取的内容；普通修订追加原因与影响记录，并让
 同一个 ExecutionRun 以 CAS 指向新快照，无需取消或重挂。只有修改或削弱
