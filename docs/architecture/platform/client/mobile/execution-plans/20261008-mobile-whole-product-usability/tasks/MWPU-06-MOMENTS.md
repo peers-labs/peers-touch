@@ -8,7 +8,7 @@
   "planId": "mobile-whole-product-usability-20261008",
   "taskId": "MWPU-06-MOMENTS",
   "workstreamId": "MWPU-PAGES",
-  "title": "Close Moments feed, detail, composer, and recovery surfaces",
+  "title": "Close three-client Social feed, composer, detail, like, and recovery workflows",
   "workClass": "product-behavior",
   "completionClass": "functional",
   "executionMode": "build",
@@ -16,10 +16,14 @@
   "journeyId": "MS-J05",
   "runtimeClass": "native-mobile",
   "writeSet": [
+    "apps/desktop/src/pages",
+    "apps/desktop/src/services/privateMomentsNative.ts",
+    "apps/desktop/src/services/socialRealtime.ts",
     "apps/mobile/src/pages/MomentsPage.tsx",
     "apps/mobile/src/pages/moments",
     "apps/mobile/src/features/social",
     "apps/mobile/src/styles.css",
+    "apps/station/app/subserver/social",
     "packages/prototypes/mobile/chat",
     "tooling/acceptance/gates/mobile"
   ],
@@ -37,12 +41,12 @@
   "checks": [
     {
       "id": "moments-source",
-      "command": "pnpm --dir apps/mobile exec vitest run src/pages/MomentsPage.test.ts src/pages/moments src/features/social/useMomentsDraft.test.ts",
+      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/moments src/services/socialRealtime.test.ts src/test/moments-store.test.ts && pnpm --dir apps/mobile exec vitest run src/pages/MomentsPage.test.ts src/pages/moments src/features/social/useMomentsDraft.test.ts",
       "verificationClass": "SOURCE_CHECK"
     },
     {
       "id": "moments-foreground-functional",
-      "command": "node apps/mobile/scripts/review-mobile-surfaces.mjs --surface-set moments --mode functional",
+      "command": "node apps/mobile/scripts/run-three-client-product-journey.mjs --phase social",
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
@@ -59,19 +63,22 @@
   "runtimeReuse": {
     "scope": "suite",
     "entryCheckId": "moments-foreground-functional",
-    "scenarioIds": ["moments-feed", "moment-detail", "moment-composer"],
+    "scenarioIds": ["alice-publish", "bob-like", "coral-publish", "three-client-feed-convergence"],
     "maxProvisioningRuns": 1,
-    "maxClientLaunches": 2,
+    "maxClientLaunches": 3,
     "minWarmReuseRate": 0.66,
     "requireAttachOnlyScenarios": true,
     "requireReceiverVisibleProof": true,
     "allowClientReplacement": false
   },
   "doneWhen": [
-    "feed, pagination, detail/comments, composer, audience, media, empty, filtered, policy-hidden, unavailable, pending, and rollback states are each operated in foreground iOS",
+    "Android Alice publishes a post that Desktop Bob and iOS Coral receive and open through foreground Social UI",
+    "Desktop Bob likes Alice's post and the visible like state converges on Android and iOS",
+    "iOS Coral publishes a post that Android Alice and Desktop Bob receive, open, and like",
+    "feed, composer, detail, media, empty, unavailable, pending, retry, rollback, and relaunch states remain usable and visually aligned across clients",
     "human content dominates protocol metadata and feed/detail/comments remain one continuous reading surface",
     "composer state and recovery stay inside the composer without blocking unrelated navigation",
-    "foreground screenshots and interaction traces cover every declared Moments row"
+    "foreground screenshots and interaction traces cover every declared Social workflow on all three clients"
   ],
   "failureBehavior": [
     "do not fabricate an empty feed when projection is unavailable",

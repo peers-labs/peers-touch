@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { workspaceIdForRoot } from '../lib/machine-dev-paths.mjs';
 import {
   checkDeclaration,
+  releaseDeclaration,
   startOrUpdateDeclaration,
 } from './dev-work.mjs';
 import { canonicalize } from './dev-work-schema.mjs';
@@ -1094,6 +1095,71 @@ test('start requires an ACTIVE declaration and preserves Plan baseline/source id
     assert.equal(statSync(paths.directory).mode & 0o777, 0o700);
     assert.equal(statSync(paths.session).mode & 0o777, 0o600);
     assert.equal(statSync(paths.events).mode & 0o777, 0o600);
+  } finally {
+    scope.close();
+  }
+});
+
+test('start archives a same-owner Session superseded by the current Plan Task', async () => {
+  const scope = fixture();
+  try {
+    const first = await start(scope);
+    releaseDeclaration(declarationOptions(scope));
+
+    const nextTaskId = 'DWF-B2';
+    scope.task.taskId = nextTaskId;
+    scope.task.title = 'Superseding Plan Task';
+    scope.plan.taskSlices = new Map([[nextTaskId, scope.task]]);
+    scope.plan.currentTask = scope.task;
+    scope.plan.manifest.tasks[0].id = nextTaskId;
+    scope.plan.manifest.tasks[0].path = `tasks/${nextTaskId}.md`;
+    scope.plan.planDigest = 'b'.repeat(64);
+    scope.planExecution.snapshot.planDigest = scope.plan.planDigest;
+    scope.planExecution.mount.planDigest = scope.plan.planDigest;
+    scope.planExecution.run.currentTaskId = nextTaskId;
+    scope.planExecution.run.taskStates = {
+      [nextTaskId]: { state: 'in_progress', blocker: null },
+    };
+    scope.baseOptions.sessionId = 'dwf-b1-session-2';
+    scope.baseOptions.taskId = nextTaskId;
+
+    startOrUpdateDeclaration(
+      declarationOptions(scope, {
+        sessionId: scope.baseOptions.sessionId,
+      }),
+    );
+    checkDeclaration(
+      declarationOptions(scope, {
+        sessionId: scope.baseOptions.sessionId,
+      }),
+    );
+    const second = await startDevelopmentSession(
+      scope.baseOptions,
+      scope.dependencies,
+    );
+    const paths = sessionStorePaths({
+      home: scope.home,
+      workspaceId: WORKSPACE_ID,
+      workItemId: scope.workItemId,
+    });
+    const archived = JSON.parse(
+      readFileSync(
+        path.join(
+          paths.directory,
+          'archive',
+          first.state.sessionId,
+          'session.json',
+        ),
+        'utf8',
+      ),
+    );
+
+    assert.equal(archived.state.sessionId, first.state.sessionId);
+    assert.equal(archived.state.taskId, 'DWF-B1');
+    assert.equal(archived.state.state, 'BOUND');
+    assert.equal(second.state.sessionId, 'dwf-b1-session-2');
+    assert.equal(second.state.taskId, nextTaskId);
+    assert.equal(second.state.state, 'BOUND');
   } finally {
     scope.close();
   }

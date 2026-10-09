@@ -8,7 +8,7 @@
   "planId": "mobile-whole-product-usability-20261008",
   "taskId": "MWPU-05-CONTACTS",
   "workstreamId": "MWPU-PAGES",
-  "title": "Close Contacts, profile, request, and group-creation surfaces",
+  "title": "Close three-client Contacts, requests, profiles, and group creation",
   "workClass": "product-behavior",
   "completionClass": "functional",
   "executionMode": "build",
@@ -16,9 +16,11 @@
   "journeyId": "MS-J04",
   "runtimeClass": "native-mobile",
   "writeSet": [
+    "apps/desktop/src",
     "apps/mobile/src/pages/ContactsPage.tsx",
     "apps/mobile/src/features/social",
     "apps/mobile/src/styles.css",
+    "apps/station/app/subserver/federation",
     "packages/prototypes/mobile/chat",
     "tooling/acceptance/gates/mobile"
   ],
@@ -36,12 +38,12 @@
   "checks": [
     {
       "id": "contacts-source",
-      "command": "pnpm --dir apps/mobile exec vitest run src/pages/ContactsPage.window.test.tsx src/features/social",
+      "command": "pnpm --dir apps/desktop run check && pnpm --dir apps/mobile exec vitest run src/pages/ContactsPage.window.test.tsx src/features/social",
       "verificationClass": "SOURCE_CHECK"
     },
     {
       "id": "contacts-foreground-functional",
-      "command": "node apps/mobile/scripts/review-mobile-surfaces.mjs --surface-set contacts --mode functional",
+      "command": "node apps/mobile/scripts/run-three-client-product-journey.mjs --phase contacts",
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
@@ -58,16 +60,16 @@
   "runtimeReuse": {
     "scope": "suite",
     "entryCheckId": "contacts-foreground-functional",
-    "scenarioIds": ["contacts-list", "contact-profile", "contact-overlays"],
+    "scenarioIds": ["alice-bob-coral-discovery", "friend-request", "group-create", "membership-readback"],
     "maxProvisioningRuns": 1,
-    "maxClientLaunches": 2,
+    "maxClientLaunches": 3,
     "minWarmReuseRate": 0.66,
     "requireAttachOnlyScenarios": true,
     "requireReceiverVisibleProof": true,
     "allowClientReplacement": false
   },
   "doneWhen": [
-    "Contacts list, request sections, local search, federated lookup, profile detail, Find People, Create Group, and role-denied states are each operated in foreground iOS",
+    "Alice, Bob, and Coral discover one another, complete friend requests, open profiles, and create the shared Group through foreground Mobile and Desktop controls",
     "no-result, duplicate, pending, unavailable, permission, and destructive actions have distinct human-readable recovery",
     "long names and technical identifiers do not break row or modal layout",
     "foreground screenshots and interaction traces cover every declared Contacts row"

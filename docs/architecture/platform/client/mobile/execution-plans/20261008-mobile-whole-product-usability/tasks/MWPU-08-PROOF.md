@@ -1,4 +1,4 @@
-# MWPU-08-PROOF: Whole-Product Foreground Proof
+# MWPU-08-PROOF: Three-Client Whole-Product Foreground Proof
 
 ## Task Slice
 
@@ -8,7 +8,7 @@
   "planId": "mobile-whole-product-usability-20261008",
   "taskId": "MWPU-08-PROOF",
   "workstreamId": "MWPU-PROOF",
-  "title": "Prove the complete Mobile surface inventory and close delivery",
+  "title": "Prove complete Android Alice, Desktop Bob, and iOS Coral product interoperability",
   "workClass": "product-behavior",
   "completionClass": "acceptance-aggregate",
   "executionMode": "build",
@@ -20,12 +20,15 @@
     "reports/mobile-whole-product-usability"
   ],
   "readSet": [
+    "apps/desktop",
     "apps/mobile/package.json",
     "apps/mobile/scripts",
     "apps/mobile/src",
     "apps/mobile/src-tauri/src",
+    "apps/station",
     "docs/architecture/platform/client/mobile",
     "docs/client/common/ui-identity",
+    "docs/client/desktop",
     "docs/client/mobile",
     "packages/prototypes/mobile/chat",
     "reports/mobile-infra-chat-usable/README.md"
@@ -37,8 +40,8 @@
   },
   "checks": [
     {
-      "id": "mobile-final-source",
-      "command": "pnpm --dir apps/mobile run check",
+      "id": "three-client-final-source",
+      "command": "pnpm --dir apps/desktop run check && pnpm --dir apps/mobile run check && go test ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/social/...",
       "verificationClass": "SOURCE_CHECK"
     },
     {
@@ -63,11 +66,12 @@
     }
   ],
   "doneWhen": [
-    "the complete route/state inventory is exercised from launch through logout in a visible iOS Simulator",
-    "every inventory row has reviewed screenshot, DOM/AX, interaction, viewport, text-size, and source identity evidence",
+    "Android Alice, Desktop Bob, and iOS Coral are built from the exact target worktree and each completes Station selection, login, relaunch, and logout",
+    "all required Direct, Group, voice message, voice/video call, Social publish, receive, open, and like directions are operated through foreground product controls",
+    "every required outcome has sender and receiver screenshots, DOM/AX or native hierarchy, interaction trace, account identity, client identity, Station identity, and source identity evidence",
     "all page-specific development journeys and required formal Gates pass on final exact source",
     "zero blocker or major usability findings remain",
-    "the final report explicitly separates whole-product proof from historical MICU-03 Session evidence",
+    "the final report explicitly separates this three-client real UI proof from API, Harness-only, headless, historical MICU-03, and physical-Android evidence",
     "all owned simulators, Appium sessions, processes, ports, storage, fixtures, and leases return to baseline"
   ],
   "failureBehavior": [

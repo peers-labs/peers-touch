@@ -181,7 +181,7 @@ export function requireWorkflowOwnerReference(value, detail = {}) {
   if (value === null || value === undefined) {
     fail(
       'WORKFLOW_OWNER_CONTEXT_REQUIRED',
-      'operation requires an exact live main-session OWNER receipt',
+      'operation requires a verified live main-session OWNER context',
       detail,
     );
   }

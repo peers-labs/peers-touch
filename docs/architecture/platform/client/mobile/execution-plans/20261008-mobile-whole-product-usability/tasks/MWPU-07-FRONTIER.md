@@ -8,7 +8,7 @@
   "planId": "mobile-whole-product-usability-20261008",
   "taskId": "MWPU-07-FRONTIER",
   "workstreamId": "MWPU-PROOF",
-  "title": "Rerun and remediate every Mobile surface on final exact source",
+  "title": "Rerun and remediate the complete Android, Desktop, and iOS product frontier",
   "workClass": "product-behavior",
   "completionClass": "functional",
   "executionMode": "fix",
@@ -16,16 +16,22 @@
   "journeyId": "MS-J08",
   "runtimeClass": "native-mobile",
   "writeSet": [
+    "apps/desktop",
     "apps/mobile/src",
     "apps/mobile/src-tauri/src",
     "apps/mobile/scripts",
+    "apps/station",
     "packages/locales",
     "packages/prototypes/mobile/chat",
     "tooling/acceptance/gates/mobile"
   ],
   "readSet": [
+    "docs/architecture/domains/chat",
+    "docs/architecture/domains/social",
     "docs/architecture/platform/client/mobile",
+    "docs/architecture/platform/station/access",
     "docs/client/common/ui-identity",
+    "docs/client/desktop",
     "docs/client/mobile",
     "reports/mobile-infra-chat-usable/README.md"
   ],
@@ -36,35 +42,35 @@
   },
   "checks": [
     {
-      "id": "mobile-final-functional-source",
-      "command": "pnpm --dir apps/mobile run check",
+      "id": "three-client-final-functional-source",
+      "command": "pnpm --dir apps/desktop run check && pnpm --dir apps/mobile run check && go test ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/social/...",
       "verificationClass": "SOURCE_CHECK"
     },
     {
-      "id": "mobile-final-functional",
-      "command": "node apps/mobile/scripts/review-mobile-surfaces.mjs --surface-set all --mode functional",
+      "id": "three-client-final-functional",
+      "command": "node apps/mobile/scripts/run-three-client-product-journey.mjs --phase all",
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
-      "id": "mobile-final-functional-ux-review",
+      "id": "three-client-final-functional-ux-review",
       "command": "node apps/mobile/scripts/review-mobile-surfaces.mjs --surface-set all --mode review",
       "verificationClass": "UX_REVIEW"
     }
   ],
   "runtimeReuse": {
     "scope": "suite",
-    "entryCheckId": "mobile-final-functional",
-    "scenarioIds": ["entry", "shell", "recovery", "chat", "contacts", "moments", "settings"],
+    "entryCheckId": "three-client-final-functional",
+    "scenarioIds": ["entry", "shell", "direct", "group", "voice", "call", "social", "recovery"],
     "maxProvisioningRuns": 1,
-    "maxClientLaunches": 2,
+    "maxClientLaunches": 3,
     "minWarmReuseRate": 0.85,
     "requireAttachOnlyScenarios": true,
     "requireReceiverVisibleProof": true,
     "allowClientReplacement": false
   },
   "doneWhen": [
-    "all earlier page closures are rerun against the final shared CSS, locale, runtime, and component source",
-    "the complete foreground inventory passes functional and visual review without stale page evidence",
+    "all earlier closures are rerun against the final Desktop, Mobile, Station, shared locale, runtime, and component source",
+    "Android Alice, Desktop Bob, and iOS Coral complete the full foreground journey without stale binaries or stale sessions",
     "any regression discovered here is fixed at its owning page or shared layer and the complete frontier is rerun",
     "the final exact-source functional result is ready for formal Acceptance promotion"
   ],

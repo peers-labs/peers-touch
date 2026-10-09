@@ -1,4 +1,4 @@
-# MWPU-02-SHELL: Shared Mobile Visual Foundation
+# MWPU-02-SHELL: Shared Mobile And Desktop Foundation
 
 ## Task Slice
 
@@ -8,7 +8,7 @@
   "planId": "mobile-whole-product-usability-20261008",
   "taskId": "MWPU-02-SHELL",
   "workstreamId": "MWPU-FOUNDATION",
-  "title": "Repair shared Mobile shell, scale, identity, and recovery composition",
+  "title": "Align Mobile and Desktop shell, identity, runtime, and recovery composition",
   "workClass": "product-behavior",
   "completionClass": "functional",
   "executionMode": "build",
@@ -16,12 +16,14 @@
   "journeyId": "MS-J08",
   "runtimeClass": "native-mobile",
   "writeSet": [
+    "apps/desktop/src",
     "apps/mobile/scripts",
     "apps/mobile/src/App.tsx",
     "apps/mobile/src/components",
     "apps/mobile/src/pages/SettingsPage.tsx",
     "apps/mobile/src/styles.css",
     "apps/mobile/src/app/mobileI18n.tsx",
+    "apps/station/app/subserver/actor_identity",
     "packages/locales",
     "packages/prototypes/mobile/chat",
     "tooling/acceptance/gates/mobile"
@@ -42,12 +44,12 @@
   "checks": [
     {
       "id": "shell-source",
-      "command": "pnpm --dir apps/mobile run check:web && pnpm --dir apps/mobile run check:recovery-ui",
+      "command": "pnpm --dir apps/desktop run check && pnpm --dir apps/mobile run check:web && pnpm --dir apps/mobile run check:recovery-ui",
       "verificationClass": "SOURCE_CHECK"
     },
     {
       "id": "shell-foreground-functional",
-      "command": "node apps/mobile/scripts/review-mobile-surfaces.mjs --surface-set shell --mode functional",
+      "command": "node apps/mobile/scripts/run-three-client-product-journey.mjs --phase shell",
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
@@ -59,20 +61,20 @@
   "runtimeReuse": {
     "scope": "suite",
     "entryCheckId": "shell-foreground-functional",
-    "scenarioIds": ["shell-navigation", "shell-degraded-module"],
+    "scenarioIds": ["android-alice-shell", "desktop-bob-shell", "ios-coral-shell"],
     "maxProvisioningRuns": 1,
-    "maxClientLaunches": 1,
-    "minWarmReuseRate": 0.5,
+    "maxClientLaunches": 3,
+    "minWarmReuseRate": 0.66,
     "requireAttachOnlyScenarios": true,
     "requireReceiverVisibleProof": true,
     "allowClientReplacement": false
   },
   "doneWhen": [
-    "shared typography, spacing, touch targets, safe areas, headers, tabbar, notices, sheets, and modal layers follow Mobile UI Identity",
+    "Android, Desktop, and iOS shell typography, spacing, identity, navigation, notices, sheets, and modal layers follow their production UI contracts",
     "friendly names are primary and technical identifiers are diagnostic-only",
     "module degradation stays inside the owning surface and never obstructs unrelated navigation or input",
     "the confirmed prototype and production shell have no unexplained visible drift",
-    "foreground iOS screenshots show stable composition at normal and maximum supported text size"
+    "foreground Android Alice, Desktop Bob, and iOS Coral screenshots show stable composition and no stale installed package"
   ],
   "failureBehavior": [
     "do not hide runtime failure or fabricate readiness",
