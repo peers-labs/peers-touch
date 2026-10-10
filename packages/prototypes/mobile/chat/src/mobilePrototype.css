@@ -604,9 +604,10 @@
     .ant-btn { align-self: flex-start; }
   }
   .mp-runtime-notice {
-    position: absolute; right: 12px; bottom: calc(var(--mp-tabbar-h) + 12px); left: 12px;
-    z-index: 110; display: grid; grid-template-columns: 24px minmax(0, 1fr);
+    position: relative; z-index: 110; display: grid; flex: 0 0 auto;
+    grid-template-columns: 24px minmax(0, 1fr);
     align-items: center; gap: 8px; padding: 10px 12px;
+    margin: 0 12px 12px;
     border: 1px solid var(--mp-gray-200); border-radius: var(--mp-r-md);
     background: rgba(255,255,255,0.98); box-shadow: 0 10px 30px rgba(31,35,48,0.14);
   }
@@ -635,9 +636,8 @@
   }
   @media (orientation: landscape) and (max-height: 500px) {
     .mp-runtime-notice {
-      right: 12px;
-      left: auto;
       width: min(calc(100% - 24px), 300px);
+      margin-left: auto;
     }
   }
   .mp-direct-state { margin: 0 16px; border-radius: var(--mp-r-md); }

@@ -363,6 +363,11 @@ export function MobileShell(props: MobileShellProps) {
         </MobileRouteBoundary>
       </div>
 
+      <div
+        className="mobile-shell-status-slot"
+        data-recovery-status-slot
+      />
+
       {!hideTabbar ? <nav className="mobile-tabbar">
         {primaryTabDescriptors.map((descriptor) => {
           const tabId = routeIdToTabId(descriptor.routeId);

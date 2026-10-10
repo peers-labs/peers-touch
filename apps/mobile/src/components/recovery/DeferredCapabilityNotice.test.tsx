@@ -67,7 +67,7 @@ describe('failed runtime recovery notice', () => {
       '/* Keep compact recovery clear of centered primary actions on short screens. */';
     const start = styles.indexOf(marker);
     const end = styles.indexOf(
-      ".recovery-overlay-host:is(\n  [data-launch-state='shell'],",
+      '.recovery-deferred-capability.compact .recovery-notice__icon',
       start + marker.length,
     );
     const contract = styles.slice(start, end);

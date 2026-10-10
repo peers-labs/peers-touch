@@ -7,7 +7,8 @@
  * a second retry, persistence, or lifecycle owner.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import {
   getMobileLifecycleKernel,
@@ -89,6 +90,16 @@ export function visibleRecoveryStates(
   });
 }
 
+export function isShellStatusState(
+  state: RecoveryState,
+  launchState: MobileLaunchState,
+): boolean {
+  return (
+    (launchState === 'shell' || launchState === 'resume')
+    && state.kind === 'deferred-capability'
+  );
+}
+
 export function bindDeferredCapabilityProjection(
   getState: () => LifecycleKernelState,
   subscribe: (listener: () => void) => () => void,
@@ -122,6 +133,8 @@ export function RecoveryOverlayHost({
   const [snapshot, setSnapshot] = useState<RecoveryProjectionSnapshot>(
     () => getRecoveryProjection().getSnapshot(),
   );
+  const [shellStatusTarget, setShellStatusTarget] =
+    useState<HTMLElement | null>(null);
 
   useEffect(() => {
     const kernel = getMobileLifecycleKernel();
@@ -138,6 +151,12 @@ export function RecoveryOverlayHost({
       unsubscribeProjection();
     };
   }, [lifecycle.generation, recoveryRuntimeStatus]);
+
+  useLayoutEffect(() => {
+    setShellStatusTarget(
+      document.querySelector<HTMLElement>('[data-recovery-status-slot]'),
+    );
+  }, [lifecycle.launchState]);
 
   const handleLegacyReliabilityAction = useCallback(
     async (action: LegacyReliabilityRecoveryAction) => {
@@ -329,14 +348,28 @@ export function RecoveryOverlayHost({
         lifecycle.launchState,
         domainFixtureActive,
       );
-  if (visibleStates.length === 0) return null;
+  const shellStatusStates = visibleStates.filter(
+    (state) => isShellStatusState(state, lifecycle.launchState),
+  );
+  const overlayStates = shellStatusTarget
+    ? visibleStates.filter(
+        (state) => !isShellStatusState(state, lifecycle.launchState),
+      )
+    : visibleStates;
+  const shellStatusRail = shellStatusTarget && shellStatusStates.length > 0
+    ? createPortal(shellStatusStates.map(renderState), shellStatusTarget)
+    : null;
+  if (overlayStates.length === 0) return shellStatusRail;
 
   return (
-    <div
-      className="recovery-overlay-host"
-      data-launch-state={lifecycle.launchState}
-    >
-      {visibleStates.map(renderState)}
-    </div>
+    <>
+      {shellStatusRail}
+      <div
+        className="recovery-overlay-host"
+        data-launch-state={lifecycle.launchState}
+      >
+        {overlayStates.map(renderState)}
+      </div>
+    </>
   );
 }

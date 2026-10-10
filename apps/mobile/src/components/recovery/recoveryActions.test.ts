@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   bindDeferredCapabilityProjection,
+  isShellStatusState,
   visibleRecoveryStates,
 } from './RecoveryOverlayHost';
 
@@ -27,6 +28,10 @@ describe('Mobile reliability recovery surfaces', () => {
   );
   const deferredSource = readFileSync(
     new URL('./DeferredCapabilityNotice.tsx', import.meta.url),
+    'utf8',
+  );
+  const mobileShellSource = readFileSync(
+    new URL('../MobileShell.tsx', import.meta.url),
     'utf8',
   );
   const stylesSource = readFileSync(
@@ -163,13 +168,23 @@ describe('Mobile reliability recovery surfaces', () => {
   });
 
   it('keeps shell degradation compact and explicitly non-blocking', () => {
+    const degraded = {
+      kind: 'deferred-capability',
+      unavailableRuntimes: [],
+    } as const;
+
     expect(hostSource).toContain('bindDeferredCapabilityProjection');
+    expect(isShellStatusState(degraded, 'shell')).toBe(true);
+    expect(isShellStatusState(degraded, 'resume')).toBe(true);
+    expect(isShellStatusState(degraded, 'access-gate-chain')).toBe(false);
     expect(deferredSource).toContain('data-blocks-unrelated-content="false"');
+    expect(hostSource).toContain('createPortal(shellStatusStates.map(renderState)');
+    expect(mobileShellSource).toContain('data-recovery-status-slot');
     expect(stylesSource).toMatch(
-      /\.recovery-overlay-host:is\(\s*\[data-launch-state='shell'\],\s*\[data-launch-state='resume'\]\s*\)\s*\{[^}]*padding-bottom:\s*calc\(var\(--tabbar-height\)/s,
+      /\.mobile-shell-status-slot\s*\{[^}]*flex:\s*0 0 auto;/s,
     );
     expect(stylesSource).toMatch(
-      /\.recovery-overlay-host:is\(\s*\[data-launch-state='shell'\],\s*\[data-launch-state='resume'\]\s*\)\s*\.recovery-deferred-capability/s,
+      /\.mobile-shell-status-slot:not\(:empty\)\s*\{[^}]*display:\s*block;/s,
     );
   });
 

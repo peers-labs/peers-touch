@@ -10,6 +10,32 @@ Mobile feedback must feel like a modern native chat app: state updates in place,
 - **Toast/message**: use only for short success or low-risk acknowledgement. Do not use it for errors that need retry, inspection, or dismissal.
 - **Confirm**: destructive actions must use an explicit confirmation surface. Do not use a raw browser confirm.
 
+## Shell Runtime Status Rail
+
+```yaml
+surface: mobile.shell.runtime-status
+scenario: non-blocking-runtime-degradation
+given:
+  - the authenticated shell is visible
+  - one or more feature runtimes are degraded
+when:
+  - the lifecycle projection publishes a retryable non-blocking status
+then:
+  - the status renders between the page content rail and bottom navigation
+  - page content remains scrollable and every unrelated control remains visible and operable
+  - retry remains a 44px accessible action owned by the lifecycle runtime
+visual_invariants:
+  - the status rail consumes layout height instead of floating over page content
+  - the status rail remains above the safe area and bottom navigation
+forbidden:
+  - covering Sign Out, composer, list actions, or any other unrelated control
+  - presenting degraded feature state as a full-screen block
+evidence:
+  - foreground interaction trace
+  - control/status rectangle collision assertion
+  - before/after native screenshots
+```
+
 ## Error Text
 
 - User-facing text must be readable and actionable. Never render raw objects, stack traces, endpoint paths, or `[object Object]`.
