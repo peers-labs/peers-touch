@@ -559,6 +559,11 @@ function retryableUiPollError(error) {
     ].includes(error.code);
 }
 
+function retryableStaleElementError(error) {
+  return retryableUiPollError(error)
+    && error.message.toLowerCase().includes('stale element reference');
+}
+
 function evidenceFileSegment(value) {
   return value.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
 }
@@ -675,9 +680,23 @@ async function clickElement(client, elementId) {
   );
 }
 
+async function clickLocatedElement(client, using, value, optional = false) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const elementId = await findElement(client, using, value, optional);
+    if (!elementId) return false;
+    try {
+      await clickElement(client, elementId);
+      return true;
+    } catch (error) {
+      if (!retryableStaleElementError(error) || attempt === 2) throw error;
+      await sleep(uiPollIntervalMs);
+    }
+  }
+  return false;
+}
+
 async function clickSelector(client, selector, label) {
-  const elementId = await findElement(client, 'css selector', selector);
-  await clickElement(client, elementId);
+  await clickLocatedElement(client, 'css selector', selector);
   return { label, selector };
 }
 
@@ -735,9 +754,13 @@ async function clickVisibleButtonText(client, text, label) {
 }
 
 async function clickXpath(client, xpath, label, optional = false) {
-  const elementId = await findElement(client, 'xpath', xpath, optional);
-  if (!elementId) return false;
-  await clickElement(client, elementId);
+  const clicked = await clickLocatedElement(
+    client,
+    'xpath',
+    xpath,
+    optional,
+  );
+  if (!clicked) return false;
   return { label, xpath };
 }
 
@@ -3322,6 +3345,18 @@ function selfTest(matrix) {
       )) === false,
     'SELF_TEST_UI_POLL_RETRY',
     'UI polling retry classification is invalid',
+  );
+  assertContract(
+    retryableStaleElementError(new JourneyContractError(
+      'WEBDRIVER_REQUEST_FAILED',
+      'WebDriver 404: stale element reference',
+    )) === true
+      && retryableStaleElementError(new JourneyContractError(
+        'WEBDRIVER_REQUEST_FAILED',
+        'WebDriver 404: no such element',
+      )) === false,
+    'SELF_TEST_STALE_ELEMENT_RETRY',
+    'stale element retry classification is invalid',
   );
   return {
     status: 'PASS',
