@@ -160,13 +160,13 @@
   .mp-launch-content {
     flex: 1;
     display: flex;
-    justify-content: center;
+    justify-content: flex-end;
     flex-direction: column;
     gap: 26px;
     width: min(100%, 480px);
     min-height: 0;
     margin-inline: auto;
-    padding: 24px 22px 132px;
+    padding: 24px 22px 24px;
   }
 
   .mp-launch-brand {
@@ -263,6 +263,7 @@
     .mp-launch-content {
       flex-direction: row;
       align-items: center;
+      justify-content: center;
       gap: 32px;
       width: min(100%, 760px);
       padding: 16px 56px;

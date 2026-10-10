@@ -91,8 +91,13 @@ describe('StationSelector layout contract', () => {
   });
 
   it('anchors the surface and preserves a useful one-line address field', () => {
-    expect(styles).toMatch(/\.launch-content\s*\{[^}]*flex:\s*1;/s);
+    expect(styles).toMatch(
+      /\.launch-content\s*\{[^}]*flex:\s*1;[^}]*justify-content:\s*flex-end;[^}]*padding:[^;]*var\(--safe-area-bottom\)\s*\+\s*24px\);/s,
+    );
     expect(styles).toMatch(/\.launch-panel\s*\{[^}]*flex:\s*0 0 auto;/s);
+    expect(styles).toMatch(
+      /@media \(orientation: landscape\) and \(max-height: 500px\)[\s\S]*?\.launch-content\s*\{[^}]*justify-content:\s*center;/s,
+    );
     expect(styles).toMatch(
       /\.station-address-input\s*\{[^}]*height:\s*44px;[^}]*font-size:\s*16px;/s,
     );
