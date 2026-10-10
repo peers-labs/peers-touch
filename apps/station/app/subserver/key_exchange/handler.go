@@ -925,64 +925,86 @@ func mapCanonicalError(
 
 	var typed *domain.Error
 	if !errors.As(err, &typed) {
-		return server.InternalErrorWithCause(
+		return keyExchangeHandlerError(
+			nethttp.StatusInternalServerError,
+			actormodel.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR,
 			"Key Exchange operation failed",
 			err,
 		)
 	}
 
+	status := nethttp.StatusInternalServerError
+	code := actormodel.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR
+	message := "Key Exchange operation failed"
 	switch typed.Code {
-	case domain.ErrorCodeInvalidArgument:
-		return server.NewHandlerErrorWithCause(
-			nethttp.StatusBadRequest,
-			"invalid Key Exchange request",
-			err,
-		)
+	case domain.ErrorCodeInvalidArgument, domain.ErrorCodeInvalidMaterial:
+		status = nethttp.StatusBadRequest
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_INVALID_MATERIAL
+		message = "invalid Key Exchange request"
 	case domain.ErrorCodeUnauthorized:
-		return server.NewHandlerErrorWithCause(
-			nethttp.StatusForbidden,
-			"Key Exchange operation is not authorized",
-			err,
-		)
+		status = nethttp.StatusForbidden
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_FORBIDDEN
+		message = "Key Exchange operation is not authorized"
 	case domain.ErrorCodeNotFound:
-		return server.NewHandlerErrorWithCause(
-			nethttp.StatusNotFound,
-			"Key Exchange material was not found",
-			err,
-		)
-	case domain.ErrorCodeConflict,
-		domain.ErrorCodeStaleMaterial,
-		domain.ErrorCodePlanExpired,
-		domain.ErrorCodePoolDepleted:
-		return server.NewHandlerErrorWithCause(
-			nethttp.StatusConflict,
-			"Key Exchange material conflicts with current state",
-			err,
-		)
+		status = nethttp.StatusNotFound
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_POOL_NOT_FOUND
+		message = "Key Exchange material was not found"
+	case domain.ErrorCodeConflict:
+		status = nethttp.StatusConflict
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_REPLAY_CONFLICT
+		message = "Key Exchange material conflicts with current state"
+	case domain.ErrorCodeStaleMaterial, domain.ErrorCodePlanExpired:
+		status = nethttp.StatusConflict
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_STALE_EPOCH
+		message = "Key Exchange material is stale"
+	case domain.ErrorCodePoolDepleted:
+		status = nethttp.StatusConflict
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_POOL_DEPLETED
+		message = "Key Exchange material is depleted"
 	case domain.ErrorCodeQuotaExceeded:
-		return server.NewHandlerErrorWithCause(
-			nethttp.StatusTooManyRequests,
-			"Key Exchange quota was exceeded",
-			err,
-		)
+		status = nethttp.StatusTooManyRequests
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_QUOTA_EXCEEDED
+		message = "Key Exchange quota was exceeded"
 	case domain.ErrorCodePayloadTooLarge:
-		return server.NewHandlerErrorWithCause(
-			nethttp.StatusRequestEntityTooLarge,
-			"Key Exchange payload exceeds the configured limit",
-			err,
-		)
+		status = nethttp.StatusRequestEntityTooLarge
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_PAYLOAD_TOO_LARGE
+		message = "Key Exchange payload exceeds the configured limit"
 	case domain.ErrorCodeDependency:
-		return server.NewHandlerErrorWithCause(
-			nethttp.StatusServiceUnavailable,
-			"Key Exchange dependency is unavailable",
-			err,
-		)
-	default:
+		status = nethttp.StatusServiceUnavailable
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_DEPENDENCY_UNAVAILABLE
+		message = "Key Exchange dependency is unavailable"
+	}
+	return keyExchangeHandlerError(status, code, message, err)
+}
+
+func keyExchangeHandlerError(
+	status int,
+	code actormodel.ErrorCode,
+	message string,
+	cause error,
+) error {
+	body, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		&actormodel.ErrorResponse{
+			Code:    code,
+			Message: message,
+		},
+	)
+	if err != nil {
 		return server.NewHandlerErrorWithCause(
 			nethttp.StatusInternalServerError,
 			"Key Exchange operation failed",
 			err,
 		)
+	}
+	return &server.HandlerError{
+		Code:        status,
+		Message:     message,
+		Err:         cause,
+		Body:        body,
+		ContentType: actormodel.ContentTypeProtobuf,
+		Headers: map[string]string{
+			"X-Peers-Error-Code": code.String(),
+		},
 	}
 }
 
