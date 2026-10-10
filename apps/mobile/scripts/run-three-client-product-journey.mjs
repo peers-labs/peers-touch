@@ -1619,6 +1619,26 @@ async function ensureMobileAuthenticated(
         `,
       );
     }
+    await waitForUi(
+      clientId,
+      client,
+      'ready active Station',
+      `
+        const entry = document.querySelector('.station-entry.active');
+        const status = entry?.querySelector('.station-entry-status');
+        const continueButton = [...document.querySelectorAll('button')]
+          .find((button) => (
+            (button.innerText || '').trim() === 'Continue'
+          ));
+        return {
+          ready: Boolean(entry)
+            && status?.classList.contains('online')
+            && continueButton instanceof HTMLButtonElement
+            && !continueButton.disabled,
+          status: status?.innerText || ''
+        };
+      `,
+    );
     await clickXpath(
       client,
       '//button[normalize-space(.)="Continue"]',
