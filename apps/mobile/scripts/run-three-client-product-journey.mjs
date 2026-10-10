@@ -5532,7 +5532,7 @@ async function searchMobileMessage(
   );
   await clickVisibleSelector(
     client,
-    '.chat-header-search .ant-input-search-button',
+    '.chat-header-search .ant-input-search-btn',
     `submit-search-${messageText}`,
   );
   const result = await waitForUi(
