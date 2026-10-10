@@ -4861,13 +4861,16 @@ async function waitForChatSendOutcome(clientId, client, text) {
         'button.message-send-button, [data-chat-send]'
       );
       const error = document.querySelector('.mobile-notice.error')?.innerText || '';
+      const inputValue = input instanceof HTMLInputElement
+        ? input.value
+        : (input?.textContent || '');
       return {
         ready: Boolean(row)
           && state !== 'pending'
           && delivery !== 'sending',
         retryable: error.includes('mobile.recovery.writeRevocation.body')
-          && input instanceof HTMLInputElement
-          && input.value === targetText
+          && input instanceof HTMLElement
+          && inputValue.trim() === targetText
           && send instanceof HTMLButtonElement
           && !send.disabled,
         delivery,
@@ -4896,9 +4899,13 @@ async function waitForStableChatComposerAdmission(clientId, client) {
         'button.message-send-button, [data-chat-send]'
       );
       const paused = (document.body?.innerText || '').includes('Actions Paused');
+      const inputReady = input instanceof HTMLInputElement
+        ? !input.disabled
+        : input instanceof HTMLElement
+          && input.getClientRects().length
+          && input.getAttribute('aria-disabled') !== 'true';
       return {
-        ready: input instanceof HTMLInputElement
-          && !input.disabled
+        ready: Boolean(inputReady)
           && send instanceof HTMLButtonElement
           && !send.disabled
           && !paused
