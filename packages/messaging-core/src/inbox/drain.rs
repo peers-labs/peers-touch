@@ -3,14 +3,53 @@ use crate::proto::chat::{
     DurableDeviceInboxItem,
 };
 use crate::proto::{actor::ActorDeviceRef, actor_device_ptid};
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 pub type AcknowledgedItemObserver = Arc<dyn Fn(&DurableDeviceInboxItem) + Send + Sync>;
 pub type ConsumerEpochObserver = Arc<dyn Fn(u64) + Send + Sync>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueueTransportErrorCode {
+    DeviceInboxItemNotHead,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QueueTransportError {
+    code: Option<QueueTransportErrorCode>,
+    message: String,
+}
+
+impl QueueTransportError {
+    pub fn new(code: Option<QueueTransportErrorCode>, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+
+    pub fn code(&self) -> Option<QueueTransportErrorCode> {
+        self.code
+    }
+}
+
+impl Display for QueueTransportError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for QueueTransportError {}
+
 pub trait QueueTransport {
-    fn claim(&self, request: ClaimDeviceInboxRequest) -> Result<ClaimDeviceInboxResponse, String>;
-    fn acknowledge(&self, request: AcknowledgeDeviceInboxItemRequest) -> Result<(), String>;
+    fn claim(
+        &self,
+        request: ClaimDeviceInboxRequest,
+    ) -> Result<ClaimDeviceInboxResponse, QueueTransportError>;
+    fn acknowledge(
+        &self,
+        request: AcknowledgeDeviceInboxItemRequest,
+    ) -> Result<(), QueueTransportError>;
 }
 
 pub trait ClaimedItemConsumer {
@@ -86,15 +125,28 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
         if cursor < 0 {
             return Err("messaging drain cursor cannot be negative".to_string());
         }
-        let response = self.transport.claim(ClaimDeviceInboxRequest {
-            device: Some(self.device.clone()),
-            consumer_id: self.consumer_id.clone(),
-            expected_consumer_epoch,
-            after_lane_sequence: cursor,
-            batch_limit: self.batch_limit,
-        })?;
+        let claim = |after_lane_sequence, consumer_epoch| {
+            self.transport.claim(ClaimDeviceInboxRequest {
+                device: Some(self.device.clone()),
+                consumer_id: self.consumer_id.clone(),
+                expected_consumer_epoch: consumer_epoch,
+                after_lane_sequence,
+                batch_limit: self.batch_limit,
+            })
+        };
+        let (response, response_cursor) = match claim(cursor, expected_consumer_epoch) {
+            Ok(response) => (response, cursor),
+            Err(error)
+                if cursor > 0
+                    && error.code() == Some(QueueTransportErrorCode::DeviceInboxItemNotHead) =>
+            {
+                // The local transaction commits before Station ACK. Replaying from Station's
+                // acknowledged head is safe because the durable consumption marker is idempotent.
+                (claim(0, 0).map_err(|error| error.to_string())?, 0)
+            }
+            Err(error) => return Err(error.to_string()),
+        };
         if response.consumer_epoch == 0
-            || response.acked_through_sequence > cursor
             || response.lane_head_sequence < response.acked_through_sequence
         {
             return Err("messaging claim response lane state is invalid".to_string());
@@ -103,7 +155,7 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
             observer(response.consumer_epoch);
         }
 
-        let mut next_cursor = cursor;
+        let mut next_cursor = response_cursor.max(response.acked_through_sequence);
         let mut processed = 0;
         for item in &response.items {
             if item.lane_sequence != next_cursor + 1 {
@@ -117,7 +169,8 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
                     lane_sequence: item.lane_sequence,
                     consumer_epoch: response.consumer_epoch,
                     payload_sha256: item.payload_sha256.clone(),
-                })?;
+                })
+                .map_err(|error| error.to_string())?;
             if let Some(observer) = &self.acknowledged_item_observer {
                 observer(item);
             }
@@ -150,7 +203,7 @@ mod tests {
         fn claim(
             &self,
             request: ClaimDeviceInboxRequest,
-        ) -> Result<ClaimDeviceInboxResponse, String> {
+        ) -> Result<ClaimDeviceInboxResponse, QueueTransportError> {
             self.claims.borrow_mut().push(request.clone());
             Ok(ClaimDeviceInboxResponse {
                 consumer_epoch: 3,
@@ -165,7 +218,10 @@ mod tests {
             })
         }
 
-        fn acknowledge(&self, request: AcknowledgeDeviceInboxItemRequest) -> Result<(), String> {
+        fn acknowledge(
+            &self,
+            request: AcknowledgeDeviceInboxItemRequest,
+        ) -> Result<(), QueueTransportError> {
             self.acknowledgements.borrow_mut().push(request);
             Ok(())
         }
@@ -317,6 +373,171 @@ mod tests {
         assert_eq!(progress.processed, 2);
         assert_eq!(*drain.consumer.consumed.borrow(), vec![2, 3]);
         assert_eq!(drain.transport.claims.borrow()[0].after_lane_sequence, 1);
+    }
+
+    #[test]
+    fn restart_replays_server_head_when_local_cursor_is_ahead() {
+        struct AheadCursorTransport {
+            claims: RefCell<Vec<ClaimDeviceInboxRequest>>,
+            acknowledgements: RefCell<Vec<AcknowledgeDeviceInboxItemRequest>>,
+        }
+
+        impl QueueTransport for AheadCursorTransport {
+            fn claim(
+                &self,
+                request: ClaimDeviceInboxRequest,
+            ) -> Result<ClaimDeviceInboxResponse, QueueTransportError> {
+                self.claims.borrow_mut().push(request.clone());
+                if request.after_lane_sequence > 0 {
+                    return Err(QueueTransportError::new(
+                        Some(QueueTransportErrorCode::DeviceInboxItemNotHead),
+                        "Station rejected a cursor ahead of the acknowledged head",
+                    ));
+                }
+                Ok(ClaimDeviceInboxResponse {
+                    consumer_epoch: 4,
+                    items: vec![item(1)],
+                    lane_head_sequence: 1,
+                    acked_through_sequence: 0,
+                })
+            }
+
+            fn acknowledge(
+                &self,
+                request: AcknowledgeDeviceInboxItemRequest,
+            ) -> Result<(), QueueTransportError> {
+                self.acknowledgements.borrow_mut().push(request);
+                Ok(())
+            }
+        }
+
+        let drain = QueueDrain::new(
+            AheadCursorTransport {
+                claims: RefCell::new(Vec::new()),
+                acknowledgements: RefCell::new(Vec::new()),
+            },
+            Consumer {
+                fail_at: None,
+                consumed: RefCell::new(Vec::new()),
+            },
+            actor_device_ref("ptid:alice", "device-1"),
+            "consumer-after-station-reset".to_string(),
+            10,
+        )
+        .unwrap();
+
+        let progress = drain.drain_once(7, 3).unwrap();
+
+        let claims = drain.transport.claims.borrow();
+        assert_eq!(claims.len(), 2);
+        assert_eq!(claims[0].after_lane_sequence, 7);
+        assert_eq!(claims[0].expected_consumer_epoch, 3);
+        assert_eq!(claims[1].after_lane_sequence, 0);
+        assert_eq!(claims[1].expected_consumer_epoch, 0);
+        assert_eq!(*drain.consumer.consumed.borrow(), vec![1]);
+        assert_eq!(drain.transport.acknowledgements.borrow().len(), 1);
+        assert_eq!(progress.cursor, 1);
+        assert_eq!(progress.processed, 1);
+    }
+
+    #[test]
+    fn local_cursor_adopts_server_acknowledged_head() {
+        struct ServerAheadTransport {
+            claims: RefCell<Vec<ClaimDeviceInboxRequest>>,
+            acknowledgements: RefCell<Vec<AcknowledgeDeviceInboxItemRequest>>,
+        }
+
+        impl QueueTransport for ServerAheadTransport {
+            fn claim(
+                &self,
+                request: ClaimDeviceInboxRequest,
+            ) -> Result<ClaimDeviceInboxResponse, QueueTransportError> {
+                self.claims.borrow_mut().push(request);
+                Ok(ClaimDeviceInboxResponse {
+                    consumer_epoch: 5,
+                    items: vec![item(3)],
+                    lane_head_sequence: 3,
+                    acked_through_sequence: 2,
+                })
+            }
+
+            fn acknowledge(
+                &self,
+                request: AcknowledgeDeviceInboxItemRequest,
+            ) -> Result<(), QueueTransportError> {
+                self.acknowledgements.borrow_mut().push(request);
+                Ok(())
+            }
+        }
+
+        let drain = QueueDrain::new(
+            ServerAheadTransport {
+                claims: RefCell::new(Vec::new()),
+                acknowledgements: RefCell::new(Vec::new()),
+            },
+            Consumer {
+                fail_at: None,
+                consumed: RefCell::new(Vec::new()),
+            },
+            actor_device_ref("ptid:alice", "device-1"),
+            "consumer-after-local-rebuild".to_string(),
+            10,
+        )
+        .unwrap();
+
+        let progress = drain.drain_once(0, 0).unwrap();
+
+        assert_eq!(*drain.consumer.consumed.borrow(), vec![3]);
+        assert_eq!(drain.transport.acknowledgements.borrow().len(), 1);
+        assert_eq!(progress.cursor, 3);
+        assert_eq!(progress.processed, 1);
+    }
+
+    #[test]
+    fn unrelated_claim_failure_does_not_replay_from_zero() {
+        struct FailingTransport {
+            claims: RefCell<Vec<ClaimDeviceInboxRequest>>,
+        }
+
+        impl QueueTransport for FailingTransport {
+            fn claim(
+                &self,
+                request: ClaimDeviceInboxRequest,
+            ) -> Result<ClaimDeviceInboxResponse, QueueTransportError> {
+                self.claims.borrow_mut().push(request);
+                Err(QueueTransportError::new(
+                    None,
+                    "Station fenced the active consumer",
+                ))
+            }
+
+            fn acknowledge(
+                &self,
+                _request: AcknowledgeDeviceInboxItemRequest,
+            ) -> Result<(), QueueTransportError> {
+                unreachable!("a failed claim cannot acknowledge an item")
+            }
+        }
+
+        let drain = QueueDrain::new(
+            FailingTransport {
+                claims: RefCell::new(Vec::new()),
+            },
+            Consumer {
+                fail_at: None,
+                consumed: RefCell::new(Vec::new()),
+            },
+            actor_device_ref("ptid:alice", "device-1"),
+            "consumer-fenced".to_string(),
+            10,
+        )
+        .unwrap();
+
+        assert_eq!(
+            drain.drain_once(7, 3),
+            Err("Station fenced the active consumer".to_string())
+        );
+        assert_eq!(drain.transport.claims.borrow().len(), 1);
     }
 
     #[test]

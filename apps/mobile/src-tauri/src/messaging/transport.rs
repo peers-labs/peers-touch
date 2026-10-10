@@ -8,7 +8,7 @@ use messaging_core::attachment::{
 };
 use messaging_core::crypto::prekeys::PreKeyTransport;
 use messaging_core::identity::{DeviceEnrollmentTransport, DeviceSigningKey};
-use messaging_core::inbox::QueueTransport;
+use messaging_core::inbox::{QueueTransport, QueueTransportError, QueueTransportErrorCode};
 use messaging_core::mls::key_packages::MlsKeyPackageTransport;
 use messaging_core::mls::membership_transition::MembershipTransitionIntentInput;
 use messaging_core::outbox::{CommandSubmitFailure, CommandTransport, KeyBundleTransport};
@@ -823,14 +823,20 @@ impl StationQueueTransport {
 }
 
 impl QueueTransport for StationQueueTransport {
-    fn claim(&self, request: ClaimDeviceInboxRequest) -> Result<ClaimDeviceInboxResponse, String> {
+    fn claim(
+        &self,
+        request: ClaimDeviceInboxRequest,
+    ) -> Result<ClaimDeviceInboxResponse, QueueTransportError> {
         if request
             .device
             .as_ref()
             .map(|device| device.device_id.as_str())
             != Some(self.device_id.as_str())
         {
-            return Err("mobile messaging queue claim endpoint mismatch".to_string());
+            return Err(QueueTransportError::new(
+                None,
+                "mobile messaging queue claim endpoint mismatch",
+            ));
         }
         let result = post_proto(
             &self.station_origin,
@@ -839,17 +845,23 @@ impl QueueTransport for StationQueueTransport {
             "/device/inbox/claim",
             &request,
         );
-        result.map_err(|error| error.to_string())
+        result.map_err(queue_transport_error)
     }
 
-    fn acknowledge(&self, request: AcknowledgeDeviceInboxItemRequest) -> Result<(), String> {
+    fn acknowledge(
+        &self,
+        request: AcknowledgeDeviceInboxItemRequest,
+    ) -> Result<(), QueueTransportError> {
         if request
             .device
             .as_ref()
             .map(|device| device.device_id.as_str())
             != Some(self.device_id.as_str())
         {
-            return Err("mobile messaging queue acknowledgement endpoint mismatch".to_string());
+            return Err(QueueTransportError::new(
+                None,
+                "mobile messaging queue acknowledgement endpoint mismatch",
+            ));
         }
         post_proto::<_, AcknowledgeDeviceInboxItemResponse>(
             &self.station_origin,
@@ -859,8 +871,20 @@ impl QueueTransport for StationQueueTransport {
             &request,
         )
         .map(|_| ())
-        .map_err(|error| error.to_string())
+        .map_err(queue_transport_error)
     }
+}
+
+fn queue_transport_error(error: StationTransportError) -> QueueTransportError {
+    let code = match &error {
+        StationTransportError::HttpStatus {
+            code: Some(code), ..
+        } if code == "DEVICE_INBOX_ITEM_NOT_HEAD" => {
+            Some(QueueTransportErrorCode::DeviceInboxItemNotHead)
+        }
+        _ => None,
+    };
+    QueueTransportError::new(code, error.to_string())
 }
 
 pub struct StationSocialTransport {
@@ -2838,5 +2862,27 @@ mod tests {
                 body: Some(_),
             }
         ));
+    }
+
+    #[test]
+    fn queue_transport_preserves_only_the_replayable_head_error() {
+        let replayable = queue_transport_error(StationTransportError::HttpStatus {
+            status: 409,
+            code: Some("DEVICE_INBOX_ITEM_NOT_HEAD".to_string()),
+            details: Some("retained cursor is ahead".to_string()),
+            body: None,
+        });
+        assert_eq!(
+            replayable.code(),
+            Some(QueueTransportErrorCode::DeviceInboxItemNotHead)
+        );
+
+        let conflict = queue_transport_error(StationTransportError::HttpStatus {
+            status: 409,
+            code: Some("DEVICE_INBOX_CONSUMER_FENCED".to_string()),
+            details: Some("consumer epoch changed".to_string()),
+            body: None,
+        });
+        assert_eq!(conflict.code(), None);
     }
 }
