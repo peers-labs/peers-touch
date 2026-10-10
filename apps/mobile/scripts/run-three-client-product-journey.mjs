@@ -547,6 +547,57 @@ async function webdriverRequest(url, options = {}) {
   return payload?.value ?? payload;
 }
 
+const permissionAlertPatterns = Object.freeze({
+  camera: /\b(camera|take pictures|record video)\b/i,
+  microphone: /\b(microphone|record audio|record your audio)\b/i,
+});
+
+function permissionAlertMatches(text, expectedKinds) {
+  return expectedKinds.some((kind) => (
+    permissionAlertPatterns[kind]?.test(text)
+  ));
+}
+
+async function acceptPendingPermissionAlerts(
+  clientId,
+  client,
+  expectedKinds,
+) {
+  if (client.platform === 'desktop') return [];
+  const accepted = [];
+  const startedAt = Date.now();
+  let lastAcceptedAt = 0;
+  while (Date.now() - startedAt < 5_000) {
+    let text;
+    try {
+      text = await webdriverRequest(webdriverEndpoint(client, '/alert/text'));
+    } catch (error) {
+      const noAlert = error instanceof JourneyContractError
+        && error.code === 'WEBDRIVER_REQUEST_FAILED'
+        && /no such alert/i.test(error.message);
+      if (!noAlert) throw error;
+      const settledAt = lastAcceptedAt || startedAt;
+      if (Date.now() - settledAt >= 750) return accepted;
+      await sleep(100);
+      continue;
+    }
+    assertContract(
+      typeof text === 'string'
+        && permissionAlertMatches(text, expectedKinds),
+      'MOBILE_PERMISSION_ALERT_UNEXPECTED',
+      `${clientId} showed an unexpected native alert: ${String(text)}`,
+    );
+    await webdriverRequest(webdriverEndpoint(client, '/alert/accept'), {
+      method: 'POST',
+      body: '{}',
+    });
+    accepted.push(text);
+    lastAcceptedAt = Date.now();
+    await sleep(200);
+  }
+  return accepted;
+}
+
 function sleep(delayMs) {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
@@ -5947,6 +5998,11 @@ async function recordMobileVoiceMessage(
       'CHAT_VOICE_RECORD_CONTROL_MISSING',
       `${clientId} cannot start voice recording`,
     );
+    await acceptPendingPermissionAlerts(
+      clientId,
+      client,
+      ['microphone'],
+    );
     return waitForUi(
       clientId,
       client,
@@ -6161,7 +6217,12 @@ async function clickConversationHeaderCall(clientId, client, kind) {
     'CHAT_CALL_CONTROL_MISSING',
     `${clientId} cannot start a ${kind} call`,
   );
-  return { kind };
+  const permissionAlerts = await acceptPendingPermissionAlerts(
+    clientId,
+    client,
+    kind === 'video' ? ['microphone', 'camera'] : ['microphone'],
+  );
+  return { kind, permissionAlerts };
 }
 
 async function readCallSurface(client) {
@@ -6262,7 +6323,12 @@ async function waitForCallSurface(
   return state;
 }
 
-async function clickCallSurfaceControl(clientId, client, action) {
+async function clickCallSurfaceControl(
+  clientId,
+  client,
+  action,
+  mediaKind = '',
+) {
   const clicked = await executeWebScript(
     client,
     `
@@ -6317,6 +6383,13 @@ async function clickCallSurfaceControl(clientId, client, action) {
     'CHAT_CALL_ACTION_MISSING',
     `${clientId} cannot perform call action ${action}`,
   );
+  if (action === 'accept') {
+    await acceptPendingPermissionAlerts(
+      clientId,
+      client,
+      mediaKind === 'video' ? ['microphone', 'camera'] : ['microphone'],
+    );
+  }
   return clicked;
 }
 
@@ -7177,6 +7250,7 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
         'android-alice',
         manifest.clients['android-alice'],
         'accept',
+        'audio',
       );
       return waitForCallSurface(
         'android-alice',
@@ -7262,6 +7336,7 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
         'ios-coral',
         manifest.clients['ios-coral'],
         'accept',
+        'video',
       );
       return waitForCallSurface(
         'ios-coral',
@@ -8218,6 +8293,22 @@ function selfTest(matrix) {
     normalizeRecoveryText('  one\n two  ') === 'one two',
     'SELF_TEST_RECOVERY_TEXT',
     'recovery text normalization is invalid',
+  );
+  assertContract(
+    permissionAlertMatches(
+      'Allow Peers to record audio?',
+      ['microphone'],
+    ),
+    'SELF_TEST_PERMISSION_ALERT_MATCH',
+    'microphone permission alert matching is invalid',
+  );
+  assertContract(
+    !permissionAlertMatches(
+      'Allow Peers to send notifications?',
+      ['microphone', 'camera'],
+    ),
+    'SELF_TEST_PERMISSION_ALERT_FAIL_CLOSED',
+    'unrelated native alerts must not be accepted',
   );
   assertContract(
     assertRecoveryIntersection(
