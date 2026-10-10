@@ -989,6 +989,11 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             viewport,
         )
         validate_station_entry_layout(
+            "entry.station-address",
+            {"stationLayout": {**layout, "helper": None}},
+            viewport,
+        )
+        validate_station_entry_layout(
             "entry.station-address-invalid",
             observation,
             viewport,
