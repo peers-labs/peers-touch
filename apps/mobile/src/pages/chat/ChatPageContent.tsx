@@ -175,6 +175,9 @@ export function ChatConversationListPageContent({
                           ? conversation.conversation.session.ulid
                           : conversation.conversation.projection.conversationId}
                         data-conversation-kind={conversation.kind}
+                        data-conversation-peer-ptid={conversation.kind === 'friend'
+                          ? conversation.conversation.peerPtid
+                          : undefined}
                         onClick={() => onOpenConversation(conversation)}
                       >
                         <List.Item.Meta
