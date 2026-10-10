@@ -2808,9 +2808,37 @@ function assertShellState(clientId, state) {
 }
 
 async function navigateMobileShell(clientId, client, routeId, pageSelector) {
+  const routeSelector = `button[data-route-id="tab:${routeId}"]`;
+  if (!await selectorIsVisible(client, routeSelector)) {
+    const backButton = await findElement(
+      client,
+      'css selector',
+      'button[aria-label="Back"]',
+      true,
+    );
+    if (backButton) {
+      await clickLocatedElement(
+        client,
+        'css selector',
+        'button[aria-label="Back"]',
+      );
+      await waitForUi(
+        clientId,
+        client,
+        'Mobile primary navigation after closing detail',
+        `
+          const route = document.querySelector(arguments[0]);
+          return {
+            ready: Boolean(route?.getClientRects().length)
+          };
+        `,
+        [routeSelector],
+      );
+    }
+  }
   await clickSelector(
     client,
-    `button[data-route-id="tab:${routeId}"]`,
+    routeSelector,
     `open-${routeId}`,
   );
   const result = await waitForUi(
