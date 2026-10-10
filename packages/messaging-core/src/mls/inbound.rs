@@ -263,6 +263,8 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
     }
 
     fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+        // Hold through load, preparation, persistence and installation of join material.
+        let _transaction = self.manager.lock_recipient_transitions();
         let now = (self.clock)();
         persist_claim(self.store.as_ref(), item, consumer_epoch, now)?;
         if self
@@ -1677,6 +1679,52 @@ mod tests {
                 .plaintext,
             b"post-welcome plaintext"
         );
+    }
+
+    #[test]
+    fn welcome_consumption_preserves_an_inflight_keypackage_transaction() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let alice = Arc::new(MlsGroupManager::new());
+        let bob = Arc::new(MlsGroupManager::new());
+        alice.actor_identity().init("ptid:alice", "alice-device").unwrap();
+        bob.actor_identity().init("ptid:bob", "bob-device").unwrap();
+        let key_package = bob.generate_key_package().unwrap();
+        let created = alice.create_group(
+            "group-welcome",
+            &[MlsMemberKeyPackage {
+                ptid: "ptid:bob".to_string(),
+                device_id: "bob-device".to_string(),
+                key_package,
+            }],
+        ).unwrap();
+        let store = Arc::new(TestMlsRepository::new(0, Vec::new()));
+        store.save_mls_join_provider_pool(bob.export_pending_join_providers().unwrap());
+        let processor = MlsTransitionProcessor::new(
+            bob.clone(), store.clone(), endpoint("ptid:bob", "bob-device"), now,
+        ).unwrap();
+        let item = genesis_welcome_queue_item(
+            &created.transition_id, created.welcome_bytes,
+        );
+        let transaction = bob.lock_recipient_transitions();
+        let (done_tx, done_rx) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            done_tx.send(processor.consume(&item, 1)).unwrap();
+        });
+
+        let premature_consumption = done_rx.recv_timeout(Duration::from_millis(200));
+        let session_before_commit = store.mls_session_state("group-welcome");
+        drop(transaction);
+        worker.join().unwrap();
+        let result = premature_consumption.as_ref().ok().cloned()
+            .unwrap_or_else(|| done_rx.recv().unwrap());
+        result.unwrap();
+
+        assert!(premature_consumption.is_err());
+        assert!(session_before_commit.is_none());
+        assert!(bob.has_session("group-welcome"));
+        assert!(store.mls_session_state("group-welcome").is_some());
     }
 
     #[test]

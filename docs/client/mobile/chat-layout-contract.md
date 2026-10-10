@@ -224,6 +224,13 @@ policy admits this asset origin for images, media, and file previews, and admits
 blob URLs for local recording drafts. The client must not grant an entire cache
 directory or expose arbitrary filesystem paths.
 
+MLS KeyPackage publication and Welcome consumption use the portable Messaging
+owner's shared recipient transaction lock. The lock covers provider-pool load,
+preparation, persistence, and installation so a Welcome cannot overwrite
+freshly published join material. Serial queue draining alone does not protect
+this shared pool from concurrent publication. Failure leaves the ordered inbox
+item pending; neither client may skip it or fabricate group readiness.
+
 ## 13. Foreground Resume Write Admission
 
 ```yaml
