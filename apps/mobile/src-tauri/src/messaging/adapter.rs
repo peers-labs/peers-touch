@@ -5958,6 +5958,111 @@ impl MetadataInteractionRepository for MobileMessagingStore {
     }
 }
 
+fn rebase_station_lane_generation_if_required(
+    transaction: &Transaction<'_>,
+    incoming_item_id: &str,
+    incoming_lane_sequence: i64,
+    incoming_consumer_epoch: i64,
+    now_unix_ms: i64,
+) -> Result<bool, String> {
+    let existing_lane = transaction
+        .query_row(
+            "SELECT item_id, consumer_epoch
+             FROM messaging_inbox_items
+             WHERE lane_sequence = ?1",
+            params![incoming_lane_sequence],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let cursor = transaction
+        .query_row(
+            "SELECT lane_sequence, consumer_epoch
+             FROM messaging_lane_cursor
+             WHERE id = 1",
+            [],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .unwrap_or((0, 0));
+    let occupied_by_another_item = existing_lane
+        .as_ref()
+        .is_some_and(|(item_id, _)| item_id != incoming_item_id);
+    let cursor_is_ahead = cursor.0 >= incoming_lane_sequence;
+    if !occupied_by_another_item && !cursor_is_ahead {
+        return Ok(false);
+    }
+    let previous_epoch = existing_lane
+        .as_ref()
+        .map(|(_, epoch)| *epoch)
+        .unwrap_or(0)
+        .max(cursor.1);
+    if incoming_lane_sequence != 1 || incoming_consumer_epoch <= previous_epoch {
+        return Err("mobile messaging claimed item replay conflict".to_string());
+    }
+
+    transaction
+        .execute_batch(
+            "PRAGMA defer_foreign_keys = ON;
+             DELETE FROM message_reactions;
+             DELETE FROM message_pins;
+             DELETE FROM message_redaction_tombstones;
+             DELETE FROM read_cursors;
+             DELETE FROM messaging_message_search_fts;
+             DELETE FROM messaging_attachment_transfers;
+             DELETE FROM messaging_attachment_projections;
+             DELETE FROM messaging_attachment_drafts;
+             DELETE FROM messaging_message_projections;
+             DELETE FROM messaging_interaction_intents;
+             DELETE FROM messaging_conversation_command_intents;
+             DELETE FROM messaging_member_authority_intents;
+             DELETE FROM messaging_membership_intents;
+             DELETE FROM messaging_pending_messages;
+             DELETE FROM messaging_command_attempts;
+             DELETE FROM messaging_command_outbox;
+             DELETE FROM messaging_local_commands;
+             DELETE FROM messaging_receipt_outbox;
+             DELETE FROM messaging_consumption_markers;
+             DELETE FROM messaging_inbox_items;
+             DELETE FROM messaging_lane_cursor;
+             DELETE FROM messaging_mls_pending_transitions;
+             DELETE FROM messaging_mls_applied_transitions;
+             DELETE FROM messaging_mls_retired_checkpoints;
+             DELETE FROM messaging_mls_groups;
+             DELETE FROM direct_session_bootstraps;
+             DELETE FROM direct_skipped_message_keys;
+             DELETE FROM direct_sessions;
+             DELETE FROM messaging_authority_events;
+             DELETE FROM messaging_authority_heads;
+             DELETE FROM messaging_conversation_members;
+             DELETE FROM messaging_conversations;
+             DELETE FROM messaging_trust;
+             DELETE FROM chat_cleanup_items;
+             DELETE FROM chat_cleanup_journal;
+             DELETE FROM chat_retention_floor;
+             UPDATE messaging_prekey_bundle
+                SET state = 'awaiting_publication'
+                WHERE state = 'published';
+             UPDATE messaging_one_time_prekeys
+                SET state = 'awaiting_publication'
+                WHERE state = 'available';
+             UPDATE messaging_mls_key_packages
+                SET state = 'awaiting_publication'
+                WHERE state = 'published';",
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "INSERT INTO messaging_lane_cursor(
+                id, lane_sequence, consumer_epoch, updated_at_unix_ms
+             ) VALUES (1, 0, ?1, ?2)",
+            params![incoming_consumer_epoch, now_unix_ms],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(true)
+}
+
 impl MessagingRepository for MobileMessagingStore {
     fn persist_claimed_item(
         &self,
@@ -5982,12 +6087,16 @@ impl MessagingRepository for MobileMessagingStore {
             return Err("mobile messaging claimed item is incomplete".to_string());
         }
         let epoch = i64::try_from(consumer_epoch).map_err(|_| "consumer epoch exceeds i64")?;
-        let connection = self
-            .connection
-            .lock()
-            .map_err(|_| "mobile messaging store lock poisoned".to_string())?;
-        let changed = connection
-            .execute(
+        self.with_transaction(|transaction| {
+            rebase_station_lane_generation_if_required(
+                transaction,
+                item_id,
+                lane_sequence,
+                epoch,
+                now_unix_ms,
+            )?;
+            let changed = transaction
+                .execute(
                 "INSERT INTO messaging_inbox_items(
                     item_id, event_id, conversation_id, lane_sequence, consumer_epoch,
                     payload_sha256, payload, state, claimed_at_unix_ms
@@ -6015,12 +6124,13 @@ impl MessagingRepository for MobileMessagingStore {
                     opaque_payload,
                     now_unix_ms
                 ],
-            )
-            .map_err(|error| error.to_string())?;
-        if changed != 1 {
-            return Err("mobile messaging claimed item replay conflict".to_string());
-        }
-        Ok(())
+                )
+                .map_err(|error| error.to_string())?;
+            if changed != 1 {
+                return Err("mobile messaging claimed item replay conflict".to_string());
+            }
+            Ok(())
+        })
     }
 
     fn consumption_marker_matches(
@@ -11951,6 +12061,135 @@ mod tests {
                 .unwrap(),
             (3, 20)
         );
+    }
+
+    #[test]
+    fn new_epoch_sequence_one_rebases_stale_station_generation() {
+        let store = store();
+        MessagingRepository::persist_claimed_item(
+            &store,
+            "old-item",
+            "old-event",
+            "old-conversation",
+            1,
+            3,
+            &[1; 32],
+            b"old-payload",
+            10,
+        )
+        .unwrap();
+        {
+            let connection = store.connection.lock().unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_lane_cursor(
+                        id, lane_sequence, consumer_epoch, updated_at_unix_ms
+                     ) VALUES (1, 1, 3, 11)",
+                    [],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_conversations(
+                        conversation_id, authority_station_id, federation_id,
+                        kind, name, owner_ptid, membership_epoch, mls_epoch,
+                        active, updated_at_unix_ms
+                     ) VALUES (
+                        'old-conversation', 'station-1', 'federation-1',
+                        1, '', 'ptid:alice', 1, 0, 1, 10
+                     )",
+                    [],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_receipt_outbox(
+                        receipt_id, event_id, receipt_bytes, state, created_at_unix_ms
+                     ) VALUES ('device-consumed:old-item', 'old-event', X'01', 'pending', 10)",
+                    [],
+                )
+                .unwrap();
+        }
+
+        MessagingRepository::persist_claimed_item(
+            &store,
+            "new-item",
+            "new-event",
+            "new-conversation",
+            1,
+            4,
+            &[2; 32],
+            b"new-payload",
+            20,
+        )
+        .unwrap();
+
+        let connection = store.connection.lock().unwrap();
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT item_id, consumer_epoch
+                     FROM messaging_inbox_items WHERE lane_sequence = 1",
+                    [],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+                )
+                .unwrap(),
+            ("new-item".to_string(), 4)
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT lane_sequence, consumer_epoch
+                     FROM messaging_lane_cursor WHERE id = 1",
+                    [],
+                    |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+                )
+                .unwrap(),
+            (0, 4)
+        );
+        for table in ["messaging_conversations", "messaging_receipt_outbox"] {
+            assert_eq!(
+                connection
+                    .query_row(
+                        &format!("SELECT COUNT(*) FROM {table}"),
+                        [],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .unwrap(),
+                0,
+                "table {table}",
+            );
+        }
+    }
+
+    #[test]
+    fn same_epoch_lane_reuse_remains_a_conflict() {
+        let store = store();
+        MessagingRepository::persist_claimed_item(
+            &store,
+            "old-item",
+            "old-event",
+            "old-conversation",
+            1,
+            3,
+            &[1; 32],
+            b"old-payload",
+            10,
+        )
+        .unwrap();
+
+        assert!(MessagingRepository::persist_claimed_item(
+            &store,
+            "different-item",
+            "different-event",
+            "different-conversation",
+            1,
+            3,
+            &[2; 32],
+            b"different-payload",
+            20,
+        )
+        .is_err());
     }
 
     #[test]
