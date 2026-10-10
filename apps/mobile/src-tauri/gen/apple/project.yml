@@ -61,6 +61,8 @@ targets:
         BGTaskSchedulerPermittedIdentifiers:
           - com.peers.touch.mobile.reconcile.v1.development
           - com.peers.touch.mobile.reconcile.v1.production
+        UIBackgroundModes:
+          - fetch
         NSCameraUsageDescription: Peers needs camera access when you choose to capture media.
         NSLocalNetworkUsageDescription: Peers Touch needs local network access to connect to your Station.
         NSMicrophoneUsageDescription: Peers needs microphone access when you choose to record audio.
