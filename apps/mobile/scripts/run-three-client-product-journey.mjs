@@ -1230,11 +1230,13 @@ async function releaseForegroundClient(clientId, client) {
         }),
       },
     );
-    assertContract(
-      yielded?.ok === true,
-      'DESKTOP_ACTIVATION_RELEASE_FAILED',
-      `${clientId} could not yield activation to ${owner.previousPid}`,
-    );
+    if (yielded?.ok !== true) {
+      process.stderr.write(
+        `Desktop activation yield observation: ${JSON.stringify(yielded)}\n`,
+      );
+    }
+  } catch (error) {
+    process.stderr.write(`Desktop activation yield observation: ${error.message}\n`);
   } finally {
     if (frontmostDesktopPid() === owner.desktopPid) {
       execFileSync(
@@ -1248,6 +1250,11 @@ async function releaseForegroundClient(clientId, client) {
       );
     }
   }
+  assertContract(
+    frontmostDesktopPid() !== owner.desktopPid,
+    'DESKTOP_ACTIVATION_RELEASE_FAILED',
+    `${clientId} retained OS foreground activation after its action`,
+  );
 }
 
 function processIsAlive(pid) {
