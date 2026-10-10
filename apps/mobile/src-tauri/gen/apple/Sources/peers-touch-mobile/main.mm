@@ -1,8 +1,11 @@
 #import <UIKit/UIKit.h>
+#import <TargetConditionals.h>
 
 #include "bindings/bindings.h"
 
-@interface PeersOrientationCoordinator : NSObject
+@interface PeersOrientationCoordinator : NSObject {
+	UIDeviceOrientation _lastRequestedOrientation;
+}
 + (void)install;
 @end
 
@@ -18,6 +21,14 @@
 			selector:@selector(deviceOrientationDidChange:)
 			name:UIDeviceOrientationDidChangeNotification
 			object:nil];
+#if TARGET_OS_SIMULATOR
+		[NSTimer
+			scheduledTimerWithTimeInterval:0.25
+			target:coordinator
+			selector:@selector(simulatorOrientationTick:)
+			userInfo:nil
+			repeats:YES];
+#endif
 		[coordinator applyCurrentOrientation];
 	});
 }
@@ -26,9 +37,18 @@
 	[self applyCurrentOrientation];
 }
 
+- (void)simulatorOrientationTick:(NSTimer *)timer {
+	[self applyCurrentOrientation];
+}
+
 - (void)applyCurrentOrientation {
+	UIDeviceOrientation orientation = [UIDevice currentDevice].orientation;
+	if (orientation == _lastRequestedOrientation) {
+		return;
+	}
+
 	UIInterfaceOrientationMask mask;
-	switch ([UIDevice currentDevice].orientation) {
+	switch (orientation) {
 		case UIDeviceOrientationPortrait:
 			mask = UIInterfaceOrientationMaskPortrait;
 			break;
@@ -49,6 +69,7 @@
 
 		UIWindowScene *windowScene = (UIWindowScene *)scene;
 		if (@available(iOS 16.0, *)) {
+			_lastRequestedOrientation = orientation;
 			for (UIWindow *window in windowScene.windows) {
 				if (window.rootViewController != nil) {
 					[window.rootViewController
@@ -61,9 +82,12 @@
 			[windowScene
 				requestGeometryUpdateWithPreferences:preferences
 				errorHandler:^(NSError *error) {
+					self->_lastRequestedOrientation =
+						UIDeviceOrientationUnknown;
 					NSLog(@"Peers orientation update failed: %@", error);
 				}];
 		} else {
+			_lastRequestedOrientation = orientation;
 			[UIViewController attemptRotationToDeviceOrientation];
 		}
 	}
