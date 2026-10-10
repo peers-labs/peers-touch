@@ -1023,6 +1023,7 @@ async function recordJourneyStep({
 
 async function activateForegroundClient(clientId, client) {
   if (client.platform === 'desktop') {
+    const desktopPid = desktopListenerPid(clientId, client);
     const result = await webdriverRequest(
       webdriverEndpoint(client, '/execute/async'),
       {
@@ -1043,6 +1044,22 @@ async function activateForegroundClient(clientId, client) {
       'WEBDRIVER_CLIENT_NOT_FOREGROUND',
       `${clientId} could not focus its native window: ${result?.error || 'unknown error'}`,
     );
+    try {
+      execFileSync(
+        'osascript',
+        [
+          '-e',
+          'tell application "System Events" to set frontmost of first process '
+            + `whose unix id is ${desktopPid} to true`,
+        ],
+        { encoding: 'utf8' },
+      );
+    } catch (error) {
+      throw new JourneyContractError(
+        'DESKTOP_NATIVE_ACTIVATION_FAILED',
+        `${clientId} could not activate process ${desktopPid}: ${error.message}`,
+      );
+    }
     await waitForUi(
       clientId,
       client,
