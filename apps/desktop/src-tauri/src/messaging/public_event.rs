@@ -1,14 +1,17 @@
 use super::store::{InteractionMutation, InteractionReceiveCommit};
 use super::{
-    verify_device_event_delivery, ClaimedItemConsumer, EngineEndpoint, MessagingStore,
-    PublicEventReceiveCommit, ReceiveCommitResult,
+    verify_device_event_delivery, ClaimedItemConsumer, ConversationMemberProjection,
+    ConversationProjection, ConversationStateReceiveCommit, EngineEndpoint,
+    MemberAuthorityReceiveCommit, MessagingStore, PublicEventReceiveCommit, ReceiveCommitResult,
 };
 use crate::model::chat::{
-    conversation_event, CryptoEndpoint, DeviceConsumptionReceipt, DeviceInboxPayloadType,
-    DurableDeviceInboxItem, MessageEditedFact, MessageHiddenForActorFact, MessagePinCommittedFact,
-    MessageRetractedFact, MessagingContentKind, PreparedEndpointPayloadKind, PublicEventMarker,
-    ReactionCommittedFact,
+    conversation_event, ConversationEvent, ConversationMemberAuthorityAction,
+    ConversationMemberAuthorityCommittedFact, CryptoEndpoint, DeviceConsumptionReceipt,
+    DeviceInboxPayloadType, DurableDeviceInboxItem, MemberRole, MessageEditedFact,
+    MessageHiddenForActorFact, MessagePinCommittedFact, MessageRetractedFact, MessagingContentKind,
+    PreparedEndpointPayloadKind, PublicEventMarker, ReactionCommittedFact,
 };
+use messaging_core::mls::inbound::authority_snapshot_projection;
 use prost::Message;
 use std::sync::Arc;
 
@@ -119,6 +122,9 @@ impl PublicEventProcessor {
             }
             Some(conversation_event::Payload::MessagePinCommitted(fact)) => {
                 self.process_pin(item, event, fact, consumer_epoch, now, committed_at_unix_ms)
+            }
+            Some(conversation_event::Payload::MemberAuthorityCommitted(fact)) => {
+                self.process_member_authority(item, event, fact, &delivery, consumer_epoch, now)
             }
             _ => Err("messaging public-event payload type is unsupported".to_string()),
         }
@@ -307,6 +313,85 @@ impl PublicEventProcessor {
         Ok(())
     }
 
+    fn process_member_authority(
+        &self,
+        item: &DurableDeviceInboxItem,
+        event: &ConversationEvent,
+        fact: &ConversationMemberAuthorityCommittedFact,
+        delivery: &crate::model::chat::DeviceEventDelivery,
+        consumer_epoch: u64,
+        now: i64,
+    ) -> Result<(), String> {
+        let marker = PublicEventMarker::decode(delivery.endpoint_payload.as_slice())
+            .map_err(|_| "messaging member-authority marker is invalid".to_string())?;
+        validate_authority_marker_bindings(event, &marker)?;
+        validate_member_authority_fact(event, fact, &self.endpoint.ptid)?;
+        let snapshot = fact
+            .post_state
+            .as_ref()
+            .ok_or_else(|| "messaging member-authority snapshot is missing".to_string())?;
+        let authority = authority_snapshot_projection(event, snapshot, now)?;
+        let projection = ConversationProjection {
+            conversation_id: authority.conversation_id,
+            authority_station_id: authority.authority_station_id,
+            federation_id: authority.federation_id,
+            kind: authority.kind,
+            name: authority.name,
+            description: authority.description,
+            avatar_object_id: authority.avatar_object_id,
+            owner_ptid: authority.owner_ptid,
+            members: authority
+                .members
+                .into_iter()
+                .map(|member| ConversationMemberProjection {
+                    ptid: member.ptid,
+                    role: member.role,
+                    home_station_peer_id: member.home_station_peer_id,
+                    muted: member.muted,
+                    muted_until_unix_ms: member.muted_until_unix_ms,
+                })
+                .collect(),
+            membership_epoch: authority.membership_epoch,
+            mls_epoch: authority.mls_epoch,
+            active: authority.active,
+            updated_at_unix_ms: authority.updated_at_unix_ms,
+        };
+        let receipt = self.build_receipt(item, event, now);
+        let receipt_bytes = receipt.encode_to_vec();
+        self.store
+            .commit_member_authority_state(&MemberAuthorityReceiveCommit {
+                state: ConversationStateReceiveCommit {
+                    item_id: &item.item_id,
+                    event_id: &event.event_id,
+                    conversation_id: &event.conversation_id,
+                    event_sequence: event.sequence,
+                    lane_sequence: item.lane_sequence,
+                    consumer_epoch,
+                    payload_sha256: &item.payload_sha256,
+                    event_hash: &event.event_hash,
+                    previous_event_hash: &event.previous_hash,
+                    projection: &projection,
+                    receipt_id: &receipt.receipt_id,
+                    receipt_bytes: &receipt_bytes,
+                    consumed_at_unix_ms: now,
+                },
+                command_id: &event.command_id,
+                operator_ptid: event
+                    .actor
+                    .as_ref()
+                    .map(|actor| actor.ptid.as_str())
+                    .unwrap_or_default(),
+                operator_device_id: event
+                    .actor
+                    .as_ref()
+                    .map(|actor| actor.device_id.as_str())
+                    .unwrap_or_default(),
+                action: fact.action,
+                target_ptid: &fact.target_ptid,
+            })?;
+        Ok(())
+    }
+
     fn commit_interaction(
         &self,
         item: &DurableDeviceInboxItem,
@@ -395,6 +480,95 @@ fn validate_marker_bindings(
     Ok(())
 }
 
+fn validate_authority_marker_bindings(
+    event: &ConversationEvent,
+    marker: &PublicEventMarker,
+) -> Result<(), String> {
+    if marker.conversation_id != event.conversation_id
+        || marker.event_id != event.event_id
+        || marker.command_id != event.command_id
+        || marker.sending_endpoint.is_none()
+        || marker.sending_endpoint != event.actor
+    {
+        return Err("messaging member-authority marker binding mismatch".to_string());
+    }
+    Ok(())
+}
+
+fn validate_member_authority_fact(
+    event: &ConversationEvent,
+    fact: &ConversationMemberAuthorityCommittedFact,
+    local_ptid: &str,
+) -> Result<(), String> {
+    let action = ConversationMemberAuthorityAction::try_from(fact.action)
+        .map_err(|_| "messaging member-authority action is invalid".to_string())?;
+    let snapshot = fact
+        .post_state
+        .as_ref()
+        .ok_or_else(|| "messaging member-authority snapshot is missing".to_string())?;
+    let target = snapshot
+        .active_members
+        .iter()
+        .find(|member| member.ptid == fact.target_ptid)
+        .ok_or_else(|| "messaging member-authority target is not active".to_string())?;
+    if action == ConversationMemberAuthorityAction::Unspecified
+        || fact.target_ptid.trim().is_empty()
+        || fact.from_membership_epoch <= 0
+        || fact.to_membership_epoch != fact.from_membership_epoch.saturating_add(1)
+        || fact.to_membership_epoch != event.membership_epoch
+        || snapshot.owner_ptid != fact.owner_ptid
+        || snapshot.membership_epoch != event.membership_epoch
+        || snapshot.mls_epoch != event.mls_epoch
+        || !snapshot
+            .active_members
+            .iter()
+            .any(|member| member.ptid == local_ptid)
+    {
+        return Err("messaging member-authority fact is inconsistent".to_string());
+    }
+    match action {
+        ConversationMemberAuthorityAction::UpdateMember => {
+            if fact.previous_owner_ptid != fact.owner_ptid
+                || (fact.role.is_none() && fact.muted.is_none())
+                || fact.role.is_some_and(|role| {
+                    authority_member_role(&target.role)
+                        .ok()
+                        .map(|value| value as i32)
+                        != Some(role)
+                })
+                || fact.muted.is_some_and(|muted| target.muted != muted)
+                || fact.muted_until != target.muted_until
+                || (fact.muted == Some(false) && fact.muted_until.is_some())
+                || (fact.muted_until.is_some() && fact.muted != Some(true))
+            {
+                return Err("messaging member-authority update is incomplete".to_string());
+            }
+        }
+        ConversationMemberAuthorityAction::TransferOwnership => {
+            if fact.previous_owner_ptid == fact.owner_ptid
+                || fact.owner_ptid != fact.target_ptid
+                || fact.role != Some(MemberRole::Owner as i32)
+                || fact.muted != Some(false)
+                || fact.muted_until.is_some()
+                || target.role != "owner"
+            {
+                return Err("messaging ownership-transfer fact is inconsistent".to_string());
+            }
+        }
+        ConversationMemberAuthorityAction::Unspecified => unreachable!(),
+    }
+    Ok(())
+}
+
+fn authority_member_role(role: &str) -> Result<MemberRole, String> {
+    match role {
+        "member" | "MEMBER_ROLE_MEMBER" => Ok(MemberRole::Member),
+        "admin" | "MEMBER_ROLE_ADMIN" => Ok(MemberRole::Admin),
+        "owner" | "MEMBER_ROLE_OWNER" => Ok(MemberRole::Owner),
+        _ => Err("messaging member-authority member role is invalid".to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::verification::delivery_commitment;
@@ -406,8 +580,9 @@ mod tests {
     use crate::messaging::private_content::test_attachment_metadata;
     use crate::messaging::{AttachmentTransferRecord, DirectSendCommit, PendingSenderProjection};
     use crate::model::chat::{
-        AttachmentPlaintextMetadata, AttachmentTransferState, ConversationEvent,
-        DeviceEventDelivery, EncryptedObjectDescriptor, MessageCommittedFact, MessagingContentKind,
+        AttachmentPlaintextMetadata, AttachmentTransferState, ConversationAuthorityMember,
+        ConversationAuthoritySnapshot, ConversationEvent, ConversationKind, DeviceEventDelivery,
+        EncryptedObjectDescriptor, MessageCommittedFact, MessagingContentKind,
     };
     use messaging_core::proto::actor_device_from_chat_endpoint;
     use sha2::{Digest, Sha256};
@@ -691,6 +866,145 @@ mod tests {
                 .0,
             projection
         );
+    }
+
+    #[test]
+    fn member_authority_event_advances_projection_and_queue() {
+        let store = Arc::new(MessagingStore::in_memory().unwrap());
+        let local = CryptoEndpoint {
+            ptid: "ptid:alice".to_string(),
+            device_id: "alice-device".to_string(),
+        };
+        let bob = CryptoEndpoint {
+            ptid: "ptid:bob".to_string(),
+            device_id: "bob-device".to_string(),
+        };
+        let marker = PublicEventMarker {
+            conversation_id: "conversation-group".to_string(),
+            event_id: "member-authority-event".to_string(),
+            command_id: "member-authority-command".to_string(),
+            sending_endpoint: Some(local.clone()),
+        };
+        let endpoint_payload = marker.encode_to_vec();
+        let endpoint_payload_sha256 = Sha256::digest(&endpoint_payload).to_vec();
+        let snapshot = ConversationAuthoritySnapshot {
+            kind: ConversationKind::Group as i32,
+            name: "Group".to_string(),
+            owner_ptid: local.ptid.clone(),
+            active_members: vec![
+                ConversationAuthorityMember {
+                    ptid: local.ptid.clone(),
+                    role: "owner".to_string(),
+                    home_station_peer_id: "station-1".to_string(),
+                    ..Default::default()
+                },
+                ConversationAuthorityMember {
+                    ptid: bob.ptid.clone(),
+                    role: "admin".to_string(),
+                    home_station_peer_id: "station-2".to_string(),
+                    muted: true,
+                    muted_until: Some(prost_types::Timestamp {
+                        seconds: 60,
+                        nanos: 0,
+                    }),
+                },
+            ],
+            active_endpoints: vec![local.clone(), bob],
+            membership_epoch: 2,
+            mls_epoch: 1,
+            federation_id: "federation-1".to_string(),
+            ..Default::default()
+        };
+        let mut event = ConversationEvent {
+            event_id: marker.event_id.clone(),
+            conversation_id: marker.conversation_id.clone(),
+            sequence: 1,
+            command_id: marker.command_id.clone(),
+            actor: Some(local.clone()),
+            committed_at: Some(prost_types::Timestamp {
+                seconds: 1,
+                nanos: 0,
+            }),
+            membership_epoch: 2,
+            mls_epoch: 1,
+            authority_station_peer_id: "station-1".to_string(),
+            payload: Some(conversation_event::Payload::MemberAuthorityCommitted(
+                ConversationMemberAuthorityCommittedFact {
+                    action: ConversationMemberAuthorityAction::UpdateMember as i32,
+                    target_ptid: "ptid:bob".to_string(),
+                    role: Some(MemberRole::Admin as i32),
+                    muted: Some(true),
+                    muted_until: Some(prost_types::Timestamp {
+                        seconds: 60,
+                        nanos: 0,
+                    }),
+                    previous_owner_ptid: local.ptid.clone(),
+                    owner_ptid: local.ptid.clone(),
+                    from_membership_epoch: 1,
+                    to_membership_epoch: 2,
+                    post_state: Some(snapshot),
+                },
+            )),
+            ..Default::default()
+        };
+        let commitment = delivery_commitment(
+            &event.conversation_id,
+            &event.event_id,
+            &local.ptid,
+            &local.device_id,
+            PreparedEndpointPayloadKind::PublicEvent,
+            &endpoint_payload_sha256,
+        );
+        event.delivery_commitments = vec![commitment.to_vec()];
+        event.event_hash = Sha256::digest(event.encode_to_vec()).to_vec();
+        let delivery = DeviceEventDelivery {
+            event: Some(event.clone()),
+            recipient: Some(local.clone()),
+            payload_kind: PreparedEndpointPayloadKind::PublicEvent as i32,
+            endpoint_payload,
+            endpoint_payload_sha256,
+            delivery_commitment: commitment.to_vec(),
+            sender_actor_identity_public_key: vec![1; 32],
+        };
+        let opaque_payload = delivery.encode_to_vec();
+        let item = DurableDeviceInboxItem {
+            item_id: "member-authority-item".to_string(),
+            recipient: Some(actor_device_from_chat_endpoint(&local)),
+            lane_sequence: 1,
+            event_id: event.event_id.clone(),
+            conversation_id: event.conversation_id.clone(),
+            idempotency_key: format!("event:{}", event.event_id),
+            payload_type: DeviceInboxPayloadType::ConversationEvent as i32,
+            opaque_payload: opaque_payload.clone(),
+            payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
+            ..Default::default()
+        };
+        let processor = PublicEventProcessor::new(
+            store.clone(),
+            EngineEndpoint {
+                ptid: local.ptid,
+                device_id: local.device_id,
+            },
+            now,
+        )
+        .unwrap();
+
+        processor.consume(&item, 3).unwrap();
+
+        let projection = store
+            .conversation_projections()
+            .unwrap()
+            .into_iter()
+            .find(|projection| projection.conversation_id == "conversation-group")
+            .unwrap();
+        assert_eq!(projection.membership_epoch, 2);
+        assert_eq!(projection.members[1].role, MemberRole::Admin as i32);
+        assert!(projection.members[1].muted);
+        assert_eq!(projection.members[1].muted_until_unix_ms, Some(60_000));
+        assert_eq!(store.lane_checkpoint().unwrap(), (1, 3));
+        assert!(store
+            .consumption_marker_matches("member-authority-item", &item.payload_sha256)
+            .unwrap());
     }
 
     #[test]

@@ -7434,14 +7434,16 @@ impl MessagingStore {
                 .execute(
                     "INSERT INTO messaging_conversations(
                         conversation_id, authority_station_id, federation_id,
-                        kind, name, owner_ptid,
+                        kind, name, description, avatar_object_id, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                      ON CONFLICT(conversation_id) DO UPDATE SET
                         authority_station_id=excluded.authority_station_id,
                         federation_id=excluded.federation_id,
                         kind=excluded.kind,
                         name=excluded.name,
+                        description=excluded.description,
+                        avatar_object_id=excluded.avatar_object_id,
                         owner_ptid=excluded.owner_ptid,
                         membership_epoch=excluded.membership_epoch,
                         mls_epoch=excluded.mls_epoch,
@@ -7453,6 +7455,8 @@ impl MessagingStore {
                         input.projection.federation_id,
                         input.projection.kind,
                         input.projection.name,
+                        input.projection.description,
+                        input.projection.avatar_object_id,
                         input.projection.owner_ptid,
                         input.projection.membership_epoch,
                         input.projection.mls_epoch,
@@ -7472,17 +7476,35 @@ impl MessagingStore {
                 transaction
                     .execute(
                         "INSERT INTO messaging_conversation_members(
-                            conversation_id, ptid, role, active
-                         ) VALUES (?1, ?2, ?3, 1)
+                            conversation_id, ptid, role, home_station_peer_id,
+                            muted, muted_until_unix_ms, active
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)
                          ON CONFLICT(conversation_id, ptid) DO UPDATE SET
                             role=excluded.role,
+                            home_station_peer_id=excluded.home_station_peer_id,
+                            muted=excluded.muted,
+                            muted_until_unix_ms=excluded.muted_until_unix_ms,
                             active=1",
-                        params![input.conversation_id, member.ptid, member.role],
+                        params![
+                            input.conversation_id,
+                            member.ptid,
+                            member.role,
+                            member.home_station_peer_id,
+                            member.muted,
+                            member.muted_until_unix_ms
+                        ],
                     )
                     .map_err(|error| error.to_string())?;
             }
             Ok(())
         })
+    }
+
+    pub fn commit_member_authority_state(
+        &self,
+        input: &MemberAuthorityReceiveCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        self.commit_conversation_state(&input.state)
     }
 
     pub fn commit_mls_sender_transition(
