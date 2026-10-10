@@ -30,6 +30,16 @@ type receiptPersistenceFixture struct {
 }
 
 func newReceiptPersistenceFixture(t *testing.T) *receiptPersistenceFixture {
+	return newReceiptPersistenceFixtureForEventKind(
+		t,
+		domainevent.KindMessageCommitted,
+	)
+}
+
+func newReceiptPersistenceFixtureForEventKind(
+	t *testing.T,
+	eventKind domainevent.Kind,
+) *receiptPersistenceFixture {
 	t.Helper()
 
 	fixture := newDeliveryFixture(t, standardLimits(), standardPolicy())
@@ -75,21 +85,30 @@ func newReceiptPersistenceFixture(t *testing.T) *receiptPersistenceFixture {
 	if err != nil {
 		t.Fatalf("build receipt delivery commitment: %v", err)
 	}
-	commandBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
-		&chat.ChatCommand{
-			CommandId:      "command-1",
-			ConversationId: "conversation-1",
-			Sender: &chat.CryptoEndpoint{
-				Ptid:     "ptid:alice",
-				DeviceId: "alice-device",
-			},
-			Payload: &chat.ChatCommand_SendMessage{
-				SendMessage: &chat.SendMessageIntent{
-					MessageId:   "message-1",
-					ContentKind: chat.MessagingContentKind_MESSAGING_CONTENT_KIND_TEXT,
-				},
+	command := &chat.ChatCommand{
+		CommandId:      "command-1",
+		ConversationId: "conversation-1",
+		Sender: &chat.CryptoEndpoint{
+			Ptid:     "ptid:alice",
+			DeviceId: "alice-device",
+		},
+		Payload: &chat.ChatCommand_SendMessage{
+			SendMessage: &chat.SendMessageIntent{
+				MessageId:   "message-1",
+				ContentKind: chat.MessagingContentKind_MESSAGING_CONTENT_KIND_TEXT,
 			},
 		},
+	}
+	if eventKind == domainevent.KindMessageForwarded {
+		command.Payload = &chat.ChatCommand_ForwardMessage{
+			ForwardMessage: &chat.ForwardMessageIntent{
+				DestinationMessageId: "message-1",
+				ContentKind:          chat.MessagingContentKind_MESSAGING_CONTENT_KIND_TEXT,
+			},
+		}
+	}
+	commandBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		command,
 	)
 	if err != nil {
 		t.Fatalf("encode receipt source command: %v", err)
@@ -112,7 +131,7 @@ func newReceiptPersistenceFixture(t *testing.T) *receiptPersistenceFixture {
 		AuthorityStation:    "station:local",
 		DeliveryCommitments: eventCommitments,
 		Fact: domainevent.NewCommandCommittedFact(
-			domainevent.KindMessageCommitted,
+			eventKind,
 			"message-1",
 			commandBytes,
 		),
@@ -899,6 +918,26 @@ func TestReceiptRecorderPersistsConsumedTransitionAndAllowsDelayedAck(t *testing
 	}
 	if ackedThrough != fixture.item.LaneSequence {
 		t.Fatalf("acked through = %d, want %d", ackedThrough, fixture.item.LaneSequence)
+	}
+}
+
+func TestReceiptRecorderAcceptsForwardedMessageEvent(t *testing.T) {
+	fixture := newReceiptPersistenceFixtureForEventKind(
+		t,
+		domainevent.KindMessageForwarded,
+	)
+
+	recorded, err := fixture.recorder.Record(
+		context.Background(),
+		fixture.receipt,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recorded.Replay ||
+		recorded.MessageID != "message-1" ||
+		recorded.Originator != "ptid:alice" {
+		t.Fatalf("recorded forwarded receipt = %+v", recorded)
 	}
 }
 

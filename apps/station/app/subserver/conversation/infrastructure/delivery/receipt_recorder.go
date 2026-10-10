@@ -550,7 +550,8 @@ func receiptEventMessageBindingMatches(
 	event domainevent.Record,
 	model persistence.ConversationEventModel,
 ) bool {
-	if event.Fact.Kind == domainevent.KindMessageCommitted {
+	if event.Fact.Kind == domainevent.KindMessageCommitted ||
+		event.Fact.Kind == domainevent.KindMessageForwarded {
 		return model.MessageID != nil &&
 			*model.MessageID == string(event.Fact.MessageID) &&
 			model.MessageAuthor == string(event.Actor.Actor)
