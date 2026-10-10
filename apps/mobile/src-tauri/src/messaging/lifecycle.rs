@@ -284,8 +284,6 @@ impl MobileMessagingRuntime {
                 .emit(MOBILE_MESSAGING_PROJECTION_EVENT, event)
                 .map_err(|error| format!("emit mobile messaging projection event: {error}"))
         });
-        let wake_station_peer_id = station_peer_id.clone();
-        let wake_actor_ptid = actor_ptid.clone();
         let seed_backup = StorageDeviceSeedBackup::new(
             storage,
             &station_peer_id,
@@ -314,7 +312,6 @@ impl MobileMessagingRuntime {
                 prekey_backup,
             )
             .map_err(MobileError::messaging)?;
-        self.wake(&wake_station_peer_id, &wake_actor_ptid)?;
         Ok(status)
     }
 
@@ -1285,6 +1282,37 @@ mod tests {
         assert_eq!(worker.phase().unwrap(), MessagingWorkerPhase::Suspended);
         worker.resume().unwrap();
         assert_eq!(worker.phase().unwrap(), MessagingWorkerPhase::Running);
+    }
+
+    #[test]
+    fn fresh_activation_waits_for_the_explicit_reconcile_wake() {
+        let runtime = MobileMessagingRuntime::default();
+        let path = temp_database("explicit-first-reconcile");
+        runtime
+            .activate_with_material(
+                &path,
+                "profile-1".to_string(),
+                "station-1".to_string(),
+                "https://station.example".to_string(),
+                "ptid:alice".to_string(),
+                "mobile-device-1".to_string(),
+                &[7; 32],
+                [8; 32],
+                "token-1".to_string(),
+                discard_events(),
+                &crate::messaging::engine::NoopSeedBackup,
+                crate::messaging::engine::noop_prekey_backup(),
+            )
+            .unwrap();
+
+        {
+            let active = runtime.active.lock().unwrap();
+            let worker = &active.as_ref().unwrap().worker;
+            assert!(!worker.state.0.lock().unwrap().wake_pending);
+        }
+
+        runtime.deactivate("station-1", "ptid:alice").unwrap();
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
