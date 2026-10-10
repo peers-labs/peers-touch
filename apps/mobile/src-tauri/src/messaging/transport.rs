@@ -784,7 +784,10 @@ impl StationDeliveryReceiptTransport {
 }
 
 impl StationDeliveryReceiptTransport {
-    pub fn submit(&self, receipt: &DeviceConsumptionReceipt) -> Result<(), String> {
+    pub(crate) fn submit(
+        &self,
+        receipt: &DeviceConsumptionReceipt,
+    ) -> Result<(), StationTransportError> {
         if receipt.conversation_id.trim().is_empty()
             || receipt.event_id.trim().is_empty()
             || receipt.receipt_id.trim().is_empty()
@@ -796,7 +799,7 @@ impl StationDeliveryReceiptTransport {
                 .map(|consumer| consumer.device_id.as_str())
                 != Some(self.device_id.as_str())
         {
-            return Err("mobile messaging delivery receipt endpoint mismatch".to_string());
+            return Err(StationTransportError::Invalid);
         }
         post_proto::<_, SubmitConversationDeliveryReceiptResponse>(
             &self.station_origin,
@@ -808,7 +811,6 @@ impl StationDeliveryReceiptTransport {
             },
         )
         .map(|_| ())
-        .map_err(|error| error.to_string())
     }
 }
 
