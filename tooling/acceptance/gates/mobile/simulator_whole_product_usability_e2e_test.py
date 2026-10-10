@@ -157,6 +157,7 @@ class _ShellDriverSession:
         self.settings_surface_id: str | None = None
         self.activated_apps: list[str] = []
         self.navigation_actions: list[str] = []
+        self.orientation_actions: list[str] = []
         self.fixture_history: list[tuple[str, str | None]] = []
 
     def switch_to_native(self) -> None:
@@ -233,6 +234,20 @@ class _ShellDriverSession:
             self.route_id = str((payload or {})["routeId"])
             self.navigation_actions.append(self.route_id)
             return {"primaryRouteId": self.route_id}
+        if action == "orientation.apply":
+            orientation = str((payload or {})["orientation"])
+            self.orientation = orientation.upper()
+            self.orientation_actions.append(orientation)
+            width, height = (
+                (852, 393)
+                if orientation == "landscape"
+                else (393, 852)
+            )
+            return {
+                "orientation": orientation,
+                "width": width,
+                "height": height,
+            }
         if action == "entry.fixture":
             self.entry_surface_id = (payload or {}).get("surfaceId")
             return {
@@ -631,7 +646,7 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             ["com.peers.touch.mobile"] * 3,
         )
 
-    def test_shell_driver_retries_transient_ios_rotation_failure(self) -> None:
+    def test_shell_driver_falls_back_to_native_ios_scene_rotation(self) -> None:
         class TransientRotationSession(_ShellDriverSession):
             def __init__(self) -> None:
                 super().__init__()
@@ -639,9 +654,7 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
 
             def set_orientation(self, orientation: str) -> None:
                 self.orientation_attempts += 1
-                if self.orientation_attempts == 1:
-                    raise DriverError("Unable To Rotate Device")
-                super().set_orientation(orientation)
+                raise DriverError("Unable To Rotate Device")
 
         gate = SimulatorWholeProductUsabilityGate(
             foreground_probe=lambda: {},
@@ -654,7 +667,8 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         ):
             result = gate._configure_cell(session, "landscape-normal")
 
-        self.assertEqual(session.orientation_attempts, 2)
+        self.assertEqual(session.orientation_attempts, 1)
+        self.assertEqual(session.orientation_actions, ["landscape"])
         self.assertEqual(result["orientation"], "landscape")
         self.assertGreater(result["width"], result["height"])
 

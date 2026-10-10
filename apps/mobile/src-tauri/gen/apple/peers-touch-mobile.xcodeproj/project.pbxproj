@@ -66,6 +66,7 @@
 		588E244712FD919D6CBAF385 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		58E4E6794D6D9091176C7D8A /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		5D3EA77142A0AE8C2FABA34C /* store.rs */ = {isa = PBXFileReference; path = store.rs; sourceTree = "<group>"; };
+		5DCE9B12F1A1CE7ED8D913E3 /* orientation.rs */ = {isa = PBXFileReference; path = orientation.rs; sourceTree = "<group>"; };
 		60E6408A1396258987FF157E /* private_mention.rs */ = {isa = PBXFileReference; path = private_mention.rs; sourceTree = "<group>"; };
 		6378EFA6DD6858C8C30D0CFE /* session.rs */ = {isa = PBXFileReference; path = session.rs; sourceTree = "<group>"; };
 		669DE333B61000FC259EF0C9 /* browser.rs */ = {isa = PBXFileReference; path = browser.rs; sourceTree = "<group>"; };
@@ -326,6 +327,7 @@
 				796FF0B61F80B9A0966519A9 /* mod.rs */,
 				A17A9297DBC2437ECA875E8B /* native_events.rs */,
 				4C0AA577EC4A91C0D991085F /* oauth.rs */,
+				5DCE9B12F1A1CE7ED8D913E3 /* orientation.rs */,
 				A79A3B45B358D69926E90206 /* platform_bridge.rs */,
 				13848CF5F59D3550D4AE901E /* secure_storage.rs */,
 				D538826EF6274B718D5766E9 /* station.rs */,

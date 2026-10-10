@@ -232,6 +232,38 @@ import {
 export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   'build.identity': async () => readSharedBuildIdentity(),
 
+  'orientation.apply': async (input) => {
+    const orientation = input?.orientation;
+    if (orientation !== 'portrait' && orientation !== 'landscape') {
+      throw new Error('acceptance.mobile.invalidInput:orientation.apply');
+    }
+    const result = await invoke<{ requested: string }>(
+      'mobile_acceptance_set_orientation',
+      { orientation },
+    );
+    if (result.requested !== orientation) {
+      throw new Error('acceptance.mobile.orientationRequestMismatch');
+    }
+
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      const viewport = globalThis as typeof globalThis & {
+        innerWidth: number;
+        innerHeight: number;
+      };
+      const width = Math.round(viewport.innerWidth);
+      const height = Math.round(viewport.innerHeight);
+      const matches = orientation === 'portrait'
+        ? width < height
+        : width > height;
+      if (matches) {
+        return { orientation, width, height };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error('acceptance.mobile.orientationTimeout');
+  },
+
   'runtime.prepareActorIdentity': async (input) => {
     const storageKey = requireString(
       input?.storageKey,

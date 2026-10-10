@@ -16,10 +16,14 @@
   "journeyId": "MS-J02",
   "runtimeClass": "native-mobile",
   "writeSet": [
+    "apps/mobile/scripts/ios_native_correctness_test.py",
     "apps/mobile/src/App.tsx",
+    "apps/mobile/src/acceptance",
     "apps/mobile/src/components/recovery",
     "apps/mobile/src/runtimes",
     "apps/mobile/src/styles.css",
+    "apps/mobile/src-tauri/gen/apple",
+    "apps/mobile/src-tauri/src/commands",
     "packages/prototypes/mobile/chat",
     "tooling/acceptance/gates/mobile"
   ],
