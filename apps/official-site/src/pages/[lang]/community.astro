@@ -9,7 +9,6 @@ export function getStaticPaths() {
 const { lang } = Astro.params;
 const locale: Locale = isLocale(lang) ? lang : DEFAULT_LOCALE;
 const t = getDict(locale);
-const GITHUB_URL = 'https://github.com/peers-labs/peers-touch';
 ---
 
 <Base locale={locale} page="community" currentPath={Astro.url.pathname}>
@@ -19,118 +18,144 @@ const GITHUB_URL = 'https://github.com/peers-labs/peers-touch';
     <p class="page-head__subtitle">{t.community.subtitle}</p>
   </section>
 
-  <section class="pt-shell vision">
-    <h2 class="vision__title">{t.community.visionTitle}</h2>
-    <p class="vision__body">{t.community.vision}</p>
-  </section>
-
   <section class="pt-shell ways">
     <h2 class="ways__title">{t.community.waysTitle}</h2>
-    <div class="ways__grid">
-      {t.community.ways.map((way) => (
-        <article class="way">
-          <h3 class="way__title">{way.title}</h3>
-          <p class="way__body">{way.body}</p>
-        </article>
+    <div class="ways__track">
+      {t.community.ways.map((way, index) => (
+        <a
+          class="way pt-indexed-card pt-indexed-card--with-tip"
+          href={`#guide-${way.id}`}
+          data-community-guide
+          aria-label={`${way.title}. ${t.community.comingSoon}`}
+        >
+          <div class="pt-indexed-card__head">
+            <span class="pt-indexed-card__number" aria-hidden="true">{index + 1}</span>
+            <h3 class="pt-indexed-card__title">{way.title}</h3>
+          </div>
+          <p class="pt-indexed-card__body">{way.body}</p>
+          <span class="pt-indexed-card__tip" aria-live="polite">{t.community.comingSoon}</span>
+        </a>
       ))}
     </div>
-  </section>
-
-  <section class="pt-shell involve">
-    <h2 class="involve__title">{t.community.involveTitle}</h2>
-    <p class="involve__body">{t.community.involve}</p>
-    <a class="pt-btn pt-btn--primary involve__cta" href={GITHUB_URL} rel="noopener">
-      {t.community.involveCta}
-    </a>
   </section>
 </Base>
 
 <style>
   .page-head {
-    padding-block: var(--pt-space-2xl) var(--pt-space-lg);
-    max-width: 820px;
+    padding-block: clamp(40px, 5vw, 56px) var(--pt-space-xl);
   }
   .page-head__title {
-    font-size: clamp(2rem, 4.4vw, 3rem);
+    max-width: 520px;
+    font-size: 44.8px;
     font-weight: 800;
-    margin-top: var(--pt-space-sm);
+    margin-top: var(--pt-space-xs);
+    line-height: 53.76px;
+    letter-spacing: 0;
   }
   .page-head__subtitle {
-    font-size: clamp(1.02rem, 1.5vw, 1.2rem);
+    max-width: 32em;
+    font-size: 17.6px;
     color: var(--pt-text-secondary);
-    margin-top: var(--pt-space-md);
-  }
-
-  .vision {
-    background: var(--pt-surface-card);
-    border: 1px solid var(--pt-border-hairline);
-    border-left: 3px solid var(--pt-accent);
-    border-radius: var(--pt-radius-lg);
-    padding: var(--pt-space-lg);
-    box-shadow: var(--pt-shadow-soft);
-  }
-  .vision__title {
-    font-size: 1.2rem;
-    font-weight: 700;
-    margin-bottom: var(--pt-space-xs);
-  }
-  .vision__body {
-    color: var(--pt-text-secondary);
+    margin-top: var(--pt-space-sm);
+    line-height: 1.7;
   }
 
   .ways {
-    margin-top: var(--pt-space-2xl);
-  }
-  .ways__title {
-    font-size: clamp(1.5rem, 3vw, 2rem);
-    font-weight: 700;
-    margin-bottom: var(--pt-space-lg);
-  }
-  .ways__grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: var(--pt-space-md);
-  }
-  .way {
-    background: var(--pt-surface-card);
-    border: 1px solid var(--pt-border-hairline);
-    border-radius: var(--pt-radius-lg);
-    padding: var(--pt-space-lg);
-    box-shadow: var(--pt-shadow-soft);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-  }
-  .way__title {
-    font-size: 1.1rem;
-    font-weight: 700;
-    margin-bottom: var(--pt-space-xs);
-  }
-  .way__body {
-    color: var(--pt-text-secondary);
-    font-size: 0.95rem;
-  }
-
-  .involve {
-    margin-top: var(--pt-space-2xl);
-    background: var(--pt-surface-card);
-    border: 1px solid var(--pt-border-hairline);
-    border-left: 3px solid var(--pt-relay);
-    border-radius: var(--pt-radius-lg);
-    padding: var(--pt-space-lg);
-    box-shadow: var(--pt-shadow-soft);
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .involve__title {
-    font-size: 1.2rem;
-    font-weight: 700;
-    margin-bottom: var(--pt-space-xs);
-  }
-  .involve__body {
-    color: var(--pt-text-secondary);
-  }
-  .involve__cta {
     margin-top: var(--pt-space-lg);
   }
+  .ways__title {
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: var(--pt-space-lg);
+    line-height: 38.4px;
+    letter-spacing: 0;
+  }
+  .ways__track {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(232px, 1fr);
+    grid-template-rows: 1fr;
+    gap: var(--pt-space-md);
+    overflow-x: auto;
+    margin-top: calc(0px - var(--pt-space-md));
+    margin-inline: calc(0px - var(--pt-space-md));
+    padding-top: var(--pt-space-md);
+    padding-inline: var(--pt-space-md);
+    padding-bottom: var(--pt-space-xs);
+    scroll-snap-type: x proximity;
+    overscroll-behavior-inline: contain;
+    scrollbar-color: transparent transparent;
+    scrollbar-width: thin;
+  }
+  .ways__track::-webkit-scrollbar {
+    height: 6px;
+  }
+  .ways__track::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .ways__track::-webkit-scrollbar-thumb {
+    border-radius: var(--pt-radius-full);
+    background: transparent;
+  }
+  .ways__track:hover {
+    scrollbar-color: rgba(38, 44, 76, 0.3) transparent;
+  }
+  .ways__track:hover::-webkit-scrollbar-thumb {
+    background: rgba(38, 44, 76, 0.3);
+  }
+  .way {
+    min-height: 252px;
+    scroll-snap-align: start;
+  }
+
+  @media (max-width: 720px) {
+    .page-head {
+      padding-block: var(--pt-space-xl);
+    }
+    .page-head__title {
+      font-size: 36px;
+      line-height: 43.2px;
+    }
+    .page-head__subtitle {
+      font-size: 16px;
+    }
+    .ways__title {
+      font-size: 28px;
+      line-height: 33.6px;
+    }
+    .ways__track {
+      grid-auto-columns: minmax(272px, 82vw);
+    }
+  }
 </style>
+
+<script>
+  const bindCommunityGuides = () => {
+    document.querySelectorAll<HTMLAnchorElement>('[data-community-guide]').forEach((guide) => {
+      if (guide.dataset.bound === 'true') return;
+      guide.dataset.bound = 'true';
+
+      let hideTimer: number | undefined;
+      const showTip = () => {
+        guide.dataset.open = 'true';
+        window.clearTimeout(hideTimer);
+        hideTimer = window.setTimeout(() => {
+          delete guide.dataset.open;
+        }, 1800);
+      };
+
+      guide.addEventListener('click', (event) => {
+        event.preventDefault();
+        showTip();
+      });
+      guide.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        showTip();
+      });
+    });
+  };
+
+  document.addEventListener('astro:page-load', bindCommunityGuides);
+  bindCommunityGuides();
+</script>

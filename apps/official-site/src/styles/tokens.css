@@ -151,6 +151,95 @@ p {
   color: var(--pt-accent);
 }
 
+.pt-indexed-card {
+  position: relative;
+  display: block;
+  padding: var(--pt-space-lg);
+  background: var(--pt-surface-card);
+  border: 1px solid var(--pt-border-hairline);
+  border-radius: var(--pt-radius-lg);
+  box-shadow: var(--pt-shadow-soft);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  outline: none;
+  transition: border-color var(--pt-motion-fast) var(--pt-ease),
+    box-shadow var(--pt-motion-fast) var(--pt-ease),
+    transform var(--pt-motion-normal) var(--pt-ease);
+}
+
+.pt-indexed-card:hover,
+.pt-indexed-card:focus-visible,
+.pt-indexed-card[data-open='true'] {
+  border-color: var(--pt-accent);
+  box-shadow: var(--pt-shadow-float);
+  transform: translateY(-3px);
+}
+
+.pt-indexed-card--with-tip {
+  padding-bottom: calc(var(--pt-space-lg) + var(--pt-space-lg));
+  cursor: pointer;
+}
+
+.pt-indexed-card__head {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 48px;
+  gap: var(--pt-space-sm);
+  margin-bottom: var(--pt-space-sm);
+}
+
+.pt-indexed-card__number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--pt-radius-full);
+  color: var(--pt-text-on-accent);
+  background: linear-gradient(135deg, var(--pt-accent), var(--pt-relay));
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.pt-indexed-card__title {
+  min-width: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.pt-indexed-card__body {
+  color: var(--pt-text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+
+.pt-indexed-card__tip {
+  position: absolute;
+  left: var(--pt-space-lg);
+  bottom: var(--pt-space-md);
+  padding: var(--pt-space-2xs) var(--pt-space-sm);
+  border-radius: var(--pt-radius-full);
+  color: var(--pt-text-on-accent);
+  background: var(--pt-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity var(--pt-motion-fast) var(--pt-ease),
+    transform var(--pt-motion-fast) var(--pt-ease);
+}
+
+.pt-indexed-card:hover .pt-indexed-card__tip,
+.pt-indexed-card:focus-visible .pt-indexed-card__tip,
+.pt-indexed-card[data-open='true'] .pt-indexed-card__tip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

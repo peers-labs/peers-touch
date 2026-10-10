@@ -1,9 +1,14 @@
 ---
 import Base from '../../layouts/Base.astro';
-import NetworkMap from '../../components/NetworkMap.astro';
-import LayerStack from '../../components/LayerStack.astro';
-import AgentDiagram from '../../components/AgentDiagram.astro';
-import { getDict, localeParams, isLocale, DEFAULT_LOCALE, type Locale } from '../../i18n';
+import HowItWorksExperience from '../../components/HowItWorksExperience.astro';
+import {
+  getDict,
+  localeParams,
+  localePath,
+  isLocale,
+  DEFAULT_LOCALE,
+  type Locale,
+} from '../../i18n';
 
 export function getStaticPaths() {
   return localeParams();
@@ -12,221 +17,12 @@ export function getStaticPaths() {
 const { lang } = Astro.params;
 const locale: Locale = isLocale(lang) ? lang : DEFAULT_LOCALE;
 const t = getDict(locale);
-const p = t.product;
-
-const statusClass = (status: string) =>
-  `cap__status cap__status--${status.trim().replace(/\s+/g, '-').toLowerCase()}`;
 ---
 
 <Base locale={locale} page="product" currentPath={Astro.url.pathname}>
-  <section class="pt-shell page-head">
-    <p class="pt-eyebrow">{p.eyebrow}</p>
-    <h1 class="page-head__title">{p.title}</h1>
-    <p class="page-head__subtitle">{p.subtitle}</p>
-  </section>
-
-  <!-- 1 · The federated network -->
-  <section class="pt-shell block">
-    <header class="block__head">
-      <p class="pt-eyebrow">{p.network.eyebrow}</p>
-      <h2 class="block__title">{p.network.title}</h2>
-      <p class="block__note">{p.network.note}</p>
-    </header>
-
-    <figure class="figure">
-      <NetworkMap labels={p.network.diagram} />
-    </figure>
-
-    <div class="points">
-      {p.network.points.map((point) => (
-        <article class="point">
-          <h3 class="point__title">{point.title}</h3>
-          <p class="point__body">{point.body}</p>
-        </article>
-      ))}
-    </div>
-  </section>
-
-  <!-- 2 · The architecture -->
-  <section class="pt-shell block">
-    <header class="block__head">
-      <p class="pt-eyebrow">{p.layers.eyebrow}</p>
-      <h2 class="block__title">{p.layers.title}</h2>
-      <p class="block__note">{p.layers.note}</p>
-    </header>
-
-    <LayerStack items={p.layers.items} />
-  </section>
-
-  <!-- 3 · The AI runtime -->
-  <section class="pt-shell block">
-    <header class="block__head">
-      <p class="pt-eyebrow">{p.agents.eyebrow}</p>
-      <h2 class="block__title">{p.agents.title}</h2>
-      <p class="block__note">{p.agents.note}</p>
-    </header>
-
-    <figure class="figure figure--agents">
-      <AgentDiagram labels={p.agents.diagram} />
-    </figure>
-
-    <div class="points">
-      {p.agents.points.map((point) => (
-        <article class="point">
-          <h3 class="point__title">{point.title}</h3>
-          <p class="point__body">{point.body}</p>
-        </article>
-      ))}
-    </div>
-  </section>
-
-  <!-- 4 · Capabilities -->
-  <section class="pt-shell block">
-    <header class="block__head">
-      <h2 class="block__title">{p.capabilities.title}</h2>
-    </header>
-
-    <div class="cap__grid">
-      {p.capabilities.items.map((cap) => (
-        <article class="cap">
-          <div class="cap__head">
-            <h3 class="cap__title">{cap.title}</h3>
-            <span class={statusClass(cap.status)}>{cap.status}</span>
-          </div>
-          <p class="cap__body">{cap.body}</p>
-        </article>
-      ))}
-    </div>
-  </section>
+  <HowItWorksExperience
+    locale={locale}
+    product={t.product}
+    roadmapHref={localePath(locale, 'roadmap')}
+  />
 </Base>
-
-<style>
-  .page-head {
-    padding-block: var(--pt-space-2xl) var(--pt-space-lg);
-    max-width: 840px;
-  }
-  .page-head__title {
-    font-size: clamp(2.1rem, 4.6vw, 3.1rem);
-    font-weight: 800;
-    margin-top: var(--pt-space-sm);
-  }
-  .page-head__subtitle {
-    font-size: clamp(1.02rem, 1.5vw, 1.2rem);
-    color: var(--pt-text-secondary);
-    margin-top: var(--pt-space-md);
-  }
-
-  .block {
-    padding-block: var(--pt-space-xl);
-  }
-  .block__head {
-    max-width: 760px;
-    margin-bottom: var(--pt-space-lg);
-  }
-  .block__title {
-    font-size: clamp(1.6rem, 3.2vw, 2.2rem);
-    font-weight: 700;
-    margin-top: var(--pt-space-xs);
-  }
-  .block__note {
-    font-size: clamp(1rem, 1.5vw, 1.12rem);
-    color: var(--pt-text-secondary);
-    margin-top: var(--pt-space-sm);
-  }
-
-  .figure {
-    margin: 0;
-    padding: clamp(var(--pt-space-md), 3.4vw, var(--pt-space-xl));
-    border: 1px solid var(--pt-border-hairline);
-    border-radius: var(--pt-radius-xl);
-    background:
-      radial-gradient(circle at 18% 12%, rgba(102, 126, 234, 0.09), transparent 46%),
-      linear-gradient(160deg, #ffffff, var(--pt-canvas-2));
-    box-shadow: var(--pt-shadow-float);
-  }
-  .figure--agents {
-    background:
-      radial-gradient(circle at 84% 10%, rgba(118, 90, 162, 0.1), transparent 46%),
-      linear-gradient(160deg, #ffffff, var(--pt-canvas-2));
-  }
-
-  .points {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: var(--pt-space-md);
-    margin-top: var(--pt-space-lg);
-  }
-  .point {
-    padding: var(--pt-space-md);
-    border-radius: var(--pt-radius-lg);
-    background: var(--pt-surface-card);
-    border: 1px solid var(--pt-border-hairline);
-    box-shadow: var(--pt-shadow-soft);
-  }
-  .point__title {
-    font-size: 1.05rem;
-    font-weight: 700;
-    margin-bottom: var(--pt-space-xs);
-  }
-  .point__body {
-    color: var(--pt-text-secondary);
-    font-size: 0.95rem;
-    line-height: 1.6;
-  }
-
-  .cap__grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: var(--pt-space-md);
-  }
-  .cap {
-    background: var(--pt-surface-card);
-    border: 1px solid var(--pt-border-hairline);
-    border-radius: var(--pt-radius-lg);
-    padding: var(--pt-space-lg);
-    box-shadow: var(--pt-shadow-soft);
-  }
-  .cap__head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--pt-space-sm);
-    margin-bottom: var(--pt-space-xs);
-    flex-wrap: wrap;
-  }
-  .cap__title {
-    font-size: 1.1rem;
-    font-weight: 700;
-  }
-  .cap__status {
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    padding: 3px 10px;
-    border-radius: var(--pt-radius-full);
-    border: 1px solid var(--pt-border-hairline);
-    color: var(--pt-text-secondary);
-    background: var(--pt-surface-subtle);
-  }
-  .cap__status--in-progress,
-  .cap__status--进行中 {
-    color: var(--pt-accent);
-    background: rgba(102, 126, 234, 0.12);
-  }
-  .cap__status--planned,
-  .cap__status--规划中 {
-    color: var(--pt-relay);
-    background: rgba(118, 90, 162, 0.12);
-  }
-  .cap__body {
-    color: var(--pt-text-secondary);
-    font-size: 0.95rem;
-    line-height: 1.6;
-  }
-
-  @media (max-width: 860px) {
-    .points {
-      grid-template-columns: 1fr;
-    }
-  }
-</style>

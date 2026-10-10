@@ -94,7 +94,7 @@ export default function DecentralizedGlobe() {
       const topojson = await import('topojson-client');
       if (disposed || !containerRef.current) return;
 
-      const world = Globe()
+      const world = Globe({ animateIn: false })
         .backgroundColor('rgba(255,255,255,0)')
         .showAtmosphere(true)
         .atmosphereColor(COLORS.atmosphere)

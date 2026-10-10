@@ -1,5 +1,6 @@
 ---
 import '../styles/tokens.css';
+import { ClientRouter } from 'astro:transitions';
 import { getDict, localePath, switchLocalePath, LOCALES, type Locale } from '../i18n';
 
 interface Props {
@@ -34,13 +35,19 @@ const navItems = [
     {LOCALES.map((l) => (
       <link rel="alternate" hreflang={l} href={switchLocalePath(currentPath, l)} />
     ))}
+    <ClientRouter />
   </head>
   <body>
     <a class="pt-skip" href="#main">Skip to content</a>
-    <header class="pt-header">
+    <header class="pt-header" transition:animate="none">
       <div class="pt-shell pt-header__inner">
-        <a class="pt-brand" href={localePath(locale)} aria-label={t.meta.siteName}>
-          <img class="pt-brand__logo" src="/peers-icon.png" alt="Peers" />
+        <a
+          class="pt-brand"
+          href={localePath(locale)}
+          aria-label={t.meta.siteName}
+          transition:persist="site-brand"
+        >
+          <img class="pt-brand__logo" src="/peers-logo.png" alt="Peers" />
         </a>
         <nav class="pt-nav" aria-label="Primary">
           {navItems.map((item) => (
@@ -72,20 +79,17 @@ const navItems = [
       </div>
     </header>
 
-    <main id="main">
+    <main id="main" transition:animate="none">
       <slot />
     </main>
 
-    <footer class="pt-footer">
+    <footer class="pt-footer" transition:animate="none">
       <div class="pt-shell pt-footer__inner">
         <div class="pt-footer__brand">
-          <img src="/peers-icon.png" alt="Peers" style="height: 24px; width: 24px; border-radius: 5px;" />
+          <img class="pt-footer__logo" src="/peers-icon.png" alt="Peers" />
           <span>{t.footer.rights}</span>
         </div>
-        <div class="pt-footer__meta">
-          <a href={GITHUB_URL} rel="noopener">GitHub</a>
-          <span>© {new Date().getFullYear()} {t.footer.rights}</span>
-        </div>
+        <span>© {new Date().getFullYear()}</span>
       </div>
     </footer>
 
@@ -120,20 +124,29 @@ const navItems = [
         height: 68px;
       }
       .pt-brand {
-        display: inline-flex;
-        align-items: center;
+        width: 48px;
+        height: 48px;
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        border-radius: 10px;
+        background: #fff;
       }
       .pt-brand__logo {
-        height: 44px;
-        width: 44px;
-        border-radius: 10px;
+        width: 40px;
+        height: auto;
+        object-fit: contain;
       }
       .pt-nav {
-        display: flex;
+        display: grid;
+        grid-template-columns: 72px 112px 88px 104px;
         gap: var(--pt-space-md);
         margin-right: auto;
+        white-space: nowrap;
       }
       .pt-nav__link {
+        display: grid;
+        place-items: center;
         font-size: 15px;
         color: var(--pt-text-secondary);
         padding: 6px 2px;
@@ -151,21 +164,29 @@ const navItems = [
         display: flex;
         align-items: center;
         gap: var(--pt-space-sm);
+        flex: 0 0 auto;
       }
       .pt-lang {
-        display: inline-flex;
+        display: inline-grid;
+        grid-template-columns: repeat(2, 72px);
         padding: 3px;
         border-radius: var(--pt-radius-full);
         background: var(--pt-surface-subtle);
         border: 1px solid var(--pt-border-hairline);
       }
       .pt-lang__opt {
+        display: grid;
+        place-items: center;
+        width: 72px;
+        height: 32px;
         font-size: 13px;
         font-weight: 600;
-        padding: 4px 12px;
         border-radius: var(--pt-radius-full);
         color: var(--pt-text-secondary);
-        transition: all var(--pt-motion-fast) var(--pt-ease);
+        white-space: nowrap;
+        transition: color var(--pt-motion-fast) var(--pt-ease),
+          background var(--pt-motion-fast) var(--pt-ease),
+          box-shadow var(--pt-motion-fast) var(--pt-ease);
       }
       .pt-lang__opt--active {
         background: var(--pt-surface-base);
@@ -194,16 +215,12 @@ const navItems = [
         font-weight: 500;
         color: var(--pt-text-primary);
       }
-      .pt-footer__meta {
-        display: inline-flex;
-        align-items: center;
-        gap: var(--pt-space-md);
+      .pt-footer__logo {
+        width: 24px;
+        height: 24px;
+        border-radius: 5px;
       }
-      .pt-footer__meta a:hover {
-        color: var(--pt-accent);
-      }
-
-      @media (max-width: 720px) {
+      @media (max-width: 920px) {
         .pt-nav {
           display: none;
         }

@@ -18,20 +18,22 @@ const t = getDict(locale);
     <p class="page-head__subtitle">{t.roadmap.subtitle}</p>
   </section>
 
-  <section class="pt-shell timeline">
-    <ol class="timeline__list">
-      {t.roadmap.phases.map((phase) => (
-        <li class="phase">
-          <span class="phase__dot" aria-hidden="true"></span>
-          <div class="phase__body">
-            <div class="phase__head">
-              <h3 class="phase__name">{phase.phase}</h3>
-              <span class={`phase__status phase__status--${phase.status.trim().replace(/\s+/g, '-').toLowerCase()}`}>
-                {phase.status}
-              </span>
+  <section class="pt-shell roadmap">
+    <h2 class="roadmap__title">{t.roadmap.sectionTitle}</h2>
+    <ol class="roadmap__track">
+      {t.roadmap.phases.map((phase, index) => (
+        <li class="phase pt-indexed-card">
+          <div class="phase__topline">
+            <div class="pt-indexed-card__head">
+              <span class="pt-indexed-card__number" aria-hidden="true">{index + 1}</span>
+              <h3 class="pt-indexed-card__title">{phase.phase}</h3>
             </div>
-            <p class="phase__desc">{phase.body}</p>
+            <span class="phase__status">{phase.status}</span>
           </div>
+          <p class="pt-indexed-card__body">{phase.body}</p>
+          <ul class="phase__outcomes">
+            {phase.outcomes.map((outcome) => <li>{outcome}</li>)}
+          </ul>
         </li>
       ))}
     </ol>
@@ -40,91 +42,110 @@ const t = getDict(locale);
 
 <style>
   .page-head {
-    padding-block: var(--pt-space-2xl) var(--pt-space-lg);
-    max-width: 760px;
+    padding-block: clamp(40px, 5vw, 56px) var(--pt-space-xl);
   }
   .page-head__title {
-    font-size: clamp(2rem, 4.4vw, 3rem);
+    max-width: 520px;
+    font-size: 44.8px;
     font-weight: 800;
-    margin-top: var(--pt-space-sm);
+    margin-top: var(--pt-space-xs);
+    line-height: 53.76px;
+    letter-spacing: 0;
   }
   .page-head__subtitle {
-    font-size: clamp(1.02rem, 1.5vw, 1.2rem);
+    max-width: 32em;
+    font-size: 17.6px;
     color: var(--pt-text-secondary);
-    margin-top: var(--pt-space-md);
+    margin-top: var(--pt-space-sm);
+    line-height: 1.7;
   }
 
-  .timeline__list {
+  .roadmap {
+    margin-top: var(--pt-space-sm);
+  }
+  .roadmap__title {
+    margin-bottom: var(--pt-space-lg);
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 38.4px;
+    letter-spacing: 0;
+  }
+  .roadmap__track {
     list-style: none;
     margin: 0;
     padding: 0;
-    position: relative;
-  }
-  .timeline__list::before {
-    content: '';
-    position: absolute;
-    left: 7px;
-    top: 8px;
-    bottom: 8px;
-    width: 2px;
-    background: linear-gradient(var(--pt-accent), var(--pt-relay));
-    opacity: 0.4;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--pt-space-md);
+    margin-top: calc(0px - var(--pt-space-md));
+    margin-inline: calc(0px - var(--pt-space-md));
+    padding-top: var(--pt-space-md);
+    padding-inline: var(--pt-space-md);
+    padding-bottom: var(--pt-space-xs);
   }
   .phase {
-    position: relative;
     display: flex;
-    gap: var(--pt-space-md);
-    padding-bottom: var(--pt-space-lg);
+    flex-direction: column;
   }
-  .phase:last-child {
-    padding-bottom: 0;
+  .phase__topline {
+    min-height: 48px;
+    margin-bottom: var(--pt-space-sm);
   }
-  .phase__dot {
-    position: relative;
-    z-index: 1;
-    flex: none;
-    width: 16px;
-    height: 16px;
-    margin-top: 4px;
-    border-radius: var(--pt-radius-full);
-    background: radial-gradient(circle at 35% 35%, var(--pt-accent), var(--pt-relay));
-    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.14);
-  }
-  .phase__body {
-    background: var(--pt-surface-card);
-    border: 1px solid var(--pt-border-hairline);
-    border-radius: var(--pt-radius-lg);
-    padding: var(--pt-space-md) var(--pt-space-lg);
-    box-shadow: var(--pt-shadow-soft);
-    flex: 1;
-  }
-  .phase__head {
-    display: flex;
-    align-items: center;
-    gap: var(--pt-space-sm);
-    margin-bottom: var(--pt-space-2xs);
-    flex-wrap: wrap;
-  }
-  .phase__name {
-    font-size: 1.2rem;
-    font-weight: 700;
+  .phase__topline .pt-indexed-card__head {
+    margin-bottom: 0;
   }
   .phase__status {
+    position: absolute;
+    top: 10px;
+    right: var(--pt-space-sm);
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding-inline: var(--pt-space-xs);
+    border: 1px solid var(--pt-border-hairline);
+    border-radius: var(--pt-radius-full);
+    background: var(--pt-surface-subtle);
+    color: var(--pt-text-muted);
     font-size: 12px;
     font-weight: 600;
-    letter-spacing: 0.03em;
-    padding: 3px 10px;
-    border-radius: var(--pt-radius-full);
-    color: var(--pt-text-secondary);
-    background: var(--pt-surface-subtle);
-    border: 1px solid var(--pt-border-hairline);
+    line-height: 20px;
   }
-  .phase__status--in-progress,
-  .phase__status--进行中 {
-    color: var(--pt-accent);
-    background: rgba(102, 126, 234, 0.12);
-  }
-  .phase__desc {
+  .phase__outcomes {
+    margin: auto 0 0;
+    padding: var(--pt-space-md) 0 0 18px;
+    border-top: 1px solid var(--pt-border-hairline);
+    display: grid;
+    grid-template-rows: repeat(3, 2lh);
+    row-gap: var(--pt-space-2xs);
     color: var(--pt-text-secondary);
+    font-size: 13px;
+    line-height: 1.7;
+  }
+  .phase__outcomes li + li {
+    margin-top: 0;
+  }
+
+  @media (max-width: 720px) {
+    .page-head {
+      padding-block: var(--pt-space-xl);
+    }
+    .page-head__title {
+      font-size: 36px;
+      line-height: 43.2px;
+    }
+    .page-head__subtitle {
+      font-size: 16px;
+    }
+    .roadmap__title {
+      font-size: 28px;
+      line-height: 33.6px;
+    }
+    .roadmap__track {
+      grid-template-columns: none;
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(272px, 82vw);
+      overflow-x: auto;
+      scroll-snap-type: x proximity;
+    }
   }
 </style>
