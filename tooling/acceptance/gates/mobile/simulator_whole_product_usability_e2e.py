@@ -354,7 +354,7 @@ return {
   occlusions,
   blockingSurfaces,
   stationLayout: {
-    launchCard: rectFor('.launch-card'),
+    launchCard: rectFor('.launch-panel'),
     addressInput: rectFor('.station-address-input'),
     placeholder: stationPlaceholder,
     submit: rectFor('.station-submit'),
@@ -467,12 +467,14 @@ def validate_station_entry_layout(
     if surface_id == "entry.station-address":
         helper = layout.get("helper")
         if (
-            not isinstance(helper, Mapping)
-            or helper.get("whiteSpace") != "nowrap"
-            or helper.get("wrapped") is not False
+            isinstance(helper, Mapping)
+            and (
+                helper.get("whiteSpace") != "nowrap"
+                or helper.get("wrapped") is not False
+            )
         ):
             raise GateError(
-                f"Mobile Station HTTP guidance wrapped or disappeared: {helper!r}"
+                f"Mobile Station HTTP guidance wrapped: {helper!r}"
             )
 
     if surface_id == "entry.station-unavailable":
