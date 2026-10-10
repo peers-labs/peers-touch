@@ -1,5 +1,8 @@
 use std::time::Duration;
 
+use crate::secure_content::proto::peers_touch::model::error::v1::{
+    ErrorCode as CanonicalErrorCode, ErrorResponse as CanonicalErrorResponse,
+};
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
 use messaging_core::attachment::{
@@ -169,13 +172,31 @@ fn station_http_error(status: u16, headers: &HeaderMap, body: &[u8]) -> StationT
             .filter(|value| !value.is_empty())
             .map(|value| value.chars().take(MAX_ERROR_CONTEXT_CHARS).collect())
     };
+    let canonical_error = headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| value.starts_with("application/protobuf"))
+        .and_then(|_| CanonicalErrorResponse::decode(body).ok());
+    let canonical_code = canonical_error
+        .as_ref()
+        .and_then(|error| CanonicalErrorCode::try_from(error.code).ok())
+        .filter(|code| *code != CanonicalErrorCode::Unspecified)
+        .map(|code| code.as_str_name().to_string());
+    let canonical_message = canonical_error
+        .as_ref()
+        .map(|error| error.message.trim())
+        .filter(|message| !message.is_empty())
+        .map(|message| message.chars().take(MAX_ERROR_CONTEXT_CHARS).collect());
     let body = String::from_utf8_lossy(body);
     let body = body.trim();
     StationTransportError::HttpStatus {
         status,
-        code: header("X-Peers-Error-Code"),
-        details: header("X-Peers-Error-Details"),
-        body: (!body.is_empty()).then(|| body.chars().take(MAX_ERROR_CONTEXT_CHARS).collect()),
+        code: header("X-Peers-Error-Code").or(canonical_code),
+        details: header("X-Peers-Error-Details").or(canonical_message),
+        body: canonical_error
+            .is_none()
+            .then(|| body.chars().take(MAX_ERROR_CONTEXT_CHARS).collect())
+            .filter(|body: &String| !body.is_empty()),
     }
 }
 
@@ -718,6 +739,23 @@ impl StationMlsKeyPackageTransport {
     }
 }
 
+fn complete_mls_key_package_upload(
+    result: Result<UploadMlsKeyPackageResponse, StationTransportError>,
+) -> Result<(), String> {
+    match result {
+        Ok(_) => Ok(()),
+        Err(error)
+            if error.has_http_code(
+                409,
+                CanonicalErrorCode::ContentPrekeyStaleEpoch.as_str_name(),
+            ) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 impl MlsKeyPackageTransport for StationMlsKeyPackageTransport {
     fn upload(&self, request: &UploadMlsKeyPackageRequest) -> Result<(), String> {
         if request
@@ -729,15 +767,13 @@ impl MlsKeyPackageTransport for StationMlsKeyPackageTransport {
         {
             return Err("mobile messaging MLS KeyPackage endpoint binding mismatch".to_string());
         }
-        post_proto::<_, UploadMlsKeyPackageResponse>(
+        complete_mls_key_package_upload(post_proto::<_, UploadMlsKeyPackageResponse>(
             &self.station_origin,
             self.access_token.as_str(),
             &self.device_id,
             "/key-exchange/mls/key-package/upload",
             request,
-        )
-        .map(|_| ())
-        .map_err(|error| error.to_string())
+        ))
     }
 
     fn available_count(&self, device: &ActorDeviceRef) -> Result<u64, String> {
@@ -2900,6 +2936,61 @@ mod tests {
                 body: Some(_),
             }
         ));
+    }
+
+    #[test]
+    fn station_http_error_decodes_canonical_protobuf_context() {
+        let response = CanonicalErrorResponse {
+            code: CanonicalErrorCode::ContentPrekeyStaleEpoch as i32,
+            message: "Content PreKey epoch is stale".to_string(),
+            details: Default::default(),
+        };
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            CONTENT_TYPE,
+            reqwest::header::HeaderValue::from_static("application/protobuf"),
+        );
+
+        let error = station_http_error(409, &headers, &response.encode_to_vec());
+
+        assert!(error.has_http_code(
+            409,
+            CanonicalErrorCode::ContentPrekeyStaleEpoch.as_str_name(),
+        ));
+        assert_eq!(
+            error.to_string(),
+            "mobile messaging Station returned HTTP 409 \
+             [ERROR_CODE_CONTENT_PREKEY_STALE_EPOCH]: Content PreKey epoch is stale"
+        );
+    }
+
+    #[test]
+    fn consumed_mls_key_package_replay_completes_local_publication() {
+        let stale = StationTransportError::HttpStatus {
+            status: 409,
+            code: Some(
+                CanonicalErrorCode::ContentPrekeyStaleEpoch
+                    .as_str_name()
+                    .to_string(),
+            ),
+            details: None,
+            body: None,
+        };
+        assert_eq!(complete_mls_key_package_upload(Err(stale)), Ok(()));
+
+        let conflict = StationTransportError::HttpStatus {
+            status: 409,
+            code: Some(
+                CanonicalErrorCode::ContentPrekeyReplayConflict
+                    .as_str_name()
+                    .to_string(),
+            ),
+            details: None,
+            body: None,
+        };
+        assert!(complete_mls_key_package_upload(Err(conflict))
+            .unwrap_err()
+            .contains("ERROR_CODE_CONTENT_PREKEY_REPLAY_CONFLICT"));
     }
 
     #[test]
