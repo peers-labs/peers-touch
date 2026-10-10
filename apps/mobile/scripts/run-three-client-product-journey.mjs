@@ -3361,7 +3361,7 @@ async function openMobileFindPeople(clientId, client) {
     '[data-contacts-find-people]',
     'open-find-people',
   );
-  return waitForUi(
+  const controls = await waitForUi(
     clientId,
     client,
     'Find People controls',
@@ -3370,14 +3370,67 @@ async function openMobileFindPeople(clientId, client) {
         '[data-product-surface="contacts.add-friend"]'
       );
       const input = surface?.querySelector('input');
+      const scopes = [...(surface?.querySelectorAll(
+        '.people-federation-chip'
+      ) || [])].filter((element) => element.getClientRects().length);
       return {
         ready: Boolean(surface?.getClientRects().length)
           && input instanceof HTMLInputElement
-          && !input.disabled,
+          && (!input.disabled || scopes.length > 0),
+        inputDisabled: input instanceof HTMLInputElement
+          ? input.disabled
+          : null,
+        scopeCount: scopes.length,
         text: (surface?.innerText || '').slice(0, 2200)
       };
     `,
   );
+  if (controls.inputDisabled) {
+    const selected = await executeWebScript(
+      client,
+      `
+        const surface = document.querySelector(
+          '[data-product-surface="contacts.add-friend"]'
+        );
+        const scopes = [...(surface?.querySelectorAll(
+          '.people-federation-chip'
+        ) || [])].filter((element) => element.getClientRects().length);
+        const preferred = scopes.find((element) => (
+          /chat-native-acceptance/i.test(element.innerText || '')
+        )) || scopes.find((element) => (
+          !/federation:\\s*local/i.test(element.innerText || '')
+        )) || scopes[0];
+        if (!(preferred instanceof HTMLButtonElement)) {
+          return { ok: false };
+        }
+        preferred.click();
+        return {
+          label: (preferred.innerText || '').trim(),
+          ok: true
+        };
+      `,
+    );
+    assertContract(
+      selected?.ok === true,
+      'CONTACTS_FEDERATION_SCOPE_MISSING',
+      `${clientId} cannot select a Find People Federation scope`,
+    );
+    await waitForUi(
+      clientId,
+      client,
+      'enabled Find People input',
+      `
+        const input = document.querySelector(
+          '[data-product-surface="contacts.add-friend"] input'
+        );
+        return {
+          ready: input instanceof HTMLInputElement && !input.disabled
+        };
+      `,
+    );
+    return { ...controls, selectedScope: selected.label };
+  }
+  return controls;
 }
 
 async function closeMobileContactsOverlay(clientId, client, surfaceSelector) {
