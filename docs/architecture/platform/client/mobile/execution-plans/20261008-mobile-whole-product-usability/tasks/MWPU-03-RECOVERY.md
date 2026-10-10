@@ -17,6 +17,7 @@
   "runtimeClass": "native-mobile",
   "writeSet": [
     "apps/mobile/scripts/ios_native_correctness_test.py",
+    "apps/mobile/scripts/run-three-client-product-journey.mjs",
     "apps/mobile/src/App.tsx",
     "apps/mobile/src/acceptance",
     "apps/mobile/src/components/recovery",

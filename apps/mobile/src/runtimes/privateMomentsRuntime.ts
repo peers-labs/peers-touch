@@ -133,7 +133,7 @@ export function createPrivateMomentsRuntimeDescriptor(): MobileRuntimeDescriptor
     title: 'Private Social Runtime',
     responsibility:
       'Owns the mobile-web projection of Native private Social durability and typed actions; cryptographic and replay authority remain in Mobile Rust.',
-    dependsOn: ['session', 'secure-storage', 'messaging'],
+    dependsOn: ['session', 'secure-storage'],
 
     async bootstrap(context): Promise<void> {
       runtimeContext = context;
