@@ -145,6 +145,17 @@ impl StationTransportError {
             body: None,
         }
     }
+
+    pub(crate) fn has_http_code(&self, expected_status: u16, expected_code: &str) -> bool {
+        matches!(
+            self,
+            Self::HttpStatus {
+                status,
+                code: Some(code),
+                ..
+            } if *status == expected_status && code == expected_code
+        )
+    }
 }
 
 fn station_http_error(status: u16, headers: &HeaderMap, body: &[u8]) -> StationTransportError {
@@ -1193,24 +1204,49 @@ impl StationConversationTransport {
         &self,
         input: &MembershipTransitionIntentInput,
     ) -> Result<PrepareConversationMembershipResponse, String> {
+        let request = self.membership_transition_request(input)?;
+        self.post_membership_transition(&request)
+            .map_err(|error| error.to_string())
+    }
+
+    pub(crate) fn prepare_membership_transition_typed(
+        &self,
+        input: &MembershipTransitionIntentInput,
+    ) -> Result<PrepareConversationMembershipResponse, StationTransportError> {
+        let request = self
+            .membership_transition_request(input)
+            .map_err(|_| StationTransportError::Invalid)?;
+        self.post_membership_transition(&request)
+    }
+
+    fn membership_transition_request(
+        &self,
+        input: &MembershipTransitionIntentInput,
+    ) -> Result<PrepareConversationMembershipRequest, String> {
+        Ok(PrepareConversationMembershipRequest {
+            conversation_id: input.conversation_id.clone(),
+            sender: Some(actor_device_ref(
+                self.endpoint.ptid.clone(),
+                self.endpoint.device_id.clone(),
+            )),
+            action: canonical_membership_action(input.action) as i32,
+            target_actor: Some(actor_ref(input.target_ptid.clone())),
+            target_device_id: input.target_device_id.clone(),
+            role: canonical_member_role(&input.role)? as i32,
+        })
+    }
+
+    fn post_membership_transition(
+        &self,
+        request: &PrepareConversationMembershipRequest,
+    ) -> Result<PrepareConversationMembershipResponse, StationTransportError> {
         post_proto(
             &self.station_origin,
             self.access_token.as_str(),
             &self.device_id,
             "/conversation/membership/prepare",
-            &PrepareConversationMembershipRequest {
-                conversation_id: input.conversation_id.clone(),
-                sender: Some(actor_device_ref(
-                    self.endpoint.ptid.clone(),
-                    self.endpoint.device_id.clone(),
-                )),
-                action: canonical_membership_action(input.action) as i32,
-                target_actor: Some(actor_ref(input.target_ptid.clone())),
-                target_device_id: input.target_device_id.clone(),
-                role: canonical_member_role(&input.role)? as i32,
-            },
+            request,
         )
-        .map_err(|error| error.to_string())
     }
 }
 
@@ -2862,6 +2898,21 @@ mod tests {
                 body: Some(_),
             }
         ));
+    }
+
+    #[test]
+    fn station_http_error_matches_only_exact_status_and_code() {
+        let error = StationTransportError::HttpStatus {
+            status: 404,
+            code: Some("CONVERSATION_NOT_FOUND".to_string()),
+            details: None,
+            body: None,
+        };
+
+        assert!(error.has_http_code(404, "CONVERSATION_NOT_FOUND"));
+        assert!(!error.has_http_code(409, "CONVERSATION_NOT_FOUND"));
+        assert!(!error.has_http_code(404, "DEVICE_INBOX_ITEM_NOT_HEAD"));
+        assert!(!StationTransportError::Network.has_http_code(404, "CONVERSATION_NOT_FOUND"));
     }
 
     #[test]
