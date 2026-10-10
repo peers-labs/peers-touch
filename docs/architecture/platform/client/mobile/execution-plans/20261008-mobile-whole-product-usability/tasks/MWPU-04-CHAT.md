@@ -27,6 +27,7 @@
     "apps/mobile/src/pages/ChatPage.tsx",
     "apps/mobile/src/pages/chat",
     "apps/mobile/src/features/chat",
+    "apps/mobile/src/features/social",
     "apps/mobile/src/components/call",
     "apps/mobile/src/styles.css",
     "apps/station/app/subserver/conversation",
