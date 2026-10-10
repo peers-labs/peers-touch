@@ -24,6 +24,11 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'orientation.apply',
+    mobileAcceptanceActions['orientation.apply'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'runtime.prepareActorIdentity',
     mobileAcceptanceActions['runtime.prepareActorIdentity'],
     registry,

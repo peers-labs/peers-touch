@@ -5,6 +5,8 @@ pub mod ledger;
 #[cfg(feature = "acceptance-harness")]
 pub mod native_events;
 pub mod oauth;
+#[cfg(any(test, feature = "acceptance-harness"))]
+pub mod orientation;
 pub mod platform_bridge;
 pub mod secure_storage;
 pub mod station;
@@ -162,6 +164,7 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         health::mobile_health,
         // Native events
         native_events::mobile_native_event_emit,
+        orientation::mobile_acceptance_set_orientation,
         // Messaging
         crate::messaging::commands::messaging_activate,
         crate::messaging::commands::messaging_attachment_stage_begin,

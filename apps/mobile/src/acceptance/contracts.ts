@@ -58,6 +58,7 @@ import type {
 
 export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'build.identity',
+  'orientation.apply',
   'runtime.prepareActorIdentity',
   'station.add',
   'station.replace',
@@ -1189,6 +1190,16 @@ export interface MobileAcceptanceActionContract {
   'build.identity': {
     input: undefined;
     output: EmbeddedMobileBuildIdentity;
+  };
+  'orientation.apply': {
+    input: {
+      orientation: 'portrait' | 'landscape';
+    };
+    output: {
+      orientation: 'portrait' | 'landscape';
+      width: number;
+      height: number;
+    };
   };
   'runtime.prepareActorIdentity': {
     input: PrepareActorIdentityInput;

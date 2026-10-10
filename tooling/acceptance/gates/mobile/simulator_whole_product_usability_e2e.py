@@ -90,6 +90,7 @@ SHELL_REQUIRED_HARNESS_ACTIONS = (
     "navigation.apply",
     "navigation.snapshot",
     "moments.fixture",
+    "orientation.apply",
     "projection.read",
     "recovery.fixture",
     "settings.fixture",
@@ -2397,6 +2398,26 @@ class SimulatorWholeProductUsabilityGate(
                 session.set_orientation(orientation.upper())
                 break
             except DriverError as error:
+                if (
+                    getattr(session, "platform", "") == "ios"
+                    and "Unable To Rotate Device" in str(error)
+                ):
+                    session.switch_to_app_webview()
+                    applied = session.call_action(
+                        "orientation.apply",
+                        {"orientation": orientation},
+                    )
+                    if (
+                        not isinstance(applied, Mapping)
+                        or applied.get("orientation") != orientation
+                        or not isinstance(applied.get("width"), int)
+                        or not isinstance(applied.get("height"), int)
+                    ):
+                        raise GateError(
+                            "Mobile native orientation fallback failed "
+                            f"for {cell_id}"
+                        ) from error
+                    break
                 if (
                     "Unable To Rotate Device" not in str(error)
                     or attempt == ORIENTATION_MAX_ATTEMPTS

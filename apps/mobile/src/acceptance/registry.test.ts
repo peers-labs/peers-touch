@@ -115,6 +115,7 @@ describe('Mobile Acceptance Harness', () => {
       [...MOBILE_ACCEPTANCE_ACTION_NAMES].sort(),
     );
     expect(actionNames).toContain('build.identity');
+    expect(actionNames).toContain('orientation.apply');
     expect(actionNames).toContain('runtime.prepareActorIdentity');
     expect(actionNames).toContain('station.select');
     expect(actionNames).toContain('entry.fixture');
@@ -164,6 +165,52 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('moments.private.reconcile');
     expect(actionNames).toContain('moments.private.snapshot');
     expect(actionNames).toContain('storage.conversation-clear.seed');
+  });
+
+  it('routes headless orientation through the native scene owner', async () => {
+    const viewport = globalThis as typeof globalThis & {
+      innerWidth?: number;
+      innerHeight?: number;
+    };
+    const originalWidth = viewport.innerWidth;
+    const originalHeight = viewport.innerHeight;
+    invokeMock.mockImplementationOnce(async (command: string, payload: unknown) => {
+      expect(command).toBe('mobile_acceptance_set_orientation');
+      expect(payload).toEqual({ orientation: 'landscape' });
+      Object.defineProperty(viewport, 'innerWidth', {
+        configurable: true,
+        value: 844,
+      });
+      Object.defineProperty(viewport, 'innerHeight', {
+        configurable: true,
+        value: 390,
+      });
+      return { requested: 'landscape' };
+    });
+
+    try {
+      await expect(createMobileAcceptanceHarness()['orientation.apply']({
+        orientation: 'landscape',
+      })).resolves.toEqual({
+        orientation: 'landscape',
+        width: 844,
+        height: 390,
+      });
+      await expect(createMobileAcceptanceHarness()['orientation.apply']({
+        orientation: 'unknown',
+      } as never)).rejects.toThrow(
+        'acceptance.mobile.invalidInput:orientation.apply',
+      );
+    } finally {
+      Object.defineProperty(viewport, 'innerWidth', {
+        configurable: true,
+        value: originalWidth,
+      });
+      Object.defineProperty(viewport, 'innerHeight', {
+        configurable: true,
+        value: originalHeight,
+      });
+    }
   });
 
   it('projects only declared entry surface fixtures', async () => {
@@ -1600,6 +1647,12 @@ describe('Mobile Acceptance Harness', () => {
     );
     expect(releaseHandler).not.toMatch(
       /mobile_build_identity|oauth_acceptance_(?:callback_replay_handle|negative_callback|configure_secure_storage_fault)/,
+    );
+    expect(releaseHandler).not.toMatch(
+      /mobile_acceptance_set_orientation/,
+    );
+    expect(acceptanceHandler).toMatch(
+      /mobile_acceptance_set_orientation/,
     );
     expect(acceptanceHandler).toMatch(
       /mobile_build_identity[\s\S]*oauth_acceptance_callback_replay_handle[\s\S]*oauth_acceptance_configure_secure_storage_fault[\s\S]*oauth_acceptance_negative_callback/,
