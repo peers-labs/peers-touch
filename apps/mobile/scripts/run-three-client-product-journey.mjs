@@ -832,13 +832,20 @@ async function selectorIsVisible(client, selector) {
   );
 }
 
-async function waitForUi(clientId, client, label, script, args = []) {
+async function waitForUi(
+  clientId,
+  client,
+  label,
+  script,
+  args = [],
+  isReady = (value) => value?.ready === true || value === true,
+) {
   const deadline = Date.now() + uiWaitTimeoutMs;
   let lastValue = null;
   while (Date.now() < deadline) {
     try {
       lastValue = await executeWebScript(client, script, args);
-      if (lastValue?.ready === true || lastValue === true) return lastValue;
+      if (isReady(lastValue)) return lastValue;
     } catch (error) {
       if (!retryableUiPollError(error)) throw error;
       lastValue = {
@@ -851,6 +858,18 @@ async function waitForUi(clientId, client, label, script, args = []) {
     'WEBDRIVER_UI_TIMEOUT',
     `${clientId} timed out waiting for ${label}: ${JSON.stringify(lastValue).slice(0, 600)}`,
   );
+}
+
+function selectNewReadyAttachmentDraft(snapshot, priorDraftIds) {
+  if (!Array.isArray(snapshot?.drafts)) return null;
+  const prior = new Set(priorDraftIds);
+  return snapshot.drafts.find((draft) => (
+    draft?.visible === true
+    && typeof draft.id === 'string'
+    && draft.id
+    && !prior.has(draft.id)
+    && draft.status === 'ready'
+  )) ?? null;
 }
 
 async function readClientUiState(client) {
@@ -4895,6 +4914,14 @@ async function assertChatMessageOrder(
 }
 
 async function stageDesktopImageAttachment(client, filename) {
+  const priorDraftIds = await executeWebScript(
+    client,
+    `
+      return [...document.querySelectorAll('[data-chat-attachment-draft]')]
+        .map((element) => element.getAttribute('data-chat-attachment-draft') || '')
+        .filter(Boolean);
+    `,
+  );
   const staged = await executeWebScript(
     client,
     `
@@ -4923,32 +4950,46 @@ async function stageDesktopImageAttachment(client, filename) {
         cancelable: true,
         dataTransfer: transfer
       }));
-      return { ok: true };
-    `,
-    [filename],
-  );
-  assertContract(
-    staged?.ok === true,
-    'CHAT_ATTACHMENT_GESTURE_FAILED',
-    `Desktop attachment gesture failed: ${staged?.reason || 'unknown'}`,
-  );
-  return waitForUi(
-    'desktop-bob',
-    client,
-    `attachment draft ${filename}`,
-    `
-      const draft = [...document.querySelectorAll('[data-chat-attachment-draft]')]
-        .find((element) => (element.innerText || '').includes(arguments[0]));
       return {
-        ready: Boolean(draft)
-          && draft.getAttribute('data-chat-attachment-status') === 'ready',
-        id: draft?.getAttribute('data-chat-attachment-draft') || '',
-        status: draft?.getAttribute('data-chat-attachment-status') || '',
-        text: (draft?.innerText || '').replace(/\\s+/g, ' ').trim()
+        ok: true,
+        filename: transfer.files[0]?.name || '',
+        size: transfer.files[0]?.size || 0,
+        type: transfer.files[0]?.type || ''
       };
     `,
     [filename],
   );
+  assertContract(
+    staged?.ok === true
+      && staged.filename === filename
+      && staged.size > 0
+      && staged.type === 'image/png',
+    'CHAT_ATTACHMENT_GESTURE_FAILED',
+    `Desktop attachment gesture failed: ${staged?.reason || 'unknown'}`,
+  );
+  const snapshot = await waitForUi(
+    'desktop-bob',
+    client,
+    `attachment draft ${filename}`,
+    `
+      return {
+        drafts: [...document.querySelectorAll('[data-chat-attachment-draft]')]
+          .map((element) => ({
+            id: element.getAttribute('data-chat-attachment-draft') || '',
+            status: element.getAttribute('data-chat-attachment-status') || '',
+            text: (element.innerText || '').replace(/\\s+/g, ' ').trim(),
+            visible: Boolean(
+              element.getClientRects().length
+              && getComputedStyle(element).visibility !== 'hidden'
+              && getComputedStyle(element).display !== 'none'
+            )
+          }))
+      };
+    `,
+    [],
+    (value) => Boolean(selectNewReadyAttachmentDraft(value, priorDraftIds)),
+  );
+  return selectNewReadyAttachmentDraft(snapshot, priorDraftIds);
 }
 
 async function sendDesktopAttachment(
@@ -8074,6 +8115,33 @@ function selfTest(matrix) {
       )) === false,
     'SELF_TEST_STALE_ELEMENT_RETRY',
     'stale element retry classification is invalid',
+  );
+  const readyImageDraft = selectNewReadyAttachmentDraft({
+    drafts: [
+      {
+        id: 'prior-ready',
+        status: 'ready',
+        text: 'Image 68 B',
+        visible: true,
+      },
+      {
+        id: 'new-uploading',
+        status: 'uploading',
+        text: 'Image 68 B',
+        visible: true,
+      },
+      {
+        id: 'new-ready',
+        status: 'ready',
+        text: 'Image 68 B',
+        visible: true,
+      },
+    ],
+  }, ['prior-ready']);
+  assertContract(
+    readyImageDraft?.id === 'new-ready',
+    'SELF_TEST_ATTACHMENT_DRAFT_IDENTITY',
+    'attachment draft readiness must require a new visible ready draft',
   );
   assertFriendlyLoginRecovery('self-test', 'Login failed');
   let internalLoginDetailRejected = false;
