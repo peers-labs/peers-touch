@@ -4,11 +4,12 @@ import {
   ArrowLeft, Check, CheckCheck, ChevronRight, Clock,
   Copy, CornerUpLeft, EyeOff, File, Flag as FlagIcon, Forward,
   Image as ImageIcon, Laugh, ListChecks, LockKeyhole,
-  MessageSquare, MoreVertical, Pencil, Phone, Pin, Plus,
+  MessageSquare, MoreHorizontal, MoreVertical, Pencil, Phone, Pin, Plus,
   RotateCcw, Send, ShieldX, X,
 } from 'lucide-react';
 import type { Conversation, Message, MessageStatus, ReactionKind } from '../types';
-import { REACTION_EMOJI, REACTION_EMOJI_EXTENDED, FULL_EMOJI_GRID } from '../types';
+import { REACTION_EMOJI } from '../types';
+import { CHAT_EMOJIS } from '../../../../../client-chat-core/src/chatEmojis';
 import { demoMessages } from '../data';
 import { ThreadView } from '../components/ThreadView';
 import { ForwardPicker } from '../components/ForwardPicker';
@@ -35,7 +36,6 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
   const [isTyping] = useState(initialMessages.length > 0);
   const [threadMessage, setThreadMessage] = useState<Message | null>(null);
   const [chatTab, setChatTab] = useState<'chat' | 'pinned'>('chat');
-  const [showEmojiGrid, setShowEmojiGrid] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastKey, setToastKey] = useState(0);
   const [showChatDetails, setShowChatDetails] = useState(false);
@@ -124,7 +124,6 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
       ));
     }
     setActionSheetMessage(null);
-    setShowEmojiGrid(false);
   }
 
   function showToast(msg: string) {
@@ -157,13 +156,24 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
       return { ...m, reactions: [...existing, { kind, byMe: true, count: 1 }] };
     }));
     setActionSheetMessage(null);
-    setShowEmojiGrid(false);
   }
 
   function handleEmojiReaction(msgId: string, emoji: string) {
-    const emojiToKind: Record<string, ReactionKind> = { '\u{1F44D}': 'like', '\u{2764}\u{FE0F}': 'love', '\u{1F604}': 'laugh', '\u{1F62E}': 'wow', '\u{1F389}': 'celebrate' };
-    const kind = emojiToKind[emoji] ?? 'like';
-    handleReaction(msgId, kind);
+    setMessages((current) => current.map((message) => {
+      if (message.id !== msgId) return message;
+      const reactions = message.reactions ?? [];
+      const selected = reactions.find((reaction) => (reaction.emoji ?? REACTION_EMOJI[reaction.kind]) === emoji);
+      const remaining = reactions.filter((reaction) => reaction !== selected);
+      return {
+        ...message,
+        reactions: selected?.byMe
+          ? [...remaining, ...(selected.count > 1
+            ? [{ ...selected, byMe: false, count: selected.count - 1 }]
+            : [])]
+          : [...remaining, { kind: 'like' as const, emoji, byMe: true, count: (selected?.count ?? 0) + 1 }],
+      };
+    }));
+    setActionSheetMessage(null);
   }
 
   function renderReceipt(status?: MessageStatus) {
@@ -322,12 +332,12 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
                       <div className="mp-reaction-row">
                         {msg.reactions.map((r) => (
                           <button
-                            key={r.kind}
+                            key={r.emoji ?? r.kind}
                             type="button"
                             className={`mp-reaction-chip ${r.byMe ? 'mine' : ''}`}
-                            onClick={() => handleReaction(msg.id, r.kind)}
+                            onClick={() => r.emoji ? handleEmojiReaction(msg.id, r.emoji) : handleReaction(msg.id, r.kind)}
                           >
-                            <span>{REACTION_EMOJI[r.kind]}</span>
+                            <span>{r.emoji ?? REACTION_EMOJI[r.kind]}</span>
                             <span className="mp-reaction-count">{r.count}</span>
                           </button>
                         ))}
@@ -344,8 +354,21 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
                     <div className={`mp-message-meta ${msg.mine ? 'mine' : 'peer'}`}>
                       <span className="mp-message-time">{msg.time}</span>
                       {msg.mine && renderReceipt(msg.status)}
+                      <button
+                        type="button"
+                        className="mp-message-overflow"
+                        aria-label={copy['mobile.chat.messageActions']}
+                        onClick={() => setActionSheetMessage(msg)}
+                      >
+                        <MoreHorizontal size={13} />
+                      </button>
                     </div>
                   </div>
+                  {msg.mine ? (
+                    <Avatar size={36} className="mp-message-avatar" style={{ background: '#6c63ce', borderRadius: 10 }}>
+                      A
+                    </Avatar>
+                  ) : null}
                 </div>
               );
             })}
@@ -413,20 +436,21 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
 
       {/* Feishu-style action sheet */}
       {actionSheetMessage && (
-        <div className="mp-action-sheet-backdrop" onClick={() => { setActionSheetMessage(null); setShowEmojiGrid(false); }}>
-          <div className="mp-action-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="mp-action-sheet-backdrop" onClick={() => setActionSheetMessage(null)}>
+          <div className="mp-action-sheet mp-message-action-sheet" role="dialog" aria-modal="true" aria-label={copy['mobile.chat.messageActions']} onClick={(e) => e.stopPropagation()}>
             <div className="mp-action-sheet-handle" />
 
             {/* Reaction row */}
             {!actionSheetMessage.recalled && !actionSheetMessage.moderated && (
               <div className="mp-reaction-bar-wrapper">
                 <div className="mp-reaction-bar">
-                  {REACTION_EMOJI_EXTENDED.map((emoji, idx) => {
+                  {CHAT_EMOJIS.map((emoji, idx) => {
                     return (
                       <button
                         key={idx}
                         type="button"
                         className="mp-reaction-bar-btn"
+                        aria-label={emoji}
                         onClick={() => handleEmojiReaction(actionSheetMessage.id, emoji)}
                       >
                         {emoji}
@@ -434,46 +458,24 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
                     );
                   })}
                 </div>
-                <button
-                  type="button"
-                  className="mp-reaction-more-btn"
-                  onClick={() => setShowEmojiGrid(!showEmojiGrid)}
-                >
-                  ···
-                </button>
-              </div>
-            )}
-
-            {/* Full emoji grid */}
-            {showEmojiGrid && (
-              <div className="mp-emoji-grid">
-                {FULL_EMOJI_GRID.map((emoji, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handleEmojiReaction(actionSheetMessage.id, emoji)}
-                  >
-                    {emoji}
-                  </button>
-                ))}
               </div>
             )}
 
             {/* Quick action grid: Reply, Forward, Reply in Thread, Copy */}
             <div className="mp-quick-actions-grid">
-              <button type="button" className="mp-quick-action-btn" onClick={() => handleAction('reply')}>
+              <button type="button" className="mp-quick-action-btn" aria-label={copy['mobile.chat.reply']} title={copy['mobile.chat.reply']} onClick={() => handleAction('reply')}>
                 <CornerUpLeft size={20} />
                 <span>Reply</span>
               </button>
-              <button type="button" className="mp-quick-action-btn" onClick={() => handleAction('forward')}>
+              <button type="button" className="mp-quick-action-btn" aria-label={copy['mobile.chat.forward']} title={copy['mobile.chat.forward']} onClick={() => handleAction('forward')}>
                 <Forward size={20} />
                 <span>Forward</span>
               </button>
-              <button type="button" className="mp-quick-action-btn" onClick={() => handleAction('thread')}>
+              <button type="button" className="mp-quick-action-btn" aria-label={copy['mobile.chat.thread']} title={copy['mobile.chat.thread']} onClick={() => handleAction('thread')}>
                 <MessageSquare size={20} />
                 <span>Thread</span>
               </button>
-              <button type="button" className="mp-quick-action-btn" onClick={() => handleAction('copy')}>
+              <button type="button" className="mp-quick-action-btn" aria-label="Copy" title="Copy" onClick={() => handleAction('copy')}>
                 <Copy size={20} />
                 <span>Copy</span>
               </button>
@@ -482,38 +484,38 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
             {/* List action groups */}
             {actionSheetMessage.mine && !actionSheetMessage.moderated && (
               <div className="mp-action-group">
-                <button type="button" className="mp-action-item" onClick={() => handleAction('recall')}>
+                <button type="button" className="mp-action-item" aria-label={copy['mobile.chat.recall']} title={copy['mobile.chat.recall']} onClick={() => handleAction('recall')}>
                   <RotateCcw size={19} /><span>Recall</span>
                 </button>
-                <button type="button" className="mp-action-item" onClick={() => handleAction('edit')}>
+                <button type="button" className="mp-action-item" aria-label={copy['mobile.chat.edit']} title={copy['mobile.chat.edit']} onClick={() => handleAction('edit')}>
                   <Pencil size={19} /><span>Edit Message</span>
                 </button>
               </div>
             )}
 
             <div className="mp-action-group">
-              <button type="button" className="mp-action-item" onClick={() => handleAction('multiselect')}>
+              <button type="button" className="mp-action-item" aria-label="Multiselect" title="Multiselect" onClick={() => handleAction('multiselect')}>
                 <ListChecks size={19} /><span>Multiselect</span>
               </button>
-              <button type="button" className="mp-action-item" onClick={() => handleAction('flag')}>
+              <button type="button" className="mp-action-item" aria-label={copy[actionSheetMessage.flagged ? 'mobile.chat.unflagOnDevice' : 'mobile.chat.flagOnDevice']} title={copy[actionSheetMessage.flagged ? 'mobile.chat.unflagOnDevice' : 'mobile.chat.flagOnDevice']} onClick={() => handleAction('flag')}>
                 <FlagIcon size={19} />
                 <span>{actionSheetMessage.flagged ? 'Unflag on this device' : 'Flag on this device'}</span>
               </button>
             </div>
 
             <div className="mp-action-group">
-              <button type="button" className="mp-action-item" onClick={() => handleAction('pin')}>
+              <button type="button" className="mp-action-item" aria-label={copy[actionSheetMessage.pinned ? 'mobile.chat.unpinMessage' : 'mobile.chat.pinMessage']} title={copy[actionSheetMessage.pinned ? 'mobile.chat.unpinMessage' : 'mobile.chat.pinMessage']} onClick={() => handleAction('pin')}>
                 <Pin size={19} /><span>{actionSheetMessage.pinned ? 'Unpin' : 'Pin'}</span>
               </button>
             </div>
 
             <div className="mp-action-group">
               {conversation.canModerate && !actionSheetMessage.moderated && (
-                <button type="button" className="mp-action-item danger" onClick={() => handleAction('moderate')}>
+                <button type="button" className="mp-action-item danger" aria-label={copy['mobile.chat.moderate']} title={copy['mobile.chat.moderate']} onClick={() => handleAction('moderate')}>
                   <ShieldX size={19} /><span>{copy['mobile.chat.moderate']}</span>
                 </button>
               )}
-              <button type="button" className="mp-action-item danger" onClick={() => handleAction('hide-for-me')}>
+              <button type="button" className="mp-action-item danger" aria-label={copy['mobile.chat.deleteForMe']} title={copy['mobile.chat.deleteForMe']} onClick={() => handleAction('hide-for-me')}>
                 <EyeOff size={19} /><span>{copy['mobile.chat.deleteForMe']}</span>
               </button>
             </div>

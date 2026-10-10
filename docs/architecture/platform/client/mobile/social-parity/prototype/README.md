@@ -22,6 +22,13 @@ This design amends the existing Mobile Shell prototype instead of creating a sec
 
 The prototype is a React/Vite interaction reference only. Production remains Tauri Mobile Web + Rust.
 
+Message presentation follows `docs/client/mobile/chat-layout-contract.md §14`:
+avatar/content top alignment, owner-side transparent overflow, a shared
+40-emoji catalog, and compact icon commands with accessible names. Station
+entry uses one brand mark and one title. Account Info uses image previews,
+without raw asset-address fields. Native product evidence remains owned by
+the mounted whole-product usability Journey.
+
 The Auth entry states are governed by
 [`auth-entry-interaction-contract.yaml`](./auth-entry-interaction-contract.yaml).
 

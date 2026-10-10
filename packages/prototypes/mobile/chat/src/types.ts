@@ -40,6 +40,7 @@ export type MomentReactionKind = 'love';
 
 export interface MessageReaction {
   kind: ReactionKind;
+  emoji?: string;
   byMe: boolean;
   count: number;
 }
@@ -165,13 +166,3 @@ export const REACTION_EMOJI: Record<ReactionKind, string> = {
 export const MOMENT_REACTION_EMOJI: Record<MomentReactionKind, string> = {
   love: '\u{2764}\u{FE0F}',
 };
-
-export const REACTION_EMOJI_EXTENDED: string[] = ['\u{1F44D}', '\u{1F602}', '\u{1F63A}', '\u{1F44C}', '\u{2705}', '\u{1F914}', '\u{2764}\u{FE0F}', '\u{1F389}'];
-
-export const FULL_EMOJI_GRID = [
-  '\u{1F44D}', '\u{1F602}', '\u{1F63A}', '\u{1F44C}', '\u{2705}', '\u{1F914}', '\u{2764}\u{FE0F}', '\u{1F389}',
-  '\u{1F44F}', '\u{1F64F}', '\u{1F4AA}', '\u{1F91D}', '\u{1FAE1}', '\u{1F62E}', '\u{1F605}', '\u{1F972}',
-  '\u{1F60D}', '\u{1F923}', '\u{1F60E}', '\u{1F929}', '\u{1F973}', '\u{1F624}', '\u{1F62D}', '\u{1FAE0}',
-  '\u{1F525}', '\u{1F4AF}', '\u{2B50}', '\u{1F31F}', '\u{2728}', '\u{1F4AB}', '\u{1F38A}', '\u{1F3AF}',
-  '\u{1F440}', '\u{1F64C}', '\u{1F4AA}', '\u{1F919}', '\u{270C}\u{FE0F}', '\u{1FAF6}', '\u{1F49B}', '\u{1F49A}',
-];

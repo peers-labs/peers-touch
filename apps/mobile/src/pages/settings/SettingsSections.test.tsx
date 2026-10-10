@@ -35,6 +35,7 @@ import {
   NotificationPreferenceControls,
   NotificationsSection,
   PermissionsSection,
+  ProfileSection,
   PrivacySection,
   StationSection,
   StorageSection,
@@ -202,8 +203,40 @@ describe('Settings truthful unavailable and permission states', () => {
     expect(populated).toContain('data-blocked-user="ptid:bob"');
     expect(populated).toContain('Bob');
     expect(populated).toContain('ptid:bob');
-    expect(populated).toContain('station-b');
+    expect(populated).not.toContain('station-b');
+    expect(populated).not.toContain('>ptid:bob<');
     expect(populated).toContain('mobile.contacts.unblock');
+  });
+
+  it('presents profile images without editable raw asset addresses', () => {
+    const avatar = 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=';
+    const markup = renderToStaticMarkup(
+      <ProfileSection
+        profile={{ ...privacyProfile, avatar }}
+        actorIdentity="alice@station"
+        disabled={false}
+        onPatch={vi.fn()}
+      />,
+    );
+    expect(markup).toContain('mobile.settings.profile.avatar');
+    expect(markup).toContain('aria-label="mobile.settings.profile.removeAvatar"');
+    expect(markup).not.toContain(`value="${avatar}"`);
+    expect(markup).not.toContain('mobile.settings.profile.avatarUrl');
+    expect(markup).not.toContain('mobile.settings.profile.headerUrl');
+  });
+
+  it('keeps absent image removal controls out of the profile', () => {
+    const markup = renderToStaticMarkup(
+      <ProfileSection
+        profile={privacyProfile}
+        actorIdentity="alice@station"
+        disabled
+        onPatch={vi.fn()}
+      />,
+    );
+    expect(markup).not.toContain('mobile.settings.profile.removeAvatar');
+    expect(markup).not.toContain('mobile.settings.profile.removeHeader');
+    expect(markup).toContain('disabled=""');
   });
 
   it('keeps device controls disabled when persisted preferences are unavailable', () => {

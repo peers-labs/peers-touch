@@ -93,6 +93,12 @@ Rules:
 - Avatar radius is derived from size and remains visibly below half the avatar dimension.
 - The same canonical actor identity must project the same display name, avatar asset, and deterministic fallback color across feeds, comments, chat, contacts, and notifications.
 - Feature code may supply a DTO fallback, but it must not create a second avatar primitive or display a raw PTID when a canonical profile is available.
+- Account profiles present avatar and cover images as previews. Raw image
+  URLs, data URLs, internal actor IDs, and home-Station peer IDs do not belong
+  in ordinary profile or blocked-person rows. Technical details require a
+  user-invoked diagnostic surface.
+- Brand marks and page titles must not repeat the same brand as an additional
+  decorative eyebrow.
 
 ## 9. Popovers And Menus
 

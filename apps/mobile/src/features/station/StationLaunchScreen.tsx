@@ -56,7 +56,6 @@ export function StationLaunchScreen({
         <header className="launch-brand">
           <img src={logo} alt="Peers Touch" className="launch-brand-logo" />
           <div className="launch-brand-copy">
-            <span>{t('mobile.launch.brand')}</span>
             <h1 id="launch-title">{t('mobile.launch.title')}</h1>
             <p>{t('mobile.launch.subtitle')}</p>
           </div>

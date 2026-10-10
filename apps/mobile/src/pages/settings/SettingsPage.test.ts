@@ -108,8 +108,9 @@ describe('Settings functional surface contract', () => {
     expect(pageSource).toContain('profile={controller.draftProfile}');
     expect(sectionsSource).toContain("onPatch({ displayName: event.target.value })");
     expect(sectionsSource).toContain("onPatch({ note: event.target.value })");
-    expect(sectionsSource).toContain("onPatch({ avatar: event.target.value })");
-    expect(sectionsSource).toContain("onPatch({ header: event.target.value })");
+    expect(sectionsSource).toContain("onPatch({ avatar: '' })");
+    expect(sectionsSource).toContain("onPatch({ header: '' })");
+    expect(sectionsSource).not.toContain('inputMode="url"');
     expect(sectionsSource).toContain("onPatch({ region: event.target.value })");
     expect(sectionsSource).toContain("onPatch({ timezone: event.target.value })");
     expect(controllerSource).toContain(

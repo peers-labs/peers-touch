@@ -16,6 +16,7 @@ import { ArrowLeft, CornerUpLeft, Flag, FolderOpen, Mic, MoreHorizontal, Phone, 
 import { useShallow } from 'zustand/shallow';
 import {
   CHAT_COMPOSER_CAPABILITIES_MOBILE_THREAD,
+  CHAT_EMOJIS,
   canSubmitChatComposerDraft,
   canEditChatMessage,
   chatMediaKindForAttachment,
@@ -179,7 +180,6 @@ const TYPING_FALSE_DELAY_MS = 4000;
 const EMPTY_MESSAGES: SocialMessage[] = [];
 const MOBILE_THREAD_COMPOSER_CAPABILITIES = CHAT_COMPOSER_CAPABILITIES_MOBILE_THREAD;
 const MOBILE_THREAD_VISUAL_VARS = chatVisualCssVars(chatVisualLayoutForSurface('mobile-thread')) as CSSProperties;
-const MOBILE_COMPOSER_EMOJIS = ['😀', '😊', '😂', '😍', '👍', '🙏', '🎉', '🔥', '❤️', '✨', '😭', '🤔'] as const;
 /** Maximum messages mounted in one traversable window. */
 const MESSAGE_WINDOW_SIZE = 200;
 
@@ -1909,7 +1909,7 @@ function ChatPageInner({
             >
               {composerEmojiOpen ? (
                 <div className="message-composer-panel emoji-panel">
-                  {MOBILE_COMPOSER_EMOJIS.map((emoji) => (
+                  {CHAT_EMOJIS.map((emoji) => (
                     <button key={emoji} type="button" className="composer-emoji-button" aria-label={t('mobile.chat.composerEmoji')} onClick={() => { handleDraftChange(`${draftValueRef.current}${emoji}`); setComposerEmojiOpen(false); }}>{emoji}</button>
                   ))}
                 </div>
