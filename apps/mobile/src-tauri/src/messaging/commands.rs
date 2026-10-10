@@ -634,7 +634,11 @@ pub struct MessagingAttachmentStageProjection {
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase", tag = "state")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "state"
+)]
 pub enum MessagingAttachmentOpenResult {
     Ready { local_path: String },
     Pending { next_attempt_at_unix_ms: i64 },
@@ -2848,6 +2852,33 @@ mod tests {
         ] {
             assert!(value.get(field).is_none(), "{field} must be omitted");
         }
+    }
+
+    #[test]
+    fn attachment_open_result_matches_the_typescript_wire_contract() {
+        let ready = serde_json::to_value(MessagingAttachmentOpenResult::Ready {
+            local_path: "/private/cache/attachment-1".to_string(),
+        })
+        .unwrap();
+        assert_eq!(
+            ready,
+            serde_json::json!({
+                "state": "ready",
+                "localPath": "/private/cache/attachment-1"
+            })
+        );
+
+        let pending = serde_json::to_value(MessagingAttachmentOpenResult::Pending {
+            next_attempt_at_unix_ms: 1_700_000_000_123,
+        })
+        .unwrap();
+        assert_eq!(
+            pending,
+            serde_json::json!({
+                "state": "pending",
+                "nextAttemptAtUnixMs": 1_700_000_000_123_i64
+            })
+        );
     }
 
     #[test]
