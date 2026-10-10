@@ -41,8 +41,13 @@ function WorktreeBadge() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [expanded]);
 
-  const activeUrl = stationInfo?.active_url || '—';
-  const activeEntry = stationInfo?.entries?.find((e) => e.url === activeUrl);
+  const activeStationPeerId = stationInfo?.active_station_peer_id || '';
+  const activeEntry = stationInfo?.entries?.find(
+    (entry) => entry.station_peer_id === activeStationPeerId,
+  );
+  const activeRoute = activeEntry?.routes.find(
+    (route) => route.route_id === activeEntry.active_route_id,
+  );
 
   return (
     <div ref={panelRef} style={{ position: 'relative', pointerEvents: 'auto' }}>
@@ -92,17 +97,20 @@ function WorktreeBadge() {
             boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
           }}
         >
-          <Row label="station" value={activeUrl} color="#8cf" />
-          {activeEntry?.label && (
-            <Row label="label" value={activeEntry.label} color="#8cf" />
+          <Row label="station" value={activeRoute?.endpoint_origin || '—'} color="#8cf" />
+          {activeEntry?.display_name && (
+            <Row label="label" value={activeEntry.display_name} color="#8cf" />
           )}
-          {activeEntry?.peer_id && (
-            <Row label="peer_id" value={activeEntry.peer_id} color="#8cf" />
+          {activeEntry?.station_peer_id && (
+            <Row label="peer_id" value={activeEntry.station_peer_id} color="#8cf" />
+          )}
+          {activeRoute && (
+            <Row label="route" value={activeRoute.route_type} color="#8cf" />
           )}
           <Row
             label="online"
-            value={activeEntry ? (activeEntry.online ? 'yes' : 'no') : '?'}
-            color={activeEntry?.online ? '#8f8' : '#f88'}
+            value={activeRoute ? (activeRoute.health === 'available' ? 'yes' : 'no') : '?'}
+            color={activeRoute?.health === 'available' ? '#8f8' : '#f88'}
           />
           <Divider />
           <Row

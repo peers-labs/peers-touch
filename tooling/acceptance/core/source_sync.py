@@ -118,7 +118,7 @@ class SourceSyncRequest:
         environment_path: Path | None = None,
         branch: str = "",
         require_clean: bool = False,
-        remote_platform: RemotePlatform = RemotePlatform.POSIX,
+        remote_platform: RemotePlatform | None = None,
     ) -> "SourceSyncRequest":
         normalized_name = normalize_lease_resource(environment_name)
         if normalized_name != environment_name:
@@ -139,6 +139,18 @@ class SourceSyncRequest:
                 f"{environment_name!r}: {selected_environment_path}"
             )
         values = load_env_file(selected_environment_path)
+        if remote_platform is None:
+            platform_value = values.get(
+                "PT_DEPLOY_PLATFORM",
+                RemotePlatform.POSIX.value,
+            ).strip().lower()
+            try:
+                remote_platform = RemotePlatform(platform_value)
+            except ValueError as error:
+                raise ProvisioningError(
+                    "unsupported PT_DEPLOY_PLATFORM "
+                    f"{platform_value!r} in {selected_environment_path}"
+                ) from error
         source_mode = values.get("PT_DEPLOY_SOURCE", "central").strip()
         if source_mode not in ("direct", "central", "github", "local"):
             raise ProvisioningError(

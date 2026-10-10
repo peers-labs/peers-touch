@@ -6,25 +6,18 @@ import {
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { mobileAuthScopeKey } from '../features/auth/mobileAuthIdentity';
 import type { SocialState } from '../features/social/socialStore';
+import { invalidatePrivateMoments } from './privateMomentsRuntime';
 import {
-  createMomentsFeedStore,
-  type MomentsFeedStoreController,
-} from '../features/social/momentsFeedStore';
+  createMobileSocialFacade,
+  type MobileSocialFacadeController,
+} from '../features/social/mobileSocialFacade';
 import type { RealtimeWireEvent } from '../features/social/socialWire';
-import {
-  createMomentsGateway,
-  type MomentsGateway,
-} from '../services/gateways/momentsGateway';
 import {
   createNotificationPreferenceGateway,
   createProfileGateway,
   type NotificationPreferenceGateway,
   type ProfileGateway,
 } from '../services/gateways/profileGateway';
-import {
-  createMomentsProjection,
-  type MomentsProjectionController,
-} from './momentsProjectionDescriptor';
 import {
   createNotificationPreferenceProjection,
   createProfileProjection,
@@ -62,12 +55,7 @@ const BOOTSTRAP_DOMAINS: readonly ProjectionDomain[] = [
   'profile',
 ];
 
-export interface ActiveMomentsRuntime {
-  readonly gateway: MomentsGateway;
-  readonly feed: MomentsFeedStoreController;
-  readonly projection: MomentsProjectionController;
-  readonly retry: () => Promise<boolean>;
-}
+export type ActiveMomentsRuntime = MobileSocialFacadeController;
 
 export interface ActiveProfileRuntime {
   readonly gateway: ProfileGateway;
@@ -129,6 +117,21 @@ export function readCurrentActiveMomentsRuntime(): ActiveMomentsRuntime | null {
   return activeRuntime?.moments ?? null;
 }
 
+export async function invalidateCurrentMomentAuthor(
+  authorPtid: string,
+  reason: 'RELATIONSHIP_REVOKED' | 'RECIPIENT_BLOCKED',
+  sourceCursor: string,
+): Promise<void> {
+  const moments = activeRuntime?.moments;
+  if (!moments) return;
+  removeMomentAuthorFromFeeds(moments, authorPtid);
+  await invalidatePrivateMoments([{
+    reason,
+    sourceCursor,
+    authorPtid,
+  }]);
+}
+
 export function readActiveProfileRuntime(
   session: MobileAuthSession | null,
 ): ActiveProfileRuntime | null {
@@ -150,9 +153,6 @@ export function createSocialProjectionRuntime(
   dependencies: SocialProjectionRuntimeDependencies,
 ): SocialProjectionRuntimeController {
   const sessionKey = mobileAuthScopeKey(session);
-  const momentsGateway = createMomentsGateway(session);
-  const momentsProjection = createMomentsProjection();
-  const momentsFeed = createMomentsFeedStore(momentsGateway);
   const profileGateway = createProfileGateway(session);
   const profileProjection = createProfileProjection(profileGateway);
   const notificationPreferenceGateway = createNotificationPreferenceGateway(session);
@@ -164,19 +164,18 @@ export function createSocialProjectionRuntime(
   let releaseMutationAdmission: (() => void) | null = null;
   let reconcileTail: Promise<void> = Promise.resolve();
 
-  const moments: ActiveMomentsRuntime = {
-    gateway: momentsGateway,
-    feed: momentsFeed,
-    projection: momentsProjection,
+  const moments = createMobileSocialFacade(session, {
     retry: async () => {
       await scheduleReconcile(
         ['moments'],
         'user-retry',
         ingress.state().streamCursor,
       );
-      return momentsProjection.state().availability.available;
+      return moments.owner.momentsProjection.state().availability.available;
     },
-  };
+  });
+  const momentsProjection = moments.owner.momentsProjection;
+  const momentsFeed = moments.feed;
   const profile: ActiveProfileRuntime = {
     gateway: profileGateway,
     projection: profileProjection,
@@ -312,6 +311,11 @@ export function createSocialProjectionRuntime(
         momentsProjection.ingestEvent(event);
         if (event.kind === 'post-deleted' && event.postId) {
           momentsFeed.removePost(event.postId);
+          await invalidatePrivateMoments([{
+            reason: 'RESOURCE_DELETED',
+            sourceCursor: event.cursor,
+            postId: event.postId,
+          }]);
         }
         await scheduleReconcile(['moments'], event.kind, event.cursor);
         return;
@@ -363,14 +367,31 @@ export function createSocialProjectionRuntime(
       case 'relationship-changed': {
         const actorPtid = optionalString(event.payload.actorPtid);
         const targetPtid = optionalString(event.payload.targetPtid);
+        const graphKind = optionalString(event.payload.graphKind);
         const currentPtid = socialStore.currentUserPtid;
         const peerPtid = actorPtid === currentPtid ? targetPtid : actorPtid;
+        const revocationReason = graphKind === 'relationship-blocked'
+          ? 'RECIPIENT_BLOCKED'
+          : graphKind === 'unfriended'
+            ? 'RELATIONSHIP_REVOKED'
+            : null;
+        if (peerPtid && revocationReason) {
+          await invalidateCurrentMomentAuthor(
+            peerPtid,
+            revocationReason,
+            event.cursor,
+          );
+        }
         await Promise.all([
           socialStore.refreshBlockedUsers(),
           socialStore.refreshFriendRequests(),
           peerPtid
+            ? socialStore.loadAuthoredPosts(peerPtid)
+            : Promise.resolve(),
+          peerPtid
             ? socialStore.loadFriendshipStatus(peerPtid)
             : Promise.resolve(),
+          scheduleReconcile(['moments'], graphKind, event.cursor),
         ]);
         await dependencies.wakeMessaging();
         return;
@@ -459,6 +480,7 @@ export function createSocialProjectionRuntime(
         () => ingress.state(),
       );
       activeRuntime = publicRuntime;
+      moments.activate();
       await scheduleReconcile(BOOTSTRAP_DOMAINS, 'bootstrap', '');
     },
     async requestCurrentUserProfile(force = false): Promise<void> {
@@ -510,8 +532,7 @@ export function createSocialProjectionRuntime(
       await ingress.drain();
       await reconcileTail;
       await getSocialStore().drainProfileCacheWrites();
-      momentsFeed.teardown();
-      momentsProjection.teardown();
+      moments.teardown();
       notificationPreferenceProjection.teardown();
       profileProjection.teardown();
       if (activeRuntime === publicRuntime) activeRuntime = null;
@@ -663,6 +684,17 @@ function toIngressEvents(event: RealtimeWireEvent): SocialIngressEvent[] {
     case 'call-signal':
       return [];
   }
+}
+
+function removeMomentAuthorFromFeeds(
+  moments: ActiveMomentsRuntime,
+  authorPtid: string,
+): void {
+  const postIds = new Set([
+    ...moments.feeds.home.state().posts,
+    ...moments.feeds.explore.state().posts,
+  ].filter((post) => post.authorPtid === authorPtid).map((post) => post.id));
+  postIds.forEach((postId) => moments.feed.hidePost(postId));
 }
 
 function requireString(

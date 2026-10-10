@@ -23,12 +23,14 @@ import { mobileAuthScopeKey } from '../../features/auth/mobileAuthIdentity';
 import {
   CreatePostRequestSchema,
   CreatePostResponseSchema,
+  DeletePostResponseSchema,
   GetPostResponseSchema,
   GetTimelineResponseSchema,
   PostDetailOutcome,
   PostAuthorSchema,
   ReactToPostResponseSchema,
   TimelinePageOutcome,
+  TimelineSort,
   UnreactToPostResponseSchema,
   type FeedObjectExplanation,
   type Post,
@@ -47,16 +49,19 @@ import {
   type ListMomentCommentsResponse,
 } from '../../gen/proto/domain/social/private_content_pb';
 import { readableErrorMessage } from '../../features/social/socialTypes';
-import { buildMobileCreatePostRequest, type MobileMomentDraft } from '../../features/social/socialApiTypes';
+import {
+  buildMobileCreatePostRequest,
+  type MobileMomentDraft,
+} from '../../features/social/socialApiTypes';
 import {
   MobileMutationAdmissionError,
   requireMobileMutationAdmission,
 } from '../../runtimes/mutationAdmission';
+import { responseBytes, responseJson } from '../stationTransport';
 import {
-  executeStationOperation,
-  responseBytes,
-  responseJson,
-} from '../stationTransport';
+  executeSocialNativeOperation,
+  type SocialNativeOperation,
+} from '../socialNativeAdapter';
 import {
   createGatewayTransport,
   decodeProtoJsonOutcome,
@@ -112,54 +117,97 @@ export interface CommentCreatedResult {
 
 export interface MomentsGateway {
   /** Create a new moment (post). Uses protobuf directly. */
-  createMoment: (draft: MobileMomentDraft) => Promise<CommandOutcome<MomentCreatedResult>>;
+  createMoment: (
+    draft: MobileMomentDraft,
+  ) => Promise<CommandOutcome<MomentCreatedResult>>;
 
   /** Fetch a cursor-based feed page (home timeline). */
-  fetchFeed: (cursor: string, limit: number) => Promise<CommandOutcome<MomentsFeedPage>>;
+  fetchFeed: (
+    cursor: string,
+    limit: number,
+  ) => Promise<CommandOutcome<MomentsFeedPage>>;
 
-  /** Fetch the public timeline feed page. */
-  fetchPublicFeed: (cursor: string, limit: number) => Promise<CommandOutcome<MomentsFeedPage>>;
+  /** Fetch the canonical public timeline page with Station-owned ranking. */
+  fetchPublicFeed: (
+    cursor: string,
+    limit: number,
+    sort?: TimelineSort,
+  ) => Promise<CommandOutcome<MomentsFeedPage>>;
+
+  /** Fetch posts authored by one canonical Actor PTID. */
+  fetchUserFeed: (
+    actorPtid: string,
+    cursor: string,
+    limit: number,
+  ) => Promise<CommandOutcome<MomentsFeedPage>>;
 
   /** Get a single post by ID. */
   getPost: (postId: string) => Promise<CommandOutcome<MomentDetailResult>>;
 
+  /** Delete one Moment owned by the authenticated author. */
+  deletePost: (postId: string) => Promise<CommandOutcome<{ success: boolean }>>;
+
   /** React to a post. */
-  reactToPost: (postId: string, reactionKind: number) => Promise<CommandOutcome<ReactionToggleResult>>;
+  reactToPost: (
+    postId: string,
+    reactionKind: number,
+  ) => Promise<CommandOutcome<ReactionToggleResult>>;
 
   /** Remove a reaction from a post. */
-  unreactToPost: (postId: string, reactionKind: number) => Promise<CommandOutcome<ReactionToggleResult>>;
+  unreactToPost: (
+    postId: string,
+    reactionKind: number,
+  ) => Promise<CommandOutcome<ReactionToggleResult>>;
 
   /** Fetch comments for a post (cursor-based). */
-  fetchComments: (postId: string, cursor: string, limit: number) => Promise<CommandOutcome<CommentsPage>>;
+  fetchComments: (
+    postId: string,
+    cursor: string,
+    limit: number,
+  ) => Promise<CommandOutcome<CommentsPage>>;
 
   /** Create a comment on a post. */
-  createComment: (postId: string, content: string, replyToCommentId?: string) => Promise<CommandOutcome<CommentCreatedResult>>;
+  createComment: (
+    postId: string,
+    content: string,
+    replyToCommentId?: string,
+  ) => Promise<CommandOutcome<CommentCreatedResult>>;
 
   /** Delete a comment. */
-  deleteComment: (commentId: string) => Promise<CommandOutcome<{ success: boolean }>>;
+  deleteComment: (
+    commentId: string,
+  ) => Promise<CommandOutcome<{ success: boolean }>>;
 }
 
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createMomentsGateway(session: MobileAuthSession): MomentsGateway {
-  const { command } = createGatewayTransport(session, 'moments');
+export function createMomentsGateway(
+  session: MobileAuthSession,
+): MomentsGateway {
+  const { command } = createGatewayTransport(
+    session,
+    'moments',
+    (activeSession, operation, signal) =>
+      executeSocialNativeOperation(
+        activeSession,
+        operation as SocialNativeOperation,
+        signal,
+      ),
+  );
   const scopeKey = mobileAuthScopeKey(session);
   const commandProtoJson = async <Desc extends DescMessage>(
     options: GatewayRequestOptions,
     schema: Desc,
     message: string,
-  ) => decodeProtoJsonOutcome(
-    await command<JsonValue>(options),
-    schema,
-    {
+  ) =>
+    decodeProtoJsonOutcome(await command<JsonValue>(options), schema, {
       code: 'INVALID_MOMENTS_RESPONSE',
       message,
       method: options.method,
       path: options.path,
-    },
-  );
+    });
 
   return {
     createMoment: async (draft) => {
@@ -167,7 +215,7 @@ export function createMomentsGateway(session: MobileAuthSession): MomentsGateway
 
       try {
         requireMobileMutationAdmission(scopeKey, 'moments');
-        const response = await executeStationOperation(session, {
+        const response = await executeSocialNativeOperation(session, {
           operationId: 'moments_create',
           body_bytes: Array.from(toBinary(CreatePostRequestSchema, req)),
         });
@@ -193,15 +241,19 @@ export function createMomentsGateway(session: MobileAuthSession): MomentsGateway
           };
         }
 
-        const created = fromBinary(CreatePostResponseSchema, responseBytes(response));
+        const created = fromBinary(
+          CreatePostResponseSchema,
+          responseBytes(response),
+        );
         return { ok: true, data: { post: created.post } };
       } catch (error) {
         return {
           ok: false,
           error: {
-            code: error instanceof MobileMutationAdmissionError
-              ? error.code
-              : 'MOMENTS_TRANSPORT_ERROR',
+            code:
+              error instanceof MobileMutationAdmissionError
+                ? error.code
+                : 'MOMENTS_TRANSPORT_ERROR',
             message: readableErrorMessage(error),
             method: 'POST',
             path: '/api/v1/social/moments',
@@ -211,89 +263,184 @@ export function createMomentsGateway(session: MobileAuthSession): MomentsGateway
     },
 
     fetchFeed: async (cursor, limit) => {
-      const result = await commandProtoJson({
-        method: 'GET',
-        path: '/api/v1/social/timeline',
-        query: {
-          type: 0, // TIMELINE_HOME
-          cursor: cursor || undefined,
-          limit,
+      const result = await commandProtoJson(
+        {
+          method: 'GET',
+          path: '/api/v1/social/timeline',
+          query: {
+            type: 0, // TIMELINE_HOME
+            cursor: cursor || undefined,
+            limit,
+          },
         },
-      }, GetTimelineResponseSchema, 'mobile.moments.feed.error');
+        GetTimelineResponseSchema,
+        'mobile.moments.feed.error',
+      );
       return validateTimelineOutcome(result, '/api/v1/social/timeline');
     },
 
-    fetchPublicFeed: async (cursor, limit) => {
-      const result = await commandProtoJson({
-        method: 'GET',
-        path: '/api/v1/social/timeline',
-        query: {
-          type: 2, // TIMELINE_PUBLIC
-          cursor: cursor || undefined,
-          limit,
+    fetchPublicFeed: async (cursor, limit, sort = TimelineSort.RECENT) => {
+      const result = await commandProtoJson(
+        {
+          method: 'GET',
+          path: '/api/v1/social/timeline',
+          query: {
+            type: 2, // TIMELINE_PUBLIC
+            cursor: cursor || undefined,
+            limit,
+            sort: sort === TimelineSort.HOT ? TimelineSort.HOT : undefined,
+          },
         },
-      }, GetTimelineResponseSchema, 'mobile.moments.feed.error');
+        GetTimelineResponseSchema,
+        'mobile.moments.feed.error',
+      );
+      return validateTimelineOutcome(result, '/api/v1/social/timeline');
+    },
+
+    fetchUserFeed: async (actorPtid, cursor, limit) => {
+      const result = await commandProtoJson(
+        {
+          method: 'GET',
+          path: '/api/v1/social/timeline',
+          query: {
+            type: 1, // TIMELINE_USER
+            actor_ptid: actorPtid,
+            cursor: cursor || undefined,
+            limit,
+          },
+        },
+        GetTimelineResponseSchema,
+        'mobile.moments.feed.error',
+      );
       return validateTimelineOutcome(result, '/api/v1/social/timeline');
     },
 
     getPost: async (postId) => {
       const path = `/api/v1/social/moments/${encodeURIComponent(postId)}`;
-      const result = await commandProtoJson({
+      const raw = await command<JsonValue>({
         method: 'GET',
         path,
-      }, GetPostResponseSchema, 'mobile.moments.feed.error');
+      });
+      const result = decodeProtoJsonOutcome(
+        projectAvailablePublicMomentOutcome(raw),
+        GetPostResponseSchema,
+        {
+          code: 'INVALID_MOMENTS_RESPONSE',
+          message: 'mobile.moments.feed.error',
+          method: 'GET',
+          path,
+        },
+      );
       return validateDetailOutcome(result, path);
     },
 
-    reactToPost: (postId, reactionKind) =>
-      commandProtoJson({
-        method: 'POST',
-        path: `/api/v1/social/moments/${encodeURIComponent(postId)}/react`,
-        body: {
-          post_id: postId,
-          kind: reactionKind,
+    deletePost: (postId) =>
+      commandProtoJson(
+        {
+          method: 'DELETE',
+          path: `/api/v1/social/moments/${encodeURIComponent(postId)}`,
         },
-      }, ReactToPostResponseSchema, 'mobile.moments.reaction.error'),
+        DeletePostResponseSchema,
+        'mobile.moments.delete.error',
+      ),
+
+    reactToPost: (postId, reactionKind) =>
+      commandProtoJson(
+        {
+          method: 'POST',
+          path: `/api/v1/social/moments/${encodeURIComponent(postId)}/react`,
+          body: {
+            post_id: postId,
+            kind: reactionKind,
+          },
+        },
+        ReactToPostResponseSchema,
+        'mobile.moments.reaction.error',
+      ),
 
     unreactToPost: (postId, reactionKind) =>
-      commandProtoJson({
-        method: 'POST',
-        path: `/api/v1/social/moments/${encodeURIComponent(postId)}/unreact`,
-        body: {
-          post_id: postId,
-          kind: reactionKind,
+      commandProtoJson(
+        {
+          method: 'POST',
+          path: `/api/v1/social/moments/${encodeURIComponent(postId)}/unreact`,
+          body: {
+            post_id: postId,
+            kind: reactionKind,
+          },
         },
-      }, UnreactToPostResponseSchema, 'mobile.moments.reaction.error'),
+        UnreactToPostResponseSchema,
+        'mobile.moments.reaction.error',
+      ),
 
     fetchComments: async (postId, cursor, limit) => {
       const path = `/api/v1/social/moments/${encodeURIComponent(postId)}/comments`;
-      const result = await commandProtoJson({
-        method: 'GET',
-        path,
-        query: {
-          cursor: cursor || undefined,
-          limit,
+      const result = await commandProtoJson(
+        {
+          method: 'GET',
+          path,
+          query: {
+            cursor: cursor || undefined,
+            limit,
+          },
         },
-      }, ListMomentCommentsResponseSchema, 'mobile.moments.comment.error');
+        ListMomentCommentsResponseSchema,
+        'mobile.moments.comment.error',
+      );
       return projectPublicCommentPage(result, path);
     },
 
     createComment: (postId, content, replyToCommentId) =>
-      commandProtoJson({
-        method: 'POST',
-        path: `/api/v1/social/moments/${encodeURIComponent(postId)}/comments`,
-        body: {
-          content,
-          ...(replyToCommentId ? { reply_to_comment_id: replyToCommentId } : {}),
+      commandProtoJson(
+        {
+          method: 'POST',
+          path: `/api/v1/social/moments/${encodeURIComponent(postId)}/comments`,
+          body: {
+            content,
+            ...(replyToCommentId
+              ? { reply_to_comment_id: replyToCommentId }
+              : {}),
+          },
         },
-      }, CreateCommentResponseSchema, 'mobile.moments.comment.sendError'),
+        CreateCommentResponseSchema,
+        'mobile.moments.comment.sendError',
+      ),
 
     deleteComment: (commentId) =>
-      commandProtoJson({
-        method: 'DELETE',
-        path: `/api/v1/social/comments/${encodeURIComponent(commentId)}`,
-      }, DeleteCommentResponseSchema, 'mobile.moments.comment.error'),
+      commandProtoJson(
+        {
+          method: 'DELETE',
+          path: `/api/v1/social/comments/${encodeURIComponent(commentId)}`,
+        },
+        DeleteCommentResponseSchema,
+        'mobile.moments.comment.error',
+      ),
   };
+}
+
+function projectAvailablePublicMomentOutcome(
+  result: CommandOutcome<JsonValue>,
+): CommandOutcome<JsonValue> {
+  if (!result.ok || !isJsonRecord(result.data) || 'outcome' in result.data) {
+    return result;
+  }
+  if (
+    !isJsonRecord(result.data.post) ||
+    !isJsonRecord(result.data.explanation)
+  ) {
+    return result;
+  }
+  return {
+    ok: true,
+    data: {
+      post: result.data.post,
+      explanation: result.data.explanation,
+      outcome: 'POST_DETAIL_OUTCOME_AVAILABLE',
+    },
+  };
+}
+
+function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function validateTimelineOutcome(
@@ -302,17 +449,18 @@ function validateTimelineOutcome(
 ): CommandOutcome<MomentsFeedPage> {
   if (!result.ok) return result;
   const { outcome, posts, policySummary } = result.data;
-  const validOutcome = outcome === TimelinePageOutcome.ITEMS
-    || outcome === TimelinePageOutcome.EMPTY
-    || outcome === TimelinePageOutcome.FILTERED_EMPTY;
-  const validShape = outcome === TimelinePageOutcome.ITEMS
-    ? posts.length > 0
-    : posts.length === 0;
+  const validOutcome =
+    outcome === TimelinePageOutcome.ITEMS ||
+    outcome === TimelinePageOutcome.EMPTY ||
+    outcome === TimelinePageOutcome.FILTERED_EMPTY;
+  const validShape =
+    outcome === TimelinePageOutcome.ITEMS
+      ? posts.length > 0
+      : posts.length === 0;
   const validSummary = Boolean(
-    policySummary
-    && policySummary.scannedCount >= posts.length
-    && policySummary.filteredCount
-      === policySummary.scannedCount - posts.length,
+    policySummary &&
+    policySummary.scannedCount >= posts.length &&
+    policySummary.filteredCount === policySummary.scannedCount - posts.length,
   );
   if (validOutcome && validShape && validSummary) return result;
   return invalidMomentsOutcome(path);
@@ -324,21 +472,15 @@ function validateDetailOutcome(
 ): CommandOutcome<MomentDetailResult> {
   if (!result.ok) return result;
   const { outcome, post, explanation } = result.data;
-  if (
-    outcome === PostDetailOutcome.AVAILABLE
-    && post
-    && explanation
-  ) {
+  if (outcome === PostDetailOutcome.AVAILABLE && post && explanation) {
     return result;
   }
   if (
-    (
-      outcome === PostDetailOutcome.HIDDEN
-      || outcome === PostDetailOutcome.DELETED
-      || outcome === PostDetailOutcome.UNAVAILABLE
-    )
-    && !post
-    && !explanation
+    (outcome === PostDetailOutcome.HIDDEN ||
+      outcome === PostDetailOutcome.DELETED ||
+      outcome === PostDetailOutcome.UNAVAILABLE) &&
+    !post &&
+    !explanation
   ) {
     return result;
   }
@@ -404,7 +546,7 @@ function publicCommentFromResource(resource: CommentResource): Comment {
     author: create(PostAuthorSchema, {
       id: author.ptid,
       username: author.acct,
-      displayName: author.acct,
+      displayName: '',
     }),
     likesCount: metadata.reactionsCount,
     replyToCommentId: metadata.replyToCommentId,

@@ -36,6 +36,7 @@ export interface MessageReply {
 }
 
 export type ReactionKind = 'like' | 'love' | 'laugh' | 'wow' | 'celebrate';
+export type MomentReactionKind = 'love';
 
 export interface MessageReaction {
   kind: ReactionKind;
@@ -79,11 +80,21 @@ export interface Moment {
   avatarGradient: string;
   time: string;
   text: string;
+  source?: string;
+  audience?: string;
+  reason?: string;
+  remote?: boolean;
   images?: string[];
+  contentKind?: 'text' | 'image' | 'video' | 'link' | 'poll' | 'repost' | 'location';
+  videoLabel?: string;
+  link?: { title: string; url: string };
+  poll?: { question: string; options: string[] };
+  repost?: { author: string; text: string };
+  location?: { name: string; address: string };
   likes: number;
   liked?: boolean;
-  myReaction?: ReactionKind;
-  reactionCounts?: Partial<Record<ReactionKind, number>>;
+  myReaction?: MomentReactionKind;
+  reactionCounts?: Partial<Record<MomentReactionKind, number>>;
   comments: MomentComment[];
 }
 
@@ -104,7 +115,21 @@ export interface GroupItem {
   memberCount: number;
 }
 
+export type SettingId =
+  | 'account-info'
+  | 'notifications'
+  | 'privacy-security'
+  | 'safety-number'
+  | 'blocked-users'
+  | 'chat-settings'
+  | 'chat-background'
+  | 'station-connection'
+  | 'encryption'
+  | 'language'
+  | 'about';
+
 export interface SettingEntry {
+  id: SettingId;
   label: string;
   value?: string;
   icon: React.ComponentType<{ size?: number }>;
@@ -135,6 +160,10 @@ export const REACTION_EMOJI: Record<ReactionKind, string> = {
   laugh: '\u{1F604}',
   wow: '\u{1F62E}',
   celebrate: '\u{1F389}',
+};
+
+export const MOMENT_REACTION_EMOJI: Record<MomentReactionKind, string> = {
+  love: '\u{2764}\u{FE0F}',
 };
 
 export const REACTION_EMOJI_EXTENDED: string[] = ['\u{1F44D}', '\u{1F602}', '\u{1F63A}', '\u{1F44C}', '\u{2705}', '\u{1F914}', '\u{2764}\u{FE0F}', '\u{1F389}'];

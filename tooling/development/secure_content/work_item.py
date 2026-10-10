@@ -18,7 +18,7 @@ REPO_PATH_PART = re.compile(
     r"^(?:[a-z0-9][a-z0-9._-]*|\.[a-z0-9][a-z0-9._-]*)$",
     re.IGNORECASE,
 )
-WORKSTREAM_ID = re.compile(r"^W(?:0R|0|[1-9][0-9]*)(?:[A-Z](?:-[A-Z]+)?)?$")
+WORKSTREAM_ID = re.compile(r"^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$")
 WORK_CLASSES = {"product-behavior", "infrastructure", "refactor", "documentation"}
 SOURCE_MODES = {"shared-read", "exclusive-write"}
 RUNTIME_MODES = {"shared", "exclusive"}
@@ -117,7 +117,7 @@ class WorkItemProjection:
     def purpose(self) -> str:
         return (
             f"Execute {self.work_item_id} ({self.workstream_id}) "
-            "from the approved Secure Content plan"
+            "from the approved Plan"
         )
 
 
@@ -238,7 +238,11 @@ def _validate_item(
     work_item_id = _require_identifier(item["id"], "item.id")
     if work_item_id != work_item_id.lower():
         raise ManifestError("item.id must use the lowercase project convention")
-    workstream_id = _require_text(item["workstreamId"], "item.workstreamId", max_length=16)
+    workstream_id = _require_text(
+        item["workstreamId"],
+        "item.workstreamId",
+        max_length=32,
+    )
     if not WORKSTREAM_ID.fullmatch(workstream_id):
         raise ManifestError("item.workstreamId is invalid")
     task_id = _require_identifier(item["taskId"], "item.taskId")

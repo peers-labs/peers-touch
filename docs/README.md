@@ -214,6 +214,9 @@
   （active；定义 Social/Conversation 共用的 Native 加密、endpoint key envelope、
   opaque object 协议、stateless validation、恢复与 hard-cut 边界；不新建业务 authority）
 - 服务协调（Relay/Station/Desktop/Mobile 依赖 DAG 与凭据契约）：`architecture/platform/runtime/service-coordination.md`
+- Node Connectivity：`architecture/platform/runtime/node-connectivity/README.md`
+  （active；Relay 运行角色、Station enrollment、签名 route、WSS + inner TLS
+  opaque tunnel 与 Station Access/Federation ownership 边界的唯一真源）
 - 本机多 worktree 开发控制面：`architecture/engineering/local-dev/README.md`
   （active；定义 `~/.peers-touch/dev/` 机器级注册表、独立 worktree 绑定、slot 与
   Station capability lease，当前仅有 observed snapshot，尚未接管运行时）
@@ -230,8 +233,12 @@
   好友建立、会话进入、文本与富媒体、语音消息、实时一对一语音/视频、群聊到跨设备/跨 Station
   恢复的唯一产品完成口径与当前执行计划）
 - Station 接入生命周期：`architecture/platform/station/access/README.md`
-  （active；定义双端签名 Station identity、protobuf Access Gate、scope 隔离、
-  Federation context 与 Relay 客户端边界，实施 Plan 已完成）
+  （active；定义同一接入地址自动识别直连 Station 或 Relay、签名 Station identity、
+  route-aware binding、protobuf Access Gate 与 scope 隔离；Relay transport
+  内部合同由 Node Connectivity 定义）
+- Federation 虚拟网络与治理账本：`architecture/domains/federation/README.md`
+  （active；定义 Federation membership、Ledger、policy 与跨站业务授权；
+  Node Connectivity 提供无业务 authority 的传输）
 - OAuth Login Broker：`architecture/domains/identity/oauth-login-broker/README.md`
   （active；定义 Vercel 跨实例 OAuth 事务、GitHub 私有仓库存储、
   AES-256-GCM 凭据、Provider refresh 与只读管理面）
@@ -250,6 +257,9 @@
   （active；W2-E2 physical OAuth proof amendment 见
   `architecture/platform/client/mobile/native-oauth-proof/README.md`；MOP-D01..MOP-D04 与
   MOP-D03-A/MOP-D04-A 均已于 2026-08-29 接受）
+- Mobile Social Desktop parity：`architecture/platform/client/mobile/social-parity/README.md`
+  （active；定义完整 Social 用户结果、Mobile 原生交互适配、单一 Social facade、
+  iOS/Android 与 Desktop↔Mobile 两 Station 证据边界；原型 amendment confirmed）
 - 群生命周期历史设计：`context/architecture/social/group-lifecycle.md`（superseded；当前真源为 Chat Lifecycle 与 Messaging Platform）
 - 双端社交/聊天产品闭环执行计划：`architecture/domains/social/runtime/execution-plans/20260604-social-chat-product-closure.md`
 - Applet / 小程序运行时架构：`architecture/platform/applet-runtime/README.md`
@@ -261,10 +271,14 @@
   （product-accepted / design-accepted；包含 LobeHub benchmark disposition、
   产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的运行时契约）
 - Actor 隔离环境平面：`architecture/platform/station/actor-isolation.md`
-- Federation 虚拟网络与治理账本：`architecture/domains/federation/README.md`
 - 质量保证闭环：`architecture/engineering/quality/README.md`
 - 产品验收框架：`architecture/engineering/acceptance/README.md`
 - Human 联邦社交活动层：`architecture/domains/social/federation/README.md`
+ - 跨 Station 私密 Social：`architecture/domains/social/cross-station/README.md`
+  （active；执行计划
+  `architecture/domains/social/cross-station/execution-plans/20261003-native-private-social/plan.md`
+  覆盖 Native Desktop 的私密 Post/Media/Comment/Reaction/Recovery/Revocation；
+  Mobile 通过独立 platform adaptation 消费该合同，Browser Social prohibited）
 - Agent LobeHub 蓝本重构：`architecture/domains/agent/agent-lobehub-blueprint.md`
 - Atelier 个人 Agent 工作台 × Peers Agent Collaboration：`architecture/domains/applets/atelier/README.md`（文档集，入口 `README.md`；Station projection endpoints 已登记为 `/sub-agent/agent/atelier/workspace/load`、`/sub-agent/agent/atelier/project/create-from-goal`、`/sub-agent/agent/atelier/message/send`、`/sub-agent/agent/atelier/escalation/resolve`、`/sub-agent/agent/atelier/task/set-status`、`/sub-agent/agent/atelier/task/purge`，Desktop applet capabilities / contract permissions 已登记为 `atelier.workspace.load`、`atelier.project.createFromGoal`、`atelier.message.send`、`atelier.escalation.resolve`、`atelier.task.setStatus`、`atelier.task.purge`、`atelier.events.subscribe`，projection event topic 为 `atelier.projection.event`；Artifact/Gate projection mapper 已支持 `artifact.upsert` / `gate.upsert`，真实生产与端到端验证后置；prototype 入口已通过 `runtimeBootstrap` 在 Lynx / Web Host 中走 applet-sdk bridge，在 standalone / unavailable 中回退 mock；runtime manifest 草案位于 `apps/applets/atelier/applet.manifest.json`，真实 bundle integrity 待正式 applet 化补齐）
 - 原型统一入口（Prototype Portal + 统一登记 + 确认门）：`architecture/engineering/prototypes/README.md`

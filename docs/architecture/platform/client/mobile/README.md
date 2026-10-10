@@ -1,8 +1,8 @@
 # Mobile Shell Architecture
 
-> **Status**: active; iOS simulator-canonical Acceptance amendment accepted
-> **Version**: v1.2
-> **Created**: 2026-08-27 | **Updated**: 2026-09-21
+> **Status**: active; whole-product foreground usability amendment accepted
+> **Version**: v1.3
+> **Created**: 2026-08-27 | **Updated**: 2026-10-08
 > **Owner**: Mobile Architecture Team
 > **Module**: `apps/mobile/`
 
@@ -57,10 +57,12 @@ runtime registry 仅是状态说明，Moments/Profile/Settings 与已确认原�
 | [module-layout.md](./module-layout.md) | Target module ownership |
 | [native-oauth-proof/README.md](./native-oauth-proof/README.md) | Optional W2-E2 physical OAuth diagnostics: Fixture, Station proof, browser lease, and build provenance |
 | [mobile-acceptance-environment.md](./mobile-acceptance-environment.md) | Mobile acceptance environment contract: tiers, gate mapping, Station dependency, network model |
-| [prototype/README.md](./prototype/README.md) | Confirmed prototype reference |
+| [prototype/README.md](./prototype/README.md) | Mobile Shell prototype; baseline and Social parity amendment confirmed |
+| [social-parity/README.md](./social-parity/README.md) | Complete Desktop Social semantic parity, Mobile adaptation, prototype amendment, and iOS/Android/interop evidence contract |
 | [execution-plans/20260827-mobile-shell-implementation/plan.md](./execution-plans/20260827-mobile-shell-implementation/plan.md) | Dependency-ordered implementation and Acceptance plan |
 | [execution-plans/20260829-mobile-native-oauth-proof.md](./execution-plans/20260829-mobile-native-oauth-proof.md) | Historical focused W2-E2 physical-diagnostics plan |
 | [execution-plans/20261006-infra-chat-usability/plan.md](./execution-plans/20261006-infra-chat-usability/plan.md) | Focused Infra/Chat usability, mixed-client parity, and Session class takeover plan |
+| [execution-plans/20261008-mobile-whole-product-usability/plan.md](./execution-plans/20261008-mobile-whole-product-usability/plan.md) | Successor plan for page-by-page foreground iOS usability closure |
 
 ## 5. Upstream Sources
 
@@ -94,6 +96,12 @@ sessions or actors. MS-D27 binds the current Mobile product proof to one
 source-attested Station and defers cross-Station/Relay proof until the
 Desktop/Mobile cross-Station plan. Android and E2-6 physical proof remain
 optional diagnostics.
+
+The 2026-10-06 Social parity module adds a separate required product and
+architecture claim over the existing Mobile Shell. It does not rewrite the
+same-Station Mobile plan: full Social parity additionally requires Android
+physical-device proof plus Desktop/iOS/Android two-Station interoperability.
+Its prototype amendment was Owner-confirmed on 2026-10-06.
 
 ## 7. Accepted Owner-Contract Closure Amendment
 

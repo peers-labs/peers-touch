@@ -13,6 +13,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
 	registryNative "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
+	"github.com/peers-labs/peers-touch/station/frame/core/runtime/role"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
@@ -144,6 +145,11 @@ func (s *native) initComponents(ctx context.Context) error {
 
 	// init server
 	if s.opts.Server == nil {
+		processRole, err := role.FromContext(ctx)
+		if err != nil {
+			return fmt.Errorf("initialize server role: %w", err)
+		}
+
 		serverName := config.Get("peers.node.server.name").String(plugin.NativePluginName)
 		if len(serverName) > 0 {
 			if plugin.ServerPlugins[serverName] == nil {
@@ -153,14 +159,25 @@ func (s *native) initComponents(ctx context.Context) error {
 		}
 
 		logger.Infof(ctx, "initial server's name is: %s", serverName)
+		s.primeServerOptions()
 		s.opts.Server = plugin.ServerPlugins[serverName].New()
 
 		// Inject plugin subservers into subServerNewFunctions
 		for name, p := range plugin.SubserverPlugins {
+			if !processRole.AllowsPluginSubserver(name) {
+				logger.Infof(ctx, "subserver [%s] is excluded from role [%s]", name, processRole)
+				continue
+			}
 			if p.Enabled() {
 				s.opts.ServerOptions = append(s.opts.ServerOptions, server.WithSubServer(name, p.New))
 			} else {
 				logger.Infof(ctx, "subserver [%s] is disabled", name)
+			}
+		}
+		if processRole == role.Relay {
+			relayPlugin := plugin.SubserverPlugins["relay"]
+			if relayPlugin == nil || !relayPlugin.Enabled() {
+				return fmt.Errorf("initialize relay role: relay subserver is unavailable or disabled")
 			}
 		}
 	}
@@ -187,4 +204,10 @@ func (s *native) initComponents(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (s *native) primeServerOptions() {
+	// Server constructors read typed options before Init. Roles without
+	// app-level server options still need that option context initialized.
+	s.opts.Apply(server.WithTransport(s.opts.Transport))
 }

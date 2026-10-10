@@ -53,19 +53,8 @@ function digest(value) {
     .digest('hex');
 }
 
-export function digestRunCompletionCandidate(resolved, candidate) {
-  return digest({
-    kind: 'peers-touch-execution-run-completion-candidate',
-    planDigest: resolved.snapshot.planDigest,
-    snapshotDigest: resolved.snapshot.recordDigest,
-    runId: resolved.run.runId,
-    runRevision: resolved.run.revision,
-    transition: {
-      to: 'done',
-      nextTaskId: candidate.currentTaskId,
-      exhaustion: candidate.exhaustion,
-    },
-  });
+export function digestRunCompletionCandidate(_resolved, candidate) {
+  return digest(candidate);
 }
 
 function parseArguments(argv) {

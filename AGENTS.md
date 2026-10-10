@@ -518,18 +518,17 @@ Agent responsibilities at startup:
 1. **Discover**: read every `tooling/skills/*/SKILL.md` in the repo.
 2. **Integrate**: run `make skills IDE=<trae|cursor|codex>` at a durable
    boundary. For a TRAE multi-root workspace, pass
-   `WORKSPACE=<absolute-.code-workspace-path>`. It projects Skills in the
-   selected source worktree and one descriptor-selected workspace hook
-   bootstrap.
+   `WORKSPACE=<absolute-.code-workspace-path>`. It projects Skills and Hooks
+   only in the selected worktree; the descriptor supplies the allowed runtime
+   root set and is never a cross-worktree projection target.
 3. **Resolve conflicts**: if a same-named skill already exists in the IDE-private directory, the project copy in `tooling/skills/` wins.
 4. **Never write back**: do not edit, generate, or persist project skills inside the IDE-private directory.
-5. **Never mutate global hooks**: Cursor and Codex integration writes only this
-   worktree's projection. TRAE writes one bootstrap in the descriptor's first
-   folder and removes managed project hooks from existing sibling `.trae`
-   projections; it preserves unrelated hook entries and never creates sibling
-   host directories except for the bootstrap or selected source worktree. The
-   first blockable tool event selects authority from an explicit declared task
-   root or one mutation root, never from bootstrap location or folder order.
+5. **Never mutate global or sibling hooks**: Cursor, Codex, and TRAE integration
+   write only this worktree's projection. TRAE preserves unrelated local hook
+   entries and never creates, rewrites, or cleans another worktree's `.trae`
+   directory. The first blockable tool event selects authority from an
+   explicit declared task root or one mutation root, never from Hook location
+   or folder order.
 
 This keeps `tooling/skills/` as the single git-tracked truth and prevents skill drift across IDE instances or contributors.
 

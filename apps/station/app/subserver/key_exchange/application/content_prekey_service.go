@@ -56,6 +56,12 @@ type ContentPreKeyStore interface {
 		response *securecontentpb.ClaimContentPreKeysResponse,
 		principals []domain.ContentPreKeyPrincipal,
 	) error
+	ValidateContentPreKeyClaimsStandalone(
+		ctx context.Context,
+		request *securecontentpb.ClaimContentPreKeysRequest,
+		response *securecontentpb.ClaimContentPreKeysResponse,
+		principals []domain.ContentPreKeyPrincipal,
+	) error
 }
 
 func (s *ContentPreKeyService) PublishContentPreKeysClient(
@@ -340,6 +346,58 @@ func (s *ContentPreKeyService) ValidateContentPreKeyClaims(
 		return wrapStoreError(validateContentPreKeysOperation, err)
 	}
 
+	return nil
+}
+
+// ValidateContentPreKeyClaimsStandalone owns the short target-side transaction
+// used by the Federation read-only validation route.
+func (s *ContentPreKeyService) ValidateContentPreKeyClaimsStandalone(
+	ctx context.Context,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+	response *securecontentpb.ClaimContentPreKeysResponse,
+) error {
+	normalized, principals, err := domain.NormalizeContentPreKeyClaimRequest(
+		validateContentPreKeysOperation,
+		request,
+	)
+	if err != nil {
+		return err
+	}
+	if !proto.Equal(normalized, request) {
+		return domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			validateContentPreKeysOperation,
+			"request",
+			"must match the canonical persisted claim request",
+		)
+	}
+	if response == nil || len(response.ProtoReflect().GetUnknown()) != 0 {
+		return domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			validateContentPreKeysOperation,
+			"response",
+			"must be present and contain no unknown protobuf fields",
+		)
+	}
+	if err := validateContentPreKeyClaims(
+		validateContentPreKeysOperation,
+		response,
+		principals,
+	); err != nil {
+		return domain.WrapError(
+			domain.ErrorCodeInvalidArgument,
+			validateContentPreKeysOperation,
+			err,
+		)
+	}
+	if err := s.store.ValidateContentPreKeyClaimsStandalone(
+		ctx,
+		normalized,
+		proto.Clone(response).(*securecontentpb.ClaimContentPreKeysResponse),
+		principals,
+	); err != nil {
+		return wrapStoreError(validateContentPreKeysOperation, err)
+	}
 	return nil
 }
 

@@ -105,8 +105,9 @@ not an input.
 1. Resolve the workspace's current PlanMount, snapshot, and ExecutionRun; read only that
    workspace's active-work record with `make active-work-status`.
 2. Revalidate the current `BindingProjection`. Its role, binding/root/parent
-   digests, assignment, release/child state, and execution root must match the
-   invoking lineage. Never select a binding by enumerating a worktree.
+   digests, assignment, and release/child state must match the invoking
+   lineage. Its workspace must match the current OWNER action selection or the
+   child's fixed assignment. Never select a binding by enumerating a worktree.
 3. Verify the persisted worktree and mount. Do not recapture a snapshot,
    replace a live mount, or change an unfinished run.
 4. Run `planctl validate`, `planctl current`, and `planctl status`.

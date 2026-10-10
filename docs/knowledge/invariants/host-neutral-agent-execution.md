@@ -107,4 +107,6 @@ of the project architecture.
 - DWF-D22 separates workflow source distribution from runtime-state ownership.
 - DWF-D33 roots IDE enforcement in one OWNER binding, assigns child lineage,
   and treats each hook target as a separate subject root.
+- DWF-D44 selects one workspace per mutating OWNER action without changing
+  host-neutral OWNER identity or workspace-local state ownership.
 - DWF-D37 keeps Completion Review identity independent from host transport.

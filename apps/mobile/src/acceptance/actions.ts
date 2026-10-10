@@ -26,11 +26,16 @@ import { verifyStationIdentity } from '../features/station/stationConnection';
 import {
   activeStationEntry,
   activateStationEntry,
-  addStationEntry,
+  addStationRoute,
   emptyStationRegistry,
   removeStationEntry,
+  stationRoutes,
   type StoredStationRegistry,
 } from '../features/station/stationRegistry';
+import {
+  readStationRouteBinding,
+  removeStationRouteBinding,
+} from '../services/mobileCommands';
 import {
   cancelOAuth,
   readAuthRuntimeSnapshot,
@@ -55,6 +60,7 @@ import {
 import {
   readStationRegistryProjection,
   replaceStationRegistryProjection,
+  selectStationRouteRuntime,
 } from '../runtimes/stationRuntime';
 import {
   checkAllPermissions,
@@ -76,11 +82,8 @@ import {
   readPrivateMomentsSnapshot,
   readPrivateTextMoment,
   recoverPrivateMoment,
-  recoverPrivateTextMoment,
   reconcilePrivateMoments,
-  storePrivateSocialRecoveryPhrase,
   submitPrivateComment,
-  trackPublicMomentPublish,
 } from '../runtimes/privateMomentsRuntime';
 import {
   acceptSocialFriendRequest,
@@ -171,6 +174,34 @@ import {
 } from '../services/mobileCommands';
 import type { CommandOutcome } from '../services/gateways/gatewayTypes';
 import { readSharedBuildIdentity } from './buildIdentity';
+import {
+  isEntrySurfaceFixtureId,
+  setEntrySurfaceFixture,
+} from './entrySurfaceFixture';
+import {
+  chatSurfaceFixtureRouteKind,
+  isChatSurfaceFixtureId,
+  setChatSurfaceFixture,
+} from './chatSurfaceFixture';
+import {
+  contactsSurfaceFixtureRouteKind,
+  isContactsSurfaceFixtureId,
+  setContactsSurfaceFixture,
+} from './contactsSurfaceFixture';
+import {
+  isMomentsSurfaceFixtureId,
+  momentsSurfaceFixtureRouteKind,
+  setMomentsSurfaceFixture,
+} from './momentsSurfaceFixture';
+import {
+  isSettingsSurfaceFixtureId,
+  setSettingsSurfaceFixture,
+  settingsSurfaceFixtureRoute,
+} from './settingsSurfaceFixture';
+import {
+  isRecoverySurfaceFixtureId,
+  setRecoverySurfaceFixture,
+} from './recoverySurfaceFixture';
 import type {
   LifecycleWaitReadyInput,
   LifecycleWaitReadyOutput,
@@ -195,6 +226,7 @@ import {
 } from './reliabilityFixture';
 import {
   sanitizeAccessDecision,
+  sanitizeAccessSession,
   sanitizeMessagingMessages,
   sanitizeMessagingProjection,
   sanitizeMobileProjection,
@@ -316,6 +348,157 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     };
   },
 
+  'station.route.select': async (input) => {
+    const stationPeerId = requireString(
+      input?.stationPeerId,
+      'station.route.select.stationPeerId',
+    );
+    const routeId = requireString(
+      input?.routeId,
+      'station.route.select.routeId',
+    );
+    const current = await readStationRegistryProjection();
+    const station = current.entries.find((entry) => entry.stationPeerId === stationPeerId);
+    const route = station ? stationRoutes(station).find((item) => item.routeId === routeId) : null;
+    if (!station || !route) throw new Error('acceptance.mobile.stationRouteNotFound');
+    const next = await selectStationRouteRuntime(stationPeerId, routeId);
+    return {
+      ...sanitizeStationRegistry(next),
+      sessionRevocation: sanitizeSessionRevocation({
+        remoteRevocation: 'not-required',
+        nativePurge: null,
+      }),
+    };
+  },
+
+  'station.route.snapshot': async () => ({
+    ...sanitizeStationRegistry(await readStationRegistryProjection()),
+    binding: await readStationRouteBinding(),
+    sessionRevocation: sanitizeSessionRevocation({
+      remoteRevocation: 'not-required',
+      nativePurge: null,
+    }),
+  }),
+
+  'entry.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isEntrySurfaceFixtureId(surfaceId)) {
+      throw new Error('acceptance.mobile.invalidInput:entry.fixture.surfaceId');
+    }
+    return setEntrySurfaceFixture(surfaceId);
+  },
+
+  'recovery.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isRecoverySurfaceFixtureId(surfaceId)) {
+      throw new Error(
+        'acceptance.mobile.invalidInput:recovery.fixture.surfaceId',
+      );
+    }
+    return setRecoverySurfaceFixture(surfaceId);
+  },
+
+  'chat.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isChatSurfaceFixtureId(surfaceId)) {
+      throw new Error('acceptance.mobile.invalidInput:chat.fixture.surfaceId');
+    }
+    const routeKind = chatSurfaceFixtureRouteKind(surfaceId);
+    applyMobileNavigationIntent({
+      kind: 'primary',
+      routeId: 'tab:chat',
+    });
+    if (routeKind !== 'list') {
+      applyMobileNavigationIntent({
+        kind: 'detail.push',
+        route: routeKind === 'group'
+          ? {
+              routeId: 'detail:group-conversation',
+              groupUlid: 'acceptance-group',
+            }
+          : {
+              routeId: 'detail:chat-conversation',
+              sessionUlid: 'acceptance-direct',
+            },
+      });
+    }
+    return setChatSurfaceFixture(surfaceId);
+  },
+
+  'contacts.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isContactsSurfaceFixtureId(surfaceId)) {
+      throw new Error('acceptance.mobile.invalidInput:contacts.fixture.surfaceId');
+    }
+    const routeKind = contactsSurfaceFixtureRouteKind(surfaceId);
+    applyMobileNavigationIntent({
+      kind: 'primary',
+      routeId: 'tab:contacts',
+    });
+    if (routeKind === 'profile') {
+      applyMobileNavigationIntent({
+        kind: 'detail.push',
+        route: {
+          routeId: 'detail:contact-profile',
+          actorPtid: 'ptid:acceptance-contact',
+        },
+      });
+    } else if (routeKind === 'people' || routeKind === 'group') {
+      applyMobileNavigationIntent({
+        kind: 'overlay.open',
+        route: {
+          routeId: routeKind === 'group'
+            ? 'overlay:create-group'
+            : 'overlay:add-friend',
+        },
+      });
+    }
+    return setContactsSurfaceFixture(surfaceId);
+  },
+
+  'moments.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isMomentsSurfaceFixtureId(surfaceId)) {
+      throw new Error('acceptance.mobile.invalidInput:moments.fixture.surfaceId');
+    }
+    const routeKind = momentsSurfaceFixtureRouteKind(surfaceId);
+    applyMobileNavigationIntent({
+      kind: 'primary',
+      routeId: 'tab:moments',
+    });
+    if (routeKind === 'detail') {
+      applyMobileNavigationIntent({
+        kind: 'detail.push',
+        route: {
+          routeId: 'detail:moment',
+          postId: 'acceptance-moment',
+        },
+      });
+    }
+    return setMomentsSurfaceFixture(surfaceId);
+  },
+
+  'settings.fixture': async (input) => {
+    const surfaceId = input?.surfaceId;
+    if (surfaceId !== null && !isSettingsSurfaceFixtureId(surfaceId)) {
+      throw new Error('acceptance.mobile.invalidInput:settings.fixture.surfaceId');
+    }
+    const route = settingsSurfaceFixtureRoute(surfaceId);
+    applyMobileNavigationIntent({
+      kind: 'primary',
+      routeId: 'tab:settings',
+    });
+    if (route.kind === 'detail' && route.settingId) {
+      applyMobileNavigationIntent({
+        kind: 'detail.push',
+        route: {
+          routeId: 'detail:setting',
+          settingId: route.settingId,
+        },
+      });
+    }
+    return setSettingsSurfaceFixture(surfaceId);
+  },
   'access.submit': async (input) => {
     if (!input) throw new Error('acceptance.mobile.invalidAccessSubmitInput');
     const station = requireActiveStation(
@@ -328,7 +511,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       await completeAccessGateLaunch(decision);
       return {
         decision: requirePublicDecision(decision),
-        session: readSessionRuntimeSnapshot().session,
+        session: sanitizeAccessSession(
+          readSessionRuntimeSnapshot().session,
+        ),
       };
     }
 
@@ -355,7 +540,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       await completeAccessGateLaunch(result.decision);
       return {
         decision: requirePublicDecision(result.decision),
-        session: readSessionRuntimeSnapshot().session,
+        session: sanitizeAccessSession(
+          readSessionRuntimeSnapshot().session,
+        ),
       };
     }
 
@@ -378,7 +565,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       }
       return {
         decision: requirePublicDecision(result.decision),
-        session: readSessionRuntimeSnapshot().session,
+        session: sanitizeAccessSession(
+          readSessionRuntimeSnapshot().session,
+        ),
       };
     }
 
@@ -1128,34 +1317,18 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     ),
   ),
 
-  'moments.private.storeRecoveryPhrase': async (input) => {
+  'moments.private.recover': async (input) => {
     const recoveryEpoch = input?.recoveryEpoch === undefined
       ? 1
       : requirePositiveInteger(
         input.recoveryEpoch,
-        'moments.private.storeRecoveryPhrase.recoveryEpoch',
+        'moments.private.recover.recoveryEpoch',
       );
-    await storePrivateSocialRecoveryPhrase(
-      requireString(
-        input?.recoveryPhrase,
-        'moments.private.storeRecoveryPhrase.recoveryPhrase',
-      ),
-      recoveryEpoch,
-    );
-    return { stored: true as const, recoveryEpoch };
-  },
-
-  'moments.private.recover': async (input) => sanitizePrivateMomentRead(
-    await recoverPrivateMoment(
+    return sanitizePrivateMomentRead(await recoverPrivateMoment(
       requireString(input?.postId, 'moments.private.recover.postId'),
-    ),
-  ),
-
-  'moments.private.recoverText': async (input) => sanitizePrivateMomentRead(
-    await recoverPrivateTextMoment(
-      requireString(input?.postId, 'moments.private.recoverText.postId'),
-    ),
-  ),
+      recoveryEpoch,
+    ));
+  },
 
   'moments.private.reconcile': async () => {
     await reconcilePrivateMoments();
@@ -1168,10 +1341,10 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'moments.feed.read': async () => {
     const runtime = requireMomentsRuntime();
-    if (!await runtime.feed.refresh()) {
+    if (!await runtime.intents.refreshPublicFeed()) {
       throw new Error('acceptance.mobile.momentsFeedUnavailable');
     }
-    const snapshot = runtime.feed.state();
+    const snapshot = runtime.state().home;
     return {
       outcome: snapshot.pageOutcome,
       hasMore: snapshot.hasMore,
@@ -1187,22 +1360,25 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     if (audienceKind !== Audience_Kind.PUBLIC) {
       throw new Error('acceptance.mobile.privateMomentRequiresNativeAction');
     }
-    const result = await trackPublicMomentPublish(
-      () => runtime.gateway.createMoment({
+    const result = await runtime.intents.publishMoment({
+      draftId: globalThis.crypto.randomUUID(),
+      draftRevision: 1,
+      draft: {
         kind: 'text',
         text,
         audience: create(AudienceSchema, { kind: audienceKind }),
-      }),
-      (outcome) => outcome.ok && Boolean(outcome.data.post),
-    );
+      },
+    });
+    if (result.route !== 'PUBLIC') {
+      throw new Error('acceptance.mobile.momentsPublishRouteMismatch');
+    }
     const created = requireAcceptanceOutcome(
-      result,
+      result.outcome,
       'acceptance.mobile.momentsPublishFailed',
     );
     if (!created.post) {
       throw new Error('acceptance.mobile.momentsPublishMissingPost');
     }
-    await runtime.feed.refresh();
     return publicMoment(created.post);
   },
 
@@ -1210,14 +1386,15 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     const runtime = requireMomentsRuntime();
     const postId = requireString(input?.postId, 'moments.react.postId');
     const reactionKind = requireReactionKind(input?.reactionKind);
-    const result = input?.active
-      ? await runtime.gateway.reactToPost(postId, reactionKind)
-      : await runtime.gateway.unreactToPost(postId, reactionKind);
+    const result = await runtime.intents.setPublicReaction(
+      postId,
+      reactionKind,
+      Boolean(input?.active),
+    );
     const updated = requireAcceptanceOutcome(
       result,
       'acceptance.mobile.momentsReactionFailed',
     );
-    runtime.feed.updateReaction(postId, updated.reactions);
     return updated.reactions.map((reaction) => ({
       kind: reaction.kind,
       count: reaction.count.toString(),
@@ -1227,7 +1404,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'moments.comment': async (input) => {
     const runtime = requireMomentsRuntime();
-    const result = await runtime.gateway.createComment(
+    const result = await runtime.intents.createPublicComment(
       requireString(input?.postId, 'moments.comment.postId'),
       requireString(input?.content, 'moments.comment.content'),
       input?.replyToCommentId?.trim() || undefined,
@@ -1244,7 +1421,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'moments.comments.read': async (input) => {
     const runtime = requireMomentsRuntime();
-    const result = await runtime.gateway.fetchComments(
+    const result = await runtime.intents.readPublicComments(
       requireString(input?.postId, 'moments.comments.read.postId'),
       '',
       50,
@@ -1472,12 +1649,23 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   },
 
   cleanup: async () => {
+    setEntrySurfaceFixture(null);
+    setRecoverySurfaceFixture(null);
+    setChatSurfaceFixture(null);
     let oauthPurge: Awaited<ReturnType<typeof purgeNativeOAuth>> | null = null;
     await getMobileLifecycleKernel().transitionScope(
       'logout',
       async () => {
         const logout = await logoutSessionRuntime();
         oauthPurge = logout.nativePurge ?? await purgeNativeOAuth();
+        const registry = await readStationRegistryProjection();
+        await Promise.all(registry.entries.flatMap((entry) => (
+          stationRoutes(entry).map((route) => removeStationRouteBinding({
+            stationPeerId: entry.stationPeerId,
+            routeId: route.routeId,
+            sourceRef: route.sourceRef,
+          }))
+        )));
         await replaceStationRegistryProjection(emptyStationRegistry());
       },
       { restart: false, draftDisposition: 'discard' },
@@ -1514,11 +1702,15 @@ function addVerifiedStation(
   registry: StoredStationRegistry,
   verified: Awaited<ReturnType<typeof verifyStationIdentity>>,
 ): StoredStationRegistry {
-  const result = addStationEntry(
+  const result = addStationRoute(
     registry,
     {
-      stationPeerId: verified.stationPeerId,
-      url: verified.canonicalOrigin,
+      identity: {
+        stationPeerId: verified.stationPeerId,
+        url: verified.canonicalOrigin,
+      },
+      stationHostPublicKey: verified.route.stationHostPublicKey,
+      route: verified.route,
     },
     {
       checkedAt: verified.verifiedAt,
@@ -1697,6 +1889,14 @@ function publicRecoveryState(state: RecoveryState): PublicRecoveryState {
         detail: {
           expectedStationPeerId: state.expectedStationPeerId,
           actualStationPeerId: state.actualStationPeerId,
+          detectedAtMs: state.detectedAtMs,
+        },
+      };
+    case 'actor-identity-recovery':
+      return {
+        kind: state.kind,
+        actions: ['recover', 'switch-station'],
+        detail: {
           detectedAtMs: state.detectedAtMs,
         },
       };
@@ -2245,6 +2445,30 @@ function requireDetailRoute(value: unknown): MobileDetailRoute {
           'navigation.detail.postId',
         ),
       };
+    case 'detail:social-search':
+    case 'detail:social-circles':
+      return { routeId: route.routeId };
+    case 'detail:social-profile':
+      return {
+        routeId: route.routeId,
+        actorPtid: requirePtid(
+          route.actorPtid,
+          'navigation.detail.actorPtid',
+        ),
+        federationId: requireString(
+          route.federationId,
+          'navigation.detail.federationId',
+        ),
+      };
+    case 'detail:social-circle':
+    case 'detail:social-circle-members':
+      return {
+        routeId: route.routeId,
+        circleId: requireString(
+          route.circleId,
+          'navigation.detail.circleId',
+        ),
+      };
     case 'detail:setting':
       return {
         routeId: route.routeId,
@@ -2460,7 +2684,11 @@ function requireAudienceKind(value: unknown): Audience_Kind {
 }
 
 function requireReactionKind(value: unknown): ReactionKind {
-  if (!Number.isSafeInteger(value) || Number(value) < 1 || Number(value) > 5) {
+  if (
+    !Number.isSafeInteger(value)
+    || Number(value) < ReactionKind.REACTION_LIKE
+    || Number(value) > ReactionKind.REACTION_HEART_HANDS
+  ) {
     throw new Error('acceptance.mobile.invalidInput:moments.react.reactionKind');
   }
   return Number(value) as ReactionKind;

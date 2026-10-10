@@ -22,6 +22,7 @@ import {
   PostDetailOutcome,
   ReactionSummarySchema,
   TimelinePageOutcome,
+  TimelineSort,
   type FeedObjectExplanation,
   type Post,
   type ReactionKind,
@@ -69,7 +70,12 @@ export type MomentPolicyState = 'visible' | 'hidden' | 'blocked';
 export interface ReactionMutationState {
   readonly requestId: number;
   readonly reactionKind: number;
-  readonly status: 'pending' | 'rolled-back';
+  readonly status:
+    | 'pending'
+    | 'retrying'
+    | 'unknown-outcome'
+    | 'rejected'
+    | 'rolled-back';
   readonly errorMessage: string;
 }
 
@@ -79,6 +85,14 @@ export interface ReactionMutationToken {
   readonly reactionKind: number;
   readonly operation: 'react' | 'unreact';
   readonly previousReactions: readonly ReactionSummary[];
+}
+
+function isReactionMutationActive(
+  status: ReactionMutationState['status'] | undefined,
+): boolean {
+  return status === 'pending'
+    || status === 'retrying'
+    || status === 'unknown-outcome';
 }
 
 export type MomentDetailReadback =
@@ -138,6 +152,12 @@ export interface MomentsFeedStoreController {
   /** Refresh the feed from the beginning */
   refresh: () => Promise<boolean>;
 
+  /** Select Station-owned Explore ranking and restart its cursor window. */
+  setSort: (sort: TimelineSort) => Promise<boolean>;
+
+  /** Active canonical ranking for this feed window. */
+  sort: () => TimelineSort;
+
   /** Null means superseded: do not change availability or acknowledge a cursor. */
   reconcile: () => Promise<boolean | null>;
 
@@ -149,6 +169,9 @@ export interface MomentsFeedStoreController {
 
   /** Remove a post by ID (deleted event) */
   removePost: (postId: string) => void;
+
+  /** Hide a post for current relationship policy; later readback may restore it. */
+  hidePost: (postId: string) => void;
 
   /** Apply an authoritative reaction projection to a post. */
   updateReaction: (postId: string, reactions: readonly ReactionSummary[]) => void;
@@ -190,6 +213,13 @@ type FeedPageWithExplanations = MomentsFeedPage & {
 };
 
 type FeedPageMode = 'replace' | 'refresh' | 'append';
+
+export type MomentsFeedScope = 'home' | 'explore';
+
+export interface MomentsFeedStoreOptions {
+  readonly scope?: MomentsFeedScope;
+  readonly initialSort?: TimelineSort;
+}
 
 export function resolveMomentPolicyState(
   explanation: FeedObjectExplanation | undefined,
@@ -237,7 +267,10 @@ export async function readAuthoritativeMomentDetail(
 
 export function createMomentsFeedStore(
   gateway: MomentsGateway,
+  options: MomentsFeedStoreOptions = {},
 ): MomentsFeedStoreController {
+  const feedScope = options.scope ?? 'home';
+  let feedSort = options.initialSort ?? TimelineSort.RECENT;
   let feedState: MomentsFeedState = {
     posts: [],
     postIndex: new Map(),
@@ -265,9 +298,16 @@ export function createMomentsFeedStore(
   let postRequestSequence = 0;
   const postRequestSequences = new Map<string, number>();
   const commentRequestSequences = new Map<string, number>();
+  const terminalPostIds = new Set<string>();
   const listeners = new Set<() => void>();
 
   // -- Internal helpers --
+
+  function fetchPage(cursor: string): ReturnType<MomentsGateway['fetchFeed']> {
+    return feedScope === 'explore'
+      ? gateway.fetchPublicFeed(cursor, DEFAULT_PAGE_SIZE, feedSort)
+      : gateway.fetchFeed(cursor, DEFAULT_PAGE_SIZE);
+  }
 
   function emit(): void {
     if (torn) return;
@@ -332,7 +372,8 @@ export function createMomentsFeedStore(
     if (selectedPostId) retainedIds.add(selectedPostId);
     return new Map(
       [...feedState.reactionMutations].filter(
-        ([postId, mutation]) => mutation.status === 'pending' || retainedIds.has(postId),
+        ([postId, mutation]) => isReactionMutationActive(mutation.status)
+          || retainedIds.has(postId),
       ),
     );
   }
@@ -366,7 +407,7 @@ export function createMomentsFeedStore(
   function applyFeedPage(page: FeedPageWithExplanations, mode: FeedPageMode): void {
     const pageIds = new Set<string>();
     const pagePosts = page.posts.filter((post) => {
-      if (!post.id || pageIds.has(post.id)) return false;
+      if (!post.id || pageIds.has(post.id) || terminalPostIds.has(post.id)) return false;
       pageIds.add(post.id);
       return true;
     });
@@ -391,7 +432,8 @@ export function createMomentsFeedStore(
         const existingPost = existingIndex === undefined
           ? undefined
           : feedState.posts[existingIndex];
-        return existingPost && feedState.reactionMutations.get(post.id)?.status === 'pending'
+        return existingPost
+          && isReactionMutationActive(feedState.reactionMutations.get(post.id)?.status)
           ? { ...post, reactions: existingPost.reactions }
           : post;
       });
@@ -461,7 +503,7 @@ export function createMomentsFeedStore(
     };
     emit();
 
-    const result = await gateway.fetchFeed('', DEFAULT_PAGE_SIZE);
+    const result = await fetchPage('');
     if (!isFeedRequestCurrent(requestLifecycle, requestRevision, requestId)) return;
 
     if (result.ok) {
@@ -506,7 +548,7 @@ export function createMomentsFeedStore(
     };
     emit();
 
-    const result = await gateway.fetchFeed(cursor, DEFAULT_PAGE_SIZE);
+    const result = await fetchPage(cursor);
     if (!isFeedRequestCurrent(requestLifecycle, requestRevision, requestId)) return;
 
     if (result.ok) {
@@ -529,6 +571,19 @@ export function createMomentsFeedStore(
     return await refreshFeed() === true;
   }
 
+  async function setSort(sort: TimelineSort): Promise<boolean> {
+    const canonicalSort = sort === TimelineSort.HOT
+      ? TimelineSort.HOT
+      : TimelineSort.RECENT;
+    if (feedScope !== 'explore' || canonicalSort === feedSort) return true;
+    feedSort = canonicalSort;
+    return await refresh();
+  }
+
+  function sort(): TimelineSort {
+    return feedSort;
+  }
+
   async function refreshFeed(): Promise<boolean | null> {
     if (torn) return null;
     const requestLifecycle = lifecycleRevision;
@@ -543,7 +598,7 @@ export function createMomentsFeedStore(
     };
     emit();
 
-    const result = await gateway.fetchFeed('', DEFAULT_PAGE_SIZE);
+    const result = await fetchPage('');
     if (!isFeedRequestCurrent(requestLifecycle, requestRevision, requestId)) return null;
 
     if (result.ok) {
@@ -587,7 +642,9 @@ export function createMomentsFeedStore(
   }
 
   async function refreshPost(postId: string): Promise<boolean> {
-    if (torn || !feedState.postIndex.has(postId)) return false;
+    if (torn || terminalPostIds.has(postId) || !feedState.postIndex.has(postId)) {
+      return false;
+    }
     const requestLifecycle = lifecycleRevision;
     const requestRevision = feedRevision;
     const requestId = ++postRequestSequence;
@@ -606,7 +663,9 @@ export function createMomentsFeedStore(
       const index = feedState.postIndex.get(postId);
       if (index === undefined) return false;
       const posts = [...feedState.posts];
-      posts[index] = feedState.reactionMutations.get(postId)?.status === 'pending'
+      posts[index] = isReactionMutationActive(
+        feedState.reactionMutations.get(postId)?.status,
+      )
         ? { ...readback.post, reactions: posts[index].reactions }
         : readback.post;
       feedState = { ...feedState, posts };
@@ -620,7 +679,7 @@ export function createMomentsFeedStore(
   }
 
   function prependPost(post: Post): void {
-    if (torn || !post.id) return;
+    if (torn || !post.id || terminalPostIds.has(post.id)) return;
 
     // Skip if already present (stable anchor dedup)
     if (feedState.postIndex.has(post.id)) return;
@@ -641,7 +700,16 @@ export function createMomentsFeedStore(
   }
 
   function removePost(postId: string): void {
+    removePostProjection(postId, true);
+  }
+
+  function hidePost(postId: string): void {
+    removePostProjection(postId, false);
+  }
+
+  function removePostProjection(postId: string, terminal: boolean): void {
     if (torn) return;
+    if (terminal) terminalPostIds.add(postId);
     const postIndex = feedState.postIndex.get(postId);
     const retainedPost = postIndex === undefined ? undefined : feedState.posts[postIndex];
     const filtered = feedState.posts.filter((p) => p.id !== postId);
@@ -651,25 +719,33 @@ export function createMomentsFeedStore(
       activeDetailRequestId = ++detailRequestSequence;
       postRequestSequences.delete(postId);
       commentRequestSequences.delete(postId);
-      const selectedPost = priorSelectedDetail.readback.kind === 'available'
-        || priorSelectedDetail.readback.kind === 'deleted'
-        ? priorSelectedDetail.readback.post
-        : priorSelectedDetail.readback.kind === 'loading'
-          ? retainedPost
-          : undefined;
-      if (selectedPost) {
+      if (terminal) {
+        const selectedPost = priorSelectedDetail.readback.kind === 'available'
+          || priorSelectedDetail.readback.kind === 'deleted'
+          ? priorSelectedDetail.readback.post
+          : priorSelectedDetail.readback.kind === 'loading'
+            ? retainedPost
+            : undefined;
         selectedDetail = {
           postId,
           readback: {
             kind: 'deleted',
-            post: { ...selectedPost, isDeleted: true },
+            ...(selectedPost ? { post: { ...selectedPost, isDeleted: true } } : {}),
           },
+        };
+      } else {
+        selectedDetail = {
+          postId,
+          readback: { kind: 'blocked' },
         };
       }
     }
+    const commentsByPost = new Map(feedState.commentsByPost);
+    commentsByPost.delete(postId);
     if (
       filtered.length === feedState.posts.length
       && selectedDetail === priorSelectedDetail
+      && commentsByPost.size === feedState.commentsByPost.size
     ) return;
 
     feedState = {
@@ -682,6 +758,7 @@ export function createMomentsFeedStore(
         selectedDetail?.readback.kind === 'available' ? selectedDetail.postId : '',
       ),
       selectedDetail,
+      commentsByPost,
     };
     emit();
   }
@@ -734,7 +811,7 @@ export function createMomentsFeedStore(
     reactionKind: number,
   ): ReactionMutationToken | null {
     if (torn) return null;
-    if (feedState.reactionMutations.get(postId)?.status === 'pending') return null;
+    if (isReactionMutationActive(feedState.reactionMutations.get(postId)?.status)) return null;
 
     const post = reactionPost(postId);
     if (!post || post.id !== postId || post.isDeleted) return null;
@@ -833,6 +910,20 @@ export function createMomentsFeedStore(
     postId: string,
   ): Promise<MomentDetailReadback | null> {
     if (torn || !postId) return null;
+    if (terminalPostIds.has(postId)) {
+      const retained = feedState.selectedDetail?.postId === postId
+        ? feedState.selectedDetail.readback
+        : null;
+      const readback: MomentDetailReadback = retained?.kind === 'deleted'
+        ? retained
+        : { kind: 'deleted' };
+      feedState = {
+        ...feedState,
+        selectedDetail: { postId, readback },
+      };
+      emit();
+      return readback;
+    }
 
     const requestLifecycle = lifecycleRevision;
     const requestId = ++detailRequestSequence;
@@ -903,7 +994,7 @@ export function createMomentsFeedStore(
   }
 
   async function reloadComments(postId: string): Promise<boolean | null> {
-    if (torn || !postId) return null;
+    if (torn || !postId || terminalPostIds.has(postId)) return null;
     const requestLifecycle = lifecycleRevision;
     const requestId = ++commentRequestSequence;
     commentRequestSequences.set(postId, requestId);
@@ -946,7 +1037,7 @@ export function createMomentsFeedStore(
   }
 
   async function loadMoreComments(postId: string): Promise<void> {
-    if (torn || !postId) return;
+    if (torn || !postId || terminalPostIds.has(postId)) return;
     const existing = feedState.commentsByPost.get(postId);
     if (!existing?.hasMore || existing.loading) return;
 
@@ -1007,6 +1098,7 @@ export function createMomentsFeedStore(
     activeDetailRequestId = ++detailRequestSequence;
     commentRequestSequences.clear();
     postRequestSequences.clear();
+    terminalPostIds.clear();
     listeners.clear();
   }
 
@@ -1016,10 +1108,13 @@ export function createMomentsFeedStore(
     loadFeed,
     loadMore,
     refresh,
+    setSort,
+    sort,
     reconcile,
     refreshPost,
     prependPost,
     removePost,
+    hidePost,
     updateReaction,
     beginReaction,
     commitReaction,

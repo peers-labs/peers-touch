@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Architecture Decisions
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-07
+> **Created**: 2026-09-13 | **Updated**: 2026-10-09
 > **Owner**: Platform Team
 
 ---
@@ -35,7 +35,7 @@
 | DWF-D23 | Keep the internal Development Workflow unversioned | accepted |
 | DWF-D24 | Reopen invalidated source through one Plan-declared invalidation owner | accepted |
 | DWF-D25 | Keep user Skill overlays machine-local and interaction-only | accepted |
-| DWF-D26 | Bind workflow enforcement to one immutable conversation execution root | accepted |
+| DWF-D26 | Bind workflow enforcement to one immutable conversation execution root | superseded by DWF-D33/D44 |
 | DWF-D27 | Project workflow status through one read-only Workflow Snapshot | accepted |
 | DWF-D28 | Require independent current-source Completion Review | accepted |
 | DWF-D29 | Derive agent activity from bounded Action Receipts | accepted |
@@ -44,7 +44,7 @@
 | DWF-D32 | Aggregate module impacts before resource acquisition | accepted |
 | DWF-D33 | Root workflow authority in one owner binding with assigned child lineage | accepted |
 | DWF-D34 | Separate live integration install from global-idle cleanup | accepted |
-| DWF-D35 | Project one canonical TRAE hook into every participating workspace root | accepted |
+| DWF-D35 | Keep TRAE Hook projection worktree-local | accepted |
 | DWF-D36 | Bootstrap non-destructive integration projection outside the Hook grant cycle | accepted |
 | DWF-D37 | Make Completion Review a repository-native reviewer handoff | accepted |
 | DWF-D38 | Separate frozen Plan versions from execution worktree mounts | superseded by DWF-D42 |
@@ -53,6 +53,8 @@
 | DWF-D41 | Coordinate Development close with one resumable receipt | accepted |
 | DWF-D42 | Keep one stable Plan and record in-place amendments | accepted |
 | DWF-D43 | Persist main-session provenance for Agent-created worktrees | accepted |
+| DWF-D44 | Select one workspace per mutating OWNER action | accepted |
+| DWF-D45 | Isolate machine-ledger schema adoption by workspace | accepted |
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
@@ -1490,16 +1492,17 @@ history rather than a live ownership conflict.
   Child liveness comes only from assignment/lease/terminal receipts. OWNER
   liveness has no generic TTL.
 - One pure `BindingProjection` joins host identity, owner or child binding,
-  role, lineage, release state, execution root, and per-event subject/tool/
-  target roots. Hook context, status, readiness, handoff, Stop, Action Receipt,
-  and worker result consume that projection.
+  role, lineage, release state, selected action workspace, and per-event
+  subject/tool/target roots. Hook context, status, readiness, handoff, Stop,
+  Action Receipt, and worker result consume that projection.
 - Completion Review originally selected the exact OWNER or assigned REVIEWER
   from the current owner-command Action Receipt. DWF-D37 supersedes this path
   with a repository-native reviewer capability and no binding fallback.
-- `CROSS_WORKTREE_WRITE_DENIED` remains unchanged: all lineage members inherit
-  the OWNER execution root, may read sibling roots, and cannot write them.
-- TRAE multi-root hook projection was originally limited to one workspace
-  bootstrap. DWF-D35 supersedes this projection detail without changing the
+- DWF-D44 supersedes the original immutable OWNER execution-root clause.
+  OWNER identity remains immutable, but each mutating OWNER action selects one
+  workspace. Assigned children remain fixed to their assignment workspace.
+- DWF-D35 keeps TRAE Hook projection local to each selected worktree while the
+  descriptor supplies only the runtime root set. This does not change the
   single OWNER binding or canonical Kernel authority defined here.
 - Rollout originally combined projection with a hard cut. DWF-D34 and DWF-D36
   supersede that command boundary: ordinary projection is non-destructive and
@@ -1607,68 +1610,68 @@ worktrees into a global upgrade lock.
 - Tests and audit output must distinguish projection success from hard-cut or
   GC completion; installation success no longer claims machine cleanup.
 
-## DWF-D35: Project One Canonical TRAE Hook Into Every Participating Workspace Root
+## DWF-D35: Keep TRAE Hook Projection Worktree-Local
 
 **Status**: accepted
 **Date**: 2026-10-04
+**Amended**: 2026-10-10
 
 ### Context
 
-TRAE can open any folder from a multi-root workspace as an independent window.
-Limiting the managed Hook to the descriptor's first root leaves another source
-root unable to create its OWNER binding or exact `skills` grant. The installer
-then requires a grant that the current window can never emit, so the projection
-needed to repair the workflow is permanently self-blocked.
+The original DWF-D35 projected one selected worktree's Hook implementation into
+other folders in the same multi-root workspace. Because every worktree can run
+`make skills`, the last installer rewrote every participating
+`.trae/hooks.json` to call its own source checkout. Parallel worktrees therefore
+replaced one another's integration and could repeatedly reintroduce stale
+Kernel behavior.
 
-The descriptor's folder order is not authority, and multiple transport entries
-do not imply multiple workflow owners. Every entry dispatches to the same
-worktree-local plugin and host-neutral Kernel, which resolves the execution
-root from explicit event evidence before creating one immutable OWNER binding.
+A worktree-local Hook is transport for that worktree's own checked-out
+integration. The workspace descriptor is an allowlist for action-root
+resolution, not a projection target list or a distribution channel.
 
 ### Decision
 
-- TRAE projects an equivalent canonical managed Hook into the selected source
-  root, the descriptor bootstrap root, and every descriptor root that already
-  participates in TRAE through a real `.trae` directory.
-- The installer does not create `.trae` in otherwise untouched descriptor
-  roots. This bounds cross-root mutation while ensuring the current source
-  window and existing TRAE roots can authorize and enforce their own work.
-- All projected entries call the selected source root's same canonical plugin,
-  carry the same workspace descriptor, preserve unrelated Hook entries, and
-  remain transport only. They do not own binding, Plan, Session, or action
-  state.
-- Audit derives the same projection-root set, requires one exact managed entry
-  per event in each participating root, rejects managed entries outside that
-  set, and probes the selected source root directly.
-- Descriptor order, Hook file location, current editor, and Hook `cwd` never
-  select authority. The Kernel still requires an explicit declared task root
-  or a unique target-root resolution and otherwise returns
-  `WORKTREE_SELECTION_REQUIRED`.
+- `make skills IDE=trae` writes only the selected worktree's
+  `.trae/hooks.json` and `.trae/skills`.
+- Every managed Hook entry calls the same selected worktree's local
+  `tooling/plugins/pt-ew-plugin/scripts/hook-entry.mjs`.
+- Passing `WORKSPACE=<descriptor>` validates that the selected worktree belongs
+  to the descriptor and supplies the declared runtime root set to the local
+  Hook. It never authorizes writing a bootstrap folder or sibling worktree.
+- Installation preserves unrelated entries in the selected worktree's Hook
+  file and leaves every sibling `.trae` directory byte-for-byte unchanged.
+- Audit validates and probes only the selected worktree's local projection.
+  Fleet audit invokes that local audit independently in each selected worktree.
+- Descriptor order and Hook file location never select authority. Under
+  DWF-D44, a unique mutation target takes precedence, followed by explicit
+  task root, tool `cwd`, active editor, and repository `cwd`; multi-root or
+  undeclared selection returns `WORKTREE_SELECTION_REQUIRED`.
 
 ### Rationale
 
-A Hook is an event ingress, not an owner. Replicating the same fail-closed
-ingress at every participating root removes the bootstrap dependency without
-duplicating workflow truth or weakening exact root selection.
+A Hook is worktree-local event ingress, not a shared workspace service.
+Worktree-local projection makes source identity deterministic and prevents one
+branch from changing another branch's enforcement while retaining per-action
+workspace selection inside the Kernel.
 
 ### Alternatives Considered
 
-- Keep one descriptor-first bootstrap: rejected because independently opened
-  roots cannot trigger it and cannot bootstrap their required grant.
-- Create `.trae` in every descriptor root: rejected because it expands
-  cross-root mutation into folders that have not opted into TRAE projection.
-- Hand-write a receipt or bypass the grant for repair: rejected because it
-  would forge workflow authority and hide the broken bootstrap contract.
+- Project one selected source into every participating root: rejected because
+  concurrent installers are last-writer-wins and destroy worktree isolation.
+- Keep one descriptor-first bootstrap: rejected because folder order is not a
+  source-ownership contract and still centralizes otherwise independent roots.
+- Create or clean sibling `.trae` directories: rejected because installation
+  in one worktree has no write authority over another worktree.
 
 ### Consequences
 
-- A source root can repair or refresh its integration without IDE reload or
-  dependence on another workspace window.
-- Existing TRAE roots receive equivalent canonical Hook updates; untouched
-  roots remain untouched until they participate.
-- Tests must prove source/bootstrap/existing-root projection, untouched-root
-  preservation, folder-order neutrality, exact audit behavior, and direct
-  source-root callback proof.
+- Each worktree repairs or refreshes its own integration independently.
+- Updating worktree A cannot alter worktree B's Hook path, contents, receipt,
+  or enforcement version.
+- A newly added worktree must run its own `make skills`; no sibling installer
+  bootstraps it implicitly.
+- Tests must prove sibling byte preservation, local callback proof, descriptor
+  membership validation, and independent fleet audit.
 
 ## DWF-D36: Bootstrap Non-Destructive Integration Projection Outside The Hook Grant Cycle
 
@@ -1697,6 +1700,11 @@ machine-local stores or retired projections.
   It remains serialized by the machine ledger lock and fails closed on invalid
   source, workspace descriptor, host root, symlink boundary, Hook merge, or
   callback proof.
+- Non-destructive projection does not parse PlanMount, declaration, Session,
+  or active-work state. Its embedded `--projection-only` audit verifies the
+  canonical catalog, host projection, callback, and installation receipt while
+  retaining workflow-identity findings as diagnostics. The standalone full
+  integration audit still fails on invalid workflow owner state.
 - `skills` remains an `OWNER_CONTROL` label when observed through an active
   Hook so activity and root-write enforcement stay visible. The Kernel and
   Action Store do not issue a grant for that label.
@@ -1728,9 +1736,10 @@ retaining strict authority on every destructive path.
 - A clean worktree can run `make skills` before any Hook or OWNER binding
   exists, and an active window can repair stale projection without Reload.
 - The ordinary projection command cannot authorize hard cut or GC.
-- Tests must prove ungranted projection success, no `skills` grant issuance,
-  exact grants for both cleanup labels, invalid-path fail closed behavior, and
-  truthful installation receipts.
+- Tests must prove ungranted projection success over absent, live, and
+  retired-schema workflow ledgers; no `skills` grant issuance; exact grants
+  for both cleanup labels; invalid-path fail closed behavior; projection-only
+  versus full-audit separation; and truthful installation receipts.
 
 ## DWF-D37: Make Completion Review A Repository-Native Reviewer Handoff
 
@@ -1773,8 +1782,9 @@ handoff and writes an immutable receipt.
   reviewer launch remains an orchestration obligation because a repository
   capability cannot prove cognitive or process independence.
 - DWF-D33 continues to govern IDE Hook authorization, OWNER/WORKER lineage,
-  cross-worktree writes, Action Receipts, status, handoff, and compaction. This
-  decision supersedes only its Completion Review binding and assignment path.
+  Action Receipts, status, handoff, and compaction; DWF-D44 governs per-action
+  workspace selection and write confinement. This decision supersedes only
+  DWF-D33's Completion Review binding and assignment path.
 
 ### Rationale
 
@@ -2022,6 +2032,14 @@ required close to have already happened.
 - A deleted worktree can release only the exact
   `workspaceId + mountId + mountedBy` mount. Repository scans and branch names
   are not recovery selectors.
+- A pre-OWNER legacy Run with no `workflowOwner` in its active-work,
+  Development Session, or declaration may use one bounded ownerless recovery:
+  `owner-abandon` with exact `workspaceId + mountId + workItemId + mountedBy`,
+  no live or OWNER-bound declaration, no runtime lease, and
+  `environmentPolicy=retain`. A matching stale ownerless declaration may be
+  released as part of the same close receipt.
+  Any OWNER-bound record, normal close reason, ambiguous selector, active
+  resource, or environment mutation still requires a live OWNER receipt.
 - New declaration and PlanMount admission reject unfinished close receipts.
   Dev Workflow resumes the internal close instead of asking the user to run
   owner commands manually.
@@ -2059,7 +2077,8 @@ removes the review/release cycle without weakening final cleanup proof.
 - Low-level release commands remain available to their owners and recovery
   tooling, but normal workflow closure does not call them independently.
 - Tests cover interruption, exact owner checks, standalone/tracked modes,
-  cancellation, and deleted-worktree mount recovery.
+  cancellation, deleted-worktree mount recovery, exact ownerless legacy
+  abandonment, and rejection of OWNER-bound fallback.
 
 ## DWF-D42: Keep One Stable Plan And Record In-Place Amendments
 
@@ -2122,10 +2141,10 @@ bookkeeping that the Agent could validate deterministically.
   immutable repository `completions/<planDigest>.json` attestation. CI validates
   an explicit Plan and this digest-bound completion record without reading or
   reconstructing machine-local PlanMount state.
-- Repository Plan sources are converted in the same hard cut. Existing
-  machine ledgers are converted by `make plan-state-migrate` only after every
-  live declaration and mount is closed. Normal readers have no legacy fallback,
-  alias, or dual-write path.
+- Repository Plan sources are converted in the same source hard cut. Machine
+  ledger adoption follows DWF-D45: the selected workspace may migrate while
+  unrelated work remains live, and the bounded mixed envelope converges after
+  the last legacy workspace releases its records.
 
 ### Rationale
 
@@ -2144,8 +2163,8 @@ without turning every correction into a new Plan.
   is Agent-owned and only changes to accepted outcomes need product judgment.
 - Treat generated North Star text as implicitly accepted: rejected because
   Agent-authored distillation is a proposal, not evidence of user consent.
-- Allow normal readers to accept both formats: rejected because it creates two
-  active contracts and hides incomplete rollout.
+- Allow normal execution owners to run both Plan source formats: rejected
+  because it creates two active Plan contracts and hides incomplete rollout.
 
 ### Consequences
 
@@ -2235,3 +2254,172 @@ hash-based authority chain.
 - Tests cover immutable creation provenance, legacy OWNER upgrade without
   lineage change, declaration/Session/active-work propagation, and snapshot
   visibility.
+
+## DWF-D44: Select One Workspace Per Mutating OWNER Action
+
+**Status**: accepted
+**Date**: 2026-10-09
+
+### Context
+
+DWF-D26 and the original DWF-D33 wording conflated two different identities:
+the visible chat that owns workflow authority and the worktree selected by one
+tool action. The first mutating action therefore made its worktree the
+conversation's permanent write root. A user could not continue the same chat
+against another worktree or switch to another workspace-local Plan without
+manufacturing a new host Task, even though PlanMount, declaration, Session,
+and active-work are already isolated by `workspaceId`.
+
+### Decision
+
+- The host root-chat identity creates one immutable OWNER lineage. It does not
+  permanently own one worktree.
+- Every mutating OWNER action resolves exactly one action workspace in this
+  order: unique mutation target root, explicit host task root, tool working
+  directory, active editor root, then repository working directory.
+- When the host supplies workspace roots, the selected action workspace must
+  be one of them. One action with mutation targets in multiple worktrees fails
+  closed with `WORKTREE_SELECTION_REQUIRED`.
+- `BindingProjection.executionRoot` and `workspaceId` describe the selected
+  action workspace for an OWNER event. The persisted OWNER binding keeps its
+  original root fields only as a compatible default/origin; they are not
+  permanent mutation authority.
+- A target-less mutating event may use that stored default only when every
+  resolved mutation path remains inside it. Shell actions that switch
+  worktrees must also run with the selected worktree as `cwd`; a foreign cwd
+  plus an absolute target is one multi-root action and is denied.
+- The selected workspace's declaration, source claims, PlanMount,
+  ExecutionRun, Session, active-work, and Git identity are revalidated for that
+  action. Switching workspace never copies or rebinds those records.
+- Cross-worktree reads remain legal. Cross-worktree writes are legal across
+  separate, single-workspace OWNER actions. One action may write only inside
+  its selected workspace and declared claims; escape fails with
+  `ACTION_WORKSPACE_WRITE_DENIED`.
+- Assigned WORKER and REVIEWER children remain fixed to the workspace in their
+  assignment. A child cannot select another action workspace.
+
+### Rationale
+
+The visible chat is the stable authorization principal; a worktree is the
+scope of one mutation. Keeping those identities separate lets one conversation
+move intentionally between independent workspace-local Plans without weakening
+single-action scope, declarations, or child isolation.
+
+### Alternatives Considered
+
+- Bind the chat to whichever worktree mutates first: rejected because host
+  startup order is not durable user intent and forces artificial new Tasks.
+- Rebind the persisted OWNER record on every action: rejected because it would
+  mutate identity lineage and race concurrent child/session state.
+- Permit one command to mutate multiple worktrees: rejected because no single
+  declaration, PlanMount, or write set can authorize that action atomically.
+
+### Consequences
+
+- A user may execute worktree A, then worktree B, then return to A in one
+  visible chat; each mutation independently passes B's or A's local guards.
+- Context and Action Receipts report the selected action workspace, while OWNER
+  and root binding digests remain stable.
+- Tests must prove sequential OWNER switching, target precedence, multi-root
+  rejection, shell cwd confinement, symlink escape denial, and immutable child
+  assignment scope.
+
+## DWF-D45: Isolate Machine-Ledger Schema Adoption By Workspace
+
+**Status**: accepted
+**Date**: 2026-10-07
+**Supersedes**: the machine-wide idle migration clause of DWF-D42
+
+### Context
+
+The stable Plan hard cut changed declaration field
+`planVersionDigest -> planDigest` and mount index
+`liveMountsByPlanVersion -> liveMountsByPlan`. Both files are machine-wide
+coordination projections, but their first migration owner required every
+Development declaration and PlanMount on the machine to close before either
+file could advance.
+
+On a machine with independent Mobile Social and Relay work, the current Mobile
+Chat workspace held no conflicting Profile, Station, slot, source branch, or
+Plan. It was still blocked solely because those foreign workspaces were live.
+This conflated global visibility with global lifecycle ownership and
+contradicted DWF-D11's claim-based conflict model.
+
+### Decision
+
+- `work.json` remains the single machine-wide resource-intent projection.
+  Each declaration is independently classified as `legacy` or `stable`; the
+  coordination reader validates the complete exact shape and digest for that
+  record before using its common source/runtime claims.
+- A normal writer creates and mutates only stable declarations owned by its
+  current `workspaceId`. Foreign legacy declarations remain value-equivalent
+  in the enclosing atomic replacement and continue to participate in
+  source/runtime conflict detection.
+- `plan-mounts/ledger.json` has one bounded migration envelope. During adoption
+  it may contain disjoint `liveMountsByPlanVersion` and
+  `liveMountsByPlan` indexes plus the shared workspace/run indexes. A mount ID
+  appears in exactly one Plan index, and the union must equal
+  `liveMountsByWorkspace`.
+- `make plan-state-migrate` derives the selected workspace from its canonical
+  root, acquires the existing short machine locks, rewrites only declarations
+  for that workspace, preserves their lifecycle state, and preserves every
+  foreign record and index entry.
+- A selected pre-DWF-D43 declaration with no `workflowOwner` may adopt only
+  the live OWNER reference carried by the exact Hook action that admitted the
+  migration. Existing ownership must match or migration fails closed; foreign
+  declarations are never adopted by another workspace.
+- A legacy mount remains close-only after adoption. Stable execution never
+  consumes its retired snapshot or trusts its terminal state. Only separately
+  authorized exact-owner `owner-unmount` may close it; close validates the
+  legacy mount/run digests and identity before removing only that workspace's
+  legacy indexes.
+- The migration owner removes `liveMountsByPlanVersion` as soon as its map is
+  empty. That condition is the mandatory removal trigger; the mixed envelope is
+  not a permanent second source of truth.
+- Stable mount admission checks both stable Plan keys and the `projectId +
+  planId` identity of foreign legacy mount records, so the migration window
+  cannot create duplicate execution ownership.
+- All writers retain lock plus compare-and-swap replacement. A stale
+  pre-adoption writer may fail schema validation after another workspace
+  adopts, but it cannot overwrite a newer ledger revision. It must synchronize
+  workflow tooling before its next machine-state mutation.
+- Global idle remains valid only for destructive machine-wide cleanup whose
+  operation explicitly owns all affected records. It is forbidden for
+  non-destructive projection, declaration, migration, status, or install work.
+
+### Rationale
+
+The shared ledger answers which resources and Plans are occupied across
+worktrees. It does not make one workspace the lifecycle owner of another.
+Record-level schema discrimination preserves coordination during rollout;
+workspace-scoped mutation preserves ownership; the short machine lock and CAS
+still serialize one physical file safely.
+
+The bounded mixed envelope is necessary because active legacy mounts already
+exist. Treating it as an explicit state with a mechanical deletion trigger is
+safer than either rewriting foreign live ownership or keeping a hidden
+compatibility reader indefinitely.
+
+### Alternatives Considered
+
+- Keep the all-machine idle hard cut: rejected because unrelated work can
+  prevent any workspace from adopting the current workflow indefinitely.
+- Rewrite every foreign live record from the current workspace: rejected
+  because it transfers lifecycle ownership and can invalidate an active
+  writer's digest.
+- Ignore foreign legacy records during conflict checks: rejected because it can
+  double-allocate source, runtime, workspace, or Plan ownership.
+- Maintain two independent ledgers: rejected because split indexes cannot
+  provide atomic conflict admission.
+
+### Consequences
+
+- Different worktrees no longer block schema adoption merely by being active.
+- Actual same-branch, same-workspace, exclusive runtime, workspace mount, and
+  Plan identity conflicts remain fail-closed.
+- Tests must prove foreign-live migration, foreign-record preservation,
+  selected live-declaration state preservation, close-only legacy mount
+  release, mixed-index disjointness, cross-schema Plan conflict, retry after
+  interruption, and stale-writer CAS rejection.
+- Operational knowledge records the invariant that machine coordination state
+  is global for visibility but workspace-scoped for lifecycle mutation.

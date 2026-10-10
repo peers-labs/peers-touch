@@ -41,15 +41,15 @@ func (s *eventsSubServer) Init(ctx context.Context, opts ...option.Option) error
 	if err != nil {
 		return err
 	}
-	eventStore := newGormEventStore(rds)
-	if err := eventStore.AutoMigrate(); err != nil {
+	eventBus, err := NewDurableEventBus(rds)
+	if err != nil {
 		return err
 	}
 	callResolution := newCallResolutionStore(rds)
 	if err := callResolution.AutoMigrate(); err != nil {
 		return err
 	}
-	s.bus = NewEventBus(WithDurableStore(eventStore))
+	s.bus = eventBus
 	s.callResolution = callResolution
 	setGlobalBus(s.bus)
 	return nil

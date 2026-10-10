@@ -18,11 +18,14 @@ use messaging_core::contracts::{
     CryptoEndpoint as CoreCryptoEndpoint,
 };
 use messaging_core::crypto::identity::IdentityKeyPair;
-use messaging_core::crypto::prekeys::PreKeyPublisher;
+use messaging_core::crypto::prekeys::{
+    PendingPreKeyBundle, PreKeyBundleBackup, PreKeyPublisher,
+};
 use messaging_core::crypto::signaling_envelope;
 use messaging_core::identity::{
-    is_stale_endpoint_error, load_or_create_device_identity_for_device, DeviceEnrollmentManager,
-    DeviceSigningKey, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
+    generate_device_identity_for_device_from_parts, is_stale_endpoint_error,
+    load_or_create_device_identity_for_device, DeviceEnrollmentManager,
+    DeviceEnrollmentRepository, DeviceSigningKey, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
 };
 use messaging_core::inbox::{
     AcknowledgedItemObserver, ClaimedItemConsumer, CommandResultLifecycle, CommandResultProcessor,
@@ -424,6 +427,45 @@ pub struct MobileMessagingEngine {
     send_intent_lock: Mutex<()>,
     membership_transition_lock: Mutex<()>,
     access_token: Mutex<Zeroizing<String>>,
+    prekey_backup: Arc<dyn PreKeyBundleBackup>,
+}
+
+/// Durable backup for the device signing seed, used to preserve identity
+/// continuity when local messaging data is lost (e.g. app reinstall).
+pub trait DeviceSigningSeedBackup {
+    fn load(&self) -> Result<Option<[u8; 32]>, String>;
+    fn store(&self, seed: &[u8; 32]) -> Result<(), String>;
+}
+
+/// No-op backup: identity is not restored, so local data loss generates a new
+/// device key. Used by tests and environments without durable secure storage.
+pub struct NoopSeedBackup;
+
+impl DeviceSigningSeedBackup for NoopSeedBackup {
+    fn load(&self) -> Result<Option<[u8; 32]>, String> {
+        Ok(None)
+    }
+    fn store(&self, _seed: &[u8; 32]) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// No-op prekey bundle backup: used by tests; no bundle is restored or
+/// persisted outside the messaging database.
+pub struct NoopPreKeyBundleBackup;
+
+impl PreKeyBundleBackup for NoopPreKeyBundleBackup {
+    fn load_bundle(&self) -> Result<Option<PendingPreKeyBundle>, String> {
+        Ok(None)
+    }
+    fn store_bundle(&self, _bundle: &PendingPreKeyBundle) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// Convenience constructor for the no-op prekey backup used in tests.
+pub fn noop_prekey_backup() -> Arc<dyn PreKeyBundleBackup> {
+    Arc::new(NoopPreKeyBundleBackup)
 }
 
 impl MobileMessagingEngine {
@@ -437,6 +479,8 @@ impl MobileMessagingEngine {
         database_key: &[u8; 32],
         actor_identity_seed: [u8; 32],
         access_token: String,
+        seed_backup: &dyn DeviceSigningSeedBackup,
+        prekey_backup: Arc<dyn PreKeyBundleBackup>,
     ) -> Result<Self, String> {
         validate_account_scope(&station_peer_id, &station_origin, &actor_ptid)?;
         if profile_id.trim().is_empty() || access_token.trim().is_empty() {
@@ -451,13 +495,38 @@ impl MobileMessagingEngine {
             .join("attachments")
             .join(&profile_id);
         cleanup_incomplete_attachment_stages(&attachment_root, store.as_ref())?;
-        let enrollment = load_or_create_device_identity_for_device(
-            store.as_ref(),
-            &actor_ptid,
-            &device_id,
-            *actor_identity_seed,
-            INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
-        )?;
+        let enrollment = match store.device_enrollment()? {
+            Some(_) => load_or_create_device_identity_for_device(
+                store.as_ref(),
+                &actor_ptid,
+                &device_id,
+                *actor_identity_seed,
+                INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
+            )?,
+            None => {
+                // Local messaging data was lost. Restore the same device signing
+                // material from durable backup so the Station sees an idempotent
+                // enrollment instead of a forbidden key rotation.
+                let device_seed = match seed_backup.load()? {
+                    Some(seed) => seed,
+                    None => {
+                        let mut seed = [0u8; 32];
+                        rand::rngs::OsRng.fill_bytes(&mut seed);
+                        seed
+                    }
+                };
+                let state = generate_device_identity_for_device_from_parts(
+                    &actor_ptid,
+                    &device_id,
+                    &*actor_identity_seed,
+                    INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
+                    Some(&device_seed),
+                )?;
+                store.install_fresh_device_identity(&state)?;
+                seed_backup.store(&device_seed)?;
+                state.enrollment
+            }
+        };
         let device = enrollment
             .certificate
             .device
@@ -562,6 +631,7 @@ impl MobileMessagingEngine {
             send_intent_lock: Mutex::new(()),
             membership_transition_lock: Mutex::new(()),
             access_token: Mutex::new(Zeroizing::new(access_token)),
+            prekey_backup,
         })
     }
 
@@ -3478,6 +3548,7 @@ impl MobileMessagingEngine {
                 device_id: self.scope.device_id.clone(),
             },
         )?
+        .with_backup(self.prekey_backup.clone())
         .publish(
             self.actor_identity.as_ref(),
             now_unix_ms(),
@@ -4726,6 +4797,8 @@ mod tests {
             &[7; 32],
             [8; 32],
             "token".to_string(),
+            &NoopSeedBackup,
+            noop_prekey_backup(),
         )
         .unwrap();
         (engine, root)

@@ -125,7 +125,7 @@ class WindowsCellProfileTest(unittest.TestCase):
                 "runId": "run-1",
             }
         )
-        provisioner._active_actor = Mock(return_value="bob")
+        provisioner._actor_id = Mock(return_value="bob")
         path = (
             r"C:\runtime\actors\run-1\bob\storage"
             + (r"\long-segment" * 30)
@@ -134,6 +134,19 @@ class WindowsCellProfileTest(unittest.TestCase):
 
         self.assertEqual(provisioner.actor_file_sha256("bob", path), "a" * 64)
         self.assertIn(r"\\?\C:\runtime", transport.commands[0][-1])
+
+    def test_fixture_staging_accepts_actor_before_launch(self) -> None:
+        source = WINDOWS_PROVISIONER_PATH.read_text(encoding="utf-8")
+        staging = source[
+            source.index("    def stage_actor_file("):
+            source.index("    def clone_actor_storage(")
+        ]
+
+        self.assertGreaterEqual(
+            staging.count("normalized = self._actor_id(actor)"),
+            2,
+        )
+        self.assertNotIn("self._active_actor(actor)", staging)
 
     def test_provisioner_registry_imports_in_fresh_process(self) -> None:
         completed = subprocess.run(
@@ -298,6 +311,19 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         self.assertNotIn("windows[-1]", source)
         self.assertGreaterEqual(source.count("hwnd = windows[0]"), 2)
 
+    def test_win32_adapter_owns_bounded_display_geometry_changes(self) -> None:
+        source = WINDOWS_DRIVER_PATH.read_text(encoding="utf-8")
+        display = source[
+            source.index("    def display_geometry("):
+            source.index("    # -- window helpers")
+        ]
+
+        self.assertIn("EnumDisplaySettingsW(", display)
+        self.assertIn("ChangeDisplaySettingsW(", display)
+        self.assertIn("_DM_PELSWIDTH | _DM_PELSHEIGHT", display)
+        self.assertIn("time.monotonic() + timeout", display)
+        self.assertIn("observed != (width, height)", display)
+
     def test_implements_remote_runtime_binding_surface(self) -> None:
         module = ast.parse(
             WINDOWS_PROVISIONER_PATH.read_text(encoding="utf-8")
@@ -354,6 +380,27 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         self.assertIn("$env:OPENSSL_SRC_PERL = $PerlPath", source)
         self.assertIn("$env:PROTOC = $ProtocPath", source)
         self.assertIn("$env:CARGO_TARGET_DIR = $CargoTargetRoot", source)
+        self.assertIn(
+            '$env:CARGO_HOME = Join-Path $CargoTargetRoot "cargo-home"',
+            source,
+        )
+        self.assertIn("Split-Path -Parent $ProtocPath", source)
+        self.assertIn("protoc-gen-es.CMD", source)
+        self.assertIn('Get-ChildItem (', source)
+        self.assertIn('-Recurse -Filter "*.proto"', source)
+        self.assertIn('"--es_opt=target=ts"', source)
+        install = source.index(
+            'Invoke-NativeCommand "pnpm.cmd" @("install", "--frozen-lockfile")'
+        )
+        generate = source.index(
+            "Invoke-NativeCommand $ProtocPath"
+        )
+        desktop_build = source.index(
+            'Invoke-NativeCommand "pnpm.cmd" '
+            '@("--dir", "apps/desktop", "run", "build")'
+        )
+        self.assertLess(install, generate)
+        self.assertLess(generate, desktop_build)
         self.assertIn("$env:VITE_ACCEPTANCE_HARNESS = \"1\"", source)
         self.assertIn("$env:TAURI_CONFIG =", source)
 
@@ -369,6 +416,14 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         self.assertLess(
             ready.index("self._require_interactive_desktop("),
             ready.index('self._broker('),
+        )
+        self.assertLess(
+            ready.index('"prepare-display"'),
+            ready.index("self._launch_remote_actor("),
+        )
+        self.assertIn(
+            "self.contract.display.fixed_geometry.split(",
+            ready,
         )
 
     def test_interactive_gate_fails_closed_without_desktop_session(self) -> None:

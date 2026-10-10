@@ -69,13 +69,21 @@ Three sequential checks the receiver applies before evicting:
 ## Relay protocol
 
 **Frame**
-A length-prefixed binary message on the relay-station TCP stream. Five types: `TypeRequest` (0x01), `TypeResponse` (0x02), `TypePing` (0x03), `TypePong` (0x04), `TypeBroadcast` (0x05). Defined in `apps/station/frame/core/plugin/native/subserver/relay/protocol/frame.go`.
+A length-prefixed binary message on the relay-station mount stream. Version 2
+contains `TypePing`, `TypePong`, `TypeBroadcast`, `TypeTunnelOpen`,
+`TypeTunnelOpened`, `TypeTunnelData`, `TypeTunnelCancel`, and
+`TypeTunnelClose`. Tunnel data is opaque inner-TLS ciphertext; Relay never
+decodes Station HTTP metadata. Defined in
+`apps/station/frame/core/plugin/native/subserver/relay/protocol/frame.go`.
 
 **`StreamManager`**
 Relay-side registry of all active station streams. Owns the topic allow-list, the per-stream readLoop, and the broadcast fan-out. The single piece of relay state with project-wide invariants — see `invariants/relay-readloop-discipline.md`.
 
 **`writeMu` (per-stream)**
-The mutex serializing writes to a single TCP stream. Held by request forwards (potentially seconds), pong replies (microseconds), and broadcast deliveries. The lock is local to one `streamEntry`; never crossed between entries.
+The mutex serializing frame writes to one mount stream. Held only while writing
+bounded tunnel, ping/pong, terminal, or broadcast frames. It must not be held
+while waiting for a tunnel consumer or a sibling stream. The lock is local to
+one `streamEntry`; never crossed between entries.
 
 **Origin stamping**
 The act of overwriting any `origin_peer_id` field the publisher claimed with the relay's authenticated peer ID for that stream, before fan-out. The relay is the trust anchor for this field; the publisher's claim is always discarded.

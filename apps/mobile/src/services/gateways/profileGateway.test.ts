@@ -31,7 +31,7 @@ vi.mock('../stationTransport', () => ({
         case 'actor_search':
           return [`/api/v1/social/users/search?q=${encodeURIComponent(String(operation.query))}`, 'GET', undefined];
         case 'federation_contexts_list':
-          return ['/sub-federation/contexts', 'GET', undefined];
+          return ['/sub-federation/federations', 'GET', undefined];
         case 'federation_resolve':
           return [
             `/actor/federation/resolve?federation_id=${encodeURIComponent(String(operation.federation_id))}&handle=${encodeURIComponent(String(operation.handle))}`,
@@ -265,20 +265,20 @@ describe('profileGateway current profile', () => {
 
   it('reads active Federation identities from the Station projection, not actor handles', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      contexts: [
+      federations: [
         { federation_id: 'fed-active', name: 'Development', status: 'active' },
-        { federationId: 'fed-archived', name: 'Archived', status: 'archived' },
+        { federation_id: 'fed-archived', name: 'Archived', status: 'archived' },
       ],
     }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
     const result = await createProfileGateway(session).listFederationContexts();
     expect(result.ok && result.data.map((federation) => federation.federationId)).toEqual(['fed-active']);
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://station.example/sub-federation/contexts');
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://station.example/sub-federation/federations');
   });
 
   it('preserves an empty Federation membership without inventing a scope', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      contexts: [],
+      federations: [],
     }), { status: 200 })));
     await expect(createProfileGateway(session).listFederationContexts()).resolves.toEqual({
       ok: true,
@@ -288,7 +288,7 @@ describe('profileGateway current profile', () => {
 
   it('fails closed on a Federation without an identity', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      contexts: [{ status: 'active' }],
+      federations: [{ status: 'active' }],
     }), { status: 200 })));
     await expect(createProfileGateway(session).listFederationContexts()).resolves.toMatchObject({
       ok: false,

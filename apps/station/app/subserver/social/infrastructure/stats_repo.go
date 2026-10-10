@@ -31,7 +31,7 @@ func (r *momentsStatsRepo) GetByActorPTID(ctx context.Context, actorPTID string)
 	var stats domain.MomentsStatsSnapshot
 	publicPosts, err := r.countAuthorPosts(ctx, authorID, &db.SocialPublicPost{})
 	if err != nil {
-		logger.Warn(ctx, "stats: count public posts failed", "error", err, "author_ptid", actorPTID)
+		logger.Warn(ctx, "stats: count public posts failed", "error", err)
 	}
 	privatePosts, err := r.countByColumn(
 		ctx,
@@ -40,7 +40,7 @@ func (r *momentsStatsRepo) GetByActorPTID(ctx context.Context, actorPTID string)
 		actorPTID,
 	)
 	if err != nil {
-		logger.Warn(ctx, "stats: count private posts failed", "error", err, "author_ptid", actorPTID)
+		logger.Warn(ctx, "stats: count private posts failed", "error", err)
 	}
 	stats.PostsCount = publicPosts + privatePosts
 
@@ -51,7 +51,7 @@ func (r *momentsStatsRepo) GetByActorPTID(ctx context.Context, actorPTID string)
 		authorID,
 	)
 	if err != nil {
-		logger.Warn(ctx, "stats: count my public comments failed", "error", err, "author_ptid", actorPTID)
+		logger.Warn(ctx, "stats: count my public comments failed", "error", err)
 	}
 	privateCommentsByActor, err := r.countByColumn(
 		ctx,
@@ -60,19 +60,19 @@ func (r *momentsStatsRepo) GetByActorPTID(ctx context.Context, actorPTID string)
 		actorPTID,
 	)
 	if err != nil {
-		logger.Warn(ctx, "stats: count my private comments failed", "error", err, "author_ptid", actorPTID)
+		logger.Warn(ctx, "stats: count my private comments failed", "error", err)
 	}
 	stats.CommentsCount = publicCommentsByActor + privateCommentsByActor
 
 	if count, err := r.countByColumn(ctx, &db.SocialReaction{}, "actor_id = ?", authorID); err == nil {
 		stats.ReactionsGivenCount = count
 	} else {
-		logger.Warn(ctx, "stats: count my reactions failed", "error", err, "author_ptid", actorPTID)
+		logger.Warn(ctx, "stats: count my reactions failed", "error", err)
 	}
 
 	publicComments, err := r.sumAuthorComments(ctx, authorID, &db.SocialPublicPost{})
 	if err != nil {
-		logger.Warn(ctx, "stats: sum public comments-received failed", "error", err, "author_ptid", actorPTID)
+		logger.Warn(ctx, "stats: sum public comments-received failed", "error", err)
 	}
 	privateComments, err := r.sumByColumn(
 		ctx,
@@ -82,7 +82,7 @@ func (r *momentsStatsRepo) GetByActorPTID(ctx context.Context, actorPTID string)
 		actorPTID,
 	)
 	if err != nil {
-		logger.Warn(ctx, "stats: sum private comments-received failed", "error", err, "author_ptid", actorPTID)
+		logger.Warn(ctx, "stats: sum private comments-received failed", "error", err)
 	}
 	stats.CommentsReceivedCount = publicComments + privateComments
 	stats.ReactionsReceivedCount = r.countReactionsReceived(ctx, authorID, actorPTID)
@@ -90,7 +90,7 @@ func (r *momentsStatsRepo) GetByActorPTID(ctx context.Context, actorPTID string)
 	if count, err := r.countByColumn(ctx, &db.SocialCircle{}, "owner_id = ? AND deleted_at IS NULL", authorID); err == nil {
 		stats.CirclesCount = count
 	} else {
-		logger.Warn(ctx, "stats: circles count failed", "error", err, "author_ptid", actorPTID)
+		logger.Warn(ctx, "stats: circles count failed", "error", err)
 	}
 
 	return stats, nil
@@ -152,7 +152,7 @@ func (r *momentsStatsRepo) countReactionsReceived(ctx context.Context, authorID 
 			string(domain.PostClassPublic),
 		).
 		Count(&publicCount).Error; err != nil {
-		logger.Warn(ctx, "stats: count public reactions-received failed", "error", err, "author_ptid", actorPTID)
+		logger.Warn(ctx, "stats: count public reactions-received failed", "error", err)
 		publicCount = 0
 	}
 
@@ -164,7 +164,7 @@ func (r *momentsStatsRepo) countReactionsReceived(ctx context.Context, authorID 
 		actorPTID,
 	)
 	if err != nil {
-		logger.Warn(ctx, "stats: count private reactions-received failed", "error", err, "author_ptid", actorPTID)
+		logger.Warn(ctx, "stats: count private reactions-received failed", "error", err)
 	}
 
 	return publicCount + privateCount

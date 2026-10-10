@@ -11,32 +11,15 @@ afterEach(() => {
 });
 
 describe('Station registry trust boundary', () => {
-  it('accepts only a credential-free root HTTP origin', () => {
-    expect(buildStationUrl({
-      protocol: 'https',
-      address: 'station.example:443',
-    })).toBe('https://station.example');
-    expect(buildStationUrl({
-      protocol: 'http',
-      address: '192.168.1.8:18080',
-    })).toBe('http://192.168.1.8:18080');
+  it('accepts only a complete credential-free root HTTP origin', () => {
+    expect(buildStationUrl('https://station.example/')).toBe('https://station.example');
+    expect(buildStationUrl('http://192.168.1.8:18080/')).toBe('http://192.168.1.8:18080');
 
-    expect(buildStationUrl({
-      protocol: 'https',
-      address: 'user:secret@station.example',
-    })).toBeNull();
-    expect(buildStationUrl({
-      protocol: 'https',
-      address: 'station.example/path',
-    })).toBeNull();
-    expect(buildStationUrl({
-      protocol: 'https',
-      address: 'station.example?redirect=other',
-    })).toBeNull();
-    expect(buildStationUrl({
-      protocol: 'https',
-      address: 'station.example#fragment',
-    })).toBeNull();
+    expect(buildStationUrl('https://user:secret@station.example')).toBeNull();
+    expect(buildStationUrl('https://station.example/path')).toBeNull();
+    expect(buildStationUrl('https://station.example?redirect=other')).toBeNull();
+    expect(buildStationUrl('https://station.example#fragment')).toBeNull();
+    expect(buildStationUrl('station.example:443')).toBeNull();
   });
 
   it('replaces only the explicitly confirmed Station identity at that origin', () => {

@@ -237,7 +237,7 @@ test('completion review precedes the single guarded Run update', () => {
   assert.doesNotMatch(advance, /Restore the exact previous run|rollback/u);
 });
 
-test('completion candidate digest uses the delegated review envelope', () => {
+test('completion candidate digest covers the complete candidate run', () => {
   const resolved = {
     snapshot: {
       planDigest: 'plan-digest',
@@ -249,19 +249,7 @@ test('completion candidate digest uses the delegated review envelope', () => {
     currentTaskId: 'TASK-02',
     exhaustion: null,
   };
-  const envelope = {
-    kind: 'peers-touch-execution-run-completion-candidate',
-    planDigest: 'plan-digest',
-    snapshotDigest: 'snapshot-digest',
-    runId: 'run-id',
-    runRevision: 7,
-    transition: {
-      to: 'done',
-      nextTaskId: 'TASK-02',
-      exhaustion: null,
-    },
-  };
-  const expected = digestCompletionCandidate(envelope);
+  const expected = digestCompletionCandidate(candidate);
 
   assert.equal(digestRunCompletionCandidate(resolved, candidate), expected);
 });

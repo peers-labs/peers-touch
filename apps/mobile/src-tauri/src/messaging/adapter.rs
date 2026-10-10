@@ -2674,6 +2674,109 @@ impl MobileMessagingStore {
             .map_err(|error| error.to_string())
     }
 
+    pub(crate) fn replace_fresh_install_identity(
+        &self,
+        state: &FreshDeviceIdentityState,
+    ) -> Result<(), String> {
+        let enrollment = &state.enrollment;
+        let certificate = &enrollment.certificate;
+        let device = certificate
+            .device
+            .as_ref()
+            .ok_or_else(|| "recovered mobile messaging identity has no endpoint".to_string())?;
+        let ptid = messaging_core::proto::actor_device_ptid(device)?;
+        self.with_transaction(|transaction| {
+            let current = transaction
+                .query_row(
+                    "SELECT identity.ptid, identity.device_id, recovery.status
+                     FROM messaging_device_identity AS identity
+                     JOIN messaging_recovery_state AS recovery ON recovery.id = identity.id
+                     WHERE identity.id = 1",
+                    [],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                        ))
+                    },
+                )
+                .optional()
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| {
+                    "fresh-install messaging recovery has no pending identity".to_string()
+                })?;
+            if current.0 != ptid
+                || current.1 != device.device_id
+                || current.2 != "awaiting_device_enrollment"
+            {
+                return Err(
+                    "fresh-install messaging recovery scope does not match the pending endpoint"
+                        .to_string(),
+                );
+            }
+            let durable_rows: i64 = transaction
+                .query_row(
+                    "SELECT
+                       (SELECT COUNT(*) FROM messaging_conversations) +
+                       (SELECT COUNT(*) FROM messaging_message_projections) +
+                       (SELECT COUNT(*) FROM messaging_inbox_items) +
+                       (SELECT COUNT(*) FROM messaging_command_outbox) +
+                       (SELECT COUNT(*) FROM messaging_pending_messages) +
+                       (SELECT COUNT(*) FROM messaging_prekey_bundle) +
+                       (SELECT COUNT(*) FROM messaging_mls_groups)",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(|error| error.to_string())?;
+            if durable_rows != 0 {
+                return Err(
+                    "fresh-install messaging identity recovery refuses non-empty local data"
+                        .to_string(),
+                );
+            }
+            transaction
+                .execute("DELETE FROM messaging_mls_actor_identity", [])
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute("DELETE FROM messaging_recovery_state WHERE id = 1", [])
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute("DELETE FROM messaging_device_identity WHERE id = 1", [])
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    "INSERT INTO messaging_device_identity(
+                        id, ptid, device_id, device_signing_seed,
+                        actor_identity_public_key, actor_identity_key_fingerprint,
+                        device_signing_public_key, actor_cross_signature,
+                        signing_key_id, profile_version
+                     ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    params![
+                        ptid,
+                        device.device_id,
+                        state.device_signing_seed.as_slice(),
+                        certificate.actor_identity_public_key,
+                        certificate.actor_identity_key_fingerprint,
+                        certificate.device_signing_public_key,
+                        enrollment.actor_cross_signature.as_slice(),
+                        certificate.signing_key_id,
+                        i64::try_from(certificate.observed_profile_version)
+                            .map_err(|_| "recovered messaging profile version is invalid")?,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    "INSERT INTO messaging_recovery_state(id, status)
+                     VALUES (1, 'awaiting_device_enrollment')",
+                    [],
+                )
+                .map_err(|error| error.to_string())?;
+            Ok(())
+        })
+    }
+
     pub fn active_device_signing_identity(
         &self,
     ) -> Result<(FreshDeviceEnrollment, DeviceSigningKey), String> {
@@ -10302,7 +10405,9 @@ mod tests {
     use messaging_core::contracts::{
         ConversationAuthorityMemberProjection, DirectMessageContent, MlsMessageProjection,
     };
-    use messaging_core::identity::generate_fresh_device_identity;
+    use messaging_core::identity::{
+        generate_fresh_device_identity, generate_fresh_device_identity_for_device,
+    };
     use messaging_core::inbox::{ClaimedItemConsumer, PublicEventProcessor};
     use messaging_core::proto::actor_device_from_chat_endpoint;
     use messaging_core::proto::chat::{
@@ -13958,6 +14063,55 @@ mod tests {
             .mark_device_consumption_receipt_submitted(&receipt_id, &pending_bytes)
             .unwrap();
         assert!(store.next_device_consumption_receipt().unwrap().is_none());
+    }
+
+    #[test]
+    fn fresh_install_identity_recovery_rebinds_the_session_device() {
+        let store = store();
+        let pending =
+            generate_fresh_device_identity_for_device("ptid:alice", "session-device", [3; 32], 1)
+                .unwrap();
+        DeviceEnrollmentRepository::install_fresh_device_identity(&store, &pending).unwrap();
+        store
+            .save_mls_actor_identity("ptid:alice", "session-device", b"temporary")
+            .unwrap();
+
+        let recovered =
+            generate_fresh_device_identity_for_device("ptid:alice", "session-device", [7; 32], 4)
+                .unwrap();
+        store.replace_fresh_install_identity(&recovered).unwrap();
+
+        assert_eq!(
+            DeviceEnrollmentRepository::pending_device_enrollment(&store)
+                .unwrap()
+                .unwrap(),
+            recovered.enrollment
+        );
+        assert!(store.load_mls_actor_identity().unwrap().is_none());
+    }
+
+    #[test]
+    fn fresh_install_identity_recovery_refuses_nonempty_message_state() {
+        let store = store();
+        let pending =
+            generate_fresh_device_identity_for_device("ptid:alice", "session-device", [3; 32], 1)
+                .unwrap();
+        DeviceEnrollmentRepository::install_fresh_device_identity(&store, &pending).unwrap();
+        seed_group_conversation(&store);
+        let recovered =
+            generate_fresh_device_identity_for_device("ptid:alice", "session-device", [7; 32], 4)
+                .unwrap();
+
+        let error = store
+            .replace_fresh_install_identity(&recovered)
+            .unwrap_err();
+        assert!(error.contains("refuses non-empty local data"));
+        assert_eq!(
+            DeviceEnrollmentRepository::pending_device_enrollment(&store)
+                .unwrap()
+                .unwrap(),
+            pending.enrollment
+        );
     }
 
     #[test]

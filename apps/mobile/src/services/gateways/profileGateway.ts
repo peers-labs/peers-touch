@@ -23,7 +23,7 @@ import {
   type FederationCatalogEntry,
 } from '../../gen/proto/domain/federation/federation_discovery_pb';
 import {
-  ListFederationContextsResponseSchema,
+  FederationContextSchema,
   type FederationContext,
 } from '../../gen/proto/domain/federation/federation_projection_service_pb';
 import {
@@ -235,14 +235,31 @@ export function createProfileGateway(session: MobileAuthSession): ProfileGateway
     },
 
     listFederationContexts: async () => {
+      // The deployed Station exposes the federation directory at
+      // /sub-federation/federations (snake_case wire fields). This is the
+      // same contract the directory search relies on, so we read it directly
+      // and normalise to the camelCase FederationContext the UI consumes.
       const result = await command<JsonValue>({
         method: 'GET',
-        path: '/sub-federation/contexts',
+        path: '/sub-federation/federations',
       });
       if (!result.ok) return result;
       try {
-        const { contexts } = fromJson(ListFederationContextsResponseSchema, result.data);
-        if (contexts.some((context) => !context.federationId.trim())) {
+        const payload = result.data as {
+          federations?: Array<{
+            federation_id?: string;
+            name?: string;
+            status?: string;
+          }>;
+        };
+        const contexts: FederationContext[] = (payload.federations ?? [])
+          .map((federation) => create(FederationContextSchema, {
+            federationId: (federation.federation_id ?? '').trim(),
+            name: federation.name ?? '',
+            status: federation.status ?? '',
+          }))
+          .filter((context) => context.federationId !== '');
+        if ((payload.federations ?? []).some((f) => !f.federation_id?.trim())) {
           throw new Error('invalid Federation identity');
         }
         return {
@@ -256,7 +273,7 @@ export function createProfileGateway(session: MobileAuthSession): ProfileGateway
             code: 'INVALID_FEDERATION_RESPONSE',
             message: 'mobile.contacts.federationsFailed',
             method: 'GET',
-            path: '/sub-federation/contexts',
+            path: '/sub-federation/federations',
           },
         };
       }

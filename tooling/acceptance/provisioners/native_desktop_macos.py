@@ -262,6 +262,21 @@ class NativeDesktopMacOSProvisioner:
     def _source_identity(self) -> CellSourceIdentity:
         commit = self._git("rev-parse", "HEAD")
         tree = self._git("rev-parse", "HEAD^{tree}")
+        self._require_clean_source()
+        binary = self._build_acceptance_binary()
+        self._require_clean_source()
+        return CellSourceIdentity(
+            mode="local-worktree",
+            commit=commit,
+            workspace_digest="clean",
+            remote_source_digest=_sha256_text(
+                f"{self.source_root}:{commit}:{tree}"
+            ),
+            remote_checkout_clean=True,
+            binary_sha256=_file_sha256(binary),
+        )
+
+    def _require_clean_source(self) -> None:
         dirty = subprocess.run(
             (
                 "git",
@@ -286,22 +301,31 @@ class NativeDesktopMacOSProvisioner:
                 ),
                 resource="source-identity:worktree-cleanliness",
             )
+
+    def _build_acceptance_binary(self) -> Path:
+        completed = subprocess.run(
+            ("make", "acceptance-driver-build"),
+            cwd=self.source_root,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=1800,
+        )
+        if completed.returncode != 0:
+            raise BlockedError(
+                reason=(
+                    "desktop-macos-native could not build its exact-source "
+                    "Acceptance binary"
+                ),
+                resource="desktop-acceptance-binary",
+            )
         binary = Path(find_app_binary()).resolve()
         if not binary.is_file():
             raise BlockedError(
                 reason=f"macOS Acceptance binary is missing: {binary}",
                 resource="desktop-acceptance-binary",
             )
-        return CellSourceIdentity(
-            mode="local-worktree",
-            commit=commit,
-            workspace_digest="clean",
-            remote_source_digest=_sha256_text(
-                f"{self.source_root}:{commit}:{tree}"
-            ),
-            remote_checkout_clean=True,
-            binary_sha256=_file_sha256(binary),
-        )
+        return binary
 
     def _host_identity(
         self,

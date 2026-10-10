@@ -7,7 +7,10 @@ import type {
   MobileRuntimeDescriptor,
   RuntimeBootstrapStatus,
 } from '../app/lifecycle';
-import { MobileDurableCommandState } from '../gen/proto/domain/mobile/reliability_pb';
+import {
+  MobileDraftSurfaceKind,
+  MobileDurableCommandState,
+} from '../gen/proto/domain/mobile/reliability_pb';
 import type { CommandProjection } from './commandRuntime';
 import { createRecoveryProjection } from './recoveryProjection';
 
@@ -66,6 +69,25 @@ describe('recoveryProjection', () => {
     });
   });
 
+  it('keeps actor identity recovery blocking until native enrollment succeeds', () => {
+    const projection = createRecoveryProjection();
+
+    projection.reportActorIdentityRecovery();
+    projection.reportActorIdentityRecovery();
+    expect(projection.getSnapshot()).toMatchObject({
+      hasActiveRecovery: true,
+      isWriteBlocked: true,
+      states: [{ kind: 'actor-identity-recovery' }],
+    });
+
+    projection.clearActorIdentityRecovery();
+    expect(projection.getSnapshot()).toMatchObject({
+      hasActiveRecovery: false,
+      isWriteBlocked: false,
+      states: [],
+    });
+  });
+
   it('keeps legacy reliability data write-blocking until Rust confirms cleanup', () => {
     const projection = createRecoveryProjection();
 
@@ -92,6 +114,49 @@ describe('recoveryProjection', () => {
       isWriteBlocked: false,
       states: [],
     });
+  });
+
+  it('resolves only the draft claimed by its active editor', () => {
+    const projection = createRecoveryProjection();
+    const momentDraft = {
+      key: 'moment',
+      kind: 'moments',
+      surfaceKind: 'moment',
+      targetId: 'compose',
+      updatedAtMs: 1,
+      envelope: {
+        stationPeerId: 'station-a',
+        actorPtid: 'ptid:alice',
+        surfaceKind: MobileDraftSurfaceKind.MOMENT_COMPOSER,
+        targetId: 'compose',
+      },
+    };
+    const chatDraft = {
+      key: 'chat',
+      kind: 'chat',
+      surfaceKind: 'chat',
+      targetId: 'conversation-a',
+      updatedAtMs: 1,
+      envelope: {
+        stationPeerId: 'station-a',
+        actorPtid: 'ptid:alice',
+        surfaceKind: MobileDraftSurfaceKind.CHAT_COMPOSER,
+        targetId: 'conversation-a',
+      },
+    };
+
+    projection.reportDraftRestorePending([momentDraft, chatDraft]);
+    projection.resolveDraftRestore(
+      'station-a',
+      'ptid:alice',
+      MobileDraftSurfaceKind.MOMENT_COMPOSER,
+      'compose',
+    );
+
+    expect(projection.getSnapshot().states).toMatchObject([{
+      kind: 'draft-restore-pending',
+      drafts: [{ key: 'chat' }],
+    }]);
   });
 
   it('projects every actionable durable command without blocking unrelated writes', () => {

@@ -1,0 +1,117 @@
+planRef: docs/architecture/domains/social/cross-station/execution-plans/20261003-native-private-social/plan.md
+items:
+  - id: cross-station-social-source-freeze
+    workClass: infrastructure
+    planRef: docs/architecture/domains/social/cross-station/execution-plans/20261003-native-private-social/plan.md
+    workstreamId: CSS-SCHEMA-SOURCE
+    taskId: CSS-08A-schema-activation
+    productRefs: [SOC-SEC-C09]
+    architectureRefs: [CSS-D08, SC-D23, SC-D24]
+    journeyIds: [SOC-SEC-SCHEMA-ACTIVATION]
+    scope:
+      include:
+        - docs/architecture/domains/social/cross-station
+        - docs/architecture/shared/security/secure-content
+        - tooling/development/secure_content
+        - apps/station/app/subserver/social
+        - apps/station/app/subserver/oss
+      exclude:
+        - runtime mutation
+        - Station deployment
+        - destructive reset
+        - product proof
+    resources:
+      sourceClaims:
+        - { pathPrefix: apps/station/app/subserver/oss, mode: shared-read }
+        - { pathPrefix: apps/station/app/subserver/social, mode: shared-read }
+        - { pathPrefix: docs/architecture/domains/social/cross-station, mode: shared-read }
+        - { pathPrefix: docs/architecture/shared/security/secure-content, mode: shared-read }
+        - { pathPrefix: tooling/development/secure_content, mode: shared-read }
+      runtimeClaims: []
+    authorization:
+      checkpoint: { localCommit: denied, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - id: cross-station-social-schema-four
+    workClass: infrastructure
+    planRef: docs/architecture/domains/social/cross-station/execution-plans/20261003-native-private-social/plan.md
+    workstreamId: CSS-SCHEMA-FOUR
+    taskId: CSS-08A-schema-activation
+    productRefs: [SOC-SEC-C09]
+    architectureRefs: [CSS-D08, SC-D23, SC-D24]
+    journeyIds: [SOC-SEC-SCHEMA-ACTIVATION]
+    scope:
+      include:
+        - docs/architecture/domains/social/cross-station
+        - docs/architecture/shared/security/secure-content
+        - tooling/development/secure_content
+        - apps/station/app/subserver/social
+        - apps/station/app/subserver/oss
+      exclude:
+        - fiveArm reset
+        - FINAL_CUT
+        - product proof
+    resources:
+      sourceClaims:
+        - { pathPrefix: apps/station/app/subserver/oss, mode: shared-read }
+        - { pathPrefix: apps/station/app/subserver/social, mode: shared-read }
+        - { pathPrefix: docs/architecture/domains/social/cross-station, mode: shared-read }
+        - { pathPrefix: docs/architecture/shared/security/secure-content, mode: shared-read }
+        - { pathPrefix: tooling/development/secure_content, mode: shared-read }
+      runtimeClaims:
+        - { kind: profile, resourceId: four, mode: shared }
+        - { kind: station.connect, resourceId: four, mode: shared }
+        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
+        - { kind: station.reset, resourceId: station-four-social-private, mode: exclusive }
+        - { kind: fixture, resourceId: cross-station-social-schema-four, mode: exclusive }
+        - { kind: local.slot, resourceId: "13", mode: exclusive }
+    authorization:
+      checkpoint: { localCommit: denied, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime:
+        deployProfiles: [four]
+        destructiveResetScopes: [station-four-social-private]
+      history: { rewrite: denied }
+
+  - id: cross-station-social-schema-five-arm
+    workClass: infrastructure
+    planRef: docs/architecture/domains/social/cross-station/execution-plans/20261003-native-private-social/plan.md
+    workstreamId: CSS-SCHEMA-FIVEARM
+    taskId: CSS-08A-schema-activation
+    productRefs: [SOC-SEC-C09]
+    architectureRefs: [CSS-D08, SC-D23, SC-D24]
+    journeyIds: [SOC-SEC-SCHEMA-ACTIVATION]
+    scope:
+      include:
+        - docs/architecture/domains/social/cross-station
+        - docs/architecture/shared/security/secure-content
+        - tooling/development/secure_content
+        - apps/station/app/subserver/social
+        - apps/station/app/subserver/oss
+      exclude:
+        - four reset
+        - FINAL_CUT
+        - product proof
+    resources:
+      sourceClaims:
+        - { pathPrefix: apps/station/app/subserver/oss, mode: shared-read }
+        - { pathPrefix: apps/station/app/subserver/social, mode: shared-read }
+        - { pathPrefix: docs/architecture/domains/social/cross-station, mode: shared-read }
+        - { pathPrefix: docs/architecture/shared/security/secure-content, mode: shared-read }
+        - { pathPrefix: tooling/development/secure_content, mode: shared-read }
+      runtimeClaims:
+        - { kind: profile, resourceId: fiveArm, mode: shared }
+        - { kind: station.connect, resourceId: fiveArm, mode: shared }
+        - { kind: station.deploy, resourceId: station-five-arm, mode: exclusive }
+        - { kind: station.reset, resourceId: station-five-arm-social-private, mode: exclusive }
+        - { kind: fixture, resourceId: cross-station-social-schema-five-arm, mode: exclusive }
+        - { kind: local.slot, resourceId: "13", mode: exclusive }
+    authorization:
+      checkpoint: { localCommit: denied, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime:
+        deployProfiles: [fiveArm]
+        destructiveResetScopes: [station-five-arm-social-private]
+      history: { rewrite: denied }

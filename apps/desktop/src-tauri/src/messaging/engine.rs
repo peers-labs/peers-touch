@@ -43,7 +43,9 @@ use crate::model::chat::{
 };
 use messaging_core::codec::verification::{verify_authority_event, verify_direct_genesis_event};
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
-use messaging_core::identity::enrollment::load_or_create_device_identity_from_seed;
+use messaging_core::identity::enrollment::{
+    generate_fresh_device_identity_from_seed, load_or_create_device_identity_from_seed,
+};
 use messaging_core::identity::{
     is_stale_endpoint_error, DeviceEnrollmentManager, FreshDeviceEnrollment,
     FreshDeviceIdentityState,
@@ -1412,7 +1414,7 @@ impl MessagingEngine {
         for conversation in &archive.conversations {
             let conversation_id = &conversation.conversation_id;
             let query = [("conversation_id", conversation_id.clone())];
-            let response = station_client::request_proto_for_device::<
+            let response = station_client::request_proto_for_actor::<
                 GetConversationPublicHeadRequest,
                 GetConversationPublicHeadResponse,
             >(
@@ -1421,7 +1423,6 @@ impl MessagingEngine {
                 token,
                 Some(&query),
                 None,
-                &self.endpoint.device_id,
             )
             .map_err(|error| format!("snapshot messaging recovery authority head: {error}"))?;
             let mut target = response.head.ok_or_else(|| {
@@ -1436,18 +1437,21 @@ impl MessagingEngine {
                 let matches = station_client::station_registry()
                     .list()
                     .into_iter()
-                    .filter(|entry| {
-                        entry.peer_id.as_deref() == Some(conversation.authority_station_id.as_str())
-                    })
+                    .filter(|entry| entry.station_peer_id == conversation.authority_station_id)
                     .collect::<Vec<_>>();
                 if matches.len() != 1 {
                     return Err(
                         "messaging recovery authority Station route is unavailable".to_string()
                     );
                 }
-                let authority_url = matches[0].url.clone();
+                let authority_url = matches[0]
+                    .active_route()
+                    .map(|route| route.endpoint_origin.clone())
+                    .ok_or_else(|| {
+                        "messaging recovery authority Station route is unavailable".to_string()
+                    })?;
                 let authority_pin = station_client::station_registry()
-                    .federation_signing_key_pin(&authority_url)
+                    .federation_signing_key_pin(&conversation.authority_station_id)
                     .map_err(|error| {
                         format!("messaging recovery authority Station pin is invalid: {error}")
                     })?
@@ -1459,7 +1463,7 @@ impl MessagingEngine {
                         "messaging recovery authority Station pin binding mismatch".to_string()
                     );
                 }
-                let authority_response = station_client::request_proto_for_device_at::<
+                let authority_response = station_client::request_proto_for_actor_at::<
                     GetConversationPublicHeadRequest,
                     GetConversationPublicHeadResponse,
                 >(
@@ -1469,7 +1473,6 @@ impl MessagingEngine {
                     token,
                     Some(&query),
                     None,
-                    &self.endpoint.device_id,
                 )
                 .map_err(|error| {
                     format!("snapshot messaging recovery authority head directly: {error}")
@@ -1513,7 +1516,7 @@ impl MessagingEngine {
                         ("limit", limit.to_string()),
                     ];
                     let response = match authority_url.as_deref() {
-                        Some(authority_url) => station_client::request_proto_for_device_at::<
+                        Some(authority_url) => station_client::request_proto_for_actor_at::<
                             ListConversationEventsRequest,
                             ListConversationEventsResponse,
                         >(
@@ -1523,9 +1526,8 @@ impl MessagingEngine {
                             token,
                             Some(&query),
                             None,
-                            &self.endpoint.device_id,
                         ),
-                        None => station_client::request_proto_for_device::<
+                        None => station_client::request_proto_for_actor::<
                             ListConversationEventsRequest,
                             ListConversationEventsResponse,
                         >(
@@ -1534,7 +1536,6 @@ impl MessagingEngine {
                             token,
                             Some(&query),
                             None,
-                            &self.endpoint.device_id,
                         ),
                     };
                     response.map(|response| response.events).map_err(|error| {
@@ -3583,7 +3584,12 @@ impl EngineRegistry {
         archive: &MessagingRecoveryArchive,
         reconciliation: &RecoveryReconciliation,
     ) -> Result<FreshDeviceEnrollment, String> {
-        let (previous_ptid, previous_seed, previous_profile_version, device_identity) = {
+        let (
+            previous_ptid,
+            previous_seed,
+            previous_profile_version,
+            current_device_identity,
+        ) = {
             let engines = self
                 .engines
                 .lock()
@@ -3628,6 +3634,17 @@ impl EngineRegistry {
                     device_signing_seed,
                 },
             )
+        };
+        let preserve_device_continuity =
+            previous_seed.as_slice() == archive.actor_identity_seed.as_slice();
+        let device_identity = if preserve_device_continuity {
+            current_device_identity
+        } else {
+            generate_fresh_device_identity_from_seed(
+                &archive.ptid,
+                &archive.actor_identity_seed,
+                archive.actor_profile_version,
+            )?
         };
         let (worker, worker_token) = {
             let mut workers = self
@@ -3681,6 +3698,7 @@ impl EngineRegistry {
             archive,
             reconciliation,
             &device_identity,
+            preserve_device_continuity,
         ) {
             Ok(enrollment) => {
                 let engine = Arc::new(MessagingEngine::open_profile(

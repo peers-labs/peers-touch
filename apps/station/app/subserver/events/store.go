@@ -1,6 +1,7 @@
 package events
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -28,6 +29,15 @@ type durableEventStore interface {
 	NewestEventID(actorPTID string) (string, bool, error)
 }
 
+type transactionalDurableEventStore interface {
+	PersistInTransaction(
+		context.Context,
+		*gorm.DB,
+		string,
+		*realtime.StreamEvent,
+	) error
+}
+
 type gormEventStore struct {
 	db *gorm.DB
 }
@@ -44,6 +54,30 @@ func (s *gormEventStore) AutoMigrate() error {
 }
 
 func (s *gormEventStore) Persist(actorPTID string, ev *realtime.StreamEvent) error {
+	return persistRealtimeEvent(s.db, actorPTID, ev)
+}
+
+func (s *gormEventStore) PersistInTransaction(
+	ctx context.Context,
+	transaction *gorm.DB,
+	actorPTID string,
+	ev *realtime.StreamEvent,
+) error {
+	if transaction == nil {
+		return fmt.Errorf("events: transaction is required")
+	}
+	return persistRealtimeEvent(
+		transaction.WithContext(ctx),
+		actorPTID,
+		ev,
+	)
+}
+
+func persistRealtimeEvent(
+	database *gorm.DB,
+	actorPTID string,
+	ev *realtime.StreamEvent,
+) error {
 	if actorPTID == "" {
 		return fmt.Errorf("events: empty actorPTID")
 	}
@@ -64,7 +98,7 @@ func (s *gormEventStore) Persist(actorPTID string, ev *realtime.StreamEvent) err
 		KindBytes: payload,
 		CreatedAt: now,
 	}
-	if err := s.db.Create(&item).Error; err != nil {
+	if err := database.Create(&item).Error; err != nil {
 		return fmt.Errorf("persist realtime event: %w", err)
 	}
 	return nil

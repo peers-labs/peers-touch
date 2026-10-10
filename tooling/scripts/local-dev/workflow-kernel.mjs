@@ -162,8 +162,8 @@ function contextText(binding, inspection, enforcementMode) {
     binding
       ? `entrySkill=${path.join(binding.executionRoot, 'tooling', 'skills', 'pt-ew', 'SKILL.md')}`
       : 'entrySkill=pending-first-pre-tool-use',
-    'The conversation execution root is immutable after the first blockable PreToolUse.',
-    'Cross-worktree reads are allowed; cross-worktree writes are denied.',
+    'OWNER identity is stable; each mutating action resolves one explicit workspace.',
+    'Cross-worktree reads are allowed; writes require one selected workspace and its declaration.',
   ];
   if (inspection?.status === 'READY') {
     lines.push(
@@ -236,6 +236,38 @@ async function resolveBinding(event, options) {
   }
   let projection = resolved.projection ?? null;
   if (projection !== null) {
+    let actionRoot = null;
+    if (
+      projection.role === 'OWNER' &&
+      intent.mutating &&
+      !['DIRECT_RUNTIME_OWNER', 'SHELL_UNSAFE', 'UNSUPPORTED'].includes(
+        intent.kind,
+      ) &&
+      ['PRE_TOOL_USE', 'POST_TOOL_USE', 'POST_TOOL_FAILURE'].includes(
+        event.event,
+      )
+    ) {
+      actionRoot = selectOwnerExecutionRoot(event, {
+        resolveProjectRoot,
+        targetPaths,
+      });
+      if (actionRoot === null) {
+        const fallbackPaths = mutationPaths(event, projection, intent);
+        if (
+          fallbackPaths.length > 0 &&
+          fallbackPaths.every((candidate) =>
+            pathIsInside(projection.executionRoot, candidate))
+        ) {
+          actionRoot = projection.executionRoot;
+        } else {
+          const error = new Error(
+            'Mutating action requires one explicit workspace root',
+          );
+          error.code = 'WORKTREE_SELECTION_REQUIRED';
+          throw error;
+        }
+      }
+    }
     const toolRoot = resolveProjectRoot(event.toolWorkingDirectory);
     const targetRoots = intent.targets
       .map((target) =>
@@ -245,6 +277,10 @@ async function resolveBinding(event, options) {
       .map((candidate) => resolveProjectRoot(candidate))
       .filter(Boolean);
     projection = projectWorkflowEventRoots(projection, {
+      executionRoot:
+        actionRoot === null || actionRoot === projection.executionRoot
+          ? null
+          : actionRoot,
       toolRoot,
       targetRoots,
       subjectRoots: [...hintRoots, ...(toolRoot ? [toolRoot] : []), ...targetRoots],
@@ -427,8 +463,8 @@ async function evaluateWorkflowEventInternal(event, options = {}) {
     const paths = mutationPaths(event, binding, intent);
     if (paths.some((candidate) => !pathIsInside(binding.executionRoot, candidate))) {
       return deny(
-        'CROSS_WORKTREE_WRITE_DENIED',
-        'This conversation may write only inside its immutable execution root.',
+        'ACTION_WORKSPACE_WRITE_DENIED',
+        'One action may write only inside its selected workspace root.',
         binding,
       );
     }

@@ -200,7 +200,7 @@ test('missing stable conversation identity denies mutation but permits safe read
   assert.equal(read.code, 'OBSERVE_ONLY');
 });
 
-test('first PreToolUse binds once and later cross-worktree reads remain legal', async () => {
+test('one owner identity can read and later mutate another declared worktree', async () => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'pt-kernel-roots-'));
   try {
     const first = projectRoot(temporary, 'first');
@@ -227,6 +227,28 @@ test('first PreToolUse binds once and later cross-worktree reads remain legal', 
     );
     assert.equal(read.action, 'ALLOW');
     assert.equal(read.executionRoot, realpathSync(first));
+
+    const write = await evaluateWorkflowEvent(
+      event({
+        executionRootHints: [second],
+        toolWorkingDirectory: second,
+        toolName: 'Write',
+        toolInput: { file_path: path.join(second, 'next.txt') },
+      }),
+      {
+        machineRoot,
+        inspectWorkflowContext: async () => ({
+          status: 'READY',
+          tracked: false,
+          declaration: {
+            sourceClaims: [{ mode: 'exclusive-write', pathPrefix: '.' }],
+          },
+        }),
+        recordWorkflowAction: false,
+      },
+    );
+    assert.equal(write.action, 'ALLOW');
+    assert.equal(write.executionRoot, realpathSync(second));
   } finally {
     rmSync(temporary, {
       recursive: true,
@@ -299,7 +321,7 @@ test('multi-root first mutation binds its target and rejects active-editor drift
     assert.equal(selected.action, 'ALLOW');
     assert.equal(selected.executionRoot, target);
 
-    const mismatched = await evaluateWorkflowEvent(
+    const activeEditorElsewhere = await evaluateWorkflowEvent(
       event({
         host: 'trae',
         hostEvent: 'PreToolUse',
@@ -321,8 +343,8 @@ test('multi-root first mutation binds its target and rejects active-editor drift
         recordWorkflowAction: false,
       },
     );
-    assert.equal(mismatched.action, 'DENY');
-    assert.equal(mismatched.code, 'WORKTREE_SELECTION_REQUIRED');
+    assert.equal(activeEditorElsewhere.action, 'ALLOW');
+    assert.equal(activeEditorElsewhere.executionRoot, target);
   } finally {
     rmSync(temporary, {
       recursive: true,
@@ -333,7 +355,7 @@ test('multi-root first mutation binds its target and rejects active-editor drift
   }
 });
 
-test('an existing conversation binding denies cross-worktree writes', async () => {
+test('an existing owner may select another worktree for a later action', async () => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'pt-kernel-cross-write-'));
   try {
     const first = projectRoot(temporary, 'first');
@@ -344,10 +366,18 @@ test('an existing conversation binding denies cross-worktree writes', async () =
         toolName: 'Write',
         toolInput: { file_path: path.join(second, 'new.txt') },
       }),
-      injectedBinding(first),
+      injectedBinding(first, {
+        inspectWorkflowContext: async () => ({
+          status: 'READY',
+          tracked: false,
+          declaration: {
+            sourceClaims: [{ mode: 'exclusive-write', pathPrefix: '.' }],
+          },
+        }),
+      }),
     );
-    assert.equal(result.action, 'DENY');
-    assert.equal(result.code, 'CROSS_WORKTREE_WRITE_DENIED');
+    assert.equal(result.action, 'ALLOW');
+    assert.equal(result.executionRoot, second);
   } finally {
     rmSync(temporary, {
       recursive: true,
@@ -453,27 +483,63 @@ test('SubagentStop terminalizes the exact assigned child', async () => {
   assert.equal(calls[0][1], 'PASS');
 });
 
-test('shell arguments cannot move a mutation into a sibling worktree', async () => {
+test('shell target selects a sibling worktree without rebinding the owner', async () => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'pt-kernel-shell-root-'));
   try {
     const first = projectRoot(temporary, 'first');
     const second = projectRoot(temporary, 'second');
     const result = await evaluateWorkflowEvent(
       event({
-        toolWorkingDirectory: first,
+        toolWorkingDirectory: second,
         toolName: 'exec_command',
         command: `rm ${path.join(second, 'new.txt')}`,
         toolInput: { command: `rm ${path.join(second, 'new.txt')}` },
       }),
-      injectedBinding(first),
+      injectedBinding(first, {
+        inspectWorkflowContext: async () => ({
+          status: 'READY',
+          tracked: false,
+          declaration: {
+            sourceClaims: [{ mode: 'exclusive-write', pathPrefix: '.' }],
+          },
+        }),
+      }),
     );
-    assert.equal(result.action, 'DENY');
-    assert.equal(result.code, 'CROSS_WORKTREE_WRITE_DENIED');
+    assert.equal(result.action, 'ALLOW');
+    assert.equal(result.executionRoot, second);
   } finally {
     rmSync(temporary, {
       recursive: true,
       force: true,
       maxRetries: 3,
+      retryDelay: 50,
+    });
+  }
+});
+
+test('one shell action cannot target multiple worktrees', async () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-kernel-multi-root-'));
+  try {
+    const first = projectRoot(temporary, 'first');
+    const second = projectRoot(temporary, 'second');
+    const command = `rm ${path.join(first, 'first.txt')} ${path.join(second, 'second.txt')}`;
+    const result = await evaluateWorkflowEvent(
+      event({
+        workspaceRoots: [first, second],
+        toolWorkingDirectory: first,
+        toolName: 'exec_command',
+        command,
+        toolInput: { command },
+      }),
+      injectedBinding(first),
+    );
+    assert.equal(result.action, 'DENY');
+    assert.equal(result.code, 'WORKTREE_SELECTION_REQUIRED');
+  } finally {
+    rmSync(temporary, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
       retryDelay: 50,
     });
   }
@@ -495,7 +561,7 @@ test('shell mutation cwd cannot leave the execution root', async () => {
       injectedBinding(root),
     );
     assert.equal(result.action, 'DENY');
-    assert.equal(result.code, 'CROSS_WORKTREE_WRITE_DENIED');
+    assert.equal(result.code, 'WORKTREE_SELECTION_REQUIRED');
   } finally {
     rmSync(temporary, {
       recursive: true,
@@ -522,7 +588,7 @@ test('file writes cannot escape through a symlink inside the execution root', as
       injectedBinding(root),
     );
     assert.equal(result.action, 'DENY');
-    assert.equal(result.code, 'CROSS_WORKTREE_WRITE_DENIED');
+    assert.equal(result.code, 'ACTION_WORKSPACE_WRITE_DENIED');
   } finally {
     rmSync(temporary, {
       recursive: true,

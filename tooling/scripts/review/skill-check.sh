@@ -427,12 +427,13 @@ if ! node --test $workflow_kernel_tests \
   "tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs" \
   >/tmp/pt-agent-hook-test.$$ 2>&1; then
   cat /tmp/pt-agent-hook-test.$$
-  fail "conversation-bound workflow kernel tests failed"
+  fail "owner-rooted workflow kernel tests failed"
 fi
 rm -f /tmp/pt-agent-hook-test.$$
 
 for marker in \
-  "CROSS_WORKTREE_WRITE_DENIED" \
+  "WORKTREE_SELECTION_REQUIRED" \
+  "ACTION_WORKSPACE_WRITE_DENIED" \
   "OBSERVE_ONLY" \
   "CONTEXT_ANCHOR_REQUIRED" \
   "releaseWorkflowOwner"; do
@@ -532,6 +533,11 @@ for marker in \
     fail "$agent_integration_audit missing fail-closed audit marker: $marker"
   fi
 done
+
+if ! grep -Fq -- "--projection-only" "$agent_integration_audit" ||
+   ! grep -Fq -- "--projection-only" "$agent_installer"; then
+  fail "non-destructive install must use an explicit projection-only audit"
+fi
 
 for marker in \
   "staleRecoveryPath" \

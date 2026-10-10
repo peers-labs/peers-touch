@@ -67,6 +67,18 @@
       }
     },
     {
+      "id": "desktop-bob-peer",
+      "actor": "bob",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-primary",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
       "id": "sim-ios",
       "actor": "bob",
       "runtime": "tauri-ios-simulator",
@@ -91,9 +103,41 @@
       }
     }
   ],
+  "default_client_ids": [
+    "desktop-alice",
+    "desktop-bob",
+    "sim-ios",
+    "sim-ios-peer"
+  ],
+  "gate_client_ids": {
+    "station-access-session-class-suite-e2e": [
+      "desktop-alice",
+      "desktop-bob",
+      "desktop-bob-peer",
+      "sim-ios",
+      "sim-ios-peer"
+    ]
+  },
+  "gate_client_actor_bindings": {
+    "station-access-session-class-suite-e2e": {
+      "sim-ios-peer": "bob"
+    }
+  },
+  "gate_mobile_identity_sources": {
+    "station-access-session-class-suite-e2e": {
+      "sim-ios": "desktop-bob",
+      "sim-ios-peer": "desktop-bob"
+    }
+  },
   "gate_client_service_bindings": {
     "chat-lifecycle-mixed-client-multi-device-e2e": {
       "desktop-alice": "station-secondary"
+    },
+    "station-access-session-class-suite-e2e": {
+      "desktop-bob": "station-primary",
+      "desktop-bob-peer": "station-primary",
+      "sim-ios": "station-primary",
+      "sim-ios-peer": "station-primary"
     }
   },
   "harness": {
@@ -115,6 +159,8 @@
       "messaging.command.read",
       "messaging.search",
       "messaging.projection.read",
+      "navigation.apply",
+      "navigation.snapshot",
       "recovery.snapshot",
       "social.reconcile",
       "social.projection.read",
