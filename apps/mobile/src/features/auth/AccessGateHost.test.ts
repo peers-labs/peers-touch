@@ -64,7 +64,7 @@ describe('AccessGateHost schema gate surface', () => {
       decision: schemaDecision(),
     });
 
-    expect(markup).toContain('common.continue');
+    expect(markup).toContain('mobile.launch.continue');
     expect(markup).toContain('ant-btn-primary');
     expect(markup).not.toContain('auth-actions single');
   });

@@ -56,4 +56,13 @@ describe('LoginPage OAuth lifecycle contract', () => {
       /aria-label=\{t\('auth\.login\.submit'\)\}[\s\S]*data-login-submit/,
     );
   });
+
+  it('keeps invalid credential transport details out of the login error', () => {
+    expect(source).toMatch(
+      /error instanceof AuthCommandException && error\.code === 'INVALID_ARGUMENT'[\s\S]*return fallback/,
+    );
+    expect(source).toContain(
+      "message.error(loginSubmissionErrorMessage(err, t('auth.login.failed')))",
+    );
+  });
 });
