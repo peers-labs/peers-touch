@@ -41,6 +41,8 @@ impl<R: MlsKeyPackageRepository> MlsKeyPackagePublisher<R> {
         now_unix_ms: i64,
         transport: &T,
     ) -> Result<(), String> {
+        // Welcome receive and publication both replace the persisted provider pool.
+        let _transaction = self.manager.lock_recipient_transitions();
         if !self.store.has_mls_key_packages()? {
             self.generate_fresh_batch(INITIAL_MLS_KEY_PACKAGE_COUNT, now_unix_ms)?;
         }
@@ -334,6 +336,41 @@ mod tests {
         assert_eq!(
             manager.export_pending_join_providers().unwrap(),
             previous_pool
+        );
+    }
+
+    #[test]
+    fn mls_keypackage_publication_preserves_an_inflight_welcome_transaction() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let store = Arc::new(TestKeyPackageRepository::new(true));
+        let (publisher, manager) = publisher(store.clone(), [13; 32]);
+        let transport = Arc::new(RecordingTransport::default());
+        let (done_tx, done_rx) = mpsc::channel();
+        let transaction = manager.lock_recipient_transitions();
+        let worker_transport = transport.clone();
+        let worker = std::thread::spawn(move || {
+            let result = publisher.publish(10_000, worker_transport.as_ref());
+            done_tx.send(result).unwrap();
+        });
+
+        let premature_publication = done_rx.recv_timeout(Duration::from_millis(200));
+        let uploads_before_commit = transport.requests.lock().unwrap().len();
+        drop(transaction);
+        worker.join().unwrap();
+        let result = premature_publication.as_ref().ok().cloned()
+            .unwrap_or_else(|| done_rx.recv().unwrap());
+        result.unwrap();
+
+        assert_eq!(uploads_before_commit, 0);
+        assert!(premature_publication.is_err());
+        assert_eq!(transport.requests.lock().unwrap().len(), 5);
+        let persisted_pool = store.provider_pool().unwrap();
+        let fresh_manager = MlsGroupManager::new();
+        assert_eq!(
+            fresh_manager.import_pending_join_providers(&persisted_pool).unwrap(),
+            5,
         );
     }
 }
