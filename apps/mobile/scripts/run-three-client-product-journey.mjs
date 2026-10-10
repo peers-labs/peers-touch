@@ -5059,7 +5059,42 @@ async function verifyMobileAttachment(
     `[data-message-ulid="${attachment.messageId}"] [data-attachment-id]`,
     'open-receiver-attachment',
   );
-  return attachment;
+  const preview = await waitForUi(
+    clientId,
+    client,
+    'in-app attachment preview',
+    `
+      const preview = document.querySelector(
+        '[data-product-surface="chat.attachment-preview"]'
+      );
+      return {
+        ready: Boolean(preview?.getClientRects().length)
+          && preview.getAttribute('data-attachment-id') === arguments[0],
+        attachmentId: preview?.getAttribute('data-attachment-id') || '',
+        kind: preview?.getAttribute('data-attachment-kind') || ''
+      };
+    `,
+    [attachment.attachmentId],
+  );
+  await clickVisibleSelector(
+    client,
+    '.mobile-attachment-preview-modal .ant-modal-close',
+    'close-receiver-attachment',
+  );
+  await waitForUi(
+    clientId,
+    client,
+    'chat after attachment preview',
+    `
+      return {
+        ready: !document.querySelector(
+          '[data-product-surface="chat.attachment-preview"]'
+        )?.getClientRects().length
+          && Boolean(document.querySelector('[data-message-viewport]'))
+      };
+    `,
+  );
+  return { ...attachment, preview };
 }
 
 async function openMobileMessageActions(clientId, client, messageText) {

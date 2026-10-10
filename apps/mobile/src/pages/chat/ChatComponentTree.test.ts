@@ -101,4 +101,16 @@ describe('Chat component ownership boundaries', () => {
     expect(pageSource).toContain("t('mobile.chat.encrypted')");
     expect(stylesSource).toMatch(/\.chat-header-actions\s*\{[\s\S]*?display:\s*flex/);
   });
+
+  it('opens downloaded attachments without replacing the Mobile WebView', () => {
+    expect(pageSource).not.toContain("window.open(sourceUrl");
+    expect(pageSource).toContain(
+      'data-product-surface="chat.attachment-preview"',
+    );
+    expect(pageSource).toContain('setPreviewOpen(true)');
+    expect(pageSource).toContain('onCancel={() => setPreviewOpen(false)}');
+    expect(stylesSource).toMatch(
+      /\.mobile-attachment-preview\s*\{[\s\S]*?height:\s*min\(68vh,\s*560px\)/,
+    );
+  });
 });
