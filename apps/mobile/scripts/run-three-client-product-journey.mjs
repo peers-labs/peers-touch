@@ -1769,7 +1769,7 @@ async function ensureDesktopAuthenticated(clientId, client, stationUrl, account)
         `,
       )
     );
-    if (!stationLabel) {
+    if (!stationLabel || stationLabel.toLowerCase() === 'station') {
       await clickElement(client, stationTrigger);
       await setInputValue(
         client,
