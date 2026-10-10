@@ -20,6 +20,7 @@
     "apps/desktop/src/modules/p2p",
     "apps/desktop/src/pages/SocialChatPage.tsx",
     "apps/desktop/src/services",
+    "apps/mobile/scripts/run-three-client-product-journey.mjs",
     "apps/mobile/src/pages/ChatPage.tsx",
     "apps/mobile/src/pages/chat",
     "apps/mobile/src/features/chat",
