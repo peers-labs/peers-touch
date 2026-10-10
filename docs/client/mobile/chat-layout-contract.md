@@ -240,12 +240,14 @@ when:
 
 then:
   - the thread exposes `data-chat-write-admission="closed"`
+  - an open group management sheet exposes the same current admission state
   - remote mutation controls remain disabled while reads, navigation, and local draft editing remain available
+  - group save, member role, mute, invite, remove, ownership, leave and dissolve controls remain disabled during any reconciliation, including reconciliation after a preceding group command
   - successful reconciliation changes the thread state to `data-chat-write-admission="open"`
   - the same controls become usable without requiring the user to reopen the conversation
 
 visual_invariants:
-  - the existing recovery status remains the only visible explanation for the temporary pause
+  - the affected surface uses the existing localized recovery explanation for the temporary pause
   - disabled controls do not resize the message action sheet or composer
 
 forbidden:
@@ -256,6 +258,7 @@ forbidden:
 evidence:
   - foreground interaction trace
   - action-sheet and composer DOM state
+  - group management admission and enabled-control state between consecutive commands
   - sender and receiver screenshots
 ```
 

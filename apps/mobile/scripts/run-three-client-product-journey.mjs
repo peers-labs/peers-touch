@@ -5865,12 +5865,16 @@ async function groupMemberRowState(clientId, client, memberName, minimumButtons)
       ));
       const buttons = [...(row?.querySelectorAll('button') || [])];
       const controlsReady = ${groupMemberControlsReady.toString()};
+      const admission = row?.closest('[data-acceptance-id="group-management"]')
+        ?.getAttribute('data-chat-write-admission');
       return {
         ready: Boolean(row)
+          && admission === 'open'
           && controlsReady(
             buttons.map((button) => button.disabled),
             arguments[1],
           ),
+        admission,
         buttonCount: buttons.length,
         buttonText: buttons.map((button) => (button.innerText || '').trim()),
         text: (row?.innerText || '').replace(/\\s+/g, ' ').trim()
@@ -5927,10 +5931,14 @@ async function clickGroupMemberButton(
       ));
       const buttons = [...(row?.querySelectorAll('button') || [])];
       const current = buttons.map((button) => (button.innerText || '').trim());
+      const admission = row?.closest('[data-acceptance-id="group-management"]')
+        ?.getAttribute('data-chat-write-admission');
       return {
         ready: Boolean(row)
+          && admission === 'open'
           && buttons.every((button) => !button.disabled)
           && current[arguments[1]] !== arguments[2],
+        admission,
         buttonText: current,
         text: (row?.innerText || '').replace(/\\s+/g, ' ').trim()
       };
