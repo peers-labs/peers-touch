@@ -74,6 +74,23 @@ Optional / structural:
 | `PEERS_FEDERATION_DIRECT_OUTBOUND` | `true`   | Set `false` on `pt-station-relay-only`. Step 2 (code) — placeholder today. |
 | `PEERS_FEDERATION_DIRECT_INBOUND`  | `true`   | Set `false` on `pt-station-relay-only`. Step 2 (code) — placeholder today. |
 
+Relay-only, required:
+
+| Variable | Purpose |
+|----------|---------|
+| `PEERS_NODE_SERVER_BASEURL` | Public HTTPS Relay origin |
+| `RELAY_STREAM_LISTEN_ADDR` | Station mount listener |
+| `RELAY_TLS_CERT_FILE` / `RELAY_TLS_KEY_FILE` | TLS 1.3 server identity |
+| `RELAY_SIGNING_KEY_FILE` | Relay discovery/attestation signing key |
+| `RELAY_OPERATOR_KEY_FILE` | Dedicated operator JWT signing key |
+| `RELAY_OPERATOR_ISSUER` | Required operator token issuer |
+| `RELAY_OPERATOR_AUDIENCE` | Required operator token audience |
+| `RELAY_OPERATOR_SCOPE` | Required operator token scope |
+
+`RELAY_ALLOW_INSECURE_LOOPBACK=true` is a development-only exception. It
+requires both the stream listener and public HTTP origin to be loopback and
+cannot produce formal Acceptance evidence.
+
 Postgres is **never** exposed to the host. To attach a debugger:
 
 ```bash
@@ -94,19 +111,25 @@ GitHub Actions workflow [`deploy-station.yml`](../../.github/workflows/deploy-st
 ## Architecture notes
 
 - **Single Dockerfile**, single image. The `relay` profile and the `station`
-  profile share `station.Dockerfile`; the role is determined by
-  `apps/station/app/conf/sub_relay.yml` at runtime, not at build time.
+  profile share `station.Dockerfile`; Compose sets `PEERS_NODE_ROLE` explicitly.
+  The Relay allowlist excludes all Station business subservers. Relay service
+  hosts are Linux/POSIX-only; Windows remains a client or separately governed
+  Station platform.
+- **Relay secret ownership**: the reviewed Linux deploy owner prepares
+  signing/operator/TLS files under its isolated runtime root and mounts only
+  the required files read-only at `/app/relay-secrets`. The CA private key is
+  never mounted into the Relay container.
 - **Official applet service closure**: Station may bundle official applet
   services via local Go module `replace` directives. The Docker build context
   therefore includes `apps/applets/` so `apps/station/app/go.mod` can resolve
   `../../applets/<id>/service` inside the builder without applet-specific
   Dockerfile edits.
-- **Healthcheck endpoint**: `/sub-oss/healthz` (public probe). The compose
-  healthcheck and the CI verify step both consume this endpoint.
-- **Same-host coexistence**: `pt-station-2` and `pt-station-relay-only`
-  share `10.37.195.98`. Two compose projects, two bridge networks, two
-  postgres containers — they only share the Docker daemon. Their libp2p
-  ports use distinct host-side mappings (`4001` vs `4002`).
+- **Healthcheck endpoint**: Station uses `/sub-oss/healthz`; Relay uses its
+  role-owned `/healthz` probe. Relay `/metrics` requires an operator credential.
+- **Canonical Relay host**: profile `one` binds the Relay Compose owner to
+  Linux host `10.37.118.48`. Station and Relay may run on different hosts;
+  Acceptance opens separate reviewed transports and never assumes
+  co-location.
 - **Hierarchy-merge overlays** (no source-tree edits): `entrypoint.sh`
   emits `store.docker.yml` (DSN), `paths.docker.yml` (key paths under
   `/app/data`), and `bootstrap.docker.yml` (DHT seeds) into `/app/conf/`

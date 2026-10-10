@@ -7,6 +7,9 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping
@@ -37,6 +40,7 @@ ACTOR_ACCOUNTS = {
     "alice": "alice@p.t",
     "bob": "bob@p.t",
     "charlie": "carol@p.t",
+    "eve": "carol@p.t",
 }
 
 ACTOR_FIXTURE = REPO_ROOT / "apps" / "station" / "app" / "conf" / "actor.yml"
@@ -44,6 +48,8 @@ ACTOR_PASSWORD = "1"
 RESET_TIMEOUT_SECONDS = 120.0
 RESET_TERMINATION_RESERVE_SECONDS = 1.0
 RESET_POLL_INTERVAL_SECONDS = 0.05
+EXISTING_ACTOR_PROFILE_TIMEOUT_SECONDS = 30.0
+EXISTING_ACTOR_PROFILE_MAX_BYTES = 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -314,6 +320,109 @@ def resolve_actor_identity(
         ptid=record.ptid,
         federated_handle=record.federated_handle,
         home_station_peer_id=record.home_station_peer_id,
+    )
+
+
+def resolve_existing_actor_identity(
+    station_url: str,
+    role: str,
+) -> ResolvedActorIdentity:
+    account = ACTOR_ACCOUNTS.get(role)
+    if not account:
+        raise BlockedError(
+            reason=f"Chat native actor role is unsupported: {role}",
+            resource=f"fixture-actor:{role}",
+        )
+    parsed_station = urllib.parse.urlparse(station_url)
+    if (
+        parsed_station.scheme not in {"http", "https"}
+        or not parsed_station.netloc
+    ):
+        raise BlockedError(
+            reason="Existing actor Station URL is invalid",
+            resource=f"fixture-actor:{role}",
+        )
+    username = account.split("@", 1)[0]
+    endpoint = (
+        f"{station_url.rstrip('/')}/actor/"
+        f"{urllib.parse.quote(username, safe='')}/profile"
+    )
+    request = urllib.request.Request(
+        endpoint,
+        headers={"Accept": "application/json"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=EXISTING_ACTOR_PROFILE_TIMEOUT_SECONDS,
+        ) as response:
+            encoded = response.read(EXISTING_ACTOR_PROFILE_MAX_BYTES + 1)
+        if len(encoded) > EXISTING_ACTOR_PROFILE_MAX_BYTES:
+            raise BlockedError(
+                reason=(
+                    f"Public profile for existing actor {role} exceeded "
+                    "the response limit"
+                ),
+                resource=f"fixture-actor:{role}",
+            )
+        profile = json.loads(encoded.decode("utf-8"))
+    except (
+        urllib.error.URLError,
+        OSError,
+        TimeoutError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ) as error:
+        raise BlockedError(
+            reason=(
+                f"Cannot resolve public profile for existing actor "
+                f"{role}: {error}"
+            ),
+            resource=f"fixture-actor:{role}",
+        ) from error
+
+    actor_ref = (
+        profile.get("ref")
+        if isinstance(profile, Mapping)
+        and isinstance(profile.get("ref"), Mapping)
+        else {}
+    )
+    ptid = str(actor_ref.get("ptid") or "")
+    federated_handle = (
+        str(profile.get("federated_handle") or "")
+        if isinstance(profile, Mapping)
+        else ""
+    )
+    home_station_peer_id = (
+        str(profile.get("home_station_peer_id") or "")
+        if isinstance(profile, Mapping)
+        else ""
+    )
+    resolved_username = (
+        str(profile.get("username") or "")
+        if isinstance(profile, Mapping)
+        else ""
+    )
+    if (
+        not ptid.startswith("ptid:")
+        or not federated_handle
+        or not home_station_peer_id
+        or resolved_username != username
+    ):
+        raise BlockedError(
+            reason=(
+                f"Public profile for existing actor {role} is incomplete "
+                "or does not match the preset account"
+            ),
+            resource=f"fixture-actor:{role}",
+        )
+    return ResolvedActorIdentity(
+        role=role,
+        account_ref=f"station-account:{account}",
+        ptid=ptid,
+        federated_handle=federated_handle,
+        home_station_peer_id=home_station_peer_id,
     )
 
 

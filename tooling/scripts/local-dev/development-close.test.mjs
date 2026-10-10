@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { rmSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -10,12 +10,20 @@ import {
 import { createPlanRepository } from '../plan/plan-test-fixture.mjs';
 import { summarizeExecution } from '../plan/planctl.mjs';
 import { workspaceIdForRoot } from '../lib/machine-dev-paths.mjs';
-import { updateActiveWorkRecord } from './active-work-store.mjs';
+import {
+  activeWorkStorePaths,
+  digestActiveWork,
+  readActiveWorkRecord,
+  updateActiveWorkRecord,
+} from './active-work-store.mjs';
 import {
   createDevelopmentCloseReceipt,
   writeDevelopmentCloseReceipt,
 } from './development-close-store.mjs';
-import { closeDevelopment } from './development-close.mjs';
+import {
+  closeDevelopment,
+  runCli,
+} from './development-close.mjs';
 import {
   checkDeclaration,
   startOrUpdateDeclaration,
@@ -243,7 +251,12 @@ test('owner-abandon closes an orphan mount after worktree deletion', async (t) =
     owner: 'test-owner',
     now: new Date('2026-10-05T00:00:00.000Z'),
   });
-  rmSync(fixture.repoRoot, { recursive: true, force: true });
+  rmSync(fixture.repoRoot, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 50,
+  });
 
   const receipt = await closeDevelopment({
     home: fixture.home,
@@ -263,6 +276,177 @@ test('owner-abandon closes an orphan mount after worktree deletion', async (t) =
   assert.equal(
     readLivePlanMountId(mounted.mount.workspaceId, { home: fixture.home }),
     null,
+  );
+});
+
+test('owner-abandon recovers exact ownerless legacy state without a Hook receipt', async (t) => {
+  const fixture = createPlanRepository(t);
+  const mounted = await mountPlan({
+    home: fixture.home,
+    repoRoot: fixture.repoRoot,
+    plan: fixture.plan,
+    projectId: 'peers-touch',
+    owner: 'test-owner',
+    now: new Date('2026-10-05T00:00:00.000Z'),
+  });
+  const task = mounted.snapshot.plan.tasks.at(0);
+  const taskId = task.id;
+  const workItemId = 'DWF-CLOSE-OWNERLESS-LEGACY';
+  const created = updateActiveWorkRecord(
+    {
+      workspaceId: mounted.mount.workspaceId,
+      workItemId,
+      mountId: mounted.mount.mountId,
+      runId: mounted.run.runId,
+      snapshotDigest: mounted.snapshot.recordDigest,
+      planId: mounted.mount.planId,
+      planPath: mounted.mount.planPath,
+      planStatus: 'active',
+      currentTaskId: taskId,
+      currentTaskPath:
+        `${fixture.plan.slice(0, fixture.plan.lastIndexOf('/'))}/${task.path}`,
+      taskStatus: 'pending',
+      sessionId: 'ownerless-legacy-session',
+      journeyId: 'DWF-CLOSE-J02',
+      devState: 'BOUND',
+      branch: mounted.snapshot.executionBinding.branch,
+      initialHead: mounted.snapshot.executionBinding.initialHead,
+      expectedHead: mounted.snapshot.executionBinding.initialHead,
+      workflowOwner: workflowOwner(),
+    },
+    {
+      home: fixture.home,
+      workspaceRoot: fixture.repoRoot,
+      now: new Date('2026-10-05T00:01:00.000Z'),
+    },
+  );
+  const paths = activeWorkStorePaths({
+    home: fixture.home,
+    workspaceId: mounted.mount.workspaceId,
+  });
+  const legacy = { ...created };
+  delete legacy.workflowOwner;
+  legacy.recordDigest = digestActiveWork(legacy);
+  writeFileSync(paths.record, `${JSON.stringify(legacy, null, 2)}\n`);
+
+  const receipt = await runCli(
+    [
+      'close',
+      '--home',
+      fixture.home,
+      '--workspace-id',
+      mounted.mount.workspaceId,
+      '--mount-id',
+      mounted.mount.mountId,
+      '--work-item',
+      workItemId,
+      '--mode',
+      'tracked',
+      '--reason',
+      'owner-abandon',
+      '--environment-policy',
+      'retain',
+      '--owner',
+      mounted.mount.mountedBy,
+    ],
+    {
+      output: { write() {} },
+      dependencies: {
+        resolveCurrentWorkflowOwnerContext: () => ({
+          workflowOwner: null,
+          actionReceiptDigest: null,
+        }),
+      },
+    },
+  );
+
+  assert.equal(receipt.state, 'CLOSED');
+  assert.equal(receipt.resources.activeWork, 'CLOSED');
+  assert.equal(receipt.resources.planMount, 'RELEASED');
+  assert.equal(
+    readActiveWorkRecord({
+      home: fixture.home,
+      workspaceId: mounted.mount.workspaceId,
+    }),
+    null,
+  );
+});
+
+test('ownerless legacy recovery rejects OWNER-bound active-work', async (t) => {
+  const fixture = createPlanRepository(t);
+  const mounted = await mountPlan({
+    home: fixture.home,
+    repoRoot: fixture.repoRoot,
+    plan: fixture.plan,
+    projectId: 'peers-touch',
+    owner: 'test-owner',
+    now: new Date('2026-10-05T00:00:00.000Z'),
+  });
+  const task = mounted.snapshot.plan.tasks.at(0);
+  const taskId = task.id;
+  const workItemId = 'DWF-CLOSE-OWNER-BOUND';
+  updateActiveWorkRecord(
+    {
+      workspaceId: mounted.mount.workspaceId,
+      workItemId,
+      mountId: mounted.mount.mountId,
+      runId: mounted.run.runId,
+      snapshotDigest: mounted.snapshot.recordDigest,
+      planId: mounted.mount.planId,
+      planPath: mounted.mount.planPath,
+      planStatus: 'active',
+      currentTaskId: taskId,
+      currentTaskPath:
+        `${fixture.plan.slice(0, fixture.plan.lastIndexOf('/'))}/${task.path}`,
+      taskStatus: 'pending',
+      sessionId: 'owner-bound-session',
+      journeyId: 'DWF-CLOSE-J03',
+      devState: 'BOUND',
+      branch: mounted.snapshot.executionBinding.branch,
+      initialHead: mounted.snapshot.executionBinding.initialHead,
+      expectedHead: mounted.snapshot.executionBinding.initialHead,
+      workflowOwner: workflowOwner(),
+    },
+    {
+      home: fixture.home,
+      workspaceRoot: fixture.repoRoot,
+      now: new Date('2026-10-05T00:01:00.000Z'),
+    },
+  );
+
+  await assert.rejects(
+    runCli(
+      [
+        'close',
+        '--home',
+        fixture.home,
+        '--workspace-id',
+        mounted.mount.workspaceId,
+        '--mount-id',
+        mounted.mount.mountId,
+        '--work-item',
+        workItemId,
+        '--mode',
+        'tracked',
+        '--reason',
+        'owner-abandon',
+        '--environment-policy',
+        'retain',
+        '--owner',
+        mounted.mount.mountedBy,
+      ],
+      {
+        output: { write() {} },
+        dependencies: {
+          resolveCurrentWorkflowOwnerContext: () => ({
+            workflowOwner: null,
+            actionReceiptDigest: null,
+          }),
+        },
+      },
+    ),
+    (error) =>
+      error?.code === 'DEVELOPMENT_CLOSE_LEGACY_RECOVERY_DENIED',
   );
 });
 

@@ -1,20 +1,19 @@
 package events
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
 	"google.golang.org/protobuf/proto"
+	"gorm.io/gorm"
 )
 
 // Defaults from docs/architecture/shared/communication/event-stream.md.
@@ -55,6 +54,15 @@ type EventBus interface {
 	// event to multiple actor streams (e.g. sender + recipient
 	// multi-device echo) safely.
 	Publish(actorPTID string, ev *realtime.StreamEvent) (string, error)
+
+	// PublishInTransaction persists a durable event in the caller's database
+	// transaction, then exposes it to live subscribers only after commit.
+	PublishInTransaction(
+		context.Context,
+		delivery.Transaction,
+		string,
+		*realtime.StreamEvent,
+	) (string, error)
 
 	// PublishEphemeral stamps and fans out an event only to current live
 	// subscribers. It does not persist or enter the replay ring.
@@ -127,6 +135,19 @@ func NewEventBus(opts ...BusOption) EventBus {
 		cfg:    cfg,
 		actors: make(map[string]*actorState),
 	}
+}
+
+func NewDurableEventBus(database *gorm.DB, opts ...BusOption) (EventBus, error) {
+	if database == nil {
+		return nil, fmt.Errorf("events: database is required")
+	}
+	store := newGormEventStore(database)
+	if err := store.AutoMigrate(); err != nil {
+		return nil, err
+	}
+	return NewEventBus(
+		append(opts, WithDurableStore(store))...,
+	), nil
 }
 
 // BusOption configures an EventBus at construction.
@@ -261,6 +282,57 @@ func (b *eventBus) Publish(actorPTID string, ev *realtime.StreamEvent) (string, 
 	return b.publish(actorPTID, "", ev)
 }
 
+func (b *eventBus) PublishInTransaction(
+	ctx context.Context,
+	transaction delivery.Transaction,
+	actorPTID string,
+	ev *realtime.StreamEvent,
+) (string, error) {
+	if transaction == nil || transaction.DB() == nil {
+		return "", fmt.Errorf("events: transaction is required")
+	}
+	registrar, ok := transaction.(delivery.AfterCommitRegistrar)
+	if !ok {
+		return "", fmt.Errorf("events: transaction cannot register post-commit fan-out")
+	}
+	if actorPTID == "" {
+		return "", fmt.Errorf("events: empty actorPTID")
+	}
+	if ev == nil {
+		return "", fmt.Errorf("events: nil event")
+	}
+
+	b.mu.RLock()
+	closed := b.closed
+	b.mu.RUnlock()
+	if closed {
+		return "", ErrBusClosed
+	}
+
+	stamped := b.stamp(ev)
+	store, ok := b.cfg.store.(transactionalDurableEventStore)
+	if !ok {
+		return "", fmt.Errorf(
+			"events: durable transactional store is unavailable",
+		)
+	}
+	if err := store.PersistInTransaction(
+		ctx,
+		transaction.DB(),
+		actorPTID,
+		stamped,
+	); err != nil {
+		return "", err
+	}
+	if err := registrar.AfterCommit(func(context.Context) error {
+		_, err := b.publishStamped(actorPTID, "", stamped, false)
+		return err
+	}); err != nil {
+		return "", err
+	}
+	return stamped.GetEventId(), nil
+}
+
 func (b *eventBus) PublishEphemeral(
 	actorPTID string,
 	ev *realtime.StreamEvent,
@@ -285,28 +357,13 @@ func (b *eventBus) PublishEphemeral(
 	a := b.getOrCreateActor(actorPTID)
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	subscriberCount := len(a.subs)
-	deliveredCount := 0
 	for sub := range a.subs {
 		select {
 		case sub.send <- cloned:
-			deliveredCount++
 		default:
 			b.dropLocked(a, sub)
 		}
 	}
-	// #region debug-point J:typing-ephemeral-subscribers
-	if typing := cloned.GetTyping(); typing != nil {
-		if payload, err := json.Marshal(map[string]any{"sessionId": "mobile-social-activation", "runId": "typing-pre-fix", "hypothesisId": "J", "location": "apps/station/app/subserver/events/bus.go:PublishEphemeral", "msg": "[DEBUG] Typing event published to live subscribers", "data": map[string]any{"actorPtid": actorPTID, "conversationId": typing.GetSessionUlid(), "fromActorPtid": typing.GetFromActorPtid(), "typing": typing.GetTyping(), "subscriberCount": subscriberCount, "deliveredCount": deliveredCount}, "ts": time.Now().UnixMilli()}); err == nil {
-			go func() {
-				response, _ := http.Post("http://192.0.2.12:7784/event", "application/json", bytes.NewReader(payload))
-				if response != nil {
-					_ = response.Body.Close()
-				}
-			}()
-		}
-	}
-	// #endregion
 	return cloned.EventId, nil
 }
 
@@ -333,22 +390,34 @@ func (b *eventBus) publish(actorPTID, targetDeviceID string, ev *realtime.Stream
 	}
 	b.mu.RUnlock()
 
-	// Defensive clone: the caller may publish the same logical event
-	// to multiple actor buses (e.g. sender + recipient for multi-device
-	// echo). Mutating the caller's pointer would corrupt the copy
-	// already sitting in another actor's ring buffer / subscriber
-	// channels. The clone is cheap (single-message protobuf) compared
-	// to the cost of a hard-to-reproduce data race.
+	return b.publishStamped(actorPTID, targetDeviceID, b.stamp(ev), true)
+}
+
+func (b *eventBus) stamp(ev *realtime.StreamEvent) *realtime.StreamEvent {
 	cloned := proto.Clone(ev).(*realtime.StreamEvent)
 	cloned.EventId = b.cfg.idGen()
 	cloned.TsUnixMs = b.cfg.now().UnixMilli()
-	ev = cloned
+	return cloned
+}
+
+func (b *eventBus) publishStamped(
+	actorPTID string,
+	targetDeviceID string,
+	ev *realtime.StreamEvent,
+	persist bool,
+) (string, error) {
+	b.mu.RLock()
+	if b.closed {
+		b.mu.RUnlock()
+		return "", ErrBusClosed
+	}
+	b.mu.RUnlock()
 
 	a := b.getOrCreateActor(actorPTID)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if b.cfg.store != nil {
+	if persist && b.cfg.store != nil {
 		if err := b.cfg.store.Persist(actorPTID, ev); err != nil {
 			return "", err
 		}

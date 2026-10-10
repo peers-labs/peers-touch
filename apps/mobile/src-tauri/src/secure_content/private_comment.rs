@@ -190,6 +190,8 @@ pub fn submit(
                     reply_to_comment_id: stored.reply_to_comment_id.clone(),
                     object_count: 0,
                     command_id: stored.prepare_command_id.clone(),
+                    actor_signing_key_id: String::new(),
+                    actor_device_signature: Vec::new(),
                 },
             )
             .map_err(|error| finish_failure(store, &stored, error))?
@@ -269,6 +271,8 @@ pub fn submit(
                 intent.draft_revision,
             ),
             post_id: stored.post_id.clone(),
+            actor_signing_key_id: String::new(),
+            actor_device_signature: Vec::new(),
         };
         let request_bytes = request.encode_to_vec();
         let request_sha256: [u8; 32] = Sha256::digest(&request_bytes).into();

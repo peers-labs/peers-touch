@@ -64,3 +64,5 @@ authority.
 
 - Architecture: `docs/architecture/engineering/development-workflow/README.md`.
 - Machine allocation: `docs/architecture/engineering/local-dev/README.md`.
+- Machine ledger ownership:
+  `docs/knowledge/invariants/machine-ledger-workspace-isolation.md`.

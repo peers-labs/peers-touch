@@ -1,10 +1,16 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { RuntimeBootstrapStatus, RuntimeEntry } from '../app/lifecycle/types';
+import type {
+  MobileLaunchState,
+  RuntimeBootstrapStatus,
+  RuntimeEntry,
+} from '../app/lifecycle/types';
+import { setMomentsSurfaceFixture } from '../acceptance/momentsSurfaceFixture';
 
 const lifecycle = vi.hoisted(() => ({
+  launchState: 'shell' as MobileLaunchState,
   runtimes: new Map<string, RuntimeEntry>(),
 }));
 
@@ -17,6 +23,10 @@ vi.mock('../app/mobileI18n', () => ({
 }));
 
 import { MobileRouteBoundary } from './MobileRouteBoundary';
+
+afterEach(() => {
+  setMomentsSurfaceFixture(null);
+});
 
 function entry(id: string, status: RuntimeBootstrapStatus): RuntimeEntry {
   return {
@@ -37,7 +47,9 @@ function render(
   status: RuntimeBootstrapStatus | null,
   routeId = 'tab:chat',
   dependencyStatus?: 'pending' | 'failed',
+  launchState: MobileLaunchState = 'shell',
 ) {
+  lifecycle.launchState = launchState;
   lifecycle.runtimes.clear();
   if (status) {
     let social = entry('social', status);
@@ -71,11 +83,30 @@ describe('Mobile route owner readiness', () => {
     expect(render('ready')).toBe('<span>domain-content</span>');
   });
 
+  it('renders an explicit acceptance fixture without weakening production fail-closed state', () => {
+    setMomentsSurfaceFixture('moments.feed');
+    expect(render('failed', 'tab:moments')).toBe('<span>domain-content</span>');
+    setMomentsSurfaceFixture(null);
+    expect(render('failed', 'tab:moments')).not.toContain('domain-content');
+  });
+
   it('shows preparation without mounting domain content', () => {
     const html = render('bootstrapping');
     expect(html).toContain('aria-busy="true"');
     expect(html).not.toContain('domain-content');
   });
+
+  it.each([
+    ['suspended', 'background'],
+    ['resuming', 'resume'],
+  ] as const)(
+    'preserves the active tree while the native app is %s',
+    (status, launchState) => {
+      expect(render(status, 'tab:chat', undefined, launchState))
+        .toBe('<span>domain-content</span>');
+      expect(render(status)).not.toContain('domain-content');
+    },
+  );
 
   it('keeps auth-owned settings available while Social failed', () => {
     expect(render('failed', 'tab:settings')).toBe('<span>domain-content</span>');

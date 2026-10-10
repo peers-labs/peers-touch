@@ -325,6 +325,68 @@ function assertClosePreconditions({
   }
 }
 
+function assertOwnerlessLegacyRecovery({
+  activeWork,
+  declaration,
+  execution,
+  sessionInspection,
+}) {
+  if (
+    declaration !== null &&
+    (
+      declaration.workflowOwner !== undefined ||
+      !['STALE', 'RELEASED'].includes(declaration.state)
+    )
+  ) {
+    fail(
+      'DEVELOPMENT_CLOSE_LEGACY_RECOVERY_DENIED',
+      'ownerless legacy recovery requires no live or OWNER-bound declaration',
+    );
+  }
+  if (
+    activeWork === null ||
+    Object.hasOwn(activeWork, 'workflowOwner')
+  ) {
+    fail(
+      'DEVELOPMENT_CLOSE_LEGACY_RECOVERY_DENIED',
+      'ownerless legacy recovery requires ownerless active-work',
+    );
+  }
+  if (
+    sessionInspection?.session !== null &&
+    sessionInspection?.session !== undefined &&
+    Object.hasOwn(sessionInspection.session.state, 'workflowOwner')
+  ) {
+    fail(
+      'DEVELOPMENT_CLOSE_LEGACY_RECOVERY_DENIED',
+      'ownerless legacy recovery cannot archive an OWNER-bound Session',
+    );
+  }
+  if (
+    activeWork.mountId !== execution.mount.mountId ||
+    activeWork.runId !== execution.run.runId
+  ) {
+    fail(
+      'DEVELOPMENT_CLOSE_LEGACY_RECOVERY_DENIED',
+      'ownerless legacy recovery identity does not match the Plan execution',
+    );
+  }
+  if (
+    declaration !== null &&
+    (
+      declaration.mountId !== execution.mount.mountId ||
+      declaration.runId !== execution.run.runId ||
+      declaration.sessionId !== activeWork.sessionId ||
+      declaration.owner !== execution.mount.mountedBy
+    )
+  ) {
+    fail(
+      'DEVELOPMENT_CLOSE_LEGACY_RECOVERY_DENIED',
+      'ownerless legacy declaration does not match the selected execution',
+    );
+  }
+}
+
 function normalizedBlocker(error) {
   const details = error?.details ?? error?.detail ?? {};
   return {
@@ -363,10 +425,8 @@ export async function closeDevelopment(options = {}, dependencies = {}) {
     'environmentPolicy',
   );
   const owner = requiredText(options.owner, 'owner');
-  const workflowOwner = requireWorkflowOwnerReference(
-    options.workflowOwner,
-    { record: 'Development close' },
-  );
+  const ownerlessLegacyRecovery =
+    options.allowOwnerlessLegacyRecovery === true;
   if (!MODES.has(mode)) {
     fail('DEVELOPMENT_CLOSE_INVALID', 'mode must be tracked or standalone');
   }
@@ -382,6 +442,28 @@ export async function closeDevelopment(options = {}, dependencies = {}) {
       'environmentPolicy must be retain or unregister',
     );
   }
+  if (
+    ownerlessLegacyRecovery &&
+    (
+      mode !== 'tracked' ||
+      closeReason !== 'owner-abandon' ||
+      environmentPolicy !== 'retain' ||
+      options.workspaceId === undefined ||
+      options.mountId === undefined ||
+      options.workflowOwner !== undefined
+    )
+  ) {
+    fail(
+      'DEVELOPMENT_CLOSE_LEGACY_RECOVERY_DENIED',
+      'ownerless legacy recovery requires exact tracked owner-abandon selectors',
+    );
+  }
+  const workflowOwner = ownerlessLegacyRecovery
+    ? null
+    : requireWorkflowOwnerReference(
+        options.workflowOwner,
+        { record: 'Development close' },
+      );
   if (
     identity.canonicalRoot === null &&
     mode === 'tracked' &&
@@ -421,6 +503,7 @@ export async function closeDevelopment(options = {}, dependencies = {}) {
             workspaceId: identity.workspaceId,
             mountId: selectedMountId,
             allowReleased: true,
+            allowLegacyClose: true,
           });
         } else {
           const liveMountId = (
@@ -497,20 +580,6 @@ export async function closeDevelopment(options = {}, dependencies = {}) {
             home: options.home,
             workspaceId: identity.workspaceId,
           });
-          if (declaration !== null) {
-            assertMatchingWorkflowOwner(
-              declaration.workflowOwner,
-              workflowOwner,
-              { record: 'development declaration' },
-            );
-          }
-          if (activeWork !== null) {
-            assertMatchingWorkflowOwner(
-              activeWork.workflowOwner,
-              workflowOwner,
-              { record: 'active-work' },
-            );
-          }
           const context = sessionContext(
             options,
             identity,
@@ -531,6 +600,29 @@ export async function closeDevelopment(options = {}, dependencies = {}) {
               declaration,
               activeWork,
             );
+          }
+          if (ownerlessLegacyRecovery) {
+            assertOwnerlessLegacyRecovery({
+              activeWork,
+              declaration,
+              execution,
+              sessionInspection,
+            });
+          } else {
+            if (declaration !== null) {
+              assertMatchingWorkflowOwner(
+                declaration.workflowOwner,
+                workflowOwner,
+                { record: 'development declaration' },
+              );
+            }
+            if (activeWork !== null) {
+              assertMatchingWorkflowOwner(
+                activeWork.workflowOwner,
+                workflowOwner,
+                { record: 'active-work' },
+              );
+            }
           }
           assertClosePreconditions({
             activeLeases,
@@ -558,7 +650,9 @@ export async function closeDevelopment(options = {}, dependencies = {}) {
                 workspaceId: identity.workspaceId,
                 workItemId: identity.workItemId,
                 sessionId: context.sessionId,
-                workflowOwner,
+                ...(ownerlessLegacyRecovery
+                  ? {}
+                  : { workflowOwner }),
               },
               allowNonTerminal: closeReason === 'owner-abandon',
             });
@@ -596,7 +690,9 @@ export async function closeDevelopment(options = {}, dependencies = {}) {
               workspaceId: identity.workspaceId,
               workItemId: identity.workItemId,
               expectedRevision: activeWork.revision,
-              workflowOwner,
+              ...(ownerlessLegacyRecovery
+                ? { allowOwnerlessLegacyRecovery: true }
+                : { workflowOwner }),
               lifecycleLease,
             });
             persist('active-work', { activeWork: 'CLOSED' });
@@ -612,7 +708,9 @@ export async function closeDevelopment(options = {}, dependencies = {}) {
               workspaceId: identity.workspaceId,
               workItemId: identity.workItemId,
               owner,
-              workflowOwner,
+              ...(ownerlessLegacyRecovery
+                ? { allowOwnerlessLegacyRecovery: true }
+                : { workflowOwner }),
               lifecycleLease,
               now: options.now,
             });
@@ -745,16 +843,28 @@ export async function runCli(argv = process.argv.slice(2), io = {}) {
   const { action, options } = parseArguments(argv);
   let result;
   if (action === 'close') {
-    options.workflowOwner = resolveWorkflowOwnerCommandContext(
-      'development-close',
-      'close',
-      {
-        home: options.home,
-        workspaceRoot: options.repoRoot ?? process.cwd(),
-        resolveCurrentWorkflowOwnerContext:
-          io.dependencies?.resolveCurrentWorkflowOwnerContext,
-      },
-    ).workflowOwner;
+    try {
+      options.workflowOwner = resolveWorkflowOwnerCommandContext(
+        'development-close',
+        'close',
+        {
+          home: options.home,
+          workspaceRoot: options.repoRoot ?? process.cwd(),
+          resolveCurrentWorkflowOwnerContext:
+            io.dependencies?.resolveCurrentWorkflowOwnerContext,
+        },
+      ).workflowOwner;
+    } catch (error) {
+      const ownerlessLegacyRecovery =
+        error?.code === 'WORKFLOW_OWNER_CONTEXT_REQUIRED' &&
+        options.mode === 'tracked' &&
+        options.closeReason === 'owner-abandon' &&
+        options.environmentPolicy === 'retain' &&
+        options.workspaceId !== undefined &&
+        options.mountId !== undefined;
+      if (!ownerlessLegacyRecovery) throw error;
+      options.allowOwnerlessLegacyRecovery = true;
+    }
     result = await closeDevelopment(options, io.dependencies);
   } else if (action === 'status') {
     result = statusDevelopmentClose(options);

@@ -5,7 +5,11 @@ import { describe, expect, it } from 'vitest';
 import type { RuntimeBootstrapStatus } from '../../app/lifecycle/types';
 import { DeferredCapabilityNotice } from './DeferredCapabilityNotice';
 
-function render(status: RuntimeBootstrapStatus, canRetry = true) {
+function render(
+  status: RuntimeBootstrapStatus,
+  canRetry = true,
+  compact = false,
+) {
   return renderToStaticMarkup(
     <DeferredCapabilityNotice
       state={{
@@ -19,6 +23,7 @@ function render(status: RuntimeBootstrapStatus, canRetry = true) {
       }}
       t={(key) => key}
       canRetry={canRetry}
+      compact={compact}
       onRetry={async () => undefined}
     />,
   );
@@ -44,5 +49,13 @@ describe('failed runtime recovery notice', () => {
 
   it('disables retry while the lifecycle owner is transitioning', () => {
     expect(render('failed', false)).toContain('disabled=""');
+  });
+
+  it('keeps shell degradation compact while retaining accessible detail', () => {
+    const html = render('failed', true, true);
+    expect(html).toContain('recovery-deferred-capability compact');
+    expect(html).toContain('data-runtime-ids="social"');
+    expect(html).toContain('aria-label="mobile.recovery.deferredCapability.failedTitle.');
+    expect(html).not.toContain('<span class="recovery-notice__text">');
   });
 });

@@ -519,27 +519,45 @@ class NativeDesktopWindowsProvisioner:
                 },
             )
             broker_acquired = True
-            self._write_state(
-                {
-                    "cellId": self.contract.cell_id,
-                    "runId": run_id,
-                    "state": "PREPARING",
-                    "expiresAtEpoch": int(expires_at.timestamp()),
-                    "remoteHome": remote_home,
-                    "remoteSource": remote_source,
-                    "cargoTargetRoot": _windows_join(
-                        remote_home,
-                        self.profile.cargo_target_root,
-                    ),
-                    "brokerRoot": broker_root,
-                    "brokerPath": broker_path,
-                    "binaryPath": binary_path,
-                    "binarySha256": binary_sha256,
-                    "sourceCommit": source.commit,
-                    "sourceLeaseOwner": source_lease_owner,
-                    "broker": acquired,
-                }
-            )
+            state = {
+                "cellId": self.contract.cell_id,
+                "runId": run_id,
+                "state": "PREPARING",
+                "expiresAtEpoch": int(expires_at.timestamp()),
+                "remoteHome": remote_home,
+                "remoteSource": remote_source,
+                "cargoTargetRoot": _windows_join(
+                    remote_home,
+                    self.profile.cargo_target_root,
+                ),
+                "brokerRoot": broker_root,
+                "brokerPath": broker_path,
+                "binaryPath": binary_path,
+                "binarySha256": binary_sha256,
+                "sourceCommit": source.commit,
+                "sourceLeaseOwner": source_lease_owner,
+                "broker": acquired,
+            }
+            self._write_state(state)
+            if self.contract.display.fixed_geometry:
+                width, height = (
+                    int(part)
+                    for part in self.contract.display.fixed_geometry.split(
+                        "x",
+                        1,
+                    )
+                )
+                display = self._broker_from_state(
+                    state,
+                    "prepare-display",
+                    {
+                        "sourceRoot": remote_source,
+                        "width": width,
+                        "height": height,
+                    },
+                )
+                state = {**state, "displayPreparation": display}
+                self._write_state(state)
             probe = self._launch_remote_actor(
                 actor="cell-probe",
                 webdriver_port=self.profile.webdriver_port,
@@ -975,7 +993,7 @@ class NativeDesktopWindowsProvisioner:
 
     def stage_actor_file(self, actor: str, source: Path) -> str:
         state = self._require_state()
-        normalized = self._active_actor(actor)
+        normalized = self._actor_id(actor)
         local_source = source.expanduser().resolve()
         if not local_source.is_file() or not _FILE_NAME.fullmatch(
             local_source.name
@@ -1019,7 +1037,7 @@ class NativeDesktopWindowsProvisioner:
 
     def actor_file_sha256(self, actor: str, path: str) -> str:
         state = self._require_state()
-        normalized = self._active_actor(actor)
+        normalized = self._actor_id(actor)
         candidate = _normalized_windows_path(path)
         fixture_root = _windows_join(
             str(state["brokerRoot"]),

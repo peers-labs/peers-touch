@@ -24,6 +24,7 @@ type GroupRecipientMember struct {
 // GroupRecipientSnapshot freezes the active Group membership authority needed
 // by a caller without exposing Conversation repositories or transactions.
 type GroupRecipientSnapshot struct {
+	FederationID        string
 	ConversationID      string
 	AuthorPTID          string
 	MembershipEpoch     uint64

@@ -1,9 +1,13 @@
 // @ts-nocheck -- Vitest is supplied by the repository test runner.
 
 import { describe, expect, it, vi } from 'vitest';
+import { create } from '@bufbuild/protobuf';
 
 import { MobileDraftSurfaceKind } from '../../gen/proto/domain/mobile/reliability_pb';
-import { Audience_Kind } from '../../gen/proto/domain/social/post_pb';
+import {
+  Audience_Kind,
+  AudienceSchema,
+} from '../../gen/proto/domain/social/post_pb';
 import {
   buildMomentDraftEnvelope,
   discardMomentDraft,
@@ -21,7 +25,11 @@ describe('Moment draft generated contract', () => {
       },
       {
         text: 'Draft with uploads',
-        audienceKind: Audience_Kind.FOLLOWERS,
+        audience: create(AudienceSchema, {
+          kind: Audience_Kind.CUSTOM_DENY,
+          actorPtids: ['ptid:bob'],
+          baseKind: Audience_Kind.FOLLOWERS,
+        }),
         mediaRefs: ['cid:image-1', 'cid:image-2', 'cid:image-1'],
       },
       1_700_000_000_000,
@@ -35,7 +43,11 @@ describe('Moment draft generated contract', () => {
     expect(envelope.payload.value.mediaRefs.every((reference) => !('file' in reference))).toBe(true);
     expect(readMomentDraftEnvelope(envelope)).toEqual({
       text: 'Draft with uploads',
-      audienceKind: Audience_Kind.FOLLOWERS,
+      audience: expect.objectContaining({
+        kind: Audience_Kind.CUSTOM_DENY,
+        actorPtids: ['ptid:bob'],
+        baseKind: Audience_Kind.FOLLOWERS,
+      }),
       mediaRefs: ['cid:image-1', 'cid:image-2'],
       savedAtMs: 1_700_000_000_000,
     });
@@ -49,7 +61,7 @@ describe('Moment draft generated contract', () => {
       },
       {
         text: 'Scoped draft',
-        audienceKind: Audience_Kind.PUBLIC,
+        audience: create(AudienceSchema, { kind: Audience_Kind.PUBLIC }),
         mediaRefs: [],
       },
       1_700_000_000_000,
@@ -76,7 +88,10 @@ describe('Moment draft generated contract', () => {
       },
       {
         text: 'Keep this after a failed publish',
-        audienceKind: Audience_Kind.FOLLOWERS,
+        audience: create(AudienceSchema, {
+          kind: Audience_Kind.CIRCLE,
+          target: { case: 'circleId', value: 7n },
+        }),
         mediaRefs: ['cid:successful-upload'],
       },
       1_700_000_000_000,
@@ -85,7 +100,10 @@ describe('Moment draft generated contract', () => {
     expect(save).toHaveBeenCalledOnce();
     expect(readMomentDraftEnvelope(save.mock.calls[0][0])).toEqual({
       text: 'Keep this after a failed publish',
-      audienceKind: Audience_Kind.FOLLOWERS,
+      audience: expect.objectContaining({
+        kind: Audience_Kind.CIRCLE,
+        target: { case: 'circleId', value: 7n },
+      }),
       mediaRefs: ['cid:successful-upload'],
       savedAtMs: 1_700_000_000_000,
     });
@@ -104,7 +122,7 @@ describe('Moment draft generated contract', () => {
       },
       {
         text: 'Still editing',
-        audienceKind: Audience_Kind.PUBLIC,
+        audience: create(AudienceSchema, { kind: Audience_Kind.PUBLIC }),
         mediaRefs: [],
       },
       1_700_000_000_000,

@@ -10,6 +10,11 @@ export interface SessionRevokedPayload {
   device_type?: string;
 }
 
+export interface StationActiveChangedPayload {
+  stationUrl: string;
+  label?: string;
+}
+
 export interface RealtimeMessageReceivedPayload {
   /** Server-assigned monotonic ULID; opaque to the UI. */
   eventId: string;
@@ -201,7 +206,14 @@ export interface RealtimeConversationSettingsChangedPayload {
 
 export interface RealtimeSocialGraphEventPayload {
   eventId: string;
-  kind: 'friend_request_received' | 'friend_request_accepted' | 'friend_request_rejected' | 'conversation_created' | 'unfriended';
+  kind:
+    | 'friend_request_received'
+    | 'friend_request_accepted'
+    | 'friend_request_rejected'
+    | 'conversation_created'
+    | 'unfriended'
+    | 'relationship_blocked'
+    | 'relationship_unblocked';
   actorPtid: string;
   targetPtid: string;
   requestId: string;
@@ -236,6 +248,14 @@ export interface RealtimeMessageMutationPayload {
 export interface MomentRealtimeBasePayload {
   /** Monotonic realtime cursor when the event comes from Station SSE. */
   eventId: string;
+  /** Authenticated actor whose Station stream carried this event. */
+  targetActorPtid: string;
+  /** Renderer session generation that opened the native stream. */
+  sessionEpoch: number;
+  /** Station peer ID captured when the native stream supervisor started. */
+  stationPeerId: string;
+  /** Normalized Station URL captured when the native stream supervisor started. */
+  stationUrl: string;
   postId: string;
   authorActorPtid?: string;
   occurredAtUnixMs: number;
@@ -247,6 +267,15 @@ export interface MomentCreatedPayload extends MomentRealtimeBasePayload {
 
 export interface MomentDeletedPayload extends MomentRealtimeBasePayload {
   deletedByActorPtid?: string;
+}
+
+export type PrivateResourceRevocationReason =
+  | 'RESOURCE_DELETED'
+  | 'RELATIONSHIP_REVOKED'
+  | 'RECIPIENT_BLOCKED';
+
+export interface MomentRevokedPayload extends MomentRealtimeBasePayload {
+  reason: PrivateResourceRevocationReason;
 }
 
 export interface MomentCommentedPayload extends MomentRealtimeBasePayload {
@@ -297,6 +326,7 @@ export interface EventPayloadMap {
   [EVENT.GLOBAL_CONTEXT_PIPELINE_STARTED]: { name: string; timestamp_ms: number };
   [EVENT.GLOBAL_CONTEXT_PIPELINE_FINISHED]: { name: string; timestamp_ms: number };
   [EVENT.GLOBAL_CONTEXT_PIPELINE_FAILED]: { name: string; error: string; timestamp_ms: number };
+  [EVENT.STATION_ACTIVE_CHANGED]: StationActiveChangedPayload;
   [EVENT.REALTIME_MESSAGE_RECEIVED]: RealtimeMessageReceivedPayload;
   [EVENT.REALTIME_PRESENCE_FLIP]: RealtimePresenceFlipPayload;
   [EVENT.REALTIME_RESYNC]: RealtimeResyncPayload;
@@ -312,6 +342,7 @@ export interface EventPayloadMap {
   [EVENT.REALTIME_SOCIAL_GRAPH_EVENT]: RealtimeSocialGraphEventPayload;
   [EVENT.MOMENT_CREATED]: MomentCreatedPayload;
   [EVENT.MOMENT_DELETED]: MomentDeletedPayload;
+  [EVENT.MOMENT_REVOKED]: MomentRevokedPayload;
   [EVENT.MOMENT_COMMENTED]: MomentCommentedPayload;
   [EVENT.MOMENT_REACTED]: MomentReactedPayload;
   [EVENT.MOMENT_RESYNC_REQUESTED]: MomentResyncRequestedPayload;

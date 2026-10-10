@@ -50,6 +50,14 @@
       "notes": "Second product domain. It validates project-level acceptance onboarding without becoming an acceptance validation domain."
     },
     {
+      "id": "station-access",
+      "status": "active",
+      "profile": "tooling/acceptance/domains/station-access.yaml",
+      "capabilities": "tooling/acceptance/capabilities/station-access.yaml",
+      "coverage": "managed_domain",
+      "notes": "Managed Station and Relay access domain covering signed identity, Access Gate, scope isolation, Federation context, and explicit Relay runtime security."
+    },
+    {
       "id": "agent",
       "status": "active",
       "profile": "tooling/acceptance/domains/agent.yaml",

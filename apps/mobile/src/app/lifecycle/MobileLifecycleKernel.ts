@@ -30,13 +30,18 @@ import {
   lifecycleReducer,
   type LifecycleAction,
 } from './lifecycleReducer';
+import { readableErrorMessage } from '../../utils/errorMessage';
 import { reverseTeardownOrder, topologicalSortRuntimes } from './topologicalSort';
 import { publicRuntimeErrorKey, readRuntimeAvailability } from './runtimeAvailability';
 
 type RuntimeOperation = 'bootstrap' | 'suspend' | 'resume' | 'teardown';
 
 const RUNTIME_OPERATION_TIMEOUT_MS: Readonly<Record<RuntimeOperation, number>> = {
-  bootstrap: 5_000,
+  // Bootstrap runs native reconciliation against the configured Station. The
+  // budget must reflect a real remote Station (multiple sequential round
+  // trips plus worker activation), not localhost latency, otherwise a slow
+  // network spuriously fails a healthy runtime and cascades to dependents.
+  bootstrap: 20_000,
   suspend: 2_000,
   resume: 5_000,
   teardown: 5_000,
@@ -150,11 +155,19 @@ export class MobileLifecycleKernel {
       }
 
       const dependencies = this.requireGraphDependencies();
-      const generation = await withTimeout(
+      const observedGeneration = await withTimeout(
         dependencies.readGeneration(),
         GENERATION_OPERATION_TIMEOUT_MS,
         'mobile.lifecycle.readGenerationTimedOut',
       );
+      // Native cold start can precede the first foreground callback.
+      const generation = observedGeneration === 0
+        ? await withTimeout(
+          dependencies.advanceGeneration(),
+          GENERATION_OPERATION_TIMEOUT_MS,
+          'mobile.lifecycle.advanceGenerationTimedOut',
+        )
+        : observedGeneration;
       this.applyGeneration(generation, reason, false);
       await this.startRuntimeGraphNow();
       await this.reconcileLaunchStateAfterRuntime(reason);
@@ -351,7 +364,7 @@ export class MobileLifecycleKernel {
           clearTimeout(this.readinessTimeouts.get(descriptor.id));
           this.readinessTimeouts.delete(descriptor.id);
           const diagnosticError = failed
-            ? error instanceof Error ? error.message : String(error)
+            ? runtimeDiagnosticError(error)
             : null;
           this.dispatch({
             type: 'RUNTIME_READINESS',
@@ -776,7 +789,6 @@ export class MobileLifecycleKernel {
         this.state.launchState === 'station-selection'
         || this.state.launchState === 'access-gate-chain'
         || this.state.launchState === 'station-handshake'
-        || this.state.launchState === 'resume'
       ) {
         this.transitionLaunchState('runtime-critical');
       }
@@ -843,7 +855,7 @@ async function runVoidRuntimeOperation(
     return {
       runtimeId,
       success: false,
-      errorMessage: error instanceof Error ? error.message : String(error),
+      errorMessage: runtimeDiagnosticError(error),
       durationMs: performance.now() - start,
     };
   }
@@ -869,10 +881,19 @@ async function runTeardownOperation(
     return {
       runtimeId,
       success: false,
-      errorMessage: error instanceof Error ? error.message : String(error),
+      errorMessage: runtimeDiagnosticError(error),
       durationMs: performance.now() - start,
     };
   }
+}
+
+function runtimeDiagnosticError(error: unknown): string {
+  const message = readableErrorMessage(error, 'mobile.lifecycle.runtimeFailed');
+  if (!error || typeof error !== 'object' || Array.isArray(error)) return message;
+  const code = (error as Record<string, unknown>).code;
+  return typeof code === 'string' && code && !message.includes(code)
+    ? `${code}: ${message}`
+    : message;
 }
 
 async function withTimeout<T>(

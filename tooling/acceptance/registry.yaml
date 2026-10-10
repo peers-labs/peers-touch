@@ -229,15 +229,12 @@
           "apps/desktop/src-tauri/src/messaging/**",
           "apps/mobile/src-tauri/src/runtime/oauth/**",
           "apps/mobile/src-tauri/src/messaging/**",
-          "tooling/acceptance/gates/station_access/session_class_e2e.py",
-          "tooling/acceptance/gates/station_access/session_class_e2e_test.py"
+          "tooling/acceptance/gates/station_access/session_class_suite_e2e.py",
+          "tooling/acceptance/gates/station_access/session_class_suite_e2e_test.py"
         ]
       },
       "require": [
-        "chat-native-multi-device-e2e",
-        "chat-lifecycle-mixed-client-multi-device-e2e",
-        "mobile-simulator-station-lifecycle-e2e",
-        "station-access-session-class-e2e"
+        "station-access-session-class-suite-e2e"
       ]
     },
     {
@@ -271,6 +268,161 @@
       ]
     },
     {
+      "id": "station-access-relay-role-security",
+      "features": [
+        "station-access-relay-role-security",
+        "station-access-relay-enrollment"
+      ],
+      "when": {
+        "paths": [
+          "apps/station/app/conf/sub_relay.yml",
+          "apps/station/app/main.go",
+          "apps/station/app/subserver/events/bus.go",
+          "apps/station/frame/core/federation/transport.go",
+          "apps/station/frame/core/plugin/native/node/**",
+          "apps/station/frame/core/plugin/native/subserver/relay/**",
+          "apps/station/frame/core/plugin/native/subserver/relay-client/**",
+          "apps/station/frame/core/runtime/role/**",
+          "apps/station/frame/peers.go",
+          "tooling/docker/.env.example",
+          "tooling/docker/README.md",
+          "tooling/docker/compose.yml",
+          "tooling/docker/entrypoint.sh",
+          "tooling/acceptance/environments/station-access-relay-role.yaml",
+          "tooling/acceptance/provisioners/station_access_relay_role.py",
+          "tooling/acceptance/tests/test_station_access_relay_role.py",
+          "tooling/scripts/local-dev/relay-check.sh",
+          "tooling/scripts/local-dev/station-dev.sh"
+        ]
+      },
+      "require": [
+        "relay-role-security-contract",
+        "relay-station-enrollment-e2e"
+      ]
+    },
+    {
+      "id": "station-access-endpoint-discovery",
+      "features": [
+        "station-access-endpoint-discovery"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/peer/access_endpoint.proto",
+          "apps/station/app/subserver/dashboard/handler.go",
+          "apps/station/app/subserver/dashboard/handler_middleware.go",
+          "apps/station/app/subserver/dashboard/subserver.go",
+          "apps/station/frame/core/plugin/native/subserver/bootstrap/access_endpoint.go",
+          "apps/station/frame/core/plugin/native/subserver/bootstrap/accessendpoint/**",
+          "apps/station/frame/core/plugin/native/subserver/relay/application/discovery.go",
+          "apps/station/frame/core/plugin/native/subserver/relay/domain/discovery.go",
+          "apps/station/frame/core/plugin/native/subserver/relay-client/connection_material.go",
+          "apps/station/frame/core/plugin/native/subserver/relay/handler_discovery.go",
+          "tooling/acceptance/features/station-access-endpoint-discovery.yaml",
+          "tooling/acceptance/gates/station_access/relay_endpoint_discovery_contract.py"
+        ]
+      },
+      "require": [
+        "proto-build",
+        "station-api-ownership",
+        "relay-endpoint-discovery-contract"
+      ]
+    },
+    {
+      "id": "station-access-relay-opaque-tunnel",
+      "features": [
+        "station-access-relay-opaque-tunnel"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/federation/relay_transport.proto",
+          "apps/station/app/subserver/actor_identity/**",
+          "apps/station/app/subserver/key_exchange/**",
+          "apps/station/frame/core/federation/**",
+          "apps/station/frame/core/plugin/native/federation/relay_client.go",
+          "apps/station/frame/core/plugin/native/subserver/relay/**",
+          "apps/station/frame/core/plugin/native/subserver/relay-client/**",
+          "apps/station/frame/touch/federation/resolver/**",
+          "tooling/acceptance/features/station-access-relay-opaque-tunnel.yaml",
+          "tooling/acceptance/gates/station_access/relay_opaque_tunnel_e2e.py"
+        ]
+      },
+      "require": [
+        "relay-opaque-tunnel-e2e"
+      ]
+    },
+    {
+      "id": "node-connectivity-architecture",
+      "features": [
+        "station-access-relay-opaque-tunnel"
+      ],
+      "when": {
+        "paths": [
+          "docs/architecture/platform/runtime/node-connectivity/**"
+        ]
+      },
+      "require": [
+        "architecture-module-governance",
+        "relay-opaque-tunnel-e2e"
+      ]
+    },
+    {
+      "id": "station-access-desktop-relay-binding",
+      "features": [
+        "station-access-desktop-relay-binding"
+      ],
+      "when": {
+        "paths": [
+          "apps/desktop/src-tauri/src/application/station_binding/**",
+          "apps/desktop/src-tauri/src/infrastructure/station_client.rs",
+          "apps/desktop/src-tauri/src/infrastructure/station_discovery.rs",
+          "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
+          "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/station.rs",
+          "apps/desktop/src/acceptance/stationAccess.ts",
+          "apps/desktop/src/acceptance/station_access/**",
+          "apps/desktop/src/components/common/StationPicker.tsx",
+          "packages/locales/en/common.json",
+          "packages/locales/zh-CN/common.json",
+          "tooling/acceptance/environments/station-access-relay-role.yaml",
+          "tooling/acceptance/features/station-access-desktop-relay-binding.yaml",
+          "tooling/acceptance/gates/station_access/desktop_relay_native_e2e.py",
+          "tooling/acceptance/provisioners/station_access_relay_role.py"
+        ]
+      },
+      "require": [
+        "station-access-desktop-relay-native-e2e",
+        "station-access-desktop-relay-windows-e2e"
+      ]
+    },
+    {
+      "id": "station-access-mobile-relay-binding",
+      "features": [
+        "station-access-mobile-relay-binding"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src-tauri/src/runtime/station_route.rs",
+          "apps/mobile/src-tauri/src/runtime/oauth/**",
+          "apps/mobile/src/features/station/**",
+          "apps/mobile/src/runtimes/stationRuntime.ts",
+          "apps/mobile/src/acceptance/**",
+          "apps/mobile/src/App.tsx",
+          "apps/mobile/src/components/MobileShell.tsx",
+          "apps/mobile/src/pages/SettingsPage.tsx",
+          "apps/mobile/src/pages/settings/SettingsSections.tsx",
+          "packages/locales/en/common.json",
+          "packages/locales/zh-CN/common.json",
+          "tooling/acceptance/environments/mobile-relay-simulator.yaml",
+          "tooling/acceptance/environments/mobile-social-simulator.yaml",
+          "tooling/acceptance/features/station-access-mobile-relay-binding.yaml",
+          "tooling/acceptance/gates/station_access/mobile_relay_native_e2e.py"
+        ]
+      },
+      "require": [
+        "station-access-mobile-relay-native-e2e"
+      ]
+    },
+    {
       "id": "station-access-acceptance",
       "features": [
         "station-access-wire-contract",
@@ -278,6 +430,12 @@
         "station-access-scope-isolation",
         "station-access-session-class",
         "station-access-federation-boundary",
+        "station-access-relay-role-security",
+        "station-access-relay-enrollment",
+        "station-access-endpoint-discovery",
+        "station-access-relay-opaque-tunnel",
+        "station-access-desktop-relay-binding",
+        "station-access-mobile-relay-binding",
         "station-access-interface-contract"
       ],
       "when": {
@@ -288,8 +446,11 @@
           "tooling/acceptance/features/station-access-*.yaml",
           "tooling/acceptance/environments/station-access-desktop-oauth-native.yaml",
           "tooling/acceptance/environments/station-access-native.yaml",
+          "tooling/acceptance/environments/station-access-relay-role.yaml",
+          "tooling/acceptance/environments/mobile-relay-simulator.yaml",
           "tooling/acceptance/gates/station_access/**",
-          "tooling/acceptance/provisioners/station_access_desktop_oauth_native.py"
+          "tooling/acceptance/provisioners/station_access_desktop_oauth_native.py",
+          "tooling/acceptance/provisioners/station_access_relay_role.py"
         ]
       },
       "require": [
@@ -299,14 +460,17 @@
         "station-access-desktop-oauth-native-e2e",
         "station-access-auth-e2e",
         "station-access-scope-isolation-e2e",
-        "chat-native-multi-device-e2e",
-        "chat-lifecycle-mixed-client-multi-device-e2e",
-        "mobile-simulator-station-lifecycle-e2e",
-        "station-access-session-class-e2e",
+        "station-access-session-class-suite-e2e",
         "station-access-federation-boundary-e2e",
+        "relay-role-security-contract",
+        "relay-station-enrollment-e2e",
+        "relay-opaque-tunnel-e2e",
+        "station-access-mobile-relay-native-e2e",
+        "station-access-relay-security-e2e",
         "desktop-release-build",
         "mobile-native-build",
         "station-access-lifecycle-aggregate-e2e",
+        "unified-relay-station-access-aggregate-e2e",
         "station-access-domain-validation"
       ]
     },
@@ -1252,6 +1416,23 @@
       ]
     },
     {
+      "id": "mobile-whole-product-usability",
+      "features": [
+        "mobile-native-accessibility-performance"
+      ],
+      "when": {
+        "paths": [
+          "tooling/acceptance/gates/mobile/whole_product_surface_inventory.json",
+          "apps/mobile/scripts/review-mobile-surfaces.mjs",
+          "tooling/acceptance/gates/mobile/simulator_whole_product_usability_e2e.py",
+          "tooling/acceptance/gates/mobile/simulator_whole_product_usability_e2e_test.py"
+        ]
+      },
+      "require": [
+        "mobile-simulator-whole-product-usability-e2e"
+      ]
+    },
+    {
       "id": "mobile-runtime-lifecycle",
       "features": [
         "mobile-session-lifecycle",
@@ -1371,6 +1552,171 @@
       ]
     },
     {
+      "id": "mobile-social-facade",
+      "features": [
+        "mobile-moments-participation"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src/features/social/mobileSocialFacade.ts",
+          "apps/mobile/src/features/social/socialExperienceProjection.ts",
+          "apps/mobile/src/features/social/socialIntents.ts",
+          "apps/mobile/src/features/social/useSocialExperience.ts",
+          "apps/mobile/src/services/socialNativeAdapter.ts",
+          "apps/mobile/src-tauri/src/social/adapter.rs",
+          "tooling/acceptance/gates/mobile/social_facade_contract.py"
+        ]
+      },
+      "require": [
+        "mobile-social-facade-contract"
+      ]
+    },
+    {
+      "id": "mobile-social-feed",
+      "features": [
+        "mobile-moments-participation"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src/features/social/momentsFeedStore.ts",
+          "apps/mobile/src/features/social/privateMomentFeedProjection.ts",
+          "apps/mobile/src/features/social/mobileSocialFacade.ts",
+          "apps/mobile/src/features/social/socialExperienceProjection.ts",
+          "apps/mobile/src/pages/MomentsPage.tsx",
+          "apps/mobile/src/pages/moments/MomentFeedItem.tsx",
+          "apps/mobile/src/services/gateways/momentsGateway.ts",
+          "apps/mobile/src/styles.css",
+          "packages/locales/**",
+          "tooling/acceptance/gates/mobile/social_feed_native.py"
+        ]
+      },
+      "require": [
+        "mobile-social-facade-contract",
+        "mobile-social-feed-native",
+        "mobile-social-ios-native",
+        "mobile-social-android-native"
+      ]
+    },
+    {
+      "id": "mobile-social-search-profile",
+      "features": [
+        "mobile-moments-participation",
+        "mobile-profile-settings"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src/app/navigation/**",
+          "apps/mobile/src/components/MobileShell.tsx",
+          "apps/mobile/src/features/social/socialProfileCommands.ts",
+          "apps/mobile/src/features/social/socialStore.ts",
+          "apps/mobile/src/pages/MomentsPage.tsx",
+          "apps/mobile/src/pages/moments/SocialSearchPage.tsx",
+          "apps/mobile/src/pages/moments/SocialProfilePage.tsx",
+          "apps/mobile/src/services/gateways/momentsGateway.ts",
+          "apps/mobile/src/services/gateways/socialGateway.ts",
+          "packages/locales/**",
+          "tooling/acceptance/gates/mobile/social_search_profile_native.py"
+        ]
+      },
+      "require": [
+        "mobile-social-facade-contract",
+        "mobile-social-search-profile-native",
+        "mobile-social-ios-native",
+        "mobile-social-android-native"
+      ]
+    },
+    {
+      "id": "mobile-social-circles",
+      "features": [
+        "mobile-moments-participation"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src/app/navigation/**",
+          "apps/mobile/src/components/MobileShell.tsx",
+          "apps/mobile/src/features/social/socialCircles.ts",
+          "apps/mobile/src/pages/moments/MomentAudienceTargetPicker.tsx",
+          "apps/mobile/src/pages/moments/SocialCircleDetailPage.tsx",
+          "apps/mobile/src/pages/moments/SocialCircleMemberPickerPage.tsx",
+          "apps/mobile/src/pages/moments/SocialCirclePages.test.ts",
+          "apps/mobile/src/pages/moments/SocialCirclesPage.tsx",
+          "apps/mobile/src/services/socialNativeAdapter.ts",
+          "apps/mobile/src/services/stationTransport.ts",
+          "apps/mobile/src-tauri/src/runtime/station_transport/**",
+          "apps/mobile/src-tauri/src/social/**",
+          "apps/mobile/src/styles.css",
+          "packages/locales/**",
+          "tooling/acceptance/gates/mobile/social_circles_native.py"
+        ]
+      },
+      "require": [
+        "mobile-social-facade-contract",
+        "mobile-social-circles-native",
+        "mobile-social-ios-native",
+        "mobile-social-android-native"
+      ]
+    },
+    {
+      "id": "mobile-social-audience-composer",
+      "features": [
+        "mobile-moments-participation"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src/acceptance/actions.ts",
+          "apps/mobile/src/features/social/mobileSocialFacade.ts",
+          "apps/mobile/src/features/social/socialAudience.ts",
+          "apps/mobile/src/features/social/socialIntents.ts",
+          "apps/mobile/src/features/social/useMomentsDraft.ts",
+          "apps/mobile/src/pages/MomentsPage.tsx",
+          "apps/mobile/src/pages/moments/MomentAudienceTargetPicker.tsx",
+          "apps/mobile/src/pages/moments/MomentComposer.css",
+          "apps/mobile/src/pages/moments/MomentComposer.test.ts",
+          "apps/mobile/src/pages/moments/MomentComposer.tsx",
+          "apps/mobile/src/runtimes/privateMomentsRuntime.ts",
+          "apps/mobile/src/services/mobileCommands.ts",
+          "apps/mobile/src-tauri/src/social/**",
+          "packages/locales/**",
+          "tooling/acceptance/gates/mobile/social_audience_composer_native.py"
+        ]
+      },
+      "require": [
+        "mobile-social-facade-contract",
+        "mobile-social-audience-composer-native",
+        "mobile-social-ios-native",
+        "mobile-social-android-native"
+      ]
+    },
+    {
+      "id": "mobile-social-thread-media",
+      "features": [
+        "mobile-moments-participation"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src/components/MobileShell.tsx",
+          "apps/mobile/src/features/social/mobileSocialFacade.ts",
+          "apps/mobile/src/features/social/socialExperienceProjection.ts",
+          "apps/mobile/src/pages/MomentsPage.tsx",
+          "apps/mobile/src/pages/moments/MomentCommentsSection.tsx",
+          "apps/mobile/src/pages/moments/MomentFeedItem.tsx",
+          "apps/mobile/src/pages/moments/MomentImage.tsx",
+          "apps/mobile/src/pages/moments/MomentMediaOverlay.tsx",
+          "apps/mobile/src/runtimes/privateMomentsRuntime.ts",
+          "apps/mobile/src/services/gateways/momentMediaGateway.ts",
+          "apps/mobile/src/styles.css",
+          "packages/locales/**",
+          "tooling/acceptance/gates/mobile/social_thread_media_native.py"
+        ]
+      },
+      "require": [
+        "mobile-social-facade-contract",
+        "mobile-social-thread-media-native",
+        "mobile-social-ios-native",
+        "mobile-social-android-native"
+      ]
+    },
+    {
       "id": "mobile-social-runtime",
       "features": [
         "mobile-chat-contacts-groups",
@@ -1386,7 +1732,10 @@
       },
       "require": [
         "mobile-contract-static",
-        "mobile-simulator-social-convergence-e2e"
+        "mobile-social-facade-contract",
+        "mobile-simulator-social-convergence-e2e",
+        "mobile-social-ios-native",
+        "mobile-social-android-native"
       ]
     },
     {
@@ -1408,10 +1757,13 @@
         ]
       },
       "require": [
+        "mobile-social-facade-contract",
         "mobile-simulator-social-convergence-e2e",
         "mobile-simulator-chat-contacts-e2e",
         "mobile-simulator-moments-e2e",
-        "mobile-simulator-settings-e2e"
+        "mobile-simulator-settings-e2e",
+        "mobile-social-ios-native",
+        "mobile-social-android-native"
       ]
     },
     {
@@ -1534,9 +1886,14 @@
           "apps/mobile/src/acceptance/**",
           "tooling/acceptance/gates/mobile/messaging_journey.py",
           "tooling/acceptance/gates/mobile/messaging_journey_test.py",
+          "tooling/acceptance/gates/mobile/android_social_e2e.py",
+          "tooling/acceptance/gates/mobile/android_social_e2e_test.py",
           "tooling/acceptance/gates/mobile/simulator_social_e2e.py",
           "tooling/acceptance/gates/mobile/simulator_social_e2e_test.py",
+          "tooling/acceptance/environments/mobile-android-physical.yaml",
+          "tooling/acceptance/environments/mobile-android-physical-runtime.yaml",
           "tooling/acceptance/environments/mobile-direct-simulator.yaml",
+          "tooling/acceptance/environments/mobile-social-ios-simulator.yaml",
           "tooling/acceptance/environments/mobile-social-simulator.yaml"
         ]
       },
@@ -1545,7 +1902,9 @@
         "mobile-simulator-chat-contacts-e2e",
         "mobile-simulator-recovery-e2e",
         "mobile-simulator-recovery-ui-e2e",
-        "mobile-simulator-moments-e2e"
+        "mobile-simulator-moments-e2e",
+        "mobile-social-ios-native",
+        "mobile-social-android-native"
       ]
     },
     {
@@ -1563,6 +1922,7 @@
       },
       "require": [
         "mobile-contract-static",
+        "mobile-social-facade-contract",
         "mobile-simulator-social-convergence-e2e",
         "mobile-simulator-moments-e2e"
       ]
@@ -1600,12 +1960,14 @@
           "apps/mobile/src/components/BoundedList.tsx",
           "apps/mobile/src/components/boundedListRange.ts",
           "apps/mobile/scripts/check-bounded-lists.mjs",
+          "apps/mobile/scripts/review-mobile-surfaces.mjs",
           "apps/mobile/scripts/fixtures/bounded-list.tsx",
           "packages/locales/**"
         ]
       },
       "require": [
         "mobile-ios-simulator-layout-accessibility-e2e",
+        "mobile-simulator-whole-product-usability-e2e",
         "mobile-simulator-platform-e2e",
         "mobile-hard-cut-static"
       ]
@@ -2568,6 +2930,48 @@
         "station-agent-unit",
         "desktop-check",
         "agent-topic-comments-e2e"
+      ]
+    },
+    {
+      "id": "social-cross-station-private",
+      "features": [
+        "social-private-cross-station-desktop"
+      ],
+      "when": {
+        "paths": [
+          "apps/desktop/src/kernel/**",
+          "apps/desktop/src/pages/moments/**",
+          "apps/desktop/src/runtimes/momentsRuntime*",
+          "apps/desktop/src/services/privateMomentsNative*",
+          "apps/desktop/src/store/moments*",
+          "apps/station/app/subserver/conversation/**",
+          "apps/station/app/subserver/key_exchange/**",
+          "apps/station/app/subserver/social/**",
+          "apps/station/frame/core/federation/**",
+          "docs/architecture/domains/social/cross-station/**",
+          "model/domain/federation/**",
+          "model/domain/key_exchange/**",
+          "model/domain/social/**",
+          "packages/locales/en/errors.json",
+          "packages/locales/en/moments.json",
+          "packages/locales/zh-CN/errors.json",
+          "packages/locales/zh-CN/moments.json",
+          "tooling/scripts/check-social-cross-station-operability.mjs"
+        ]
+      },
+      "require": [
+        "station-api-ownership",
+        "social-cross-station-contract",
+        "social-cross-station-eventbus-contract",
+        "social-cross-station-prekey",
+        "social-cross-station-delivery",
+        "social-cross-station-interaction",
+        "social-cross-station-revocation-recovery",
+        "social-cross-station-desktop-functional",
+        "social-private-desktop-e2e",
+        "social-cross-station-native-e2e",
+        "browser-social-zero-registration",
+        "social-domain-validation"
       ]
     },
     {

@@ -6,6 +6,10 @@ import {
   type CSSProperties,
 } from 'react';
 
+import { visualKeyboardOverlap } from '../../app/layout/useVisualKeyboardOverlap';
+
+export { visualKeyboardOverlap };
+
 export type ChatInputPanelState =
   | 'none'
   | 'emoji'
@@ -44,14 +48,18 @@ export function chatInputPanelState({
   return 'none';
 }
 
-export function visualKeyboardOverlap(
-  layoutViewportHeight: number,
-  visualViewportHeight: number,
-  visualViewportOffsetTop: number,
-): number {
-  return Math.max(
-    0,
-    Math.ceil(layoutViewportHeight - visualViewportHeight - visualViewportOffsetTop),
+export function shouldResetChatViewport({
+  composerFocused,
+  visualViewportOffsetTop,
+  windowScrollY,
+}: {
+  readonly composerFocused: boolean;
+  readonly visualViewportOffsetTop: number;
+  readonly windowScrollY: number;
+}): boolean {
+  return composerFocused && (
+    visualViewportOffsetTop > 0
+    || windowScrollY > 0
   );
 }
 
@@ -81,7 +89,7 @@ export function useChatBottomOcclusion({
   const [inputPanelElement, inputPanelRef] = useState<HTMLDivElement | null>(null);
   const composerHeight = useObservedBlockSize(composerElement);
   const inputPanelHeight = useObservedBlockSize(inputPanelElement);
-  const keyboardOverlapHeight = useVisualKeyboardOverlap();
+  const keyboardOverlapHeight = useChatVisualKeyboardOverlap(composerElement);
 
   const style = useMemo(
     () => createChatBottomOcclusionStyle({
@@ -133,7 +141,7 @@ function useObservedBlockSize(element: HTMLElement | null): number | null {
   return height;
 }
 
-function useVisualKeyboardOverlap(): number {
+function useChatVisualKeyboardOverlap(composerElement: HTMLElement | null): number {
   const [overlap, setOverlap] = useState(0);
 
   useEffect(() => {
@@ -144,6 +152,15 @@ function useVisualKeyboardOverlap(): number {
     }
 
     const update = () => {
+      if (shouldResetChatViewport({
+        composerFocused: composerElement?.contains(document.activeElement) === true,
+        visualViewportOffsetTop: viewport.offsetTop,
+        windowScrollY: window.scrollY,
+      })) {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }
       const layoutViewportHeight = Math.max(
         window.innerHeight,
         document.documentElement.clientHeight,
@@ -167,7 +184,7 @@ function useVisualKeyboardOverlap(): number {
       viewport.removeEventListener('scroll', update);
       window.removeEventListener('resize', update);
     };
-  }, []);
+  }, [composerElement]);
 
   return overlap;
 }

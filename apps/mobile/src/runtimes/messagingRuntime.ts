@@ -18,11 +18,13 @@ import {
   messagingDeactivate,
   messagingListConversations,
   messagingReconcile,
+  messagingRecoverIdentity,
   type MessagingAccountInput,
   type MessagingMutationScopeInput,
   type MessagingReconcileResult,
 } from '../services/mobileCommands';
 import { readableErrorMessage } from '../utils/errorMessage';
+import { getRecoveryProjection } from './recoveryProjection';
 import { runRuntimeSessionTransition } from './runtimeSessionTransition';
 
 export const MOBILE_MESSAGING_RECONCILED_EVENT = 'mobile:messaging-reconciled';
@@ -238,6 +240,7 @@ export function reconcileActiveMessagingSession(): Promise<MessagingReconcileRes
       window.dispatchEvent(
         new CustomEvent(MOBILE_MESSAGING_RECONCILED_EVENT, { detail: result }),
       );
+      getRecoveryProjection().clearActorIdentityRecovery();
       activeRuntimeReadinessPort?.recoverAll();
       return result;
     })
@@ -246,6 +249,42 @@ export function reconcileActiveMessagingSession(): Promise<MessagingReconcileRes
     });
   reconcileInFlight = { key, promise };
   return promise;
+}
+
+async function reconcileStartupMessagingSession(): Promise<void> {
+  try {
+    await reconcileActiveMessagingSession();
+  } catch (error) {
+    if (
+      readableErrorMessage(error)
+        .includes('MOBILE_MESSAGING_IDENTITY_RECOVERY_REQUIRED')
+    ) {
+      throw error;
+    }
+    reconcileInFlight = null;
+    await reconcileActiveMessagingSession();
+  }
+}
+
+export async function recoverActiveMessagingIdentity(): Promise<void> {
+  const session = admittedSession(useAuthStore.getState());
+  if (!session || !activeScope || !sameAccount(activeScope, accountInput(session))) {
+    throw new Error('mobile.messaging.identityRecoveryScopeMissing');
+  }
+  const status = await messagingRecoverIdentity({
+    ...accountInput(session),
+    sessionId: session.sessionId,
+    lifecycleGeneration: session.lifecycleGeneration,
+  });
+  if (!status.profileId || !status.deviceId) {
+    throw new Error('mobile.messaging.identityRecoveryRuntimeMissing');
+  }
+  activeProfileId = status.profileId;
+  activeDeviceId = status.deviceId;
+  activeGeneration = status.activationGeneration;
+  lastDeliveredLaneSequence = status.laneSequence;
+  await reconcileStartupMessagingSession();
+  publishProjectionScope();
 }
 
 function enqueueSessionTransition(
@@ -295,7 +334,7 @@ async function synchronizeSession(
   activeSessionScopeKey = sessionKey(session);
   activeGeneration = status.activationGeneration;
   lastDeliveredLaneSequence = status.laneSequence;
-  await reconcileActiveMessagingSession();
+  await reconcileStartupMessagingSession();
   publishProjectionScope();
 }
 
@@ -462,11 +501,15 @@ function publishProjectionScope(): void {
 }
 
 function reportRuntimeError(operation: string, error: unknown): void {
+  const message = readableErrorMessage(error);
+  if (message.includes('MOBILE_MESSAGING_IDENTITY_RECOVERY_REQUIRED')) {
+    getRecoveryProjection().reportActorIdentityRecovery();
+  }
   window.dispatchEvent(
     new CustomEvent(MOBILE_MESSAGING_RUNTIME_ERROR_EVENT, {
       detail: {
         operation,
-        message: readableErrorMessage(error),
+        message,
       },
     }),
   );

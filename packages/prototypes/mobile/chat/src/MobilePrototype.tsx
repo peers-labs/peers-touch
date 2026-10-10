@@ -27,6 +27,7 @@ import {
 import { SocialEvidenceControls } from './components/SocialEvidenceControls';
 import { SearchEvidenceControls } from './components/SearchEvidenceControls';
 import { emptySearchDemo, searchDemoReducer } from './searchDemo';
+import type { MomentsEvidenceScenario } from './pages/MomentsPage';
 import './mobilePrototype.css';
 
 const { Text } = Typography;
@@ -34,16 +35,19 @@ const { Text } = Typography;
 type EvidenceScenario =
   | 'journey'
   | 'station-removal'
+  | 'station-offline'
   | 'session-revoked'
   | 'long-lists'
   | 'search-controlled'
   | BlockingEvidenceScenario
   | ShellEvidenceScenario
-  | SocialEvidenceScenario;
+  | SocialEvidenceScenario
+  | MomentsEvidenceScenario;
 
 const evidenceScenarioOptions: Array<{ label: string; value: EvidenceScenario }> = [
   { label: 'Default journey', value: 'journey' },
   { label: 'Station removal confirmation', value: 'station-removal' },
+  { label: 'Station selection / offline', value: 'station-offline' },
   { label: 'Station identity mismatch', value: 'station-identity-mismatch' },
   { label: 'OAuth expired', value: 'oauth-expired' },
   { label: 'Session revoked', value: 'session-revoked' },
@@ -55,6 +59,12 @@ const evidenceScenarioOptions: Array<{ label: string; value: EvidenceScenario }>
   { label: 'Find People / active Federation', value: 'find-people-member' },
   { label: 'Accepted contact / Direct opening', value: 'contact-direct' },
   { label: 'Friend request / unknown outcome', value: 'request-unknown' },
+  { label: 'Social parity / complete navigation', value: 'social-parity' },
+  { label: 'Social parity / content types', value: 'social-content-types' },
+  { label: 'Social private / remote delivery pending', value: 'social-private-pending' },
+  { label: 'Social private / recovery required', value: 'social-recovery-required' },
+  { label: 'Social private / source unavailable', value: 'social-source-unavailable' },
+  { label: 'Social private / deleted or revoked', value: 'social-revoked' },
   { label: 'Long lists / sample data only', value: 'long-lists' },
   { label: 'Search / controlled outcomes', value: 'search-controlled' },
 ];
@@ -105,6 +115,10 @@ export function MobilePrototype() {
   const [socialDemo, dispatchSocialDemo] = useReducer(socialDemoReducer, evidenceScenario, createSocialDemo);
   const [searchState, dispatchSearch] = useReducer(searchDemoReducer, emptySearchDemo);
   const socialScenario = socialEvidenceScenarios.find((scenario) => scenario === evidenceScenario);
+  const momentsScenario = evidenceScenario.startsWith('social-')
+    && !socialScenario
+    ? evidenceScenario as MomentsEvidenceScenario
+    : undefined;
   const longLists = evidenceScenario === 'long-lists' || evidenceScenario === 'search-controlled';
 
   const activeStation = useMemo(
@@ -132,6 +146,10 @@ export function MobilePrototype() {
     setEvidenceScenario(scenario);
     dispatchSocialDemo({ type: 'reset', scenario });
     dispatchSearch({ type: 'reset' });
+    if (scenario === 'station-removal' || scenario === 'station-offline') {
+      setLaunchState('station-selection');
+      setScenes(['Launch']);
+    }
   }
 
   function handleSelectStation(url: string) {
@@ -146,12 +164,11 @@ export function MobilePrototype() {
     }
   }
 
-  function handleAddStation() {
-    const newUrl = 'https://new-station.peers.social';
-    if (!stations.find((s) => s.url === newUrl)) {
+  function handleAddStation(newUrl: string) {
+    if (!stations.find((station) => station.url === newUrl)) {
       setStations((prev) => [...prev, { url: newUrl, label: 'New Station', online: true }]);
-      setActiveUrl(newUrl);
     }
+    setActiveUrl(newUrl);
   }
 
   function returnToJourney(nextState: LaunchState) {
@@ -196,10 +213,10 @@ export function MobilePrototype() {
     }
 
     const shellRecovery = shellScenarios.find((scenario) => scenario === evidenceScenario);
-    if ((socialScenario || shellRecovery || longLists || launchState === 'shell') && activeStation) {
+    if ((socialScenario || momentsScenario || shellRecovery || longLists || launchState === 'shell') && activeStation) {
       return (
         <MobileShell
-          key={longLists ? evidenceScenario : socialScenario ?? 'shell'}
+          key={longLists ? evidenceScenario : momentsScenario ?? socialScenario ?? 'shell'}
           stationLabel={activeStation.label}
           onChangeStation={handleBackToLaunch}
           recoveryScenario={shellRecovery}
@@ -207,6 +224,7 @@ export function MobilePrototype() {
           searchDemo={evidenceScenario === 'search-controlled'
             ? { state: searchState, dispatch: dispatchSearch } : undefined}
           socialScenario={socialScenario}
+          momentsScenario={momentsScenario}
           socialDemo={socialDemo}
           dispatchSocialDemo={dispatchSocialDemo}
           onRecoveryClose={() => {
@@ -228,6 +246,7 @@ export function MobilePrototype() {
           onAddStation={handleAddStation}
           onContinue={handleContinue}
           showRemovalConfirmation={evidenceScenario === 'station-removal'}
+          offline={evidenceScenario === 'station-offline'}
         />
       );
     }

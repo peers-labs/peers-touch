@@ -311,26 +311,20 @@ func TestContentProofKeyAuthoritySelfAttestsAndReattestsAfterRotation(t *testing
 	}] = append([]byte(nil), first.Pub...)
 	store.mu.Unlock()
 
-	for _, request := range []struct {
-		stationPeerID string
-		signingKeyID  string
-	}{
-		{stationPeerID: "foreign-station", signingKeyID: first.Kid},
-		{stationPeerID: testLocalStationPeerID, signingKeyID: "unknown-key"},
-	} {
-		_, err := authority.ResolveContentProofVerificationKey(
-			ctx,
-			request.stationPeerID,
-			request.signingKeyID,
-		)
-		if !errors.Is(err, ErrContentProofKeyUnavailable) {
-			t.Fatalf(
-				"resolve station=%q key=%q error = %v, want unavailable",
-				request.stationPeerID,
-				request.signingKeyID,
-				err,
-			)
-		}
+	foreign, err := authority.ResolveContentProofVerificationKey(
+		ctx,
+		"foreign-station",
+		first.Kid,
+	)
+	if err != nil || !bytes.Equal(foreign, first.Pub) {
+		t.Fatalf("resolve retained foreign key = %x, error = %v", foreign, err)
+	}
+	if _, err := authority.ResolveContentProofVerificationKey(
+		ctx,
+		testLocalStationPeerID,
+		"unknown-key",
+	); !errors.Is(err, ErrContentProofKeyUnavailable) {
+		t.Fatalf("resolve unknown local key error = %v, want unavailable", err)
 	}
 	if _, err := authority.AttestContentProofVerificationKey(
 		ctx,
@@ -352,6 +346,121 @@ func TestContentProofKeyAuthoritySelfAttestsAndReattestsAfterRotation(t *testing
 		issuedAt.Add(5*time.Minute),
 	); err == nil {
 		t.Fatal("attested a retained public key whose bytes do not match its key ID")
+	}
+}
+
+func TestContentProofKeyAuthorityTrustsImportedKeyOnlyInCallerTransaction(
+	t *testing.T,
+) {
+	ctx := context.Background()
+	database := openContentProofKeyTestDatabase(t)
+	store := NewKeyStoreGORMWithDB(database)
+	local, err := MintLocalKey(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PutCurrent(ctx, local); err != nil {
+		t.Fatal(err)
+	}
+	remote, err := MintLocalKey(time.Now().Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, err := NewContentProofKeyAuthority(
+		testLocalStationPeerID,
+		store,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observedAt := time.Date(2026, 10, 3, 20, 0, 0, 0, time.UTC)
+	if err := database.Transaction(func(tx *gorm.DB) error {
+		return authority.TrustImportedContentProofVerificationKeyInTransaction(
+			ctx,
+			tx,
+			"station-remote",
+			remote.Kid,
+			remote.Pub,
+			observedAt,
+		)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := authority.ResolveContentProofVerificationKey(
+		ctx,
+		"station-remote",
+		remote.Kid,
+	)
+	if err != nil || !bytes.Equal(resolved, remote.Pub) {
+		t.Fatalf("resolved imported key = %x, error = %v", resolved, err)
+	}
+	if err := database.Transaction(func(tx *gorm.DB) error {
+		return authority.TrustImportedContentProofVerificationKeyInTransaction(
+			ctx,
+			tx,
+			"station-remote",
+			remote.Kid,
+			remote.Pub,
+			observedAt.Add(time.Minute),
+		)
+	}); err != nil {
+		t.Fatalf("exact imported key replay: %v", err)
+	}
+
+	rollbackKey, err := MintLocalKey(observedAt.Add(2 * time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rollbackErr := errors.New("force imported-key rollback")
+	err = database.Transaction(func(tx *gorm.DB) error {
+		if trustErr := authority.TrustImportedContentProofVerificationKeyInTransaction(
+			ctx,
+			tx,
+			"station-rollback",
+			rollbackKey.Kid,
+			rollbackKey.Pub,
+			observedAt,
+		); trustErr != nil {
+			return trustErr
+		}
+		return rollbackErr
+	})
+	if !errors.Is(err, rollbackErr) {
+		t.Fatalf("rollback error = %v, want %v", err, rollbackErr)
+	}
+	if _, err := authority.ResolveContentProofVerificationKey(
+		ctx,
+		"station-rollback",
+		rollbackKey.Kid,
+	); !errors.Is(err, ErrContentProofKeyUnavailable) {
+		t.Fatalf("rolled-back imported key error = %v, want unavailable", err)
+	}
+
+	conflicting, err := MintLocalKey(observedAt.Add(3 * time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Model(&contentProofVerificationKeyRow{}).
+		Where(
+			"station_peer_id = ? AND signing_key_id = ?",
+			"station-remote",
+			remote.Kid,
+		).
+		Update("ed25519_public_key", conflicting.Pub).Error; err != nil {
+		t.Fatal(err)
+	}
+	err = database.Transaction(func(tx *gorm.DB) error {
+		return authority.TrustImportedContentProofVerificationKeyInTransaction(
+			ctx,
+			tx,
+			"station-remote",
+			remote.Kid,
+			remote.Pub,
+			observedAt.Add(4*time.Minute),
+		)
+	})
+	if !errors.Is(err, ErrContentProofKeyConflict) {
+		t.Fatalf("immutable imported-key conflict error = %v", err)
 	}
 }
 

@@ -1,8 +1,8 @@
 # Federation Architecture
 
 > **Status**: active
-> **Version**: v0.3
-> **Created**: 2026-05-31 | **Updated**: 2026-10-06
+> **Version**: v1.1
+> **Created**: 2026-05-31 | **Updated**: 2026-10-10
 > **Owner**: Architecture Team
 
 ---
@@ -25,6 +25,10 @@
 - 联邦 IM 的群 authority、Group Event Log、Sender Key 跨站路由；见 `../../../context/architecture/chat/federated-im/README.md`。
 - 具体 Desktop 页面实现细节。
 - 具体 Station handler、repository、database migration 实现。
+- 客户端如何选择 Home Station、持久化 binding 或执行 Access Gate；见
+  [Station Access](../../platform/station/access/README.md)。
+- Relay enrollment、route attestation、opaque tunnel、运行角色和资源边界；见
+  [Node Connectivity](../../platform/runtime/node-connectivity/README.md)。
 - 完整公链、token、gas、PoW/PoS 或通用区块链系统。
 
 ---
@@ -40,6 +44,8 @@
 - 用户如何不记地址地发现 Federation、Station 和人。
 
 因此需要把 Federation 上升为架构层实体，而不是把它隐藏在 Station-to-Station 连接或用户输入 handle 的交互里。
+Node Connectivity 提供无业务 authority 的共享传输能力，但不属于 Federation
+业务域，也不能演变成第二个 Federation/Station owner。
 
 ---
 
@@ -55,6 +61,8 @@
 8. 第一阶段采用单 Federation active sequencer 模型，避免在未引入完整共识前出现并发 head 分叉。
 9. 所有 Catalog、Resolver、Station list、Public actor list 查询必须显式带 Federation 语境。
 10. 跨 Station 身份语义必须复用 `ActorRef` / federated handle / `station_peer_id`，不得发明并行 Account 身份模型。
+11. Federation 只依赖 authenticated Station-to-Station transport，不拥有其
+    enrollment、route、credential 或 tunnel 实现。
 
 ---
 
@@ -65,9 +73,11 @@
 | [design.md](./design.md) | 核心架构设计、角色边界、用户感知模型、生命周期 |
 | [decisions.md](./decisions.md) | 关键设计决策与替代方案 |
 | [data-model.md](./data-model.md) | Federation、ledger、membership、role、scope、sync 的概念数据模型 |
+| [module-layout.md](./module-layout.md) | Federation 业务 owner、contract 和 transport port |
 | [wire-protocol.md](./wire-protocol.md) | Wire Protocol：hash/签名规范、RPC 定义、payload schema、sync 协议 |
 | [integration.md](./integration.md) | 与 Station、Catalog、Resolver、ActivityPub、Client projection 的映射 |
 | [execution-plans/phase-1-federation-ledger.md](./execution-plans/phase-1-federation-ledger.md) | Federation Ledger 最小闭环落地计划 |
+| [Node Connectivity](../../platform/runtime/node-connectivity/README.md) | 当前 Relay/route/transport 真源 |
 | [Historical Federated IM](../../../context/architecture/chat/federated-im/README.md) | 已 supersede 的跨 Station 群/私聊、group authority 与事件日志设计 |
 
 ---
@@ -80,3 +90,4 @@
 - [global/architecture.md](../../../global/architecture.md) — 项目整体架构。
 - [station/base.md](../../../station/base.md) — Station app/frame 分层与 subserver 边界。
 - [global/domain-model.md](../../../global/domain-model.md) — Proto-First 契约规则。
+- [Node Connectivity](../../platform/runtime/node-connectivity/README.md) — 跨 Station 连通性与 Relay transport。

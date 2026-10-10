@@ -68,7 +68,6 @@ func (l dhtActorProfileLocator) Resolve(
 }
 
 type relayActorProfileFetcher struct {
-	client  *http.Client
 	timeout time.Duration
 }
 
@@ -79,9 +78,7 @@ func (f relayActorProfileFetcher) Fetch(
 ) (*profilepb.ActorProfileEnvelope, error) {
 	const operation = "actor_identity.fetch_remote_profile"
 	relayClient := fednode.RelayClient()
-	if relayClient == nil ||
-		strings.TrimSpace(relayClient.BaseURL()) == "" ||
-		strings.TrimSpace(relayClient.Token()) == "" {
+	if relayClient == nil || !relayClient.Available() {
 		return nil, actoridentitydomain.NewError(
 			actoridentitydomain.ErrorCodeIdentityUnavailable,
 			operation,
@@ -90,12 +87,12 @@ func (f relayActorProfileFetcher) Fetch(
 		)
 	}
 
-	target := fmt.Sprintf(
-		"%s/relay/forward/%s/actor/federation/profile?handle=%s",
-		strings.TrimRight(relayClient.BaseURL(), "/"),
-		url.PathEscape(homeStationPeerID),
-		url.QueryEscape(canonicalHandle),
-	)
+	target := (&url.URL{
+		Scheme:   "https",
+		Host:     "station.invalid",
+		Path:     "/actor/federation/profile",
+		RawQuery: url.Values{"handle": []string{canonicalHandle}}.Encode(),
+	}).String()
 	requestCtx, cancel := context.WithTimeout(ctx, f.timeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, target, nil)
@@ -106,10 +103,13 @@ func (f relayActorProfileFetcher) Fetch(
 			err,
 		)
 	}
-	request.Header.Set("Authorization", "Bearer "+relayClient.Token())
 	request.Header.Set("Accept", "application/json")
 
-	response, err := f.client.Do(request)
+	response, err := relayClient.RoundTrip(
+		requestCtx,
+		homeStationPeerID,
+		request,
+	)
 	if err != nil {
 		return nil, actoridentitydomain.WrapError(
 			actoridentitydomain.ErrorCodeIdentityUnavailable,
@@ -118,12 +118,22 @@ func (f relayActorProfileFetcher) Fetch(
 		)
 	}
 	defer response.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(response.Body, maxRemoteProfileBytes))
+	body, err := io.ReadAll(
+		io.LimitReader(response.Body, maxRemoteProfileBytes+1),
+	)
 	if err != nil {
 		return nil, actoridentitydomain.WrapError(
 			actoridentitydomain.ErrorCodeIdentityUnavailable,
 			operation,
 			err,
+		)
+	}
+	if len(body) > maxRemoteProfileBytes {
+		return nil, actoridentitydomain.NewError(
+			actoridentitydomain.ErrorCodeInvalidProof,
+			operation,
+			"home_station_profile",
+			"exceeds the response byte limit",
 		)
 	}
 	switch {
@@ -204,7 +214,6 @@ func NewVerifiedProfileDeviceKeyHydrator(
 			timeout: timeout,
 		},
 		profiles: relayActorProfileFetcher{
-			client:  &http.Client{Timeout: 30 * time.Second},
 			timeout: timeout,
 		},
 		peerKeys: authfed.NewPeerKeyStoreGORMWithDB(db),

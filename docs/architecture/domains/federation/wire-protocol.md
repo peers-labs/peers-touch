@@ -1,8 +1,8 @@
 # Federation Wire Protocol Specification
 
 > **Status**: draft
-> **Version**: v0.1
-> **Created**: 2026-07-21 | **Updated**: 2026-07-21
+> **Version**: v1.1
+> **Created**: 2026-07-21 | **Updated**: 2026-10-10
 > **Owner**: Architecture Team
 > **Depends on**: design.md, data-model.md, decisions.md
 
@@ -916,24 +916,23 @@ New Governance Layer (app/subserver/federation/):
 | Routing Health | Add `governance_sync_status` field | New field in `FederationHealthView` proto |
 | Invalidation | No change for v1 | Invalidation remains per-actor, not per-federation |
 
-### 9.3 Governance Subserver → Frame Interaction
+### 9.3 Governance Subserver -> Frame Interaction
 
 The new `federation` subserver in app layer calls frame layer via Go interface injection:
 
 ```go
-// frame provides:
 type FederationTransport interface {
-    // Send HTTP request to remote station with federation JWT
-    SendAuthenticatedRequest(ctx context.Context, targetURL string, scope string, body []byte) ([]byte, error)
-}
-
-type RelayPublisher interface {
-    // Publish notification to relay topic
-    Publish(ctx context.Context, topic string, payload []byte) error
+    Deliver(
+        ctx context.Context,
+        frame *delivery.Frame,
+    ) (delivery.Result, error)
 }
 ```
 
-The governance subserver does NOT import frame internals directly. It uses injected interfaces provided during DI assembly.
+The governance subserver does NOT import frame or Relay internals directly.
+It supplies a typed destination/frame to the injected transport port. Direct
+and Relay route selection, tunnel framing and credentials are owned by
+[Node Connectivity](../../platform/runtime/node-connectivity/README.md).
 
 ---
 

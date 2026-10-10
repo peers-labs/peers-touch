@@ -28,22 +28,22 @@ Rules:
 
 ## 3. Color Roles
 
-| Role | Meaning | Usage |
-| --- | --- | --- |
-| `surface.canvas` | application background | shell and page background |
-| `surface.base` | primary reading surface | feed items, cards, panels |
-| `surface.subtle` | low-emphasis grouping | composer background, empty state blocks |
-| `surface.raised` | floating surfaces | popovers, menus, lightweight dialogs |
-| `text.primary` | main readable content | body, titles, primary labels |
-| `text.secondary` | stable metadata | handle, station, time, helper text |
-| `text.muted` | low-priority labels | placeholder, disabled hint |
-| `action.primary` | one dominant action | publish, confirm, create |
-| `action.secondary` | low-emphasis action | back, reply, view comments |
-| `action.danger` | destructive action | delete, block, revoke |
-| `trust.local` | local verified context | local station, self-authored state |
-| `trust.remote` | remote/federated context | remote station source |
-| `trust.warning` | attention-needed trust state | degraded, partial, risky |
-| `trust.blocked` | policy-denied state | block, moderation, hidden |
+| Role               | Meaning                      | Usage                                   |
+| ------------------ | ---------------------------- | --------------------------------------- |
+| `surface.canvas`   | application background       | shell and page background               |
+| `surface.base`     | primary reading surface      | feed items, cards, panels               |
+| `surface.subtle`   | low-emphasis grouping        | composer background, empty state blocks |
+| `surface.raised`   | floating surfaces            | popovers, menus, lightweight dialogs    |
+| `text.primary`     | main readable content        | body, titles, primary labels            |
+| `text.secondary`   | stable metadata              | handle, station, time, helper text      |
+| `text.muted`       | low-priority labels          | placeholder, disabled hint              |
+| `action.primary`   | one dominant action          | publish, confirm, create                |
+| `action.secondary` | low-emphasis action          | back, reply, view comments              |
+| `action.danger`    | destructive action           | delete, block, revoke                   |
+| `trust.local`      | local verified context       | local station, self-authored state      |
+| `trust.remote`     | remote/federated context     | remote station source                   |
+| `trust.warning`    | attention-needed trust state | degraded, partial, risky                |
+| `trust.blocked`    | policy-denied state          | block, moderation, hidden               |
 
 Rules:
 
@@ -54,34 +54,37 @@ Rules:
 
 ## 4. Radius Roles
 
-| Role | Meaning | Usage |
-| --- | --- | --- |
-| `radius.xs` | tiny affordance | inline chips, small status pills |
-| `radius.sm` | compact control | small buttons, reaction chips |
-| `radius.md` | default control | inputs, tabs, normal buttons |
-| `radius.lg` | reading surface | feed cards, composer panels |
-| `radius.xl` | high-level container | large panels, modal sheets |
-| `radius.full` | circular or pill | avatar, icon button, selected pill |
+| Role          | Meaning                                        | Usage                                                   |
+| ------------- | ---------------------------------------------- | ------------------------------------------------------- |
+| `radius.xs`   | tiny affordance                                | inline chips, small status pills                        |
+| `radius.sm`   | compact control                                | small buttons, reaction chips                           |
+| `radius.md`   | default control                                | inputs, tabs, normal buttons                            |
+| `radius.lg`   | reading surface                                | feed cards, composer panels                             |
+| `radius.xl`   | high-level container                           | large panels, modal sheets                              |
+| `radius.full` | indicator-only circle or compact metadata pill | presence dot, unread badge, compact reaction/count chip |
 
 Rules:
 
 - Related controls inside one surface should use adjacent radius levels.
 - Do not put sharp controls inside soft containers unless the sharpness signals data table or code.
 - Feed and chat surfaces should prefer `radius.lg` or lighter boundary models, not thick nested boxes.
+- User avatars always use rounded-square geometry derived from their size; they never use `radius.full`.
+- Interactive inputs and icon buttons never use circular or pill geometry. Use `radius.sm` or `radius.md`.
+- `radius.full` is reserved for non-container indicators and compact metadata, not the product's primary visual language.
 
 ## 5. Spacing Roles
 
 Spacing should express hierarchy.
 
-| Role | Meaning |
-| --- | --- |
-| `space.2xs` | icon/text gap |
-| `space.xs` | chip gap, compact inline gap |
-| `space.sm` | control group gap |
-| `space.md` | paragraph/action row gap |
-| `space.lg` | card internal padding |
-| `space.xl` | section gap |
-| `space.2xl` | page rail margin |
+| Role        | Meaning                      |
+| ----------- | ---------------------------- |
+| `space.2xs` | icon/text gap                |
+| `space.xs`  | chip gap, compact inline gap |
+| `space.sm`  | control group gap            |
+| `space.md`  | paragraph/action row gap     |
+| `space.lg`  | card internal padding        |
+| `space.xl`  | section gap                  |
+| `space.2xl` | page rail margin             |
 
 Rules:
 
@@ -91,14 +94,14 @@ Rules:
 
 ## 6. Border And Shadow Roles
 
-| Role | Meaning | Usage |
-| --- | --- | --- |
-| `border.hairline` | quiet separation | feed item edge, divider |
-| `border.focus` | keyboard/focus ownership | parent control focus state |
-| `border.danger` | destructive/error boundary | validation or blocking state |
-| `shadow.none` | flat reading flow | dense feeds and lists |
-| `shadow.soft` | subtle lifted surface | composer, lightweight card |
-| `shadow.float` | popover/dropdown | floating action surfaces |
+| Role              | Meaning                    | Usage                        |
+| ----------------- | -------------------------- | ---------------------------- |
+| `border.hairline` | quiet separation           | feed item edge, divider      |
+| `border.focus`    | keyboard/focus ownership   | parent control focus state   |
+| `border.danger`   | destructive/error boundary | validation or blocking state |
+| `shadow.none`     | flat reading flow          | dense feeds and lists        |
+| `shadow.soft`     | subtle lifted surface      | composer, lightweight card   |
+| `shadow.float`    | popover/dropdown           | floating action surfaces     |
 
 Rules:
 
@@ -108,15 +111,15 @@ Rules:
 
 ## 7. Typography Roles
 
-| Role | Meaning |
-| --- | --- |
-| `type.pageTitle` | page identity |
-| `type.sectionTitle` | local section title |
-| `type.itemTitle` | actor, object, or row title |
-| `type.body` | primary readable content |
-| `type.meta` | time, station, handle, audience |
-| `type.action` | button and link text |
-| `type.caption` | low-priority helper text |
+| Role                | Meaning                         |
+| ------------------- | ------------------------------- |
+| `type.pageTitle`    | page identity                   |
+| `type.sectionTitle` | local section title             |
+| `type.itemTitle`    | actor, object, or row title     |
+| `type.body`         | primary readable content        |
+| `type.meta`         | time, station, handle, audience |
+| `type.action`       | button and link text            |
+| `type.caption`      | low-priority helper text        |
 
 Rules:
 
@@ -126,12 +129,12 @@ Rules:
 
 ## 8. Motion Roles
 
-| Role | Meaning |
-| --- | --- |
-| `motion.instant` | no perceptible delay |
-| `motion.fast` | hover, press, small state |
-| `motion.normal` | panel, popover, tab switch |
-| `motion.slow` | major route transition |
+| Role             | Meaning                    |
+| ---------------- | -------------------------- |
+| `motion.instant` | no perceptible delay       |
+| `motion.fast`    | hover, press, small state  |
+| `motion.normal`  | panel, popover, tab switch |
+| `motion.slow`    | major route transition     |
 
 Rules:
 

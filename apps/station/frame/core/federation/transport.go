@@ -3,12 +3,10 @@ package federation
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -32,33 +30,34 @@ type StationURLResolver interface {
 	) (string, error)
 }
 
-// RelayAccess exposes the current relay endpoint and bearer without caching them.
+// RelayAccess sends one request through a scoped opaque peer tunnel.
 type RelayAccess interface {
-	BaseURL() string
-	Token() string
+	Available() bool
+	RoundTrip(
+		context.Context,
+		string,
+		*http.Request,
+	) (*http.Response, error)
 }
 
 // LiveRelayAccess reads the current native Federation relay client per delivery.
 type LiveRelayAccess struct{}
 
-// BaseURL returns the current relay origin.
-func (LiveRelayAccess) BaseURL() string {
+func (LiveRelayAccess) Available() bool {
 	client := nativefed.RelayClient()
-	if client == nil {
-		return ""
-	}
-
-	return client.BaseURL()
+	return client != nil && client.Available()
 }
 
-// Token returns the current relay bearer.
-func (LiveRelayAccess) Token() string {
+func (LiveRelayAccess) RoundTrip(
+	ctx context.Context,
+	targetStationPeerID string,
+	request *http.Request,
+) (*http.Response, error) {
 	client := nativefed.RelayClient()
 	if client == nil {
-		return ""
+		return nil, nativefed.ErrRelayNotConnected
 	}
-
-	return client.Token()
+	return client.RoundTrip(ctx, targetStationPeerID, request)
 }
 
 type deliveryTokenMinter struct {
@@ -186,7 +185,7 @@ func (t *HTTPTransport) Deliver(
 			err,
 		)
 	}
-	endpoint, relayToken, viaRelay, err := t.resolveEndpoint(
+	endpoint, viaRelay, err := t.resolveEndpoint(
 		ctx,
 		frame.GetTargetStationPeerId(),
 	)
@@ -208,14 +207,17 @@ func (t *HTTPTransport) Deliver(
 	}
 	request.Header.Set("Content-Type", "application/protobuf")
 	request.Header.Set("Accept", "application/protobuf")
+	request.Header.Set("Authorization", "Bearer "+token)
+	var response *http.Response
 	if viaRelay {
-		request.Header.Set("Authorization", "Bearer "+relayToken)
-		request.Header.Set(nativefed.ForwardAuthorizationHeader, "Bearer "+token)
+		response, err = t.relay.RoundTrip(
+			ctx,
+			frame.GetTargetStationPeerId(),
+			request,
+		)
 	} else {
-		request.Header.Set("Authorization", "Bearer "+token)
+		response, err = t.client.Do(request)
 	}
-
-	response, err := t.client.Do(request)
 	if err != nil {
 		return delivery.Result{}, delivery.NewError(
 			delivery.FailureTransportUnavailable,
@@ -225,12 +227,21 @@ func (t *HTTPTransport) Deliver(
 	}
 	defer response.Body.Close()
 
-	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxDeliveryResponseLen))
+	responseBody, err := io.ReadAll(
+		io.LimitReader(response.Body, maxDeliveryResponseLen+1),
+	)
 	if err != nil {
 		return delivery.Result{}, delivery.NewError(
 			delivery.FailureTransportUnavailable,
 			"read Federation delivery response",
 			err,
+		)
+	}
+	if len(responseBody) > maxDeliveryResponseLen {
+		return delivery.Result{}, delivery.NewError(
+			delivery.FailureInvalidResult,
+			"read Federation delivery response",
+			errors.New("response exceeds the configured limit"),
 		)
 	}
 	if response.StatusCode < http.StatusOK ||
@@ -289,21 +300,13 @@ func (t *HTTPTransport) Deliver(
 func (t *HTTPTransport) resolveEndpoint(
 	ctx context.Context,
 	targetStationPeerID string,
-) (endpoint string, relayToken string, viaRelay bool, err error) {
-	if t.relay != nil {
-		baseURL := strings.TrimRight(strings.TrimSpace(t.relay.BaseURL()), "/")
-		token := strings.TrimSpace(t.relay.Token())
-		if baseURL != "" && token != "" {
-			return fmt.Sprintf(
-				"%s/relay/forward/%s%s",
-				baseURL,
-				url.PathEscape(targetStationPeerID),
-				DeliveryRoute,
-			), token, true, nil
-		}
+) (endpoint string, viaRelay bool, err error) {
+	if t.relay != nil && t.relay.Available() {
+		return "https://" + targetStationPeerID + ".station.invalid" +
+			DeliveryRoute, true, nil
 	}
 	if t.resolver == nil {
-		return "", "", false, delivery.NewError(
+		return "", false, delivery.NewError(
 			delivery.FailureTransportUnavailable,
 			"resolve Federation delivery route",
 			errors.New("no direct or relay route is available"),
@@ -311,7 +314,7 @@ func (t *HTTPTransport) resolveEndpoint(
 	}
 	baseURL, err := t.resolver.ResolveActiveStationURL(ctx, targetStationPeerID)
 	if err != nil {
-		return "", "", false, delivery.NewError(
+		return "", false, delivery.NewError(
 			delivery.FailureTransportUnavailable,
 			"resolve Federation delivery route",
 			err,
@@ -319,14 +322,14 @@ func (t *HTTPTransport) resolveEndpoint(
 	}
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
-		return "", "", false, delivery.NewError(
+		return "", false, delivery.NewError(
 			delivery.FailureTransportUnavailable,
 			"resolve Federation delivery route",
 			errors.New("resolved Station URL is empty"),
 		)
 	}
 
-	return baseURL + DeliveryRoute, "", false, nil
+	return baseURL + DeliveryRoute, false, nil
 }
 
 type routedTransport struct {
@@ -347,43 +350,11 @@ func (t *routedTransport) Deliver(
 		)
 	}
 	isLocal := frame.GetTargetStationPeerId() == t.localStationPeerID
-	// #region debug-point F-G:federation-route-selection
-	if payload, err := json.Marshal(map[string]any{"sessionId": "mobile-social-activation", "runId": "post-fix", "hypothesisId": "F-G", "location": "apps/station/frame/core/federation/transport.go:routedTransport.Deliver", "msg": "[DEBUG] Federation route selected", "data": map[string]any{"frameId": frame.GetFrameId(), "payloadKind": frame.GetPayloadKind(), "sourceStationPeerId": frame.GetSourceStationPeerId(), "targetStationPeerId": frame.GetTargetStationPeerId(), "runtimeLocalStationPeerId": t.localStationPeerID, "isLocal": isLocal}, "ts": time.Now().UnixMilli()}); err == nil {
-		go func() {
-			response, _ := http.Post("http://192.0.2.12:7784/event", "application/json", bytes.NewReader(payload))
-			if response != nil {
-				_ = response.Body.Close()
-			}
-		}()
-	}
-	// #endregion
 	if isLocal {
-		result, err := t.local.Deliver(ctx, frame)
-		// #region debug-point F:same-station-delivery-result
-		if payload, encodeErr := json.Marshal(map[string]any{"sessionId": "mobile-social-activation", "runId": "post-fix", "hypothesisId": "F", "location": "apps/station/frame/core/federation/transport.go:routedTransport.Deliver", "msg": "[DEBUG] Same-Station Federation delivery completed", "data": map[string]any{"frameId": frame.GetFrameId(), "payloadKind": frame.GetPayloadKind(), "disposition": result.Disposition, "errorCode": result.ErrorCode, "error": fmt.Sprint(err)}, "ts": time.Now().UnixMilli()}); encodeErr == nil {
-			go func() {
-				response, _ := http.Post("http://192.0.2.12:7784/event", "application/json", bytes.NewReader(payload))
-				if response != nil {
-					_ = response.Body.Close()
-				}
-			}()
-		}
-		// #endregion
-		return result, err
+		return t.local.Deliver(ctx, frame)
 	}
 
-	result, err := t.remote.Deliver(ctx, frame)
-	// #region debug-point I:remote-delivery-result
-	if payload, encodeErr := json.Marshal(map[string]any{"sessionId": "mobile-social-activation", "runId": "typing-pre-fix", "hypothesisId": "I", "location": "apps/station/frame/core/federation/transport.go:routedTransport.Deliver", "msg": "[DEBUG] Remote Federation delivery completed", "data": map[string]any{"frameId": frame.GetFrameId(), "payloadKind": frame.GetPayloadKind(), "targetStationPeerId": frame.GetTargetStationPeerId(), "disposition": result.Disposition, "errorCode": result.ErrorCode, "error": fmt.Sprint(err)}, "ts": time.Now().UnixMilli()}); encodeErr == nil {
-		go func() {
-			response, _ := http.Post("http://192.0.2.12:7784/event", "application/json", bytes.NewReader(payload))
-			if response != nil {
-				_ = response.Body.Close()
-			}
-		}()
-	}
-	// #endregion
-	return result, err
+	return t.remote.Deliver(ctx, frame)
 }
 
 var (

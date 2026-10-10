@@ -71,6 +71,8 @@ type PrivateObjectService struct {
 	stationSigner PrivateContentStationSigner
 	clock         PrivateContentClock
 	policy        securecontentkernel.Policy
+	federated     *federatedPrivateObjectConfig
+	streamMetrics federatedPrivateObjectStreamMetrics
 }
 
 func NewPrivateObjectService(
@@ -107,6 +109,7 @@ func NewPrivateObjectService(
 		stationSigner: stationSigner,
 		clock:         clock,
 		policy:        policy,
+		streamMetrics: newFederatedPrivateObjectStreamMetrics(),
 	}, nil
 }
 
@@ -769,6 +772,17 @@ func (s *PrivateObjectService) Download(
 		expectedDescriptorSHA256,
 	)
 	if err != nil {
+		if errors.Is(err, infrastructure.ErrPrivateContentNotFound) &&
+			s.federated != nil {
+			return s.downloadFederatedPrivateObject(
+				ctx,
+				viewer,
+				objectID,
+				expectedDescriptorSHA256,
+				start,
+				end,
+			)
+		}
 		return PrivateObjectDownload{}, mapPrivateObjectStoreError(
 			operation,
 			err,

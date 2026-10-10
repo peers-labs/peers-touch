@@ -244,6 +244,21 @@ pub fn generate_fresh_device_identity(
     generate_fresh_device_identity_from_seed(ptid, &actor_identity_seed, actor_profile_version)
 }
 
+pub fn generate_fresh_device_identity_for_device(
+    ptid: &str,
+    device_id: &str,
+    actor_identity_seed: [u8; 32],
+    actor_profile_version: u64,
+) -> Result<FreshDeviceIdentityState, String> {
+    let actor_identity_seed = Zeroizing::new(actor_identity_seed);
+    generate_fresh_device_identity_for_device_from_seed(
+        ptid,
+        device_id,
+        &actor_identity_seed,
+        actor_profile_version,
+    )
+}
+
 pub fn generate_fresh_device_identity_from_seed(
     ptid: &str,
     actor_identity_seed: &[u8; 32],
@@ -264,6 +279,25 @@ fn generate_fresh_device_identity_for_device_from_seed(
     actor_identity_seed: &[u8; 32],
     actor_profile_version: u64,
 ) -> Result<FreshDeviceIdentityState, String> {
+    generate_device_identity_for_device_from_parts(
+        ptid,
+        device_id,
+        actor_identity_seed,
+        actor_profile_version,
+        None,
+    )
+}
+
+/// Build the device identity. When `device_signing_seed` is supplied the same
+/// device material is reconstructed (identity continuity); otherwise a fresh
+/// random device key is generated.
+pub fn generate_device_identity_for_device_from_parts(
+    ptid: &str,
+    device_id: &str,
+    actor_identity_seed: &[u8; 32],
+    actor_profile_version: u64,
+    device_signing_seed: Option<&[u8; 32]>,
+) -> Result<FreshDeviceIdentityState, String> {
     if ptid.trim().is_empty() || actor_profile_version == 0 {
         return Err("fresh messaging identity requires PTID and profile version".to_string());
     }
@@ -271,17 +305,38 @@ fn generate_fresh_device_identity_for_device_from_seed(
         return Err("fresh messaging identity requires canonical device_id".to_string());
     }
     let actor_identity = IdentityKeyPair::from_seed(actor_identity_seed);
-    let device_signing_key =
-        DeviceSigningKey::generate_cross_signed(&actor_identity, device_id, |device_key| {
-            build_device_certificate(
-                ptid,
-                device_id,
-                actor_profile_version,
-                &actor_identity,
-                device_key.as_bytes(),
-            )
-            .encode_to_vec()
-        });
+
+    let device_signing_key = match device_signing_seed {
+        Some(seed) => DeviceSigningKey::cross_signed_from_seed(
+            &actor_identity,
+            device_id,
+            seed,
+            |device_key| {
+                build_device_certificate(
+                    ptid,
+                    device_id,
+                    actor_profile_version,
+                    &actor_identity,
+                    device_key.as_bytes(),
+                )
+                .encode_to_vec()
+            },
+        ),
+        None => DeviceSigningKey::generate_cross_signed(
+            &actor_identity,
+            device_id,
+            |device_key| {
+                build_device_certificate(
+                    ptid,
+                    device_id,
+                    actor_profile_version,
+                    &actor_identity,
+                    device_key.as_bytes(),
+                )
+                .encode_to_vec()
+            },
+        ),
+    };
     let certificate = build_device_certificate(
         ptid,
         device_id,
@@ -414,6 +469,24 @@ mod tests {
         let seed = [42u8; 32];
         let state = generate_fresh_device_identity("alice@p.t", seed, 1).unwrap();
         assert!(std::mem::needs_drop::<FreshDeviceIdentityState>());
+        validate_enrollment_actor(&state.enrollment, "alice@p.t", seed, 1).unwrap();
+    }
+
+    #[test]
+    fn fresh_enrollment_uses_explicit_session_device_id() {
+        let seed = [42u8; 32];
+        let state =
+            generate_fresh_device_identity_for_device("alice@p.t", "session-device", seed, 1)
+                .unwrap();
+        assert_eq!(
+            state
+                .enrollment
+                .certificate
+                .device
+                .as_ref()
+                .map(|device| device.device_id.as_str()),
+            Some("session-device")
+        );
         validate_enrollment_actor(&state.enrollment, "alice@p.t", seed, 1).unwrap();
     }
 

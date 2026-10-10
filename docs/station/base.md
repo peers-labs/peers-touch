@@ -188,11 +188,14 @@ Related examples:
 
 - Desktop uses Station through its local runtime and command bridge
 - Mobile uses Station through native networking and relay-oriented flows
+- Station/Relay role, route and opaque tunnel ownership is defined by
+  [Node Connectivity](../architecture/platform/runtime/node-connectivity/README.md)
 
 Detailed cross-system ownership is defined in:
 
 - `../global/architecture.md`
 - `../architecture/platform/station-desktop-boundary.md`
+- `../architecture/platform/runtime/node-connectivity/README.md`
 
 ---
 

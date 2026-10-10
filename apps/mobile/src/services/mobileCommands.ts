@@ -106,6 +106,15 @@ export interface NativeMomentMediaInput {
   handle: string;
 }
 
+function stagedMomentMediaCommandInput(input: NativeMomentMediaInput) {
+  return {
+    stationPeerId: input.stationPeerId,
+    actorPtid: input.actorPtid,
+    sessionId: input.sessionId,
+    handle: input.handle,
+  };
+}
+
 export async function uploadNativeMomentMedia(
   input: NativeMomentMediaInput,
 ): Promise<ImageAttachment> {
@@ -118,14 +127,18 @@ export async function uploadNativeMomentMedia(
     ),
     'moments',
   );
-  const bytes = await invoke<number[]>('moment_media_upload', { input });
+  const bytes = await invoke<number[]>('moment_media_upload', {
+    input: stagedMomentMediaCommandInput(input),
+  });
   return fromBinary(ImageAttachmentSchema, Uint8Array.from(bytes));
 }
 
 export async function discardNativeMomentMedia(
   input: NativeMomentMediaInput,
 ): Promise<void> {
-  await invoke('moment_media_discard', { input });
+  await invoke('moment_media_discard', {
+    input: stagedMomentMediaCommandInput(input),
+  });
 }
 
 export interface MessagingAccountInput {
@@ -237,6 +250,8 @@ export interface MessagingConversationMutationInput extends MessagingMutationSco
 export interface MessagingActivateInput extends MessagingMutationScopeInput {
   sessionId: string;
 }
+
+export type MessagingIdentityRecoveryInput = MessagingActivateInput;
 
 export interface MessagingRuntimeStatus {
   active: boolean;
@@ -554,6 +569,15 @@ export async function messagingStatus(): Promise<MessagingRuntimeStatus> {
   return invoke<MessagingRuntimeStatus>('messaging_status');
 }
 
+export async function messagingRecoverIdentity(
+  input: MessagingIdentityRecoveryInput,
+): Promise<MessagingRuntimeStatus> {
+  return invoke<MessagingRuntimeStatus>(
+    'messaging_recover_identity_with_native_input',
+    { input },
+  );
+}
+
 export async function messagingCallSignalSeal(
   input: MessagingCallSignalInput & { plaintext: string },
 ): Promise<string> {
@@ -580,8 +604,8 @@ export interface PrivateSocialAccountInput extends MessagingMutationScopeInput {
   activationGeneration: number;
 }
 
-export interface PrivateSocialRecoveryPhraseInput extends PrivateSocialAccountInput {
-  recoveryPhrase: string;
+export interface PrivateSocialNativeRecoveryInput extends PrivateSocialAccountInput {
+  postId: string;
   recoveryEpoch?: number;
 }
 
@@ -761,11 +785,47 @@ export interface PrivateMomentReadProjection {
   audienceKind: PrivateSocialReceiverAudience | 'UNKNOWN';
   state: PrivateSocialReadState;
   mentions?: PrivateMomentMention[];
+  reactions?: PrivateReactionSummaryProjection[];
+  reactionRevision?: string;
+  reactionsHydrated?: boolean;
   content?: PrivateMomentReadContent;
   errorCode?: string;
   retryAfterSeconds?: number;
   createdAtMillis?: number;
   updatedAtMillis?: number;
+}
+
+export interface PrivateReactionSummaryProjection {
+  kind: number;
+  count: string;
+  reactedByViewer: boolean;
+}
+
+export type PrivateReactionCommandState =
+  | 'REACTION_PENDING'
+  | 'REACTION_RETRYING'
+  | 'REACTION_UNKNOWN_OUTCOME'
+  | 'REACTION_COMMITTED'
+  | 'REACTION_REJECTED';
+
+export interface PrivateReactionCommandProjection {
+  commandId: string;
+  postId: string;
+  kind: number;
+  operation: 'REACT' | 'UNREACT';
+  state: PrivateReactionCommandState;
+  attemptCount: number;
+  projectionRevision: string;
+  errorCode?: string;
+  retryAfterSeconds?: number;
+  retryNotBeforeUnixMs?: number;
+}
+
+export interface PrivateReactionMutationResult {
+  command: PrivateReactionCommandProjection;
+  reactions: PrivateReactionSummaryProjection[];
+  projectionRevision: string;
+  exactReplay: boolean;
 }
 
 export type PrivateCommentState =
@@ -828,6 +888,7 @@ export interface PrivateSocialNativeSnapshot {
   readProjections: PrivateMomentReadProjection[];
   commentDrafts: PrivateCommentDraftProjection[];
   comments: PrivateCommentProjection[];
+  reactionCommands: PrivateReactionCommandProjection[];
 }
 
 export interface PrivateSocialRuntimeStatus {
@@ -848,6 +909,33 @@ export interface PrivateSocialWorkerReport {
   submissionsTerminal: number;
 }
 
+export type PrivateSocialInvalidationReason =
+  | 'RESOURCE_DELETED'
+  | 'RELATIONSHIP_REVOKED'
+  | 'RECIPIENT_BLOCKED'
+  | 'DEVICE_REVOKED';
+
+export type PrivateSocialInvalidation =
+  | {
+      reason: 'RESOURCE_DELETED';
+      sourceCursor: string;
+      postId: string;
+    }
+  | {
+      reason: 'RELATIONSHIP_REVOKED' | 'RECIPIENT_BLOCKED';
+      sourceCursor: string;
+      authorPtid: string;
+    }
+  | {
+      reason: 'DEVICE_REVOKED';
+      sourceCursor: string;
+      entireScope: true;
+    };
+
+export interface PrivateSocialReconcileResult extends PrivateSocialWorkerReport {
+  invalidatedReadProjections: PrivateMomentReadProjection[];
+}
+
 export async function privateSocialActivate(
   input: PrivateSocialActivationInput,
 ): Promise<PrivateSocialRuntimeStatus> {
@@ -861,6 +949,7 @@ export async function privateSocialStatus(): Promise<PrivateSocialRuntimeStatus>
 export async function privateSocialPrepareText(
   input: PrivateSocialAccountInput & PrivateSocialTextIntent,
 ): Promise<PrivateMomentProjection> {
+  requirePrivateSocialMutation(input);
   return invoke<PrivateMomentProjection>('social_private_prepare_text', { input });
 }
 
@@ -870,12 +959,14 @@ export async function privateSocialSubmitText(
     draftRevision: number;
   },
 ): Promise<PrivateMomentProjection> {
+  requirePrivateSocialMutation(input);
   return invoke<PrivateMomentProjection>('social_private_submit_text', { input });
 }
 
 export async function privateSocialPublish(
   input: PrivateSocialAccountInput & PrivateSocialMomentIntent,
 ): Promise<PrivateMomentProjection> {
+  requirePrivateSocialMutation(input);
   return invoke<PrivateMomentProjection>('social_private_publish', { input });
 }
 
@@ -897,27 +988,19 @@ export async function privateSocialOpenMedia(
   return invoke<PrivateMomentReadProjection>('social_private_open_media', { input });
 }
 
-export async function privateSocialStoreRecoveryPhrase(
-  input: PrivateSocialRecoveryPhraseInput,
-): Promise<void> {
-  return invoke<void>('social_private_store_recovery_phrase', { input });
-}
-
-export async function privateSocialRecoverText(
-  input: PrivateSocialAccountInput & { postId: string },
+export async function privateSocialRecoverWithNativeInput(
+  input: PrivateSocialNativeRecoveryInput,
 ): Promise<PrivateMomentReadProjection> {
-  return invoke<PrivateMomentReadProjection>('social_private_recover_text', { input });
-}
-
-export async function privateSocialRecover(
-  input: PrivateSocialAccountInput & { postId: string },
-): Promise<PrivateMomentReadProjection> {
-  return invoke<PrivateMomentReadProjection>('social_private_recover', { input });
+  return invoke<PrivateMomentReadProjection>(
+    'social_private_recover_with_native_input',
+    { input },
+  );
 }
 
 export async function privateSocialCommentSubmit(
   input: PrivateSocialAccountInput & PrivateCommentIntent,
 ): Promise<PrivateCommentSubmitResult> {
+  requirePrivateSocialMutation(input);
   return invoke<PrivateCommentSubmitResult>('social_private_comment_submit', { input });
 }
 
@@ -931,10 +1014,33 @@ export async function privateSocialComments(
   return invoke<PrivateCommentPage>('social_private_comments', { input });
 }
 
+export async function privateSocialReact(
+  input: PrivateSocialAccountInput & { postId: string; kind: number },
+): Promise<PrivateReactionMutationResult> {
+  requirePrivateSocialMutation(input);
+  return invoke<PrivateReactionMutationResult>('social_private_react', { input });
+}
+
+export async function privateSocialUnreact(
+  input: PrivateSocialAccountInput & { postId: string; kind: number },
+): Promise<PrivateReactionMutationResult> {
+  requirePrivateSocialMutation(input);
+  return invoke<PrivateReactionMutationResult>('social_private_unreact', { input });
+}
+
+export async function privateSocialReactionRetry(
+  input: PrivateSocialAccountInput & { commandId: string },
+): Promise<PrivateReactionMutationResult> {
+  requirePrivateSocialMutation(input);
+  return invoke<PrivateReactionMutationResult>('social_private_reaction_retry', { input });
+}
+
 export async function privateSocialReconcile(
-  input: PrivateSocialAccountInput,
-): Promise<PrivateSocialWorkerReport> {
-  return invoke<PrivateSocialWorkerReport>('social_private_reconcile', { input });
+  input: PrivateSocialAccountInput & {
+    invalidations?: readonly PrivateSocialInvalidation[];
+  },
+): Promise<PrivateSocialReconcileResult> {
+  return invoke<PrivateSocialReconcileResult>('social_private_reconcile', { input });
 }
 
 export async function privateSocialSnapshot(
@@ -1347,6 +1453,10 @@ function requireMessagingMutation(
   );
 }
 
+function requirePrivateSocialMutation(input: PrivateSocialAccountInput): void {
+  requireMessagingMutation(input, 'social');
+}
+
 export async function messagingCommandStatus(
   input: MessagingAccountInput & { commandId: string },
 ): Promise<MessagingCommandStatusProjection> {
@@ -1379,12 +1489,90 @@ export interface VerifiedStationIdentity {
   canonicalOrigin: string;
   capabilities: string[];
   verifiedAt: number;
+  routeId?: string;
+  routeType?: StationRouteType;
 }
 
 export async function verifyStationIdentityProof(
   input: VerifyStationIdentityProofInput,
 ): Promise<VerifiedStationIdentity> {
   return invoke<VerifiedStationIdentity>('station_identity_verify', { input });
+}
+
+export type StationRouteType = 'direct' | 'relay';
+
+export interface NativeStationRouteCandidate {
+  stationPeerId: string;
+  stationHostPublicKey: number[];
+  routeId: string;
+  routeType: StationRouteType;
+  transport: 'direct_https' | 'relay_wss_v1';
+  endpointOrigin: string;
+  relayPeerId?: string;
+  routeGeneration: number;
+  innerTlsSpkiSha256?: number[];
+  attestationBytes?: number[];
+  attestationExpiresAtUnixMs?: number;
+  sourceRef: string;
+}
+
+export interface StationEndpointDiscovery {
+  role: 'direct_station' | 'relay';
+  endpointPeerId: string;
+  canonicalOrigin: string;
+  routes: NativeStationRouteCandidate[];
+}
+
+export interface StationRouteBindingProjection {
+  stationPeerId: string;
+  routeId: string;
+  routeType: StationRouteType;
+  endpointOrigin: string;
+  relayPeerId?: string;
+  routeGeneration: number;
+  routeRevision: number;
+  transportOrigin: string;
+}
+
+export async function discoverStationEndpoint(
+  input: string,
+): Promise<StationEndpointDiscovery> {
+  return invoke<StationEndpointDiscovery>('station_endpoint_discover', { input });
+}
+
+export async function activateStationRouteBinding(input: {
+  stationPeerId: string;
+  routeId: string;
+  routeRevision: number;
+}): Promise<StationRouteBindingProjection> {
+  return invoke<StationRouteBindingProjection>('station_route_activate', { input });
+}
+
+export async function restoreStationRouteBinding(input: {
+  stationPeerId: string;
+  routeId: string;
+  routeGeneration: number;
+  routeRevision: number;
+  sourceRef: string;
+  endpointOrigin: string;
+}): Promise<StationRouteBindingProjection> {
+  return invoke<StationRouteBindingProjection>('station_route_restore', { input });
+}
+
+export async function removeStationRouteBinding(input: {
+  stationPeerId: string;
+  routeId: string;
+  sourceRef: string;
+}): Promise<void> {
+  await invoke<void>('station_route_remove', { input });
+}
+
+export async function readStationRouteBinding(): Promise<StationRouteBindingProjection | null> {
+  return invoke<StationRouteBindingProjection | null>('station_route_snapshot');
+}
+
+export async function fetchActiveStationIdentity(): Promise<VerifiedStationIdentity> {
+  return invoke<VerifiedStationIdentity>('station_identity_fetch');
 }
 
 export type MobileOAuthProvider = 'github' | 'google';

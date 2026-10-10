@@ -14,21 +14,32 @@ interface OverflowReconcileBarProps {
 }
 
 export function OverflowReconcileBar({ state, t }: OverflowReconcileBarProps) {
-  const domainNames = state.staleDomains.map((entry) => entry.domain).join(', ');
+  const projectionStale = state.staleDomains.some(
+    (entry) => entry.staleness.stale
+      && entry.staleness.reason === 'projection-stale',
+  );
+  const titleKey = projectionStale
+    ? 'mobile.recovery.projectionStale.title'
+    : 'mobile.recovery.overflowReconcile.title';
+  const bodyKey = projectionStale
+    ? 'mobile.recovery.projectionStale.body'
+    : 'mobile.recovery.overflowReconcile.body';
 
   return (
     <div
       className="recovery-bar recovery-overflow-reconcile"
       data-acceptance-id="recovery-event-overflow"
+      data-product-surface={
+        projectionStale ? 'recovery.projection-stale' : undefined
+      }
       role="status"
-      aria-label={t('mobile.recovery.overflowReconcile.title')}
+      aria-label={t(titleKey)}
     >
       <span className="recovery-bar__icon" aria-hidden="true">
         &#x1F504;
       </span>
       <span className="recovery-bar__text">
-        {t('mobile.recovery.overflowReconcile.body', {
-          domains: domainNames,
+        {t(bodyKey, {
           count: state.staleDomains.length,
         })}
       </span>

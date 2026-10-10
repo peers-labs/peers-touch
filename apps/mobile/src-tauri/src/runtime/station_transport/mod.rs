@@ -26,6 +26,8 @@ const MAX_BINARY_REQUEST_BYTES: usize = 32 * 1024 * 1024;
 const MAX_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_REALTIME_CHUNK_BYTES: usize = 1024 * 1024;
 const REALTIME_EVENT: &str = "mobile:station-realtime";
+const MOMENTS_RESOURCE_PATH: &[&str] = &["api", "v1", "social", "moments"];
+const SOCIAL_RELATIONSHIP_TARGET_QUERY: &str = "target_actor_ptid";
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -169,7 +171,37 @@ enum StationOperation {
         cursor: Option<String>,
     },
     SocialFriendshipStatus {
-        target_ptid: String,
+        target_actor_ptid: String,
+    },
+    SocialCirclesList {
+        limit: u32,
+        cursor: Option<String>,
+    },
+    SocialCircleCreate {
+        name: String,
+        description: Option<String>,
+        member_ptids: Vec<String>,
+    },
+    SocialCircleUpdate {
+        circle_id: String,
+        name: String,
+        description: Option<String>,
+    },
+    SocialCircleDelete {
+        circle_id: String,
+    },
+    SocialCircleMembersList {
+        circle_id: String,
+        limit: u32,
+        cursor: Option<String>,
+    },
+    SocialCircleMembersAdd {
+        circle_id: String,
+        member_ptids: Vec<String>,
+    },
+    SocialCircleMembersRemove {
+        circle_id: String,
+        member_ptids: Vec<String>,
     },
     MomentsTimeline {
         timeline_type: i32,
@@ -177,6 +209,9 @@ enum StationOperation {
         limit: u32,
     },
     MomentsPostGet {
+        post_id: String,
+    },
+    MomentsDelete {
         post_id: String,
     },
     MomentsReact {
@@ -250,8 +285,16 @@ impl StationOperation {
             Self::SocialFriendRequestsList { .. } => "social_friend_requests_list",
             Self::SocialBlockedList { .. } => "social_blocked_list",
             Self::SocialFriendshipStatus { .. } => "social_friendship_status",
+            Self::SocialCirclesList { .. } => "social_circles_list",
+            Self::SocialCircleCreate { .. } => "social_circle_create",
+            Self::SocialCircleUpdate { .. } => "social_circle_update",
+            Self::SocialCircleDelete { .. } => "social_circle_delete",
+            Self::SocialCircleMembersList { .. } => "social_circle_members_list",
+            Self::SocialCircleMembersAdd { .. } => "social_circle_members_add",
+            Self::SocialCircleMembersRemove { .. } => "social_circle_members_remove",
             Self::MomentsTimeline { .. } => "moments_timeline",
             Self::MomentsPostGet { .. } => "moments_post_get",
+            Self::MomentsDelete { .. } => "moments_delete",
             Self::MomentsReact { .. } => "moments_react",
             Self::MomentsUnreact { .. } => "moments_unreact",
             Self::MomentsCommentsList { .. } => "moments_comments_list",
@@ -694,7 +737,7 @@ fn build_request(
             client,
             session,
             Method::GET,
-            fixed_url(session, "/sub-federation/contexts")?,
+            fixed_url(session, "/sub-federation/federations")?,
         ),
         StationOperation::FederationResolve {
             federation_id,
@@ -852,12 +895,127 @@ fn build_request(
             }
             authenticated_request(client, session, Method::GET, url)
         }
-        StationOperation::SocialFriendshipStatus { target_ptid } => {
+        StationOperation::SocialFriendshipStatus { target_actor_ptid } => {
             let mut url = fixed_url(session, "/api/v1/social/relationships/status")?;
-            url.query_pairs_mut()
-                .append_pair("target_ptid", &clean_id(target_ptid, "target_ptid")?);
+            url.query_pairs_mut().append_pair(
+                SOCIAL_RELATIONSHIP_TARGET_QUERY,
+                &clean_id(target_actor_ptid, SOCIAL_RELATIONSHIP_TARGET_QUERY)?,
+            );
             authenticated_request(client, session, Method::GET, url)
         }
+        StationOperation::SocialCirclesList { limit, cursor } => {
+            bounded_limit(limit, 200, "social_circles_list")?;
+            let mut url = fixed_url(session, "/api/v1/social/circles")?;
+            url.query_pairs_mut()
+                .append_pair("limit", &limit.to_string());
+            if let Some(cursor) = clean_optional(cursor.unwrap_or_default(), 2048, "cursor")? {
+                url.query_pairs_mut().append_pair("cursor", &cursor);
+            }
+            authenticated_request(client, session, Method::GET, url)
+        }
+        StationOperation::SocialCircleCreate {
+            name,
+            description,
+            member_ptids,
+        } => {
+            let name = clean_required(name, 512, "name")?;
+            let description =
+                clean_optional(description.unwrap_or_default(), 32 * 1024, "description")?;
+            let body = circle_mutation_body(
+                None,
+                Some(name),
+                description,
+                Some(member_ptids),
+                "social_circle_create",
+            )?;
+            json_request(
+                client,
+                session,
+                Method::POST,
+                "/api/v1/social/circles",
+                body,
+            )?
+        }
+        StationOperation::SocialCircleUpdate {
+            circle_id,
+            name,
+            description,
+        } => {
+            let circle_id = clean_u64_id(circle_id, "circle_id")?;
+            let description = description
+                .map(|value| clean_text_allow_empty(value, 32 * 1024, "description"))
+                .transpose()?;
+            let url = url_with_segments(
+                session,
+                &["api", "v1", "social", "circles"],
+                std::slice::from_ref(&circle_id),
+            )?;
+            let body = circle_mutation_body(
+                Some(circle_id),
+                Some(clean_required(name, 512, "name")?),
+                description,
+                None,
+                "social_circle_update",
+            )?;
+            authenticated_request(client, session, Method::PUT, url)
+                .header(CONTENT_TYPE, "application/json")
+                .body(body)
+        }
+        StationOperation::SocialCircleDelete { circle_id } => {
+            let circle_id = clean_u64_id(circle_id, "circle_id")?;
+            let url = url_with_segments(
+                session,
+                &["api", "v1", "social", "circles"],
+                std::slice::from_ref(&circle_id),
+            )?;
+            authenticated_request(client, session, Method::DELETE, url)
+                .header(CONTENT_TYPE, "application/json")
+                .body(
+                    serde_json::to_vec(&json!({ "circle_id": circle_id }))
+                        .map_err(|_| transport_error("social_circle_delete", "encode"))?,
+                )
+        }
+        StationOperation::SocialCircleMembersList {
+            circle_id,
+            limit,
+            cursor,
+        } => {
+            bounded_limit(limit, 200, "social_circle_members_list")?;
+            let circle_id = clean_u64_id(circle_id, "circle_id")?;
+            let mut url = url_with_segments(
+                session,
+                &["api", "v1", "social", "circles"],
+                &[circle_id, "members".to_string()],
+            )?;
+            url.query_pairs_mut()
+                .append_pair("limit", &limit.to_string());
+            if let Some(cursor) = clean_optional(cursor.unwrap_or_default(), 2048, "cursor")? {
+                url.query_pairs_mut().append_pair("cursor", &cursor);
+            }
+            authenticated_request(client, session, Method::GET, url)
+        }
+        StationOperation::SocialCircleMembersAdd {
+            circle_id,
+            member_ptids,
+        } => circle_members_request(
+            client,
+            session,
+            Method::POST,
+            circle_id,
+            member_ptids,
+            "social_circle_members_add",
+        )?,
+        StationOperation::SocialCircleMembersRemove {
+            circle_id,
+            member_ptids,
+        } => circle_members_request(
+            client,
+            session,
+            Method::DELETE,
+            circle_id,
+            member_ptids,
+            "social_circle_members_remove",
+        )?,
         StationOperation::MomentsTimeline {
             timeline_type,
             cursor,
@@ -879,7 +1037,17 @@ fn build_request(
             Method::GET,
             url_with_segments(
                 session,
-                &["api", "v1", "social", "posts"],
+                MOMENTS_RESOURCE_PATH,
+                &[clean_id(post_id, "post_id")?],
+            )?,
+        ),
+        StationOperation::MomentsDelete { post_id } => authenticated_request(
+            client,
+            session,
+            Method::DELETE,
+            url_with_segments(
+                session,
+                MOMENTS_RESOURCE_PATH,
                 &[clean_id(post_id, "post_id")?],
             )?,
         ),
@@ -890,7 +1058,7 @@ fn build_request(
             let post_id = clean_id(post_id, "post_id")?;
             let url = url_with_segments(
                 session,
-                &["api", "v1", "social", "posts"],
+                MOMENTS_RESOURCE_PATH,
                 &[post_id.clone(), "react".to_string()],
             )?;
             authenticated_request(client, session, Method::POST, url)
@@ -910,7 +1078,7 @@ fn build_request(
             let post_id = clean_id(post_id, "post_id")?;
             let url = url_with_segments(
                 session,
-                &["api", "v1", "social", "posts"],
+                MOMENTS_RESOURCE_PATH,
                 &[post_id.clone(), "unreact".to_string()],
             )?;
             authenticated_request(client, session, Method::POST, url)
@@ -931,7 +1099,7 @@ fn build_request(
             bounded_limit(limit, 200, "moments_comments_list")?;
             let mut url = url_with_segments(
                 session,
-                &["api", "v1", "social", "posts"],
+                MOMENTS_RESOURCE_PATH,
                 &[clean_id(post_id, "post_id")?, "comments".to_string()],
             )?;
             url.query_pairs_mut()
@@ -954,7 +1122,7 @@ fn build_request(
             )?;
             let url = url_with_segments(
                 session,
-                &["api", "v1", "social", "posts"],
+                MOMENTS_RESOURCE_PATH,
                 &[clean_id(post_id, "post_id")?, "comments".to_string()],
             )?;
             let mut body = serde_json::Map::new();
@@ -1245,8 +1413,93 @@ fn list_body(key: &str, values: Vec<String>, operation_id: &str) -> MobileResult
     serde_json::to_vec(&Value::Object(body)).map_err(|_| transport_error(operation_id, "encode"))
 }
 
+fn circle_mutation_body(
+    circle_id: Option<String>,
+    name: Option<String>,
+    description: Option<String>,
+    member_ptids: Option<Vec<String>>,
+    operation_id: &str,
+) -> MobileResult<Vec<u8>> {
+    let mut body = serde_json::Map::new();
+    if let Some(circle_id) = circle_id {
+        body.insert("circle_id".to_string(), Value::String(circle_id));
+    }
+    if let Some(name) = name {
+        body.insert("name".to_string(), Value::String(name));
+    }
+    if let Some(description) = description {
+        body.insert("description".to_string(), Value::String(description));
+    }
+    if let Some(member_ptids) = member_ptids {
+        let member_ptids = clean_id_list(member_ptids, "member_ptids", true, operation_id)?;
+        body.insert(
+            "member_ptids".to_string(),
+            Value::Array(member_ptids.into_iter().map(Value::String).collect()),
+        );
+    }
+    typed_json_body(&Value::Object(body), operation_id)
+}
+
+fn circle_members_request(
+    client: &Client,
+    session: &AuthenticatedNativeSession,
+    method: Method,
+    circle_id: String,
+    member_ptids: Vec<String>,
+    operation_id: &str,
+) -> MobileResult<RequestBuilder> {
+    let circle_id = clean_u64_id(circle_id, "circle_id")?;
+    let member_ptids = clean_id_list(member_ptids, "member_ptids", false, operation_id)?;
+    let url = url_with_segments(
+        session,
+        &["api", "v1", "social", "circles"],
+        &[circle_id.clone(), "members".to_string()],
+    )?;
+    let body = serde_json::to_vec(&json!({
+        "circle_id": circle_id,
+        "member_ptids": member_ptids,
+    }))
+    .map_err(|_| transport_error(operation_id, "encode"))?;
+    bounded_bytes(&body, MAX_JSON_REQUEST_BYTES, operation_id)?;
+    Ok(authenticated_request(client, session, method, url)
+        .header(CONTENT_TYPE, "application/json")
+        .body(body))
+}
+
+fn clean_id_list(
+    values: Vec<String>,
+    field: &str,
+    allow_empty: bool,
+    operation_id: &str,
+) -> MobileResult<Vec<String>> {
+    if values.len() > 500 || (!allow_empty && values.is_empty()) {
+        return Err(transport_error(operation_id, "list_invalid"));
+    }
+    let mut seen = HashSet::with_capacity(values.len());
+    values
+        .into_iter()
+        .map(|value| clean_id(value, field))
+        .filter_map(|value| match value {
+            Ok(value) if seen.insert(value.clone()) => Some(Ok(value)),
+            Ok(_) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect()
+}
+
 fn clean_id(value: String, field: &str) -> MobileResult<String> {
     clean_required(value, 2048, field)
+}
+
+fn clean_u64_id(value: String, field: &str) -> MobileResult<String> {
+    let value = clean_required(value, 20, field)?;
+    let parsed = value
+        .parse::<u64>()
+        .map_err(|_| transport_error("input", &format!("{field}_invalid")))?;
+    if parsed == 0 {
+        return Err(transport_error("input", &format!("{field}_invalid")));
+    }
+    Ok(parsed.to_string())
 }
 
 fn clean_required(value: String, max_len: usize, field: &str) -> MobileResult<String> {
@@ -1262,6 +1515,14 @@ fn clean_optional(value: String, max_len: usize, field: &str) -> MobileResult<Op
         return Ok(None);
     }
     clean_required(value, max_len, field).map(Some)
+}
+
+fn clean_text_allow_empty(value: String, max_len: usize, field: &str) -> MobileResult<String> {
+    let value = value.trim().to_string();
+    if value.len() > max_len || value.contains(['\r', '\0']) {
+        return Err(transport_error("input", &format!("{field}_invalid")));
+    }
+    Ok(value)
 }
 
 fn clean_header_value(value: String, max_len: usize, field: &str) -> MobileResult<String> {
@@ -1337,6 +1598,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn moments_operations_use_the_station_moments_resource() {
+        assert_eq!(MOMENTS_RESOURCE_PATH.join("/"), "api/v1/social/moments",);
+    }
+
+    #[test]
+    fn relationship_status_uses_the_proto_query_field() {
+        assert_eq!(SOCIAL_RELATIONSHIP_TARGET_QUERY, "target_actor_ptid",);
+    }
+
+    #[test]
     fn typed_operation_rejects_unknown_body_fields() {
         let payload = json!({
             "operationId": "actor_profile_update",
@@ -1359,6 +1630,21 @@ mod tests {
     }
 
     #[test]
+    fn moment_delete_is_a_typed_post_scoped_operation() {
+        let operation = serde_json::from_value::<StationOperation>(json!({
+            "operationId": "moments_delete",
+            "post_id": "post-1"
+        }))
+        .unwrap();
+
+        assert_eq!(operation.id(), "moments_delete");
+        assert!(matches!(
+            operation,
+            StationOperation::MomentsDelete { post_id } if post_id == "post-1"
+        ));
+    }
+
+    #[test]
     fn operation_deserialization_rejects_proxy_controls() {
         for field in ["url", "method", "headers"] {
             let mut payload = serde_json::Map::new();
@@ -1372,5 +1658,19 @@ mod tests {
             );
             assert!(serde_json::from_value::<StationOperation>(Value::Object(payload)).is_err());
         }
+    }
+
+    #[test]
+    fn circle_operation_rejects_invalid_ids_and_empty_member_mutations() {
+        assert!(clean_u64_id("0".to_string(), "circle_id").is_err());
+        assert!(clean_u64_id("abc".to_string(), "circle_id").is_err());
+        assert_eq!(clean_u64_id("42".to_string(), "circle_id").unwrap(), "42");
+        assert!(clean_id_list(
+            Vec::new(),
+            "member_ptids",
+            false,
+            "social_circle_members_add"
+        )
+        .is_err());
     }
 }

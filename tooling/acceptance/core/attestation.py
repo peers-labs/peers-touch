@@ -5,10 +5,9 @@ import json
 import subprocess
 import urllib.error
 import urllib.request
-from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Tuple
 
 from ._paths import REPO_ROOT
 from .errors import BlockedError, ProvisioningError
@@ -27,7 +26,8 @@ PROTOCOL_SOURCE_PATHS = (
     ":(glob)apps/desktop/src/gen/proto/**/*.ts",
     ":(glob)apps/station/**/*.pb.go",
 )
-RemoteSourceIdentityProvider = Callable[[str], tuple[str, str, str]]
+RemoteSourceIdentityProvider = Callable[[str], Tuple[str, str, str]]
+RuntimeVersionProvider = Callable[[str], dict[str, Any]]
 
 
 def commits_match(actual: str, expected: str) -> bool:
@@ -218,9 +218,14 @@ def produce_service_attestation(
     producer: str,
     require_runtime_identity: bool = False,
     remote_source_identity_provider: RemoteSourceIdentityProvider | None = None,
+    runtime_version_provider: RuntimeVersionProvider | None = None,
 ) -> ServiceAttestation:
     del run_id
-    version = read_service_version(endpoint)
+    version = (
+        runtime_version_provider(deployment_environment)
+        if runtime_version_provider is not None
+        else read_service_version(endpoint)
+    )
     live_commit = str(version.get("build_commit") or "")
     build_time = str(version.get("build_time") or "")
     runtime_identity = str(

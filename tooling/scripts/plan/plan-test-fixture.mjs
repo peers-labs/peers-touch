@@ -177,18 +177,14 @@ export function createPlanRepository(t) {
     path.join(os.tmpdir(), 'plan-machine-home-test-'),
   );
   t.after(() => {
-    fs.rmSync(repoDirectory, {
+    const cleanupOptions = {
       recursive: true,
       force: true,
-      maxRetries: 5,
+      maxRetries: 20,
       retryDelay: 50,
-    });
-    fs.rmSync(home, {
-      recursive: true,
-      force: true,
-      maxRetries: 5,
-      retryDelay: 50,
-    });
+    };
+    fs.rmSync(repoDirectory, cleanupOptions);
+    fs.rmSync(home, cleanupOptions);
   });
 
   fs.mkdirSync(path.join(repoRoot, 'docs', 'architecture'), {

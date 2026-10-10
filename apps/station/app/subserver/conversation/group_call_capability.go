@@ -198,6 +198,7 @@ func groupRecipientSnapshot(
 	})
 
 	result := ports.GroupRecipientSnapshot{
+		FederationID:        string(snapshot.FederationID),
 		ConversationID:      string(snapshot.ID),
 		AuthorPTID:          string(author),
 		MembershipEpoch:     uint64(snapshot.Head.MembershipEpoch),
@@ -212,6 +213,15 @@ func groupRecipientSnapshot(
 }
 
 func validateGroupRecipientSnapshot(snapshot ports.GroupRecipientSnapshot) error {
+	federationID, err := valueobject.NewFederationID(snapshot.FederationID)
+	if err != nil || string(federationID) != snapshot.FederationID {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"conversation.group_recipient_snapshot.validate",
+			"federation_id",
+			"must be canonical",
+		)
+	}
 	if snapshot.ConversationID == "" ||
 		snapshot.AuthorPTID == "" ||
 		snapshot.MembershipEpoch == 0 ||
@@ -258,7 +268,8 @@ func equalGroupRecipientSnapshots(
 	left ports.GroupRecipientSnapshot,
 	right ports.GroupRecipientSnapshot,
 ) bool {
-	if left.ConversationID != right.ConversationID ||
+	if left.FederationID != right.FederationID ||
+		left.ConversationID != right.ConversationID ||
 		left.AuthorPTID != right.AuthorPTID ||
 		left.MembershipEpoch != right.MembershipEpoch ||
 		!bytes.Equal(left.AuthorityHeadSHA256, right.AuthorityHeadSHA256) ||

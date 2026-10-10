@@ -36,6 +36,43 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ChangedPathsTests(unittest.TestCase):
+    def test_explicit_plan_reuses_matching_live_mount(self) -> None:
+        explicit = ROOT / "mounted-plan.md"
+        mounted = SimpleNamespace(path=explicit)
+        with (
+            patch.object(
+                MODULE,
+                "discover_active_plan",
+                return_value=mounted,
+            ),
+            patch.object(MODULE, "load_formal_plan") as load_source,
+        ):
+            resolved = MODULE.resolve_execution_plan(explicit)
+
+        self.assertIs(resolved, mounted)
+        load_source.assert_not_called()
+
+    def test_explicit_unmounted_plan_uses_repository_projection(self) -> None:
+        explicit = ROOT / "source-plan.md"
+        mounted = SimpleNamespace(path=ROOT / "mounted-plan.md")
+        source = SimpleNamespace(path=explicit)
+        with (
+            patch.object(
+                MODULE,
+                "discover_active_plan",
+                return_value=mounted,
+            ),
+            patch.object(
+                MODULE,
+                "load_formal_plan",
+                return_value=source,
+            ) as load_source,
+        ):
+            resolved = MODULE.resolve_execution_plan(explicit)
+
+        self.assertIs(resolved, source)
+        load_source.assert_called_once_with(explicit.resolve())
+
     def test_make_entrypoints_default_to_external_evidence_store(self) -> None:
         makefile = (
             ROOT / "tooling" / "make" / "acceptance.mk"
@@ -572,6 +609,10 @@ class BehaviorRuleTests(unittest.TestCase):
             selected,
             {
                 "chat-lifecycle-tree-zero-reference-e2e",
+                "mobile-social-android-native",
+                "mobile-social-facade-contract",
+                "mobile-social-ios-native",
+                "mobile-social-search-profile-native",
                 "mobile-simulator-social-convergence-e2e",
                 "mobile-simulator-chat-contacts-e2e",
             },
@@ -584,6 +625,9 @@ class BehaviorRuleTests(unittest.TestCase):
             "mobile-simulator-chat-contacts-e2e",
             "mobile-simulator-moments-e2e",
             "mobile-simulator-settings-e2e",
+            "mobile-social-android-native",
+            "mobile-social-facade-contract",
+            "mobile-social-ios-native",
         }
         for path in (
             "apps/mobile/src/runtimes/socialEventIngress.ts",

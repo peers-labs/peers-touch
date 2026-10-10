@@ -1,7 +1,9 @@
 mod crypto;
 mod private_comment;
+mod private_media;
 mod private_mention;
 mod private_moment;
+mod private_reaction;
 mod projection;
 
 use std::path::Path;
@@ -30,10 +32,15 @@ use self::private_comment::{
     PrivateCommentFailure, PrivateCommentIntent, PrivateCommentListInput,
     PrivateCommentOrchestrator, PrivateCommentSubmitInput,
 };
+use self::private_media::{PrivateMediaOpenError, PrivateMediaOpenFailureKind};
 use self::private_moment::{
     pending_device_recovery_projection, PrivateMomentOrchestrator, PrivateMomentPublishIntent,
     PrivateRecoveryFailureKind,
 };
+use self::private_reaction::{
+    PrivateReactionMutationInput, PrivateReactionOrchestrator, PrivateReactionRetryInput,
+};
+use self::projection::PrivateReactionOperation;
 
 #[cfg(feature = "acceptance-webdriver")]
 static ACCEPTANCE_RUNTIME_BOOT_ID: OnceLock<String> = OnceLock::new();
@@ -46,7 +53,8 @@ fn acceptance_station_binding_digests(
     station_url: &str,
     binding: &StationBindingState,
     confirmed_binding: &StationBindingState,
-    registry_active_url: Option<&str>,
+    registry_station_peer_id: Option<&str>,
+    registry_route_id: Option<&str>,
 ) -> Result<(String, String), String> {
     if binding != confirmed_binding {
         return Err("secure content Station binding changed during identity capture".to_string());
@@ -64,19 +72,22 @@ fn acceptance_station_binding_digests(
     if normalized_url.is_empty() {
         return Err("secure content active Station URL is invalid".to_string());
     }
-    let normalized_bound_url = binding
-        .bound_url
+    let bound_station_peer_id = binding
+        .station_peer_id
         .as_deref()
         .map(str::trim)
-        .map(|url| url.trim_end_matches('/'))
-        .filter(|url| !url.is_empty())
-        .ok_or_else(|| "secure content bound Station URL is unavailable".to_string())?;
-    let normalized_registry_url = registry_active_url
+        .filter(|peer_id| !peer_id.is_empty())
+        .ok_or_else(|| "secure content bound Station identity is unavailable".to_string())?;
+    let bound_route_id = binding
+        .active_route_id
+        .as_deref()
         .map(str::trim)
-        .map(|url| url.trim_end_matches('/'))
-        .filter(|url| !url.is_empty())
-        .ok_or_else(|| "secure content registry Station URL is unavailable".to_string())?;
-    if normalized_bound_url != normalized_url || normalized_registry_url != normalized_url {
+        .filter(|route_id| !route_id.is_empty())
+        .ok_or_else(|| "secure content bound Station route is unavailable".to_string())?;
+    if bound_station_peer_id != station_peer_id
+        || registry_station_peer_id != Some(station_peer_id)
+        || registry_route_id != Some(bound_route_id)
+    {
         return Err("secure content Station binding identity is inconsistent".to_string());
     }
     Ok((
@@ -120,6 +131,80 @@ pub struct PrivateMomentMediaOpenInput {
 pub struct PrivateMomentsTeardownInput {
     pub actor_ptid: String,
     pub renderer_generation: u64,
+}
+
+#[tauri::command]
+pub fn social_private_react(
+    input: PrivateReactionMutationInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    private_reaction_mutation(
+        input,
+        PrivateReactionOperation::React,
+        state.inner(),
+        &window,
+    )
+}
+
+#[tauri::command]
+pub fn social_private_unreact(
+    input: PrivateReactionMutationInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    private_reaction_mutation(
+        input,
+        PrivateReactionOperation::Unreact,
+        state.inner(),
+        &window,
+    )
+}
+
+#[tauri::command]
+pub fn social_private_reaction_retry(
+    input: PrivateReactionRetryInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "REACTION_REJECTED"),
+    };
+    match PrivateReactionOrchestrator::new(&state.secure_content, lease)
+        .and_then(|service| service.retry(&input))
+    {
+        Ok(result) => AppResult::success(json!(result)),
+        Err(error) => private_reaction_failure(error),
+    }
+}
+
+fn private_reaction_mutation(
+    input: PrivateReactionMutationInput,
+    operation: PrivateReactionOperation,
+    state: &AppState,
+    window: &Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state,
+        window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "REACTION_REJECTED"),
+    };
+    match PrivateReactionOrchestrator::new(&state.secure_content, lease)
+        .and_then(|service| service.mutate(&input, operation))
+    {
+        Ok(result) => AppResult::success(json!(result)),
+        Err(error) => private_reaction_failure(error),
+    }
 }
 
 #[tauri::command]
@@ -332,7 +417,16 @@ pub fn social_private_moment_publish(
         .and_then(|service| service.publish(&input))
     {
         Ok(result) => AppResult::success(json!(result)),
-        Err(error) => native_failure(error, "PUBLISH_FAILED"),
+        Err(error) => {
+            let failure_state = if error.contains("RECIPIENT_KEY_UNAVAILABLE") {
+                "RECIPIENT_KEY_UNAVAILABLE"
+            } else if error.contains("PRIVATE_UNSUPPORTED") {
+                "PRIVATE_UNSUPPORTED"
+            } else {
+                "PUBLISH_FAILED"
+            };
+            native_failure(error, failure_state)
+        }
     }
 }
 
@@ -402,9 +496,11 @@ pub fn social_private_moment_media_open(
             .secure_content
             .revoke_private_media_path(&authority_key, path)
     };
-    match PrivateMomentOrchestrator::new(&state.secure_content, lease)
-        .and_then(|service| service.open_media(&input.post_id, &input.object_id, &revoke_media))
-    {
+    let result = match PrivateMomentOrchestrator::new(&state.secure_content, lease) {
+        Ok(service) => service.open_media(&input.post_id, &input.object_id, &revoke_media),
+        Err(error) => Err(PrivateMediaOpenError::dependency(error, None)),
+    };
+    match result {
         Ok(mut projection) => {
             if let Err(error) = grant_private_media_preview(
                 &state.secure_content,
@@ -416,7 +512,7 @@ pub fn social_private_moment_media_open(
             }
             AppResult::success(json!(projection))
         }
-        Err(error) => native_failure(error, "MEDIA_OFFLINE_RETRYABLE"),
+        Err(error) => private_media_failure(error),
     }
 }
 
@@ -590,7 +686,7 @@ pub fn social_private_moments_acceptance_runtime_identity(
         }
     };
     let station_url = station_client::station_base_url();
-    let registry_active_url = station_client::station_registry().active_url();
+    let registry_entry = station_client::station_registry().active_entry();
     let confirmed_binding = station_binding::service().state();
     let (station_runtime_identity_sha256, station_endpoint_sha256) =
         match acceptance_station_binding_digests(
@@ -598,7 +694,12 @@ pub fn social_private_moments_acceptance_runtime_identity(
             &station_url,
             &binding,
             &confirmed_binding,
-            registry_active_url.as_deref(),
+            registry_entry
+                .as_ref()
+                .map(|entry| entry.station_peer_id.as_str()),
+            registry_entry
+                .as_ref()
+                .map(|entry| entry.active_route_id.as_str()),
         ) {
             Ok(value) => value,
             Err(error) => return native_failure(error, "INTEGRITY_FAILURE"),
@@ -795,7 +896,10 @@ fn recovery_lease_for_window(
     actor_ptid: &str,
     renderer_generation: u64,
 ) -> Result<SecureContentLease, String> {
-    let lease = lease_for_window(state, window, actor_ptid, renderer_generation)?;
+    let lease = match lease_for_window(state, window, actor_ptid, renderer_generation) {
+        Ok(lease) => lease,
+        Err(_) => return activate(state, window, actor_ptid, renderer_generation),
+    };
     let engine = state
         .messaging_engines
         .get(&lease.session.account_id)?
@@ -811,7 +915,11 @@ fn recovery_lease_for_window(
 
 fn native_failure(message: String, state: &str) -> AppResult<Value> {
     let lower = message.to_ascii_lowercase();
-    let (code, app_code) = if lower.contains("auth") || lower.contains("session") {
+    let (code, app_code) = if state == "RECIPIENT_KEY_UNAVAILABLE" {
+        ("RECIPIENT_KEY_UNAVAILABLE", ErrorCode::InvalidArgument)
+    } else if state == "PRIVATE_UNSUPPORTED" {
+        ("PRIVATE_UNSUPPORTED", ErrorCode::InvalidArgument)
+    } else if lower.contains("auth") || lower.contains("session") {
         ("UNAUTHORIZED", ErrorCode::Unauthorized)
     } else if lower.contains("not authorized") || lower.contains("not found") {
         ("NOT_FOUND_OR_NOT_AUTHORIZED", ErrorCode::NotFound)
@@ -826,6 +934,54 @@ fn native_failure(message: String, state: &str) -> AppResult<Value> {
         Some(json!({
             "state": state,
             "native_error_code": code,
+        })),
+    )
+}
+
+fn private_reaction_failure(message: String) -> AppResult<Value> {
+    let lower = message.to_ascii_lowercase();
+    let pending = lower.contains("reaction command is already pending");
+    let retrying = lower.contains("reaction command is not retryable yet");
+    if !pending && !retrying {
+        return native_failure(message, "REACTION_REJECTED");
+    }
+    AppResult::fail(
+        ErrorCode::Conflict,
+        message,
+        Some(json!({
+            "state": if pending {
+                "REACTION_PENDING"
+            } else {
+                "REACTION_RETRYING"
+            },
+            "native_error_code": if pending {
+                "REACTION_COMMAND_PENDING"
+            } else {
+                "REACTION_RETRY_NOT_READY"
+            },
+            "retryable": true,
+        })),
+    )
+}
+
+fn private_media_failure(error: PrivateMediaOpenError) -> AppResult<Value> {
+    let state = error.state();
+    let retryable = error.retryable();
+    let app_code = match error.kind {
+        PrivateMediaOpenFailureKind::AccessDenied => ErrorCode::NotFound,
+        PrivateMediaOpenFailureKind::Integrity => ErrorCode::Conflict,
+        PrivateMediaOpenFailureKind::Dependency | PrivateMediaOpenFailureKind::Cancelled => {
+            ErrorCode::InternalError
+        }
+    };
+    AppResult::fail(
+        app_code,
+        error.message,
+        Some(json!({
+            "state": state,
+            "native_error_code": error.code,
+            "retryable": retryable,
+            "retry_after_seconds": error.retry_after_seconds,
         })),
     )
 }
@@ -848,6 +1004,38 @@ fn private_comment_failure(error: PrivateCommentFailure) -> AppResult<Value> {
     )
 }
 
+#[cfg(test)]
+mod private_reaction_failure_tests {
+    use super::private_reaction_failure;
+    use crate::error::ErrorCode;
+
+    #[test]
+    fn preserves_existing_reaction_command_as_retryable_pending() {
+        let result = private_reaction_failure(
+            "secure content Reaction command is already pending".to_string(),
+        );
+        let error = result.error.expect("pending conflict should fail");
+        assert_eq!(error.code, ErrorCode::Conflict);
+        let details = error.details.expect("pending conflict should be typed");
+        assert_eq!(details["state"], "REACTION_PENDING");
+        assert_eq!(details["native_error_code"], "REACTION_COMMAND_PENDING");
+        assert_eq!(details["retryable"], true);
+    }
+
+    #[test]
+    fn preserves_reaction_backoff_as_retryable_state() {
+        let result = private_reaction_failure(
+            "secure content Reaction command is not retryable yet".to_string(),
+        );
+        let error = result.error.expect("retry backoff should fail");
+        assert_eq!(error.code, ErrorCode::Conflict);
+        let details = error.details.expect("retry backoff should be typed");
+        assert_eq!(details["state"], "REACTION_RETRYING");
+        assert_eq!(details["native_error_code"], "REACTION_RETRY_NOT_READY");
+        assert_eq!(details["retryable"], true);
+    }
+}
+
 #[cfg(all(test, feature = "acceptance-webdriver"))]
 mod tests {
     use super::acceptance_station_binding_digests;
@@ -856,10 +1044,12 @@ mod tests {
     fn binding(phase: StationBindingPhase, generation: u64) -> StationBindingState {
         StationBindingState {
             phase,
-            selected_url: Some("https://station.invalid".to_string()),
-            bound_url: Some("https://station.invalid".to_string()),
-            target_url: None,
-            generation,
+            station_peer_id: Some("station-peer-four".to_string()),
+            active_route_id: Some("route-direct".to_string()),
+            target_station_peer_id: None,
+            target_route_id: None,
+            route_revision: 1,
+            lifecycle_generation: generation,
             error: None,
         }
     }
@@ -872,7 +1062,8 @@ mod tests {
             "https://station.invalid",
             &binding,
             &binding,
-            Some("https://station.invalid"),
+            Some("station-peer-four"),
+            Some("route-direct"),
         )
         .expect("station binding should hash");
         let with_slash = acceptance_station_binding_digests(
@@ -880,7 +1071,8 @@ mod tests {
             "https://station.invalid/",
             &binding,
             &binding,
-            Some("https://station.invalid/"),
+            Some("station-peer-four"),
+            Some("route-direct"),
         )
         .expect("station binding should normalize");
 
@@ -896,7 +1088,8 @@ mod tests {
             "https://station.invalid",
             &binding,
             &binding,
-            Some("https://station.invalid"),
+            Some("station-peer-four"),
+            Some("route-direct"),
         )
         .is_err());
         assert!(acceptance_station_binding_digests(
@@ -904,7 +1097,8 @@ mod tests {
             "",
             &binding,
             &binding,
-            Some("https://station.invalid"),
+            Some("station-peer-four"),
+            Some("route-direct"),
         )
         .is_err());
     }
@@ -924,22 +1118,24 @@ mod tests {
                 "https://station.invalid",
                 &binding,
                 &binding,
-                Some("https://station.invalid"),
+                Some("station-peer-four"),
+                Some("route-direct"),
             )
             .is_err());
         }
     }
 
     #[test]
-    fn acceptance_station_binding_rejects_divergent_urls() {
+    fn acceptance_station_binding_rejects_divergent_identity_or_route() {
         let mut divergent_bound = binding(StationBindingPhase::Bound, 1);
-        divergent_bound.bound_url = Some("https://other-station.invalid".to_string());
+        divergent_bound.station_peer_id = Some("station-peer-five".to_string());
         assert!(acceptance_station_binding_digests(
             "station-peer-four",
             "https://station.invalid",
             &divergent_bound,
             &divergent_bound,
-            Some("https://station.invalid"),
+            Some("station-peer-four"),
+            Some("route-direct"),
         )
         .is_err());
         let binding = binding(StationBindingPhase::Bound, 1);
@@ -948,7 +1144,8 @@ mod tests {
             "https://station.invalid",
             &binding,
             &binding,
-            Some("https://other-station.invalid"),
+            Some("station-peer-four"),
+            Some("route-relay"),
         )
         .is_err());
     }
@@ -962,7 +1159,8 @@ mod tests {
             "https://station.invalid",
             &before,
             &after,
-            Some("https://station.invalid"),
+            Some("station-peer-four"),
+            Some("route-direct"),
         )
         .is_err());
     }
