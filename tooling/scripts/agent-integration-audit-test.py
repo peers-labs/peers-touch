@@ -796,7 +796,7 @@ export function processStartIdentity() { return 'fixture'; }
             },
         )
 
-    def test_trae_workspace_projects_bootstrap_source_and_existing_host_roots(
+    def test_trae_workspace_projects_only_selected_worktree(
         self,
     ) -> None:
         bootstrap = self.root / "bootstrap"
@@ -807,10 +807,12 @@ export function processStartIdentity() { return 'fixture'; }
         untouched.mkdir()
         connected_trae = connected / ".trae"
         connected_trae.mkdir()
-        (connected_trae / "hooks.json").write_text(
-            json.dumps({"hooks": {}}),
+        connected_hooks = connected_trae / "hooks.json"
+        connected_hooks.write_text(
+            '{"sibling":"preserved","hooks":{}}\n',
             encoding="utf-8",
         )
+        connected_before = connected_hooks.read_bytes()
         workspace = self.root / "fixture.code-workspace"
         workspace.write_text(
             json.dumps(
@@ -845,41 +847,44 @@ export function processStartIdentity() { return 'fixture'; }
 
         installed = self.install_trae_fixture(workspace)
         self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
-        bootstrap_hooks = json.loads(
-            (bootstrap / ".trae/hooks.json").read_text(encoding="utf-8")
-        )
-        self.assertIn("--workspace", json.dumps(bootstrap_hooks))
+        self.assertFalse((bootstrap / ".trae").exists())
         self.assertIn(
             "pt-ew-plugin",
             current_hooks.read_text(encoding="utf-8"),
         )
         self.assertIn("--workspace", current_hooks.read_text(encoding="utf-8"))
-        self.assertIn(
-            "pt-ew-plugin",
-            (connected_trae / "hooks.json").read_text(encoding="utf-8"),
-        )
+        self.assertEqual(connected_hooks.read_bytes(), connected_before)
         self.assertFalse((untouched / ".trae").exists())
 
         audit = self.audit_trae_fixture(workspace)
         self.assertEqual(audit.returncode, 0, audit.stdout + audit.stderr)
 
-        duplicate_hooks = untouched / ".trae/hooks.json"
-        duplicate_hooks.parent.mkdir()
-        duplicate_hooks.write_text(
+        connected_hooks.write_text(
             json.dumps(
                 {
                     "hooks": {
-                        "PreToolUse": bootstrap_hooks["hooks"]["PreToolUse"],
+                        "PreToolUse": [
+                            {
+                                "matcher": "*",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "node sibling-invalid",
+                                        "timeout": 5,
+                                    }
+                                ],
+                            }
+                        ],
                     }
                 }
             ),
             encoding="utf-8",
         )
-        duplicate_audit = self.audit_trae_fixture(workspace)
-        self.assertEqual(duplicate_audit.returncode, 2)
-        self.assertIn(
-            "managed-hook-invalid:SessionStart",
-            duplicate_audit.stdout,
+        sibling_audit = self.audit_trae_fixture(workspace)
+        self.assertEqual(
+            sibling_audit.returncode,
+            0,
+            sibling_audit.stdout + sibling_audit.stderr,
         )
 
     def test_trae_workspace_preflight_never_resets_legacy_state(self) -> None:

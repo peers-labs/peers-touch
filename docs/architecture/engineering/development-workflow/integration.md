@@ -244,21 +244,22 @@ make agent-integration-audit IDE=<trae|cursor|codex> ROOT=<worktree-root>
 ```
 
 This is the only canonical project Skill projector. Codex also receives the
-worktree-local `pt-ew-plugin`; TRAE projects equivalent canonical Hooks into
-the selected source root, the descriptor bootstrap root, and descriptor roots
-with an existing real `.trae` directory. Untouched roots remain untouched.
-Every projected Hook calls the selected source root's same plugin and remains
-transport only; the Kernel owns root selection and the single OWNER binding.
-The installer preserves unrelated host files, never edits global hooks, and
-does not depend on a grant from the Hook it installs. The machine ledger lock,
-canonical source checks, path boundaries, workspace descriptor, merged Hook
-shape, and callback proof still fail closed. Install does not parse PlanMount,
-declaration, Session, or active-work state; its `--projection-only` audit
-verifies only projection-owned facts and leaves workflow identity diagnostics
-for the standalone full audit. Unrelated live or retired-schema workflow owner
-state does not block this non-destructive bootstrap. There is no separate
-acknowledgement command; restart the IDE only when the host cannot reload
-changed hooks, then rerun the full audit after workflow-state repair.
+worktree-local `pt-ew-plugin`; TRAE writes one managed Hook projection only in
+the selected worktree, and every entry calls that worktree's local plugin. A
+workspace descriptor validates membership and supplies the runtime root set,
+but does not authorize writing a bootstrap folder or sibling worktree. The
+Kernel owns per-action root selection and the single OWNER binding.
+The installer preserves unrelated local host files, never edits global or
+sibling hooks, and does not depend on a grant from the Hook it installs. The
+machine ledger lock, canonical source checks, path boundaries, workspace
+descriptor, merged Hook shape, and callback proof still fail closed. Install
+does not parse PlanMount, declaration, Session, or active-work state; its
+`--projection-only` audit verifies only local projection-owned facts and leaves
+workflow identity diagnostics for the standalone full audit. Unrelated live or
+retired-schema workflow owner state does not block this non-destructive
+bootstrap. There is no separate acknowledgement command; restart the IDE only
+when the host cannot reload changed hooks, then rerun the full audit after
+workflow-state repair.
 
 `skills-hard-cut` is the only machine-store reset path. It consumes an exact
 OWNER `skills-hard-cut` grant, proves global idle, validates every reset target,

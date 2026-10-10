@@ -304,40 +304,27 @@ def host_projection_findings(
     elif required_host == "trae":
         try:
             control = integration_control_module()
-            workspace_file, workspace_roots, bootstrap_root = (
-                control.resolve_trae_workspace(root, workspace)
+            workspace_file, _ = control.resolve_trae_workspace(
+                root,
+                workspace,
             )
         except Exception:
             findings.append(
                 {
                     "path": ".trae/hooks.json",
-                    "issue": "trae-workspace-bootstrap-invalid",
+                    "issue": "trae-workspace-descriptor-invalid",
                 }
             )
         else:
-            projection_roots = set(
-                control.trae_hook_projection_roots(
-                    root,
-                    workspace_roots,
-                    bootstrap_root,
+            hooks_path = root / ".trae" / "hooks.json"
+            if not hooks_path.exists():
+                findings.append(
+                    {
+                        "path": ".trae/hooks.json",
+                        "issue": "trae-hooks-invalid",
+                    }
                 )
-            )
-            for workspace_root in workspace_roots:
-                hooks_path = workspace_root / ".trae" / "hooks.json"
-                hook_label = (
-                    ".trae/hooks.json"
-                    if workspace_root == root
-                    else str(hooks_path)
-                )
-                if not hooks_path.exists():
-                    if workspace_root in projection_roots:
-                        findings.append(
-                            {
-                                "path": hook_label,
-                                "issue": "trae-hooks-invalid",
-                            }
-                        )
-                    continue
+            else:
                 try:
                     hooks_value = json.loads(
                         hooks_path.read_text(encoding="utf-8")
@@ -345,49 +332,44 @@ def host_projection_findings(
                 except (OSError, json.JSONDecodeError):
                     findings.append(
                         {
-                            "path": hook_label,
+                            "path": ".trae/hooks.json",
                             "issue": "trae-hooks-invalid",
                         }
                     )
-                    continue
-                hooks = hooks_value.get("hooks")
-                if not isinstance(hooks, dict):
-                    findings.append(
-                        {
-                            "path": hook_label,
-                            "issue": "trae-hooks-invalid",
-                        }
-                    )
-                    continue
-                for event in TRAE_HOOK_EVENTS:
-                    entries = hooks.get(event)
-                    managed = (
-                        [
-                            entry
-                            for entry in entries
-                            if control.is_managed_trae_hook_entry(entry)
-                        ]
-                        if isinstance(entries, list)
-                        else []
-                    )
-                    expected = control.canonical_trae_hook_entry(
-                        root,
-                        event,
-                        workspace_file,
-                    )
-                    valid = (
-                        managed == [expected]
-                        if workspace_root in projection_roots
-                        else managed == []
-                    )
-                    if valid:
-                        continue
-                    findings.append(
-                        {
-                            "path": hook_label,
-                            "issue": f"managed-hook-invalid:{event}",
-                        }
-                    )
+                else:
+                    hooks = hooks_value.get("hooks")
+                    if not isinstance(hooks, dict):
+                        findings.append(
+                            {
+                                "path": ".trae/hooks.json",
+                                "issue": "trae-hooks-invalid",
+                            }
+                        )
+                    else:
+                        for event in TRAE_HOOK_EVENTS:
+                            entries = hooks.get(event)
+                            managed = (
+                                [
+                                    entry
+                                    for entry in entries
+                                    if control.is_managed_trae_hook_entry(entry)
+                                ]
+                                if isinstance(entries, list)
+                                else []
+                            )
+                            expected = control.canonical_trae_hook_entry(
+                                root,
+                                event,
+                                workspace_file,
+                            )
+                            if managed == [expected]:
+                                continue
+                            findings.append(
+                                {
+                                    "path": ".trae/hooks.json",
+                                    "issue": f"managed-hook-invalid:{event}",
+                                }
+                            )
     return findings
 
 
@@ -891,7 +873,7 @@ def installed_callback_probe(
         return {"status": "NOT_APPLICABLE"}
     try:
         control = integration_control_module()
-        workspace_file, _, _ = control.resolve_trae_workspace(
+        workspace_file, _ = control.resolve_trae_workspace(
             root,
             workspace,
         )

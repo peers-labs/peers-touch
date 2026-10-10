@@ -82,14 +82,12 @@ Development Session, and selected or assigned workspace before context is
 restored. Concurrent OWNER, WORKER, and REVIEWER compactions never share a
 receipt slot.
 
-TRAE multi-root installations expose equivalent canonical Hook entries in the
-selected source root, descriptor bootstrap root, and descriptor roots with an
-existing real `.trae` directory. Their locations are not authority hints, and
-the entries are not parallel authorities. They dispatch to the same selected
-source integration and one host-neutral Kernel. Every mutating OWNER event
-must resolve exactly one declared workspace root; otherwise it fails with
-`WORKTREE_SELECTION_REQUIRED`.
-Descriptor roots without `.trae` remain untouched.
+TRAE Hook projection is worktree-local. Installation writes only the selected
+worktree's `.trae` projection, and every managed entry calls that worktree's
+local integration. A multi-root descriptor supplies the allowed runtime root
+set but never authorizes writing, cleaning, or replacing a bootstrap folder or
+sibling worktree. Every mutating OWNER event must resolve exactly one declared
+workspace root; otherwise it fails with `WORKTREE_SELECTION_REQUIRED`.
 Projection and cleanup are separate actions. Ordinary `skills` consumes one
 machine-lock-serialized, strictly validated projection path and does not
 depend on a grant from the Hook it installs. It may update the selected host
@@ -149,8 +147,10 @@ authority because a timer elapsed.
   `ACTION_WORKSPACE_WRITE_DENIED`.
 - A child assignment created in worktree B remains in B even when the OWNER's
   origin workspace is A.
-- Every participating root in the active multi-root workspace contains exactly
-  one managed TRAE Hook per supported event; untouched roots remain untouched.
+- Installing in worktree A changes only A's `.trae` projection; worktree B's
+  Hook bytes, source path, receipt, and host directory remain unchanged.
+- Every selected worktree's managed TRAE Hooks point to that worktree's local
+  plugin and pass its independent audit.
 - Mutation targets take precedence over active editor and task hints; folder
   order never decides authority.
 - Explicit hard cut removes the old conversation/action stores; ordinary

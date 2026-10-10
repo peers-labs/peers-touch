@@ -26,11 +26,12 @@ bypass the workflow or create another worktree.
 
 For a TRAE multi-root workspace, install with
 `make skills IDE=trae WORKSPACE=<absolute-.code-workspace-path>`. The
-selected source root, descriptor bootstrap root, and existing TRAE-participating
-roots receive equivalent ingress to one canonical Kernel; Hook location never
-selects execution authority. Normal installation is non-destructive and does
-not require machine-wide workflow quiescence. Explicit `skills-hard-cut` and
-`skills-gc` own separately authorized global-idle cleanup.
+selected worktree alone receives its local Hook projection. The descriptor
+only supplies the allowed runtime root set; it never authorizes writing a
+bootstrap folder or sibling worktree. Hook location never selects execution
+authority. Normal installation is non-destructive and does not require
+machine-wide workflow quiescence. Explicit `skills-hard-cut` and `skills-gc`
+own separately authorized global-idle cleanup.
 
 | Promise ID | What must be true | Normal recovery |
 |---|---|---|

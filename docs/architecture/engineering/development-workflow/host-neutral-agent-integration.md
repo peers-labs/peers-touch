@@ -17,11 +17,11 @@ semantic integration, not filesystem copying.
 
 The `peers-dev-workflow` repository owns the canonical implementation and
 distribution contract. It is not the runtime-state source for consuming
-worktrees. Each installed adapter contributes a canonical integration candidate.
-Equivalent Hooks in participating multi-root folders dispatch to the selected
-source root's same canonical integration. The Kernel resolves the explicit
-target worktree for each mutating OWNER event; the first blockable event creates
-only the immutable OWNER identity.
+worktrees. Each worktree installs its own adapter and Hook from its own checked
+out source. A multi-root workspace descriptor supplies the allowed runtime root
+set but does not make one worktree an integration source for another. The
+Kernel resolves the explicit target worktree for each mutating OWNER event; the
+first blockable event creates only the immutable OWNER identity.
 
 The Hook's own filesystem location is never an action-workspace hint. A unique
 mutation target wins, followed by a host-provided task root, tool `cwd`, active
@@ -129,12 +129,11 @@ authority.
    every canonical `pt-*` Skill. Codex additionally receives
    `.agents/plugins/pt-ew-plugin`; Cursor receives merged project-native
    `.cursor/hooks.json` entries for `sessionStart`, `beforeSubmitPrompt`,
-   `preToolUse`, and `stop`, all with `failClosed: true`; TRAE receives
-   equivalent canonical Hooks in the selected source root, descriptor
-   bootstrap root, and descriptor roots with an existing real `.trae`
-   directory, including `SubagentStart`, `SubagentStop`, `PreCompact`, and
-   `PostCompact`. Descriptor roots without `.trae` remain untouched. No
-   user-global hook file is modified.
+   `preToolUse`, and `stop`, all with `failClosed: true`; TRAE receives one
+   local managed Hook set in the selected worktree, including
+   `SubagentStart`, `SubagentStop`, `PreCompact`, and `PostCompact`. The
+   workspace descriptor is passed to that local Hook for runtime root
+   validation. No sibling worktree or user-global hook file is modified.
    Ordinary install never deletes conversation or workflow-action stores. It
    runs while holding the machine work-ledger lock and does not require a
    grant from the Hook it installs. Canonical source, host-root, workspace,
@@ -232,8 +231,8 @@ Required report fields:
   do not project a symlinked external implementation.
 - `CANONICAL_PLUGIN_SOURCE_INVALID`: restore the current worktree's canonical
   `tooling/plugins/pt-ew-plugin` source.
-- `TRAE_WORKSPACE_BOOTSTRAP_INVALID`: repair the descriptor or participating
-  canonical Hook projections without replacing unrelated hook entries.
+- `TRAE_WORKSPACE_DESCRIPTOR_INVALID`: repair the selected worktree's
+  descriptor membership without replacing unrelated local Hook entries.
 - `CURSOR_HOOKS_INVALID`: repair the project hook file without replacing
   unrelated hook entries.
 - `WORKFLOW_BINDING_INVALID`: repair the owner-controlled current binding
@@ -247,10 +246,10 @@ Required report fields:
 ## Completion
 
 Fleet integration is complete only when every selected active worktree reports
-audit `PASS`, no host discovery root exposes the legacy scheduler, the
-multi-root workspace has one exact managed Hook per event in every participating
-root, each owner lineage proves stable OWNER identity, per-action workspace
+its own audit `PASS`, no host discovery root exposes the legacy scheduler, each
+worktree has one exact local managed Hook per event that points to its own
+plugin, each owner lineage proves stable OWNER identity, per-action workspace
 selection, single-root mutation confinement, and assignment-bound children,
-global hooks remain unchanged, and each resumed Plan advances at least one
-legal owner-controlled action. Stop proof additionally requires the exact
-machine-rendered Anchor and its create-once OWNER release receipt.
+global and sibling hooks remain unchanged, and each resumed Plan advances at
+least one legal owner-controlled action. Stop proof additionally requires the
+exact machine-rendered Anchor and its create-once OWNER release receipt.

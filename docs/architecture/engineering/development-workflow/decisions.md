@@ -44,7 +44,7 @@
 | DWF-D32 | Aggregate module impacts before resource acquisition | accepted |
 | DWF-D33 | Root workflow authority in one owner binding with assigned child lineage | accepted |
 | DWF-D34 | Separate live integration install from global-idle cleanup | accepted |
-| DWF-D35 | Project one canonical TRAE hook into every participating workspace root | accepted |
+| DWF-D35 | Keep TRAE Hook projection worktree-local | accepted |
 | DWF-D36 | Bootstrap non-destructive integration projection outside the Hook grant cycle | accepted |
 | DWF-D37 | Make Completion Review a repository-native reviewer handoff | accepted |
 | DWF-D38 | Separate frozen Plan versions from execution worktree mounts | superseded by DWF-D42 |
@@ -1500,8 +1500,8 @@ history rather than a live ownership conflict.
 - DWF-D44 supersedes the original immutable OWNER execution-root clause.
   OWNER identity remains immutable, but each mutating OWNER action selects one
   workspace. Assigned children remain fixed to their assignment workspace.
-- TRAE multi-root hook projection was originally limited to one workspace
-  bootstrap. DWF-D35 supersedes this projection detail without changing the
+- DWF-D35 keeps TRAE Hook projection local to each selected worktree while the
+  descriptor supplies only the runtime root set. This does not change the
   single OWNER binding or canonical Kernel authority defined here.
 - Rollout originally combined projection with a hard cut. DWF-D34 and DWF-D36
   supersede that command boundary: ordinary projection is non-destructive and
@@ -1609,39 +1609,38 @@ worktrees into a global upgrade lock.
 - Tests and audit output must distinguish projection success from hard-cut or
   GC completion; installation success no longer claims machine cleanup.
 
-## DWF-D35: Project One Canonical TRAE Hook Into Every Participating Workspace Root
+## DWF-D35: Keep TRAE Hook Projection Worktree-Local
 
 **Status**: accepted
 **Date**: 2026-10-04
+**Amended**: 2026-10-10
 
 ### Context
 
-TRAE can open any folder from a multi-root workspace as an independent window.
-Limiting the managed Hook to the descriptor's first root leaves another source
-root unable to create its OWNER binding or exact `skills` grant. The installer
-then requires a grant that the current window can never emit, so the projection
-needed to repair the workflow is permanently self-blocked.
+The original DWF-D35 projected one selected worktree's Hook implementation into
+other folders in the same multi-root workspace. Because every worktree can run
+`make skills`, the last installer rewrote every participating
+`.trae/hooks.json` to call its own source checkout. Parallel worktrees therefore
+replaced one another's integration and could repeatedly reintroduce stale
+Kernel behavior.
 
-The descriptor's folder order is not authority, and multiple transport entries
-do not imply multiple workflow owners. Every entry dispatches to the same
-worktree-local plugin and host-neutral Kernel. The Kernel creates one immutable
-OWNER identity and resolves one action workspace from each mutating event.
+A worktree-local Hook is transport for that worktree's own checked-out
+integration. The workspace descriptor is an allowlist for action-root
+resolution, not a projection target list or a distribution channel.
 
 ### Decision
 
-- TRAE projects an equivalent canonical managed Hook into the selected source
-  root, the descriptor bootstrap root, and every descriptor root that already
-  participates in TRAE through a real `.trae` directory.
-- The installer does not create `.trae` in otherwise untouched descriptor
-  roots. This bounds cross-root mutation while ensuring the current source
-  window and existing TRAE roots can authorize and enforce their own work.
-- All projected entries call the selected source root's same canonical plugin,
-  carry the same workspace descriptor, preserve unrelated Hook entries, and
-  remain transport only. They do not own binding, Plan, Session, or action
-  state.
-- Audit derives the same projection-root set, requires one exact managed entry
-  per event in each participating root, rejects managed entries outside that
-  set, and probes the selected source root directly.
+- `make skills IDE=trae` writes only the selected worktree's
+  `.trae/hooks.json` and `.trae/skills`.
+- Every managed Hook entry calls the same selected worktree's local
+  `tooling/plugins/pt-ew-plugin/scripts/hook-entry.mjs`.
+- Passing `WORKSPACE=<descriptor>` validates that the selected worktree belongs
+  to the descriptor and supplies the declared runtime root set to the local
+  Hook. It never authorizes writing a bootstrap folder or sibling worktree.
+- Installation preserves unrelated entries in the selected worktree's Hook
+  file and leaves every sibling `.trae` directory byte-for-byte unchanged.
+- Audit validates and probes only the selected worktree's local projection.
+  Fleet audit invokes that local audit independently in each selected worktree.
 - Descriptor order and Hook file location never select authority. Under
   DWF-D44, a unique mutation target takes precedence, followed by explicit
   task root, tool `cwd`, active editor, and repository `cwd`; multi-root or
@@ -1649,28 +1648,29 @@ OWNER identity and resolves one action workspace from each mutating event.
 
 ### Rationale
 
-A Hook is an event ingress, not an owner. Replicating the same fail-closed
-ingress at every participating root removes the bootstrap dependency without
-duplicating workflow truth or weakening exact root selection.
+A Hook is worktree-local event ingress, not a shared workspace service.
+Worktree-local projection makes source identity deterministic and prevents one
+branch from changing another branch's enforcement while retaining per-action
+workspace selection inside the Kernel.
 
 ### Alternatives Considered
 
-- Keep one descriptor-first bootstrap: rejected because independently opened
-  roots cannot trigger it and cannot bootstrap their required grant.
-- Create `.trae` in every descriptor root: rejected because it expands
-  cross-root mutation into folders that have not opted into TRAE projection.
-- Hand-write a receipt or bypass the grant for repair: rejected because it
-  would forge workflow authority and hide the broken bootstrap contract.
+- Project one selected source into every participating root: rejected because
+  concurrent installers are last-writer-wins and destroy worktree isolation.
+- Keep one descriptor-first bootstrap: rejected because folder order is not a
+  source-ownership contract and still centralizes otherwise independent roots.
+- Create or clean sibling `.trae` directories: rejected because installation
+  in one worktree has no write authority over another worktree.
 
 ### Consequences
 
-- A source root can repair or refresh its integration without IDE reload or
-  dependence on another workspace window.
-- Existing TRAE roots receive equivalent canonical Hook updates; untouched
-  roots remain untouched until they participate.
-- Tests must prove source/bootstrap/existing-root projection, untouched-root
-  preservation, folder-order neutrality, exact audit behavior, and direct
-  source-root callback proof.
+- Each worktree repairs or refreshes its own integration independently.
+- Updating worktree A cannot alter worktree B's Hook path, contents, receipt,
+  or enforcement version.
+- A newly added worktree must run its own `make skills`; no sibling installer
+  bootstraps it implicitly.
+- Tests must prove sibling byte preservation, local callback proof, descriptor
+  membership validation, and independent fleet audit.
 
 ## DWF-D36: Bootstrap Non-Destructive Integration Projection Outside The Hook Grant Cycle
 

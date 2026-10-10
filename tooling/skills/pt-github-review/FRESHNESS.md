@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-09
-covered_docs_hash: 4e882a9348d48405881de75f45c4e93e847066b00ffb4780fa2b689df7782c33
+last_verified_at: 2026-10-10
+covered_docs_hash: 7e8fc31f8a3017aaf82797d85321f03f4864b5b1d59a8a7aa0e0fa54aca5fa2e
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,18 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-10 Worktree-Local TRAE Hook Review
+
+DWF-D35 now forbids one worktree's integration install from creating,
+rewriting, cleaning, or auditing another worktree's `.trae` projection. Review
+must reject workspace-descriptor fan-out, descriptor-first bootstrap ownership,
+selected-source Hook paths written into siblings, and fleet PASS inferred from
+one local install. Each worktree's managed Hook must call its own local plugin;
+the descriptor only validates membership and supplies runtime roots. The
+owner-rooted invariant and installer regression prove sibling byte preservation
+and independent local audit. GitHub Review severity and fixtures are otherwise
+unchanged, so `SKILL.md` needs no behavior update.
 
 ## 2026-10-09 Projection Bootstrap Review
 
@@ -142,12 +154,13 @@ owner, product contract, host-neutral invariant, and focused regression suite
 carry this boundary.
 
 DWF-D34 through DWF-D36 separate non-destructive Agent integration projection
-from machine-wide cleanup, project one equivalent canonical TRAE Hook into
-every participating root, and remove the projection's circular dependency on a
-grant issued by the Hook being installed. Review now rejects ordinary
+from machine-wide cleanup and remove the projection's circular dependency on a
+grant issued by the Hook being installed. DWF-D35 originally projected one
+source Hook into participating roots; its 2026-10-10 amendment above replaces
+that behavior with worktree-local projection. Review still rejects ordinary
 projection that depends on unrelated-worktree idle state or a Hook-issued
-grant, singleton bootstrap assumptions, implicit cleanup, interchangeable
-cleanup grants, or destructive cleanup without global-idle proof.
+grant, implicit cleanup, interchangeable cleanup grants, or destructive
+cleanup without global-idle proof.
 `SKILL.md`, the owner-rooted workflow invariant, and dedicated multi-root,
 control, Kernel, and Action Store fixtures cover these checks; no generic
 review fixture is required.

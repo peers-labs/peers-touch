@@ -358,22 +358,21 @@ Workflow Bindings or Action Receipts. Canonical requests, capabilities, and
 receipts live only in the versioned `completion-reviews-v3` namespace;
 earlier review records are neither read nor migrated.
 
-TRAE multi-root startup projects equivalent event ingress into the selected
-source root, the descriptor bootstrap root, and descriptor roots with an
-existing real `.trae` directory. Every entry calls the selected source root's
-same canonical integration; Hook location is never owner authority or an
-action-workspace hint. On every mutating OWNER event, a unique mutation target
-wins, followed by an explicit host task root and tool `cwd`. The result must be
-one declared workspace root. Ambiguous selection returns
-`WORKTREE_SELECTION_REQUIRED`; a target-less action may use the stored default
-only when every resolved mutation path stays inside it. Changing the workspace
-descriptor or writing these cross-root projections remains a separately
-declared rollout operation. Descriptor roots without `.trae` remain untouched.
+TRAE integration is projected only into the selected worktree. Its managed Hook
+calls that worktree's local plugin and may carry a workspace descriptor as the
+declared runtime root set, but it never writes a bootstrap folder or sibling
+worktree. Hook location is never owner authority or an action-workspace hint.
+On every mutating OWNER event, a unique mutation target wins, followed by an
+explicit host task root and tool `cwd`. The result must be one declared
+workspace root. Ambiguous selection returns `WORKTREE_SELECTION_REQUIRED`; a
+target-less action may use the stored default only when every resolved mutation
+path stays inside it. Every sibling worktree installs and audits its own Hook
+independently.
 
 Ordinary `skills` projection is non-destructive. It completes fallible
-preflight, updates equivalent host projections under the machine install lock,
-and records truthful installation/callback state without requiring global idle
-or a Hook-issued grant. It never deletes workflow state.
+preflight, updates only the selected worktree's host projection under the
+machine install lock, and records truthful installation/callback state without
+requiring global idle or a Hook-issued grant. It never deletes workflow state.
 
 `skills-hard-cut` and `skills-gc` are separate destructive operations. Each
 requires its own exact OWNER grant and global-idle proof before deleting its
