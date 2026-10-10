@@ -44,9 +44,9 @@ use messaging_core::proto::chat::{
     UpdateConversationMemberRequest, UpdateConversationMemberResponse,
 };
 use messaging_core::proto::key_exchange::{
-    DirectKeyBundle, FetchDirectKeyBundlesRequest, FetchDirectKeyBundlesResponse,
-    UploadDirectKeyBundleRequest, UploadDirectKeyBundleResponse, UploadMlsKeyPackageRequest,
-    UploadMlsKeyPackageResponse,
+    CountMlsKeyPackagesRequest, CountMlsKeyPackagesResponse, DirectKeyBundle,
+    FetchDirectKeyBundlesRequest, FetchDirectKeyBundlesResponse, UploadDirectKeyBundleRequest,
+    UploadDirectKeyBundleResponse, UploadMlsKeyPackageRequest, UploadMlsKeyPackageResponse,
 };
 use messaging_core::proto::social::{
     AcceptSocialFriendRequestRequest, AcceptSocialFriendRequestResponse, BlockSocialActorRequest,
@@ -727,6 +727,27 @@ impl MlsKeyPackageTransport for StationMlsKeyPackageTransport {
         )
         .map(|_| ())
         .map_err(|error| error.to_string())
+    }
+
+    fn available_count(&self, device: &ActorDeviceRef) -> Result<u64, String> {
+        actor_device_ptid(device)?;
+        if device.device_id != self.device_id {
+            return Err(
+                "mobile messaging MLS KeyPackage count endpoint binding mismatch".to_string(),
+            );
+        }
+        let response = get_proto::<_, CountMlsKeyPackagesResponse>(
+            &self.station_origin,
+            self.access_token.as_str(),
+            &self.device_id,
+            "/key-exchange/mls/key-package/count",
+            &CountMlsKeyPackagesRequest {
+                device: Some(device.clone()),
+            },
+        )
+        .map_err(|error| error.to_string())?;
+        u64::try_from(response.count)
+            .map_err(|_| "mobile messaging MLS KeyPackage count is negative".to_string())
     }
 }
 

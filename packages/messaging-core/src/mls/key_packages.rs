@@ -1,5 +1,6 @@
 use super::group::MlsGroupManager;
 use crate::contracts::CryptoEndpoint;
+use crate::proto::actor::ActorDeviceRef;
 use crate::proto::actor_device_ref;
 use crate::proto::key_exchange::UploadMlsKeyPackageRequest;
 use crate::store::MlsKeyPackageRepository;
@@ -9,6 +10,8 @@ const INITIAL_MLS_KEY_PACKAGE_COUNT: usize = 5;
 
 pub trait MlsKeyPackageTransport: Send + Sync {
     fn upload(&self, request: &UploadMlsKeyPackageRequest) -> Result<(), String>;
+
+    fn available_count(&self, device: &ActorDeviceRef) -> Result<u64, String>;
 }
 
 pub struct MlsKeyPackagePublisher<R> {
@@ -39,8 +42,23 @@ impl<R: MlsKeyPackageRepository> MlsKeyPackagePublisher<R> {
         transport: &T,
     ) -> Result<(), String> {
         if !self.store.has_mls_key_packages()? {
-            self.generate_fresh_batch(now_unix_ms)?;
+            self.generate_fresh_batch(INITIAL_MLS_KEY_PACKAGE_COUNT, now_unix_ms)?;
         }
+        self.publish_pending(transport)?;
+        let endpoint = actor_device_ref(&self.endpoint.ptid, &self.endpoint.device_id);
+        let available = transport.available_count(&endpoint)?;
+        let target = u64::try_from(INITIAL_MLS_KEY_PACKAGE_COUNT)
+            .map_err(|_| "messaging MLS KeyPackage target count is invalid".to_string())?;
+        if available < target {
+            let missing = usize::try_from(target - available)
+                .map_err(|_| "messaging MLS KeyPackage deficit is invalid".to_string())?;
+            self.generate_fresh_batch(missing, now_unix_ms)?;
+            self.publish_pending(transport)?;
+        }
+        Ok(())
+    }
+
+    fn publish_pending<T: MlsKeyPackageTransport>(&self, transport: &T) -> Result<(), String> {
         for package in self.store.pending_mls_key_packages()? {
             transport.upload(&UploadMlsKeyPackageRequest {
                 device: Some(actor_device_ref(
@@ -55,12 +73,12 @@ impl<R: MlsKeyPackageRepository> MlsKeyPackagePublisher<R> {
         Ok(())
     }
 
-    fn generate_fresh_batch(&self, now_unix_ms: i64) -> Result<(), String> {
-        if now_unix_ms <= 0 {
+    fn generate_fresh_batch(&self, count: usize, now_unix_ms: i64) -> Result<(), String> {
+        if count == 0 || now_unix_ms <= 0 {
             return Err("messaging MLS KeyPackage generation time is invalid".to_string());
         }
         let previous_pool = self.manager.export_pending_join_providers()?;
-        let packages = (0..INITIAL_MLS_KEY_PACKAGE_COUNT)
+        let packages = (0..count)
             .map(|_| self.manager.generate_key_package())
             .collect::<Result<Vec<_>, _>>()?;
         let provider_pool = self.manager.export_pending_join_providers()?;
@@ -95,6 +113,13 @@ mod tests {
     struct RecordingTransport {
         requests: Mutex<Vec<UploadMlsKeyPackageRequest>>,
         fail_first: Mutex<bool>,
+        available: Mutex<u64>,
+    }
+
+    impl RecordingTransport {
+        fn consume_all(&self) {
+            *self.available.lock().unwrap() = 0;
+        }
     }
 
     impl MlsKeyPackageTransport for RecordingTransport {
@@ -105,7 +130,15 @@ mod tests {
                 *fail = false;
                 return Err("network".to_string());
             }
+            *self.available.lock().unwrap() += 1;
             Ok(())
+        }
+
+        fn available_count(&self, device: &ActorDeviceRef) -> Result<u64, String> {
+            if device.device_id.trim().is_empty() || actor_device_ptid(device).is_err() {
+                return Err("invalid endpoint".to_string());
+            }
+            Ok(*self.available.lock().unwrap())
         }
     }
 
@@ -167,16 +200,15 @@ mod tests {
                 return Err("persistence".to_string());
             }
             state.provider_pool = Some(provider_pool_state.to_vec());
-            state.packages = packages
-                .iter()
-                .map(|data| StoredKeyPackage {
+            state
+                .packages
+                .extend(packages.iter().map(|data| StoredKeyPackage {
                     package: PendingMlsKeyPackage {
                         package_id: hex::encode(Sha256::digest(data)),
                         data: data.clone(),
                     },
                     published: false,
-                })
-                .collect();
+                }));
             Ok(())
         }
 
@@ -249,6 +281,7 @@ mod tests {
         let transport = RecordingTransport {
             requests: Mutex::new(Vec::new()),
             fail_first: Mutex::new(true),
+            available: Mutex::new(0),
         };
 
         assert!(publisher.publish(10_000, &transport).is_err());
@@ -259,6 +292,23 @@ mod tests {
         let requests = transport.requests.lock().unwrap();
         assert_eq!(requests.len(), 6);
         assert_eq!(requests[0], requests[1]);
+    }
+
+    #[test]
+    fn mls_keypackage_publisher_replenishes_exhausted_station_inventory() {
+        let store = Arc::new(TestKeyPackageRepository::new(true));
+        let (publisher, _) = publisher(store.clone(), [12; 32]);
+        let transport = RecordingTransport::default();
+
+        publisher.publish(10_000, &transport).unwrap();
+        assert_eq!(*transport.available.lock().unwrap(), 5);
+        transport.consume_all();
+
+        publisher.publish(20_000, &transport).unwrap();
+
+        assert_eq!(*transport.available.lock().unwrap(), 5);
+        assert_eq!(store.state.lock().unwrap().packages.len(), 10);
+        assert!(store.pending_mls_key_packages().unwrap().is_empty());
     }
 
     #[test]
