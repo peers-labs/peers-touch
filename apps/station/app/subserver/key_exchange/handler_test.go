@@ -437,20 +437,22 @@ func TestKeyExchangeHandlerRejectsMissingAuthenticatedDevice(t *testing.T) {
 
 func TestMapCanonicalErrorPreservesFailureClass(t *testing.T) {
 	tests := []struct {
-		code   domain.ErrorCode
-		status int
+		code     domain.ErrorCode
+		status   int
+		wireCode actormodel.ErrorCode
 	}{
-		{domain.ErrorCodeInvalidArgument, http.StatusBadRequest},
-		{domain.ErrorCodeUnauthorized, http.StatusForbidden},
-		{domain.ErrorCodeNotFound, http.StatusNotFound},
-		{domain.ErrorCodeConflict, http.StatusConflict},
-		{domain.ErrorCodeStaleMaterial, http.StatusConflict},
-		{domain.ErrorCodePlanExpired, http.StatusConflict},
-		{domain.ErrorCodePoolDepleted, http.StatusConflict},
-		{domain.ErrorCodeQuotaExceeded, http.StatusTooManyRequests},
-		{domain.ErrorCodePayloadTooLarge, http.StatusRequestEntityTooLarge},
-		{domain.ErrorCodeDependency, http.StatusServiceUnavailable},
-		{domain.ErrorCodeInternal, http.StatusInternalServerError},
+		{domain.ErrorCodeInvalidArgument, http.StatusBadRequest, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_INVALID_MATERIAL},
+		{domain.ErrorCodeInvalidMaterial, http.StatusBadRequest, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_INVALID_MATERIAL},
+		{domain.ErrorCodeUnauthorized, http.StatusForbidden, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_FORBIDDEN},
+		{domain.ErrorCodeNotFound, http.StatusNotFound, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_POOL_NOT_FOUND},
+		{domain.ErrorCodeConflict, http.StatusConflict, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_REPLAY_CONFLICT},
+		{domain.ErrorCodeStaleMaterial, http.StatusConflict, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_STALE_EPOCH},
+		{domain.ErrorCodePlanExpired, http.StatusConflict, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_STALE_EPOCH},
+		{domain.ErrorCodePoolDepleted, http.StatusConflict, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_POOL_DEPLETED},
+		{domain.ErrorCodeQuotaExceeded, http.StatusTooManyRequests, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_QUOTA_EXCEEDED},
+		{domain.ErrorCodePayloadTooLarge, http.StatusRequestEntityTooLarge, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_PAYLOAD_TOO_LARGE},
+		{domain.ErrorCodeDependency, http.StatusServiceUnavailable, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_DEPENDENCY_UNAVAILABLE},
+		{domain.ErrorCodeInternal, http.StatusInternalServerError, actormodel.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR},
 	}
 	for _, test := range tests {
 		t.Run(string(test.code), func(t *testing.T) {
@@ -468,6 +470,31 @@ func TestMapCanonicalErrorPreservesFailureClass(t *testing.T) {
 					"mapped status = %d, want %d",
 					handlerError.Code,
 					test.status,
+				)
+			}
+			if handlerError.ContentType != actormodel.ContentTypeProtobuf {
+				t.Fatalf(
+					"mapped content type = %q, want %q",
+					handlerError.ContentType,
+					actormodel.ContentTypeProtobuf,
+				)
+			}
+			if got := handlerError.Headers["X-Peers-Error-Code"]; got != test.wireCode.String() {
+				t.Fatalf(
+					"mapped error header = %q, want %q",
+					got,
+					test.wireCode.String(),
+				)
+			}
+			var response actormodel.ErrorResponse
+			if err := proto.Unmarshal(handlerError.Body, &response); err != nil {
+				t.Fatalf("decode mapped error body: %v", err)
+			}
+			if response.GetCode() != test.wireCode {
+				t.Fatalf(
+					"mapped error body code = %s, want %s",
+					response.GetCode(),
+					test.wireCode,
 				)
 			}
 		})

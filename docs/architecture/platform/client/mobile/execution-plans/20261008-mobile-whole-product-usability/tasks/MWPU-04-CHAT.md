@@ -31,6 +31,7 @@
     "apps/mobile/src/styles.css",
     "apps/station/app/subserver/conversation",
     "apps/station/app/subserver/envelope",
+    "apps/station/app/subserver/key_exchange",
     "packages/messaging-core/src/inbox",
     "packages/prototypes/mobile/chat",
     "tooling/acceptance/gates/mobile"
