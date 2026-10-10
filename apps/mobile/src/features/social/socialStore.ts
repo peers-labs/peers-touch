@@ -46,6 +46,7 @@ import {
   listReliabilityCommands,
   readReliabilityRuntimeStatus,
 } from '../../runtimes/commandRuntime';
+import { MobileMutationAdmissionError } from '../../runtimes/mutationAdmission';
 import {
   createSocialGateway,
   createNotificationGateway,
@@ -862,12 +863,17 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       ? messages.find((message) => message.ulid === upToUlid)
       : messages.at(-1);
     if (!target?.eventSequence || target.eventSequence <= 0) return;
-    await messagingSubmitReadCursor({
-      ...messagingAccount(state),
-      admissionDomain: mutationDomainForConversation(state, sessionUlid),
-      conversationId: sessionUlid,
-      lastReadSequence: target.eventSequence,
-    });
+    try {
+      await messagingSubmitReadCursor({
+        ...messagingAccount(state),
+        admissionDomain: mutationDomainForConversation(state, sessionUlid),
+        conversationId: sessionUlid,
+        lastReadSequence: target.eventSequence,
+      });
+    } catch (error) {
+      // Projection hydration must not fail while the monotonic receipt waits for admission.
+      if (!(error instanceof MobileMutationAdmissionError)) throw error;
+    }
   },
 
   loadMoreNotifications: async () => {
