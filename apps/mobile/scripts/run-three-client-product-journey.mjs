@@ -6500,18 +6500,19 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
   const step = async (clientId, stepId, action) => {
     const client = manifest.clients[clientId];
     await activateForegroundClient(clientId, client);
-    return withWebContext(client, async () => {
-      await waitForStableMobileChatWriteAdmission(clientId, client);
-      sequenceRef.value += 1;
-      return recordJourneyStep({
-        clientId,
-        client,
-        evidenceDir,
-        interactionTrace,
-        sequence: sequenceRef.value,
-        stepId,
-        action,
-      });
+    // Keep one CDP attachment across the long Chat phase. Repeatedly restoring
+    // NATIVE_APP can deadlock Android WebView context teardown after a send.
+    await selectWebContext(client);
+    await waitForStableMobileChatWriteAdmission(clientId, client);
+    sequenceRef.value += 1;
+    return recordJourneyStep({
+      clientId,
+      client,
+      evidenceDir,
+      interactionTrace,
+      sequence: sequenceRef.value,
+      stepId,
+      action,
     });
   };
 
