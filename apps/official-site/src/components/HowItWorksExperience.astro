@@ -1,0 +1,2193 @@
+---
+interface ProductCopy {
+  eyebrow: string;
+  title: string;
+  subtitle: string;
+  network: {
+    eyebrow: string;
+    title: string;
+    note: string;
+    points: Array<{ title: string; body: string }>;
+  };
+  layers: {
+    eyebrow: string;
+    title: string;
+    note: string;
+    items: Array<{ name: string; tag: string; body: string }>;
+  };
+  agents: {
+    eyebrow: string;
+    title: string;
+    note: string;
+    points: Array<{ title: string; body: string }>;
+  };
+  capabilities: {
+    title: string;
+    items: Array<{ title: string; status: string; body: string }>;
+  };
+}
+
+interface Props {
+  locale: 'en' | 'zh';
+  product: ProductCopy;
+  roadmapHref: string;
+}
+
+const { locale, product: p, roadmapHref } = Astro.props;
+const ui =
+  locale === 'zh'
+    ? {
+        heroSignal: '真实产品形态 · Desktop + Mobile',
+        ownershipIndex: '01 · 归属',
+        ownershipTitle: '你的社交生活，有自己的家。',
+        ownershipBody:
+          '身份、关系、消息与内容归于你选择的 Station。你可以自己运行，也可以加入信任的社区；无论由谁托管，边界始终清楚。',
+        stationSignal: '真实产品形态 · Station Dashboard',
+        networkIndex: '02 · 互联',
+        networkTitle: '不在同一个 Station，也能自然相见。',
+        networkBody:
+          '联系人会标明 Home Station 与 Federation 来源。关注、聊天、分享和群组可以跨 Station 发生，产品里看到的是人，不是协议负担。',
+        networkSignal: '真实产品形态 · Desktop Contacts + Mobile Chat',
+        agentIndex: '03 · 个人 Agent',
+        agentTitle: '你的个人 Agent，由你定义。',
+        agentBody:
+          '选择模型、上下文、工具和权限。Agent 使用你允许的数据，在执行外部动作前向你确认。',
+        agentSignal: '真实产品形态 · Desktop Agent Module',
+        capabilityEyebrow: '正在形成的产品能力',
+        closingTitle: '各自拥有，彼此连接。',
+        closingBody: '人与 Agent，共同生活在一张没有平台中心的网络里。',
+        roadmap: '查看路线图',
+      }
+    : {
+        heroSignal: 'Real product surfaces · Desktop + Mobile',
+        ownershipIndex: '01 · Ownership',
+        ownershipTitle: 'Your social life has a home of its own.',
+        ownershipBody:
+          'Identity, relationships, messages, and content live on the Station you choose. Run it yourself or join a community you trust; the boundary stays explicit.',
+        stationSignal: 'Real product surface · Station Dashboard',
+        networkIndex: '02 · Federation',
+        networkTitle: 'Different Stations, one natural conversation.',
+        networkBody:
+          'Contacts expose their Home Station and Federation. Following, messaging, sharing, and groups cross Station boundaries without turning protocols into product burden.',
+        networkSignal: 'Real product surfaces · Desktop Contacts + Mobile Chat',
+        agentIndex: '03 · Personal Agent',
+        agentTitle: 'A personal Agent, defined by you.',
+        agentBody:
+          'Choose its model, context, tools, and permissions. It works with data you allow and asks before taking external action.',
+        agentSignal: 'Real product surface · Desktop Agent Module',
+        capabilityEyebrow: 'The product taking shape',
+        closingTitle: 'Owned independently. Connected openly.',
+        closingBody: 'People and Agents share one network without a platform at its center.',
+        roadmap: 'View roadmap',
+      };
+---
+
+<svg class="hi-symbols" aria-hidden="true">
+  <symbol id="hi-search" viewBox="0 0 24 24">
+    <path d="m21 21-4.35-4.35"></path><circle cx="11" cy="11" r="8"></circle>
+  </symbol>
+  <symbol id="hi-message" viewBox="0 0 24 24">
+    <path d="M3 16.5a9 9 0 1 1 4 4L2 22l1-5.5Z"></path>
+  </symbol>
+  <symbol id="hi-contact" viewBox="0 0 24 24">
+    <rect x="3" y="4" width="18" height="18" rx="2"></rect><circle cx="12" cy="11" r="3"></circle>
+    <path d="M7 21v-1a4 4 0 0 1 4-4h2a4 4 0 0 1 4 4v1"></path>
+  </symbol>
+  <symbol id="hi-bot" viewBox="0 0 24 24">
+    <rect x="4" y="8" width="16" height="12" rx="2"></rect><path d="M12 8V4H8"></path>
+    <path d="M8 13h.01M16 13h.01M9 17h6"></path>
+  </symbol>
+  <symbol id="hi-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"></path></symbol>
+  <symbol id="hi-phone" viewBox="0 0 24 24">
+    <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.4 19.4 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.9a2 2 0 0 1-.5 2.1L8 10a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.9.6 2.9.7a2 2 0 0 1 1.7 2Z"></path>
+  </symbol>
+  <symbol id="hi-video" viewBox="0 0 24 24">
+    <rect x="2" y="6" width="14" height="12" rx="2"></rect><path d="m16 10 6-3v10l-6-3"></path>
+  </symbol>
+  <symbol id="hi-more" viewBox="0 0 24 24">
+    <circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle>
+  </symbol>
+  <symbol id="hi-smile" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"></path>
+  </symbol>
+  <symbol id="hi-paperclip" viewBox="0 0 24 24">
+    <path d="m16 6-8.4 8.6a2 2 0 0 0 2.8 2.8L18.8 8.8a4 4 0 1 0-5.6-5.6l-8.4 8.5a6 6 0 1 0 8.5 8.5l7-7.1"></path>
+  </symbol>
+  <symbol id="hi-image" viewBox="0 0 24 24">
+    <rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="9" cy="9" r="2"></circle><path d="m21 15-5-5L5 21"></path>
+  </symbol>
+  <symbol id="hi-mic" viewBox="0 0 24 24">
+    <rect x="9" y="2" width="6" height="13" rx="3"></rect><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3"></path>
+  </symbol>
+  <symbol id="hi-send" viewBox="0 0 24 24">
+    <path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path>
+  </symbol>
+  <symbol id="hi-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"></path></symbol>
+  <symbol id="hi-lock" viewBox="0 0 24 24">
+    <rect x="3" y="10" width="18" height="12" rx="2"></rect><path d="M7 10V7a5 5 0 0 1 10 0v3"></path>
+  </symbol>
+  <symbol id="hi-settings" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"></path>
+  </symbol>
+</svg>
+
+<section class="hi-hero pt-shell">
+  <div class="hi-hero-copy">
+    <p class="pt-eyebrow">{p.eyebrow}</p>
+    <h1>{p.title}</h1>
+    <p>{p.subtitle}</p>
+  </div>
+  <p class="hi-source"><span></span>{ui.heroSignal}</p>
+
+  <div class="hi-hero-stage" aria-label="Peers-Touch Desktop and Mobile chat">
+    <div class="hi-desktop-window">
+      <div class="hi-desktop-shell">
+        <aside class="hi-global-rail">
+          <span class="hi-avatar hi-avatar--self"><img src="/avatar-alice.webp" alt="Alex Chen" /></span>
+          <button aria-label="Search"><svg class="hi-icon"><use href="#hi-search"></use></svg></button>
+          <span class="hi-rail-divider"></span>
+          <button class="active" aria-label="Chat"><svg class="hi-icon"><use href="#hi-message"></use></svg></button>
+          <button aria-label="Agent"><svg class="hi-icon"><use href="#hi-bot"></use></svg></button>
+          <span class="hi-rail-spacer"></span>
+          <button aria-label="Settings"><svg class="hi-icon"><use href="#hi-settings"></use></svg></button>
+        </aside>
+
+        <aside class="hi-chat-rail">
+          <button class="active" aria-label="Chat"><svg class="hi-icon"><use href="#hi-message"></use></svg></button>
+          <button aria-label="Contacts"><svg class="hi-icon"><use href="#hi-contact"></use></svg></button>
+        </aside>
+
+        <aside class="hi-session-list">
+          <header><strong>Messages</strong><button aria-label="New conversation"><svg class="hi-icon hi-icon--small"><use href="#hi-plus"></use></svg></button></header>
+          <div class="hi-session-search"><svg class="hi-icon hi-icon--small"><use href="#hi-search"></use></svg><span>Search</span></div>
+          <article class="hi-session active">
+            <span class="hi-avatar hi-avatar--group"><img src="/avatar-alice.webp" alt="" /><img src="/avatar-emma.webp" alt="" /></span>
+            <div><strong>Engineering Team</strong><span>Sarah: Let me check the logs</span></div><time>2m</time>
+          </article>
+          <article class="hi-session">
+            <span class="hi-avatar"><img src="/avatar-sarah.webp" alt="Sarah Kim" /></span>
+            <div><strong>Sarah Kim</strong><span>Sounds good, see you tomorrow!</span></div><time>5m</time>
+          </article>
+          <article class="hi-session">
+            <span class="hi-avatar hi-avatar--group"><img src="/avatar-emma.webp" alt="" /><img src="/avatar-sarah.webp" alt="" /></span>
+            <div><strong>Design Review</strong><span>Emma shared a file</span></div><time>15m</time>
+          </article>
+        </aside>
+
+        <section class="hi-chat">
+          <header class="hi-chat-head">
+            <div><strong>Engineering Team</strong><span>7 members · End-to-end encrypted</span></div>
+            <div>
+              <button aria-label="Search messages"><svg class="hi-icon"><use href="#hi-search"></use></svg></button>
+              <button aria-label="Voice call"><svg class="hi-icon"><use href="#hi-phone"></use></svg></button>
+              <button aria-label="Video call"><svg class="hi-icon"><use href="#hi-video"></use></svg></button>
+              <button aria-label="More"><svg class="hi-icon"><use href="#hi-more"></use></svg></button>
+            </div>
+          </header>
+          <div class="hi-chat-stream">
+            <div class="hi-message">
+              <span class="hi-avatar hi-avatar--small"><img src="/avatar-emma.webp" alt="Emma Wang" /></span>
+              <div><small>Emma Wang</small><p>The new build is ready for testing.</p><time>10:24</time></div>
+            </div>
+            <div class="hi-message mine">
+              <div><p>I found a memory leak in the WebSocket handler. Looking into it.</p><time>10:26 · Read</time></div>
+            </div>
+            <div class="hi-system-line">Sarah joined from the Singapore Station.</div>
+            <div class="hi-message">
+              <span class="hi-avatar hi-avatar--small"><img src="/avatar-sarah.webp" alt="Sarah Kim" /></span>
+              <div><small>Sarah Kim</small><p>Let me check the deployment logs.</p><time>10:31</time></div>
+            </div>
+          </div>
+          <div class="hi-composer-wrap">
+            <div class="hi-composer">
+              <div class="hi-composer-field">Write a message...</div>
+              <div class="hi-composer-tools">
+                <span>
+                  <button aria-label="Emoji"><svg class="hi-icon"><use href="#hi-smile"></use></svg></button>
+                  <button aria-label="Attach"><svg class="hi-icon"><use href="#hi-paperclip"></use></svg></button>
+                  <button aria-label="Image"><svg class="hi-icon"><use href="#hi-image"></use></svg></button>
+                  <button aria-label="Voice"><svg class="hi-icon"><use href="#hi-mic"></use></svg></button>
+                </span>
+                <button class="hi-send" aria-label="Send"><svg class="hi-icon"><use href="#hi-send"></use></svg></button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="hi-phone">
+      <div class="hi-phone-status"><span>9:41</span><span>5G&nbsp; 100%</span></div>
+      <div class="hi-phone-app">
+        <header>
+          <span><svg class="hi-icon"><use href="#hi-arrow-left"></use></svg></span>
+          <span class="hi-avatar hi-avatar--mobile hi-avatar--group"><img src="/avatar-alice.webp" alt="" /><img src="/avatar-emma.webp" alt="" /></span>
+          <div><strong>Dev Team</strong><small><svg class="hi-icon hi-icon--tiny"><use href="#hi-lock"></use></svg> End-to-end encrypted</small></div>
+          <span><svg class="hi-icon"><use href="#hi-more"></use></svg></span>
+        </header>
+        <nav><b>Chat</b><span>Pinned</span></nav>
+        <div class="hi-mobile-pinned">PINNED · Bring the prototype demo?</div>
+        <div class="hi-mobile-stream">
+          <div class="hi-mobile-message">
+            <span class="hi-avatar hi-avatar--small"><img src="/avatar-emma.webp" alt="" /></span>
+            <p>The new build is ready for testing.</p>
+          </div>
+          <div class="hi-mobile-message mine"><p>I found a memory leak. Looking into it.</p></div>
+          <div class="hi-mobile-message">
+            <span class="hi-avatar hi-avatar--small"><img src="/avatar-sarah.webp" alt="" /></span>
+            <p>Let me check the deployment logs.</p>
+          </div>
+        </div>
+        <footer>
+          <button aria-label="Attach"><svg class="hi-icon"><use href="#hi-plus"></use></svg></button>
+          <button aria-label="Voice"><svg class="hi-icon"><use href="#hi-mic"></use></svg></button>
+          <span>Message</span>
+          <button class="hi-mobile-send" aria-label="Send"><svg class="hi-icon"><use href="#hi-send"></use></svg></button>
+        </footer>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="hi-chapter hi-chapter--dark">
+  <div class="pt-shell">
+    <header class="hi-chapter-head">
+      <div><p class="hi-index">{ui.ownershipIndex}</p><h2>{ui.ownershipTitle}</h2></div>
+      <p>{ui.ownershipBody}</p>
+    </header>
+    <p class="hi-source hi-source--dark"><span></span>{ui.stationSignal}</p>
+
+    <div class="hi-station-window">
+      <aside>
+        <div class="hi-station-brand"><img src="/peers-icon.png" alt="" /><div><strong>Station</strong><span>Dashboard</span></div></div>
+        <button class="active"><b>▦</b><span>Overview</span></button>
+        <button><b>◉</b><span>Transport</span></button>
+        <button><b>◎</b><span>Actors</span></button>
+        <button><b>□</b><span>Sessions</span></button>
+        <button><b>⌁</b><span>Nodes</span></button>
+        <button><b>▤</b><span>Services</span></button>
+        <button><b>▥</b><span>Storage</span></button>
+        <button><b>▣</b><span>Security</span></button>
+        <footer>peers-station-prod-01<br />v1.4.2 · uptime 14d</footer>
+      </aside>
+      <div class="hi-station-main">
+        <header><span>▦</span><div><h3>Overview</h3><p>Station operational summary and recent activity</p></div></header>
+        <div class="hi-stats">
+          <article><span>Total Actors</span><strong>2,847</strong><small>+12 today</small></article>
+          <article><span>Active Actors</span><strong>1,203</strong><small>+5.2%</small></article>
+          <article><span>Peer Stations</span><strong>18</strong><small>+2 this week</small></article>
+        </div>
+        <div class="hi-station-grid">
+          <article>
+            <h4>Recent Actors</h4>
+            <table>
+              <thead><tr><th>PTID</th><th>Name</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr><td>pt:actor:a8f2</td><td>Alice Chen</td><td><b>active</b></td></tr>
+                <tr><td>pt:actor:b3e7</td><td>Bob Martinez</td><td><b>active</b></td></tr>
+                <tr><td>pt:actor:d4a6</td><td>David Kumar</td><td><b class="pending">pending</b></td></tr>
+              </tbody>
+            </table>
+          </article>
+          <article>
+            <h4>Federation Health</h4>
+            <div class="hi-health-row"><span>Alpha Research Network</span><b>healthy</b></div>
+            <div class="hi-health-row"><span>Open Social Commons</span><b>healthy</b></div>
+            <div class="hi-health-row"><span>Dev & Testing Ring</span><b class="pending">degraded</b></div>
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div class="hi-principles">
+      {p.layers.items.map((item) => (
+        <article><span>{item.tag}</span><h3>{item.name}</h3><p>{item.body}</p></article>
+      ))}
+    </div>
+  </div>
+</section>
+
+<section class="hi-chapter">
+  <div class="pt-shell">
+    <header class="hi-chapter-head">
+      <div><p class="hi-index">{ui.networkIndex}</p><h2>{ui.networkTitle}</h2></div>
+      <p>{ui.networkBody}</p>
+    </header>
+    <p class="hi-source"><span></span>{ui.networkSignal}</p>
+
+    <div class="hi-network-layout">
+      <div class="hi-contacts-window">
+        <aside class="hi-contact-list">
+          <header>Contacts <button aria-label="Add contact"><svg class="hi-icon hi-icon--small"><use href="#hi-plus"></use></svg></button></header>
+          <div class="hi-contact-search"><svg class="hi-icon hi-icon--small"><use href="#hi-search"></use></svg> Find people</div>
+          <article class="active"><span class="hi-avatar"><img src="/avatar-sarah.webp" alt="Bob" /></span><div><strong>Bob</strong><span>@bob@aspen.social</span><small>Friends Federation</small></div></article>
+          <article><span class="hi-avatar"><img src="/avatar-emma.webp" alt="Carol" /></span><div><strong>Carol</strong><span>@carol@harbor.social</span><small>Open Social Commons</small></div></article>
+          <article><span class="hi-avatar"><img src="/avatar-alice.webp" alt="Alice" /></span><div><strong>Alice</strong><span>@alice@north.social</span><small>Alpha Network</small></div></article>
+        </aside>
+        <section class="hi-identity">
+          <span class="hi-avatar hi-avatar--profile"><img src="/avatar-sarah.webp" alt="Bob" /></span>
+          <h3>Bob</h3>
+          <p>@bob@aspen.social</p>
+          <dl>
+            <div><dt>Federation</dt><dd>Friends Federation</dd></div>
+            <div><dt>Home Station</dt><dd>aspen.social</dd></div>
+            <div><dt>Station Peer ID</dt><dd>12D3KooW-aspen</dd></div>
+          </dl>
+          <button><svg class="hi-icon hi-icon--small"><use href="#hi-message"></use></svg> Message</button>
+        </section>
+      </div>
+
+      <div class="hi-network-phone">
+        <div class="hi-phone-status"><span>9:41</span><span>5G&nbsp; 100%</span></div>
+        <div class="hi-phone-app">
+          <header>
+            <span><svg class="hi-icon"><use href="#hi-arrow-left"></use></svg></span>
+            <span class="hi-avatar hi-avatar--mobile"><img src="/avatar-sarah.webp" alt="Bob" /></span>
+            <div><strong>Bob</strong><small><svg class="hi-icon hi-icon--tiny"><use href="#hi-lock"></use></svg> End-to-end encrypted</small></div>
+            <span><svg class="hi-icon"><use href="#hi-more"></use></svg></span>
+          </header>
+          <nav><b>Chat</b><span>Pinned</span></nav>
+          <div class="hi-mobile-stream">
+            <div class="hi-mobile-message"><span class="hi-avatar hi-avatar--small"><img src="/avatar-sarah.webp" alt="" /></span><p>Saturday hike? I sent the route from Aspen Station.</p></div>
+            <div class="hi-mobile-message mine"><p>I’m in. Send me the meeting point.</p></div>
+            <div class="hi-mobile-message"><span class="hi-avatar hi-avatar--small"><img src="/avatar-sarah.webp" alt="" /></span><p>Sent. Cross-Station delivery confirmed.</p></div>
+          </div>
+          <footer><button><svg class="hi-icon"><use href="#hi-plus"></use></svg></button><button><svg class="hi-icon"><use href="#hi-mic"></use></svg></button><span>Message</span><button class="hi-mobile-send"><svg class="hi-icon"><use href="#hi-send"></use></svg></button></footer>
+        </div>
+      </div>
+    </div>
+
+    <div class="hi-point-list">
+      {p.network.points.map((point, index) => (
+        <article><span>0{index + 1}</span><div><h3>{point.title}</h3><p>{point.body}</p></div></article>
+      ))}
+    </div>
+  </div>
+</section>
+
+<section class="hi-chapter hi-chapter--agent">
+  <div class="pt-shell">
+    <header class="hi-chapter-head">
+      <div><p class="hi-index">{ui.agentIndex}</p><h2>{ui.agentTitle}</h2></div>
+      <p>{ui.agentBody}</p>
+    </header>
+    <p class="hi-source"><span></span>{ui.agentSignal}</p>
+
+    <div class="hi-agent-window">
+      <aside class="hi-global-rail">
+        <span class="hi-avatar hi-avatar--self"><img src="/avatar-alice.webp" alt="Alex Chen" /></span>
+        <button aria-label="Search"><svg class="hi-icon"><use href="#hi-search"></use></svg></button>
+        <span class="hi-rail-divider"></span>
+        <button aria-label="Chat"><svg class="hi-icon"><use href="#hi-message"></use></svg></button>
+        <button class="active" aria-label="Agent"><svg class="hi-icon"><use href="#hi-bot"></use></svg></button>
+        <span class="hi-rail-spacer"></span>
+        <button aria-label="Settings"><svg class="hi-icon"><use href="#hi-settings"></use></svg></button>
+      </aside>
+      <div class="hi-agent-product">
+        <nav><b>Agent</b><span>Atelier</span><span>Orchestration</span></nav>
+        <div class="hi-agent-layout">
+          <aside class="hi-agent-list">
+            <header>My Agents <button><svg class="hi-icon hi-icon--small"><use href="#hi-plus"></use></svg></button></header>
+            <div class="hi-agent-search"><svg class="hi-icon hi-icon--small"><use href="#hi-search"></use></svg> Search agents</div>
+            <small>PINNED</small>
+            <article class="active"><i>T</i><div><strong>Travel Assistant</strong><span>Travel planning assistant</span></div></article>
+            <small>ALL AGENTS</small>
+            <article><i>A</i><div><strong>AI UI Automation</strong><span>Workspace automation</span></div></article>
+            <article><i>M</i><div><strong>MCP-Tester</strong><span>Capability testing</span></div></article>
+          </aside>
+          <section class="hi-agent-chat">
+            <header><div><i>T</i><span><strong>Travel Assistant</strong><small>GPT-5.5 · Station ready</small></span></div><b>Station authoritative</b></header>
+            <div class="hi-agent-thread">
+              <article class="user"><small>You</small><p>{locale === 'zh' ? '把周六徒步路线整理成日历事件，写入前先让我确认。' : 'Turn Saturday’s hike into a calendar event. Ask before saving it.'}</p></article>
+              <article><small>Travel Assistant · Agent</small><p>{locale === 'zh' ? '已整理为一条日历事件。以下内容等待你的确认：' : 'I prepared one calendar event and left it waiting for your confirmation.'}</p>
+                <div><strong>{locale === 'zh' ? '周六徒步 · 日历事件' : 'Saturday hike · Calendar event'}</strong><span>{locale === 'zh' ? '周六 08:30 · 北门集合 · 路线已附上' : 'Saturday 08:30 · North gate · Route attached'}</span><button>{locale === 'zh' ? '确认写入' : 'Confirm save'}</button></div>
+              </article>
+            </div>
+            <footer>Continue with Travel Assistant <button><svg class="hi-icon"><use href="#hi-send"></use></svg></button></footer>
+          </section>
+          <aside class="hi-agent-profile">
+            <header>Agent Profile <span>×</span></header>
+            <article><i>T</i><div><strong>Travel Assistant</strong><span>User-defined execution unit</span></div></article>
+            <label>Model</label><div>GPT-5.5 · OpenAI</div>
+            <label>Workspace</label><div>/Workspace/travel-plans</div>
+            <label>Context</label><p><span>Current chat</span><span>Selected contacts</span><span>Trip folder</span></p>
+            <label>Tools</label><p><span>Calendar</span><span>Notes</span><span>Applets</span></p>
+            <label>Permissions</label><div>Ask before external actions</div>
+          </aside>
+        </div>
+      </div>
+    </div>
+
+    <div class="hi-point-list hi-point-list--three">
+      {p.agents.points.map((point, index) => (
+        <article><span>0{index + 1}</span><div><h3>{point.title}</h3><p>{point.body}</p></div></article>
+      ))}
+    </div>
+  </div>
+</section>
+
+<section class="hi-capabilities pt-shell">
+  <header><p class="pt-eyebrow">{ui.capabilityEyebrow}</p><h2>{p.capabilities.title}</h2></header>
+  <div>
+    {p.capabilities.items.map((cap, index) => (
+      <article>
+        <span>{String(index + 1).padStart(2, '0')}</span>
+        <div><h3>{cap.title}</h3><p>{cap.body}</p></div>
+        <b>{cap.status}</b>
+      </article>
+    ))}
+  </div>
+</section>
+
+<section class="hi-closing">
+  <div class="pt-shell">
+    <div><h2>{ui.closingTitle}</h2><p>{ui.closingBody}</p></div>
+    <a class="pt-btn pt-btn--primary" href={roadmapHref}>{ui.roadmap}</a>
+  </div>
+</section>
+
+<style>
+  .hi-symbols {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+  }
+
+  .hi-icon {
+    width: 18px;
+    height: 18px;
+    display: block;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .hi-icon--small {
+    width: 14px;
+    height: 14px;
+  }
+
+  .hi-icon--tiny {
+    width: 11px;
+    height: 11px;
+  }
+
+  button {
+    color: inherit;
+    font: inherit;
+  }
+
+  .hi-hero {
+    padding-block: clamp(40px, 5vw, 56px) var(--pt-space-xl);
+    overflow: hidden;
+  }
+
+  .hi-hero-copy {
+    width: min(100%, 520px);
+  }
+
+  .hi-hero h1 {
+    margin-top: var(--pt-space-xs);
+    font-size: clamp(1.9rem, 4.2vw, 2.8rem);
+    line-height: 1.2;
+    font-weight: 800;
+    background: linear-gradient(120deg, var(--pt-text-primary), var(--pt-relay));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .hi-hero-copy > p:last-child {
+    max-width: 32em;
+    margin-top: var(--pt-space-sm);
+    color: var(--pt-text-secondary);
+    font-size: clamp(0.95rem, 1.4vw, 1.1rem);
+    line-height: 1.7;
+  }
+
+  .hi-source {
+    display: flex;
+    align-items: center;
+    gap: var(--pt-space-xs);
+    margin: var(--pt-space-lg) 0 var(--pt-space-sm);
+    color: var(--pt-text-muted);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .hi-source span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #38a169;
+  }
+
+  .hi-source--dark {
+    color: rgba(255, 255, 255, 0.62);
+  }
+
+  .hi-hero-stage {
+    position: relative;
+    height: 560px;
+  }
+
+  .hi-desktop-window,
+  .hi-contacts-window,
+  .hi-agent-window {
+    overflow: hidden;
+    border: 1px solid var(--pt-border-hairline);
+    border-radius: var(--pt-radius-md);
+    background: #fff;
+    box-shadow: var(--pt-shadow-float);
+  }
+
+  .hi-desktop-window {
+    position: absolute;
+    inset: 0 52px 0 0;
+  }
+
+  .hi-desktop-shell {
+    height: 100%;
+    display: flex;
+    min-width: 0;
+  }
+
+  .hi-global-rail,
+  .hi-chat-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 4px;
+    padding-top: 12px;
+    border-right: 1px solid #e8e8e8;
+    background: #fbfbfb;
+  }
+
+  .hi-global-rail {
+    width: 58px;
+  }
+
+  .hi-chat-rail {
+    width: 48px;
+    background: #fff;
+  }
+
+  .hi-global-rail button,
+  .hi-chat-rail button,
+  .hi-chat-head button,
+  .hi-composer button,
+  .hi-agent-list button {
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 8px;
+    color: #8c8c8c;
+    background: transparent;
+  }
+
+  .hi-global-rail button.active,
+  .hi-chat-rail button.active {
+    color: var(--pt-accent);
+    background: rgba(102, 126, 234, 0.1);
+  }
+
+  .hi-rail-divider {
+    width: 24px;
+    height: 1px;
+    margin-block: 4px;
+    background: #e8e8e8;
+  }
+
+  .hi-rail-spacer {
+    flex: 1;
+  }
+
+  .hi-avatar {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    overflow: hidden;
+    border-radius: 8px;
+    background: var(--pt-accent);
+  }
+
+  .hi-avatar img {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    display: block;
+    object-fit: cover;
+  }
+
+  .hi-avatar--self {
+    width: 36px;
+    height: 36px;
+    margin-bottom: 6px;
+  }
+
+  .hi-avatar--small {
+    width: 32px;
+    height: 32px;
+  }
+
+  .hi-avatar--mobile {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+  }
+
+  .hi-avatar--profile {
+    width: 64px;
+    height: 64px;
+    border-radius: 12px;
+  }
+
+  .hi-avatar--group {
+    position: relative;
+    display: block;
+    background: #eef1fb;
+  }
+
+  .hi-avatar--group img {
+    position: absolute;
+    width: 64%;
+    height: 64%;
+    border: 2px solid #fff;
+    border-radius: 6px;
+  }
+
+  .hi-avatar--group img:first-child {
+    top: 0;
+    left: 0;
+  }
+
+  .hi-avatar--group img:last-child {
+    right: 0;
+    bottom: 0;
+  }
+
+  .hi-session-list {
+    width: 290px;
+    flex: 0 0 290px;
+    border-right: 1px solid #e8e8e8;
+    background: #fff;
+  }
+
+  .hi-session-list > header,
+  .hi-contact-list > header {
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-inline: 16px;
+    border-bottom: 1px solid #e8e8e8;
+    color: #1a1a1a;
+  }
+
+  .hi-session-list > header strong {
+    font-size: 18px;
+  }
+
+  .hi-session-list > header button,
+  .hi-contact-list > header button {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 8px;
+    color: #595959;
+    background: #f5f5f5;
+  }
+
+  .hi-session-search,
+  .hi-contact-search,
+  .hi-agent-search {
+    height: 32px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 12px;
+    padding-inline: 12px;
+    border-radius: 8px;
+    color: #8c8c8c;
+    background: #f5f5f5;
+    font-size: 12px;
+  }
+
+  .hi-session {
+    min-height: 68px;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-left: 3px solid transparent;
+    color: #1a1a1a;
+  }
+
+  .hi-session.active {
+    border-left-color: var(--pt-accent);
+    background: #f0f0f0;
+  }
+
+  .hi-session div {
+    min-width: 0;
+  }
+
+  .hi-session strong,
+  .hi-session span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .hi-session strong {
+    font-size: 13px;
+  }
+
+  .hi-session span,
+  .hi-session time {
+    color: #8c8c8c;
+    font-size: 10px;
+  }
+
+  .hi-chat {
+    min-width: 380px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+  }
+
+  .hi-chat-head {
+    height: 56px;
+    flex: 0 0 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-inline: 18px;
+    border-bottom: 1px solid #e8e8e8;
+    color: #1a1a1a;
+  }
+
+  .hi-chat-head strong,
+  .hi-chat-head span {
+    display: block;
+  }
+
+  .hi-chat-head strong {
+    font-size: 14px;
+  }
+
+  .hi-chat-head span {
+    color: #8c8c8c;
+    font-size: 10px;
+  }
+
+  .hi-chat-head > div:last-child {
+    display: flex;
+    gap: 2px;
+  }
+
+  .hi-chat-stream {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 18px;
+    overflow: hidden;
+  }
+
+  .hi-message {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .hi-message > div {
+    max-width: 68%;
+  }
+
+  .hi-message small,
+  .hi-message time {
+    display: block;
+    color: #b0b0b0;
+    font-size: 10px;
+  }
+
+  .hi-message p {
+    margin-block: 2px;
+    padding: 8px 12px;
+    border-radius: 6px 12px 12px;
+    color: #1a1a1a;
+    background: #f5f5f5;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .hi-message.mine {
+    justify-content: flex-end;
+  }
+
+  .hi-message.mine > div {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
+  .hi-message.mine p {
+    color: #fff;
+    border-radius: 12px 6px 12px 12px;
+    background: var(--pt-accent);
+  }
+
+  .hi-system-line {
+    align-self: center;
+    padding: 4px 12px;
+    border-radius: 999px;
+    color: #8c8c8c;
+    background: #fafafa;
+    font-size: 10px;
+  }
+
+  .hi-composer-wrap {
+    padding: 6px 8px 10px;
+    background: #fafafa;
+  }
+
+  .hi-composer {
+    overflow: hidden;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 10px 28px rgba(40, 44, 78, 0.1);
+  }
+
+  .hi-composer-field {
+    min-height: 68px;
+    padding: 12px 14px 4px;
+    color: #8c8c8c;
+    font-size: 13px;
+  }
+
+  .hi-composer-tools {
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px 6px;
+  }
+
+  .hi-composer-tools > span {
+    display: flex;
+  }
+
+  .hi-composer .hi-send {
+    color: #8c8c8c;
+    background: #f0f0f0;
+  }
+
+  .hi-phone,
+  .hi-network-phone {
+    overflow: hidden;
+    border: 6px solid #1d1d1f;
+    border-radius: 42px;
+    background: #fff;
+    box-shadow: 0 28px 70px rgba(27, 31, 59, 0.23);
+  }
+
+  .hi-phone {
+    position: absolute;
+    right: 0;
+    bottom: -4px;
+    z-index: 3;
+    width: 390px;
+    height: 844px;
+    transform: scale(0.61);
+    transform-origin: bottom right;
+  }
+
+  .hi-phone::before,
+  .hi-network-phone::before {
+    content: '';
+    position: absolute;
+    z-index: 5;
+    top: 0;
+    left: 50%;
+    width: 116px;
+    height: 27px;
+    border-radius: 0 0 18px 18px;
+    background: #1d1d1f;
+    transform: translateX(-50%);
+  }
+
+  .hi-phone-status {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-inline: 28px;
+    color: #14161f;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .hi-phone-app {
+    height: calc(100% - 44px);
+    display: flex;
+    flex-direction: column;
+    color: #1f2330;
+    background: #f0f2f5;
+  }
+
+  .hi-phone-app > header {
+    height: 54px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px 0 4px;
+    border-bottom: 1px solid #e4e6eb;
+    background: #fff;
+  }
+
+  .hi-phone-app > header > span:first-child,
+  .hi-phone-app > header > span:last-child {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+  }
+
+  .hi-phone-app > header > div {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .hi-phone-app > header strong,
+  .hi-phone-app > header small {
+    display: block;
+  }
+
+  .hi-phone-app > header strong {
+    font-size: 15px;
+  }
+
+  .hi-phone-app > header small {
+    color: #38a169;
+    font-size: 10px;
+  }
+
+  .hi-phone-app > header small .hi-icon {
+    display: inline-block;
+    vertical-align: -2px;
+  }
+
+  .hi-phone-app > nav {
+    display: flex;
+    gap: 6px;
+    padding: 6px 16px 10px;
+    border-bottom: 1px solid #e4e6eb;
+    background: #fff;
+  }
+
+  .hi-phone-app > nav > * {
+    padding: 5px 14px;
+    border-radius: 10px;
+    color: #6b7080;
+    background: #f0f1f4;
+    font-size: 12px;
+  }
+
+  .hi-phone-app > nav b {
+    color: #fff;
+    background: var(--pt-accent);
+  }
+
+  .hi-mobile-pinned {
+    padding: 7px 14px;
+    color: #6b7080;
+    background: rgba(102, 126, 234, 0.08);
+    font-size: 11px;
+  }
+
+  .hi-mobile-stream {
+    flex: 1;
+    min-height: 0;
+    padding: 14px;
+  }
+
+  .hi-mobile-message {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .hi-mobile-message p {
+    max-width: 76%;
+    padding: 9px 13px;
+    border-radius: 14px 14px 14px 4px;
+    background: #fff;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .hi-mobile-message.mine {
+    justify-content: flex-end;
+  }
+
+  .hi-mobile-message.mine p {
+    color: #fff;
+    border-radius: 14px 14px 4px 14px;
+    background: var(--pt-accent);
+  }
+
+  .hi-phone-app > footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px 10px;
+    border-top: 1px solid #e4e6eb;
+    background: #fff;
+  }
+
+  .hi-phone-app > footer button {
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    border: 0;
+    border-radius: 10px;
+    color: #6b7080;
+    background: #f0f1f4;
+  }
+
+  .hi-phone-app > footer > span {
+    height: 36px;
+    min-width: 0;
+    flex: 1;
+    padding: 8px 14px;
+    border-radius: 14px;
+    color: #9ca0ab;
+    background: #f7f8fa;
+    font-size: 14px;
+  }
+
+  .hi-phone-app > footer .hi-mobile-send {
+    color: #fff;
+    background: var(--pt-accent);
+  }
+
+  .hi-chapter {
+    padding-block: clamp(76px, 10vw, 112px);
+    background: rgba(255, 255, 255, 0.7);
+  }
+
+  .hi-chapter--dark {
+    color: #f7f7f8;
+    background: #17191f;
+  }
+
+  .hi-chapter--agent {
+    background: #fff;
+  }
+
+  .hi-chapter-head {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(340px, 1.2fr);
+    align-items: end;
+    gap: clamp(32px, 7vw, 92px);
+    margin-bottom: var(--pt-space-md);
+  }
+
+  .hi-index {
+    color: var(--pt-accent);
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .hi-chapter--dark .hi-index {
+    color: #aeb9ff;
+  }
+
+  .hi-chapter h2,
+  .hi-capabilities h2,
+  .hi-closing h2 {
+    margin-top: var(--pt-space-sm);
+    font-size: clamp(2rem, 4.4vw, 3.5rem);
+    line-height: 1.08;
+    font-weight: 730;
+    letter-spacing: 0;
+  }
+
+  .hi-chapter--dark h2 {
+    color: #fff;
+  }
+
+  .hi-chapter-head > p {
+    color: var(--pt-text-secondary);
+    font-size: clamp(1rem, 1.7vw, 1.18rem);
+    line-height: 1.75;
+  }
+
+  .hi-chapter--dark .hi-chapter-head > p {
+    color: rgba(255, 255, 255, 0.68);
+  }
+
+  .hi-station-window {
+    height: 600px;
+    display: grid;
+    grid-template-columns: 210px minmax(0, 1fr);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: var(--pt-radius-md);
+    background: #f7f8fa;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.28);
+  }
+
+  .hi-station-window > aside {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 18px 8px 12px;
+    color: #a0a0c0;
+    background: #1a1a2e;
+  }
+
+  .hi-station-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 8px 16px;
+  }
+
+  .hi-station-brand img {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+  }
+
+  .hi-station-brand strong,
+  .hi-station-brand span {
+    display: block;
+  }
+
+  .hi-station-brand strong {
+    color: #fff;
+    font-size: 13px;
+  }
+
+  .hi-station-brand span {
+    font-size: 9px;
+  }
+
+  .hi-station-window > aside button {
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-inline: 12px;
+    border: 0;
+    border-radius: 6px;
+    color: inherit;
+    background: transparent;
+    text-align: left;
+    font-size: 11px;
+  }
+
+  .hi-station-window > aside button.active {
+    color: #fff;
+    background: var(--pt-accent);
+    font-weight: 650;
+  }
+
+  .hi-station-window > aside footer {
+    margin-top: auto;
+    padding: 12px 8px 0;
+    border-top: 1px solid #2a2a4e;
+    font-size: 9px;
+  }
+
+  .hi-station-main {
+    min-width: 0;
+    padding: 28px;
+    overflow: hidden;
+    color: #1a1a2e;
+  }
+
+  .hi-station-main > header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .hi-station-main > header > span {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    color: var(--pt-accent);
+    background: rgba(102, 126, 234, 0.1);
+  }
+
+  .hi-station-main h3 {
+    color: #1a1a2e;
+    font-size: 20px;
+  }
+
+  .hi-station-main header p {
+    color: #6b7280;
+    font-size: 11px;
+  }
+
+  .hi-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-block: 22px 18px;
+  }
+
+  .hi-stats article,
+  .hi-station-grid article {
+    padding: 16px;
+    border: 1px solid #e8e8e8;
+    border-radius: 10px;
+    background: #fff;
+  }
+
+  .hi-stats span,
+  .hi-stats strong,
+  .hi-stats small {
+    display: block;
+  }
+
+  .hi-stats span {
+    color: #6b7280;
+    font-size: 10px;
+  }
+
+  .hi-stats strong {
+    margin-top: 5px;
+    font-size: 22px;
+  }
+
+  .hi-stats small {
+    color: var(--pt-accent);
+    font-size: 9px;
+    font-weight: 700;
+  }
+
+  .hi-station-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 16px;
+  }
+
+  .hi-station-grid h4 {
+    margin: 0 0 10px;
+    font-size: 12px;
+  }
+
+  .hi-station-grid table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9px;
+  }
+
+  .hi-station-grid th,
+  .hi-station-grid td {
+    padding: 9px 7px;
+    border-bottom: 1px solid #f0f0f0;
+    text-align: left;
+  }
+
+  .hi-station-grid th {
+    color: #6b7280;
+    font-size: 8px;
+    text-transform: uppercase;
+  }
+
+  .hi-station-grid td:first-child {
+    color: var(--pt-accent);
+    font-family: var(--pt-font-mono);
+  }
+
+  .hi-station-grid td b,
+  .hi-health-row b {
+    color: #38a169;
+  }
+
+  .hi-station-grid .pending,
+  .hi-health-row .pending {
+    color: #d69e2e;
+  }
+
+  .hi-health-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding-block: 11px;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 10px;
+  }
+
+  .hi-principles {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--pt-space-md);
+    margin-top: var(--pt-space-lg);
+  }
+
+  .hi-principles article {
+    padding-top: var(--pt-space-md);
+    border-top: 1px solid rgba(255, 255, 255, 0.18);
+  }
+
+  .hi-principles span {
+    color: #aeb9ff;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .hi-principles h3 {
+    margin-top: var(--pt-space-xs);
+    color: #fff;
+    font-size: 1.05rem;
+  }
+
+  .hi-principles p {
+    margin-top: var(--pt-space-xs);
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 0.9rem;
+  }
+
+  .hi-network-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 290px;
+    align-items: center;
+    gap: var(--pt-space-lg);
+  }
+
+  .hi-contacts-window {
+    height: 560px;
+    display: grid;
+    grid-template-columns: 310px minmax(0, 1fr);
+  }
+
+  .hi-contact-list {
+    border-right: 1px solid #e8e8e8;
+    background: #fff;
+  }
+
+  .hi-contact-list > article {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    padding: 11px 14px;
+    border-left: 3px solid transparent;
+    color: #1a1a1a;
+  }
+
+  .hi-contact-list > article.active {
+    border-left-color: var(--pt-accent);
+    background: rgba(102, 126, 234, 0.08);
+  }
+
+  .hi-contact-list strong,
+  .hi-contact-list span,
+  .hi-contact-list small {
+    display: block;
+  }
+
+  .hi-contact-list strong {
+    font-size: 13px;
+  }
+
+  .hi-contact-list span,
+  .hi-contact-list small {
+    color: #8c8c8c;
+    font-size: 10px;
+  }
+
+  .hi-identity {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    color: #1a1a1a;
+    text-align: center;
+    background: #fff;
+  }
+
+  .hi-identity h3 {
+    margin-top: 12px;
+    font-size: 18px;
+  }
+
+  .hi-identity > p {
+    margin-top: 4px;
+    color: var(--pt-accent);
+    font-size: 11px;
+  }
+
+  .hi-identity dl {
+    width: min(100%, 360px);
+    margin: 22px 0 18px;
+    border-top: 1px solid #e8e8e8;
+  }
+
+  .hi-identity dl div {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    padding-block: 10px;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 10px;
+    text-align: left;
+  }
+
+  .hi-identity dt {
+    color: #8c8c8c;
+  }
+
+  .hi-identity dd {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .hi-identity button {
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding-inline: 14px;
+    border: 0;
+    border-radius: 8px;
+    color: #fff;
+    background: var(--pt-accent);
+  }
+
+  .hi-network-phone {
+    position: relative;
+    width: 390px;
+    height: 844px;
+    transform: scale(0.7);
+    transform-origin: center left;
+  }
+
+  .hi-point-list {
+    margin-top: var(--pt-space-xl);
+    border-top: 1px solid var(--pt-border-hairline);
+  }
+
+  .hi-point-list > article {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: var(--pt-space-md);
+    padding-block: var(--pt-space-md);
+    border-bottom: 1px solid var(--pt-border-hairline);
+  }
+
+  .hi-point-list > article > span {
+    color: var(--pt-accent);
+    font-family: var(--pt-font-mono);
+    font-size: 12px;
+  }
+
+  .hi-point-list h3 {
+    font-size: 1.03rem;
+  }
+
+  .hi-point-list p {
+    max-width: 760px;
+    margin-top: var(--pt-space-xs);
+    color: var(--pt-text-secondary);
+    font-size: 0.94rem;
+  }
+
+  .hi-point-list--three {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .hi-point-list--three > article {
+    grid-template-columns: 1fr;
+    padding-right: var(--pt-space-md);
+  }
+
+  .hi-agent-window {
+    height: 630px;
+    display: flex;
+  }
+
+  .hi-agent-product {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    color: #1a1a1a;
+  }
+
+  .hi-agent-product > nav {
+    height: 42px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding-inline: 10px;
+    border-bottom: 1px solid #e8e8e8;
+  }
+
+  .hi-agent-product > nav > * {
+    padding: 6px 10px;
+    border-radius: 8px;
+    color: #595959;
+    font-size: 11px;
+  }
+
+  .hi-agent-product > nav b {
+    color: var(--pt-accent);
+    background: rgba(102, 126, 234, 0.08);
+  }
+
+  .hi-agent-layout {
+    min-height: 0;
+    flex: 1;
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr) 300px;
+  }
+
+  .hi-agent-list,
+  .hi-agent-profile {
+    min-width: 0;
+    overflow: hidden;
+    background: #fbfbfb;
+  }
+
+  .hi-agent-list {
+    padding: 14px 10px;
+    border-right: 1px solid #e8e8e8;
+  }
+
+  .hi-agent-list > header,
+  .hi-agent-profile > header {
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .hi-agent-list > small {
+    display: block;
+    margin: 12px 8px 5px;
+    color: #8c8c8c;
+    font-size: 8px;
+    font-weight: 700;
+  }
+
+  .hi-agent-list article {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    align-items: center;
+    gap: 9px;
+    padding: 7px 8px;
+    border-radius: 8px;
+  }
+
+  .hi-agent-list article.active {
+    background: rgba(102, 126, 234, 0.09);
+  }
+
+  .hi-agent-list i,
+  .hi-agent-chat i,
+  .hi-agent-profile i {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    color: #fff;
+    background: var(--pt-accent);
+    font-style: normal;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .hi-agent-list strong,
+  .hi-agent-list span {
+    display: block;
+  }
+
+  .hi-agent-list strong {
+    font-size: 11px;
+  }
+
+  .hi-agent-list span {
+    color: #8c8c8c;
+    font-size: 9px;
+  }
+
+  .hi-agent-chat {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+  }
+
+  .hi-agent-chat > header {
+    min-height: 62px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-inline: 18px;
+    border-bottom: 1px solid #e8e8e8;
+  }
+
+  .hi-agent-chat > header > div {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+
+  .hi-agent-chat > header strong,
+  .hi-agent-chat > header small {
+    display: block;
+  }
+
+  .hi-agent-chat > header strong {
+    font-size: 12px;
+  }
+
+  .hi-agent-chat > header small {
+    color: #8c8c8c;
+    font-size: 8px;
+  }
+
+  .hi-agent-chat > header > b {
+    padding: 4px 7px;
+    border-radius: 4px;
+    color: #38a169;
+    background: #ecfdf5;
+    font-size: 8px;
+  }
+
+  .hi-agent-thread {
+    flex: 1;
+    min-height: 0;
+    padding: 22px;
+    overflow: hidden;
+  }
+
+  .hi-agent-thread > article {
+    max-width: 78%;
+    margin-bottom: 16px;
+  }
+
+  .hi-agent-thread > article.user {
+    margin-left: auto;
+  }
+
+  .hi-agent-thread > article > small {
+    display: block;
+    margin-bottom: 4px;
+    color: #8c8c8c;
+    font-size: 8px;
+  }
+
+  .hi-agent-thread > article > p {
+    padding: 11px 13px;
+    border-radius: 10px;
+    background: #f5f5f5;
+    font-size: 10px;
+    line-height: 1.55;
+  }
+
+  .hi-agent-thread > article.user > p {
+    color: #fff;
+    background: var(--pt-accent);
+  }
+
+  .hi-agent-thread article article,
+  .hi-agent-thread article > div {
+    margin-top: 8px;
+    padding: 10px;
+    border: 1px solid #e8e8e8;
+    border-radius: 8px;
+  }
+
+  .hi-agent-thread article > div strong,
+  .hi-agent-thread article > div span {
+    display: block;
+  }
+
+  .hi-agent-thread article > div strong {
+    font-size: 9px;
+  }
+
+  .hi-agent-thread article > div span {
+    color: #8c8c8c;
+    font-size: 8px;
+  }
+
+  .hi-agent-thread article > div button {
+    height: 26px;
+    margin-top: 8px;
+    padding-inline: 9px;
+    border: 0;
+    border-radius: 6px;
+    color: #fff;
+    background: var(--pt-accent);
+    font-size: 8px;
+  }
+
+  .hi-agent-chat > footer {
+    min-height: 54px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 16px 16px;
+    padding: 10px 12px;
+    border: 1px solid #e8e8e8;
+    border-radius: 10px;
+    color: #8c8c8c;
+    font-size: 9px;
+  }
+
+  .hi-agent-chat > footer button {
+    width: 28px;
+    height: 28px;
+    margin-left: auto;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 7px;
+    color: #fff;
+    background: var(--pt-accent);
+  }
+
+  .hi-agent-profile {
+    padding: 14px;
+    border-left: 1px solid #e8e8e8;
+  }
+
+  .hi-agent-profile > article {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding-block: 14px;
+  }
+
+  .hi-agent-profile strong,
+  .hi-agent-profile article span {
+    display: block;
+  }
+
+  .hi-agent-profile strong {
+    font-size: 10px;
+  }
+
+  .hi-agent-profile article span {
+    color: #8c8c8c;
+    font-size: 8px;
+  }
+
+  .hi-agent-profile label {
+    display: block;
+    margin: 12px 0 5px;
+    color: #8c8c8c;
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .hi-agent-profile > div {
+    min-height: 34px;
+    padding: 8px 10px;
+    border: 1px solid #e8e8e8;
+    border-radius: 8px;
+    background: #fff;
+    font-size: 9px;
+  }
+
+  .hi-agent-profile > p {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .hi-agent-profile > p span {
+    padding: 4px 7px;
+    border-radius: 5px;
+    color: var(--pt-accent);
+    background: rgba(102, 126, 234, 0.08);
+    font-size: 8px;
+  }
+
+  .hi-capabilities {
+    padding-block: clamp(76px, 10vw, 112px);
+  }
+
+  .hi-capabilities > header {
+    max-width: 720px;
+    margin-bottom: var(--pt-space-lg);
+  }
+
+  .hi-capabilities > div {
+    border-top: 1px solid var(--pt-border-hairline);
+  }
+
+  .hi-capabilities article {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--pt-space-md);
+    padding-block: var(--pt-space-md);
+    border-bottom: 1px solid var(--pt-border-hairline);
+  }
+
+  .hi-capabilities article > span {
+    color: var(--pt-accent);
+    font-family: var(--pt-font-mono);
+    font-size: 12px;
+  }
+
+  .hi-capabilities h3 {
+    font-size: 1rem;
+  }
+
+  .hi-capabilities article p {
+    max-width: 720px;
+    margin-top: var(--pt-space-xs);
+    color: var(--pt-text-secondary);
+    font-size: 0.92rem;
+  }
+
+  .hi-capabilities article > b {
+    padding: 4px 9px;
+    border: 1px solid var(--pt-border-hairline);
+    border-radius: var(--pt-radius-full);
+    color: var(--pt-accent);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .hi-closing {
+    padding-block: var(--pt-space-xl);
+    color: #fff;
+    background: #282c4e;
+  }
+
+  .hi-closing > div {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: var(--pt-space-lg);
+  }
+
+  .hi-closing h2 {
+    margin: 0;
+    color: #fff;
+  }
+
+  .hi-closing p {
+    margin-top: var(--pt-space-sm);
+    color: rgba(255, 255, 255, 0.68);
+  }
+
+  .hi-closing .pt-btn {
+    flex: 0 0 auto;
+    background: #fff;
+    color: #282c4e;
+  }
+
+  @media (max-width: 980px) {
+    .hi-desktop-window {
+      right: 0;
+    }
+
+    .hi-session-list {
+      width: 230px;
+      flex-basis: 230px;
+    }
+
+    .hi-network-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .hi-network-phone {
+      display: none;
+    }
+
+    .hi-agent-layout {
+      grid-template-columns: 190px minmax(0, 1fr);
+    }
+
+    .hi-agent-profile {
+      display: none;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .hi-hero {
+      padding-top: var(--pt-space-xl);
+    }
+
+    .hi-hero-stage {
+      height: 430px;
+    }
+
+    .hi-desktop-window {
+      height: 310px;
+    }
+
+    .hi-session-list {
+      display: none;
+    }
+
+    .hi-chat {
+      min-width: 220px;
+    }
+
+    .hi-phone {
+      right: 50%;
+      transform: translateX(50%) scale(0.45);
+      transform-origin: bottom center;
+    }
+
+    .hi-chapter-head {
+      grid-template-columns: 1fr;
+      gap: var(--pt-space-md);
+    }
+
+    .hi-station-window {
+      height: 530px;
+      grid-template-columns: 54px minmax(0, 1fr);
+    }
+
+    .hi-station-window > aside {
+      align-items: center;
+      padding: 14px 5px;
+    }
+
+    .hi-station-brand {
+      margin-inline: 0;
+    }
+
+    .hi-station-brand > div,
+    .hi-station-window > aside button span,
+    .hi-station-window > aside footer {
+      display: none;
+    }
+
+    .hi-station-window > aside button {
+      width: 38px;
+      justify-content: center;
+      padding: 0;
+    }
+
+    .hi-station-main {
+      padding: 18px;
+    }
+
+    .hi-stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .hi-stats article:last-child {
+      display: none;
+    }
+
+    .hi-station-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .hi-station-grid article:last-child {
+      display: none;
+    }
+
+    .hi-principles,
+    .hi-point-list--three {
+      grid-template-columns: 1fr;
+    }
+
+    .hi-contacts-window {
+      height: 520px;
+      grid-template-columns: 160px minmax(0, 1fr);
+    }
+
+    .hi-contact-list > header {
+      padding-inline: 10px;
+    }
+
+    .hi-contact-list > article {
+      grid-template-columns: 36px minmax(0, 1fr);
+      gap: 7px;
+      padding-inline: 9px;
+    }
+
+    .hi-contact-list .hi-avatar {
+      width: 36px;
+      height: 36px;
+    }
+
+    .hi-identity {
+      padding: 18px;
+    }
+
+    .hi-identity dl div {
+      display: block;
+    }
+
+    .hi-identity dd {
+      margin-top: 2px;
+    }
+
+    .hi-agent-window {
+      height: 560px;
+    }
+
+    .hi-agent-window > .hi-global-rail {
+      display: none;
+    }
+
+    .hi-agent-layout {
+      grid-template-columns: 48px minmax(0, 1fr);
+    }
+
+    .hi-agent-list {
+      padding-inline: 7px;
+    }
+
+    .hi-agent-list > header,
+    .hi-agent-search,
+    .hi-agent-list > small,
+    .hi-agent-list article > div {
+      display: none;
+    }
+
+    .hi-agent-list article {
+      display: block;
+      padding: 3px 0;
+    }
+
+    .hi-agent-thread {
+      padding: 14px;
+    }
+
+    .hi-capabilities article {
+      grid-template-columns: 42px minmax(0, 1fr);
+    }
+
+    .hi-capabilities article > b {
+      grid-column: 2;
+      width: max-content;
+    }
+
+    .hi-closing > div {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  }
+
+  @media (max-width: 520px) {
+    .hi-global-rail {
+      width: 50px;
+    }
+
+    .hi-chat-rail {
+      display: none;
+    }
+
+    .hi-chat-head {
+      padding-inline: 12px;
+    }
+
+    .hi-chat-head button:nth-child(-n + 2) {
+      display: none;
+    }
+
+    .hi-chat-stream {
+      padding: 12px;
+    }
+
+    .hi-message > div {
+      max-width: 82%;
+    }
+
+    .hi-composer-field {
+      min-height: 58px;
+    }
+
+    .hi-station-main > header p {
+      display: none;
+    }
+
+    .hi-stats article {
+      padding: 11px;
+    }
+
+    .hi-stats strong {
+      font-size: 18px;
+    }
+
+    .hi-contacts-window {
+      grid-template-columns: 112px minmax(0, 1fr);
+    }
+
+    .hi-contact-list > header button,
+    .hi-contact-search,
+    .hi-contact-list article div {
+      display: none;
+    }
+
+    .hi-contact-list > article {
+      display: flex;
+      justify-content: center;
+      padding-inline: 4px;
+    }
+
+    .hi-identity {
+      padding: 14px;
+    }
+
+    .hi-identity dl {
+      margin-top: 14px;
+    }
+
+    .hi-identity button {
+      font-size: 0;
+      padding-inline: 10px;
+    }
+
+    .hi-agent-chat > header {
+      padding-inline: 12px;
+    }
+
+    .hi-agent-chat > header > b {
+      display: none;
+    }
+
+    .hi-agent-thread > article {
+      max-width: 88%;
+    }
+  }
+</style>

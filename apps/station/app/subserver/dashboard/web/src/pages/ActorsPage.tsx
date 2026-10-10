@@ -20,7 +20,6 @@ import {
   Drawer,
   Tabs,
   Descriptions,
-  Modal,
   Form,
   Popconfirm,
   message,
@@ -57,8 +56,8 @@ export default function ActorsPage() {
   const [actorSessions, setActorSessions] = useState<actorsApi.ActorSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
 
-  // ── Password reset modal state ───────────────────────────────────
-  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  // ── Password reset form (inline in the drawer's Password Reset tab) ──
+  const [resetting, setResetting] = useState(false);
   const [passwordForm] = Form.useForm();
 
   // ── Data loaders ─────────────────────────────────────────────────
@@ -111,6 +110,7 @@ export default function ActorsPage() {
     setDrawerOpen(false);
     setSelectedActor(null);
     setActorSessions([]);
+    passwordForm.resetFields();
   };
 
   const handleRevokeSession = async (sessionId: string) => {
@@ -129,14 +129,16 @@ export default function ActorsPage() {
   const handleResetPassword = async (values: { new_password: string }) => {
     if (!selectedActor) return;
 
+    setResetting(true);
     try {
       await actorsApi.resetActorPassword(selectedActor.ptid, values.new_password);
       message.success('Password reset successfully');
-      setPasswordModalOpen(false);
       passwordForm.resetFields();
     } catch (err) {
       log.error('actors', 'Failed to reset password');
       message.error('Failed to reset password');
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -288,18 +290,52 @@ export default function ActorsPage() {
         </span>
       ),
       children: (
-        <Flexbox gap={16}>
-          <Text type="secondary">
+        <Form
+          form={passwordForm}
+          layout="vertical"
+          onFinish={handleResetPassword}
+          disabled={resetting}
+        >
+          <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
             Reset the password for this actor. They will need to use the new password on next login.
           </Text>
+          <Form.Item
+            name="new_password"
+            label="New Password"
+            rules={[
+              { required: true, message: 'Please enter a new password' },
+              { min: 8, message: 'Minimum 8 characters' },
+            ]}
+          >
+            <Input.Password placeholder="Enter new password" autoComplete="new-password" />
+          </Form.Item>
+          <Form.Item
+            name="confirm_password"
+            label="Confirm Password"
+            dependencies={['new_password']}
+            rules={[
+              { required: true, message: 'Please confirm the password' },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || getFieldValue('new_password') === value) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error('Passwords do not match'));
+                },
+              }),
+            ]}
+          >
+            <Input.Password placeholder="Confirm new password" autoComplete="new-password" />
+          </Form.Item>
           <Button
             type="primary"
+            htmlType="submit"
+            loading={resetting}
             icon={<KeyRound size={14} />}
-            onClick={() => setPasswordModalOpen(true)}
           >
             Reset Password
           </Button>
-        </Flexbox>
+        </Form>
       ),
     },
   ];
@@ -452,51 +488,6 @@ export default function ActorsPage() {
           </Flexbox>
         )}
       </Drawer>
-
-      {/* ── Password reset modal ────────────────────────────────── */}
-      <Modal
-        title={`Reset Password — ${selectedActor?.preferred_username}`}
-        open={passwordModalOpen}
-        onCancel={() => { setPasswordModalOpen(false); passwordForm.resetFields(); }}
-        onOk={() => passwordForm.submit()}
-        destroyOnClose
-      >
-        <Form
-          form={passwordForm}
-          layout="vertical"
-          onFinish={handleResetPassword}
-        >
-          <Form.Item
-            name="new_password"
-            label="New Password"
-            rules={[
-              { required: true, message: 'Please enter a new password' },
-              { min: 8, message: 'Minimum 8 characters' },
-            ]}
-          >
-            <Input.Password placeholder="Enter new password" />
-          </Form.Item>
-
-          <Form.Item
-            name="confirm_password"
-            label="Confirm Password"
-            dependencies={['new_password']}
-            rules={[
-              { required: true, message: 'Please confirm the password' },
-              ({ getFieldValue }) => ({
-                validator(_, value) {
-                  if (!value || getFieldValue('new_password') === value) {
-                    return Promise.resolve();
-                  }
-                  return Promise.reject(new Error('Passwords do not match'));
-                },
-              }),
-            ]}
-          >
-            <Input.Password placeholder="Confirm new password" />
-          </Form.Item>
-        </Form>
-      </Modal>
     </Flexbox>
   );
 }

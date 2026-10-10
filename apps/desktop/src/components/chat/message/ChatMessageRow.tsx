@@ -375,11 +375,6 @@ export function ChatMessageRowInteractionStyle() {
     .msg-row.highlighted .msg-bubble {
       box-shadow: 0 0 0 2px ${token.colorPrimaryBorder}, ${token.boxShadowSecondary} !important;
     }
-    .msg-row:focus-visible {
-      outline: 2px solid ${token.colorPrimaryBorder};
-      outline-offset: 3px;
-      border-radius: 12px;
-    }
   `;
 
   return <style>{rowInteractionStyle}</style>;

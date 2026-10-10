@@ -45,6 +45,8 @@ pub fn run() -> BootstrapResult {
     let i18n = I18nService::new(&config_dir);
     tracing::info!("I18nService initialized");
 
+    configure_debug_identity_store(&layout);
+
     let result = BootstrapResult {
         app_state: AppState::new(layout, i18n),
         _log_guard: log_guard,
@@ -54,6 +56,24 @@ pub fn run() -> BootstrapResult {
 
     result
 }
+
+// Debug/dev builds keep identity seeds in a file-backed secure store instead of
+// the macOS Keychain, so recompiling (which changes the ad-hoc signature and
+// invalidates the Keychain ACL) does not prompt for the login password on every
+// launch. Release builds leave the domain on the OS keychain.
+#[cfg(debug_assertions)]
+fn configure_debug_identity_store(layout: &StorageLayout) {
+    let Some(data_dir) = layout.dirs.get(&StorageKind::Data) else {
+        return;
+    };
+    let secure_store = data_dir.join("secure-store");
+    if let Err(error) = crate::domain::crypto::set_identity_file_root(secure_store) {
+        tracing::warn!(%error, "failed to configure debug identity file store");
+    }
+}
+
+#[cfg(not(debug_assertions))]
+fn configure_debug_identity_store(_layout: &StorageLayout) {}
 
 fn init_storage() -> StorageLayout {
     let profile = std::env::var("PT_PROFILE").unwrap_or_else(|_| "desktop".to_string());
