@@ -4637,6 +4637,17 @@ function chatComposerSelector(client) {
     : 'input.message-composer-input';
 }
 
+function chatConversationRowMatches(kind, friendlyName, peerPtid, label) {
+  const normalizedName = friendlyName.trim().toLowerCase();
+  if (!normalizedName) {
+    return kind === 'group' && label.includes('MWPU Three Client');
+  }
+  if (kind === 'group') {
+    return label.toLowerCase().includes(normalizedName);
+  }
+  return peerPtid.toLowerCase().includes(`:${normalizedName}:`);
+}
+
 async function waitForStableMobileChatWriteAdmission(clientId, client) {
   if (client.platform === 'desktop') return;
   const waitOnce = () => waitForUi(
@@ -4724,16 +4735,17 @@ async function openChatConversation(
             || element.getAttribute('data-conversation-kind')
           ) === kind
         ));
-      const normalizedName = friendlyName.toLowerCase();
-      const target = rows.find((element) => (
-        normalizedName
-          ? (
+      const matchesConversation = ${chatConversationRowMatches.toString()};
+      const target = rows.find((element) => matchesConversation(
+        kind,
+        friendlyName,
+        (
             element.getAttribute('data-conversation-peer-ptid')
             || element.querySelector('[data-chat-avatar-ptid]')
               ?.getAttribute('data-chat-avatar-ptid')
             || ''
-          ).toLowerCase().includes(':' + normalizedName + ':')
-          : (element.innerText || '').includes('MWPU Three Client')
+        ),
+        element.innerText || '',
       ));
       if (!(target instanceof HTMLElement)) {
         return {
@@ -8316,6 +8328,34 @@ function selfTest(matrix) {
     readyImageDraft?.id === 'new-ready',
     'SELF_TEST_ATTACHMENT_DRAFT_IDENTITY',
     'attachment draft readiness must require a new visible ready draft',
+  );
+  assertContract(
+    chatConversationRowMatches(
+      'group',
+      'MWPU Three Client 20261010151521',
+      '',
+      'MWPU Three Client 20261010151521 No messages yet',
+    )
+      && !chatConversationRowMatches(
+        'group',
+        'MWPU Three Client 20261010151521',
+        '',
+        'MWPU Three Client 20261010131833 No messages yet',
+      )
+      && chatConversationRowMatches(
+        'group',
+        '',
+        '',
+        'MWPU Three Client 20261010151521 No messages yet',
+      )
+      && chatConversationRowMatches(
+        'friend',
+        'Bob',
+        'ptid:v1:actor:peers:p:bob:123',
+        'Bob No messages yet',
+      ),
+    'SELF_TEST_CHAT_CONVERSATION_IDENTITY',
+    'chat conversation matching must use visible group titles and friend PTIDs',
   );
   assertFriendlyLoginRecovery('self-test', 'Login failed');
   let internalLoginDetailRejected = false;
