@@ -4648,6 +4648,11 @@ function chatConversationRowMatches(kind, friendlyName, peerPtid, label) {
   return peerPtid.toLowerCase().includes(`:${normalizedName}:`);
 }
 
+function groupMemberControlsReady(disabledStates, minimumButtons) {
+  return disabledStates.length >= minimumButtons
+    && disabledStates.every((disabled) => disabled === false);
+}
+
 async function waitForStableMobileChatWriteAdmission(clientId, client) {
   if (client.platform === 'desktop') return;
   const waitOnce = () => waitForUi(
@@ -5671,8 +5676,13 @@ async function groupMemberRowState(clientId, client, memberName, minimumButtons)
         element.querySelectorAll('button').length >= arguments[1]
       ));
       const buttons = [...(row?.querySelectorAll('button') || [])];
+      const controlsReady = ${groupMemberControlsReady.toString()};
       return {
-        ready: Boolean(row),
+        ready: Boolean(row)
+          && controlsReady(
+            buttons.map((button) => button.disabled),
+            arguments[1],
+          ),
         buttonCount: buttons.length,
         buttonText: buttons.map((button) => (button.innerText || '').trim()),
         text: (row?.innerText || '').replace(/\\s+/g, ' ').trim()
@@ -5818,6 +5828,20 @@ async function removeAndRestoreGroupMember(
     `,
     [memberName],
   );
+  await waitForUi(
+    clientId,
+    client,
+    `${memberName} removal settled`,
+    `
+      const modal = [...document.querySelectorAll('.ant-modal-confirm')]
+        .find((element) => element.getClientRects().length);
+      return {
+        ready: !modal,
+        text: (modal?.innerText || '').slice(0, 1000)
+      };
+    `,
+  );
+  await groupMemberRowState(clientId, client, memberName, 1);
   const invited = await executeWebScript(
     client,
     `
@@ -8356,6 +8380,14 @@ function selfTest(matrix) {
       ),
     'SELF_TEST_CHAT_CONVERSATION_IDENTITY',
     'chat conversation matching must use visible group titles and friend PTIDs',
+  );
+  assertContract(
+    groupMemberControlsReady([false], 1)
+      && groupMemberControlsReady([false, false, false, false], 4)
+      && !groupMemberControlsReady([true], 1)
+      && !groupMemberControlsReady([false, false, false], 4),
+    'SELF_TEST_GROUP_MEMBER_CONTROL_ADMISSION',
+    'Group member controls must be present and enabled before mutation',
   );
   assertFriendlyLoginRecovery('self-test', 'Login failed');
   let internalLoginDetailRejected = false;
