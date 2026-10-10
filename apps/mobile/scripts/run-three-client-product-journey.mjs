@@ -5132,14 +5132,6 @@ async function openMobileMessageActions(clientId, client, messageText) {
   return message;
 }
 
-async function closeMobileMessageActions(client) {
-  await clickVisibleSelector(
-    client,
-    '[data-product-surface="chat.message-actions"] .chat-action-sheet-header button',
-    'close-message-actions',
-  );
-}
-
 async function reactToMobileMessage(
   clientId,
   client,
@@ -5181,14 +5173,17 @@ async function reactToMobileMessage(
       );
       const chip = [...(row?.querySelectorAll('.message-reaction-chip') || [])]
         .find((element) => (element.innerText || '').includes(arguments[1]));
+      const actionSheet = document.querySelector(
+        '[data-product-surface="chat.message-actions"]'
+      );
       return {
-        ready: Boolean(chip),
+        ready: Boolean(chip) && !actionSheet?.getClientRects().length,
+        actionSheetOpen: Boolean(actionSheet?.getClientRects().length),
         text: (chip?.innerText || '').replace(/\\s+/g, ' ').trim()
       };
     `,
     [message.messageId, reaction],
   );
-  await closeMobileMessageActions(client);
   return { messageId: message.messageId, reaction };
 }
 
