@@ -951,12 +951,15 @@ fn run_engine_cycle(
     cycle_id: u64,
     event_sink: &ProjectionEventSink,
 ) -> Result<Option<(MessagingWorkerCycleResult, bool, Option<Instant>)>, String> {
-    let enrollment = engine.enroll_pending_device();
+    let enrollment = messaging_cycle_stage("device enrollment", engine.enroll_pending_device());
     let enrolled_now = enrollment?.is_some();
     if !worker_is_running(state) {
         return Ok(None);
     }
-    let repaired_projection_scopes = engine.hydrate_conversation_authority_scopes()?;
+    let repaired_projection_scopes = messaging_cycle_stage(
+        "Conversation authority hydration",
+        engine.hydrate_conversation_authority_scopes(),
+    )?;
     if repaired_projection_scopes > 0 {
         log::info!(
             "mobile messaging repaired {repaired_projection_scopes} Conversation authority scopes"
@@ -965,39 +968,53 @@ fn run_engine_cycle(
     if !worker_is_running(state) {
         return Ok(None);
     }
-    engine.publish_prekeys()?;
+    messaging_cycle_stage("Direct PreKey publication", engine.publish_prekeys())?;
     if !worker_is_running(state) {
         return Ok(None);
     }
-    engine.publish_mls_key_packages()?;
+    messaging_cycle_stage("MLS KeyPackage publication", engine.publish_mls_key_packages())?;
     if !worker_is_running(state) {
         return Ok(None);
     }
-    let membership_reprepared = engine.resume_membership_intent_once()?;
+    let membership_reprepared = messaging_cycle_stage(
+        "membership intent recovery",
+        engine.resume_membership_intent_once(),
+    )?;
     if !worker_is_running(state) {
         return Ok(None);
     }
 
     let now = now_unix_ms();
-    let attachment_upload_result = engine.resume_attachment_upload_once(now);
+    let attachment_upload_result = messaging_cycle_stage(
+        "attachment upload recovery",
+        engine.resume_attachment_upload_once(now),
+    );
     let attachment_upload_progressed = attachment_upload_result?;
     if !worker_is_running(state) {
         return Ok(None);
     }
-    let attachment_download_progressed = engine.resume_attachment_download_once(now)?;
+    let attachment_download_progressed = messaging_cycle_stage(
+        "attachment download recovery",
+        engine.resume_attachment_download_once(now),
+    )?;
     if !worker_is_running(state) {
         return Ok(None);
     }
-    let draft_result = engine.resume_message_draft_once(now);
+    let draft_result =
+        messaging_cycle_stage("message draft recovery", engine.resume_message_draft_once(now));
     let draft = draft_result?;
     if !worker_is_running(state) {
         return Ok(None);
     }
-    let interaction_reprepared = engine.resume_superseded_interaction_once()?;
+    let interaction_reprepared = messaging_cycle_stage(
+        "interaction recovery",
+        engine.resume_superseded_interaction_once(),
+    )?;
     if !worker_is_running(state) {
         return Ok(None);
     }
-    let command_result = engine.dispatch_command_once();
+    let command_result =
+        messaging_cycle_stage("command dispatch", engine.dispatch_command_once());
     let command = command_result?;
     if !worker_is_running(state) {
         return Ok(None);
@@ -1006,25 +1023,34 @@ fn run_engine_cycle(
     let actor_ptid = engine.scope().actor_ptid.clone();
     let profile_id = engine.profile_id().to_string();
     let projection_sink = event_sink.clone();
-    let drain = engine.drain_once_with_observer(Some(Arc::new(move |item| {
-        if let Err(error) = projection_sink(MessagingProjectionEvent {
-            station_peer_id: station_peer_id.clone(),
-            actor_ptid: actor_ptid.clone(),
-            profile_id: profile_id.clone(),
-            activation_generation,
-            cycle_id,
-            conversation_id: item.conversation_id.clone(),
-            event_id: item.event_id.clone(),
-            lane_sequence: item.lane_sequence,
-        }) {
-            log::warn!("mobile messaging projection event delivery failed: {error}");
-        }
-    })))?;
+    let drain = messaging_cycle_stage(
+        "inbox drain",
+        engine.drain_once_with_observer(Some(Arc::new(move |item| {
+            if let Err(error) = projection_sink(MessagingProjectionEvent {
+                station_peer_id: station_peer_id.clone(),
+                actor_ptid: actor_ptid.clone(),
+                profile_id: profile_id.clone(),
+                activation_generation,
+                cycle_id,
+                conversation_id: item.conversation_id.clone(),
+                event_id: item.event_id.clone(),
+                lane_sequence: item.lane_sequence,
+            }) {
+                log::warn!("mobile messaging projection event delivery failed: {error}");
+            }
+        }))),
+    )?;
     if !worker_is_running(state) {
         return Ok(None);
     }
-    let attachment_sources_cleaned = engine.cleanup_completed_attachment_sources()?;
-    let delivery_receipt_submitted = engine.dispatch_delivery_receipt_once()?;
+    let attachment_sources_cleaned = messaging_cycle_stage(
+        "attachment source cleanup",
+        engine.cleanup_completed_attachment_sources(),
+    )?;
+    let delivery_receipt_submitted = messaging_cycle_stage(
+        "delivery receipt dispatch",
+        engine.dispatch_delivery_receipt_once(),
+    )?;
     let device_enrolled = engine.store().pending_device_enrollment()?.is_none();
     let retry_deadline = earlier_deadline(
         draft_retry_deadline(&draft, now),
@@ -1032,8 +1058,7 @@ fn run_engine_cycle(
     );
     let retry_deadline = earlier_deadline(
         retry_deadline,
-        engine
-            .next_scheduled_work_at()?
+        messaging_cycle_stage("scheduled work read", engine.next_scheduled_work_at())?
             .map(|next| unix_retry_deadline(next, now)),
     );
     let has_backlog = enrolled_now
@@ -1059,6 +1084,10 @@ fn run_engine_cycle(
         has_backlog,
         retry_deadline,
     )))
+}
+
+fn messaging_cycle_stage<T>(stage: &str, result: Result<T, String>) -> Result<T, String> {
+    result.map_err(|error| format!("mobile messaging {stage} failed: {error}"))
 }
 
 fn worker_is_running(state: &Arc<(Mutex<WorkerState>, Condvar)>) -> bool {
