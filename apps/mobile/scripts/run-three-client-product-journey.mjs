@@ -4508,6 +4508,2560 @@ async function runContactsPhase(manifest, evidenceDir, preflight) {
   return { ...report, reportPath, tracePath };
 }
 
+function chatComposerSelector(client) {
+  return client.platform === 'desktop'
+    ? 'textarea[data-pt-text-input="chat-composer"]'
+    : 'input.message-composer-input';
+}
+
+async function openChatConversation(
+  clientId,
+  client,
+  kind,
+  friendlyName = '',
+) {
+  if (client.platform === 'desktop') {
+    await navigateDesktopPrimary(
+      clientId,
+      client,
+      'chat',
+      '[data-social-chat-layout]',
+    );
+    await clickSelector(
+      client,
+      '[data-chat-subpage="chats"]',
+      'open-chat-conversation-list',
+    );
+    await waitForUi(
+      clientId,
+      client,
+      'Desktop conversation list',
+      `
+        return {
+          ready: Boolean(
+            document.querySelector('[data-chat-conversation-list-shell]')
+          )
+        };
+      `,
+    );
+  } else {
+    if (await selectorIsVisible(
+      client,
+      '[data-product-surface^="chat."][data-product-surface$="-thread"]',
+    )) {
+      await clickSelector(
+        client,
+        'button[aria-label="Back"]',
+        'return-to-chat-conversation-list',
+      );
+    }
+    await navigateMobileShell(
+      clientId,
+      client,
+      'chat',
+      '[data-product-surface^="chat.list"]',
+    );
+  }
+
+  const selector = client.platform === 'desktop'
+    ? '[data-pt-conversation-item]'
+    : '[data-conversation-id]';
+  const opened = await waitForUi(
+    clientId,
+    client,
+    `${kind} conversation ${friendlyName || 'latest shared group'}`,
+    `
+      const [selector, kind, friendlyName] = arguments;
+      const rows = [...document.querySelectorAll(selector)]
+        .filter((element) => (
+          element instanceof HTMLElement
+          && element.getClientRects().length
+          && (
+            element.getAttribute('data-chat-conversation-kind')
+            || element.getAttribute('data-conversation-kind')
+          ) === kind
+        ));
+      const normalizedName = friendlyName.toLowerCase();
+      const target = rows.find((element) => (
+        normalizedName
+          ? (element.innerText || '').toLowerCase().includes(normalizedName)
+          : (element.innerText || '').includes('MWPU Three Client')
+      ));
+      if (!(target instanceof HTMLElement)) {
+        return {
+          ready: false,
+          candidates: rows.map((element) => (
+            (element.innerText || '').replace(/\\s+/g, ' ').trim()
+          )).slice(0, 20)
+        };
+      }
+      const id = target.getAttribute('data-pt-conversation-item')
+        || target.getAttribute('data-conversation-id')
+        || '';
+      const label = (target.innerText || '').replace(/\\s+/g, ' ').trim();
+      target.click();
+      return { ready: Boolean(id), id, label };
+    `,
+    [selector, kind, friendlyName],
+  );
+  const surface = kind === 'group'
+    ? 'chat.group-thread'
+    : 'chat.direct-thread';
+  const thread = await waitForUi(
+    clientId,
+    client,
+    `${kind} conversation composer`,
+    client.platform === 'desktop'
+      ? `
+          const pane = document.querySelector(
+            '[data-chat-conversation-pane="' + CSS.escape(arguments[0]) + '"]'
+          );
+          const composer = document.querySelector(
+            '[data-chat-composer="' + CSS.escape(arguments[0]) + '"]'
+          );
+          const text = pane?.innerText || '';
+          return {
+            ready: Boolean(pane?.getClientRects().length)
+              && Boolean(composer?.getClientRects().length)
+              && (!arguments[1]
+                || text.toLowerCase().includes(arguments[1].toLowerCase())),
+            text: text.slice(0, 2400)
+          };
+        `
+      : `
+          const surface = document.querySelector(
+            '[data-product-surface="' + arguments[0] + '"]'
+          );
+          const title = surface?.querySelector('h1')?.innerText.trim() || '';
+          return {
+            ready: Boolean(surface?.getClientRects().length)
+              && Boolean(surface.querySelector('.message-composer'))
+              && (!arguments[1]
+                || title.toLowerCase().includes(arguments[1].toLowerCase())),
+            text: (surface?.innerText || '').slice(0, 2400),
+            title
+          };
+        `,
+    client.platform === 'desktop'
+      ? [opened.id, friendlyName]
+      : [surface, friendlyName],
+  );
+  const title = thread.title || friendlyName || opened.label.split(' ')[0] || '';
+  assertContract(
+    !friendlyName || title.toLowerCase().includes(friendlyName.toLowerCase()),
+    'CHAT_FRIENDLY_TITLE_MISSING',
+    `${clientId} opened ${kind} conversation without friendly title ${friendlyName}`,
+  );
+  return {
+    conversationId: opened.id,
+    label: opened.label,
+    title,
+  };
+}
+
+async function waitForChatMessage(clientId, client, text) {
+  return waitForUi(
+    clientId,
+    client,
+    `message ${text}`,
+    `
+      const targetText = arguments[0];
+      const rows = [...document.querySelectorAll('[data-message-ulid]')]
+        .filter((element) => element.getClientRects().length);
+      const row = rows.find((element) => (
+        (element.innerText || '').includes(targetText)
+      ));
+      return {
+        ready: Boolean(row),
+        messageId: row?.getAttribute('data-message-ulid') || '',
+        text: (row?.innerText || '').replace(/\\s+/g, ' ').trim(),
+        reply: (row?.querySelector('.message-reply-quote')?.innerText || '')
+          .replace(/\\s+/g, ' ')
+          .trim(),
+        receipt: row?.querySelector('[data-message-receipt]')
+          ?.getAttribute('data-message-receipt') || '',
+        delivery: row?.querySelector('[data-message-delivery]')
+          ?.getAttribute('data-message-delivery') || '',
+        reaction: (row?.querySelector('.message-reaction-row')?.innerText || '')
+          .replace(/\\s+/g, ' ')
+          .trim()
+      };
+    `,
+    [text],
+  );
+}
+
+async function sendChatText(
+  clientId,
+  client,
+  kind,
+  friendlyName,
+  text,
+) {
+  const conversation = await openChatConversation(
+    clientId,
+    client,
+    kind,
+    friendlyName,
+  );
+  const composer = chatComposerSelector(client);
+  await setInputValue(client, composer, text, `compose-${text}`);
+  await clickVisibleSelector(
+    client,
+    client.platform === 'desktop'
+      ? '[data-chat-send]'
+      : 'button.message-send-button',
+    `send-${text}`,
+  );
+  return {
+    conversation,
+    message: await waitForChatMessage(clientId, client, text),
+  };
+}
+
+async function waitForChatReadReceipt(
+  clientId,
+  client,
+  kind,
+  friendlyName,
+  text,
+) {
+  await openChatConversation(clientId, client, kind, friendlyName);
+  return waitForUi(
+    clientId,
+    client,
+    `read receipt for ${text}`,
+    `
+      const targetText = arguments[0];
+      const row = [...document.querySelectorAll('[data-message-ulid]')]
+        .find((element) => (
+          element.getClientRects().length
+          && (element.innerText || '').includes(targetText)
+        ));
+      const receipt = row?.querySelector('[data-message-receipt]')
+        ?.getAttribute('data-message-receipt') || '';
+      const delivery = row?.querySelector('[data-message-delivery]')
+        ?.getAttribute('data-message-delivery') || '';
+      return {
+        ready: receipt === 'read' || delivery === 'read',
+        messageId: row?.getAttribute('data-message-ulid') || '',
+        receipt,
+        delivery
+      };
+    `,
+    [text],
+  );
+}
+
+async function assertChatMessageOrder(
+  clientId,
+  client,
+  kind,
+  friendlyName,
+  orderedTexts,
+) {
+  await openChatConversation(clientId, client, kind, friendlyName);
+  const snapshot = await waitForUi(
+    clientId,
+    client,
+    `stable ${kind} history`,
+    `
+      const expected = arguments[0];
+      const rows = [...document.querySelectorAll('[data-message-ulid]')]
+        .filter((element) => element.getClientRects().length)
+        .map((element) => ({
+          id: element.getAttribute('data-message-ulid') || '',
+          text: (element.innerText || '').replace(/\\s+/g, ' ').trim()
+        }));
+      const indexes = expected.map((text) => (
+        rows.findIndex((row) => row.text.includes(text))
+      ));
+      return {
+        ready: indexes.every((index) => index >= 0)
+          && indexes.every((index, position) => (
+            position === 0 || indexes[position - 1] < index
+          )),
+        indexes,
+        rows
+      };
+    `,
+    [orderedTexts],
+  );
+  return snapshot;
+}
+
+async function stageDesktopImageAttachment(client, filename) {
+  const staged = await executeWebScript(
+    client,
+    `
+      const composer = document.querySelector('[data-chat-composer]');
+      if (!(composer instanceof HTMLElement) || typeof DataTransfer === 'undefined') {
+        return { ok: false, reason: 'composer-or-data-transfer-missing' };
+      }
+      const binary = atob(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+      );
+      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([bytes], arguments[0], { type: 'image/png' }));
+      composer.dispatchEvent(new DragEvent('dragenter', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: transfer
+      }));
+      composer.dispatchEvent(new DragEvent('dragover', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: transfer
+      }));
+      composer.dispatchEvent(new DragEvent('drop', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: transfer
+      }));
+      return { ok: true };
+    `,
+    [filename],
+  );
+  assertContract(
+    staged?.ok === true,
+    'CHAT_ATTACHMENT_GESTURE_FAILED',
+    `Desktop attachment gesture failed: ${staged?.reason || 'unknown'}`,
+  );
+  return waitForUi(
+    'desktop-bob',
+    client,
+    `attachment draft ${filename}`,
+    `
+      const draft = [...document.querySelectorAll('[data-chat-attachment-draft]')]
+        .find((element) => (element.innerText || '').includes(arguments[0]));
+      return {
+        ready: Boolean(draft)
+          && draft.getAttribute('data-chat-attachment-status') === 'ready',
+        id: draft?.getAttribute('data-chat-attachment-draft') || '',
+        status: draft?.getAttribute('data-chat-attachment-status') || '',
+        text: (draft?.innerText || '').replace(/\\s+/g, ' ').trim()
+      };
+    `,
+    [filename],
+  );
+}
+
+async function sendDesktopAttachment(
+  clientId,
+  client,
+  friendlyName,
+  filename,
+) {
+  const conversation = await openChatConversation(
+    clientId,
+    client,
+    'friend',
+    friendlyName,
+  );
+  await stageDesktopImageAttachment(client, filename);
+  await clickVisibleSelector(client, '[data-chat-send]', 'send-attachment');
+  const message = await waitForUi(
+    clientId,
+    client,
+    `sent attachment ${filename}`,
+    `
+      const rows = [...document.querySelectorAll(
+        '[data-message-ulid][data-message-attachment-count]'
+      )].filter((element) => element.getClientRects().length);
+      const row = rows.at(-1);
+      return {
+        ready: Number(row?.getAttribute('data-message-attachment-count') || 0) > 0,
+        messageId: row?.getAttribute('data-message-ulid') || '',
+        attachmentCount: Number(
+          row?.getAttribute('data-message-attachment-count') || 0
+        ),
+        text: (row?.innerText || '').replace(/\\s+/g, ' ').trim()
+      };
+    `,
+  );
+  return { conversation, message };
+}
+
+async function verifyMobileAttachment(
+  clientId,
+  client,
+  friendlyName,
+) {
+  await openChatConversation(clientId, client, 'friend', friendlyName);
+  const attachment = await waitForUi(
+    clientId,
+    client,
+    'receiver-visible attachment',
+    `
+      const rows = [...document.querySelectorAll('[data-message-ulid]')]
+        .filter((element) => element.getClientRects().length);
+      const row = rows.find((element) => (
+        element.querySelector('[data-attachment-id]')
+      ));
+      const item = row?.querySelector('[data-attachment-id]');
+      return {
+        ready: Boolean(item?.getClientRects().length)
+          && !item.hasAttribute('disabled'),
+        messageId: row?.getAttribute('data-message-ulid') || '',
+        attachmentId: item?.getAttribute('data-attachment-id') || '',
+        text: (row?.innerText || '').replace(/\\s+/g, ' ').trim()
+      };
+    `,
+  );
+  await clickVisibleSelector(
+    client,
+    `[data-message-ulid="${attachment.messageId}"] [data-attachment-id]`,
+    'open-receiver-attachment',
+  );
+  return attachment;
+}
+
+async function openMobileMessageActions(clientId, client, messageText) {
+  const message = await waitForChatMessage(clientId, client, messageText);
+  const opened = await executeWebScript(
+    client,
+    `
+      const row = document.querySelector(
+        '[data-message-ulid="' + CSS.escape(arguments[0]) + '"]'
+      );
+      const button = row?.querySelector('.message-overflow-button');
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+      button.click();
+      return true;
+    `,
+    [message.messageId],
+  );
+  assertContract(
+    opened === true,
+    'CHAT_MESSAGE_ACTION_CONTROL_MISSING',
+    `${clientId} cannot open actions for ${messageText}`,
+  );
+  await waitForUi(
+    clientId,
+    client,
+    'Mobile message action sheet',
+    `
+      return {
+        ready: Boolean(document.querySelector(
+          '[data-product-surface="chat.message-actions"]'
+        )?.getClientRects().length)
+      };
+    `,
+  );
+  return message;
+}
+
+async function closeMobileMessageActions(client) {
+  await clickVisibleSelector(
+    client,
+    '[data-product-surface="chat.message-actions"] .chat-action-sheet-header button',
+    'close-message-actions',
+  );
+}
+
+async function reactToMobileMessage(
+  clientId,
+  client,
+  messageText,
+  reaction,
+) {
+  const message = await openMobileMessageActions(
+    clientId,
+    client,
+    messageText,
+  );
+  const reacted = await executeWebScript(
+    client,
+    `
+      const button = [...document.querySelectorAll(
+        '[data-product-surface="chat.message-actions"] .message-reaction-choice'
+      )].find((element) => (
+        element instanceof HTMLButtonElement
+        && (element.innerText || '').includes(arguments[0])
+      ));
+      if (!button || button.disabled) return false;
+      button.click();
+      return true;
+    `,
+    [reaction],
+  );
+  assertContract(
+    reacted === true,
+    'CHAT_REACTION_CONTROL_MISSING',
+    `${clientId} cannot react with ${reaction}`,
+  );
+  await waitForUi(
+    clientId,
+    client,
+    `reaction ${reaction}`,
+    `
+      const row = document.querySelector(
+        '[data-message-ulid="' + CSS.escape(arguments[0]) + '"]'
+      );
+      const chip = [...(row?.querySelectorAll('.message-reaction-chip') || [])]
+        .find((element) => (element.innerText || '').includes(arguments[1]));
+      return {
+        ready: Boolean(chip),
+        text: (chip?.innerText || '').replace(/\\s+/g, ' ').trim()
+      };
+    `,
+    [message.messageId, reaction],
+  );
+  await closeMobileMessageActions(client);
+  return { messageId: message.messageId, reaction };
+}
+
+async function replyToMobileMessage(
+  clientId,
+  client,
+  messageText,
+  replyText,
+) {
+  await openMobileMessageActions(clientId, client, messageText);
+  const selected = await executeWebScript(
+    client,
+    `
+      const button = document.querySelector(
+        '[data-product-surface="chat.message-actions"] '
+          + '.chat-action-group .chat-action-button '
+          + 'svg.lucide-corner-up-left'
+      )?.closest('button');
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+      button.click();
+      return true;
+    `,
+  );
+  assertContract(
+    selected === true,
+    'CHAT_REPLY_CONTROL_MISSING',
+    `${clientId} cannot select Reply`,
+  );
+  await waitForUi(
+    clientId,
+    client,
+    'reply composer context',
+    `
+      const context = document.querySelector('.message-reply-context');
+      return {
+        ready: Boolean(context?.getClientRects().length)
+          && (context.innerText || '').includes(arguments[0]),
+        text: (context?.innerText || '').replace(/\\s+/g, ' ').trim()
+      };
+    `,
+    [messageText],
+  );
+  await setInputValue(
+    client,
+    chatComposerSelector(client),
+    replyText,
+    `compose-${replyText}`,
+  );
+  await clickVisibleSelector(
+    client,
+    'button.message-send-button',
+    `send-${replyText}`,
+  );
+  const reply = await waitForChatMessage(clientId, client, replyText);
+  assertContract(
+    reply.reply.includes(messageText),
+    'CHAT_REPLY_CONTEXT_MISSING',
+    `${clientId} reply ${replyText} does not quote ${messageText}`,
+  );
+  return reply;
+}
+
+async function forwardMobileMessage(
+  clientId,
+  client,
+  messageText,
+  destination,
+) {
+  await openMobileMessageActions(clientId, client, messageText);
+  const selected = await executeWebScript(
+    client,
+    `
+      const button = document.querySelector(
+        '[data-product-surface="chat.message-actions"] '
+          + '.chat-action-group .chat-action-button svg.lucide-forward'
+      )?.closest('button');
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+      button.click();
+      return true;
+    `,
+  );
+  assertContract(
+    selected === true,
+    'CHAT_FORWARD_CONTROL_MISSING',
+    `${clientId} cannot select Forward`,
+  );
+  await waitForUi(
+    clientId,
+    client,
+    `forward destination ${destination}`,
+    `
+      const surface = document.querySelector(
+        '[data-product-surface="chat.forward-picker"]'
+      );
+      const button = [...(surface?.querySelectorAll('button') || [])]
+        .find((element) => (
+          element.getClientRects().length
+          && (element.getAttribute('aria-label') || '')
+            .toLowerCase()
+            .includes(arguments[0].toLowerCase())
+        ));
+      return { ready: Boolean(button), label: button?.getAttribute('aria-label') || '' };
+    `,
+    [destination],
+  );
+  const forwarded = await executeWebScript(
+    client,
+    `
+      const surface = document.querySelector(
+        '[data-product-surface="chat.forward-picker"]'
+      );
+      const button = [...(surface?.querySelectorAll('button') || [])]
+        .find((element) => (
+          element.getClientRects().length
+          && (element.getAttribute('aria-label') || '')
+            .toLowerCase()
+            .includes(arguments[0].toLowerCase())
+        ));
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+      button.click();
+      return true;
+    `,
+    [destination],
+  );
+  assertContract(
+    forwarded === true,
+    'CHAT_FORWARD_DESTINATION_MISSING',
+    `${clientId} cannot forward to ${destination}`,
+  );
+  await waitForUi(
+    clientId,
+    client,
+    'forward completion',
+    `
+      return {
+        ready: !document.querySelector(
+          '[data-product-surface^="chat.forward-"]'
+        )
+      };
+    `,
+  );
+  return { destination, messageText };
+}
+
+async function searchMobileMessage(
+  clientId,
+  client,
+  messageText,
+) {
+  const opened = await executeWebScript(
+    client,
+    `
+      const actions = document.querySelector('.chat-header-actions');
+      const buttons = [...(actions?.querySelectorAll('button') || [])]
+        .filter((button) => button.getClientRects().length);
+      const button = buttons.at(-1);
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+      button.click();
+      return true;
+    `,
+  );
+  assertContract(
+    opened === true,
+    'CHAT_CONVERSATION_ACTION_CONTROL_MISSING',
+    `${clientId} cannot open conversation actions`,
+  );
+  await waitForUi(
+    clientId,
+    client,
+    'conversation action sheet',
+    `
+      return {
+        ready: Boolean(document.querySelector(
+          '[data-product-surface="chat.conversation-actions"]'
+        )?.getClientRects().length)
+      };
+    `,
+  );
+  const searchSelected = await executeWebScript(
+    client,
+    `
+      const surface = document.querySelector(
+        '[data-product-surface="chat.conversation-actions"]'
+      );
+      const button = surface?.querySelector(
+        '.chat-action-group .chat-action-button'
+      );
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+      button.click();
+      return true;
+    `,
+  );
+  assertContract(
+    searchSelected === true,
+    'CHAT_SEARCH_CONTROL_MISSING',
+    `${clientId} cannot open message search`,
+  );
+  await setInputValue(
+    client,
+    '.chat-header-search input',
+    messageText,
+    `search-${messageText}`,
+  );
+  await clickVisibleSelector(
+    client,
+    '.chat-header-search .ant-input-search-button',
+    `submit-search-${messageText}`,
+  );
+  const result = await waitForUi(
+    clientId,
+    client,
+    `search result ${messageText}`,
+    `
+      const result = [...document.querySelectorAll('.message-search-result')]
+        .find((element) => (
+          element.getClientRects().length
+          && (element.innerText || '').includes(arguments[0])
+        ));
+      return {
+        ready: Boolean(result),
+        anchor: result?.getAttribute('data-scroll-anchor-id') || '',
+        text: (result?.innerText || '').replace(/\\s+/g, ' ').trim()
+      };
+    `,
+    [messageText],
+  );
+  await clickVisibleSelector(
+    client,
+    `.message-search-result[data-scroll-anchor-id="${result.anchor}"]`,
+    `reopen-search-${messageText}`,
+  );
+  await waitForUi(
+    clientId,
+    client,
+    `highlighted message ${messageText}`,
+    `
+      const row = document.querySelector(
+        '[data-message-ulid="' + CSS.escape(arguments[0]) + '"]'
+      );
+      return {
+        ready: Boolean(row?.classList.contains('highlighted'))
+          && (row.innerText || '').includes(arguments[1])
+      };
+    `,
+    [result.anchor, messageText],
+  );
+  return result;
+}
+
+async function openMobileGroupManagement(clientId, client) {
+  const opened = await executeWebScript(
+    client,
+    `
+      const actions = document.querySelector('.chat-header-actions');
+      const buttons = [...(actions?.querySelectorAll('button') || [])]
+        .filter((button) => button.getClientRects().length);
+      const button = buttons.at(-1);
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+      button.click();
+      return true;
+    `,
+  );
+  assertContract(
+    opened === true,
+    'CHAT_GROUP_ACTION_CONTROL_MISSING',
+    `${clientId} cannot open Group actions`,
+  );
+  await waitForUi(
+    clientId,
+    client,
+    'Group conversation actions',
+    `
+      return {
+        ready: Boolean(document.querySelector(
+          '[data-product-surface="chat.conversation-actions"]'
+        )?.getClientRects().length)
+      };
+    `,
+  );
+  const selected = await executeWebScript(
+    client,
+    `
+      const groups = [...document.querySelectorAll(
+        '[data-product-surface="chat.conversation-actions"] .chat-action-group'
+      )];
+      const button = groups.flatMap((group) => [...group.querySelectorAll('button')])
+        .find((candidate) => candidate.querySelector('svg.lucide-users'));
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+      button.click();
+      return true;
+    `,
+  );
+  assertContract(
+    selected === true,
+    'CHAT_GROUP_MANAGEMENT_CONTROL_MISSING',
+    `${clientId} cannot open Group management`,
+  );
+  return waitForUi(
+    clientId,
+    client,
+    'Group management sheet',
+    `
+      const sheet = document.querySelector(
+        '[data-acceptance-id="group-management"]'
+      );
+      return {
+        ready: Boolean(sheet?.getClientRects().length),
+        surface: sheet?.parentElement?.getAttribute('data-product-surface') || '',
+        text: (sheet?.innerText || '').slice(0, 3000)
+      };
+    `,
+  );
+}
+
+async function groupMemberRowState(clientId, client, memberName, minimumButtons) {
+  return waitForUi(
+    clientId,
+    client,
+    `Group member ${memberName} controls`,
+    `
+      const rows = [...document.querySelectorAll(
+        '[data-acceptance-id="group-management"] .ant-list-item'
+      )].filter((element) => (
+        element.getClientRects().length
+        && (element.innerText || '').toLowerCase().includes(
+          arguments[0].toLowerCase()
+        )
+      ));
+      const row = rows.find((element) => (
+        element.querySelectorAll('button').length >= arguments[1]
+      ));
+      const buttons = [...(row?.querySelectorAll('button') || [])];
+      return {
+        ready: Boolean(row),
+        buttonCount: buttons.length,
+        buttonText: buttons.map((button) => (button.innerText || '').trim()),
+        text: (row?.innerText || '').replace(/\\s+/g, ' ').trim()
+      };
+    `,
+    [memberName, minimumButtons],
+  );
+}
+
+async function clickGroupMemberButton(
+  clientId,
+  client,
+  memberName,
+  buttonIndex,
+) {
+  const before = await groupMemberRowState(clientId, client, memberName, 4);
+  const clicked = await executeWebScript(
+    client,
+    `
+      const row = [...document.querySelectorAll(
+        '[data-acceptance-id="group-management"] .ant-list-item'
+      )].find((element) => (
+        element.getClientRects().length
+        && (element.innerText || '').toLowerCase().includes(
+          arguments[0].toLowerCase()
+        )
+        && element.querySelectorAll('button').length >= 4
+      ));
+      const button = row?.querySelectorAll('button')[arguments[1]];
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+      button.click();
+      return true;
+    `,
+    [memberName, buttonIndex],
+  );
+  assertContract(
+    clicked === true,
+    'CHAT_GROUP_MEMBER_CONTROL_MISSING',
+    `${clientId} cannot operate ${memberName} button ${buttonIndex}`,
+  );
+  const after = await waitForUi(
+    clientId,
+    client,
+    `Group member ${memberName} update`,
+    `
+      const row = [...document.querySelectorAll(
+        '[data-acceptance-id="group-management"] .ant-list-item'
+      )].find((element) => (
+        element.getClientRects().length
+        && (element.innerText || '').toLowerCase().includes(
+          arguments[0].toLowerCase()
+        )
+        && element.querySelectorAll('button').length >= 4
+      ));
+      const buttons = [...(row?.querySelectorAll('button') || [])];
+      const current = buttons.map((button) => (button.innerText || '').trim());
+      return {
+        ready: Boolean(row)
+          && buttons.every((button) => !button.disabled)
+          && current[arguments[1]] !== arguments[2],
+        buttonText: current,
+        text: (row?.innerText || '').replace(/\\s+/g, ' ').trim()
+      };
+    `,
+    [memberName, buttonIndex, before.buttonText[buttonIndex] || ''],
+  );
+  return { after, before };
+}
+
+async function removeAndRestoreGroupMember(
+  clientId,
+  client,
+  memberName,
+) {
+  await groupMemberRowState(clientId, client, memberName, 4);
+  const removeClicked = await executeWebScript(
+    client,
+    `
+      const row = [...document.querySelectorAll(
+        '[data-acceptance-id="group-management"] .ant-list-item'
+      )].find((element) => (
+        element.getClientRects().length
+        && (element.innerText || '').toLowerCase().includes(
+          arguments[0].toLowerCase()
+        )
+        && element.querySelectorAll('button').length >= 4
+      ));
+      const buttons = [...(row?.querySelectorAll('button') || [])];
+      const button = buttons.at(-1);
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+      button.click();
+      return true;
+    `,
+    [memberName],
+  );
+  assertContract(
+    removeClicked === true,
+    'CHAT_GROUP_REMOVE_CONTROL_MISSING',
+    `${clientId} cannot remove ${memberName}`,
+  );
+  await waitForUi(
+    clientId,
+    client,
+    `remove confirmation for ${memberName}`,
+    `
+      const modal = [...document.querySelectorAll('.ant-modal-confirm')]
+        .find((element) => element.getClientRects().length);
+      const confirm = modal?.querySelector(
+        '.ant-modal-confirm-btns .ant-btn-primary'
+      );
+      return { ready: Boolean(confirm), text: (modal?.innerText || '').slice(0, 1000) };
+    `,
+  );
+  await clickVisibleSelector(
+    client,
+    '.ant-modal-confirm .ant-modal-confirm-btns .ant-btn-primary',
+    `confirm-remove-${memberName}`,
+  );
+  await waitForUi(
+    clientId,
+    client,
+    `${memberName} removed`,
+    `
+      const rows = [...document.querySelectorAll(
+        '[data-acceptance-id="group-management"] .ant-list-item'
+      )].filter((element) => (
+        element.getClientRects().length
+        && (element.innerText || '').toLowerCase().includes(
+          arguments[0].toLowerCase()
+        )
+      ));
+      return {
+        ready: rows.some((element) => (
+          element.querySelectorAll('button').length === 1
+        )) && !rows.some((element) => (
+          element.querySelectorAll('button').length >= 4
+        )),
+        rows: rows.map((element) => ({
+          buttons: element.querySelectorAll('button').length,
+          text: (element.innerText || '').replace(/\\s+/g, ' ').trim()
+        }))
+      };
+    `,
+    [memberName],
+  );
+  const invited = await executeWebScript(
+    client,
+    `
+      const row = [...document.querySelectorAll(
+        '[data-acceptance-id="group-management"] .ant-list-item'
+      )].find((element) => (
+        element.getClientRects().length
+        && (element.innerText || '').toLowerCase().includes(
+          arguments[0].toLowerCase()
+        )
+        && element.querySelectorAll('button').length === 1
+      ));
+      const button = row?.querySelector('button');
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+      button.click();
+      return true;
+    `,
+    [memberName],
+  );
+  assertContract(
+    invited === true,
+    'CHAT_GROUP_RESTORE_CONTROL_MISSING',
+    `${clientId} cannot restore ${memberName}`,
+  );
+  const restored = await groupMemberRowState(clientId, client, memberName, 4);
+  return { removed: true, restored };
+}
+
+async function proveGroupRoleDenied(clientId, client) {
+  const management = await openMobileGroupManagement(clientId, client);
+  assertContract(
+    management.surface === 'chat.group-role-denied',
+    'CHAT_GROUP_ROLE_GATE_MISSING',
+    `${clientId} did not expose the role-gated Group management state`,
+  );
+  await clickVisibleSelector(
+    client,
+    '[data-acceptance-id="group-management"] .chat-action-sheet-header button',
+    'close-role-gated-group-management',
+  );
+  return management;
+}
+
+async function recordMobileVoiceMessage(
+  clientId,
+  client,
+  friendlyName,
+) {
+  await openChatConversation(clientId, client, 'friend', friendlyName);
+  const existingIds = await executeWebScript(
+    client,
+    `
+      return [...document.querySelectorAll(
+        '[data-message-ulid] [data-attachment-id]'
+      )].map((element) => (
+        element.closest('[data-message-ulid]')
+          ?.getAttribute('data-message-ulid') || ''
+      )).filter(Boolean);
+    `,
+  );
+  const startRecording = async () => {
+    const opened = await executeWebScript(
+      client,
+      `
+        const buttons = [...document.querySelectorAll(
+          '.message-composer-row .message-composer-tool'
+        )].filter((button) => button.getClientRects().length);
+        const more = buttons.at(-1);
+        if (!(more instanceof HTMLButtonElement) || more.disabled) return false;
+        more.click();
+        return true;
+      `,
+    );
+    assertContract(
+      opened === true,
+      'CHAT_VOICE_MORE_CONTROL_MISSING',
+      `${clientId} cannot open composer tools`,
+    );
+    await waitForUi(
+      clientId,
+      client,
+      'voice composer tool',
+      `
+        const option = [...document.querySelectorAll(
+          '.more-panel .composer-tool-option'
+        )].find((button) => button.querySelector('svg.lucide-mic'));
+        return { ready: Boolean(option?.getClientRects().length) };
+      `,
+    );
+    const started = await executeWebScript(
+      client,
+      `
+        const option = [...document.querySelectorAll(
+          '.more-panel .composer-tool-option'
+        )].find((button) => button.querySelector('svg.lucide-mic'));
+        if (!(option instanceof HTMLButtonElement) || option.disabled) return false;
+        option.click();
+        return true;
+      `,
+    );
+    assertContract(
+      started === true,
+      'CHAT_VOICE_RECORD_CONTROL_MISSING',
+      `${clientId} cannot start voice recording`,
+    );
+    return waitForUi(
+      clientId,
+      client,
+      'voice recording state',
+      `
+        const surface = document.querySelector(
+          '[data-product-surface="chat.voice-recording"]'
+        );
+        return {
+          ready: Boolean(surface?.getClientRects().length),
+          text: (surface?.innerText || '').replace(/\\s+/g, ' ').trim()
+        };
+      `,
+    );
+  };
+
+  await startRecording();
+  await sleep(600);
+  await clickVisibleSelector(
+    client,
+    '[data-product-surface="chat.voice-recording"] .voice-recording-actions button:first-child',
+    'cancel-voice-recording',
+  );
+  await waitForUi(
+    clientId,
+    client,
+    'cancelled voice recording',
+    `
+      return {
+        ready: !document.querySelector(
+          '[data-product-surface="chat.voice-recording"]'
+        )
+      };
+    `,
+  );
+
+  await startRecording();
+  await sleep(1600);
+  await clickVisibleSelector(
+    client,
+    '[data-product-surface="chat.voice-recording"] .voice-recording-actions button:last-child',
+    'finish-voice-recording',
+  );
+  await waitForUi(
+    clientId,
+    client,
+    'ready voice attachment',
+    `
+      const surface = document.querySelector(
+        '[data-product-surface="chat.attachment-ready"]'
+      );
+      return {
+        ready: Boolean(surface?.getClientRects().length),
+        text: (surface?.innerText || '').replace(/\\s+/g, ' ').trim()
+      };
+    `,
+  );
+  await clickVisibleSelector(
+    client,
+    'button.message-send-button',
+    'send-voice-message',
+  );
+  return waitForUi(
+    clientId,
+    client,
+    'sent voice message',
+    `
+      const previous = new Set(arguments[0]);
+      const rows = [...document.querySelectorAll('[data-message-ulid]')]
+        .filter((element) => (
+          element.getClientRects().length
+          && element.querySelector('[data-attachment-id]')
+          && !previous.has(element.getAttribute('data-message-ulid') || '')
+        ));
+      const row = rows.at(-1);
+      const item = row?.querySelector('[data-attachment-id]');
+      return {
+        ready: Boolean(item),
+        messageId: row?.getAttribute('data-message-ulid') || '',
+        attachmentId: item?.getAttribute('data-attachment-id') || '',
+        text: (row?.innerText || '').replace(/\\s+/g, ' ').trim()
+      };
+    `,
+    [existingIds],
+  );
+}
+
+async function playLatestVoiceMessage(clientId, client, friendlyName) {
+  await openChatConversation(clientId, client, 'friend', friendlyName);
+  if (client.platform === 'desktop') {
+    const voice = await waitForUi(
+      clientId,
+      client,
+      'ready Desktop voice message',
+      `
+        const voices = [...document.querySelectorAll(
+          '[data-chat-voice-playback-state]'
+        )].filter((element) => element.getClientRects().length);
+        const voice = voices.at(-1);
+        return {
+          ready: Boolean(voice)
+            && !['loading', 'error'].includes(
+              voice.getAttribute('data-chat-voice-playback-state') || ''
+            ),
+          state: voice?.getAttribute('data-chat-voice-playback-state') || ''
+        };
+      `,
+    );
+    const played = await executeWebScript(
+      client,
+      `
+        const voices = [...document.querySelectorAll(
+          '[data-chat-voice-playback-state]'
+        )].filter((element) => element.getClientRects().length);
+        const button = voices.at(-1)?.querySelector(
+          'button[data-chat-voice-playing]'
+        );
+        if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+        button.click();
+        return true;
+      `,
+    );
+    assertContract(
+      played === true,
+      'CHAT_VOICE_PLAY_CONTROL_MISSING',
+      `${clientId} cannot play the voice message`,
+    );
+    return waitForUi(
+      clientId,
+      client,
+      'Desktop voice playback',
+      `
+        const voices = [...document.querySelectorAll(
+          '[data-chat-voice-playback-state]'
+        )].filter((element) => element.getClientRects().length);
+        const state = voices.at(-1)
+          ?.getAttribute('data-chat-voice-playback-state') || '';
+        return { ready: ['playing', 'ended'].includes(state), state };
+      `,
+    );
+  }
+  await waitForUi(
+    clientId,
+    client,
+    'ready Mobile voice message',
+    `
+      const audios = [...document.querySelectorAll(
+        '.mobile-attachment-audio audio'
+      )].filter((element) => element.getClientRects().length);
+      const audio = audios.at(-1);
+      return {
+        ready: Boolean(audio?.getAttribute('src')),
+        src: audio?.getAttribute('src') || ''
+      };
+    `,
+  );
+  const played = await executeWebScript(
+    client,
+    `
+      const audios = [...document.querySelectorAll(
+        '.mobile-attachment-audio audio'
+      )].filter((element) => element.getClientRects().length);
+      const audio = audios.at(-1);
+      if (!(audio instanceof HTMLAudioElement)) return { ok: false };
+      audio.click();
+      return audio.play()
+        .then(() => ({ ok: true, paused: audio.paused }))
+        .catch((error) => ({ ok: false, error: String(error) }));
+    `,
+  );
+  assertContract(
+    played?.ok === true,
+    'CHAT_VOICE_PLAY_FAILED',
+    `${clientId} voice playback failed: ${played?.error || 'unknown'}`,
+  );
+  return played;
+}
+
+async function clickConversationHeaderCall(clientId, client, kind) {
+  const started = await executeWebScript(
+    client,
+    client.platform === 'desktop'
+      ? `
+          const pane = document.querySelector('[data-chat-conversation-pane]');
+          const selector = arguments[0] === 'video'
+            ? 'svg.lucide-video'
+            : 'svg.lucide-phone';
+          const button = [...(pane?.querySelectorAll('button') || [])]
+            .find((candidate) => (
+              candidate.getClientRects().length
+              && candidate.querySelector(selector)
+              && !candidate.closest('[data-chat-call-surface]')
+            ));
+          if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+          button.click();
+          return true;
+        `
+      : `
+          const buttons = [...document.querySelectorAll(
+            '.chat-header-actions button'
+          )].filter((button) => button.getClientRects().length);
+          const index = arguments[0] === 'video' ? 1 : 0;
+          const button = buttons[index];
+          if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+          button.click();
+          return true;
+        `,
+    [kind],
+  );
+  assertContract(
+    started === true,
+    'CHAT_CALL_CONTROL_MISSING',
+    `${clientId} cannot start a ${kind} call`,
+  );
+  return { kind };
+}
+
+async function readCallSurface(client) {
+  return executeWebScript(
+    client,
+    client.platform === 'desktop'
+      ? `
+          const surface = document.querySelector('[data-chat-call-surface]');
+          return {
+            active: Boolean(surface?.getClientRects().length),
+            mediaKind: surface?.getAttribute('data-chat-call-media-kind') || '',
+            state: surface?.getAttribute('data-chat-call-state') || '',
+            text: (surface?.innerText || '').replace(/\\s+/g, ' ').trim()
+          };
+        `
+      : `
+          const surface = document.querySelector('.mobile-call-surface');
+          const buttons = [...(surface?.querySelectorAll('button') || [])];
+          return {
+            active: Boolean(surface?.getClientRects().length),
+            connected: Boolean(surface?.classList.contains('active')),
+            labels: buttons.map((button) => button.getAttribute('aria-label') || ''),
+            selected: buttons.filter((button) => button.classList.contains('selected'))
+              .map((button) => button.getAttribute('aria-label') || ''),
+            terminal: Boolean(
+              surface
+              && buttons.some((button) => button.querySelector('svg.lucide-x'))
+            ),
+            text: (surface?.innerText || '').replace(/\\s+/g, ' ').trim()
+          };
+        `,
+  );
+}
+
+async function waitForCallSurface(
+  clientId,
+  client,
+  expectedState,
+  mediaKind,
+  friendlyName,
+) {
+  const state = await waitForUi(
+    clientId,
+    client,
+    `${mediaKind} call ${expectedState}`,
+    client.platform === 'desktop'
+      ? `
+          const [expectedState, mediaKind] = arguments;
+          const surface = document.querySelector('[data-chat-call-surface]');
+          const state = surface?.getAttribute('data-chat-call-state') || '';
+          const media = surface?.getAttribute('data-chat-call-media-kind') || '';
+          return {
+            ready: Boolean(surface?.getClientRects().length)
+              && state === expectedState
+              && media === mediaKind,
+            state,
+            mediaKind: media,
+            text: (surface?.innerText || '').replace(/\\s+/g, ' ').trim()
+          };
+        `
+      : `
+          const [expectedState] = arguments;
+          const surface = document.querySelector('.mobile-call-surface');
+          const buttons = [...(surface?.querySelectorAll('button') || [])];
+          const incoming = buttons.some((button) => (
+            button.classList.contains('accept')
+          ));
+          const connected = Boolean(surface?.classList.contains('active'));
+          const terminal = buttons.some((button) => (
+            button.querySelector('svg.lucide-x')
+          ));
+          const ready = expectedState === 'incoming'
+            ? incoming
+            : expectedState === 'active'
+              ? connected
+              : expectedState === 'terminal'
+                ? terminal
+                : Boolean(surface?.getClientRects().length)
+                  && !incoming
+                  && !connected
+                  && !terminal;
+          return {
+            ready,
+            incoming,
+            connected,
+            terminal,
+            text: (surface?.innerText || '').replace(/\\s+/g, ' ').trim()
+          };
+        `,
+    [expectedState, mediaKind],
+  );
+  assertContract(
+    !friendlyName
+      || state.text.toLowerCase().includes(friendlyName.toLowerCase()),
+    'CHAT_CALL_FRIENDLY_IDENTITY_MISSING',
+    `${clientId} ${mediaKind} call surface does not identify ${friendlyName}`,
+  );
+  return state;
+}
+
+async function clickCallSurfaceControl(clientId, client, action) {
+  const clicked = await executeWebScript(
+    client,
+    `
+      const surface = document.querySelector(
+        arguments[0] === 'desktop'
+          ? '[data-chat-call-surface]'
+          : '.mobile-call-surface'
+      );
+      const buttons = [...(surface?.querySelectorAll('button') || [])]
+        .filter((button) => button.getClientRects().length);
+      const action = arguments[1];
+      const button = buttons.find((candidate) => {
+        if (action === 'accept') {
+          return candidate.classList.contains('accept')
+            || (
+              candidate.querySelector('svg.lucide-phone')
+              && !candidate.querySelector('svg.lucide-phone-off')
+            );
+        }
+        if (action === 'decline' || action === 'end') {
+          return candidate.classList.contains('danger')
+            || Boolean(candidate.querySelector('svg.lucide-phone-off'));
+        }
+        if (action === 'microphone') {
+          return Boolean(candidate.querySelector(
+            'svg.lucide-mic, svg.lucide-mic-off'
+          ));
+        }
+        if (action === 'camera') {
+          return Boolean(candidate.querySelector(
+            'svg.lucide-camera, svg.lucide-camera-off'
+          ));
+        }
+        if (action === 'dismiss') {
+          return Boolean(candidate.querySelector('svg.lucide-x'));
+        }
+        return false;
+      });
+      if (!(button instanceof HTMLButtonElement) || button.disabled) {
+        return { ok: false };
+      }
+      const before = button.getAttribute('aria-label')
+        || button.getAttribute('title')
+        || button.className;
+      button.click();
+      return { ok: true, before };
+    `,
+    [client.platform, action],
+  );
+  assertContract(
+    clicked?.ok === true,
+    'CHAT_CALL_ACTION_MISSING',
+    `${clientId} cannot perform call action ${action}`,
+  );
+  return clicked;
+}
+
+async function waitForCallTerminal(clientId, client) {
+  return waitForUi(
+    clientId,
+    client,
+    'terminal call state',
+    client.platform === 'desktop'
+      ? `
+          const surface = document.querySelector('[data-chat-call-surface]');
+          const state = surface?.getAttribute('data-chat-call-state') || '';
+          return {
+            ready: !surface
+              || !surface.getClientRects().length
+              || !['incoming', 'outgoing', 'active', 'reconnecting'].includes(state),
+            state
+          };
+        `
+      : `
+          const surface = document.querySelector('.mobile-call-surface');
+          const terminal = Boolean(
+            surface
+            && [...surface.querySelectorAll('button')].some((button) => (
+              button.querySelector('svg.lucide-x')
+            ))
+          );
+          return {
+            ready: !surface || !surface.getClientRects().length || terminal,
+            terminal,
+            text: (surface?.innerText || '').replace(/\\s+/g, ' ').trim()
+          };
+        `,
+  );
+}
+
+async function clearTerminalCallSurface(clientId, client) {
+  const state = await readCallSurface(client);
+  if (!state.active) return state;
+  await clickCallSurfaceControl(clientId, client, 'dismiss');
+  return waitForUi(
+    clientId,
+    client,
+    'dismissed terminal call',
+    `
+      const surface = document.querySelector(
+        arguments[0] === 'desktop'
+          ? '[data-chat-call-surface]'
+          : '.mobile-call-surface'
+      );
+      return { ready: !surface || !surface.getClientRects().length };
+    `,
+    [client.platform],
+  );
+}
+
+async function toggleCallControl(clientId, client, action) {
+  const before = await readCallSurface(client);
+  await clickCallSurfaceControl(clientId, client, action);
+  return waitForUi(
+    clientId,
+    client,
+    `${action} call toggle`,
+    `
+      const surface = document.querySelector(
+        arguments[0] === 'desktop'
+          ? '[data-chat-call-surface]'
+          : '.mobile-call-surface'
+      );
+      const buttons = [...(surface?.querySelectorAll('button') || [])];
+      const action = arguments[1];
+      const button = buttons.find((candidate) => (
+        action === 'microphone'
+          ? candidate.querySelector('svg.lucide-mic, svg.lucide-mic-off')
+          : candidate.querySelector('svg.lucide-camera, svg.lucide-camera-off')
+      ));
+      const label = button?.getAttribute('aria-label')
+        || button?.getAttribute('title')
+        || '';
+      const selected = Boolean(button?.classList.contains('selected'));
+      return {
+        ready: Boolean(button)
+          && (label !== arguments[2] || selected !== arguments[3]),
+        label,
+        selected
+      };
+    `,
+    [
+      client.platform,
+      action,
+      before.labels?.find((label) => (
+        action === 'microphone'
+          ? /mute/i.test(label)
+          : /camera/i.test(label)
+      )) || '',
+      Boolean(before.selected?.some((label) => (
+        action === 'microphone'
+          ? /mute/i.test(label)
+          : /camera/i.test(label)
+      ))),
+    ],
+  );
+}
+
+async function runChatPhase(manifest, evidenceDir, preflight) {
+  const interactionTrace = [];
+  const sequenceRef = { value: 0 };
+  const step = async (clientId, stepId, action) => {
+    const client = manifest.clients[clientId];
+    await activateForegroundClient(clientId, client);
+    return withWebContext(client, async () => {
+      sequenceRef.value += 1;
+      return recordJourneyStep({
+        clientId,
+        client,
+        evidenceDir,
+        interactionTrace,
+        sequence: sequenceRef.value,
+        stepId,
+        action,
+      });
+    });
+  };
+
+  for (const clientId of requiredClientIds) {
+    await step(clientId, 'chat-authenticated-precondition', () => (
+      ensureAuthenticated(
+        clientId,
+        manifest.clients[clientId],
+        manifest.stationUrl,
+      )
+    ));
+  }
+  const bobCoralRequest = (await step(
+    'ios-coral',
+    'chat-coral-request-bob',
+    () => requestMobileFriendship(
+      'ios-coral',
+      manifest.clients['ios-coral'],
+      'bob',
+      'Bob',
+    ),
+  )).result;
+  await step(
+    'desktop-bob',
+    'chat-bob-accept-coral',
+    () => acceptIncomingFriendship(
+      'desktop-bob',
+      manifest.clients['desktop-bob'],
+      'Carol',
+      bobCoralRequest.peerPtid,
+    ),
+  );
+
+  const stamp = Date.now();
+  const aliceBobText = `MWPU Alice to Bob ${stamp}`;
+  const bobAliceReply = `MWPU Bob to Alice ${stamp}`;
+  const coralAliceText = `MWPU Carol to Alice ${stamp}`;
+  const aliceCoralReply = `MWPU Alice to Carol ${stamp}`;
+
+  await step(
+    'android-alice',
+    'chat-alice-send-bob-text',
+    () => sendChatText(
+      'android-alice',
+      manifest.clients['android-alice'],
+      'friend',
+      'Bob',
+      aliceBobText,
+    ),
+  );
+  await step(
+    'desktop-bob',
+    'chat-bob-receive-and-reply-alice',
+    async () => {
+      await openChatConversation(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'friend',
+        'Alice',
+      );
+      const received = await waitForChatMessage(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        aliceBobText,
+      );
+      const reply = await sendChatText(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'friend',
+        'Alice',
+        bobAliceReply,
+      );
+      return { received, reply };
+    },
+  );
+  await step(
+    'android-alice',
+    'chat-alice-receive-bob-and-read-state',
+    async () => {
+      await openChatConversation(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'friend',
+        'Bob',
+      );
+      const received = await waitForChatMessage(
+        'android-alice',
+        manifest.clients['android-alice'],
+        bobAliceReply,
+      );
+      const receipt = await waitForChatReadReceipt(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'friend',
+        'Bob',
+        aliceBobText,
+      );
+      return { received, receipt };
+    },
+  );
+  await step(
+    'ios-coral',
+    'chat-coral-send-alice-text',
+    () => sendChatText(
+      'ios-coral',
+      manifest.clients['ios-coral'],
+      'friend',
+      'Alice',
+      coralAliceText,
+    ),
+  );
+  await step(
+    'android-alice',
+    'chat-alice-receive-and-reply-coral',
+    async () => {
+      await openChatConversation(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'friend',
+        'Carol',
+      );
+      const received = await waitForChatMessage(
+        'android-alice',
+        manifest.clients['android-alice'],
+        coralAliceText,
+      );
+      const reply = await sendChatText(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'friend',
+        'Carol',
+        aliceCoralReply,
+      );
+      return { received, reply };
+    },
+  );
+  await step(
+    'ios-coral',
+    'chat-coral-receive-alice-and-read-state',
+    async () => {
+      await openChatConversation(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'friend',
+        'Alice',
+      );
+      const received = await waitForChatMessage(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        aliceCoralReply,
+      );
+      const receipt = await waitForChatReadReceipt(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'friend',
+        'Alice',
+        coralAliceText,
+      );
+      return { received, receipt };
+    },
+  );
+  await step(
+    'desktop-bob',
+    'chat-direct-history-stable-bob',
+    () => assertChatMessageOrder(
+      'desktop-bob',
+      manifest.clients['desktop-bob'],
+      'friend',
+      'Alice',
+      [aliceBobText, bobAliceReply],
+    ),
+  );
+  await step(
+    'ios-coral',
+    'chat-direct-history-stable-coral',
+    () => assertChatMessageOrder(
+      'ios-coral',
+      manifest.clients['ios-coral'],
+      'friend',
+      'Alice',
+      [coralAliceText, aliceCoralReply],
+    ),
+  );
+
+  const attachmentName = `mwpu-${stamp}.png`;
+  await step(
+    'desktop-bob',
+    'chat-bob-send-alice-attachment',
+    () => sendDesktopAttachment(
+      'desktop-bob',
+      manifest.clients['desktop-bob'],
+      'Alice',
+      attachmentName,
+    ),
+  );
+  await step(
+    'android-alice',
+    'chat-alice-open-bob-attachment',
+    () => verifyMobileAttachment(
+      'android-alice',
+      manifest.clients['android-alice'],
+      'Bob',
+    ),
+  );
+  await step(
+    'android-alice',
+    'chat-alice-react-bob-message',
+    () => reactToMobileMessage(
+      'android-alice',
+      manifest.clients['android-alice'],
+      bobAliceReply,
+      '\u{1F44D}',
+    ),
+  );
+  await step(
+    'desktop-bob',
+    'chat-bob-observe-alice-reaction',
+    async () => {
+      await openChatConversation(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'friend',
+        'Alice',
+      );
+      return waitForUi(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'Alice reaction on Bob message',
+        `
+          const row = [...document.querySelectorAll('[data-message-ulid]')]
+            .find((element) => (
+              element.getClientRects().length
+              && (element.innerText || '').includes(arguments[0])
+            ));
+          const reaction = [...(row?.querySelectorAll(
+            '[data-message-reaction]'
+          ) || [])].find((element) => (
+            element.getAttribute('data-message-reaction') === arguments[1]
+          ));
+          return {
+            ready: Boolean(reaction),
+            reaction: reaction?.getAttribute('data-message-reaction') || ''
+          };
+        `,
+        [bobAliceReply, '\u{1F44D}'],
+      );
+    },
+  );
+  const richReply = `MWPU rich reply ${stamp}`;
+  await step(
+    'android-alice',
+    'chat-alice-reply-bob-message',
+    () => replyToMobileMessage(
+      'android-alice',
+      manifest.clients['android-alice'],
+      bobAliceReply,
+      richReply,
+    ),
+  );
+  await step(
+    'desktop-bob',
+    'chat-bob-observe-alice-reply',
+    async () => {
+      await openChatConversation(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'friend',
+        'Alice',
+      );
+      const reply = await waitForChatMessage(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        richReply,
+      );
+      assertContract(
+        reply.text.includes(bobAliceReply),
+        'CHAT_REPLY_RECEIVER_CONTEXT_MISSING',
+        'Bob does not see the original message in Alice reply',
+      );
+      return reply;
+    },
+  );
+  await step(
+    'android-alice',
+    'chat-alice-forward-bob-message-to-coral',
+    async () => {
+      await openChatConversation(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'friend',
+        'Bob',
+      );
+      return forwardMobileMessage(
+        'android-alice',
+        manifest.clients['android-alice'],
+        bobAliceReply,
+        'Carol',
+      );
+    },
+  );
+  await step(
+    'ios-coral',
+    'chat-coral-observe-forwarded-message',
+    async () => {
+      await openChatConversation(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'friend',
+        'Alice',
+      );
+      return waitForChatMessage(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        bobAliceReply,
+      );
+    },
+  );
+  await step(
+    'android-alice',
+    'chat-alice-search-original-message',
+    async () => {
+      await openChatConversation(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'friend',
+        'Bob',
+      );
+      return searchMobileMessage(
+        'android-alice',
+        manifest.clients['android-alice'],
+        bobAliceReply,
+      );
+    },
+  );
+
+  const aliceGroup = (await step(
+    'android-alice',
+    'chat-alice-open-shared-group',
+    () => openChatConversation(
+      'android-alice',
+      manifest.clients['android-alice'],
+      'group',
+    ),
+  )).result;
+  const groupName = aliceGroup.title || aliceGroup.label
+    .match(/MWPU Three Client \d+/)?.[0]
+    || '';
+  assertContract(
+    groupName.startsWith('MWPU Three Client'),
+    'CHAT_SHARED_GROUP_MISSING',
+    'Alice cannot resolve the shared three-client Group',
+  );
+  const aliceGroupText = `MWPU Alice group ${stamp}`;
+  const bobGroupText = `MWPU Bob group ${stamp}`;
+  const coralGroupText = `MWPU Carol group ${stamp}`;
+  await step(
+    'android-alice',
+    'chat-alice-send-group-message',
+    () => sendChatText(
+      'android-alice',
+      manifest.clients['android-alice'],
+      'group',
+      groupName,
+      aliceGroupText,
+    ),
+  );
+  await step(
+    'desktop-bob',
+    'chat-bob-receive-and-send-group-message',
+    async () => {
+      await openChatConversation(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'group',
+        groupName,
+      );
+      const received = await waitForChatMessage(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        aliceGroupText,
+      );
+      const sent = await sendChatText(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'group',
+        groupName,
+        bobGroupText,
+      );
+      return { received, sent };
+    },
+  );
+  await step(
+    'ios-coral',
+    'chat-coral-receive-and-send-group-message',
+    async () => {
+      await openChatConversation(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'group',
+        groupName,
+      );
+      const alice = await waitForChatMessage(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        aliceGroupText,
+      );
+      const bob = await waitForChatMessage(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        bobGroupText,
+      );
+      const sent = await sendChatText(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'group',
+        groupName,
+        coralGroupText,
+      );
+      return { alice, bob, sent };
+    },
+  );
+  await step(
+    'android-alice',
+    'chat-alice-group-administration',
+    async () => {
+      await openChatConversation(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'group',
+        groupName,
+      );
+      await waitForChatMessage(
+        'android-alice',
+        manifest.clients['android-alice'],
+        coralGroupText,
+      );
+      await openMobileGroupManagement(
+        'android-alice',
+        manifest.clients['android-alice'],
+      );
+      const promoted = await clickGroupMemberButton(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'Bob',
+        0,
+      );
+      const demoted = await clickGroupMemberButton(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'Bob',
+        0,
+      );
+      const muted = await clickGroupMemberButton(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'Bob',
+        2,
+      );
+      const unmuted = await clickGroupMemberButton(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'Bob',
+        2,
+      );
+      const membership = await removeAndRestoreGroupMember(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'Bob',
+      );
+      await clickVisibleSelector(
+        manifest.clients['android-alice'],
+        '[data-acceptance-id="group-management"] .chat-action-sheet-header button',
+        'close-group-management',
+      );
+      return {
+        demoted,
+        membership,
+        muted,
+        promoted,
+        unmuted,
+      };
+    },
+  );
+  await step(
+    'ios-coral',
+    'chat-coral-role-gated-group-controls',
+    async () => {
+      await openChatConversation(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'group',
+        groupName,
+      );
+      return proveGroupRoleDenied(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+      );
+    },
+  );
+  for (const clientId of requiredClientIds) {
+    await step(
+      clientId,
+      'chat-group-history-converged',
+      () => assertChatMessageOrder(
+        clientId,
+        manifest.clients[clientId],
+        'group',
+        groupName,
+        [aliceGroupText, bobGroupText, coralGroupText],
+      ),
+    );
+  }
+
+  await step(
+    'android-alice',
+    'chat-alice-record-and-send-voice',
+    () => recordMobileVoiceMessage(
+      'android-alice',
+      manifest.clients['android-alice'],
+      'Bob',
+    ),
+  );
+  await step(
+    'desktop-bob',
+    'chat-bob-play-alice-voice',
+    () => playLatestVoiceMessage(
+      'desktop-bob',
+      manifest.clients['desktop-bob'],
+      'Alice',
+    ),
+  );
+  await step(
+    'ios-coral',
+    'chat-coral-record-and-send-voice',
+    () => recordMobileVoiceMessage(
+      'ios-coral',
+      manifest.clients['ios-coral'],
+      'Alice',
+    ),
+  );
+  await step(
+    'android-alice',
+    'chat-alice-play-coral-voice',
+    () => playLatestVoiceMessage(
+      'android-alice',
+      manifest.clients['android-alice'],
+      'Carol',
+    ),
+  );
+
+  await step(
+    'android-alice',
+    'chat-alice-start-audio-call-bob',
+    async () => {
+      await openChatConversation(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'friend',
+        'Bob',
+      );
+      await clickConversationHeaderCall(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'audio',
+      );
+      return waitForCallSurface(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'outgoing',
+        'audio',
+        'Bob',
+      );
+    },
+  );
+  await step(
+    'desktop-bob',
+    'chat-bob-answer-audio-call',
+    async () => {
+      await waitForCallSurface(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'incoming',
+        'audio',
+        'Alice',
+      );
+      await clickCallSurfaceControl(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'accept',
+      );
+      return waitForCallSurface(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'active',
+        'audio',
+        'Alice',
+      );
+    },
+  );
+  await step(
+    'android-alice',
+    'chat-alice-audio-call-connected',
+    () => waitForCallSurface(
+      'android-alice',
+      manifest.clients['android-alice'],
+      'active',
+      'audio',
+      'Bob',
+    ),
+  );
+  await step(
+    'desktop-bob',
+    'chat-bob-end-audio-call',
+    async () => {
+      await clickCallSurfaceControl(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'end',
+      );
+      return waitForCallTerminal(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+      );
+    },
+  );
+  await step(
+    'android-alice',
+    'chat-alice-audio-call-terminal',
+    async () => {
+      await waitForCallTerminal(
+        'android-alice',
+        manifest.clients['android-alice'],
+      );
+      return clearTerminalCallSurface(
+        'android-alice',
+        manifest.clients['android-alice'],
+      );
+    },
+  );
+
+  await step(
+    'ios-coral',
+    'chat-coral-start-audio-call-alice',
+    async () => {
+      await openChatConversation(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'friend',
+        'Alice',
+      );
+      await clickConversationHeaderCall(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'audio',
+      );
+      return waitForCallSurface(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'outgoing',
+        'audio',
+        'Alice',
+      );
+    },
+  );
+  await step(
+    'android-alice',
+    'chat-alice-reject-coral-audio-call',
+    async () => {
+      await waitForCallSurface(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'incoming',
+        'audio',
+        'Carol',
+      );
+      await clickCallSurfaceControl(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'decline',
+      );
+      return waitForCallTerminal(
+        'android-alice',
+        manifest.clients['android-alice'],
+      );
+    },
+  );
+  for (const clientId of ['android-alice', 'ios-coral']) {
+    await step(
+      clientId,
+      'chat-rejected-audio-call-terminal',
+      async () => {
+        await waitForCallTerminal(clientId, manifest.clients[clientId]);
+        return clearTerminalCallSurface(
+          clientId,
+          manifest.clients[clientId],
+        );
+      },
+    );
+  }
+  await step(
+    'ios-coral',
+    'chat-coral-retry-audio-call-alice',
+    async () => {
+      await openChatConversation(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'friend',
+        'Alice',
+      );
+      await clickConversationHeaderCall(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'audio',
+      );
+      return waitForCallSurface(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'outgoing',
+        'audio',
+        'Alice',
+      );
+    },
+  );
+  await step(
+    'android-alice',
+    'chat-alice-answer-coral-audio-retry',
+    async () => {
+      await waitForCallSurface(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'incoming',
+        'audio',
+        'Carol',
+      );
+      await clickCallSurfaceControl(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'accept',
+      );
+      return waitForCallSurface(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'active',
+        'audio',
+        'Carol',
+      );
+    },
+  );
+  await step(
+    'ios-coral',
+    'chat-coral-end-audio-retry',
+    async () => {
+      await waitForCallSurface(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'active',
+        'audio',
+        'Alice',
+      );
+      await clickCallSurfaceControl(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'end',
+      );
+      return waitForCallTerminal(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+      );
+    },
+  );
+  for (const clientId of ['android-alice', 'ios-coral']) {
+    await step(
+      clientId,
+      'chat-completed-audio-retry-terminal',
+      async () => {
+        await waitForCallTerminal(clientId, manifest.clients[clientId]);
+        return clearTerminalCallSurface(
+          clientId,
+          manifest.clients[clientId],
+        );
+      },
+    );
+  }
+
+  await step(
+    'desktop-bob',
+    'chat-bob-start-video-call-coral',
+    async () => {
+      await openChatConversation(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'friend',
+        'Carol',
+      );
+      await clickConversationHeaderCall(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'video',
+      );
+      return waitForCallSurface(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'outgoing',
+        'video',
+        'Carol',
+      );
+    },
+  );
+  await step(
+    'ios-coral',
+    'chat-coral-answer-bob-video-call',
+    async () => {
+      await waitForCallSurface(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'incoming',
+        'video',
+        'Bob',
+      );
+      await clickCallSurfaceControl(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'accept',
+      );
+      return waitForCallSurface(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'active',
+        'video',
+        'Bob',
+      );
+    },
+  );
+  await step(
+    'desktop-bob',
+    'chat-bob-toggle-video-controls',
+    async () => {
+      await waitForCallSurface(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'active',
+        'video',
+        'Carol',
+      );
+      const microphone = await toggleCallControl(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'microphone',
+      );
+      const camera = await toggleCallControl(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'camera',
+      );
+      return { camera, microphone };
+    },
+  );
+  await step(
+    'ios-coral',
+    'chat-coral-toggle-video-controls-and-end',
+    async () => {
+      const microphone = await toggleCallControl(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'microphone',
+      );
+      const camera = await toggleCallControl(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'camera',
+      );
+      await clickCallSurfaceControl(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'end',
+      );
+      await waitForCallTerminal(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+      );
+      return { camera, microphone };
+    },
+  );
+  for (const clientId of ['desktop-bob', 'ios-coral']) {
+    await step(
+      clientId,
+      'chat-video-call-terminal',
+      async () => {
+        await waitForCallTerminal(clientId, manifest.clients[clientId]);
+        return clearTerminalCallSurface(
+          clientId,
+          manifest.clients[clientId],
+        );
+      },
+    );
+  }
+  await step(
+    'desktop-bob',
+    'chat-bob-retry-video-call-coral',
+    async () => {
+      await openChatConversation(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'friend',
+        'Carol',
+      );
+      await clickConversationHeaderCall(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'video',
+      );
+      return waitForCallSurface(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+        'outgoing',
+        'video',
+        'Carol',
+      );
+    },
+  );
+  await step(
+    'ios-coral',
+    'chat-coral-reject-video-retry',
+    async () => {
+      await waitForCallSurface(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'incoming',
+        'video',
+        'Bob',
+      );
+      await clickCallSurfaceControl(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'decline',
+      );
+      return waitForCallTerminal(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+      );
+    },
+  );
+  for (const clientId of ['desktop-bob', 'ios-coral']) {
+    await step(
+      clientId,
+      'chat-video-retry-terminal',
+      async () => {
+        await waitForCallTerminal(clientId, manifest.clients[clientId]);
+        return clearTerminalCallSurface(
+          clientId,
+          manifest.clients[clientId],
+        );
+      },
+    );
+  }
+
+  const report = {
+    kind: 'peers-touch-three-client-product-journey-result',
+    schemaVersion: 1,
+    phase: 'chat',
+    status: 'PASS',
+    source: preflight.source,
+    stationUrl: manifest.stationUrl,
+    scenarioIds: preflight.scenarioIds,
+    preflight: path.join(evidenceDir, 'preflight.json'),
+    interactionTrace,
+    observedAt: new Date().toISOString(),
+  };
+  const reportPath = path.join(evidenceDir, 'result.json');
+  const tracePath = path.join(evidenceDir, 'interaction-trace.json');
+  writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  writeFileSync(
+    tracePath,
+    `${JSON.stringify(interactionTrace, null, 2)}\n`,
+  );
+  return { ...report, reportPath, tracePath };
+}
+
 function normalizeRecoveryText(value) {
   return String(value || '')
     .replace(/\s+/g, ' ')
@@ -5481,7 +8035,7 @@ async function main() {
     process.stdout.write(`${JSON.stringify(preflight, null, 2)}\n`);
     return;
   }
-  if (!['entry', 'shell', 'contacts', 'recovery'].includes(options.phase)) {
+  if (!['entry', 'shell', 'contacts', 'chat', 'recovery'].includes(options.phase)) {
     throw new JourneyContractError(
       'PHASE_UI_BINDING_REQUIRED',
       [
@@ -5501,7 +8055,9 @@ async function main() {
       ? await runShellPhase(manifest, evidenceDir, preflight)
       : options.phase === 'contacts'
         ? await runContactsPhase(manifest, evidenceDir, preflight)
-        : await runRecoveryPhase(manifest, evidenceDir, preflight);
+        : options.phase === 'chat'
+          ? await runChatPhase(manifest, evidenceDir, preflight)
+          : await runRecoveryPhase(manifest, evidenceDir, preflight);
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
