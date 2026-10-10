@@ -4708,12 +4708,11 @@ async function openChatConversation(
       const target = rows.find((element) => (
         normalizedName
           ? (
-            element.querySelector('[data-chat-avatar-ptid]')
+            element.getAttribute('data-conversation-peer-ptid')
+            || element.querySelector('[data-chat-avatar-ptid]')
               ?.getAttribute('data-chat-avatar-ptid')
-              ?.toLowerCase()
-              .includes(':' + normalizedName + ':')
-            || (element.innerText || '').toLowerCase().includes(normalizedName)
-          )
+            || ''
+          ).toLowerCase().includes(':' + normalizedName + ':')
           : (element.innerText || '').includes('MWPU Three Client')
       ));
       if (!(target instanceof HTMLElement)) {
@@ -4755,7 +4754,12 @@ async function openChatConversation(
           return {
             ready: Boolean(pane?.getClientRects().length)
               && Boolean(composer?.getClientRects().length)
-              && Boolean(title),
+              && Boolean(title)
+              && (
+                arguments[2] !== 'group'
+                || !arguments[1]
+                || title.toLowerCase().includes(arguments[1].toLowerCase())
+              ),
             text: text.slice(0, 2400),
             title
           };
@@ -4768,15 +4772,16 @@ async function openChatConversation(
           return {
             ready: Boolean(surface?.getClientRects().length)
               && Boolean(surface.querySelector('.message-composer'))
-              && (!arguments[1]
+              && (arguments[2] !== 'group'
+                || !arguments[1]
                 || title.toLowerCase().includes(arguments[1].toLowerCase())),
             text: (surface?.innerText || '').slice(0, 2400),
             title
           };
         `,
     client.platform === 'desktop'
-      ? [opened.id, friendlyName]
-      : [surface, friendlyName],
+      ? [opened.id, friendlyName, kind]
+      : [surface, friendlyName, kind],
   );
   const title = thread.title || friendlyName || opened.label.split(' ')[0] || '';
   assertContract(

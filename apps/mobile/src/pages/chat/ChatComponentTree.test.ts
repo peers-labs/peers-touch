@@ -46,6 +46,7 @@ describe('Chat component ownership boundaries', () => {
     expect(pageSource).toContain('<ChatOverlayHost>');
     expect(pageContentSource).toContain('export function ChatThreadPageContent');
     expect(pageContentSource).toContain('export function ChatConversationListPageContent');
+    expect(pageContentSource).toContain('data-conversation-peer-ptid=');
     expect(messageSectionSource).toContain('export function ChatMessageSectionBoundary');
     expect(overlayHostSource).toContain('export function ChatOverlayHost');
   });
