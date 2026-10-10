@@ -3603,9 +3603,24 @@ impl MobileMessagingEngine {
             token,
             self.scope.device_id.clone(),
         )?
-        .submit(&receipt)?;
-        self.store
-            .mark_device_consumption_receipt_submitted(&receipt_id, &receipt_bytes)?;
+        .submit(&receipt)
+        .map_or_else(
+            |error| {
+                if error.has_http_code(404, "CONVERSATION_NOT_FOUND") {
+                    self.store.discard_missing_conversation_receipt(
+                        &receipt_id,
+                        &receipt_bytes,
+                        &receipt.conversation_id,
+                    )
+                } else {
+                    Err(error.to_string())
+                }
+            },
+            |_| {
+                self.store
+                    .mark_device_consumption_receipt_submitted(&receipt_id, &receipt_bytes)
+            },
+        )?;
         Ok(true)
     }
 

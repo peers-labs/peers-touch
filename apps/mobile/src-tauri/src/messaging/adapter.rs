@@ -5875,6 +5875,46 @@ impl MobileMessagingStore {
         }
         Ok(())
     }
+
+    pub fn discard_missing_conversation_receipt(
+        &self,
+        receipt_id: &str,
+        receipt_bytes: &[u8],
+        conversation_id: &str,
+    ) -> Result<(), String> {
+        if receipt_id.trim().is_empty()
+            || receipt_bytes.is_empty()
+            || conversation_id.trim().is_empty()
+        {
+            return Err("mobile messaging missing Conversation receipt is incomplete".to_string());
+        }
+        self.with_transaction(|transaction| {
+            let changed = transaction
+                .execute(
+                    "UPDATE messaging_receipt_outbox SET state = 'discarded'
+                     WHERE receipt_id = ?1
+                       AND receipt_bytes = ?2
+                       AND state = 'pending'",
+                    params![receipt_id, receipt_bytes],
+                )
+                .map_err(|error| error.to_string())?;
+            if changed != 1 {
+                return Err(
+                    "mobile messaging missing Conversation receipt transition mismatch"
+                        .to_string(),
+                );
+            }
+            transaction
+                .execute(
+                    "UPDATE messaging_conversations
+                     SET active = 0
+                     WHERE conversation_id = ?1",
+                    params![conversation_id],
+                )
+                .map_err(|error| error.to_string())?;
+            Ok(())
+        })
+    }
 }
 
 impl MetadataInteractionRepository for MobileMessagingStore {
@@ -14208,6 +14248,87 @@ mod tests {
             recovered.enrollment
         );
         assert!(store.load_mls_actor_identity().unwrap().is_none());
+    }
+
+    #[test]
+    fn missing_conversation_discards_receipt_and_retires_local_projection() {
+        let store = store();
+        let receipt = DeviceConsumptionReceipt {
+            receipt_id: "device-consumed:missing-item".to_string(),
+            conversation_id: "conversation-missing-receipt".to_string(),
+            event_id: "event-missing".to_string(),
+            consumer: Some(messaging_core::proto::chat::CryptoEndpoint {
+                ptid: "ptid:alice".to_string(),
+                device_id: "alice-device".to_string(),
+            }),
+            event_sequence: 1,
+            lane_sequence: 1,
+            payload_sha256: vec![3; 32],
+            consumed_at: Some(prost_types::Timestamp {
+                seconds: 1,
+                nanos: 0,
+            }),
+        };
+        let receipt_bytes = receipt.encode_to_vec();
+        {
+            let connection = store.connection.lock().unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_conversations(
+                        conversation_id, authority_station_id, federation_id,
+                        kind, name, owner_ptid, membership_epoch, mls_epoch,
+                        active, updated_at_unix_ms
+                     ) VALUES (
+                        'conversation-missing-receipt', 'station-1', 'federation-1',
+                        1, '', 'ptid:alice', 1, 0, 1, 10
+                     )",
+                    [],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_receipt_outbox(
+                        receipt_id, event_id, receipt_bytes, state, created_at_unix_ms
+                     ) VALUES (
+                        'device-consumed:missing-item', 'event-missing', ?1, 'pending', 10
+                     )",
+                    params![receipt_bytes],
+                )
+                .unwrap();
+        }
+
+        store
+            .discard_missing_conversation_receipt(
+                &receipt.receipt_id,
+                &receipt.encode_to_vec(),
+                &receipt.conversation_id,
+            )
+            .unwrap();
+
+        assert!(store.next_device_consumption_receipt().unwrap().is_none());
+        let connection = store.connection.lock().unwrap();
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT state FROM messaging_receipt_outbox
+                     WHERE receipt_id = 'device-consumed:missing-item'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            "discarded"
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT active FROM messaging_conversations
+                     WHERE conversation_id = 'conversation-missing-receipt'",
+                    [],
+                    |row| row.get::<_, bool>(0),
+                )
+                .unwrap(),
+            false
+        );
     }
 
     #[test]
