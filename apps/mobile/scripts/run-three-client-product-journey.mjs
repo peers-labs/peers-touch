@@ -586,10 +586,20 @@ async function waitForVisualFrame(client) {
       body: JSON.stringify({
         script: `
           const done = arguments[arguments.length - 1];
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            done(true);
+          };
           const nextFrame = typeof requestAnimationFrame === 'function'
             ? requestAnimationFrame
             : (callback) => setTimeout(callback, 16);
-          nextFrame(() => nextFrame(() => setTimeout(() => done(true), 50)));
+          const fallback = setTimeout(finish, 250);
+          nextFrame(() => nextFrame(() => setTimeout(() => {
+            clearTimeout(fallback);
+            finish();
+          }, 50)));
         `,
         args: [],
       }),
