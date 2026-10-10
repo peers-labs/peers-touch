@@ -230,6 +230,15 @@ class IOSInterfaceOrientationSourceContractTest(unittest.TestCase):
             "requestGeometryUpdateWithPreferences:preferences",
             source,
         )
+        self.assertIn("#if TARGET_OS_SIMULATOR", source)
+        self.assertIn(
+            "scheduledTimerWithTimeInterval:0.25",
+            source,
+        )
+        self.assertIn(
+            "if (orientation == _lastRequestedOrientation)",
+            source,
+        )
 
 
 class IOSLimitedPhotoPermissionSourceContractTest(unittest.TestCase):
