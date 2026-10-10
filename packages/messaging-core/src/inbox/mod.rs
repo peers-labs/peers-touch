@@ -12,7 +12,7 @@ pub use conversation_state::ConversationStateProcessor;
 pub use direct::DirectMessageProcessor;
 pub use drain::{
     AcknowledgedItemObserver, ClaimedItemConsumer, ConsumerEpochObserver, DrainProgress,
-    QueueDrain, QueueTransport,
+    QueueDrain, QueueTransport, QueueTransportError, QueueTransportErrorCode,
 };
 pub use public_event::PublicEventProcessor;
 pub use receipt::{decode_device_receipt_payload, DeliveryReceiptProcessor, DeviceReceiptPayload};

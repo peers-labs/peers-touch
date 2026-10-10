@@ -21,6 +21,7 @@
     "apps/desktop/src/pages/SocialChatPage.tsx",
     "apps/desktop/src/services",
     "apps/mobile/scripts/run-three-client-product-journey.mjs",
+    "apps/mobile/src-tauri/src/messaging",
     "apps/mobile/src/pages/ChatPage.tsx",
     "apps/mobile/src/pages/chat",
     "apps/mobile/src/features/chat",
@@ -28,6 +29,7 @@
     "apps/mobile/src/styles.css",
     "apps/station/app/subserver/conversation",
     "apps/station/app/subserver/envelope",
+    "packages/messaging-core/src/inbox",
     "packages/prototypes/mobile/chat",
     "tooling/acceptance/gates/mobile"
   ],
@@ -45,7 +47,7 @@
   "checks": [
     {
       "id": "chat-source",
-      "command": "pnpm --dir apps/desktop exec vitest run src/components/chat src/pages/SocialChatPage.test.tsx src/modules/p2p && pnpm --dir apps/mobile exec vitest run src/pages/ChatPage.history.test.tsx src/pages/ChatPage.localFlag.test.ts src/pages/chat src/features/chat",
+      "command": "cargo test --manifest-path packages/messaging-core/Cargo.toml inbox::drain && pnpm --dir apps/desktop exec vitest run src/components/chat src/pages/SocialChatPage.test.tsx src/modules/p2p && pnpm --dir apps/mobile exec vitest run src/pages/ChatPage.history.test.tsx src/pages/ChatPage.localFlag.test.ts src/pages/chat src/features/chat",
       "verificationClass": "SOURCE_CHECK"
     },
     {
