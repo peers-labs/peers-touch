@@ -30,7 +30,7 @@ rusqlite = { version = "0.31", features = ["bundled-sqlcipher-vendored-openssl"]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-tauri = { version = "2.0.1", features = ["devtools"] }
+tauri = { version = "2.0.1", features = ["devtools", "protocol-asset"] }
 tauri-plugin-deep-link = "=2.4.9"
 tauri-plugin-opener = "=2.5.4"
 tauri-plugin-peers-platform-permissions = { path = "plugins/platform-permissions" }

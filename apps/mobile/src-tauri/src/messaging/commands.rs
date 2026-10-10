@@ -2599,7 +2599,8 @@ pub async fn messaging_submit_typing(
 }
 
 #[tauri::command]
-pub async fn messaging_open_attachment(
+pub async fn messaging_open_attachment<R: Runtime>(
+    app: AppHandle<R>,
     runtime: State<'_, MobileMessagingRuntime>,
     input: MessagingAttachmentTransferInput,
 ) -> MobileResult<MessagingAttachmentOpenResult> {
@@ -2630,6 +2631,11 @@ pub async fn messaging_open_attachment(
     .map_err(MobileError::messaging)?;
     Ok(match progress {
         MessagingAttachmentOpenProgress::Ready { local_path } => {
+            app.asset_protocol_scope()
+                .allow_file(std::path::Path::new(&local_path))
+                .map_err(|error| {
+                    MobileError::messaging(format!("allow attachment preview: {error}"))
+                })?;
             MessagingAttachmentOpenResult::Ready { local_path }
         }
         MessagingAttachmentOpenProgress::Pending {
