@@ -4382,7 +4382,7 @@ async function runContactsPhase(manifest, evidenceDir, preflight) {
     () => acceptIncomingFriendship(
       'android-alice',
       manifest.clients['android-alice'],
-      'Coral',
+      clientAccounts['ios-coral'].friendlyName,
     ),
   )).result;
 
