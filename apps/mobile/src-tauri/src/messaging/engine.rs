@@ -1843,6 +1843,8 @@ impl MobileMessagingEngine {
         let Some(intent) = self.store.pending_membership_intents()?.into_iter().next() else {
             return Ok(false);
         };
+        let intent_id = intent.intent_id.clone();
+        let conversation_id = intent.conversation_id.clone();
         self.mls_manager
             .discard_pending_transition(&intent.conversation_id);
         let action = MessagingMembershipAction::try_from(intent.action)
@@ -1861,13 +1863,22 @@ impl MobileMessagingEngine {
             self.scope.device_id.clone(),
             self.proto_endpoint(),
         )?
-        .prepare_membership_transition(&input)?;
+        .prepare_membership_transition_typed(&input);
+        let plan = match plan {
+            Ok(plan) => plan,
+            Err(error) if error.has_http_code(404, "CONVERSATION_NOT_FOUND") => {
+                self.store
+                    .fail_missing_conversation_membership_intent(&intent_id, &conversation_id)?;
+                return Ok(true);
+            }
+            Err(error) => return Err(error.to_string()),
+        };
         MembershipTransitionPreparer::new(
             self.store.clone(),
             self.mls_manager.clone(),
             self.proto_endpoint(),
         )?
-        .prepare(Some(&intent.intent_id), &input, &plan, now_unix_ms())?;
+        .prepare(Some(&intent_id), &input, &plan, now_unix_ms())?;
         Ok(true)
     }
 

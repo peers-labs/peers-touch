@@ -2885,6 +2885,48 @@ impl MobileMessagingStore {
         Ok(intents)
     }
 
+    pub(crate) fn fail_missing_conversation_membership_intent(
+        &self,
+        intent_id: &str,
+        conversation_id: &str,
+    ) -> Result<(), String> {
+        if intent_id.trim().is_empty() || conversation_id.trim().is_empty() {
+            return Err("mobile messaging missing Conversation intent is incomplete".to_string());
+        }
+        self.with_transaction(|transaction| {
+            let intent_changed = transaction
+                .execute(
+                    "UPDATE messaging_membership_intents
+                     SET state = 'failed'
+                     WHERE intent_id = ?1 AND conversation_id = ?2
+                       AND state IN ('pending_plan', 'superseded')",
+                    params![intent_id, conversation_id],
+                )
+                .map_err(|error| error.to_string())?;
+            if intent_changed != 1 {
+                return Err(
+                    "mobile messaging missing Conversation intent was not pending".to_string(),
+                );
+            }
+            transaction
+                .execute(
+                    "UPDATE messaging_conversations
+                     SET active = 0
+                     WHERE conversation_id = ?1",
+                    params![conversation_id],
+                )
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    "DELETE FROM messaging_mls_pending_transitions
+                     WHERE conversation_id = ?1",
+                    params![conversation_id],
+                )
+                .map_err(|error| error.to_string())?;
+            Ok(())
+        })
+    }
+
     fn from_connection(connection: Connection) -> Result<Self, String> {
         Self::from_connection_with_path(connection, None)
     }
@@ -11513,6 +11555,84 @@ mod tests {
         store.create_membership_intent(&intent).unwrap();
 
         assert_eq!(store.pending_membership_intents().unwrap(), vec![intent]);
+    }
+
+    #[test]
+    fn missing_conversation_terminalizes_membership_intent_and_local_projection() {
+        let store = store();
+        let intent = PendingMembershipIntent {
+            intent_id: "intent-missing".to_string(),
+            conversation_id: "conversation-missing".to_string(),
+            action: 1,
+            target_ptid: "ptid:bob".to_string(),
+            target_device_id: String::new(),
+            role: "member".to_string(),
+            created_at_unix_ms: 10,
+        };
+        {
+            let connection = store.connection.lock().unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_conversations(
+                        conversation_id, authority_station_id, federation_id,
+                        kind, name, owner_ptid, membership_epoch, mls_epoch,
+                        active, updated_at_unix_ms
+                     ) VALUES (
+                        'conversation-missing', 'station-1', 'federation-1',
+                        2, 'Missing group', 'ptid:alice', 1, 1, 1, 10
+                     )",
+                    [],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_mls_pending_transitions(
+                        conversation_id, transition_id, command_id, transition_state
+                     ) VALUES (
+                        'conversation-missing', 'transition-missing',
+                        'command-missing', X'01'
+                     )",
+                    [],
+                )
+                .unwrap();
+        }
+        store.create_membership_intent(&intent).unwrap();
+
+        store
+            .fail_missing_conversation_membership_intent(&intent.intent_id, &intent.conversation_id)
+            .unwrap();
+
+        assert!(store.pending_membership_intents().unwrap().is_empty());
+        assert!(
+            !store
+                .mobile_conversation_projections()
+                .unwrap()
+                .remove(0)
+                .active
+        );
+        let connection = store.connection.lock().unwrap();
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT state FROM messaging_membership_intents
+                     WHERE intent_id = 'intent-missing'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            "failed"
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM messaging_mls_pending_transitions
+                     WHERE conversation_id = 'conversation-missing'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            0
+        );
     }
 
     #[test]
