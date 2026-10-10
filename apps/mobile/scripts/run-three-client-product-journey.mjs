@@ -4707,7 +4707,13 @@ async function openChatConversation(
       const normalizedName = friendlyName.toLowerCase();
       const target = rows.find((element) => (
         normalizedName
-          ? (element.innerText || '').toLowerCase().includes(normalizedName)
+          ? (
+            element.querySelector('[data-chat-avatar-ptid]')
+              ?.getAttribute('data-chat-avatar-ptid')
+              ?.toLowerCase()
+              .includes(':' + normalizedName + ':')
+            || (element.innerText || '').toLowerCase().includes(normalizedName)
+          )
           : (element.innerText || '').includes('MWPU Three Client')
       ));
       if (!(target instanceof HTMLElement)) {
@@ -4743,12 +4749,15 @@ async function openChatConversation(
             '[data-chat-composer="' + CSS.escape(arguments[0]) + '"]'
           );
           const text = pane?.innerText || '';
+          const title = [...(pane?.querySelectorAll('strong') || [])]
+            .find((element) => element.getClientRects().length)
+            ?.innerText.trim() || '';
           return {
             ready: Boolean(pane?.getClientRects().length)
               && Boolean(composer?.getClientRects().length)
-              && (!arguments[1]
-                || text.toLowerCase().includes(arguments[1].toLowerCase())),
-            text: text.slice(0, 2400)
+              && Boolean(title),
+            text: text.slice(0, 2400),
+            title
           };
         `
       : `
@@ -4771,9 +4780,17 @@ async function openChatConversation(
   );
   const title = thread.title || friendlyName || opened.label.split(' ')[0] || '';
   assertContract(
-    !friendlyName || title.toLowerCase().includes(friendlyName.toLowerCase()),
+    title
+      && !/^ptid:/i.test(title)
+      && !/^12D3Koo/i.test(title)
+      && !/^https?:\/\//i.test(title)
+      && (
+        kind !== 'group'
+        || !friendlyName
+        || title.toLowerCase().includes(friendlyName.toLowerCase())
+      ),
     'CHAT_FRIENDLY_TITLE_MISSING',
-    `${clientId} opened ${kind} conversation without friendly title ${friendlyName}`,
+    `${clientId} opened ${kind} conversation without a friendly title`,
   );
   return {
     conversationId: opened.id,
