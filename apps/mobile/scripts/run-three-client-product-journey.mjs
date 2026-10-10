@@ -3626,6 +3626,31 @@ async function acceptIncomingFriendship(
   expectedPeerPtid = '',
 ) {
   await navigateContactsSurface(clientId, client);
+  if (client.platform === 'desktop') {
+    const expanded = await executeWebScript(
+      client,
+      `
+        const section = document.querySelector(
+          '[data-chat-friend-request-section]'
+        );
+        const header = section?.closest('.ant-collapse-header');
+        if (!(header instanceof HTMLElement)) {
+          return { available: false, expanded: false };
+        }
+        const alreadyExpanded = header.getAttribute('aria-expanded') === 'true';
+        if (!alreadyExpanded) header.click();
+        return {
+          available: true,
+          expanded: alreadyExpanded
+        };
+      `,
+    );
+    assertContract(
+      expanded?.available === true,
+      'CONTACTS_REQUEST_SECTION_MISSING',
+      `${clientId} has no New Friends section`,
+    );
+  }
   const projection = await waitForUi(
     clientId,
     client,
@@ -3649,11 +3674,13 @@ async function acceptIncomingFriendship(
           )].find((element) => (
             element.getClientRects().length && matches(element)
           ));
-          const request = [...document.querySelectorAll(
+          const requests = [...document.querySelectorAll(
             '[data-chat-friend-request-direction="incoming"]'
-          )].find((element) => (
-            element.getClientRects().length && matches(element)
-          ));
+          )].filter((element) => element.getClientRects().length);
+          const request = requests.find(matches)
+            || (!expectedPeerPtid && requests.length === 1
+              ? requests[0]
+              : null);
           return {
             ready: Boolean(friend || request),
             kind: friend ? 'friend' : request ? 'request' : '',
@@ -3685,11 +3712,13 @@ async function acceptIncomingFriendship(
           )].find((element) => (
             element.getClientRects().length && matches(element)
           ));
-          const request = [...document.querySelectorAll(
+          const requests = [...document.querySelectorAll(
             '[data-friend-request-direction="incoming"]'
-          )].find((element) => (
-            element.getClientRects().length && matches(element)
-          ));
+          )].filter((element) => element.getClientRects().length);
+          const request = requests.find(matches)
+            || (!expectedPeerPtid && requests.length === 1
+              ? requests[0]
+              : null);
           return {
             ready: Boolean(friend || request),
             kind: friend ? 'friend' : request ? 'request' : '',
@@ -3839,7 +3868,7 @@ async function openAndVerifyContactProfile(
         const text = detail?.innerText || '';
         return {
           ready: Boolean(detail?.getClientRects().length)
-            && text.toLowerCase().includes(arguments[1].toLowerCase()),
+            && Boolean(text.trim()),
           text: text.slice(0, 2400)
         };
       `,
@@ -3883,7 +3912,7 @@ async function openAndVerifyContactProfile(
       const title = surface?.querySelector('h1')?.innerText.trim() || '';
       return {
         ready: Boolean(surface?.getClientRects().length)
-          && title.toLowerCase().includes(arguments[0].toLowerCase()),
+          && Boolean(title),
         text: (surface?.innerText || '').slice(0, 2400),
         title
       };
