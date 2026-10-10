@@ -22,6 +22,7 @@
     "apps/mobile/src/App.tsx",
     "apps/mobile/src/features/auth",
     "apps/mobile/src/features/station",
+    "apps/mobile/scripts/run-three-client-product-journey.mjs",
     "apps/mobile/src/styles.css",
     "apps/station/app/subserver/actor_identity",
     "packages/prototypes/mobile/chat",
