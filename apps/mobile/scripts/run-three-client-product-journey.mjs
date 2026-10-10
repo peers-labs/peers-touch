@@ -4883,6 +4883,33 @@ async function waitForChatSendOutcome(clientId, client, text) {
   );
 }
 
+async function waitForStableChatComposerAdmission(clientId, client) {
+  const waitOnce = () => waitForUi(
+    clientId,
+    client,
+    'chat composer write admission',
+    `
+      const input = document.querySelector(
+        '.message-composer-input, [data-chat-composer]'
+      );
+      const send = document.querySelector(
+        'button.message-send-button, [data-chat-send]'
+      );
+      const paused = (document.body?.innerText || '').includes('Actions Paused');
+      return {
+        ready: input instanceof HTMLInputElement
+          && !input.disabled
+          && send instanceof HTMLButtonElement
+          && !send.disabled
+          && !paused
+      };
+    `,
+  );
+  await waitOnce();
+  await sleep(750);
+  await waitOnce();
+}
+
 async function sendChatText(
   clientId,
   client,
@@ -4898,6 +4925,7 @@ async function sendChatText(
   );
   const composer = chatComposerSelector(client);
   await setInputValue(client, composer, text, `compose-${text}`);
+  await waitForStableChatComposerAdmission(clientId, client);
   await clickVisibleSelector(
     client,
     client.platform === 'desktop'
@@ -4907,6 +4935,7 @@ async function sendChatText(
   );
   let outcome = await waitForChatSendOutcome(clientId, client, text);
   if (outcome.retryable) {
+    await waitForStableChatComposerAdmission(clientId, client);
     await clickVisibleSelector(
       client,
       client.platform === 'desktop'
