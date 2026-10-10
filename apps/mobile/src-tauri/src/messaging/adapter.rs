@@ -5900,8 +5900,7 @@ impl MobileMessagingStore {
                 .map_err(|error| error.to_string())?;
             if changed != 1 {
                 return Err(
-                    "mobile messaging missing Conversation receipt transition mismatch"
-                        .to_string(),
+                    "mobile messaging missing Conversation receipt transition mismatch".to_string(),
                 );
             }
             transaction
@@ -6046,10 +6045,7 @@ fn rebase_station_lane_generation_if_required(
                 WHERE state = 'published';
              UPDATE messaging_one_time_prekeys
                 SET state = 'awaiting_publication'
-                WHERE state = 'available';
-             UPDATE messaging_mls_key_packages
-                SET state = 'awaiting_publication'
-                WHERE state = 'published';",
+                WHERE state = 'available';",
         )
         .map_err(|error| error.to_string())?;
     transaction
@@ -6097,7 +6093,7 @@ impl MessagingRepository for MobileMessagingStore {
             )?;
             let changed = transaction
                 .execute(
-                "INSERT INTO messaging_inbox_items(
+                    "INSERT INTO messaging_inbox_items(
                     item_id, event_id, conversation_id, lane_sequence, consumer_epoch,
                     payload_sha256, payload, state, claimed_at_unix_ms
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'claimed', ?8)
@@ -6114,16 +6110,16 @@ impl MessagingRepository for MobileMessagingStore {
                    AND messaging_inbox_items.payload_sha256 = excluded.payload_sha256
                    AND messaging_inbox_items.payload = excluded.payload
                    AND excluded.consumer_epoch >= messaging_inbox_items.consumer_epoch",
-                params![
-                    item_id,
-                    event_id,
-                    conversation_id,
-                    lane_sequence,
-                    epoch,
-                    payload_sha256,
-                    opaque_payload,
-                    now_unix_ms
-                ],
+                    params![
+                        item_id,
+                        event_id,
+                        conversation_id,
+                        lane_sequence,
+                        epoch,
+                        payload_sha256,
+                        opaque_payload,
+                        now_unix_ms
+                    ],
                 )
                 .map_err(|error| error.to_string())?;
             if changed != 1 {
@@ -12109,6 +12105,19 @@ mod tests {
                     [],
                 )
                 .unwrap();
+            connection
+                .execute_batch(
+                    "INSERT INTO messaging_mls_actor_identity(
+                        id, ptid, device_id, identity_state
+                     ) VALUES (1, 'ptid:alice', 'alice-device', X'010203');
+                     INSERT INTO messaging_mls_join_provider_pool(
+                        id, provider_pool_state, updated_at_unix_ms
+                     ) VALUES (1, X'040506', 10);
+                     INSERT INTO messaging_mls_key_packages(
+                        package_id, data, state, created_at_unix_ms
+                     ) VALUES ('package-1', X'070809', 'published', 10);",
+                )
+                .unwrap();
         }
 
         MessagingRepository::persist_claimed_item(
@@ -12150,16 +12159,24 @@ mod tests {
         for table in ["messaging_conversations", "messaging_receipt_outbox"] {
             assert_eq!(
                 connection
-                    .query_row(
-                        &format!("SELECT COUNT(*) FROM {table}"),
-                        [],
-                        |row| row.get::<_, i64>(0),
-                    )
+                    .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row
+                        .get::<_, i64>(0),)
                     .unwrap(),
                 0,
                 "table {table}",
             );
         }
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT data, state
+                     FROM messaging_mls_key_packages WHERE package_id = 'package-1'",
+                    [],
+                    |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, String>(1)?)),
+                )
+                .unwrap(),
+            (vec![7_u8, 8, 9], "published".to_string())
+        );
     }
 
     #[test]
