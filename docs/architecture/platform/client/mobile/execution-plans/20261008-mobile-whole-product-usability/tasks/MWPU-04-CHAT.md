@@ -24,6 +24,7 @@
     "apps/mobile/scripts/run-three-client-product-journey.mjs",
     "apps/mobile/src/app/lifecycle",
     "apps/mobile/src-tauri/src/messaging",
+    "apps/mobile/src-tauri/plugins/platform-permissions/android/src/main/AndroidManifest.xml",
     "apps/mobile/src/pages/ChatPage.tsx",
     "apps/mobile/src/pages/chat",
     "apps/mobile/src/features/chat",

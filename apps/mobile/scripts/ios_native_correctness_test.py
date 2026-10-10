@@ -380,6 +380,17 @@ class IOSNativeNetworkSourceContractTest(unittest.TestCase):
         self.assertIn("addEventListener('online'", mobile_bridge_source)
 
 
+class AndroidMediaCaptureSourceContractTest(unittest.TestCase):
+    def test_manifest_declares_webview_audio_capture_permissions(self) -> None:
+        android_manifest = ANDROID_MANIFEST_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("android.permission.RECORD_AUDIO", android_manifest)
+        self.assertIn(
+            "android.permission.MODIFY_AUDIO_SETTINGS",
+            android_manifest,
+        )
+
+
 class NativePushSchedulerAndPickerSourceContractTest(unittest.TestCase):
     def test_ios_scheduler_registers_before_webview_load(self) -> None:
         swift = SWIFT_PLUGIN_PATH.read_text(encoding="utf-8")
