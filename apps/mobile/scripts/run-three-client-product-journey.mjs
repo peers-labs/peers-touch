@@ -2496,6 +2496,21 @@ async function prepareLoginForm(clientId, client, password) {
     : prepareMobileLoginForm(clientId, client, account, password);
 }
 
+function assertFriendlyLoginRecovery(clientId, error) {
+  const value = String(error || '').trim();
+  assertContract(
+    value.length > 0 && value.length <= 160,
+    'ENTRY_LOGIN_RECOVERY_COPY_INVALID',
+    `${clientId} login recovery copy is missing or too long`,
+  );
+  assertContract(
+    !/access gate|station returned|https?:\/\/|[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/i.test(value),
+    'ENTRY_LOGIN_RECOVERY_INTERNAL_DETAIL',
+    `${clientId} exposes internal login failure detail: ${JSON.stringify(value)}`,
+  );
+  return value;
+}
+
 async function proveInvalidMobileLoginRecovery(clientId, client) {
   await clickXpath(
     client,
@@ -2524,6 +2539,7 @@ async function proveInvalidMobileLoginRecovery(clientId, client) {
       };
     `,
   );
+  assertFriendlyLoginRecovery(clientId, failure?.error);
   await setInputValue(
     client,
     'input[placeholder="Password"]',
@@ -2562,6 +2578,7 @@ async function proveInvalidDesktopLoginRecovery(clientId, client) {
       };
     `,
   );
+  assertFriendlyLoginRecovery(clientId, failure?.error);
   await setInputValue(
     client,
     '[data-login-password]',
@@ -3357,6 +3374,22 @@ function selfTest(matrix) {
       )) === false,
     'SELF_TEST_STALE_ELEMENT_RETRY',
     'stale element retry classification is invalid',
+  );
+  assertFriendlyLoginRecovery('self-test', 'Login failed');
+  let internalLoginDetailRejected = false;
+  try {
+    assertFriendlyLoginRecovery(
+      'self-test',
+      'Access gate submit failed: station returned 400',
+    );
+  } catch (error) {
+    internalLoginDetailRejected = error instanceof JourneyContractError
+      && error.code === 'ENTRY_LOGIN_RECOVERY_INTERNAL_DETAIL';
+  }
+  assertContract(
+    internalLoginDetailRejected,
+    'SELF_TEST_LOGIN_RECOVERY_COPY',
+    'internal login failure detail was not rejected',
   );
   return {
     status: 'PASS',

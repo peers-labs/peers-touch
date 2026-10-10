@@ -58,6 +58,13 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+function loginSubmissionErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof AuthCommandException && error.code === 'INVALID_ARGUMENT') {
+    return fallback;
+  }
+  return errorMessage(error, fallback);
+}
+
 function wait(milliseconds: number): Promise<void> {
   return new Promise(resolve => window.setTimeout(resolve, milliseconds));
 }
@@ -592,7 +599,7 @@ export function LoginPage({
       }
       await finishLoginGate(decision);
     } catch (err: unknown) {
-      message.error(errorMessage(err, t('auth.login.failed')));
+      message.error(loginSubmissionErrorMessage(err, t('auth.login.failed')));
     }
   }, [accessStart, finishLoginGate, t]);
 
