@@ -3304,6 +3304,781 @@ async function runShellPhase(manifest, evidenceDir, preflight) {
   return { ...report, reportPath, tracePath };
 }
 
+function normalizeRecoveryText(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 1200);
+}
+
+function assertRecoveryIntersection(
+  clientId,
+  label,
+  beforeValues,
+  afterValues,
+) {
+  const before = new Set(beforeValues.filter(Boolean));
+  const after = new Set(afterValues.filter(Boolean));
+  const retained = [...before].filter((value) => after.has(value));
+  assertContract(
+    retained.length > 0,
+    'RECOVERY_VISIBLE_STATE_MISSING',
+    `${clientId} did not recover any ${label}`,
+  );
+  return retained;
+}
+
+async function navigateRecoveryChatList(clientId, client) {
+  if (client.platform === 'desktop') {
+    await navigateDesktopPrimary(
+      clientId,
+      client,
+      'chat',
+      '[data-social-chat-layout]',
+    );
+    await clickSelector(
+      client,
+      '[data-chat-subpage="chats"]',
+      'open-recovery-chat-list',
+    );
+    await waitForUi(
+      clientId,
+      client,
+      'Desktop recovery conversation list',
+      `
+        return {
+          ready: Boolean(
+            document.querySelector('[data-chat-conversation-list-shell]')
+          )
+        };
+      `,
+    );
+    return;
+  }
+  if (await selectorIsVisible(
+    client,
+    '[data-product-surface^="chat."][data-product-surface$="-thread"]',
+  )) {
+    await clickSelector(
+      client,
+      'button[aria-label="Back"]',
+      'return-to-recovery-chat-list',
+    );
+  }
+  await navigateMobileShell(
+    clientId,
+    client,
+    'chat',
+    '[data-product-surface^="chat.list"]',
+  );
+}
+
+async function readRecoveryConversationInventory(clientId, client) {
+  await navigateRecoveryChatList(clientId, client);
+  const inventory = await executeWebScript(
+    client,
+    client.platform === 'desktop'
+      ? `
+          return [...document.querySelectorAll('[data-pt-conversation-item]')]
+            .filter((element) => element.getClientRects().length)
+            .map((element) => ({
+              id: element.getAttribute('data-pt-conversation-item') || '',
+              kind: element.getAttribute('data-chat-conversation-kind') || '',
+              label: (element.innerText || '').replace(/\\s+/g, ' ').trim()
+            }));
+        `
+      : `
+          return [...document.querySelectorAll('[data-conversation-id]')]
+            .filter((element) => element.getClientRects().length)
+            .map((element) => ({
+              id: element.getAttribute('data-conversation-id') || '',
+              kind: element.getAttribute('data-conversation-kind') || '',
+              label: (element.innerText || '').replace(/\\s+/g, ' ').trim()
+            }));
+        `,
+  );
+  const direct = inventory.filter(({ kind }) => kind === 'friend');
+  const groups = inventory.filter(({ kind }) => kind === 'group');
+  assertContract(
+    direct.length > 0,
+    'RECOVERY_DIRECT_HISTORY_REQUIRED',
+    `${clientId} has no Direct conversation to recover`,
+  );
+  assertContract(
+    groups.length > 0,
+    'RECOVERY_GROUP_HISTORY_REQUIRED',
+    `${clientId} has no Group conversation to recover`,
+  );
+  return { direct, groups };
+}
+
+async function openRecoveryConversation(
+  clientId,
+  client,
+  kind,
+  friendlyName = '',
+) {
+  await navigateRecoveryChatList(clientId, client);
+  const selector = client.platform === 'desktop'
+    ? '[data-pt-conversation-item]'
+    : '[data-conversation-id]';
+  const opened = await executeWebScript(
+    client,
+    `
+      const [selector, kind, friendlyName] = arguments;
+      const rows = [...document.querySelectorAll(selector)]
+        .filter((element) => element.getClientRects().length)
+        .filter((element) => (
+          (element.getAttribute('data-chat-conversation-kind')
+            || element.getAttribute('data-conversation-kind')) === kind
+        ));
+      const target = rows.find((element) => (
+        friendlyName
+        && (element.innerText || '').toLowerCase().includes(
+          friendlyName.toLowerCase()
+        )
+      )) || rows[0];
+      if (!(target instanceof HTMLElement)) {
+        return { ok: false, reason: 'conversation-missing' };
+      }
+      const id = target.getAttribute('data-pt-conversation-item')
+        || target.getAttribute('data-conversation-id')
+        || '';
+      target.click();
+      return {
+        id,
+        label: (target.innerText || '').replace(/\\s+/g, ' ').trim(),
+        ok: true
+      };
+    `,
+    [selector, kind, friendlyName],
+  );
+  assertContract(
+    opened?.ok === true && opened.id,
+    kind === 'group'
+      ? 'RECOVERY_GROUP_HISTORY_REQUIRED'
+      : 'RECOVERY_DIRECT_HISTORY_REQUIRED',
+    `${clientId} cannot open a ${kind} conversation`,
+  );
+  const detail = await waitForUi(
+    clientId,
+    client,
+    `${kind} recovery history`,
+    client.platform === 'desktop'
+      ? `
+          const composer = document.querySelector(
+            '[data-chat-composer="' + arguments[0] + '"]'
+          );
+          const messages = [...document.querySelectorAll('[data-message-ulid]')]
+            .filter((element) => element.getClientRects().length);
+          return {
+            ready: Boolean(composer) && messages.length > 0,
+            messageIds: messages.map((element) => (
+              element.getAttribute('data-message-ulid') || ''
+            )),
+            messageText: messages.map((element) => (
+              (element.innerText || '').replace(/\\s+/g, ' ').trim()
+            )),
+            text: (document.body?.innerText || '').slice(0, 2400)
+          };
+        `
+      : `
+          const surface = document.querySelector(
+            arguments[1] === 'group'
+              ? '[data-product-surface="chat.group-thread"]'
+              : '[data-product-surface="chat.direct-thread"]'
+          );
+          const messages = [...document.querySelectorAll('[data-message-ulid]')]
+            .filter((element) => element.getClientRects().length);
+          return {
+            ready: Boolean(surface?.getClientRects().length)
+              && messages.length > 0,
+            messageIds: messages.map((element) => (
+              element.getAttribute('data-message-ulid') || ''
+            )),
+            messageText: messages.map((element) => (
+              (element.innerText || '').replace(/\\s+/g, ' ').trim()
+            )),
+            text: (surface?.innerText || '').slice(0, 2400)
+          };
+        `,
+    [opened.id, kind],
+  );
+  return {
+    id: opened.id,
+    label: normalizeRecoveryText(opened.label),
+    messageIds: detail.messageIds.filter(Boolean),
+    messageText: detail.messageText.map(normalizeRecoveryText).filter(Boolean),
+    text: normalizeRecoveryText(detail.text),
+  };
+}
+
+async function readRecoverySocialSnapshot(clientId, client) {
+  if (client.platform === 'desktop') {
+    await navigateDesktopPrimary(
+      clientId,
+      client,
+      'moments',
+      '[data-pt-primary-nav="moments"] [role="button"]',
+      'Social',
+    );
+    const feed = await waitForUi(
+      clientId,
+      client,
+      'Desktop recovered Social feed',
+      `
+        const main = document.querySelector('[data-page="moments"] main');
+        const cards = main
+          ? [...main.querySelectorAll('div')].filter((element) => (
+              element.getClientRects().length
+              && getComputedStyle(element).cursor === 'pointer'
+              && element.querySelectorAll('button').length >= 2
+              && (element.innerText || '').trim().length > 0
+            ))
+          : [];
+        const card = cards[0];
+        return {
+          ready: Boolean(card),
+          signatures: cards.slice(0, 8).map((element) => (
+            (element.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 500)
+          )),
+          text: (main?.innerText || '').slice(0, 3000)
+        };
+      `,
+    );
+    const opened = await executeWebScript(
+      client,
+      `
+        const main = document.querySelector('[data-page="moments"] main');
+        const card = main
+          ? [...main.querySelectorAll('div')].find((element) => (
+              element.getClientRects().length
+              && getComputedStyle(element).cursor === 'pointer'
+              && element.querySelectorAll('button').length >= 2
+              && (element.innerText || '').trim().length > 0
+            ))
+          : null;
+        if (!(card instanceof HTMLElement)) return false;
+        card.click();
+        return true;
+      `,
+    );
+    assertContract(
+      opened === true,
+      'RECOVERY_SOCIAL_DETAIL_REQUIRED',
+      `${clientId} cannot open a Social post`,
+    );
+    const detail = await waitForUi(
+      clientId,
+      client,
+      'Desktop recovered Social detail',
+      `
+        const region = document.querySelector('[data-moments-comments-region]');
+        return {
+          ready: Boolean(region),
+          text: (document.querySelector('[data-page="moments"] main')?.innerText || '')
+            .slice(0, 3000)
+        };
+      `,
+    );
+    return {
+      detail: normalizeRecoveryText(detail.text),
+      postIds: [],
+      signatures: feed.signatures.map(normalizeRecoveryText).filter(Boolean),
+    };
+  }
+
+  await navigateMobileShell(
+    clientId,
+    client,
+    'moments',
+    '[data-product-surface="moments.feed"]',
+  );
+  const feed = await waitForUi(
+    clientId,
+    client,
+    'Mobile recovered Social feed',
+    `
+      const cards = [...document.querySelectorAll(
+        'article[data-acceptance-id="social-moment-card"][data-post-id]'
+      )].filter((element) => element.getClientRects().length);
+      return {
+        ready: cards.length > 0,
+        postIds: cards.map((element) => element.getAttribute('data-post-id') || ''),
+        signatures: cards.slice(0, 8).map((element) => (
+          (element.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 500)
+        ))
+      };
+    `,
+  );
+  const firstPostId = feed.postIds.find(Boolean);
+  await clickSelector(
+    client,
+    `[data-acceptance-id="social-thread-open"][data-post-id="${firstPostId}"]`,
+    'open-recovered-social-detail',
+  );
+  const detail = await waitForUi(
+    clientId,
+    client,
+    'Mobile recovered Social detail',
+    `
+      const surface = document.querySelector(
+        '[data-product-surface="moments.detail-comments"]'
+      );
+      return {
+        ready: Boolean(surface?.getClientRects().length),
+        text: (surface?.innerText || '').slice(0, 3000)
+      };
+    `,
+  );
+  return {
+    detail: normalizeRecoveryText(detail.text),
+    postIds: feed.postIds.filter(Boolean),
+    signatures: feed.signatures.map(normalizeRecoveryText).filter(Boolean),
+  };
+}
+
+async function readRecoveryProductSnapshot(clientId, client) {
+  const account = clientAccounts[clientId];
+  const inventory = await readRecoveryConversationInventory(clientId, client);
+  const directTarget = clientId === 'android-alice'
+    ? 'Bob'
+    : clientId === 'desktop-bob'
+      ? 'Alice'
+      : 'Alice';
+  const direct = await openRecoveryConversation(
+    clientId,
+    client,
+    'friend',
+    directTarget,
+  );
+  const group = await openRecoveryConversation(clientId, client, 'group');
+  const social = await readRecoverySocialSnapshot(clientId, client);
+  return {
+    account: account.email,
+    direct,
+    group,
+    inventory,
+    social,
+  };
+}
+
+function assertRecoveredProductSnapshot(clientId, before, after) {
+  assertContract(
+    before.account === after.account,
+    'RECOVERY_ACTOR_CHANGED',
+    `${clientId} recovered the wrong account`,
+  );
+  assertRecoveryIntersection(
+    clientId,
+    'Direct conversations',
+    before.inventory.direct.map(({ id }) => id),
+    after.inventory.direct.map(({ id }) => id),
+  );
+  assertRecoveryIntersection(
+    clientId,
+    'Group conversations',
+    before.inventory.groups.map(({ id }) => id),
+    after.inventory.groups.map(({ id }) => id),
+  );
+  assertRecoveryIntersection(
+    clientId,
+    'Direct messages',
+    before.direct.messageIds,
+    after.direct.messageIds,
+  );
+  assertRecoveryIntersection(
+    clientId,
+    'Group messages',
+    before.group.messageIds,
+    after.group.messageIds,
+  );
+  if (before.social.postIds.length > 0) {
+    assertRecoveryIntersection(
+      clientId,
+      'Social posts',
+      before.social.postIds,
+      after.social.postIds,
+    );
+  } else {
+    assertRecoveryIntersection(
+      clientId,
+      'Social post signatures',
+      before.social.signatures,
+      after.social.signatures,
+    );
+  }
+  assertContract(
+    before.social.detail && after.social.detail,
+    'RECOVERY_SOCIAL_DETAIL_REQUIRED',
+    `${clientId} did not recover Social detail`,
+  );
+  return {
+    directMessagesRetained: assertRecoveryIntersection(
+      clientId,
+      'Direct history',
+      before.direct.messageIds,
+      after.direct.messageIds,
+    ),
+    groupMessagesRetained: assertRecoveryIntersection(
+      clientId,
+      'Group history',
+      before.group.messageIds,
+      after.group.messageIds,
+    ),
+  };
+}
+
+async function dismissTerminalCallSurface(clientId, client) {
+  const state = await executeWebScript(
+    client,
+    client.platform === 'desktop'
+      ? `
+          const surface = document.querySelector('[data-chat-call-surface]');
+          return {
+            active: Boolean(surface),
+            state: surface?.getAttribute('data-chat-call-state') || ''
+          };
+        `
+      : `
+          const surface = document.querySelector('.mobile-call-surface');
+          const buttons = surface ? [...surface.querySelectorAll('button')] : [];
+          const close = buttons.find((button) => (
+            /close/i.test(button.getAttribute('aria-label') || '')
+          ));
+          if (close) close.click();
+          return {
+            active: Boolean(surface) && !close,
+            state: close ? 'terminal-dismissed' : surface ? 'active' : 'idle'
+          };
+        `,
+  );
+  assertContract(
+    state?.active === false,
+    'RECOVERY_STALE_CALL_SURFACE',
+    `${clientId} retains call state ${state?.state || 'unknown'} after relaunch`,
+  );
+  if (state.state === 'terminal-dismissed') {
+    await waitForUi(
+      clientId,
+      client,
+      'dismissed terminal call',
+      `
+        return { ready: !document.querySelector('.mobile-call-surface') };
+      `,
+    );
+  }
+  return state;
+}
+
+async function startRecoveryAudioCall(clientId, client, friendlyName) {
+  await openRecoveryConversation(
+    clientId,
+    client,
+    'friend',
+    friendlyName,
+  );
+  const started = await executeWebScript(
+    client,
+    `
+      const buttons = [...document.querySelectorAll('button')]
+        .filter((button) => button.getClientRects().length);
+      const target = buttons.find((button) => (
+        /start audio call/i.test(
+          button.getAttribute('aria-label')
+          || button.getAttribute('title')
+          || ''
+        )
+      ));
+      if (!(target instanceof HTMLButtonElement) || target.disabled) {
+        return false;
+      }
+      target.click();
+      return true;
+    `,
+  );
+  assertContract(
+    started === true,
+    'RECOVERY_CALL_CONTROL_MISSING',
+    `${clientId} cannot start an audio call`,
+  );
+  return waitForUi(
+    clientId,
+    client,
+    'outgoing recovery audio call',
+    client.platform === 'desktop'
+      ? `
+          const surface = document.querySelector('[data-chat-call-surface]');
+          return {
+            ready: surface?.getAttribute('data-chat-call-state') === 'outgoing'
+          };
+        `
+      : `
+          const surface = document.querySelector('.mobile-call-surface');
+          const text = surface?.innerText || '';
+          return {
+            ready: Boolean(surface?.getClientRects().length)
+              && /calling|outgoing|ringing/i.test(text),
+            text
+          };
+        `,
+  );
+}
+
+async function answerRecoveryCall(clientId, client) {
+  await waitForUi(
+    clientId,
+    client,
+    'incoming recovery audio call',
+    client.platform === 'desktop'
+      ? `
+          const surface = document.querySelector(
+            '[data-chat-call-surface][data-chat-call-state="incoming"]'
+          );
+          return { ready: Boolean(surface?.getClientRects().length) };
+        `
+      : `
+          const surface = document.querySelector('.mobile-call-surface');
+          const button = [...(surface?.querySelectorAll('button') || [])]
+            .find((entry) => /accept/i.test(
+              entry.getAttribute('aria-label') || ''
+            ));
+          return { ready: Boolean(button) };
+        `,
+  );
+  const answered = await executeWebScript(
+    client,
+    client.platform === 'desktop'
+      ? `
+          const surface = document.querySelector(
+            '[data-chat-call-surface][data-chat-call-state="incoming"]'
+          );
+          const buttons = [...(surface?.querySelectorAll('button') || [])];
+          const accept = buttons.find((button) => /accept/i.test(
+            button.getAttribute('aria-label')
+            || button.getAttribute('title')
+            || ''
+          )) || buttons.at(-1);
+          if (!(accept instanceof HTMLElement)) return false;
+          accept.click();
+          return true;
+        `
+      : `
+          const surface = document.querySelector('.mobile-call-surface');
+          const accept = [...(surface?.querySelectorAll('button') || [])]
+            .find((button) => /accept/i.test(
+              button.getAttribute('aria-label') || ''
+            ));
+          if (!(accept instanceof HTMLElement)) return false;
+          accept.click();
+          return true;
+        `,
+  );
+  assertContract(
+    answered === true,
+    'RECOVERY_CALL_ACCEPT_FAILED',
+    `${clientId} could not answer the recovery call`,
+  );
+  return waitForUi(
+    clientId,
+    client,
+    'connected recovery audio call',
+    client.platform === 'desktop'
+      ? `
+          const surface = document.querySelector('[data-chat-call-surface]');
+          return {
+            ready: surface?.getAttribute('data-chat-call-state') === 'active'
+          };
+        `
+      : `
+          const surface = document.querySelector('.mobile-call-surface.active');
+          return { ready: Boolean(surface?.getClientRects().length) };
+        `,
+  );
+}
+
+async function endRecoveryCall(clientId, client) {
+  const ended = await executeWebScript(
+    client,
+    client.platform === 'desktop'
+      ? `
+          const surface = document.querySelector(
+            '[data-chat-call-surface][data-chat-call-state="active"]'
+          );
+          const buttons = [...(surface?.querySelectorAll('button') || [])];
+          const hangup = buttons.find((button) => /hang up|hangup|end call/i.test(
+            button.getAttribute('aria-label')
+            || button.getAttribute('title')
+            || ''
+          )) || buttons.at(-1);
+          if (!(hangup instanceof HTMLElement)) return false;
+          hangup.click();
+          return true;
+        `
+      : `
+          const surface = document.querySelector('.mobile-call-surface.active');
+          const hangup = [...(surface?.querySelectorAll('button') || [])]
+            .find((button) => /end/i.test(
+              button.getAttribute('aria-label') || ''
+            ));
+          if (!(hangup instanceof HTMLElement)) return false;
+          hangup.click();
+          return true;
+        `,
+  );
+  assertContract(
+    ended === true,
+    'RECOVERY_CALL_END_FAILED',
+    `${clientId} could not end the recovery call`,
+  );
+}
+
+async function runRecoveryPhase(manifest, evidenceDir, preflight) {
+  const interactionTrace = [];
+  const sequenceRef = { value: 0 };
+  const before = {};
+  const step = async (clientId, stepId, action) => {
+    const client = manifest.clients[clientId];
+    await activateForegroundClient(clientId, client);
+    return withWebContext(client, async () => {
+      sequenceRef.value += 1;
+      return recordJourneyStep({
+        clientId,
+        client,
+        evidenceDir,
+        interactionTrace,
+        sequence: sequenceRef.value,
+        stepId,
+        action,
+      });
+    });
+  };
+
+  for (const clientId of requiredClientIds) {
+    await step(clientId, 'recovery-authenticated-precondition', () => (
+      ensureAuthenticated(
+        clientId,
+        manifest.clients[clientId],
+        manifest.stationUrl,
+      )
+    ));
+    const observation = await step(
+      clientId,
+      'recovery-before-relaunch',
+      () => readRecoveryProductSnapshot(
+        clientId,
+        manifest.clients[clientId],
+      ),
+    );
+    before[clientId] = observation.result;
+  }
+
+  for (const clientId of requiredClientIds) {
+    await step(
+      clientId,
+      'recovery-native-relaunch',
+      () => relaunchClient(
+        clientId,
+        manifest.clients[clientId],
+        evidenceDir,
+      ),
+    );
+  }
+
+  for (const clientId of requiredClientIds) {
+    await step(clientId, 'recovery-session-identity', async () => {
+      await ensureAuthenticated(
+        clientId,
+        manifest.clients[clientId],
+        manifest.stationUrl,
+      );
+      const identity = await verifyAuthenticatedActor(
+        clientId,
+        manifest.clients[clientId],
+      );
+      await dismissTerminalCallSurface(
+        clientId,
+        manifest.clients[clientId],
+      );
+      return identity;
+    });
+    await step(clientId, 'recovery-chat-social-visible', async () => {
+      const after = await readRecoveryProductSnapshot(
+        clientId,
+        manifest.clients[clientId],
+      );
+      return {
+        after,
+        retained: assertRecoveredProductSnapshot(
+          clientId,
+          before[clientId],
+          after,
+        ),
+      };
+    });
+  }
+
+  await step(
+    'android-alice',
+    'recovery-fresh-audio-call-start',
+    () => startRecoveryAudioCall(
+      'android-alice',
+      manifest.clients['android-alice'],
+      'Bob',
+    ),
+  );
+  await step(
+    'desktop-bob',
+    'recovery-fresh-audio-call-answer',
+    () => answerRecoveryCall(
+      'desktop-bob',
+      manifest.clients['desktop-bob'],
+    ),
+  );
+  await step(
+    'desktop-bob',
+    'recovery-fresh-audio-call-end',
+    async () => {
+      await endRecoveryCall(
+        'desktop-bob',
+        manifest.clients['desktop-bob'],
+      );
+      return { ended: true };
+    },
+  );
+  for (const clientId of requiredClientIds) {
+    await step(
+      clientId,
+      'recovery-call-terminal-idle',
+      () => dismissTerminalCallSurface(
+        clientId,
+        manifest.clients[clientId],
+      ),
+    );
+  }
+
+  const report = {
+    kind: 'peers-touch-three-client-product-journey-result',
+    schemaVersion: 1,
+    phase: 'recovery',
+    status: 'PASS',
+    source: preflight.source,
+    stationUrl: manifest.stationUrl,
+    scenarioIds: preflight.scenarioIds,
+    preflight: path.join(evidenceDir, 'preflight.json'),
+    interactionTrace,
+    observedAt: new Date().toISOString(),
+  };
+  const reportPath = path.join(evidenceDir, 'result.json');
+  const tracePath = path.join(evidenceDir, 'interaction-trace.json');
+  writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  writeFileSync(
+    tracePath,
+    `${JSON.stringify(interactionTrace, null, 2)}\n`,
+  );
+  return { ...report, reportPath, tracePath };
+}
+
 function selfTest(matrix) {
   const matrixSummary = validateMatrix(matrix);
   assertContract(
@@ -3315,6 +4090,26 @@ function selfTest(matrix) {
     scenariosForPhase(matrix, 'all').length === matrixSummary.scenarioCount,
     'SELF_TEST_ALL_COUNT',
     'all phase does not include every scenario',
+  );
+  assertContract(
+    scenariosForPhase(matrix, 'recovery').length === 2,
+    'SELF_TEST_RECOVERY_COUNT',
+    'recovery phase scenario count changed unexpectedly',
+  );
+  assertContract(
+    normalizeRecoveryText('  one\n two  ') === 'one two',
+    'SELF_TEST_RECOVERY_TEXT',
+    'recovery text normalization is invalid',
+  );
+  assertContract(
+    assertRecoveryIntersection(
+      'self-test',
+      'values',
+      ['one', 'two'],
+      ['two', 'three'],
+    )[0] === 'two',
+    'SELF_TEST_RECOVERY_INTERSECTION',
+    'recovery state intersection is invalid',
   );
   const sourceIdentity = {
     head: '0123456789abcdef0123456789abcdef01234567',
@@ -3477,7 +4272,7 @@ async function main() {
     process.stdout.write(`${JSON.stringify(preflight, null, 2)}\n`);
     return;
   }
-  if (!['entry', 'shell'].includes(options.phase)) {
+  if (!['entry', 'shell', 'recovery'].includes(options.phase)) {
     throw new JourneyContractError(
       'PHASE_UI_BINDING_REQUIRED',
       [
@@ -3493,7 +4288,9 @@ async function main() {
   );
   const result = options.phase === 'entry'
     ? await runEntryPhase(manifest, evidenceDir, preflight)
-    : await runShellPhase(manifest, evidenceDir, preflight);
+    : options.phase === 'shell'
+      ? await runShellPhase(manifest, evidenceDir, preflight)
+      : await runRecoveryPhase(manifest, evidenceDir, preflight);
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
