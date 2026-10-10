@@ -2119,6 +2119,7 @@ function MobileMessageAttachmentItem({ attachment, session }: { attachment: Soci
   const { t } = useMobileI18n();
   const [sourceUrl, setSourceUrl] = useState('');
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'pending' | 'failed' | 'ready'>('idle');
+  const [previewOpen, setPreviewOpen] = useState(false);
   const kind = chatMediaKindForAttachment(attachment);
   const filename = attachment.filename || t('mobile.chat.attachmentUnnamed');
   const sizeLabel = formatChatAttachmentSize(Number(attachment.size ?? 0));
@@ -2138,7 +2139,7 @@ function MobileMessageAttachmentItem({ attachment, session }: { attachment: Soci
       const url = convertFileSrc(result.localPath);
       setSourceUrl(url);
       setLoadState('ready');
-      if (openWhenReady && kind !== 'audio') window.open(url, '_blank');
+      if (openWhenReady && kind !== 'audio') setPreviewOpen(true);
     } catch {
       setLoadState('failed');
     }
@@ -2152,7 +2153,7 @@ function MobileMessageAttachmentItem({ attachment, session }: { attachment: Soci
 
   const openAttachment = () => {
     if (sourceUrl) {
-      window.open(sourceUrl, '_blank');
+      setPreviewOpen(true);
       return;
     }
     void loadAttachment(true);
@@ -2164,16 +2165,43 @@ function MobileMessageAttachmentItem({ attachment, session }: { attachment: Soci
       : formatVoiceDuration(attachment.voiceNote?.durationMs) || sizeLabel || attachment.mimeType;
 
   return (
-    <MessageAttachmentPresentation
-      attachmentId={attachment.cid}
-      kind={kind}
-      filename={filename}
-      stateLabel={stateLabel}
-      sourceUrl={sourceUrl}
-      voiceDurationLabel={formatVoiceDuration(attachment.voiceNote?.durationMs)}
-      disabled={!session || !attachment.cid || loadState === 'loading'}
-      onOpen={openAttachment}
-    />
+    <>
+      <MessageAttachmentPresentation
+        attachmentId={attachment.cid}
+        kind={kind}
+        filename={filename}
+        stateLabel={stateLabel}
+        sourceUrl={sourceUrl}
+        voiceDurationLabel={formatVoiceDuration(attachment.voiceNote?.durationMs)}
+        disabled={!session || !attachment.cid || loadState === 'loading'}
+        onOpen={openAttachment}
+      />
+      <Modal
+        centered
+        destroyOnHidden
+        footer={null}
+        open={previewOpen && Boolean(sourceUrl)}
+        rootClassName="mobile-attachment-preview-modal"
+        title={filename}
+        width="min(94vw, 720px)"
+        onCancel={() => setPreviewOpen(false)}
+      >
+        <div
+          className="mobile-attachment-preview"
+          data-product-surface="chat.attachment-preview"
+          data-attachment-id={attachment.cid}
+          data-attachment-kind={kind}
+        >
+          {kind === 'image' ? (
+            <img src={sourceUrl} alt={filename} />
+          ) : kind === 'video' ? (
+            <video src={sourceUrl} controls playsInline />
+          ) : (
+            <iframe src={sourceUrl} title={filename} />
+          )}
+        </div>
+      </Modal>
+    </>
   );
 }
 

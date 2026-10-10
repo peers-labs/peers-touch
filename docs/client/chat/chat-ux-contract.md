@@ -145,6 +145,9 @@ Image messages:
 - Image body MUST keep an undisturbed visible rectangle.
 - Send status, retry, and time SHOULD render outside the image in `MetaRow`.
 - If a transient image overlay is needed, it MUST be bounded, gradient-backed, and must not host primary actions.
+- Mobile attachment open MUST use an app-owned preview dialog and return to the
+  same conversation when closed. It MUST NOT navigate the top-level WebView to
+  an `asset:` or `http://asset.localhost` URL.
 
 File messages:
 
