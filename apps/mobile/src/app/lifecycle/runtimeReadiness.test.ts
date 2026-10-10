@@ -191,6 +191,9 @@ describe('generation-bound runtime readiness', () => {
     await kernel.startRuntimeGraph();
     const update = begin('messaging');
     await vi.advanceTimersByTimeAsync(20_000);
+    expect(status('messaging')).toBe('bootstrapping');
+    expect(update.isCurrent()).toBe(true);
+    await vi.advanceTimersByTimeAsync(25_000);
     expect(status('messaging')).toBe('failed');
     expect(update.isCurrent()).toBe(false);
     update.ready();

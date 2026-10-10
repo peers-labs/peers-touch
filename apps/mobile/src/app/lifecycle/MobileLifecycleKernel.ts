@@ -41,7 +41,7 @@ const RUNTIME_OPERATION_TIMEOUT_MS: Readonly<Record<RuntimeOperation, number>> =
   // budget must reflect a real remote Station (multiple sequential round
   // trips plus worker activation), not localhost latency, otherwise a slow
   // network spuriously fails a healthy runtime and cascades to dependents.
-  bootstrap: 20_000,
+  bootstrap: 45_000,
   suspend: 2_000,
   resume: 5_000,
   teardown: 5_000,
