@@ -320,7 +320,9 @@ const stationHelper = stationHelperElement && visible(stationHelperElement)
         > stationHelperElement.clientHeight + 1,
     }
   : null;
-const stationLogoElement = document.querySelector('.launch-hero-logo');
+const stationLogoElement = document.querySelector(
+  '.launch-brand-logo, .launch-hero-logo'
+);
 const stationLogoStyle = stationLogoElement && visible(stationLogoElement)
   ? getComputedStyle(stationLogoElement)
   : null;

@@ -718,7 +718,7 @@
     &.single {
       display: flex; justify-content: center;
       .ant-btn {
-        width: auto; height: 36px; padding-inline: 10px;
+        width: auto; height: 44px; padding-inline: 10px;
         border-color: transparent; background: transparent; box-shadow: none;
       }
     }
