@@ -11704,6 +11704,49 @@ mod tests {
     }
 
     #[test]
+    fn shared_schema_reopens_remove_actor_intent_without_role() {
+        let store = store();
+        let connection = store.connection.lock().unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_membership_intents(
+                    intent_id, conversation_id, action, target_ptid,
+                    target_device_id, role, state, command_id, created_at_unix_ms
+                 ) VALUES (
+                    'intent-remove', 'conversation-1', 2, 'ptid:bob',
+                    '', '', 'pending_plan', '', 10
+                 )",
+                [],
+            )
+            .unwrap();
+
+        migrate_messaging_schema(&RusqliteMessagingSchema(&connection)).unwrap();
+    }
+
+    #[test]
+    fn shared_schema_rejects_add_actor_intent_without_role() {
+        let store = store();
+        let connection = store.connection.lock().unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_membership_intents(
+                    intent_id, conversation_id, action, target_ptid,
+                    target_device_id, role, state, command_id, created_at_unix_ms
+                 ) VALUES (
+                    'intent-add', 'conversation-1', 1, 'ptid:bob',
+                    '', '', 'pending_plan', '', 10
+                 )",
+                [],
+            )
+            .unwrap();
+
+        assert_eq!(
+            migrate_messaging_schema(&RusqliteMessagingSchema(&connection)).unwrap_err(),
+            "messaging membership intent migration is incomplete"
+        );
+    }
+
+    #[test]
     fn missing_conversation_terminalizes_membership_intent_and_local_projection() {
         let store = store();
         let intent = PendingMembershipIntent {

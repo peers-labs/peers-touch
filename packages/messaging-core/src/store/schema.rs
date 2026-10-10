@@ -908,7 +908,8 @@ fn validate_migrated_schema<B: MessagingSchemaBackend>(backend: &B) -> Result<()
     let incomplete_membership = backend.query_i64(
         "SELECT COUNT(*) FROM messaging_membership_intents
          WHERE state <> '' AND (
-             action <= 0 OR target_ptid = '' OR role = ''
+             action <= 0 OR target_ptid = ''
+             OR (action IN (1, 4) AND role = '')
          )",
     )?;
     if incomplete_membership != 0 {
