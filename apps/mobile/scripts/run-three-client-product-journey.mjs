@@ -564,38 +564,58 @@ async function acceptPendingPermissionAlerts(
   expectedKinds,
 ) {
   if (client.platform === 'desktop') return [];
+  const originalContext = await webdriverRequest(
+    webdriverEndpoint(client, '/context'),
+  );
+  const restoreWebContext = typeof originalContext === 'string'
+    && originalContext.toUpperCase().includes('WEBVIEW');
+  if (restoreWebContext) {
+    await webdriverRequest(webdriverEndpoint(client, '/context'), {
+      method: 'POST',
+      body: JSON.stringify({ name: 'NATIVE_APP' }),
+    });
+  }
   const accepted = [];
   const startedAt = Date.now();
   let lastAcceptedAt = 0;
-  while (Date.now() - startedAt < 5_000) {
-    let text;
-    try {
-      text = await webdriverRequest(webdriverEndpoint(client, '/alert/text'));
-    } catch (error) {
-      const noAlert = error instanceof JourneyContractError
-        && error.code === 'WEBDRIVER_REQUEST_FAILED'
-        && /no such alert/i.test(error.message);
-      if (!noAlert) throw error;
-      const settledAt = lastAcceptedAt || startedAt;
-      if (Date.now() - settledAt >= 750) return accepted;
-      await sleep(100);
-      continue;
+  try {
+    while (Date.now() - startedAt < 5_000) {
+      let text;
+      try {
+        text = await webdriverRequest(webdriverEndpoint(client, '/alert/text'));
+      } catch (error) {
+        const noAlert = error instanceof JourneyContractError
+          && error.code === 'WEBDRIVER_REQUEST_FAILED'
+          && /no such alert/i.test(error.message);
+        if (!noAlert) throw error;
+        const settledAt = lastAcceptedAt || startedAt;
+        if (Date.now() - settledAt >= 750) return accepted;
+        await sleep(100);
+        continue;
+      }
+      assertContract(
+        typeof text === 'string'
+          && permissionAlertMatches(text, expectedKinds),
+        'MOBILE_PERMISSION_ALERT_UNEXPECTED',
+        `${clientId} showed an unexpected native alert: ${String(text)}`,
+      );
+      await webdriverRequest(webdriverEndpoint(client, '/alert/accept'), {
+        method: 'POST',
+        body: '{}',
+      });
+      accepted.push(text);
+      lastAcceptedAt = Date.now();
+      await sleep(200);
     }
-    assertContract(
-      typeof text === 'string'
-        && permissionAlertMatches(text, expectedKinds),
-      'MOBILE_PERMISSION_ALERT_UNEXPECTED',
-      `${clientId} showed an unexpected native alert: ${String(text)}`,
-    );
-    await webdriverRequest(webdriverEndpoint(client, '/alert/accept'), {
-      method: 'POST',
-      body: '{}',
-    });
-    accepted.push(text);
-    lastAcceptedAt = Date.now();
-    await sleep(200);
+    return accepted;
+  } finally {
+    if (restoreWebContext) {
+      await webdriverRequest(webdriverEndpoint(client, '/context'), {
+        method: 'POST',
+        body: JSON.stringify({ name: originalContext }),
+      });
+    }
   }
-  return accepted;
 }
 
 function sleep(delayMs) {
