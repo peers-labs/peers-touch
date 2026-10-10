@@ -3669,11 +3669,6 @@ async function acceptIncomingFriendship(
                 friendlyName.toLowerCase()
               );
           };
-          const friend = [...document.querySelectorAll(
-            '[data-chat-contact-ptid]'
-          )].find((element) => (
-            element.getClientRects().length && matches(element)
-          ));
           const requests = [...document.querySelectorAll(
             '[data-chat-friend-request-direction="incoming"]'
           )].filter((element) => element.getClientRects().length);
@@ -3681,6 +3676,22 @@ async function acceptIncomingFriendship(
             || (!expectedPeerPtid && requests.length === 1
               ? requests[0]
               : null);
+          const requestPeerPtid = request?.getAttribute(
+            'data-chat-friend-request-peer-ptid'
+          ) || '';
+          const friend = [...document.querySelectorAll(
+            '[data-chat-contact-ptid]'
+          )].find((element) => (
+            element.getClientRects().length
+            && (
+              matches(element)
+              || (
+                requestPeerPtid
+                && element.getAttribute('data-chat-contact-ptid')
+                  === requestPeerPtid
+              )
+            )
+          ));
           return {
             ready: Boolean(friend || request),
             kind: friend ? 'friend' : request ? 'request' : '',
@@ -3707,11 +3718,6 @@ async function acceptIncomingFriendship(
                 friendlyName.toLowerCase()
               );
           };
-          const friend = [...document.querySelectorAll(
-            '[data-contact-ptid]'
-          )].find((element) => (
-            element.getClientRects().length && matches(element)
-          ));
           const requests = [...document.querySelectorAll(
             '[data-friend-request-direction="incoming"]'
           )].filter((element) => element.getClientRects().length);
@@ -3719,6 +3725,22 @@ async function acceptIncomingFriendship(
             || (!expectedPeerPtid && requests.length === 1
               ? requests[0]
               : null);
+          const requestPeerPtid = request?.getAttribute(
+            'data-friend-request-sender-ptid'
+          ) || '';
+          const friend = [...document.querySelectorAll(
+            '[data-contact-ptid]'
+          )].find((element) => (
+            element.getClientRects().length
+            && (
+              matches(element)
+              || (
+                requestPeerPtid
+                && element.getAttribute('data-contact-ptid')
+                  === requestPeerPtid
+              )
+            )
+          ));
           return {
             ready: Boolean(friend || request),
             kind: friend ? 'friend' : request ? 'request' : '',
