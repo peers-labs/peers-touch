@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 420" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+  <defs>
+    <linearGradient id="sta" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#6c7ee1"/><stop offset="100%" stop-color="#5a6bd6"/></linearGradient>
+    <linearGradient id="sta2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#8b9bef"/><stop offset="100%" stop-color="#7a8ae4"/></linearGradient>
+    <linearGradient id="relay-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#667eea" stop-opacity=".12"/><stop offset="100%" stop-color="#764ba2" stop-opacity=".12"/></linearGradient>
+    <filter id="glow"><feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#667eea" flood-opacity=".18"/></filter>
+    <filter id="sh"><feDropShadow dx="0" dy="1" stdDeviation="3" flood-opacity=".06"/></filter>
+    <marker id="arr" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="7" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#b0b8e0"/>
+    </marker>
+  </defs>
+
+  <!-- ============ YOUR STATION (left) ============ -->
+  <g transform="translate(180,170)">
+    <!-- Home icon — big -->
+    <g filter="url(#glow)">
+      <path d="M0,-42 L48,0 L36,0 L36,30 L12,30 L12,12 L-12,12 L-12,30 L-36,30 L-36,0 L-48,0 Z" fill="url(#sta)" stroke="none"/>
+    </g>
+    <text x="0" y="58" text-anchor="middle" style="font-size:15px;font-weight:700;fill:#1e2340">Your Station</text>
+    <text x="0" y="76" text-anchor="middle" style="font-size:11px;fill:#8890a8">your identity · messages · data</text>
+  </g>
+
+  <!-- Your Desktop -->
+  <g transform="translate(68,110)">
+    <rect x="-22" y="-16" width="44" height="28" rx="3" fill="#fff" stroke="#c5caf0" stroke-width="1.5" filter="url(#sh)"/>
+    <rect x="-8" y="14" width="16" height="4" rx="1" fill="#dde1f0"/>
+    <text x="0" y="36" text-anchor="middle" style="font-size:10px;fill:#8890a8">Desktop</text>
+  </g>
+
+  <!-- Your Mobile -->
+  <g transform="translate(68,258)">
+    <rect x="-11" y="-18" width="22" height="36" rx="4" fill="#fff" stroke="#c5caf0" stroke-width="1.5" filter="url(#sh)"/>
+    <rect x="-5" y="14" width="10" height="2" rx="1" fill="#dde1f0"/>
+    <text x="0" y="36" text-anchor="middle" style="font-size:10px;fill:#8890a8">Mobile</text>
+  </g>
+
+  <!-- Lines: Your Devices → Your Station -->
+  <line x1="96" y1="118" x2="144" y2="155" stroke="#c5caf0" stroke-width="1.2" marker-end="url(#arr)"/>
+  <line x1="96" y1="258" x2="144" y2="210" stroke="#c5caf0" stroke-width="1.2" marker-end="url(#arr)"/>
+
+  <!-- Label on device lines -->
+  <text x="100" y="178" style="font-size:9px;fill:#b0b6cc">your data</text>
+
+  <!-- ============ RELAY (center) ============ -->
+  <g transform="translate(500,170)">
+    <circle cx="0" cy="0" r="36" fill="url(#relay-g)" stroke="#c5caf0" stroke-width="1.5"/>
+    <circle cx="0" cy="0" r="6" fill="#667eea" opacity=".4"/>
+    <circle cx="0" cy="0" r="2.5" fill="#667eea"/>
+    <text x="0" y="56" text-anchor="middle" style="font-size:13px;font-weight:600;fill:#5a6078">Relay</text>
+    <text x="0" y="72" text-anchor="middle" style="font-size:10px;fill:#b0b6cc">discovery · routing</text>
+  </g>
+
+  <!-- Lines: Your Station ↔ Relay -->
+  <line x1="235" y1="170" x2="458" y2="170" stroke="#c5caf0" stroke-width="1.2" marker-end="url(#arr)" marker-start="url(#arr)"/>
+  <rect x="310" y="158" width="80" height="16" rx="4" fill="#fff" stroke="#e4e7f2" stroke-width="1"/>
+  <text x="350" y="169" text-anchor="middle" style="font-size:9px;fill:#b0b6cc">federate</text>
+
+  <!-- Lines: Relay ↔ Friend's Station -->
+  <line x1="542" y1="170" x2="765" y2="170" stroke="#c5caf0" stroke-width="1.2" marker-end="url(#arr)" marker-start="url(#arr)"/>
+  <rect x="610" y="158" width="80" height="16" rx="4" fill="#fff" stroke="#e4e7f2" stroke-width="1"/>
+  <text x="650" y="169" text-anchor="middle" style="font-size:9px;fill:#b0b6cc">federate</text>
+
+  <!-- ============ FRIEND'S STATION (right) ============ -->
+  <g transform="translate(820,170)">
+    <g filter="url(#glow)">
+      <path d="M0,-42 L48,0 L36,0 L36,30 L12,30 L12,12 L-12,12 L-12,30 L-36,30 L-36,0 L-48,0 Z" fill="url(#sta2)" stroke="none"/>
+    </g>
+    <text x="0" y="58" text-anchor="middle" style="font-size:15px;font-weight:700;fill:#1e2340">Friend's Station</text>
+    <text x="0" y="76" text-anchor="middle" style="font-size:11px;fill:#8890a8">their identity · messages · data</text>
+  </g>
+
+  <!-- Friend's Desktop -->
+  <g transform="translate(932,110)">
+    <rect x="-22" y="-16" width="44" height="28" rx="3" fill="#fff" stroke="#c5caf0" stroke-width="1.5" filter="url(#sh)"/>
+    <rect x="-8" y="14" width="16" height="4" rx="1" fill="#dde1f0"/>
+    <text x="0" y="36" text-anchor="middle" style="font-size:10px;fill:#8890a8">Desktop</text>
+  </g>
+
+  <!-- Friend's Mobile -->
+  <g transform="translate(932,258)">
+    <rect x="-11" y="-18" width="22" height="36" rx="4" fill="#fff" stroke="#c5caf0" stroke-width="1.5" filter="url(#sh)"/>
+    <rect x="-5" y="14" width="10" height="2" rx="1" fill="#dde1f0"/>
+    <text x="0" y="36" text-anchor="middle" style="font-size:10px;fill:#8890a8">Mobile</text>
+  </g>
+
+  <!-- Lines: Friend's Station → Their Devices -->
+  <line x1="856" y1="155" x2="904" y2="118" stroke="#c5caf0" stroke-width="1.2" marker-end="url(#arr)"/>
+  <line x1="856" y1="210" x2="904" y2="258" stroke="#c5caf0" stroke-width="1.2" marker-end="url(#arr)"/>
+
+  <!-- ============ THIRD STATION HINT (bottom) ============ -->
+  <g transform="translate(500,350)">
+    <g opacity=".45">
+      <path d="M0,-28 L32,0 L24,0 L24,20 L8,20 L8,8 L-8,8 L-8,20 L-24,20 L-24,0 L-32,0 Z" fill="url(#sta)" stroke="none"/>
+    </g>
+    <text x="0" y="38" text-anchor="middle" style="font-size:11px;fill:#b0b6cc">…and any number of Stations</text>
+  </g>
+
+  <!-- Line: Relay → Third Station -->
+  <line x1="500" y1="210" x2="500" y2="316" stroke="#c5caf0" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr)" opacity=".4"/>
+
+  <!-- ============ TOP TAGLINE ============ -->
+  <text x="500" y="30" text-anchor="middle" style="font-size:11px;font-weight:600;fill:#8b96d1;letter-spacing:.1em">HOW THE NETWORK WORKS</text>
+  <text x="500" y="52" text-anchor="middle" style="font-size:12px;fill:#8890a8">Every Station is independently owned. Stations federate through open protocols. No platform in the middle.</text>
+</svg>

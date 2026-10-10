@@ -1,0 +1,27 @@
+---
+// Root entry: send visitors to a locale. Default is English; the browser's
+// preferred language is honored client-side for a friendlier first hit.
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="refresh" content="0; url=/en/" />
+    <link rel="canonical" href="/en/" />
+    <script is:inline>
+      (function () {
+        try {
+          var pref = (navigator.languages || [navigator.language || 'en'])[0] || 'en';
+          var target = pref.toLowerCase().indexOf('zh') === 0 ? '/zh/' : '/en/';
+          window.location.replace(target);
+        } catch (e) {
+          window.location.replace('/en/');
+        }
+      })();
+    </script>
+    <title>Peers-Touch</title>
+  </head>
+  <body>
+    <a href="/en/">Continue to Peers-Touch</a>
+  </body>
+</html>

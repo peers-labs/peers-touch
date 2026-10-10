@@ -1,0 +1,221 @@
+---
+/**
+ * NetworkMap — the federated Peers-Touch network.
+ *
+ * Pure inline SVG (zero JS, server-rendered). Five independently owned Stations
+ * form a mesh with no central node; clients (desktop/mobile) attach to their own
+ * Station, and one cross-Station route is highlighted to show a message reaching
+ * a friend without a company in the middle.
+ */
+interface DiagramLabels {
+  you: string;
+  station: string;
+  friend: string;
+  openProtocol: string;
+}
+
+interface Props {
+  labels: DiagramLabels;
+}
+
+const { labels: l } = Astro.props;
+
+type StationRole = 'you' | 'friend' | null;
+const stations: { cx: number; cy: number; role: StationRole }[] = [
+  { cx: 210, cy: 250, role: 'you' },
+  { cx: 600, cy: 95, role: null },
+  { cx: 740, cy: 320, role: 'friend' },
+  { cx: 430, cy: 395, role: null },
+  { cx: 150, cy: 95, role: null },
+];
+
+// Mesh links by station index — deliberately include edges that bypass Station 0.
+const neutralEdges: [number, number][] = [
+  [0, 1], [1, 2], [2, 3], [3, 0], [1, 4], [4, 0], [1, 3],
+];
+const routeEdge: [number, number] = [0, 2];
+
+type DeviceType = 'monitor' | 'phone' | 'person';
+const devices: { x: number; y: number; type: DeviceType; to: number }[] = [
+  { x: 52, y: 212, type: 'monitor', to: 0 },
+  { x: 52, y: 288, type: 'phone', to: 0 },
+  { x: 828, y: 250, type: 'person', to: 2 },
+  { x: 688, y: 40, type: 'phone', to: 1 },
+  { x: 300, y: 432, type: 'monitor', to: 3 },
+];
+
+const W = 128;
+const H = 62;
+const pill = { you: 44, friend: 56 };
+---
+
+<svg
+  class="network"
+  viewBox="0 0 880 470"
+  role="img"
+  aria-label={l.openProtocol}
+  fill="none"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <defs>
+    <filter id="station-shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="6" stdDeviation="9" flood-color="#3c426e" flood-opacity="0.14" />
+    </filter>
+  </defs>
+
+  <!-- Device → Station links (static) -->
+  {devices.map((d) => {
+    const s = stations[d.to];
+    return <line class="device-link" x1={d.x} y1={d.y} x2={s.cx} y2={s.cy} />;
+  })}
+
+  <!-- Neutral federation links -->
+  {neutralEdges.map(([a, b]) => (
+    <line class="edge" x1={stations[a].cx} y1={stations[a].cy} x2={stations[b].cx} y2={stations[b].cy} />
+  ))}
+
+  <!-- Highlighted cross-Station message route -->
+  <line
+    class="edge edge--route"
+    x1={stations[routeEdge[0]].cx} y1={stations[routeEdge[0]].cy}
+    x2={stations[routeEdge[1]].cx} y2={stations[routeEdge[1]].cy}
+  />
+
+  <!-- Open protocol pill (clear area on the 1→2 link) -->
+  {
+    (() => {
+      const mx = (stations[1].cx + stations[2].cx) / 2;
+      const my = (stations[1].cy + stations[2].cy) / 2 - 2;
+      return (
+        <g>
+          <rect x={mx - 58} y={my - 13} width="116" height="26" rx="13" fill="#ffffff" stroke="#667eea" stroke-width="1.4" />
+          <text x={mx} y={my + 4} class="pill-text" text-anchor="middle">{l.openProtocol}</text>
+        </g>
+      );
+    })()
+  }
+
+  <!-- Devices -->
+  {devices.map((d) => (
+    <g transform={`translate(${d.x} ${d.y})`}>
+      <rect x="-20" y="-17" width="40" height="34" rx="9" fill="#ffffff" stroke="#cdd6f4" stroke-width="1.3" />
+      {d.type === 'monitor' && (
+        <g class="device-glyph" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="-9" y="-8" width="18" height="12" rx="1.6" />
+          <path d="M-3 8h6M0 4v4" />
+        </g>
+      )}
+      {d.type === 'phone' && (
+        <g class="device-glyph" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="-5.5" y="-9" width="11" height="18" rx="2.4" />
+          <path d="M-2 6h4" />
+        </g>
+      )}
+      {d.type === 'person' && (
+        <g class="device-glyph device-glyph--friend" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="0" cy="-3" r="3.4" />
+          <path d="M-7 8a7 5.4 0 0 1 14 0" />
+        </g>
+      )}
+    </g>
+  ))}
+
+  <!-- Stations -->
+  {stations.map((s) => {
+    const isYou = s.role === 'you';
+    const isFriend = s.role === 'friend';
+    return (
+      <g filter="url(#station-shadow)">
+        <rect
+          x={s.cx - W / 2} y={s.cy - H / 2} width={W} height={H} rx="14"
+          fill="#ffffff"
+          class={isYou ? 'station station--you' : 'station'}
+        />
+        <g transform={`translate(${s.cx - 38} ${s.cy})`} class="db-glyph" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M-10 -7a10 3.5 0 1 0 20 0a10 3.5 0 1 0 -20 0" />
+          <path d="M-10 -7v14M10 -7v14" />
+          <path d="M-10 0a10 3.5 0 0 0 20 0" />
+          <path d="M-10 7a10 3.5 0 0 0 20 0" />
+        </g>
+        <text x={s.cx + 14} y={s.cy + 5} class="station-text" text-anchor="middle">{l.station}</text>
+
+        {isYou && (
+          <g>
+            <rect x={s.cx - pill.you / 2} y={s.cy - H / 2 - 23} width={pill.you} height="18" rx="9" fill="#667eea" />
+            <text x={s.cx} y={s.cy - H / 2 - 11} class="badge-text" text-anchor="middle">{l.you}</text>
+          </g>
+        )}
+        {isFriend && (
+          <g>
+            <rect x={s.cx - pill.friend / 2} y={s.cy - H / 2 - 23} width={pill.friend} height="18" rx="9" fill="#765aa2" />
+            <text x={s.cx} y={s.cy - H / 2 - 11} class="badge-text" text-anchor="middle">{l.friend}</text>
+          </g>
+        )}
+      </g>
+    );
+  })}
+</svg>
+
+<style>
+  .network {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .device-link {
+    stroke: #d8dff6;
+    stroke-width: 1.4;
+  }
+  .edge {
+    stroke: #c2cbf0;
+    stroke-width: 1.6;
+    stroke-dasharray: 5 7;
+    animation: pt-flow 1.1s linear infinite;
+  }
+  .edge--route {
+    stroke: #667eea;
+    stroke-width: 2.6;
+    stroke-dasharray: 7 7;
+    animation-duration: 0.7s;
+  }
+  .station {
+    stroke: #d4dcf5;
+    stroke-width: 1.3;
+  }
+  .station--you {
+    stroke: #667eea;
+    stroke-width: 2;
+  }
+  .db-glyph {
+    stroke: #667eea;
+  }
+  .device-glyph {
+    stroke: #8a93c8;
+  }
+  .device-glyph--friend {
+    stroke: #765aa2;
+  }
+  .station-text {
+    font-family: var(--pt-font-sans);
+    font-size: 13px;
+    font-weight: 700;
+    fill: #282c4e;
+  }
+  .pill-text {
+    font-family: var(--pt-font-sans);
+    font-size: 12px;
+    font-weight: 600;
+    fill: #5568d6;
+  }
+  .badge-text {
+    font-family: var(--pt-font-sans);
+    font-size: 10px;
+    font-weight: 700;
+    fill: #ffffff;
+  }
+  @keyframes pt-flow {
+    to {
+      stroke-dashoffset: -28;
+    }
+  }
+</style>

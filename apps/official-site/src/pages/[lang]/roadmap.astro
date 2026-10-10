@@ -1,0 +1,151 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getDict, localeParams, isLocale, DEFAULT_LOCALE, type Locale } from '../../i18n';
+
+export function getStaticPaths() {
+  return localeParams();
+}
+
+const { lang } = Astro.params;
+const locale: Locale = isLocale(lang) ? lang : DEFAULT_LOCALE;
+const t = getDict(locale);
+---
+
+<Base locale={locale} page="roadmap" currentPath={Astro.url.pathname}>
+  <section class="pt-shell page-head">
+    <p class="pt-eyebrow">{t.roadmap.eyebrow}</p>
+    <h1 class="page-head__title">{t.roadmap.title}</h1>
+    <p class="page-head__subtitle">{t.roadmap.subtitle}</p>
+  </section>
+
+  <section class="pt-shell roadmap">
+    <h2 class="roadmap__title">{t.roadmap.sectionTitle}</h2>
+    <ol class="roadmap__track">
+      {t.roadmap.phases.map((phase, index) => (
+        <li class="phase pt-indexed-card">
+          <div class="phase__topline">
+            <div class="pt-indexed-card__head">
+              <span class="pt-indexed-card__number" aria-hidden="true">{index + 1}</span>
+              <h3 class="pt-indexed-card__title">{phase.phase}</h3>
+            </div>
+            <span class="phase__status">{phase.status}</span>
+          </div>
+          <p class="pt-indexed-card__body">{phase.body}</p>
+          <ul class="phase__outcomes">
+            {phase.outcomes.map((outcome) => <li>{outcome}</li>)}
+          </ul>
+        </li>
+      ))}
+    </ol>
+  </section>
+</Base>
+
+<style>
+  .page-head {
+    padding-block: clamp(40px, 5vw, 56px) var(--pt-space-xl);
+  }
+  .page-head__title {
+    max-width: 520px;
+    font-size: 44.8px;
+    font-weight: 800;
+    margin-top: var(--pt-space-xs);
+    line-height: 53.76px;
+    letter-spacing: 0;
+  }
+  .page-head__subtitle {
+    max-width: 32em;
+    font-size: 17.6px;
+    color: var(--pt-text-secondary);
+    margin-top: var(--pt-space-sm);
+    line-height: 1.7;
+  }
+
+  .roadmap {
+    margin-top: var(--pt-space-sm);
+  }
+  .roadmap__title {
+    margin-bottom: var(--pt-space-lg);
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 38.4px;
+    letter-spacing: 0;
+  }
+  .roadmap__track {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--pt-space-md);
+    margin-top: calc(0px - var(--pt-space-md));
+    margin-inline: calc(0px - var(--pt-space-md));
+    padding-top: var(--pt-space-md);
+    padding-inline: var(--pt-space-md);
+    padding-bottom: var(--pt-space-xs);
+  }
+  .phase {
+    display: flex;
+    flex-direction: column;
+  }
+  .phase__topline {
+    min-height: 48px;
+    margin-bottom: var(--pt-space-sm);
+  }
+  .phase__topline .pt-indexed-card__head {
+    margin-bottom: 0;
+  }
+  .phase__status {
+    position: absolute;
+    top: 10px;
+    right: var(--pt-space-sm);
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding-inline: var(--pt-space-xs);
+    border: 1px solid var(--pt-border-hairline);
+    border-radius: var(--pt-radius-full);
+    background: var(--pt-surface-subtle);
+    color: var(--pt-text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 20px;
+  }
+  .phase__outcomes {
+    margin: auto 0 0;
+    padding: var(--pt-space-md) 0 0 18px;
+    border-top: 1px solid var(--pt-border-hairline);
+    display: grid;
+    grid-template-rows: repeat(3, 2lh);
+    row-gap: var(--pt-space-2xs);
+    color: var(--pt-text-secondary);
+    font-size: 13px;
+    line-height: 1.7;
+  }
+  .phase__outcomes li + li {
+    margin-top: 0;
+  }
+
+  @media (max-width: 720px) {
+    .page-head {
+      padding-block: var(--pt-space-xl);
+    }
+    .page-head__title {
+      font-size: 36px;
+      line-height: 43.2px;
+    }
+    .page-head__subtitle {
+      font-size: 16px;
+    }
+    .roadmap__title {
+      font-size: 28px;
+      line-height: 33.6px;
+    }
+    .roadmap__track {
+      grid-template-columns: none;
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(272px, 82vw);
+      overflow-x: auto;
+      scroll-snap-type: x proximity;
+    }
+  }
+</style>

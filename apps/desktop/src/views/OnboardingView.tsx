@@ -10,10 +10,21 @@ import type { AppLifecycle } from '../types/navigation';
 
 type Phase = 'splash' | 'transition' | 'login';
 
-const SPLASH_DURATION = 2800;
+// Calm, legible boot rhythm. The convergence must fully finish before the
+// wordmark reveals: converge delay + max stagger + travel duration.
+const CONVERGE_DELAY_MS = 600;
+const PARTICLE_TRAVEL_MS = 1400;
+const PARTICLE_STAGGER_MAX_MS = 500;
+const REVEAL_DELAY_MS = CONVERGE_DELAY_MS + PARTICLE_STAGGER_MAX_MS + PARTICLE_TRAVEL_MS;
+const SPLASH_DURATION = 4300;
 const TRANSITION_DURATION = 600;
 
-// ── Peers colored particle config (reused from SplashScreen) ──
+// easeOutQuint — particles glide in and decelerate to rest without the
+// springy overshoot that made the previous boot feel frantic.
+const PARTICLE_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
+const WORDMARK_REVEAL_MS = 900;
+
+// ── Peers colored particle config ──
 
 const PEER_COLORS = [
   '#667eea', '#764ba2', '#f093fb', '#f5576c',
@@ -68,17 +79,17 @@ export function OnboardingView({ lifecycle }: OnboardingViewProps) {
         color: PEER_COLORS[i % PEER_COLORS.length],
         startX: Math.cos(angle) * dist,
         startY: Math.sin(angle) * dist,
-        delay: Math.random() * 0.3,
+        delay: (Math.random() * PARTICLE_STAGGER_MAX_MS) / 1000,
         size: 14 + Math.random() * 10,
-        rotation: (Math.random() - 0.5) * 60,
+        rotation: (Math.random() - 0.5) * 24,
       };
     });
   }, []);
 
   // ── Splash animation timeline ──
   useEffect(() => {
-    const t1 = setTimeout(() => setSplashStep('converge'), 100);
-    const t2 = setTimeout(() => setSplashStep('reveal'), 1200);
+    const t1 = setTimeout(() => setSplashStep('converge'), CONVERGE_DELAY_MS);
+    const t2 = setTimeout(() => setSplashStep('reveal'), REVEAL_DELAY_MS);
     const t3 = setTimeout(() => {
       splashTimerDone.current = true;
       if (dataWasDone.current) setPhase('transition');
@@ -139,7 +150,7 @@ export function OnboardingView({ lifecycle }: OnboardingViewProps) {
                     ? 'translate(-50%, -50%) rotate(0deg) scale(0)'
                     : `translate(calc(-50% + ${p.startX}px), calc(-50% + ${p.startY}px)) rotate(${p.rotation}deg)`,
                   opacity: isConverged ? 0 : 0.9,
-                  transition: `all 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) ${p.delay}s`,
+                  transition: `all ${PARTICLE_TRAVEL_MS}ms ${PARTICLE_EASE} ${p.delay}s`,
                   pointerEvents: 'none',
                   userSelect: 'none',
                   letterSpacing: '-0.5px',
@@ -155,9 +166,9 @@ export function OnboardingView({ lifecycle }: OnboardingViewProps) {
                 position: 'absolute',
                 left: '50%',
                 top: '50%',
-                transform: `translate(-50%, -50%) scale(${isRevealed ? 1 : 0.3})`,
+                transform: `translate(-50%, -50%) scale(${isRevealed ? 1 : 0.8})`,
                 opacity: isRevealed ? 1 : 0,
-                transition: 'all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                transition: `all ${WORDMARK_REVEAL_MS}ms ${PARTICLE_EASE}`,
                 whiteSpace: 'nowrap',
               }}
             >

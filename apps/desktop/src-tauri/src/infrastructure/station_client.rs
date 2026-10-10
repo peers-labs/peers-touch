@@ -1,5 +1,5 @@
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_registry::StationRegistry;
+use crate::infrastructure::station_registry::{normalize_station_url, StationRegistry};
 use crate::model::common::PeersResponse;
 use prost::Message;
 use reqwest::blocking::Client;
@@ -1021,17 +1021,49 @@ where
     })?;
 
     if !status.is_success() {
-        let msg = String::from_utf8_lossy(&bytes).to_string();
         tracing::warn!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station FAIL");
-        return Err(StationClientError::new(
-            StationClientErrorKind::HttpStatus(status.as_u16()),
-            format!("station returned {}: {}", status.as_u16(), msg),
-            Some(serde_json::json!({ "status": status.as_u16(), "body": msg })),
-        ));
+        return Err(peers_failure_error(status.as_u16(), &bytes));
     }
 
     tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (peers proto, no-auth)");
     decode_peers_envelope(bytes.as_ref())
+}
+
+/// Minimal wire view of the Touch ErrorResponse, declared locally so the same
+/// code compiles in the trimmed lib crate (which omits the full generated model
+/// tree). Field tags match the canonical ErrorResponse.
+#[derive(Clone, PartialEq, prost::Message)]
+struct station_error_body {
+    #[prost(int32, tag = "1")]
+    code: i32,
+    #[prost(string, tag = "2")]
+    message: String,
+}
+
+/// Build a structured error from a non-success Touch response. Decodes the
+/// canonical `ErrorResponse` so the stable numeric error code (e.g. 10006 =
+/// ACTOR_EXISTS) is preserved in details for localized handling instead of raw
+/// proto bytes.
+fn peers_failure_error(status: u16, bytes: &[u8]) -> StationClientError {
+    let mut details = serde_json::json!({ "status": status });
+    if let Ok(body) = station_error_body::decode(bytes) {
+        details["error_code"] = serde_json::json!(body.code);
+        if !body.message.is_empty() {
+            details["server_message"] = serde_json::json!(body.message);
+        }
+        return StationClientError::new(
+            StationClientErrorKind::HttpStatus(status),
+            format!("station returned {status}: {}", body.message),
+            Some(details),
+        );
+    }
+    let raw = String::from_utf8_lossy(bytes).to_string();
+    details["body"] = serde_json::json!(raw);
+    StationClientError::new(
+        StationClientErrorKind::HttpStatus(status),
+        format!("station returned {status}: {raw}"),
+        Some(details),
+    )
 }
 
 // JSON-based request for non-canonical Station APIs.
@@ -1763,7 +1795,7 @@ pub(crate) fn probe_station(url: &str) -> (bool, Option<String>, Option<String>,
         }
     };
 
-    let base = url.trim_end_matches('/');
+    let base = normalize_station_url(url);
 
     // Primary reachability check via healthz endpoint.
     let health_ok = client
@@ -1815,7 +1847,7 @@ pub(crate) fn probe_station(url: &str) -> (bool, Option<String>, Option<String>,
 #[cfg(test)]
 mod tests {
     use super::{
-        build_error_for_status_with_headers, request_json_with_policy_base_url,
+        build_error_for_status_with_headers, probe_station, request_json_with_policy_base_url,
         StationTransportPolicy,
     };
     use crate::error::ErrorCode;
@@ -1841,6 +1873,51 @@ mod tests {
             StationTransportPolicy::TurnExecution.label(),
             "turn_execution"
         );
+    }
+
+    #[test]
+    fn station_probe_accepts_bare_host_and_port() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind Station probe fixture");
+        let address = listener
+            .local_addr()
+            .expect("read Station probe fixture address");
+        let server = thread::spawn(move || {
+            for request_index in 0..2 {
+                let (mut stream, _) = listener.accept().expect("accept Station probe request");
+                let mut request = [0_u8; 4096];
+                let request_len = stream
+                    .read(&mut request)
+                    .expect("read Station probe request");
+                let request = String::from_utf8_lossy(&request[..request_len]);
+                if request_index == 0 {
+                    assert!(request.starts_with("GET /sub-oss/healthz "));
+                    stream
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                        )
+                        .expect("write Station health response");
+                } else {
+                    assert!(request.starts_with("GET /sub-bootstrap/info "));
+                    let body =
+                        r#"{"peer_id":"station-peer-1","label":"Test Station","peers_count":3}"#;
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    stream
+                        .write_all(response.as_bytes())
+                        .expect("write Station bootstrap response");
+                }
+            }
+        });
+
+        let (online, label, peer_id, peers_count) = probe_station(&address.to_string());
+        server.join().expect("join Station probe fixture");
+
+        assert!(online);
+        assert_eq!(label.as_deref(), Some("Test Station"));
+        assert_eq!(peer_id.as_deref(), Some("station-peer-1"));
+        assert_eq!(peers_count, Some(3));
     }
 
     #[test]

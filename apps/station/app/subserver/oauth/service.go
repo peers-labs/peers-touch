@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -709,8 +710,23 @@ func deriveOAuthState(attemptID string, attemptSecretHash []byte) string {
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
+// liveBindingKeySeparator joins the immutable attempt tuple into one opaque
+// key. It must be (1) valid inside a PostgreSQL text column — a NUL byte
+// (0x00) is rejected with SQLSTATE 22021 — and (2) absent from every
+// component so two distinct tuples never map to the same key. Access attempt
+// IDs use [a-z0-9-], device IDs are Crockford-base32 ULIDs [0-9A-Z], and the
+// lifecycle generation is decimal, so ':' never occurs in any component.
+const liveBindingKeySeparator = ":"
+
 func oauthLiveBindingKey(accessAttemptID, deviceID string, lifecycleGeneration uint64) string {
-	return fmt.Sprintf("%s\x00%s\x00%d", strings.TrimSpace(accessAttemptID), strings.TrimSpace(deviceID), lifecycleGeneration)
+	return strings.Join(
+		[]string{
+			strings.TrimSpace(accessAttemptID),
+			strings.TrimSpace(deviceID),
+			strconv.FormatUint(lifecycleGeneration, 10),
+		},
+		liveBindingKeySeparator,
+	)
 }
 
 func randomOpaqueValue(size int) (string, error) {

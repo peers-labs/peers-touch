@@ -1,6 +1,7 @@
 use crate::domain::storage::key_management::{
     KeyErrorCode, KeyMaterial, KeyProvider, KeyProviderError,
 };
+use crate::infrastructure::storage;
 use keyring::Entry;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -117,16 +118,13 @@ impl PlatformKeyProvider {
         }
     }
 
-    fn scoped_file_store_path(key_ref: &str) -> Option<PathBuf> {
+    /// Sandboxed file store used when `PEERS_STORAGE_ROOT` is set.
+    fn sandbox_file_store_path(key_ref: &str) -> Option<PathBuf> {
         let root = std::env::var("PEERS_STORAGE_ROOT").ok()?;
         let root = root.trim();
         if root.is_empty() {
             return None;
         }
-        let mut hasher = Sha256::new();
-        hasher.update(key_ref.as_bytes());
-        let digest = hasher.finalize();
-        let name: String = digest.iter().map(|b| format!("{b:02x}")).collect();
         Some(
             PathBuf::from(root)
                 .join("peers-touch")
@@ -134,8 +132,39 @@ impl PlatformKeyProvider {
                 .join("data")
                 .join("secure-store")
                 .join("storage-keys")
-                .join(format!("{name}.key")),
+                .join(Self::key_file_name(key_ref)),
         )
+    }
+
+    fn key_file_name(key_ref: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(key_ref.as_bytes());
+        let digest = hasher.finalize();
+        digest.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// File-backed key location.
+    ///
+    /// Sandboxed runs (`PEERS_STORAGE_ROOT`) and debug/dev builds persist keys
+    /// in a 0600 file. Debug builds are recompiled constantly, and each ad-hoc
+    /// signature invalidates the macOS Keychain item's access-control list,
+    /// which otherwise forces a login-password prompt on every cold read.
+    /// Release builds return None and persist through the OS keychain.
+    fn file_store_path(key_ref: &str) -> Option<PathBuf> {
+        if let Some(path) = Self::sandbox_file_store_path(key_ref) {
+            return Some(path);
+        }
+        #[cfg(debug_assertions)]
+        {
+            storage::app_file_path(
+                "desktop",
+                storage::StorageKind::Data,
+                &["secure-store", "storage-keys", &Self::key_file_name(key_ref)],
+            )
+            .ok()
+        }
+        #[cfg(not(debug_assertions))]
+        None
     }
 
     fn classify_keyring_error(key_ref: &str, err: &keyring::Error) -> KeyProviderError {
@@ -161,18 +190,35 @@ impl PlatformKeyProvider {
     }
 
     fn read_from_os_store(key_ref: &str) -> Result<Option<KeyMaterial>, KeyProviderError> {
-        if let Some(path) = Self::scoped_file_store_path(key_ref) {
-            match fs::read_to_string(path) {
-                Ok(payload) => return Ok(Self::decode_material(payload.trim())),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-                Err(e) => {
-                    return Err(KeyProviderError::io_failure(
-                        key_ref,
-                        format!("file keystore read failed: {e}"),
-                    ));
+        let Some(path) = Self::file_store_path(key_ref) else {
+            return Self::read_from_keychain(key_ref);
+        };
+        match fs::read_to_string(&path) {
+            Ok(payload) => Ok(Self::decode_material(payload.trim())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // First launch on the file store: migrate the existing keychain
+                // key once (a single prompt), then keep using the file.
+                if let Some(migrated) = Self::read_from_keychain(key_ref)? {
+                    Self::write_key_file(key_ref, &path, &migrated)?;
+                    return Ok(Some(migrated));
                 }
+                Ok(None)
             }
+            Err(e) => Err(KeyProviderError::io_failure(
+                key_ref,
+                format!("file keystore read failed: {e}"),
+            )),
         }
+    }
+
+    fn write_to_os_store(key_ref: &str, item: &KeyMaterial) -> Result<(), KeyProviderError> {
+        match Self::file_store_path(key_ref) {
+            Some(path) => Self::write_key_file(key_ref, &path, item),
+            None => Self::write_to_keychain(key_ref, item),
+        }
+    }
+
+    fn read_from_keychain(key_ref: &str) -> Result<Option<KeyMaterial>, KeyProviderError> {
         let entry = Entry::new(
             Self::service_name(),
             Self::username_for_ref(key_ref).as_str(),
@@ -185,43 +231,7 @@ impl PlatformKeyProvider {
         }
     }
 
-    fn write_to_os_store(key_ref: &str, item: &KeyMaterial) -> Result<(), KeyProviderError> {
-        if let Some(path) = Self::scoped_file_store_path(key_ref) {
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).map_err(|e| {
-                    KeyProviderError::io_failure(
-                        key_ref,
-                        format!("file keystore mkdir failed: {e}"),
-                    )
-                })?;
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).map_err(
-                        |e| {
-                            KeyProviderError::io_failure(
-                                key_ref,
-                                format!("file keystore chmod failed: {e}"),
-                            )
-                        },
-                    )?;
-                }
-            }
-            fs::write(&path, Self::encode_material(item)).map_err(|e| {
-                KeyProviderError::io_failure(key_ref, format!("file keystore write failed: {e}"))
-            })?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).map_err(|e| {
-                    KeyProviderError::io_failure(
-                        key_ref,
-                        format!("file keystore chmod failed: {e}"),
-                    )
-                })?;
-            }
-            return Ok(());
-        }
+    fn write_to_keychain(key_ref: &str, item: &KeyMaterial) -> Result<(), KeyProviderError> {
         let entry = Entry::new(
             Self::service_name(),
             Self::username_for_ref(item.key_id.as_str()).as_str(),
@@ -230,6 +240,42 @@ impl PlatformKeyProvider {
         entry
             .set_password(Self::encode_material(item).as_str())
             .map_err(|e| Self::classify_keyring_error(key_ref, &e))
+    }
+
+    fn write_key_file(
+        key_ref: &str,
+        path: &PathBuf,
+        item: &KeyMaterial,
+    ) -> Result<(), KeyProviderError> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| {
+                KeyProviderError::io_failure(key_ref, format!("file keystore mkdir failed: {e}"))
+            })?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).map_err(|e| {
+                    KeyProviderError::io_failure(
+                        key_ref,
+                        format!("file keystore chmod dir failed: {e}"),
+                    )
+                })?;
+            }
+        }
+        fs::write(path, Self::encode_material(item)).map_err(|e| {
+            KeyProviderError::io_failure(key_ref, format!("file keystore write failed: {e}"))
+        })?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|e| {
+                KeyProviderError::io_failure(
+                    key_ref,
+                    format!("file keystore chmod file failed: {e}"),
+                )
+            })?;
+        }
+        Ok(())
     }
 }
 

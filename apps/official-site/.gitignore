@@ -1,0 +1,17 @@
+# build output
+dist/
+.output/
+
+# astro
+.astro/
+
+# deps
+node_modules/
+
+# vercel
+.vercel/
+
+# os / editor
+.DS_Store
+.vercel
+.env*

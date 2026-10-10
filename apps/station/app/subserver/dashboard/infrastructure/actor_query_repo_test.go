@@ -50,17 +50,6 @@ func TestActorQueryRepositoryResolvesPTIDInsidePersistenceAdapter(t *testing.T) 
 		t.Fatalf("PTID search mismatch: total=%d actors=%+v", total, found)
 	}
 
-	if err := repo.ResetPassword(ctx, "ptid:alice", "new-alice"); err != nil {
-		t.Fatalf("reset password by PTID: %v", err)
-	}
-	var persisted []touchdb.Actor
-	if err := db.Order("id").Find(&persisted).Error; err != nil {
-		t.Fatalf("read actors: %v", err)
-	}
-	if persisted[0].PasswordHash != "new-alice" || persisted[1].PasswordHash != "old-numeric" {
-		t.Fatalf("PTID resolution updated wrong actor: %+v", persisted)
-	}
-
 	actorSessions, err := repo.ListActorSessions(ctx, "ptid:alice")
 	if err != nil {
 		t.Fatalf("list sessions by PTID: %v", err)

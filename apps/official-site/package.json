@@ -1,0 +1,30 @@
+{
+  "name": "@peers-touch/official-site",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/react": "^4.2.3",
+    "@types/three": "^0.185.4",
+    "@types/topojson-client": "^3.1.5",
+    "astro": "^5.6.1",
+    "globe.gl": "^2.46.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "three": "^0.185.1",
+    "topojson-client": "^3.1.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "typescript": "^5.8.2"
+  }
+}

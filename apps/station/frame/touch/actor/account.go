@@ -12,12 +12,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/crypto"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
-)
-
-const (
-	bcryptCost = 12
 )
 
 func SignUp(c context.Context, req *model.ActorSignRequest, baseURL string) error {
@@ -72,7 +67,7 @@ func SignUp(c context.Context, req *model.ActorSignRequest, baseURL string) erro
 		Endpoints:         fmt.Sprintf(`{"sharedInbox": "%s/activitypub/inbox"}`, baseURL),
 	}
 
-	a.PasswordHash, err = generateHash(req.GetPassword())
+	a.PasswordHash, err = crypto.HashPassword(req.GetPassword())
 	if err != nil {
 		log.Warnf(c, "[SignUp] Generate hash err: %v", err)
 		return err
@@ -141,30 +136,4 @@ func GetActorByName(c context.Context, name string) (*db.Actor, error) {
 		return nil, err
 	}
 	return &presentActor, nil
-}
-
-func Login(c context.Context, loginParams *model.ActorLoginParams) (*db.Actor, error) {
-	rds, err := store.GetRDS(c)
-	if err != nil {
-		log.Warnf(c, "[Login] Get db err: %v", err)
-		return nil, err
-	}
-
-	var actor db.Actor
-	if err = rds.Where("email = ?", loginParams.Email).First(&actor).Error; err != nil {
-		log.Warnf(c, "[Login] Find actor by email err: %v", err)
-		return nil, model.ErrActorNotFound
-	}
-
-	if err = bcrypt.CompareHashAndPassword([]byte(actor.PasswordHash), []byte(loginParams.Password)); err != nil {
-		log.Warnf(c, "[Login] Password verification failed: %v", err)
-		return nil, model.ErrActorInvalidCredentials
-	}
-
-	return &actor, nil
-}
-
-func generateHash(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
-	return string(bytes), err
 }

@@ -29,9 +29,32 @@ const CRYPTO_SERVICE: &str = "peers-touch.desktop.crypto";
 const ACTOR_IDENTITY_ROOT_ENV: &str = "PEERS_ACTOR_IDENTITY_ROOT";
 const STORAGE_ROOT_ENV: &str = "PEERS_STORAGE_ROOT";
 
+fn identity_file_root() -> &'static OnceLock<PathBuf> {
+    static ROOT: OnceLock<PathBuf> = OnceLock::new();
+    &ROOT
+}
+
+/// Configure the directory for file-backed identity seeds. Called by the
+/// composition root (which can resolve the OS data dir) so this domain module
+/// never has to depend on the infrastructure layer. Debug builds use it to keep
+/// identity keys in a 0600 file instead of the OS keychain, avoiding repeated
+/// keychain prompts caused by recompilation changing the code signature.
+pub fn set_identity_file_root(root: PathBuf) -> Result<(), CryptoError> {
+    identity_file_root()
+        .set(root)
+        .map_err(|_| CryptoError::IoError("identity file root already configured".to_string()))
+}
+
 fn identity_cache() -> &'static Mutex<HashMap<String, Zeroizing<[u8; 32]>>> {
     static CACHE: OnceLock<Mutex<HashMap<String, Zeroizing<[u8; 32]>>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn identity_key_file_name(identity_key_ref: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(identity_key_ref.as_bytes());
+    let digest = hasher.finalize();
+    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn scoped_identity_file(identity_key_ref: &str) -> Option<PathBuf> {
@@ -43,10 +66,6 @@ fn scoped_identity_file(identity_key_ref: &str) -> Option<PathBuf> {
     if root.is_empty() {
         return None;
     }
-    let mut hasher = Sha256::new();
-    hasher.update(identity_key_ref.as_bytes());
-    let digest = hasher.finalize();
-    let name: String = digest.iter().map(|b| format!("{b:02x}")).collect();
     Some(
         PathBuf::from(root)
             .join("peers-touch")
@@ -54,8 +73,19 @@ fn scoped_identity_file(identity_key_ref: &str) -> Option<PathBuf> {
             .join("data")
             .join("secure-store")
             .join("identity-keys")
-            .join(format!("{name}.key")),
+            .join(identity_key_file_name(identity_key_ref)),
     )
+}
+
+/// Resolved file location for an identity seed: explicit env root first, then
+/// the composition-root-provided debug store. None means use the OS keyring.
+fn identity_file(identity_key_ref: &str) -> Option<PathBuf> {
+    if let Some(path) = scoped_identity_file(identity_key_ref) {
+        return Some(path);
+    }
+    identity_file_root()
+        .get()
+        .map(|root| root.join("identity-keys").join(identity_key_file_name(identity_key_ref)))
 }
 
 fn keyring_entry(identity_key_ref: &str) -> Result<keyring::Entry, CryptoError> {
@@ -98,7 +128,7 @@ fn load_scoped_identity_key(
 pub fn store_identity_key(identity_key_ref: &str, seed: &[u8; 32]) -> Result<(), CryptoError> {
     let hex_seed = Zeroizing::new(seed.iter().map(|b| format!("{b:02x}")).collect::<String>());
 
-    if let Some(path) = scoped_identity_file(identity_key_ref) {
+    if let Some(path) = identity_file(identity_key_ref) {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| CryptoError::IoError(e.to_string()))?;
         }
@@ -120,17 +150,7 @@ pub fn store_identity_key(identity_key_ref: &str, seed: &[u8; 32]) -> Result<(),
     Ok(())
 }
 
-pub fn load_identity_key(identity_key_ref: &str) -> Result<Option<IdentityKeyPair>, CryptoError> {
-    if let Ok(cache) = identity_cache().lock() {
-        if let Some(seed) = cache.get(identity_key_ref) {
-            return Ok(Some(IdentityKeyPair::from_seed(&**seed)));
-        }
-    }
-
-    if let Some(path) = scoped_identity_file(identity_key_ref) {
-        return load_scoped_identity_key(identity_key_ref, &path);
-    }
-
+fn load_keyring_identity(identity_key_ref: &str) -> Result<Option<IdentityKeyPair>, CryptoError> {
     let entry = keyring_entry(identity_key_ref)?;
     match entry.get_password() {
         Ok(password) => {
@@ -140,6 +160,32 @@ pub fn load_identity_key(identity_key_ref: &str) -> Result<Option<IdentityKeyPai
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(CryptoError::KeyringAccess(e.to_string())),
     }
+}
+
+pub fn load_identity_key(identity_key_ref: &str) -> Result<Option<IdentityKeyPair>, CryptoError> {
+    if let Ok(cache) = identity_cache().lock() {
+        if let Some(seed) = cache.get(identity_key_ref) {
+            return Ok(Some(IdentityKeyPair::from_seed(&**seed)));
+        }
+    }
+
+    if let Some(path) = identity_file(identity_key_ref) {
+        match load_scoped_identity_key(identity_key_ref, &path)? {
+            Some(kp) => return Ok(Some(kp)),
+            None => {
+                // First launch on the file store: migrate the existing keyring
+                // seed once (a single prompt), then keep using the file.
+                if let Some(kp) = load_keyring_identity(identity_key_ref)? {
+                    let seed = Zeroizing::new(kp.seed_bytes());
+                    store_identity_key(identity_key_ref, &seed)?;
+                    return Ok(Some(kp));
+                }
+                return Ok(None);
+            }
+        }
+    }
+
+    load_keyring_identity(identity_key_ref)
 }
 
 pub fn get_or_create_identity(identity_key_ref: &str) -> Result<IdentityKeyPair, CryptoError> {
@@ -156,7 +202,7 @@ pub fn delete_identity_key(identity_key_ref: &str) -> Result<(), CryptoError> {
     if let Ok(mut cache) = identity_cache().lock() {
         cache.remove(identity_key_ref);
     }
-    if let Some(path) = scoped_identity_file(identity_key_ref) {
+    if let Some(path) = identity_file(identity_key_ref) {
         if path.exists() {
             fs::remove_file(&path).map_err(|e| CryptoError::IoError(e.to_string()))?;
         }
