@@ -433,6 +433,7 @@ MobileShell (NavigationShell)
   mobile-content (active tab only)
     ChatPage | MomentsPage | ContactsPage | SettingsPage
       OverlayHost (action sheet, modals)
+  mobile-shell-status-slot (non-blocking runtime recovery)
   mobile-tabbar (NavigationShell)
   RuntimeProjection: Mobile runtime registry + Messaging/Social projections
 ```
@@ -459,6 +460,7 @@ Layer mapping:
 
 - Conversation and contextual actions must use a bottom action sheet or a dedicated page, never a desktop-style right drawer (`ChatActionSheet` returns `null` when closed).
 - Modal/sheet surfaces are `on-visit + none`; they must not retain heavy hidden trees after close.
+- Non-blocking runtime recovery must render in the Shell status slot and consume layout height; it must not float over page controls. Blocking recovery remains owned by the app-level OverlayHost.
 - Find People and Create Group use one selected-only descriptor-owned overlay
   route; closing, replacing the primary route, or entering a detail route
   unmounts the overlay tree.

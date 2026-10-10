@@ -1943,6 +1943,68 @@ async function assertEntryControlUsability(clientId, client) {
   return result;
 }
 
+async function assertMobileControlClearOfNonBlockingStatus(
+  clientId,
+  client,
+  selector,
+) {
+  const layout = await executeWebScript(
+    client,
+    `
+      const target = document.querySelector(arguments[0]);
+      target?.scrollIntoView({ block: 'center', inline: 'nearest' });
+      const targetRect = target?.getBoundingClientRect();
+      const notices = [
+        ...document.querySelectorAll(
+          '[data-blocks-unrelated-content="false"]'
+        )
+      ].filter((element) => element.getClientRects().length);
+      const intersections = targetRect
+        ? notices.map((notice) => {
+            const noticeRect = notice.getBoundingClientRect();
+            const overlaps = (
+              targetRect.left < noticeRect.right
+              && targetRect.right > noticeRect.left
+              && targetRect.top < noticeRect.bottom
+              && targetRect.bottom > noticeRect.top
+            );
+            return {
+              notice: {
+                bottom: noticeRect.bottom,
+                left: noticeRect.left,
+                right: noticeRect.right,
+                top: noticeRect.top
+              },
+              overlaps,
+              target: {
+                bottom: targetRect.bottom,
+                left: targetRect.left,
+                right: targetRect.right,
+                top: targetRect.top
+              }
+            };
+          }).filter((entry) => entry.overlaps)
+        : [];
+      return {
+        ready: Boolean(targetRect && target?.getClientRects().length),
+        intersections
+      };
+    `,
+    [selector],
+  );
+  assertContract(
+    layout?.ready === true,
+    'MOBILE_CONTROL_MISSING',
+    `${clientId} is missing ${selector}`,
+  );
+  assertContract(
+    layout.intersections.length === 0,
+    'MOBILE_NON_BLOCKING_STATUS_OCCLUSION',
+    `${clientId} ${selector} is occluded by a non-blocking status surface: `
+      + JSON.stringify(layout.intersections),
+  );
+}
+
 async function logoutMobileClient(clientId, client) {
   const confirmationOpen = await selectorIsVisible(
     client,
@@ -1977,6 +2039,11 @@ async function logoutMobileClient(clientId, client) {
         '[data-product-surface="settings.summary"]',
       );
     }
+    await assertMobileControlClearOfNonBlockingStatus(
+      clientId,
+      client,
+      '.settings-sign-out',
+    );
     await clickXpath(
       client,
       '//button[normalize-space(.)="Sign Out"]',
