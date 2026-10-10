@@ -4836,6 +4836,53 @@ async function waitForChatMessage(clientId, client, text) {
   );
 }
 
+async function waitForChatSendOutcome(clientId, client, text) {
+  return waitForUi(
+    clientId,
+    client,
+    `send outcome for ${text}`,
+    `
+      const targetText = arguments[0];
+      const rows = [...document.querySelectorAll('[data-message-ulid]')]
+        .filter((element) => (
+          element.getClientRects().length
+          && (element.innerText || '').includes(targetText)
+        ));
+      const row = rows.at(-1);
+      const delivery = row?.querySelector('[data-message-delivery]')
+        ?.getAttribute('data-message-delivery') || '';
+      const receipt = row?.querySelector('[data-message-receipt]')
+        ?.getAttribute('data-message-receipt') || '';
+      const state = row?.getAttribute('data-message-state') || '';
+      const input = document.querySelector(
+        '.message-composer-input, [data-chat-composer]'
+      );
+      const send = document.querySelector(
+        'button.message-send-button, [data-chat-send]'
+      );
+      const error = document.querySelector('.mobile-notice.error')?.innerText || '';
+      return {
+        ready: Boolean(row)
+          && state !== 'pending'
+          && delivery !== 'sending',
+        retryable: error.includes('mobile.recovery.writeRevocation.body')
+          && input instanceof HTMLInputElement
+          && input.value === targetText
+          && send instanceof HTMLButtonElement
+          && !send.disabled,
+        delivery,
+        error,
+        messageId: row?.getAttribute('data-message-ulid') || '',
+        receipt,
+        state,
+        text: (row?.innerText || '').replace(/\\s+/g, ' ').trim()
+      };
+    `,
+    [text],
+    (value) => value?.ready === true || value?.retryable === true,
+  );
+}
+
 async function sendChatText(
   clientId,
   client,
@@ -4858,9 +4905,26 @@ async function sendChatText(
       : 'button.message-send-button',
     `send-${text}`,
   );
+  let outcome = await waitForChatSendOutcome(clientId, client, text);
+  if (outcome.retryable) {
+    await clickVisibleSelector(
+      client,
+      client.platform === 'desktop'
+        ? '[data-chat-send]'
+        : 'button.message-send-button',
+      `retry-send-${text}`,
+    );
+    await waitForVisualFrame(client);
+    outcome = await waitForChatSendOutcome(clientId, client, text);
+  }
+  assertContract(
+    outcome.ready === true,
+    'CHAT_SEND_DID_NOT_SETTLE',
+    `${clientId} message ${text} remained retryable`,
+  );
   return {
     conversation,
-    message: await waitForChatMessage(clientId, client, text),
+    message: outcome,
   };
 }
 
