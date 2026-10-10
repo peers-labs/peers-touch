@@ -215,3 +215,38 @@ This refinement does not define general history cursor ordering, pending-row
 promotion between pages, or a retained-history eviction budget. Active and
 previously materialized histories remain complete until those decisions are
 accepted; the native index and DOM windows are not substitutes for them.
+
+## 13. Foreground Resume Write Admission
+
+```yaml
+surface: mobile.chat.thread
+scenario: foreground-resume-write-admission
+
+given:
+  - a signed-in Mobile client has an open Direct or Group conversation
+  - native foreground activation resumes a previously suspended runtime graph
+
+when:
+  - lifecycle reconciliation temporarily closes canonical write admission
+  - the user opens message actions or prepares a composer submission
+
+then:
+  - the thread exposes `data-chat-write-admission="closed"`
+  - remote mutation controls remain disabled while reads, navigation, and local draft editing remain available
+  - successful reconciliation changes the thread state to `data-chat-write-admission="open"`
+  - the same controls become usable without requiring the user to reopen the conversation
+
+visual_invariants:
+  - the existing recovery status remains the only visible explanation for the temporary pause
+  - disabled controls do not resize the message action sheet or composer
+
+forbidden:
+  - an enabled remote mutation control dispatches while canonical write admission is closed
+  - a foreground reaction click produces `mobile.recovery.writeRevocation.body`
+  - foreground automation bypasses the product admission state through Harness or API mutation
+
+evidence:
+  - foreground interaction trace
+  - action-sheet and composer DOM state
+  - sender and receiver screenshots
+```

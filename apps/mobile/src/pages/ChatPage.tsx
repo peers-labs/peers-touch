@@ -27,6 +27,7 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import { useMobileI18n } from '../app/mobileI18n';
+import { useLifecycleKernel } from '../app/lifecycle/useLifecycleKernel';
 import type { MobileChatDetailRoute } from '../app/navigation';
 import { readRouteQuery, saveRouteQuery } from '../app/navigation/scrollRestoration';
 import { useChatSurfaceFixture } from '../acceptance/chatSurfaceFixture';
@@ -117,6 +118,7 @@ import { MemberRole } from '../gen/proto/domain/chat/conversation_pb';
 import { ChatStorageOperationState } from '../gen/proto/domain/chat/storage_pb';
 import { MobileDraftSurfaceKind } from '../gen/proto/domain/mobile/reliability_pb';
 import { getDraftRestorationPort } from '../runtimes/commandRuntime';
+import { getRecoveryProjection } from '../runtimes/recoveryProjection';
 import { secureRandomUuid } from '../utils/randomIdentity';
 import {
   chatStorageReleasedBytes,
@@ -263,6 +265,7 @@ function ChatPageInner({
   onBack,
 }: ChatPageProps) {
   const { t } = useMobileI18n();
+  const lifecycle = useLifecycleKernel();
   const activeSessionUlid = activeDetail?.routeId === 'detail:chat-conversation'
     ? activeDetail.sessionUlid
     : null;
@@ -299,10 +302,23 @@ function ChatPageInner({
   const [clearHistoryConfirmOpen, setClearHistoryConfirmOpen] = useState(false);
   const [clearHistoryBusy, setClearHistoryBusy] = useState(false);
   const [localActionError, setLocalActionError] = useState('');
+  const [chatWriteAdmissionOpen, setChatWriteAdmissionOpen] = useState(
+    () => !getRecoveryProjection().getSnapshot().isWriteBlocked,
+  );
   const [senderTypingFeedback, setSenderTypingFeedback] = useState(
     IDLE_SENDER_TYPING_FEEDBACK,
   );
   const messageWindow = useRef<BoundedListHandle>(null);
+
+  useEffect(() => {
+    const projection = getRecoveryProjection();
+    const syncAdmission = () => {
+      setChatWriteAdmissionOpen(!projection.getSnapshot().isWriteBlocked);
+    };
+    const unsubscribe = projection.subscribe(syncAdmission);
+    syncAdmission();
+    return unsubscribe;
+  }, [lifecycle.generation]);
 
   // --- Narrow store selectors (batched via useShallow to prevent torn-read cascades) ---
   const {
@@ -1450,6 +1466,7 @@ function ChatPageInner({
           : 'chat.direct-thread'}
         style={chatThreadStyle}
         tabBarVisible={chatBottomOcclusion.tabBarVisible}
+        writeAdmissionOpen={chatWriteAdmissionOpen}
       >
         <header className={`page-header chat-thread-header ${threadSearchOpen ? 'searching' : ''}`}>
           <button className="header-action" type="button" onClick={() => {
@@ -1484,6 +1501,7 @@ function ChatPageInner({
                       <button
                         className="header-action"
                         type="button"
+                        disabled={!chatWriteAdmissionOpen}
                         onClick={() => {
                           void runChatOperation(
                             () => mobileCallManager.startOutgoingCall(
@@ -1500,6 +1518,7 @@ function ChatPageInner({
                       <button
                         className="header-action"
                         type="button"
+                        disabled={!chatWriteAdmissionOpen}
                         onClick={() => {
                           void runChatOperation(
                             () => mobileCallManager.startOutgoingCall(
@@ -1569,7 +1588,8 @@ function ChatPageInner({
             message={selectedActionMessage}
             currentUserPtid={currentUserPtid}
             canEdit={selectedActionCanEdit}
-            commandBusy={isChatMessageCommandBusy(selectedActionCommandOutcome)}
+            commandBusy={!chatWriteAdmissionOpen
+              || isChatMessageCommandBusy(selectedActionCommandOutcome)}
             onClose={() => setMessageActionUlid('')}
             onReply={() => {
               if (!selectedActionMessage) return;
@@ -2006,7 +2026,7 @@ function ChatPageInner({
                 <button type="button" className={`message-composer-tool ${composerMoreOpen ? 'active' : ''}`} aria-label={t('mobile.chat.composerMore')} onClick={() => { composerInputRef.current?.blur(); setComposerMoreOpen((o) => !o); setComposerEmojiOpen(false); }} disabled={voiceRecorder.recording || Boolean(editingMessage) || Boolean(pendingAttachmentSubmission)}><Plus size={18} /></button>
                 <Button className="message-send-button" type="primary" icon={<Send size={16} />}
                   aria-label={t('common.action.send')}
-                  disabled={voiceRecorder.recording || !canSubmitChatComposerDraft({ text: draft, attachmentCount: readyChatAttachmentStages(attachmentDrafts).length, capabilities: MOBILE_THREAD_COMPOSER_CAPABILITIES }) || attachmentUploading || attachmentStagingFailed || encryptedAttachmentRefs.length > 0 || Boolean(pendingAttachmentSubmission)}
+                  disabled={!chatWriteAdmissionOpen || voiceRecorder.recording || !canSubmitChatComposerDraft({ text: draft, attachmentCount: readyChatAttachmentStages(attachmentDrafts).length, capabilities: MOBILE_THREAD_COMPOSER_CAPABILITIES }) || attachmentUploading || attachmentStagingFailed || encryptedAttachmentRefs.length > 0 || Boolean(pendingAttachmentSubmission)}
                   loading={attachmentUploading || Boolean(pendingAttachmentSubmission)}
                   onClick={() => void runChatOperation(submitMessage, 'mobile.chat.operationSendFailed')} />
               </div>
