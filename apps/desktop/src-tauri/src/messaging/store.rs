@@ -2278,6 +2278,111 @@ impl MessagingStore {
         transaction.commit().map_err(|error| error.to_string())
     }
 
+    fn rebase_station_lane_generation_if_required(
+        transaction: &Transaction<'_>,
+        incoming_item_id: &str,
+        incoming_lane_sequence: i64,
+        incoming_consumer_epoch: i64,
+        now_unix_ms: i64,
+    ) -> Result<(), String> {
+        let existing_lane = transaction
+            .query_row(
+                "SELECT item_id, consumer_epoch
+                 FROM messaging_inbox_items
+                 WHERE lane_sequence = ?1",
+                params![incoming_lane_sequence],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let cursor = transaction
+            .query_row(
+                "SELECT lane_sequence, consumer_epoch
+                 FROM messaging_lane_cursor
+                 WHERE id = 1",
+                [],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .unwrap_or((0, 0));
+        let occupied_by_another_item = existing_lane
+            .as_ref()
+            .is_some_and(|(item_id, _)| item_id != incoming_item_id);
+        let cursor_is_ahead = cursor.0 >= incoming_lane_sequence;
+        if !occupied_by_another_item && !cursor_is_ahead {
+            return Ok(());
+        }
+        let previous_epoch = existing_lane
+            .as_ref()
+            .map(|(_, epoch)| *epoch)
+            .unwrap_or(0)
+            .max(cursor.1);
+        if incoming_lane_sequence != 1 || incoming_consumer_epoch <= previous_epoch {
+            return Err("messaging claimed item replay conflict".to_string());
+        }
+
+        transaction
+            .execute_batch(
+                "PRAGMA defer_foreign_keys = ON;
+                 DELETE FROM message_reactions;
+                 DELETE FROM message_pins;
+                 DELETE FROM message_redaction_tombstones;
+                 DELETE FROM read_cursors;
+                 DELETE FROM messaging_message_search_fts;
+                 DELETE FROM messaging_attachment_transfers;
+                 DELETE FROM messaging_attachment_projections;
+                 DELETE FROM messaging_attachment_drafts;
+                 DELETE FROM messaging_message_projections;
+                 DELETE FROM messaging_interaction_intents;
+                 DELETE FROM messaging_conversation_command_intents;
+                 DELETE FROM messaging_member_authority_intents;
+                 DELETE FROM messaging_membership_intents;
+                 DELETE FROM messaging_pending_messages;
+                 DELETE FROM messaging_command_attempts;
+                 DELETE FROM messaging_command_outbox;
+                 DELETE FROM messaging_local_commands;
+                 DELETE FROM messaging_receipt_outbox;
+                 DELETE FROM messaging_consumption_markers;
+                 DELETE FROM messaging_inbox_items;
+                 DELETE FROM messaging_lane_cursor;
+                 DELETE FROM messaging_mls_pending_transitions;
+                 DELETE FROM messaging_mls_applied_transitions;
+                 DELETE FROM messaging_mls_retired_checkpoints;
+                 DELETE FROM messaging_mls_groups;
+                 DELETE FROM direct_session_bootstraps;
+                 DELETE FROM direct_skipped_message_keys;
+                 DELETE FROM direct_sessions;
+                 DELETE FROM messaging_authority_events;
+                 DELETE FROM messaging_authority_heads;
+                 DELETE FROM messaging_conversation_members;
+                 DELETE FROM messaging_conversations;
+                 DELETE FROM messaging_trust;
+                 DELETE FROM chat_cleanup_items;
+                 DELETE FROM chat_cleanup_journal;
+                 DELETE FROM chat_retention_floor;
+                 UPDATE messaging_prekey_bundle
+                    SET state = 'awaiting_publication'
+                    WHERE state = 'published';
+                 UPDATE messaging_one_time_prekeys
+                    SET state = 'awaiting_publication'
+                    WHERE state = 'available';
+                 UPDATE messaging_mls_key_packages
+                    SET state = 'awaiting_publication'
+                    WHERE state = 'published';",
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_lane_cursor(
+                    id, lane_sequence, consumer_epoch, updated_at_unix_ms
+                 ) VALUES (1, 0, ?1, ?2)",
+                params![incoming_consumer_epoch, now_unix_ms],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
     pub fn persist_claimed_item(
         &self,
         item_id: &str,
@@ -2296,11 +2401,23 @@ impl MessagingStore {
             || consumer_epoch == 0
             || payload_sha256.len() != 32
             || payload.is_empty()
+            || claimed_at_unix_ms <= 0
         {
             return Err("messaging claimed item is incomplete".to_string());
         }
-        let changed = self
-            .connection()?
+        let epoch = i64::try_from(consumer_epoch).map_err(|_| "consumer epoch exceeds i64")?;
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        Self::rebase_station_lane_generation_if_required(
+            &transaction,
+            item_id,
+            lane_sequence,
+            epoch,
+            claimed_at_unix_ms,
+        )?;
+        let changed = transaction
             .execute(
                 "INSERT INTO messaging_inbox_items(
                     item_id, event_id, conversation_id, lane_sequence,
@@ -2316,13 +2433,15 @@ impl MessagingStore {
                  WHERE messaging_inbox_items.event_id = excluded.event_id
                    AND messaging_inbox_items.conversation_id = excluded.conversation_id
                    AND messaging_inbox_items.lane_sequence = excluded.lane_sequence
-                   AND messaging_inbox_items.payload_sha256 = excluded.payload_sha256",
+                   AND messaging_inbox_items.payload_sha256 = excluded.payload_sha256
+                   AND messaging_inbox_items.payload = excluded.payload
+                   AND excluded.consumer_epoch >= messaging_inbox_items.consumer_epoch",
                 params![
                     item_id,
                     event_id,
                     conversation_id,
                     lane_sequence,
-                    i64::try_from(consumer_epoch).map_err(|_| "consumer epoch exceeds i64")?,
+                    epoch,
                     payload_sha256,
                     payload,
                     claimed_at_unix_ms
@@ -2330,9 +2449,9 @@ impl MessagingStore {
             )
             .map_err(|error| error.to_string())?;
         if changed != 1 {
-            return Err("messaging inbox replay payload hash mismatch".to_string());
+            return Err("messaging claimed item replay conflict".to_string());
         }
-        Ok(())
+        transaction.commit().map_err(|error| error.to_string())
     }
 
     pub fn consumption_marker_matches(
@@ -17336,6 +17455,18 @@ mod tests {
                 20,
             )
             .unwrap();
+        assert!(store
+            .persist_claimed_item(
+                "item-1",
+                "event-1",
+                "conversation-1",
+                1,
+                1,
+                &hash,
+                b"payload",
+                30,
+            )
+            .is_err());
         let changed = [2_u8; 32];
         let result = store.persist_claimed_item(
             "item-1",
@@ -17349,14 +17480,266 @@ mod tests {
         );
         assert!(result.is_err());
         let connection = store.connection().unwrap();
-        let stored: Vec<u8> = connection
+        let stored: (Vec<u8>, i64, i64) = connection
             .query_row(
-                "SELECT payload_sha256 FROM messaging_inbox_items WHERE item_id = 'item-1'",
+                "SELECT payload_sha256, consumer_epoch, claimed_at_unix_ms
+                 FROM messaging_inbox_items WHERE item_id = 'item-1'",
                 [],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .unwrap();
-        assert_eq!(stored, hash);
+        assert_eq!(stored, (hash.to_vec(), 2, 20));
+    }
+
+    #[test]
+    fn new_epoch_sequence_one_rebases_stale_station_generation() {
+        let store = MessagingStore::in_memory().unwrap();
+        store
+            .persist_claimed_item(
+                "old-item",
+                "old-event",
+                "old-conversation",
+                1,
+                3,
+                &[1; 32],
+                b"old-payload",
+                10,
+            )
+            .unwrap();
+        {
+            let connection = store.connection().unwrap();
+            connection
+                .execute_batch(
+                    "INSERT INTO messaging_lane_cursor(
+                        id, lane_sequence, consumer_epoch, updated_at_unix_ms
+                     ) VALUES (1, 1, 3, 11);
+                     INSERT INTO messaging_conversations(
+                        conversation_id, authority_station_id, federation_id,
+                        kind, name, owner_ptid, membership_epoch, mls_epoch,
+                        active, updated_at_unix_ms
+                     ) VALUES (
+                        'old-conversation', 'station-1', 'federation-1',
+                        1, '', 'ptid:alice', 1, 0, 1, 10
+                     );
+                     INSERT INTO messaging_receipt_outbox(
+                        receipt_id, event_id, receipt_bytes, state, created_at_unix_ms
+                     ) VALUES (
+                        'device-consumed:old-item', 'old-event', X'01', 'pending', 10
+                     );
+                     INSERT INTO messaging_mls_actor_identity(
+                        id, ptid, device_id, identity_state
+                     ) VALUES (1, 'ptid:alice', 'alice-device', X'010203');
+                     INSERT INTO messaging_mls_join_provider_pool(
+                        id, provider_pool_state, updated_at_unix_ms
+                     ) VALUES (1, X'040506', 10);
+                     INSERT INTO messaging_mls_key_packages(
+                        package_id, data, state, created_at_unix_ms
+                     ) VALUES ('package-1', X'070809', 'published', 10);",
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_device_identity(
+                        id, ptid, device_id, device_signing_seed,
+                        actor_identity_public_key, actor_identity_key_fingerprint,
+                        device_signing_public_key, actor_cross_signature,
+                        signing_key_id, profile_version
+                     ) VALUES (
+                        1, 'ptid:alice', 'alice-device', ?1, ?2, ?3, ?4, ?5,
+                        'signing-key-1', 1
+                     )",
+                    params![
+                        [11_u8; 32].as_slice(),
+                        [12_u8; 32].as_slice(),
+                        [13_u8; 32].as_slice(),
+                        [14_u8; 32].as_slice(),
+                        [15_u8; 64].as_slice(),
+                    ],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_prekey_bundle(
+                        id, signed_prekey_id, signed_prekey_private,
+                        state, created_at_unix_ms, one_time_prekey_high_watermark
+                     ) VALUES (1, 17, ?1, 'published', 10, 18)",
+                    params![[16_u8; 32].as_slice()],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_one_time_prekeys(
+                        prekey_id, private_key, state
+                     ) VALUES (18, ?1, 'available')",
+                    params![[17_u8; 32].as_slice()],
+                )
+                .unwrap();
+        }
+
+        store
+            .persist_claimed_item(
+                "new-item",
+                "new-event",
+                "new-conversation",
+                1,
+                4,
+                &[2; 32],
+                b"new-payload",
+                20,
+            )
+            .unwrap();
+
+        let connection = store.connection().unwrap();
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT item_id, consumer_epoch
+                     FROM messaging_inbox_items WHERE lane_sequence = 1",
+                    [],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+                )
+                .unwrap(),
+            ("new-item".to_string(), 4)
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT lane_sequence, consumer_epoch
+                     FROM messaging_lane_cursor WHERE id = 1",
+                    [],
+                    |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+                )
+                .unwrap(),
+            (0, 4)
+        );
+        for table in ["messaging_conversations", "messaging_receipt_outbox"] {
+            assert_eq!(
+                connection
+                    .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                        row.get::<_, i64>(0)
+                    })
+                    .unwrap(),
+                0,
+                "table {table}",
+            );
+        }
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT ptid, device_id, device_signing_seed
+                     FROM messaging_device_identity WHERE id = 1",
+                    [],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, Vec<u8>>(2)?,
+                        ))
+                    },
+                )
+                .unwrap(),
+            (
+                "ptid:alice".to_string(),
+                "alice-device".to_string(),
+                vec![11_u8; 32],
+            )
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT signed_prekey_private, state
+                     FROM messaging_prekey_bundle WHERE id = 1",
+                    [],
+                    |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, String>(1)?)),
+                )
+                .unwrap(),
+            (vec![16_u8; 32], "awaiting_publication".to_string())
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT private_key, state
+                     FROM messaging_one_time_prekeys WHERE prekey_id = 18",
+                    [],
+                    |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, String>(1)?)),
+                )
+                .unwrap(),
+            (vec![17_u8; 32], "awaiting_publication".to_string())
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT identity_state FROM messaging_mls_actor_identity WHERE id = 1",
+                    [],
+                    |row| row.get::<_, Vec<u8>>(0),
+                )
+                .unwrap(),
+            vec![1_u8, 2, 3]
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT provider_pool_state
+                     FROM messaging_mls_join_provider_pool WHERE id = 1",
+                    [],
+                    |row| row.get::<_, Vec<u8>>(0),
+                )
+                .unwrap(),
+            vec![4_u8, 5, 6]
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT data, state
+                     FROM messaging_mls_key_packages WHERE package_id = 'package-1'",
+                    [],
+                    |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, String>(1)?)),
+                )
+                .unwrap(),
+            (vec![7_u8, 8, 9], "awaiting_publication".to_string())
+        );
+    }
+
+    #[test]
+    fn same_epoch_lane_reuse_remains_a_conflict() {
+        let store = MessagingStore::in_memory().unwrap();
+        store
+            .persist_claimed_item(
+                "old-item",
+                "old-event",
+                "old-conversation",
+                1,
+                3,
+                &[1; 32],
+                b"old-payload",
+                10,
+            )
+            .unwrap();
+
+        assert!(store
+            .persist_claimed_item(
+                "different-item",
+                "different-event",
+                "different-conversation",
+                1,
+                3,
+                &[2; 32],
+                b"different-payload",
+                20,
+            )
+            .is_err());
+        let connection = store.connection().unwrap();
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT item_id, consumer_epoch
+                     FROM messaging_inbox_items WHERE lane_sequence = 1",
+                    [],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+                )
+                .unwrap(),
+            ("old-item".to_string(), 3)
+        );
     }
 
     #[test]
