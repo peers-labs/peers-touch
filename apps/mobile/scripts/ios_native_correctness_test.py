@@ -19,6 +19,9 @@ INFO_PLIST_PATH = APPLE_ROOT / "peers-touch-mobile_iOS" / "Info.plist"
 PBX_PROJECT_PATH = (
     APPLE_ROOT / "peers-touch-mobile.xcodeproj" / "project.pbxproj"
 )
+MAIN_ENTRY_PATH = (
+    APPLE_ROOT / "Sources" / "peers-touch-mobile" / "main.mm"
+)
 SWIFT_PLUGIN_PATH = (
     TAURI_ROOT
     / "plugins"
@@ -199,6 +202,34 @@ class IOSProjectGenerationTest(unittest.TestCase):
                 generated_project.read_text(encoding="utf-8"),
                 PBX_PROJECT_PATH.read_text(encoding="utf-8"),
             )
+
+
+class IOSInterfaceOrientationSourceContractTest(unittest.TestCase):
+    def test_scene_geometry_tracks_supported_device_orientations(self) -> None:
+        source = MAIN_ENTRY_PATH.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "UIDeviceOrientationDidChangeNotification",
+            source,
+        )
+        self.assertIn(
+            "UIDeviceOrientationLandscapeLeft:\n"
+            "\t\t\tmask = UIInterfaceOrientationMaskLandscapeRight;",
+            source,
+        )
+        self.assertIn(
+            "UIDeviceOrientationLandscapeRight:\n"
+            "\t\t\tmask = UIInterfaceOrientationMaskLandscapeLeft;",
+            source,
+        )
+        self.assertIn(
+            "setNeedsUpdateOfSupportedInterfaceOrientations",
+            source,
+        )
+        self.assertIn(
+            "requestGeometryUpdateWithPreferences:preferences",
+            source,
+        )
 
 
 class IOSLimitedPhotoPermissionSourceContractTest(unittest.TestCase):
