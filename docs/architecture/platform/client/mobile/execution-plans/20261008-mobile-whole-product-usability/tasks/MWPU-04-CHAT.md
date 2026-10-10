@@ -41,6 +41,7 @@
     "apps/station/app/subserver/envelope",
     "apps/station/app/subserver/key_exchange",
     "packages/messaging-core/src/inbox",
+    "packages/messaging-core/src/mls",
     "packages/prototypes/mobile/chat",
     "packages/client-chat-core/src/chatEmojis.ts",
     "packages/client-chat-core/src/index.ts",

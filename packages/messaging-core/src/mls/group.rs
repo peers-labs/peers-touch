@@ -283,10 +283,12 @@ impl MlsGroupManager {
                 .map_err(|e| format!("deserialize welcome: {e:?}"))?
                 .into_welcome()
                 .ok_or("message is not a Welcome")?;
-            let Ok(staged) =
-                StagedWelcome::new_from_welcome(provider, &mls_group_config, welcome, None)
-            else {
-                continue;
+            let staged = match StagedWelcome::new_from_welcome(
+                provider, &mls_group_config, welcome, None,
+            ) {
+                Ok(staged) => staged,
+                Err(WelcomeError::NoMatchingKeyPackage) => continue,
+                Err(error) => return Err(format!("stage welcome: {error:?}")),
             };
             let group = staged
                 .into_group(provider)
@@ -539,9 +541,10 @@ impl MlsGroupManager {
                 .map_err(|e| format!("deserialize welcome: {e:?}"))?
                 .into_welcome()
                 .ok_or("message is not a Welcome")?;
-            let Ok(staged) = StagedWelcome::new_from_welcome(provider, &config, welcome, None)
-            else {
-                continue;
+            let staged = match StagedWelcome::new_from_welcome(provider, &config, welcome, None) {
+                Ok(staged) => staged,
+                Err(WelcomeError::NoMatchingKeyPackage) => continue,
+                Err(error) => return Err(format!("stage welcome: {error:?}")),
             };
             let group = staged
                 .into_group(provider)
