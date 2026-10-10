@@ -250,3 +250,33 @@ evidence:
   - action-sheet and composer DOM state
   - sender and receiver screenshots
 ```
+
+## 14. Message Presentation And Actions
+
+```yaml
+surface: mobile.chat.thread
+scenario: readable-owner-aligned-message-actions
+given:
+  - sent and received messages include short text, multiline text and media
+when:
+  - a user reads the conversation and opens a message action sheet
+then:
+  - each avatar shares the top edge of its message content
+  - received overflow is leftmost in its metadata row and sent overflow is rightmost
+  - overflow has no persistent border or background
+  - reaction choices show only the Unicode emoji and retain selected state
+  - reply, forward, thread, pin, flag and owned-message commands use icon-only targets
+  - emoji choices and actions retain accessible names and at least 44px touch targets
+visual_invariants:
+  - the reaction grid has six columns and bounded internal scrolling
+  - the composer uses the same 40-emoji catalog
+  - action controls do not cover message content
+forbidden:
+  - a decorative smiley appears beside every reaction choice
+  - all message overflow entries align to the right regardless of owner
+  - message height pushes avatars down to the metadata baseline
+evidence:
+  - foreground DOM geometry and computed-style assertions
+  - sender and receiver screenshots
+  - reaction, reply and forward interaction traces
+```

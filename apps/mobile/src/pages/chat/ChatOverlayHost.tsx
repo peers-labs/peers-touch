@@ -4,7 +4,6 @@ import {
   Ban,
   Bell,
   Image,
-  Laugh,
   MessageSquare,
   Pencil,
   Pin,
@@ -20,7 +19,7 @@ import {
   Forward as ForwardIcon,
   ShieldX,
 } from 'lucide-react';
-import { isRecalledChatMessage } from '@peers-touch/client-chat-core';
+import { CHAT_EMOJIS, isRecalledChatMessage } from '@peers-touch/client-chat-core';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { BoundedList } from '../../components/BoundedList';
@@ -55,7 +54,6 @@ import { isOwnChatMessage } from '../../features/chat/chatSelectors';
 import type { ConversationSettingsFeedback } from './conversationSettingsState';
 
 const { Text } = Typography;
-const MOBILE_MESSAGE_REACTIONS = ['\u{1F44D}', '\u{2764}\u{FE0F}', '\u{1F602}', '\u{1F62E}', '\u{1F389}'] as const;
 
 export function ChatOverlayHost({ children }: { readonly children: ReactNode }) {
   return <>{children}</>;
@@ -125,7 +123,7 @@ export function MessageActionSheet({
           <div className="chat-background-section message-action-reactions">
             <Text type="secondary" className="chat-background-title">{t('mobile.chat.addReaction')}</Text>
             <div className="chat-background-grid">
-              {MOBILE_MESSAGE_REACTIONS.map((reaction) => {
+              {CHAT_EMOJIS.map((reaction) => {
                 const active = metadata.reactions.some(
                   (item) => item.actorPtid === currentUserPtid && item.reaction === reaction,
                 );
@@ -139,7 +137,6 @@ export function MessageActionSheet({
                     disabled={commandBusy}
                     onClick={() => onToggleReaction(reaction)}
                   >
-                    <Laugh size={14} />
                     <span>{reaction}</span>
                   </button>
                 );
@@ -1053,6 +1050,9 @@ function ChatActionButton({
     <button
       className={`chat-action-button ${active ? 'active' : ''} ${danger ? 'danger' : ''}`}
       type="button"
+      aria-label={title}
+      title={title}
+      aria-pressed={active}
       onClick={onClick}
       disabled={disabled}
     >

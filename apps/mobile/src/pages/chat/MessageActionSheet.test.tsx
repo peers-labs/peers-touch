@@ -73,4 +73,14 @@ describe('MessageActionSheet', () => {
     expect(markup).toContain('mobile.chat.moderate');
     expect(markup).toContain('mobile.chat.deleteForMe');
   });
+
+  it('offers forty emoji-only reactions and names every icon command', () => {
+    const markup = render(false);
+    expect(markup.match(/class="chat-background-choice message-reaction-choice/g)).toHaveLength(40);
+    expect(markup).not.toContain('lucide-laugh');
+    for (const action of ['reply', 'forward', 'thread', 'pinMessage', 'recall', 'deleteForMe']) {
+      expect(markup).toContain(`aria-label="mobile.chat.${action}"`);
+      expect(markup).toContain(`title="mobile.chat.${action}"`);
+    }
+  });
 });

@@ -296,12 +296,6 @@ select,
   gap: 2px;
 }
 
-.launch-brand-copy > span {
-  color: rgba(15, 23, 42, 0.48);
-  font-size: 12px;
-  font-weight: 700;
-}
-
 .launch-brand-copy h1 {
   margin: 0;
   color: rgba(15, 23, 42, 0.94);
@@ -2624,7 +2618,7 @@ select,
 
 .message-bubble-row {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: var(--chat-message-avatar-gap, 7px);
   width: 100%;
 }
@@ -2811,12 +2805,65 @@ select,
 }
 
 .message-action-sheet .message-action-reactions .chat-background-grid {
-  grid-template-columns: repeat(5, minmax(40px, 1fr));
+  grid-template-columns: repeat(6, minmax(44px, 1fr));
+  gap: 2px;
+  max-height: 180px;
+  overflow-y: auto;
 }
 
 .message-reaction-choice {
   justify-content: center;
   min-width: 0;
+  min-height: 44px;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  font-size: 24px;
+}
+
+.message-action-sheet .message-action-reactions {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.message-action-sheet .chat-action-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.message-action-sheet .chat-action-button {
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.message-action-sheet .chat-action-button > span:last-child {
+  display: none;
+}
+
+.message-action-sheet .chat-action-icon {
+  width: auto;
+  height: auto;
+  flex: 0 0 auto;
+  background: transparent;
+}
+
+.message-action-sheet .chat-action-button.active {
+  background: rgba(76, 110, 245, 0.12);
+}
+
+.message-bubble-row.peer .message-meta.attachment-only-meta {
+  justify-content: flex-start;
+}
+
+.message-bubble-row.peer .message-overflow-button {
+  order: -1;
 }
 
 .message-reply-context {
@@ -2981,6 +3028,21 @@ select,
 .message-bubble-row.peer .message-action-button {
   color: rgba(0, 0, 0, 0.56);
   background: rgba(15, 23, 42, 0.06);
+}
+
+.message-bubble-row .message-action-button.message-overflow-button {
+  border: 0;
+  background: transparent;
+}
+
+.message-overflow-button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
+
+.message-composer-panel.emoji-panel {
+  max-height: 180px;
+  overflow-y: auto;
 }
 
 .message-editing-banner {
@@ -4127,6 +4189,13 @@ select,
 .settings-profile-field > .ant-input,
 .settings-profile-field > .ant-input-textarea {
   width: 100%;
+}
+
+.settings-profile-cover {
+  width: 100%;
+  height: 112px;
+  border-radius: 12px;
+  object-fit: cover;
 }
 
 .settings-station-actions {

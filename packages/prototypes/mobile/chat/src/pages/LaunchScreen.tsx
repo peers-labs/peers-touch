@@ -30,7 +30,6 @@ export function LaunchScreen({
         <header className="mp-launch-brand">
           <img src={logo} alt="Peers Touch" className="mp-launch-brand-logo" />
           <div className="mp-launch-brand-copy">
-            <span>Peers</span>
             <h1 id="mp-launch-title">Connect Your Station</h1>
             <p>Choose Station</p>
           </div>

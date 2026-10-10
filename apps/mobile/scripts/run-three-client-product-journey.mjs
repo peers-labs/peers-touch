@@ -26,6 +26,7 @@ const requiredClients = Object.freeze({
   'ios-coral': Object.freeze({ actor: 'coral', platform: 'ios' }),
 });
 const requiredClientIds = Object.freeze(Object.keys(requiredClients));
+const desktopActivationOwners = new Map();
 const requiredPhases = Object.freeze([
   'entry',
   'shell',
@@ -1064,6 +1065,7 @@ async function recordJourneyStep({
 }) {
   const startedAt = new Date().toISOString();
   try {
+    await activateForegroundClient(clientId, client);
     const result = await action();
     const evidence = await captureJourneyStep(
       clientId,
@@ -1108,12 +1110,21 @@ async function recordJourneyStep({
       completedAt: new Date().toISOString(),
     });
     throw error;
+  } finally {
+    await releaseForegroundClient(clientId, client);
   }
 }
 
 async function activateForegroundClient(clientId, client) {
   if (client.platform === 'desktop') {
     const desktopPid = desktopListenerPid(clientId, client);
+    if (!desktopActivationOwners.has(clientId)) {
+      const previousPid = frontmostDesktopPid();
+      desktopActivationOwners.set(
+        clientId,
+        previousPid !== desktopPid ? { previousPid, desktopPid, client } : null,
+      );
+    }
     const result = await webdriverRequest(
       webdriverEndpoint(client, '/execute/async'),
       {
@@ -1183,6 +1194,60 @@ async function activateForegroundClient(clientId, client) {
     `${clientId} native application state is ${state}, expected foreground`,
   );
   return state;
+}
+
+function frontmostDesktopPid() {
+  return Number(execFileSync(
+    'osascript',
+    ['-e', 'tell application "System Events" to get unix id of first process whose frontmost is true'],
+    { encoding: 'utf8' },
+  ).trim());
+}
+
+async function releaseForegroundClient(clientId, client) {
+  if (client.platform !== 'desktop') return;
+  const owner = desktopActivationOwners.get(clientId);
+  desktopActivationOwners.delete(clientId);
+  if (!owner || frontmostDesktopPid() !== owner.desktopPid) return;
+  assertContract(
+    Number.isInteger(owner.previousPid) && owner.previousPid > 0,
+    'DESKTOP_ACTIVATION_OWNER_INVALID',
+    `${clientId} has no valid previous application to restore`,
+  );
+  try {
+    const yielded = await webdriverRequest(
+      webdriverEndpoint(client, '/execute/async'),
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          script: `
+            const done = arguments[arguments.length - 1];
+            window.__TAURI__.core.invoke('acceptance_yield_activation', {
+              targetPid: arguments[0]
+            }).then(done).catch((error) => done({ ok: false, error: String(error) }));
+          `,
+          args: [owner.previousPid],
+        }),
+      },
+    );
+    assertContract(
+      yielded?.ok === true,
+      'DESKTOP_ACTIVATION_RELEASE_FAILED',
+      `${clientId} could not yield activation to ${owner.previousPid}`,
+    );
+  } finally {
+    if (frontmostDesktopPid() === owner.desktopPid) {
+      execFileSync(
+        'osascript',
+        [
+          '-e',
+          'tell application "System Events" to set frontmost of first process '
+            + `whose unix id is ${owner.previousPid} to true`,
+        ],
+        { encoding: 'utf8' },
+      );
+    }
+  }
 }
 
 function processIsAlive(pid) {
@@ -1599,6 +1664,7 @@ async function probeClient(clientId, client, evidenceDir) {
     };
   } finally {
     await restoreContext(client, priorContext);
+    await releaseForegroundClient(clientId, client);
   }
 }
 
@@ -5360,7 +5426,51 @@ async function openMobileMessageActions(clientId, client, messageText) {
       };
     `,
   );
-  return message;
+  const presentation = await executeWebScript(
+    client,
+    `
+      const row = document.querySelector(
+        '[data-message-ulid="' + CSS.escape(arguments[0]) + '"]'
+      );
+      const avatar = row?.querySelector('.message-avatar');
+      const bubble = row?.querySelector('.message-bubble');
+      const overflow = row?.querySelector('.message-overflow-button');
+      const sheet = document.querySelector('[data-product-surface="chat.message-actions"]');
+      const reactions = [...(sheet?.querySelectorAll('.message-reaction-choice') || [])];
+      const actions = [...(sheet?.querySelectorAll('.chat-action-button') || [])];
+      const mine = row?.classList.contains('mine');
+      const style = overflow ? getComputedStyle(overflow) : null;
+      const target = (element) => element.getBoundingClientRect();
+      const compactActions = actions.every((button) => {
+        const rect = target(button);
+        return rect.width >= 44 && rect.width <= 48 && rect.height >= 44
+          && button.getAttribute('aria-label')
+          && getComputedStyle(button.lastElementChild).display === 'none';
+      });
+      return {
+        topAligned: Boolean(avatar && bubble)
+          && Math.abs(target(avatar).top - target(bubble).top) <= 1,
+        ownerSide: Boolean(overflow && bubble)
+          && (mine
+            ? target(overflow).right >= target(bubble).right - 12
+            : target(overflow).left <= target(bubble).left + 12),
+        borderless: style?.borderTopWidth === '0px'
+          && style.backgroundColor === 'rgba(0, 0, 0, 0)',
+        reactionCount: reactions.length,
+        emojiOnly: reactions.every((button) => !button.querySelector('svg')),
+        compactActions
+      };
+    `,
+    [message.messageId],
+  );
+  assertContract(
+    presentation.topAligned && presentation.ownerSide && presentation.borderless
+      && presentation.reactionCount === 40 && presentation.emojiOnly
+      && presentation.compactActions,
+    'CHAT_MESSAGE_PRESENTATION_INVALID',
+    `${clientId} message presentation violates the UI contract: ${JSON.stringify(presentation)}`,
+  );
+  return { ...message, presentation };
 }
 
 async function reactToMobileMessage(
@@ -8591,7 +8701,14 @@ async function main() {
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
+  for (const [clientId, owner] of desktopActivationOwners) {
+    try {
+      await releaseForegroundClient(clientId, owner?.client ?? { platform: 'desktop' });
+    } catch (cleanupError) {
+      process.stderr.write(`FAIL DESKTOP_ACTIVATION_RELEASE: ${cleanupError.message}\n`);
+    }
+  }
   const code = error instanceof JourneyContractError
     ? error.code
     : 'UNEXPECTED_FAILURE';

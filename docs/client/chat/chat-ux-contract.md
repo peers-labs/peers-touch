@@ -63,6 +63,10 @@ Slot rules:
 - `MetaRow` owns time, sent/delivered/read state, failure state, and retry entry.
 - `ActionAnchor` owns placement for context menus, hover actions, long-press actions, and overflow controls.
 - `AvatarSlot` and `SenderSlot` may collapse in consecutive message groups, but their absence MUST NOT change message body width unpredictably.
+- Avatar and message content begin at the same top edge. Message height must
+  never move the avatar down to the metadata baseline.
+- Overflow entry is transparent and borderless, with received-message entry
+  toward the sender on the left and sent-message entry toward self on the right.
 
 Anti-patterns:
 
@@ -212,6 +216,10 @@ Platform contracts may map these tokens to different values.
 
 - User-facing strings MUST use locale keys.
 - Interactive action targets MUST expose accessible names.
+- Reactions display the selected Unicode emoji without a second smiley icon.
+  Mobile reaction and composer pickers share the same bounded emoji catalog.
+- Repeated message commands use compact icon controls with accessible names and
+  tooltips. Compact presentation preserves the platform's minimum touch target.
 - Keyboard focus, screen reader order, and visible focus state MUST match message anatomy order.
 - Desktop MUST support keyboard and right-click access to message actions.
 - Mobile MUST support touch targets large enough for thumb interaction.

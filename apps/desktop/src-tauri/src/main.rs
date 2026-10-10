@@ -53,30 +53,6 @@ use tauri::{Emitter, Manager};
 const MESSAGING_PROJECTION_CHANGED_EVENT: &str = "messaging:projection-changed";
 
 #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
-fn configure_acceptance_window_level(window: &tauri::WebviewWindow) -> std::io::Result<()> {
-    use dispatch2::DispatchQueue;
-    use objc2_app_kit::{NSScreenSaverWindowLevel, NSWindow, NSWindowCollectionBehavior};
-
-    let ns_window = window.ns_window().map_err(|error| {
-        std::io::Error::other(format!("acceptance native window lookup failed: {error}"))
-    })? as usize;
-    DispatchQueue::main().exec_async(move || {
-        let ns_window = unsafe { &*(ns_window as *mut NSWindow) };
-        let collection_behavior = ns_window.collectionBehavior()
-            | NSWindowCollectionBehavior::CanJoinAllSpaces
-            | NSWindowCollectionBehavior::FullScreenAuxiliary;
-        ns_window.setCollectionBehavior(collection_behavior);
-        ns_window.setLevel(NSScreenSaverWindowLevel);
-    });
-    Ok(())
-}
-
-#[cfg(all(feature = "acceptance-webdriver", not(target_os = "macos")))]
-fn configure_acceptance_window_level(_window: &tauri::WebviewWindow) -> std::io::Result<()> {
-    Ok(())
-}
-
-#[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
 #[tauri::command]
 fn acceptance_yield_activation(target_pid: i32) -> error::AppResult<serde_json::Value> {
     use objc2::MainThreadMarker;
@@ -315,10 +291,6 @@ fn configure_acceptance_window(
     window.show().map_err(|error| {
         std::io::Error::other(format!("acceptance window show failed: {error}"))
     })?;
-    window.set_always_on_top(true).map_err(|error| {
-        std::io::Error::other(format!("acceptance window layering failed: {error}"))
-    })?;
-    configure_acceptance_window_level(window)?;
     Ok(())
 }
 

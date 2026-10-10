@@ -8,7 +8,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ConversationClearBatchResult } from '@peers-touch/client-chat-core';
 import {
-  Avatar,
   Button,
   Card,
   Checkbox,
@@ -40,6 +39,8 @@ import {
 import { useMobileI18n } from '../../app/mobileI18n';
 import { ChatRetentionPreset } from '../../gen/proto/domain/chat/storage_pb';
 import { MobileNotice } from '../../components/MobileNotice';
+import { MobileAvatar } from '../../components/MobileAvatar';
+import { useAvatarAsset } from '../../runtimes/avatarAssetRuntime';
 import type {
   DevicePermission,
   DevicePreferences,
@@ -78,6 +79,7 @@ export function ProfileSection({
   onPatch: (patch: Partial<EditableProfileDraft>) => void;
 }) {
   const { t } = useMobileI18n();
+  const headerAsset = useAvatarAsset(profile?.header);
   return (
     <Card className="settings-section" variant="borderless">
       <div className="settings-section-header">
@@ -105,24 +107,45 @@ export function ProfileSection({
           onChange={(event) => onPatch({ note: event.target.value })}
         />
       </label>
-      <label className="settings-profile-field">
-        <Text type="secondary">{t('mobile.settings.profile.avatarUrl')}</Text>
-        <Input
-          value={profile?.avatar ?? ''}
-          disabled={disabled || !profile}
-          inputMode="url"
-          onChange={(event) => onPatch({ avatar: event.target.value })}
+      <div className="settings-row">
+        <Text type="secondary">{t('mobile.settings.profile.avatar')}</Text>
+        <MobileAvatar
+          src={profile?.avatar}
+          name={profile?.displayName || actorIdentity}
+          identityKey={actorIdentity}
+          size={48}
         />
-      </label>
-      <label className="settings-profile-field">
-        <Text type="secondary">{t('mobile.settings.profile.headerUrl')}</Text>
-        <Input
-          value={profile?.header ?? ''}
-          disabled={disabled || !profile}
-          inputMode="url"
-          onChange={(event) => onPatch({ header: event.target.value })}
-        />
-      </label>
+        {profile?.avatar ? (
+          <Button
+            type="text"
+            aria-label={t('mobile.settings.profile.removeAvatar')}
+            icon={<Trash2 size={16} />}
+            disabled={disabled}
+            onClick={() => onPatch({ avatar: '' })}
+          />
+        ) : null}
+      </div>
+      {profile?.header ? (
+        <div className="settings-profile-field">
+          <div className="settings-row">
+            <Text type="secondary">{t('mobile.settings.profile.header')}</Text>
+            <Button
+              type="text"
+              aria-label={t('mobile.settings.profile.removeHeader')}
+              icon={<Trash2 size={16} />}
+              disabled={disabled}
+              onClick={() => onPatch({ header: '' })}
+            />
+          </div>
+          {headerAsset.src ? (
+            <img
+              className="settings-profile-cover"
+              src={headerAsset.src}
+              alt={t('mobile.settings.profile.header')}
+            />
+          ) : null}
+        </div>
+      ) : null}
       <label className="settings-profile-field">
         <Text type="secondary">{t('mobile.settings.profile.region')}</Text>
         <Input
@@ -904,7 +927,9 @@ export function StorageSection({
                 {batchMode ? (
                   <Checkbox
                     aria-label={t('mobile.settings.storage.batchSelectConversation', {
-                      name: usage.conversationName || usage.conversationId,
+                      name: usage.conversationName || t(usage.conversationKind === 2
+                        ? 'mobile.settings.storage.group'
+                        : 'mobile.settings.storage.direct'),
                     })}
                     checked={selectedConversationIds.has(usage.conversationId)}
                     disabled={batchRunning}
@@ -916,7 +941,9 @@ export function StorageSection({
                 ) : null}
                 <div className="settings-storage-conversation-label">
                   <Text strong ellipsis>
-                    {usage.conversationName || usage.conversationId}
+                    {usage.conversationName || t(usage.conversationKind === 2
+                      ? 'mobile.settings.storage.group'
+                      : 'mobile.settings.storage.direct')}
                   </Text>
                   <Text type="secondary">
                     {usage.conversationKind === 2
@@ -1272,15 +1299,14 @@ export function BlockedUsersSection({
             data-blocked-user={item.targetPtid}
             key={item.targetPtid}
           >
-            <Avatar src={item.avatar || undefined}>
-              {item.displayName.slice(0, 2).toUpperCase()}
-            </Avatar>
+            <MobileAvatar
+              src={item.avatar}
+              name={item.displayName}
+              identityKey={item.targetPtid}
+              size={40}
+            />
             <div className="settings-station-copy settings-blocked-user-copy">
               <Text>{item.displayName}</Text>
-              <Text copyable>{item.targetPtid}</Text>
-              {item.homeStationPeerId ? (
-                <Text type="secondary">{item.homeStationPeerId}</Text>
-              ) : null}
             </div>
             <Button
               className="settings-blocked-user-action"

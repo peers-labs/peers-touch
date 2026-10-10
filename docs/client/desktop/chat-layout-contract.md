@@ -88,6 +88,11 @@ Desktop composer requirements:
 - Keyboard shortcuts MUST not steal focus from message text selection.
 - Send, attach, emoji, mention, and voice/file affordances must be keyboard reachable when present.
 - Composer expansion MUST reduce `MessageViewportRect` height instead of overlaying the last message.
+- Foreground automation acquires activation for one product action and its
+  capture, then restores the previously active application in `finally`.
+  If the user switches to another application during that action, automation
+  must preserve their new choice. Permanent topmost/screen-saver window levels
+  and recurring focus-keeper loops are forbidden.
 
 ## 7. Window And Density Rules
 
