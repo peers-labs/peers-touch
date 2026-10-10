@@ -441,6 +441,7 @@ interface GroupManagementModalProps {
   readonly members: readonly MessagingMemberAuthorityMemberProjection[];
   readonly myRole: number;
   readonly canManage: boolean;
+  readonly writeAdmissionOpen: boolean;
   readonly groupNameDraft: string;
   readonly setGroupNameDraft: (value: string) => void;
   readonly groupDescriptionDraft: string;
@@ -476,6 +477,7 @@ export function GroupManagementModal({
   members,
   myRole,
   canManage,
+  writeAdmissionOpen,
   groupNameDraft,
   setGroupNameDraft,
   groupDescriptionDraft,
@@ -508,13 +510,16 @@ export function GroupManagementModal({
     (outcome) => outcome.state === 'uncertain',
   ) ?? visibleGroupOutcomes[0];
   const groupCommandBusy = visibleGroupOutcomes.some(isGroupCommandBusy);
+  const operationDisabled = !writeAdmissionOpen
+    || Boolean(pendingOperation)
+    || groupCommandBusy;
 
   const runOperation = async (
     operationKey: string,
     failureKey: string,
     operation: () => Promise<unknown>,
   ) => {
-    if (pendingOperation || groupCommandBusy) return;
+    if (operationDisabled) return;
     setPendingOperation(operationKey);
     setOperationError('');
     try {
@@ -540,6 +545,7 @@ export function GroupManagementModal({
       <aside
         className="chat-action-sheet group-management-sheet"
         data-acceptance-id="group-management"
+        data-chat-write-admission={writeAdmissionOpen ? 'open' : 'closed'}
         role="dialog"
         aria-modal="true"
         aria-labelledby="group-management-title"
@@ -557,6 +563,9 @@ export function GroupManagementModal({
           </button>
         </div>
         <div className="chat-action-list group-management-panel">
+          {!writeAdmissionOpen ? (
+            <Alert type="info" showIcon title={t('mobile.recovery.writeRevocation.body')} />
+          ) : null}
           {!canManage ? (
             <Alert
               type="info"
@@ -592,8 +601,7 @@ export function GroupManagementModal({
               loading={pendingOperation === 'save'}
               disabled={
                 !groupNameDraft.trim()
-                || Boolean(pendingOperation)
-                || groupCommandBusy
+                || operationDisabled
               }
               onClick={() => void runOperation(
                 'save',
@@ -613,7 +621,7 @@ export function GroupManagementModal({
             <Switch
               aria-label={t('mobile.group.myMuted')}
               checked={Boolean(conversationSettings?.isMuted)}
-              disabled={Boolean(pendingOperation) || groupCommandBusy}
+              disabled={operationDisabled}
               onChange={(value) => void runOperation(
                 'settings:mute',
                 'mobile.settings.dirty.saveFailed',
@@ -626,7 +634,7 @@ export function GroupManagementModal({
             <Switch
               aria-label={t('mobile.group.pinned')}
               checked={Boolean(conversationSettings?.isPinned)}
-              disabled={Boolean(pendingOperation) || groupCommandBusy}
+              disabled={operationDisabled}
               onChange={(value) => void runOperation(
                 'settings:pin',
                 'mobile.settings.dirty.saveFailed',
@@ -675,7 +683,7 @@ export function GroupManagementModal({
                             <Button
                               key="role"
                               size="small"
-                              disabled={Boolean(pendingOperation) || groupCommandBusy}
+                              disabled={operationDisabled}
                               onClick={() => void runOperation(
                                 `${memberOperation}:role`,
                                 'mobile.group.operationUpdateMemberFailed',
@@ -696,7 +704,7 @@ export function GroupManagementModal({
                             <Button
                               key="transfer"
                               size="small"
-                              disabled={Boolean(pendingOperation) || groupCommandBusy}
+                              disabled={operationDisabled}
                               onClick={() => {
                                 Modal.confirm({
                                   title: t('mobile.group.transferOwnerConfirmTitle'),
@@ -721,7 +729,7 @@ export function GroupManagementModal({
                             <Button
                               key="mute"
                               size="small"
-                              disabled={Boolean(pendingOperation) || groupCommandBusy}
+                              disabled={operationDisabled}
                               onClick={() => void runOperation(
                                 `${memberOperation}:mute`,
                                 'mobile.group.operationUpdateMemberFailed',
@@ -738,7 +746,7 @@ export function GroupManagementModal({
                               key="remove"
                               size="small"
                               danger
-                              disabled={Boolean(pendingOperation) || groupCommandBusy}
+                              disabled={operationDisabled}
                               onClick={() => {
                                 Modal.confirm({
                                   title: t('common.action.confirm'),
@@ -817,7 +825,7 @@ export function GroupManagementModal({
                             key="invite"
                             size="small"
                             type="primary"
-                            disabled={Boolean(pendingOperation) || groupCommandBusy}
+                            disabled={operationDisabled}
                             loading={
                               pendingOperation === `invite:${candidate.peerPtid}`
                               || isGroupCommandBusy(membershipOutcome)
@@ -865,7 +873,7 @@ export function GroupManagementModal({
             <Button
               danger
               block
-              disabled={Boolean(pendingOperation) || groupCommandBusy}
+              disabled={operationDisabled}
               loading={pendingOperation === 'leave-or-dissolve'}
               onClick={() => {
                 const owner = myRole === MemberRole.OWNER;

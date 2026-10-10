@@ -656,6 +656,7 @@ function ChatFixtureOverlay({
           ? MemberRole.MEMBER
           : MemberRole.OWNER}
         canManage={surfaceId !== 'chat.group-role-denied'}
+        writeAdmissionOpen
         groupNameDraft={FIXTURE_GROUP.name}
         setGroupNameDraft={() => undefined}
         groupDescriptionDraft={FIXTURE_GROUP.description ?? ''}

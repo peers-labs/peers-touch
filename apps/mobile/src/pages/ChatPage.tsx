@@ -1737,6 +1737,7 @@ function ChatPageInner({
               members={groupMembers}
               myRole={myGroupRole}
               canManage={canManageGroupMembers}
+              writeAdmissionOpen={chatWriteAdmissionOpen}
               groupNameDraft={groupNameDraft}
               setGroupNameDraft={setGroupNameDraft}
               groupDescriptionDraft={groupDescriptionDraft}
