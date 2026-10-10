@@ -3304,6 +3304,1094 @@ async function runShellPhase(manifest, evidenceDir, preflight) {
   return { ...report, reportPath, tracePath };
 }
 
+async function navigateContactsSurface(clientId, client) {
+  if (client.platform === 'desktop') {
+    await navigateDesktopPrimary(
+      clientId,
+      client,
+      'chat',
+      '[data-social-chat-layout]',
+    );
+    await clickSelector(
+      client,
+      '[data-chat-subpage="contacts"]',
+      'open-contacts',
+    );
+    return waitForUi(
+      clientId,
+      client,
+      'Desktop Contacts projection',
+      `
+        const panel = document.querySelector('[data-chat-contacts]');
+        return {
+          ready: Boolean(panel?.getClientRects().length)
+            && panel.getAttribute('data-chat-friendship-state') === 'ready',
+          state: panel?.getAttribute('data-chat-friendship-state') || '',
+          text: (panel?.innerText || '').slice(0, 2400)
+        };
+      `,
+    );
+  }
+  await navigateMobileShell(
+    clientId,
+    client,
+    'contacts',
+    '[data-product-surface="contacts.list"]',
+  );
+  return waitForUi(
+    clientId,
+    client,
+    'Mobile Contacts projection',
+    `
+      const surface = document.querySelector(
+        '[data-product-surface="contacts.list"]'
+      );
+      return {
+        ready: Boolean(surface?.getClientRects().length),
+        text: (surface?.innerText || '').slice(0, 2400)
+      };
+    `,
+  );
+}
+
+async function openMobileFindPeople(clientId, client) {
+  await navigateContactsSurface(clientId, client);
+  await clickVisibleSelector(
+    client,
+    '[data-contacts-find-people]',
+    'open-find-people',
+  );
+  return waitForUi(
+    clientId,
+    client,
+    'Find People controls',
+    `
+      const surface = document.querySelector(
+        '[data-product-surface="contacts.add-friend"]'
+      );
+      const input = surface?.querySelector('input');
+      return {
+        ready: Boolean(surface?.getClientRects().length)
+          && input instanceof HTMLInputElement
+          && !input.disabled,
+        text: (surface?.innerText || '').slice(0, 2200)
+      };
+    `,
+  );
+}
+
+async function closeMobileContactsOverlay(clientId, client, surfaceSelector) {
+  const closed = await executeWebScript(
+    client,
+    `
+      const surface = document.querySelector(arguments[0]);
+      const modal = surface?.closest('.ant-modal');
+      const close = modal?.querySelector('button.ant-modal-close');
+      if (!(close instanceof HTMLButtonElement)) return false;
+      close.click();
+      return true;
+    `,
+    [surfaceSelector],
+  );
+  assertContract(
+    closed === true,
+    'CONTACTS_OVERLAY_CLOSE_MISSING',
+    `${clientId} cannot close ${surfaceSelector}`,
+  );
+  await waitForUi(
+    clientId,
+    client,
+    `closed ${surfaceSelector}`,
+    `
+      const surface = document.querySelector(arguments[0]);
+      return {
+        ready: !surface || !surface.getClientRects().length
+      };
+    `,
+    [surfaceSelector],
+  );
+}
+
+async function proveMobilePeopleNoResult(clientId, client, query) {
+  await openMobileFindPeople(clientId, client);
+  await setInputValue(
+    client,
+    '[data-product-surface="contacts.add-friend"] input',
+    query,
+    'enter-no-result-people-query',
+  );
+  await clickVisibleSelector(
+    client,
+    '[data-product-surface="contacts.add-friend"] .people-search-button',
+    'search-no-result-person',
+  );
+  const result = await waitForUi(
+    clientId,
+    client,
+    'distinct no-result feedback',
+    `
+      const state = document.querySelector('[data-people-search-state]');
+      return {
+        ready: state?.getAttribute('data-people-search-state')
+          === 'local-no-result',
+        state: state?.getAttribute('data-people-search-state') || '',
+        text: (state?.innerText || '').slice(0, 1200)
+      };
+    `,
+  );
+  await closeMobileContactsOverlay(
+    clientId,
+    client,
+    '[data-product-surface="contacts.add-friend"]',
+  );
+  return result;
+}
+
+async function searchMobilePerson(clientId, client, query, friendlyName) {
+  await openMobileFindPeople(clientId, client);
+  await setInputValue(
+    client,
+    '[data-product-surface="contacts.add-friend"] input',
+    query,
+    `search-${query}`,
+  );
+  await clickVisibleSelector(
+    client,
+    '[data-product-surface="contacts.add-friend"] .people-search-button',
+    `submit-search-${query}`,
+  );
+  return waitForUi(
+    clientId,
+    client,
+    `search result for ${friendlyName}`,
+    `
+      const friendlyName = arguments[0].toLowerCase();
+      const query = arguments[1].toLowerCase();
+      const cards = [...document.querySelectorAll(
+        '[data-people-result-ptid]'
+      )].filter((element) => element.getClientRects().length);
+      const card = cards.find((element) => {
+        const text = (element.innerText || '').toLowerCase();
+        return text.includes(friendlyName) || text.includes(query);
+      });
+      return {
+        ready: Boolean(card),
+        ptid: card?.getAttribute('data-people-result-ptid') || '',
+        state: card?.getAttribute('data-people-result-state') || '',
+        text: (card?.innerText || '').slice(0, 1400)
+      };
+    `,
+    [friendlyName, query],
+  );
+}
+
+async function requestMobileFriendship(
+  clientId,
+  client,
+  query,
+  friendlyName,
+) {
+  const result = await searchMobilePerson(
+    clientId,
+    client,
+    query,
+    friendlyName,
+  );
+  assertContract(
+    result.ptid,
+    'CONTACTS_SEARCH_IDENTITY_MISSING',
+    `${clientId} search result for ${friendlyName} has no Actor PTID`,
+  );
+  let action = 'reused';
+  if (result.state === 'available') {
+    const clicked = await executeWebScript(
+      client,
+      `
+        const button = document.querySelector(
+          '[data-people-result-action="' + CSS.escape(arguments[0]) + '"]'
+        );
+        if (!(button instanceof HTMLButtonElement) || button.disabled) {
+          return false;
+        }
+        button.click();
+        return true;
+      `,
+      [result.ptid],
+    );
+    assertContract(
+      clicked === true,
+      'CONTACTS_REQUEST_CONTROL_MISSING',
+      `${clientId} cannot send a request to ${friendlyName}`,
+    );
+    action = 'sent';
+  } else {
+    assertContract(
+      [
+        'friend',
+        'incoming-pending',
+        'outgoing-pending',
+      ].includes(result.state),
+      'CONTACTS_REQUEST_STATE_INVALID',
+      `${clientId} search result for ${friendlyName} is ${result.state}`,
+    );
+  }
+  const outcome = await waitForUi(
+    clientId,
+    client,
+    `request state for ${friendlyName}`,
+    `
+      const card = document.querySelector(
+        '[data-people-result-ptid="' + CSS.escape(arguments[0]) + '"]'
+      );
+      const state = card?.getAttribute('data-people-result-state') || '';
+      return {
+        ready: ['friend', 'incoming-pending', 'outgoing-pending'].includes(
+          state
+        ),
+        state,
+        text: (card?.innerText || '').slice(0, 1400)
+      };
+    `,
+    [result.ptid],
+  );
+  await closeMobileContactsOverlay(
+    clientId,
+    client,
+    '[data-product-surface="contacts.add-friend"]',
+  );
+  return {
+    action,
+    peerPtid: result.ptid,
+    state: outcome.state,
+  };
+}
+
+async function acceptIncomingFriendship(
+  clientId,
+  client,
+  friendlyName,
+  expectedPeerPtid = '',
+) {
+  await navigateContactsSurface(clientId, client);
+  const projection = await waitForUi(
+    clientId,
+    client,
+    `incoming request or accepted contact for ${friendlyName}`,
+    client.platform === 'desktop'
+      ? `
+          const [friendlyName, expectedPeerPtid] = arguments;
+          const matches = (element) => {
+            const ptid = element.getAttribute(
+              'data-chat-contact-ptid'
+            ) || element.getAttribute(
+              'data-chat-friend-request-peer-ptid'
+            ) || '';
+            return (expectedPeerPtid && ptid === expectedPeerPtid)
+              || (element.innerText || '').toLowerCase().includes(
+                friendlyName.toLowerCase()
+              );
+          };
+          const friend = [...document.querySelectorAll(
+            '[data-chat-contact-ptid]'
+          )].find((element) => (
+            element.getClientRects().length && matches(element)
+          ));
+          const request = [...document.querySelectorAll(
+            '[data-chat-friend-request-direction="incoming"]'
+          )].find((element) => (
+            element.getClientRects().length && matches(element)
+          ));
+          return {
+            ready: Boolean(friend || request),
+            kind: friend ? 'friend' : request ? 'request' : '',
+            peerPtid: (
+              friend?.getAttribute('data-chat-contact-ptid')
+              || request?.getAttribute(
+                'data-chat-friend-request-peer-ptid'
+              )
+              || ''
+            ),
+            text: ((friend || request)?.innerText || '').slice(0, 1400)
+          };
+        `
+      : `
+          const [friendlyName, expectedPeerPtid] = arguments;
+          const matches = (element) => {
+            const ptid = element.getAttribute('data-contact-ptid')
+              || element.getAttribute(
+                'data-friend-request-sender-ptid'
+              )
+              || '';
+            return (expectedPeerPtid && ptid === expectedPeerPtid)
+              || (element.innerText || '').toLowerCase().includes(
+                friendlyName.toLowerCase()
+              );
+          };
+          const friend = [...document.querySelectorAll(
+            '[data-contact-ptid]'
+          )].find((element) => (
+            element.getClientRects().length && matches(element)
+          ));
+          const request = [...document.querySelectorAll(
+            '[data-friend-request-direction="incoming"]'
+          )].find((element) => (
+            element.getClientRects().length && matches(element)
+          ));
+          return {
+            ready: Boolean(friend || request),
+            kind: friend ? 'friend' : request ? 'request' : '',
+            peerPtid: (
+              friend?.getAttribute('data-contact-ptid')
+              || request?.getAttribute(
+                'data-friend-request-sender-ptid'
+              )
+              || ''
+            ),
+            text: ((friend || request)?.innerText || '').slice(0, 1400)
+          };
+        `,
+    [friendlyName, expectedPeerPtid],
+  );
+  assertContract(
+    projection.peerPtid,
+    'CONTACTS_REQUEST_IDENTITY_MISSING',
+    `${clientId} request from ${friendlyName} has no Actor PTID`,
+  );
+  if (projection.kind === 'request') {
+    const accepted = await executeWebScript(
+      client,
+      client.platform === 'desktop'
+        ? `
+            const request = document.querySelector(
+              '[data-chat-friend-request-peer-ptid="'
+                + CSS.escape(arguments[0])
+                + '"][data-chat-friend-request-direction="incoming"]'
+            );
+            const button = request?.querySelector(
+              '[data-chat-friend-request-action="accept"]'
+            );
+            if (!(button instanceof HTMLButtonElement) || button.disabled) {
+              return false;
+            }
+            button.click();
+            return true;
+          `
+        : `
+            const request = document.querySelector(
+              '[data-friend-request-sender-ptid="'
+                + CSS.escape(arguments[0])
+                + '"]'
+            );
+            const button = [...(request?.querySelectorAll('button') || [])]
+              .find((candidate) => /accept/i.test(
+                candidate.getAttribute('aria-label') || ''
+              ));
+            if (!(button instanceof HTMLButtonElement) || button.disabled) {
+              return false;
+            }
+            button.click();
+            return true;
+          `,
+      [projection.peerPtid],
+    );
+    assertContract(
+      accepted === true,
+      'CONTACTS_ACCEPT_CONTROL_MISSING',
+      `${clientId} cannot accept ${friendlyName}`,
+    );
+  }
+  const friend = await waitForUi(
+    clientId,
+    client,
+    `accepted contact ${friendlyName}`,
+    client.platform === 'desktop'
+      ? `
+          const friend = document.querySelector(
+            '[data-chat-contact-ptid="' + CSS.escape(arguments[0]) + '"]'
+          );
+          return {
+            ready: Boolean(friend?.getClientRects().length),
+            peerPtid: arguments[0],
+            text: (friend?.innerText || '').slice(0, 1400)
+          };
+        `
+      : `
+          const friend = document.querySelector(
+            '[data-contact-ptid="' + CSS.escape(arguments[0]) + '"]'
+          );
+          return {
+            ready: Boolean(friend?.getClientRects().length),
+            peerPtid: arguments[0],
+            text: (friend?.innerText || '').slice(0, 1400)
+          };
+        `,
+    [projection.peerPtid],
+  );
+  return {
+    action: projection.kind === 'request' ? 'accepted' : 'reused',
+    ...friend,
+  };
+}
+
+async function verifyMobileDuplicateFriendship(
+  clientId,
+  client,
+  query,
+  friendlyName,
+  expectedPeerPtid,
+) {
+  const result = await searchMobilePerson(
+    clientId,
+    client,
+    query,
+    friendlyName,
+  );
+  assertContract(
+    result.ptid === expectedPeerPtid && result.state === 'friend',
+    'CONTACTS_DUPLICATE_STATE_MISSING',
+    `${clientId} does not show ${friendlyName} as an existing friend`,
+  );
+  await closeMobileContactsOverlay(
+    clientId,
+    client,
+    '[data-product-surface="contacts.add-friend"]',
+  );
+  return result;
+}
+
+async function openAndVerifyContactProfile(
+  clientId,
+  client,
+  peerPtid,
+  friendlyName,
+) {
+  await navigateContactsSurface(clientId, client);
+  if (client.platform === 'desktop') {
+    await clickVisibleSelector(
+      client,
+      `[data-chat-contact-ptid="${peerPtid}"]`,
+      `open-${friendlyName}-profile`,
+    );
+    const profile = await waitForUi(
+      clientId,
+      client,
+      `${friendlyName} profile`,
+      `
+        const detail = document.querySelector(
+          '[data-chat-contact-detail-kind="friend"]'
+            + '[data-chat-contact-detail-peer-ptid="'
+            + CSS.escape(arguments[0])
+            + '"]'
+        );
+        const text = detail?.innerText || '';
+        return {
+          ready: Boolean(detail?.getClientRects().length)
+            && text.toLowerCase().includes(arguments[1].toLowerCase()),
+          text: text.slice(0, 2400)
+        };
+      `,
+      [peerPtid, friendlyName],
+    );
+    assertContract(
+      !/^ptid:/i.test(profile.text.trim())
+        && !/^12D3Koo/i.test(profile.text.trim()),
+      'CONTACTS_PROFILE_RAW_IDENTITY',
+      `${clientId} profile starts with a raw identifier`,
+    );
+    return profile;
+  }
+
+  const opened = await executeWebScript(
+    client,
+    `
+      const row = document.querySelector(
+        '[data-contact-ptid="' + CSS.escape(arguments[0]) + '"]'
+      );
+      const action = row?.querySelector('.contact-item-row');
+      if (!(action instanceof HTMLElement)) return false;
+      action.click();
+      return true;
+    `,
+    [peerPtid],
+  );
+  assertContract(
+    opened === true,
+    'CONTACTS_PROFILE_CONTROL_MISSING',
+    `${clientId} cannot open ${friendlyName}`,
+  );
+  const profile = await waitForUi(
+    clientId,
+    client,
+    `${friendlyName} profile`,
+    `
+      const surface = document.querySelector(
+        '[data-product-surface="contacts.profile"]'
+      );
+      const title = surface?.querySelector('h1')?.innerText.trim() || '';
+      return {
+        ready: Boolean(surface?.getClientRects().length)
+          && title.toLowerCase().includes(arguments[0].toLowerCase()),
+        text: (surface?.innerText || '').slice(0, 2400),
+        title
+      };
+    `,
+    [friendlyName],
+  );
+  assertContract(
+    profile.title
+      && !/^ptid:/i.test(profile.title)
+      && !/^12D3Koo/i.test(profile.title),
+    'CONTACTS_PROFILE_RAW_IDENTITY',
+    `${clientId} profile title is ${profile.title || '<missing>'}`,
+  );
+  const destructiveConfirmation = await executeWebScript(
+    client,
+    `
+      const surface = document.querySelector(
+        '[data-product-surface="contacts.profile"]'
+      );
+      const block = [...(surface?.querySelectorAll('button') || [])]
+        .find((button) => (
+          button instanceof HTMLButtonElement
+          && !button.disabled
+          && /^block$/i.test((button.innerText || '').trim())
+        ));
+      if (!block) return false;
+      block.click();
+      return true;
+    `,
+  );
+  assertContract(
+    destructiveConfirmation === true,
+    'CONTACTS_DESTRUCTIVE_CONFIRMATION_MISSING',
+    `${clientId} profile has no Block confirmation entry`,
+  );
+  await waitForUi(
+    clientId,
+    client,
+    'destructive contact confirmation',
+    `
+      const confirm = document.querySelector('.ant-modal-confirm');
+      return {
+        ready: Boolean(confirm?.getClientRects().length),
+        text: (confirm?.innerText || '').slice(0, 1200)
+      };
+    `,
+  );
+  const cancelled = await executeWebScript(
+    client,
+    `
+      const confirm = document.querySelector('.ant-modal-confirm');
+      const cancel = [...(confirm?.querySelectorAll('button') || [])]
+        .find((button) => /cancel/i.test((button.innerText || '').trim()));
+      if (!(cancel instanceof HTMLButtonElement)) return false;
+      cancel.click();
+      return true;
+    `,
+  );
+  assertContract(
+    cancelled === true,
+    'CONTACTS_DESTRUCTIVE_CANCEL_MISSING',
+    `${clientId} cannot cancel Block`,
+  );
+  await waitForUi(
+    clientId,
+    client,
+    'closed destructive contact confirmation',
+    'return { ready: !document.querySelector(".ant-modal-confirm") };',
+  );
+  await clickVisibleSelector(
+    client,
+    'button[aria-label="Back"]',
+    'close-contact-profile',
+  );
+  await waitForUi(
+    clientId,
+    client,
+    'Contacts list after profile',
+    `
+      const surface = document.querySelector(
+        '[data-product-surface="contacts.list"]'
+      );
+      return { ready: Boolean(surface?.getClientRects().length) };
+    `,
+  );
+  return profile;
+}
+
+async function createMobileSharedGroup(
+  clientId,
+  client,
+  memberPtids,
+  groupName,
+) {
+  await navigateContactsSurface(clientId, client);
+  await clickVisibleSelector(
+    client,
+    '[data-contacts-create-group]',
+    'open-create-group',
+  );
+  const initial = await waitForUi(
+    clientId,
+    client,
+    'Create Group controls',
+    `
+      const surface = document.querySelector(
+        '[data-product-surface="contacts.create-group"]'
+      );
+      const modal = surface?.closest('.ant-modal');
+      const submit = modal?.querySelector(
+        '.ant-modal-footer button.ant-btn-primary'
+      );
+      return {
+        ready: Boolean(surface?.getClientRects().length)
+          && submit instanceof HTMLButtonElement,
+        submitDisabled: submit instanceof HTMLButtonElement
+          ? submit.disabled
+          : null
+      };
+    `,
+  );
+  assertContract(
+    initial.submitDisabled === true,
+    'CONTACTS_GROUP_MEMBER_REQUIREMENT_MISSING',
+    `${clientId} Create Group is enabled without initial members`,
+  );
+  const selected = await executeWebScript(
+    client,
+    `
+      const requested = new Set(arguments[0]);
+      const controls = [...document.querySelectorAll(
+        '[data-group-member-ptid]'
+      )].filter((element) => (
+        requested.has(element.getAttribute('data-group-member-ptid'))
+      ));
+      for (const control of controls) {
+        const input = control instanceof HTMLInputElement
+          ? control
+          : control.querySelector('input[type="checkbox"]');
+        if (input instanceof HTMLInputElement && !input.checked) {
+          input.click();
+        }
+      }
+      return {
+        found: controls.map((element) => (
+          element.getAttribute('data-group-member-ptid') || ''
+        )),
+        selected: controls.filter((element) => {
+          const input = element instanceof HTMLInputElement
+            ? element
+            : element.querySelector('input[type="checkbox"]');
+          return input instanceof HTMLInputElement && input.checked;
+        }).map((element) => (
+          element.getAttribute('data-group-member-ptid') || ''
+        ))
+      };
+    `,
+    [memberPtids],
+  );
+  assertContract(
+    selected.found.length === memberPtids.length
+      && selected.selected.length === memberPtids.length,
+    'CONTACTS_GROUP_MEMBERS_MISSING',
+    `${clientId} could not select every group member: ${JSON.stringify(selected)}`,
+  );
+  await setInputValue(
+    client,
+    '[data-product-surface="contacts.create-group"] input[placeholder="Group name"]',
+    groupName,
+    'enter-group-name',
+  );
+  const submitted = await executeWebScript(
+    client,
+    `
+      const surface = document.querySelector(
+        '[data-product-surface="contacts.create-group"]'
+      );
+      const modal = surface?.closest('.ant-modal');
+      const submit = modal?.querySelector(
+        '.ant-modal-footer button.ant-btn-primary'
+      );
+      if (!(submit instanceof HTMLButtonElement) || submit.disabled) {
+        return false;
+      }
+      submit.click();
+      return true;
+    `,
+  );
+  assertContract(
+    submitted === true,
+    'CONTACTS_GROUP_CREATE_CONTROL_MISSING',
+    `${clientId} cannot submit Create Group`,
+  );
+  const created = await waitForUi(
+    clientId,
+    client,
+    `created group ${groupName}`,
+    `
+      const surface = document.querySelector(
+        '[data-product-surface="chat.group-thread"]'
+      );
+      const title = surface?.querySelector('h1')?.innerText.trim() || '';
+      const text = surface?.innerText || '';
+      return {
+        ready: Boolean(surface?.getClientRects().length)
+          && title === arguments[0]
+          && /3\\s+members?/i.test(text),
+        text: text.slice(0, 2400),
+        title
+      };
+    `,
+    [groupName],
+  );
+  return {
+    groupName,
+    memberCount: 3,
+    ...created,
+  };
+}
+
+async function openSharedGroup(
+  clientId,
+  client,
+  groupName,
+) {
+  if (client.platform === 'desktop') {
+    await navigateContactsSurface(clientId, client);
+    const group = await waitForUi(
+      clientId,
+      client,
+      `Desktop group ${groupName}`,
+      `
+        const group = [...document.querySelectorAll(
+          '[data-chat-contact-kind="group"]'
+        )].find((element) => (
+          element.getClientRects().length
+          && (element.innerText || '').includes(arguments[0])
+        ));
+        return {
+          ready: Boolean(group),
+          conversationId: group?.getAttribute(
+            'data-chat-contact-conversation-id'
+          ) || '',
+          text: (group?.innerText || '').slice(0, 1600)
+        };
+      `,
+      [groupName],
+    );
+    await clickVisibleSelector(
+      client,
+      `[data-chat-contact-conversation-id="${group.conversationId}"]`,
+      `open-${groupName}-detail`,
+    );
+    const detail = await waitForUi(
+      clientId,
+      client,
+      `Desktop group detail ${groupName}`,
+      `
+        const detail = document.querySelector(
+          '[data-chat-contact-detail-kind="group"]'
+        );
+        const text = detail?.innerText || '';
+        return {
+          ready: Boolean(detail?.getClientRects().length)
+            && text.includes(arguments[0])
+            && /3\\s+members?/i.test(text),
+          text: text.slice(0, 2400)
+        };
+      `,
+      [groupName],
+    );
+    await clickVisibleSelector(
+      client,
+      '[data-chat-contact-detail-kind="group"] [data-chat-contact-message]',
+      `open-${groupName}-thread`,
+    );
+    await waitForUi(
+      clientId,
+      client,
+      `Desktop group thread ${groupName}`,
+      `
+        const composer = document.querySelector(
+          '[data-chat-composer="' + CSS.escape(arguments[0]) + '"]'
+        );
+        const text = document.body?.innerText || '';
+        return {
+          ready: Boolean(composer) && text.includes(arguments[1]),
+          text: text.slice(0, 2400)
+        };
+      `,
+      [group.conversationId, groupName],
+    );
+    return {
+      conversationId: group.conversationId,
+      detail,
+      memberCount: 3,
+    };
+  }
+
+  await navigateMobileShell(
+    clientId,
+    client,
+    'chat',
+    '[data-product-surface^="chat.list"]',
+  );
+  const group = await waitForUi(
+    clientId,
+    client,
+    `Mobile group ${groupName}`,
+    `
+      const group = [...document.querySelectorAll(
+        '[data-conversation-kind="group"]'
+      )].find((element) => (
+        element.getClientRects().length
+        && (element.innerText || '').includes(arguments[0])
+      ));
+      return {
+        ready: Boolean(group),
+        conversationId: group?.getAttribute('data-conversation-id') || '',
+        text: (group?.innerText || '').slice(0, 1600)
+      };
+    `,
+    [groupName],
+  );
+  await clickVisibleSelector(
+    client,
+    `[data-conversation-id="${group.conversationId}"]`,
+    `open-${groupName}-thread`,
+  );
+  const thread = await waitForUi(
+    clientId,
+    client,
+    `Mobile group thread ${groupName}`,
+    `
+      const surface = document.querySelector(
+        '[data-product-surface="chat.group-thread"]'
+      );
+      const title = surface?.querySelector('h1')?.innerText.trim() || '';
+      const text = surface?.innerText || '';
+      return {
+        ready: Boolean(surface?.getClientRects().length)
+          && title === arguments[0]
+          && /3\\s+members?/i.test(text),
+        text: text.slice(0, 2400),
+        title
+      };
+    `,
+    [groupName],
+  );
+  return {
+    conversationId: group.conversationId,
+    memberCount: 3,
+    thread,
+  };
+}
+
+async function runContactsPhase(manifest, evidenceDir, preflight) {
+  const interactionTrace = [];
+  const sequenceRef = { value: 0 };
+  const step = async (clientId, stepId, action) => {
+    const client = manifest.clients[clientId];
+    await activateForegroundClient(clientId, client);
+    return withWebContext(client, async () => {
+      sequenceRef.value += 1;
+      return recordJourneyStep({
+        clientId,
+        client,
+        evidenceDir,
+        interactionTrace,
+        sequence: sequenceRef.value,
+        stepId,
+        action,
+      });
+    });
+  };
+
+  for (const clientId of requiredClientIds) {
+    await step(clientId, 'contacts-authenticated-precondition', () => (
+      ensureAuthenticated(
+        clientId,
+        manifest.clients[clientId],
+        manifest.stationUrl,
+      )
+    ));
+  }
+
+  await step(
+    'android-alice',
+    'contacts-distinct-no-result',
+    () => proveMobilePeopleNoResult(
+      'android-alice',
+      manifest.clients['android-alice'],
+      `mwpu-no-result-${Date.now()}`,
+    ),
+  );
+  const aliceToBob = (await step(
+    'android-alice',
+    'contacts-alice-request-bob',
+    () => requestMobileFriendship(
+      'android-alice',
+      manifest.clients['android-alice'],
+      'bob',
+      'Bob',
+    ),
+  )).result;
+  const bobAcceptedAlice = (await step(
+    'desktop-bob',
+    'contacts-bob-accept-alice',
+    () => acceptIncomingFriendship(
+      'desktop-bob',
+      manifest.clients['desktop-bob'],
+      'Alice',
+    ),
+  )).result;
+  const coralToAlice = (await step(
+    'ios-coral',
+    'contacts-coral-request-alice',
+    () => requestMobileFriendship(
+      'ios-coral',
+      manifest.clients['ios-coral'],
+      'alice',
+      'Alice',
+    ),
+  )).result;
+  assertContract(
+    coralToAlice.peerPtid === bobAcceptedAlice.peerPtid,
+    'CONTACTS_ACTOR_IDENTITY_DIVERGED',
+    'Bob and Coral resolved different Actor PTIDs for Alice',
+  );
+  const aliceAcceptedCoral = (await step(
+    'android-alice',
+    'contacts-alice-accept-coral',
+    () => acceptIncomingFriendship(
+      'android-alice',
+      manifest.clients['android-alice'],
+      'Coral',
+    ),
+  )).result;
+
+  await step(
+    'android-alice',
+    'contacts-bob-duplicate-and-profile',
+    async () => {
+      const duplicate = await verifyMobileDuplicateFriendship(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'bob',
+        'Bob',
+        aliceToBob.peerPtid,
+      );
+      const profile = await openAndVerifyContactProfile(
+        'android-alice',
+        manifest.clients['android-alice'],
+        aliceToBob.peerPtid,
+        'Bob',
+      );
+      return { duplicate, profile };
+    },
+  );
+  await step(
+    'desktop-bob',
+    'contacts-alice-profile',
+    () => openAndVerifyContactProfile(
+      'desktop-bob',
+      manifest.clients['desktop-bob'],
+      bobAcceptedAlice.peerPtid,
+      'Alice',
+    ),
+  );
+  await step(
+    'ios-coral',
+    'contacts-alice-duplicate-and-profile',
+    async () => {
+      const duplicate = await verifyMobileDuplicateFriendship(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        'alice',
+        'Alice',
+        coralToAlice.peerPtid,
+      );
+      const profile = await openAndVerifyContactProfile(
+        'ios-coral',
+        manifest.clients['ios-coral'],
+        coralToAlice.peerPtid,
+        'Alice',
+      );
+      return { duplicate, profile };
+    },
+  );
+
+  const stamp = new Date().toISOString()
+    .replace(/\D/g, '')
+    .slice(0, 14);
+  const groupName = `MWPU Three Client ${stamp}`;
+  await step(
+    'android-alice',
+    'contacts-alice-create-shared-group',
+    () => createMobileSharedGroup(
+      'android-alice',
+      manifest.clients['android-alice'],
+      [
+        aliceToBob.peerPtid,
+        aliceAcceptedCoral.peerPtid,
+      ],
+      groupName,
+    ),
+  );
+  const bobGroup = (await step(
+    'desktop-bob',
+    'contacts-bob-open-shared-group',
+    () => openSharedGroup(
+      'desktop-bob',
+      manifest.clients['desktop-bob'],
+      groupName,
+    ),
+  )).result;
+  const coralGroup = (await step(
+    'ios-coral',
+    'contacts-coral-open-shared-group',
+    () => openSharedGroup(
+      'ios-coral',
+      manifest.clients['ios-coral'],
+      groupName,
+    ),
+  )).result;
+
+  const report = {
+    kind: 'peers-touch-three-client-product-journey-result',
+    schemaVersion: 1,
+    phase: 'contacts',
+    status: 'PASS',
+    source: preflight.source,
+    stationUrl: manifest.stationUrl,
+    scenarioIds: preflight.scenarioIds,
+    preflight: path.join(evidenceDir, 'preflight.json'),
+    relationships: {
+      alicePtid: bobAcceptedAlice.peerPtid,
+      bobPtid: aliceToBob.peerPtid,
+      coralPtid: aliceAcceptedCoral.peerPtid,
+    },
+    sharedGroup: {
+      name: groupName,
+      memberCount: 3,
+      receiverConversationIds: {
+        'desktop-bob': bobGroup.conversationId,
+        'ios-coral': coralGroup.conversationId,
+      },
+    },
+    interactionTrace,
+    observedAt: new Date().toISOString(),
+  };
+  const reportPath = path.join(evidenceDir, 'result.json');
+  const tracePath = path.join(evidenceDir, 'interaction-trace.json');
+  writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  writeFileSync(
+    tracePath,
+    `${JSON.stringify(interactionTrace, null, 2)}\n`,
+  );
+  return { ...report, reportPath, tracePath };
+}
+
 function normalizeRecoveryText(value) {
   return String(value || '')
     .replace(/\s+/g, ' ')
@@ -4087,6 +5175,11 @@ function selfTest(matrix) {
     'chat phase scenario count changed unexpectedly',
   );
   assertContract(
+    scenariosForPhase(matrix, 'contacts').length === 2,
+    'SELF_TEST_CONTACTS_COUNT',
+    'contacts phase scenario count changed unexpectedly',
+  );
+  assertContract(
     scenariosForPhase(matrix, 'all').length === matrixSummary.scenarioCount,
     'SELF_TEST_ALL_COUNT',
     'all phase does not include every scenario',
@@ -4272,7 +5365,7 @@ async function main() {
     process.stdout.write(`${JSON.stringify(preflight, null, 2)}\n`);
     return;
   }
-  if (!['entry', 'shell', 'recovery'].includes(options.phase)) {
+  if (!['entry', 'shell', 'contacts', 'recovery'].includes(options.phase)) {
     throw new JourneyContractError(
       'PHASE_UI_BINDING_REQUIRED',
       [
@@ -4290,7 +5383,9 @@ async function main() {
     ? await runEntryPhase(manifest, evidenceDir, preflight)
     : options.phase === 'shell'
       ? await runShellPhase(manifest, evidenceDir, preflight)
-      : await runRecoveryPhase(manifest, evidenceDir, preflight);
+      : options.phase === 'contacts'
+        ? await runContactsPhase(manifest, evidenceDir, preflight)
+        : await runRecoveryPhase(manifest, evidenceDir, preflight);
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 

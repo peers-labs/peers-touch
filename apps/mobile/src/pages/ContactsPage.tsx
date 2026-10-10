@@ -504,6 +504,7 @@ function ContactsPageInner({
         <h1 className="header-title">{t('mobile.contacts.title')}</h1>
         <button
           className="header-action"
+          data-contacts-create-group
           type="button"
           onClick={() => onOpenOverlay({ routeId: 'overlay:create-group' })}
           aria-label={t('mobile.group.create')}
@@ -512,6 +513,7 @@ function ContactsPageInner({
         </button>
         <button
           className="header-action"
+          data-contacts-find-people
           type="button"
           onClick={() => onOpenOverlay({ routeId: 'overlay:add-friend' })}
           aria-label={t('mobile.contacts.findPeople')}
@@ -539,6 +541,9 @@ function ContactsPageInner({
                 return (
                   <List.Item
                     data-scroll-anchor-id={request.requestId}
+                    data-friend-request-id={request.requestId}
+                    data-friend-request-sender-ptid={request.senderPtid}
+                    data-friend-request-direction="incoming"
                     data-request-decision-state={decision?.phase}
                     aria-busy={decision?.phase === 'pending'}
                     className="contact-item friend-request-item"
@@ -587,7 +592,11 @@ function ContactsPageInner({
               <div className="contact-list">
                 <BoundedList surfaceKey={`contacts:friends:${contactQuery}`} items={windowedContacts} itemKey={(contact) => contact.peerPtid} size={CONTACT_WINDOW_SIZE}>
                 {(rows) => rows.map((contact, index) => (
-                  <div key={contact.peerPtid} data-scroll-anchor-id={contact.peerPtid}>
+                  <div
+                    key={contact.peerPtid}
+                    data-contact-ptid={contact.peerPtid}
+                    data-scroll-anchor-id={contact.peerPtid}
+                  >
                     {index === 0 || contact.peerName[0]?.toUpperCase() !== rows[index - 1].peerName[0]?.toUpperCase()
                       ? <div className="contact-letter">{contact.peerName[0]?.toUpperCase() || '?'}</div>
                       : null}
@@ -717,13 +726,27 @@ function ContactsPageInner({
                   const alreadyPending = pendingTargetPtids.has(receiverPtid);
                   const inboundPending = inboundTargetPtids.has(receiverPtid);
                   const alreadyFriend = contactPtids.has(receiverPtid);
+                  const resultState = isSelf
+                    ? 'self'
+                    : alreadyFriend
+                      ? 'friend'
+                      : alreadyPending
+                        ? 'outgoing-pending'
+                        : inboundPending
+                          ? 'incoming-pending'
+                          : 'available';
                   const handle = result.federation?.handle
                     || (result.username ? `@${result.username}` : receiverPtid);
                   const stationLabel = result.homeStationPeerId
                     ? `${result.homeStationPeerId.slice(0, 18)}…`
                     : '';
                   return (
-                    <div className="people-result-card" key={receiverPtid || result.username}>
+                    <div
+                      className="people-result-card"
+                      data-people-result-ptid={receiverPtid}
+                      data-people-result-state={resultState}
+                      key={receiverPtid || result.username}
+                    >
                       <MobileAvatar src={result.avatar} size={44}>{(result.displayName || result.username || receiverPtid).slice(0, 1)}</MobileAvatar>
                       <div className="people-result-copy">
                         <div className="people-result-title">
@@ -740,6 +763,7 @@ function ContactsPageInner({
                         ) : null}
                       </div>
                       <Button
+                        data-people-result-action={receiverPtid}
                         type="primary"
                         size="small"
                         className="people-result-action"
@@ -870,6 +894,7 @@ function ContactsPageInner({
                         )}
                       />
                       <Checkbox
+                        data-group-member-ptid={contact.peerPtid}
                         aria-label={contact.peerName}
                         checked={selectedGroupMemberPtids.includes(contact.peerPtid)}
                         disabled={creatingGroup}

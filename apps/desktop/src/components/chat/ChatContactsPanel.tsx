@@ -570,6 +570,8 @@ export function ChatContactsPanel({
               return (
                 <Flexbox
                   key={conversation.id}
+                  data-chat-contact-conversation-id={conversation.id}
+                  data-chat-contact-kind="group"
                   data-chat-contact-ptid={conversation.peerPtid}
                   horizontal
                   align="center"

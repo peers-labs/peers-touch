@@ -17,6 +17,7 @@
   "runtimeClass": "native-mobile",
   "writeSet": [
     "apps/desktop/src",
+    "apps/mobile/scripts/run-three-client-product-journey.mjs",
     "apps/mobile/src/pages/ContactsPage.tsx",
     "apps/mobile/src/features/social",
     "apps/mobile/src/styles.css",
