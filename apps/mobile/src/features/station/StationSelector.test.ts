@@ -103,6 +103,7 @@ describe('StationSelector layout contract', () => {
       /\.launch-brand-logo\s*\{[^}]*filter:\s*drop-shadow\(/s,
     );
     expect(styles).not.toMatch(/\.launch-brand-logo\s*\{[^}]*border:/s);
+    expect(source).not.toMatch(/<Text[^>]*>\{entry\.url\}<\/Text>/);
   });
 
   it('never draws an inner focus frame inside the outer control', () => {

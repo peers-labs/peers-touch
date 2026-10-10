@@ -952,6 +952,10 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertIn("stationLayout:", SURFACE_AUDIT_SCRIPT)
         self.assertIn("placeholder: stationPlaceholder", SURFACE_AUDIT_SCRIPT)
         self.assertIn("stationStatusClasses:", SURFACE_AUDIT_SCRIPT)
+        self.assertIn(
+            ".launch-brand-logo, .launch-hero-logo",
+            SURFACE_AUDIT_SCRIPT,
+        )
 
     def test_station_entry_layout_requires_human_usable_geometry_and_states(
         self,

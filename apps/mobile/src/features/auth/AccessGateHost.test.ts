@@ -44,6 +44,10 @@ const source = readFileSync(
   new URL('./AccessGateHost.tsx', import.meta.url),
   'utf8',
 );
+const styles = readFileSync(
+  new URL('../../styles.css', import.meta.url),
+  'utf8',
+);
 
 afterEach(() => {
   recoveryMock.states = [];
@@ -67,6 +71,12 @@ describe('AccessGateHost schema gate surface', () => {
     expect(markup).toContain('mobile.launch.continue');
     expect(markup).toContain('ant-btn-primary');
     expect(markup).not.toContain('auth-actions single');
+  });
+
+  it('keeps a lone recovery action at the minimum touch height', () => {
+    expect(styles).toMatch(
+      /\.auth-actions\.single \.ant-btn\s*\{[^}]*height:\s*44px;/s,
+    );
   });
 });
 
