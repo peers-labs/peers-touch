@@ -26,6 +26,7 @@ export function ChatThreadPageContent({
   productSurface,
   style,
   tabBarVisible,
+  writeAdmissionOpen,
 }: {
   readonly activeInputPanel: ChatInputPanelState;
   readonly children: ReactNode;
@@ -33,6 +34,7 @@ export function ChatThreadPageContent({
   readonly productSurface?: string;
   readonly style: CSSProperties;
   readonly tabBarVisible: boolean;
+  readonly writeAdmissionOpen: boolean;
 }) {
   return (
     <div
@@ -41,6 +43,7 @@ export function ChatThreadPageContent({
       data-chat-keyboard-open={keyboardOverlapHeight > 0}
       data-chat-keyboard-overlap={keyboardOverlapHeight}
       data-chat-tabbar-visible={tabBarVisible}
+      data-chat-write-admission={writeAdmissionOpen ? 'open' : 'closed'}
       data-product-surface={productSurface}
       style={style}
     >

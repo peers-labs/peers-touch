@@ -22,14 +22,14 @@ const message = {
   moderated: false,
 };
 
-function render(canModerate: boolean) {
+function render(canModerate: boolean, commandBusy = false) {
   return renderToStaticMarkup(
     <MessageActionSheet
       message={message}
       currentUserPtid="ptid:alice"
       canEdit
       canModerate={canModerate}
-      commandBusy={false}
+      commandBusy={commandBusy}
       flagged={false}
       flagLabel="mobile.chat.flagOnDevice"
       flagLoading={false}
@@ -60,5 +60,17 @@ describe('MessageActionSheet', () => {
 
   it('adds the separate moderation action for authorized group roles', () => {
     expect(render(true)).toContain('mobile.chat.moderate');
+  });
+
+  it('disables remote message mutations while write admission is closed', () => {
+    const markup = render(true, true);
+
+    expect(markup).toContain('aria-label="mobile.chat.reactWith"');
+    expect(markup).toContain('disabled=""');
+    expect(markup).toContain('mobile.chat.forward');
+    expect(markup).toContain('mobile.chat.pinMessage');
+    expect(markup).toContain('mobile.chat.recall');
+    expect(markup).toContain('mobile.chat.moderate');
+    expect(markup).toContain('mobile.chat.deleteForMe');
   });
 });

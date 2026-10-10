@@ -4637,6 +4637,26 @@ function chatComposerSelector(client) {
     : 'input.message-composer-input';
 }
 
+async function waitForStableMobileChatWriteAdmission(clientId, client) {
+  if (client.platform === 'desktop') return;
+  const waitOnce = () => waitForUi(
+    clientId,
+    client,
+    'Mobile Chat product write admission',
+    `
+      const thread = document.querySelector('.chat-thread-page');
+      const admission = thread?.getAttribute('data-chat-write-admission') || '';
+      return {
+        ready: !thread || admission === 'open',
+        admission
+      };
+    `,
+  );
+  await waitOnce();
+  await sleep(500);
+  await waitOnce();
+}
+
 async function openChatConversation(
   clientId,
   client,
@@ -4797,6 +4817,7 @@ async function openChatConversation(
     'CHAT_FRIENDLY_TITLE_MISSING',
     `${clientId} opened ${kind} conversation without a friendly title`,
   );
+  await waitForStableMobileChatWriteAdmission(clientId, client);
   return {
     conversationId: opened.id,
     label: opened.label,
@@ -6371,6 +6392,7 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
     const client = manifest.clients[clientId];
     await activateForegroundClient(clientId, client);
     return withWebContext(client, async () => {
+      await waitForStableMobileChatWriteAdmission(clientId, client);
       sequenceRef.value += 1;
       return recordJourneyStep({
         clientId,

@@ -342,6 +342,7 @@ function ChatFixtureThread({
       productSurface={productSurface}
       style={style}
       tabBarVisible={false}
+      writeAdmissionOpen
     >
       <header className={`page-header chat-thread-header ${isSearch ? 'searching' : ''}`}>
         <button className="header-action" type="button" aria-label={t('common.action.back')}>
