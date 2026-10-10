@@ -13,7 +13,7 @@
   "completionClass": "functional",
   "executionMode": "build",
   "closureId": "mobile-recovery-usability",
-  "journeyId": "MS-J02,MS-J07",
+  "journeyId": "MS-J02",
   "runtimeClass": "native-mobile",
   "writeSet": [
     "apps/mobile/src/App.tsx",
