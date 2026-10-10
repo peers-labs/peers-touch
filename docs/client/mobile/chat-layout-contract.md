@@ -216,6 +216,14 @@ promotion between pages, or a retained-history eviction budget. Active and
 previously materialized histories remain complete until those decisions are
 accepted; the native index and DOM windows are not substitutes for them.
 
+Attachment previews and voice playback use Tauri's asset protocol. Its initial
+filesystem scope is empty. `messaging_open_attachment` grants the exact cache
+file only after the native Messaging owner has verified its availability and
+integrity; a pending or failed open grants no file access. The WebView content
+policy admits this asset origin for images, media, and file previews, and admits
+blob URLs for local recording drafts. The client must not grant an entire cache
+directory or expose arbitrary filesystem paths.
+
 ## 13. Foreground Resume Write Admission
 
 ```yaml
