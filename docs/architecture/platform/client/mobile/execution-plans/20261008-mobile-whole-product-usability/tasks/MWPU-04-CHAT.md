@@ -20,7 +20,9 @@
     "apps/desktop/src/modules/p2p",
     "apps/desktop/src/pages/SocialChatPage.tsx",
     "apps/desktop/src/services",
+    "apps/desktop/src-tauri/src/messaging",
     "apps/mobile/scripts/run-three-client-product-journey.mjs",
+    "apps/mobile/src/app/lifecycle",
     "apps/mobile/src-tauri/src/messaging",
     "apps/mobile/src/pages/ChatPage.tsx",
     "apps/mobile/src/pages/chat",
@@ -47,7 +49,7 @@
   "checks": [
     {
       "id": "chat-source",
-      "command": "cargo test --manifest-path packages/messaging-core/Cargo.toml inbox::drain && pnpm --dir apps/desktop exec vitest run src/components/chat src/pages/SocialChatPage.test.tsx src/modules/p2p && pnpm --dir apps/mobile exec vitest run src/pages/ChatPage.history.test.tsx src/pages/ChatPage.localFlag.test.ts src/pages/chat src/features/chat",
+      "command": "cargo test --manifest-path packages/messaging-core/Cargo.toml inbox::drain && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml messaging:: && pnpm --dir apps/desktop exec vitest run src/components/chat src/pages/SocialChatPage.test.tsx src/modules/p2p && pnpm --dir apps/mobile exec vitest run src/app/lifecycle/runtimeReadiness.test.ts src/pages/ChatPage.history.test.tsx src/pages/ChatPage.localFlag.test.ts src/pages/chat src/features/chat",
       "verificationClass": "SOURCE_CHECK"
     },
     {
