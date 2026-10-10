@@ -1405,6 +1405,10 @@ async function relaunchClient(clientId, client, evidenceDir) {
 async function probeClient(clientId, client, evidenceDir) {
   const statusUrl = `${client.webdriver.serverUrl.replace(/\/$/, '')}/status`;
   await webdriverRequest(statusUrl);
+  await webdriverRequest(webdriverEndpoint(client, '/timeouts'), {
+    method: 'POST',
+    body: JSON.stringify({ script: 30_000 }),
+  });
   const nativeApplicationState = await activateForegroundClient(
     clientId,
     client,
