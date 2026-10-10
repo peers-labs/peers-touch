@@ -17,11 +17,15 @@
   "runtimeClass": "native-mobile",
   "writeSet": [
     "apps/desktop/src",
+    "apps/desktop/src-tauri/src/messaging",
     "apps/mobile/scripts/run-three-client-product-journey.mjs",
     "apps/mobile/src/pages/ContactsPage.tsx",
     "apps/mobile/src/features/social",
     "apps/mobile/src/styles.css",
+    "apps/mobile/src-tauri/src/messaging",
     "apps/station/app/subserver/federation",
+    "packages/messaging-core/src/mls/key_packages.rs",
+    "packages/messaging-core/src/store/repository.rs",
     "packages/prototypes/mobile/chat",
     "tooling/acceptance/gates/mobile"
   ],
@@ -39,7 +43,7 @@
   "checks": [
     {
       "id": "contacts-source",
-      "command": "pnpm --dir apps/desktop run check && pnpm --dir apps/mobile exec vitest run src/pages/ContactsPage.window.test.tsx src/features/social",
+      "command": "pnpm --dir apps/desktop run check && pnpm --dir apps/mobile exec vitest run src/pages/ContactsPage.window.test.tsx src/features/social && cargo test --manifest-path packages/messaging-core/Cargo.toml mls::key_packages && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml messaging::store::tests::mls_key_package_repository && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml messaging::adapter::tests::mls_outbound_key_packages_and_startup_state_are_durable",
       "verificationClass": "SOURCE_CHECK"
     },
     {
