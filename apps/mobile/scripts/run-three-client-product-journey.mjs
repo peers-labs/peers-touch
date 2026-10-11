@@ -1201,7 +1201,6 @@ async function activateForegroundClient(clientId, client) {
           : null,
       );
     }
-    activateDesktopProcess(desktopPid);
     const result = await webdriverRequest(
       webdriverEndpoint(client, '/execute/async'),
       {
@@ -1223,6 +1222,7 @@ async function activateForegroundClient(clientId, client) {
       'WEBDRIVER_CLIENT_NOT_FOREGROUND',
       `${clientId} could not focus its native window: ${result?.error || 'unknown error'}`,
     );
+    activateDesktopProcess(desktopPid);
     await waitForUi(
       clientId,
       client,
