@@ -282,6 +282,7 @@ def validate_relay_role_source_contract() -> None:
         entrypoint_source,
         (
             'case "${PEERS_NODE_ROLE:-}" in',
+            "/ip4/0.0.0.0/tcp/4001",
             "PEERS_LIBP2P_PUBLIC_ADDRS is required for relay role",
             "RELAY_OPERATOR_KEY_FILE is required for relay role",
         ),

@@ -10,7 +10,8 @@
 #
 # Overlays produced:
 #   conf/store.docker.yml         — only when PEERS_DB_DSN is set
-#   conf/paths.docker.yml         — always (redirects key files into /app/data)
+#   conf/paths.docker.yml         — always (binds TCP 4001 and redirects keys
+#                                   into /app/data)
 #   conf/federation.docker.yml    — emitted whenever any node-level libp2p
 #                                   federation env var is set. Single overlay
 #                                   for ALL libp2p hosts in the process
@@ -143,6 +144,8 @@ cat > /app/conf/paths.docker.yml <<'EOF'
 peers:
   node:
     transport:
+      addrs:
+        - /ip4/0.0.0.0/tcp/4001
       native:
         libp2p-identity-key-file: data/libp2pIdentity.key
     server:
