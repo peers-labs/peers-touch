@@ -69,13 +69,13 @@ var registeredConfig struct {
 				RetryMinSeconds    int    `pconf:"retry-min-seconds"`
 				RetryMaxSeconds    int    `pconf:"retry-max-seconds"`
 				Relays             []struct {
-					PeerID         string   `pconf:"peer-id"`
-					Addresses      []string `pconf:"addresses"`
-					ControlOrigin  string   `pconf:"control-origin"`
-					InviteToken    string   `pconf:"invite-token"`
-					CredentialFile string   `pconf:"credential-file"`
-					TLSCAFile      string   `pconf:"tls-ca-file"`
-					Label          string   `pconf:"label"`
+					PeerID         string   `pconf:"peer-id" json:"peer-id"`
+					Addresses      []string `pconf:"addresses" json:"addresses"`
+					ControlOrigin  string   `pconf:"control-origin" json:"control-origin"`
+					InviteToken    string   `pconf:"invite-token" json:"invite-token"`
+					CredentialFile string   `pconf:"credential-file" json:"credential-file"`
+					TLSCAFile      string   `pconf:"tls-ca-file" json:"tls-ca-file"`
+					Label          string   `pconf:"label" json:"label"`
 				} `pconf:"relays"`
 			} `pconf:"relay-pool"`
 		} `pconf:"node"`
@@ -102,8 +102,9 @@ func ConfigFromRegistered() (RuntimeConfig, error) {
 		relayPeerID, err := peer.Decode(strings.TrimSpace(raw.PeerID))
 		if err != nil {
 			return RuntimeConfig{}, fmt.Errorf(
-				"Relay pool target %d has invalid PeerID: %w",
+				"Relay pool target %d has invalid PeerID %q: %w",
 				index,
+				raw.PeerID,
 				err,
 			)
 		}
