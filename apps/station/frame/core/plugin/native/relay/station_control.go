@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -286,6 +287,7 @@ func (c *StationControl) publishRouteLocked(
 			RelayPeerId:        credential.RelayPeerID,
 			RouteId:            routeID,
 			RouteGeneration:    credential.Generation,
+			Addresses:          circuitRouteAddressStrings(route),
 			InnerTlsSpkiSha256: c.innerSPKI[:],
 			Visibility:         visibility,
 			IssuedAtUnixMs:     now.UnixMilli(),
@@ -311,6 +313,15 @@ func (c *StationControl) publishRouteLocked(
 		return nil, fmt.Errorf("Relay published a different Station route")
 	}
 	return attestation, nil
+}
+
+func circuitRouteAddressStrings(route CircuitRoute) []string {
+	addresses := make([]string, 0, len(route.DialMultiaddrs))
+	for _, address := range route.DialMultiaddrs {
+		addresses = append(addresses, address.String())
+	}
+	sort.Strings(addresses)
+	return addresses
 }
 
 func (c *StationControl) ensureCredentialLocked(

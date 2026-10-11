@@ -16,7 +16,7 @@ import (
 
 type CircuitRoute struct {
 	RelayPeerID     peer.ID
-	DialMultiaddr   multiaddr.Multiaddr
+	DialMultiaddrs  []multiaddr.Multiaddr
 	RouteGeneration uint64
 	ExpiresAt       time.Time
 	LimitDuration   time.Duration
@@ -242,19 +242,16 @@ func (m *ReservationManager) reserve(
 			err,
 		)
 	}
-	circuitAddress, err := multiaddr.NewMultiaddr(
-		fmt.Sprintf(
-			"/p2p/%s/p2p-circuit/p2p/%s",
-			target.RelayPeerID,
-			valueHost.ID(),
-		),
+	circuitAddresses, err := circuitDialMultiaddrs(
+		addressInfo,
+		valueHost.ID(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("build Circuit route: %w", err)
 	}
 	route := &CircuitRoute{
 		RelayPeerID:     target.RelayPeerID,
-		DialMultiaddr:   circuitAddress,
+		DialMultiaddrs:  circuitAddresses,
 		RouteGeneration: generation,
 		ExpiresAt:       reservation.Expiration.UTC(),
 		LimitDuration:   reservation.LimitDuration,
@@ -304,6 +301,40 @@ func targetAddrInfo(target Target) (peer.AddrInfo, error) {
 		addresses = append(addresses, address)
 	}
 	return peer.AddrInfo{ID: target.RelayPeerID, Addrs: addresses}, nil
+}
+
+func circuitDialMultiaddrs(
+	relay peer.AddrInfo,
+	stationPeerID peer.ID,
+) ([]multiaddr.Multiaddr, error) {
+	if relay.ID == "" || stationPeerID == "" || len(relay.Addrs) == 0 {
+		return nil, fmt.Errorf("Relay route identity is incomplete")
+	}
+	suffix := multiaddr.StringCast(
+		fmt.Sprintf(
+			"/p2p/%s/p2p-circuit/p2p/%s",
+			relay.ID,
+			stationPeerID,
+		),
+	)
+	unique := make(map[string]multiaddr.Multiaddr, len(relay.Addrs))
+	for _, base := range relay.Addrs {
+		if len(base) == 0 {
+			return nil, fmt.Errorf("Relay route has an empty dial address")
+		}
+		address := base.Encapsulate(suffix)
+		unique[address.String()] = address
+	}
+	keys := make([]string, 0, len(unique))
+	for key := range unique {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	addresses := make([]multiaddr.Multiaddr, 0, len(keys))
+	for _, key := range keys {
+		addresses = append(addresses, unique[key])
+	}
+	return addresses, nil
 }
 
 func waitForContext(ctx context.Context, duration time.Duration) bool {

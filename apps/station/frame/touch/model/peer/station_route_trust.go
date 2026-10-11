@@ -9,6 +9,7 @@ import (
 
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -226,6 +227,9 @@ func validStationRouteStatement(
 	default:
 		return false
 	}
+	if !routeAddressesMatchKind(statement) {
+		return false
+	}
 	issuedAt := time.UnixMilli(statement.GetIssuedAtUnixMs()).UTC()
 	expiresAt := time.UnixMilli(statement.GetExpiresAtUnixMs()).UTC()
 	authorizationExpiresAt := time.UnixMilli(
@@ -300,6 +304,35 @@ func canonicalRouteAddresses(addresses []string) bool {
 			address != strings.TrimSpace(address) ||
 			len(address) > 2048 ||
 			(index > 0 && addresses[index-1] == address) {
+			return false
+		}
+	}
+	return true
+}
+
+func routeAddressesMatchKind(statement *StationRouteStatement) bool {
+	var suffix string
+	switch statement.GetKind() {
+	case StationRouteKind_STATION_ROUTE_KIND_DIRECT:
+		suffix = "/p2p/" + statement.GetNodePeerId()
+	case StationRouteKind_STATION_ROUTE_KIND_CIRCUIT:
+		suffix = "/p2p/" + statement.GetRelayPeerId() +
+			"/p2p-circuit/p2p/" + statement.GetNodePeerId()
+	default:
+		return false
+	}
+	for _, raw := range statement.GetAddresses() {
+		address, err := multiaddr.NewMultiaddr(raw)
+		if err != nil || address.String() != raw || !strings.HasSuffix(raw, suffix) {
+			return false
+		}
+		prefix := strings.TrimSuffix(raw, suffix)
+		if prefix == "" ||
+			strings.Contains(prefix, "/p2p/") ||
+			strings.Contains(prefix, "/p2p-circuit") {
+			return false
+		}
+		if _, err := multiaddr.NewMultiaddr(prefix); err != nil {
 			return false
 		}
 	}
