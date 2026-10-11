@@ -1612,6 +1612,55 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         )
         self.assertFalse(cleanup["cleanupErrors"])
 
+    def test_cleanup_exports_log_for_client_that_failed_before_authentication(
+        self,
+    ) -> None:
+        log_path = self.root / "alice-login-failure.log"
+
+        class FailedLoginClient:
+            profile = "alice"
+            gateway_port = 3030
+
+            def __init__(self, path: Path) -> None:
+                self.log_path = path
+
+            def stop(self) -> None:
+                self.log_path.write_text(
+                    "station proxy request failed\n",
+                    encoding="utf-8",
+                )
+
+        client = FailedLoginClient(log_path)
+        gate = object.__new__(NativeTwoClientGate)
+        gate.runtime_instances = [client]
+        gate.runtime_instance_actors = {id(client): "alice"}
+        gate.client_lifecycles = NativeClientLifecycleLedger()
+        gate.client_lifecycles.register(
+            client,
+            "ptid:v1:actor:alice",
+        )
+        gate.client_lifecycles.mark_live(client)
+        gate.clients = {}
+        gate.client_specs = {}
+        gate.runtime_binding = SyntheticRuntimeBinding()
+        gate.report = EvidenceReport(
+            gate_id=self.module.GATE_ID,
+            status="RUNNING",
+            started_at="2026-08-28T00:00:00Z",
+            duration_ms=0,
+        )
+
+        cleanup = gate.cleanup_clients()
+
+        reference = ArtifactRef.from_dict(
+            gate.report.evidence["alice-runtime-1-app-log"]
+        )
+        self.assertEqual(
+            self.store.resolve(reference).read_text(encoding="utf-8"),
+            "station proxy request failed\n",
+        )
+        self.assertFalse(cleanup["cleanupErrors"])
+
     def test_w8_and_gate_entry_bind_runtime_cell(self) -> None:
         root = Path(__file__).resolve().parents[4]
         runner = (
