@@ -7,6 +7,7 @@ import { api } from '../../services/desktop_api';
 import type { StationEntry, StationProbeResult } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import { dispatchStationActiveChanged } from './stationRegistryEvents';
+import { useStationGate } from '../../store/stationGate';
 
 type StationHealthStatus = 'unknown' | 'checking' | 'online' | 'offline';
 
@@ -168,6 +169,8 @@ export function StationPicker() {
         const requestId = ++probeRequestRef.current;
         void probeStations([entry], url, requestId);
       }
+      // Re-evaluate the login prerequisite for the newly active Station.
+      void useStationGate.getState().refresh();
     } catch (err) {
       log.error('StationPicker', 'Failed to set active station', { error: err });
     }
@@ -182,6 +185,7 @@ export function StationPicker() {
       await api.stationAdd(url);
       setInputValue('');
       await loadStations(true);
+      void useStationGate.getState().refresh();
     } catch (err) {
       log.error('StationPicker', 'Failed to add station', { error: err });
     } finally {
@@ -194,6 +198,7 @@ export function StationPicker() {
     try {
       await api.stationRemove(url);
       await loadStations(true);
+      void useStationGate.getState().refresh();
     } catch (err) {
       log.error('StationPicker', 'Failed to remove station', { error: err });
     }
@@ -287,7 +292,15 @@ export function StationPicker() {
             </div>
           </div>
 
-          <div style={{ maxHeight: 228, overflowY: 'auto', paddingRight: 2 }}>
+          <div
+            data-station-picker-list
+            style={{
+              maxHeight: 228,
+              overflowY: 'auto',
+              scrollbarGutter: 'stable',
+              paddingRight: token.paddingXS,
+            }}
+          >
             {entries.map((entry) => {
               const isActive = entry.url === activeUrl;
               const health = healthByUrl[entry.url]?.status ?? statusFromEntry(entry);
