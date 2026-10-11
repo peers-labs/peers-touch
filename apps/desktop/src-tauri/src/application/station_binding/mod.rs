@@ -3,7 +3,7 @@ use std::sync::{Mutex, OnceLock, TryLockError};
 
 use crate::infrastructure::event_stream;
 use crate::infrastructure::station_client;
-use crate::infrastructure::station_registry::StationRegistry;
+use crate::infrastructure::station_registry::{normalize_station_url, StationRegistry};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -128,7 +128,7 @@ impl StationBindingService {
     }
 
     pub fn selection_changes(&self, registry: &StationRegistry, target_url: &str) -> bool {
-        let target_url = normalize_url(target_url);
+        let target_url = normalize_station_url(target_url);
         let persisted_active_url = registry.active_url();
         let state = self.state();
         let current_url = state
@@ -136,7 +136,7 @@ impl StationBindingService {
             .as_deref()
             .or(persisted_active_url.as_deref());
         current_url
-            .map(|url| normalize_url(url) != target_url)
+            .map(|url| normalize_station_url(url) != target_url)
             .unwrap_or(true)
     }
 
@@ -180,7 +180,7 @@ impl StationBindingService {
         registry: &StationRegistry,
         url: &str,
     ) -> Result<(StationBindingState, bool), StationBindingError> {
-        let url = normalize_url(url);
+        let url = normalize_station_url(url);
         let _transition = self.transition.try_lock().map_err(|error| match error {
             TryLockError::WouldBlock => StationBindingError::new(
                 "station_switch_in_progress",
@@ -328,7 +328,7 @@ impl StationBindingService {
         target_url: &str,
         hooks: &dyn StationBindingHooks,
     ) -> Result<StationBindingState, StationBindingError> {
-        let target_url = normalize_url(target_url);
+        let target_url = normalize_station_url(target_url);
         if target_url.is_empty() {
             return Err(StationBindingError::new(
                 "station_unselected",
@@ -460,10 +460,6 @@ impl StationBindingService {
     }
 }
 
-fn normalize_url(url: &str) -> String {
-    url.trim().trim_end_matches('/').to_string()
-}
-
 pub fn service() -> &'static StationBindingService {
     static SERVICE: OnceLock<StationBindingService> = OnceLock::new();
     SERVICE
@@ -573,6 +569,25 @@ mod tests {
         assert_eq!(state.phase, StationBindingPhase::AccessGate);
         assert_eq!(state.bound_url.as_deref(), Some("http://b.example"));
         assert!(hooks.teardown_called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn bare_target_url_matches_canonical_registry_entry() {
+        let registry = registry_with(&["192.0.2.60:18280"]);
+        let service = StationBindingService::new(None);
+
+        let state = service
+            .switch_with_hooks(&registry, "192.0.2.60:18280/", &TestHooks::success())
+            .unwrap();
+
+        assert_eq!(
+            registry.active_url().as_deref(),
+            Some("http://192.0.2.60:18280")
+        );
+        assert_eq!(
+            state.bound_url.as_deref(),
+            Some("http://192.0.2.60:18280")
+        );
     }
 
     #[test]
