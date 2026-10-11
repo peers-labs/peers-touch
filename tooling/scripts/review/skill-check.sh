@@ -233,6 +233,7 @@ required_rules=(
   "repository-debug-artifact"
   "station-profile-bypass"
   "unauthorized-environment-creation"
+  "private-environment-reference"
   "Proto Review"
   "Station Review"
   "Desktop Review"

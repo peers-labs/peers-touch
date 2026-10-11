@@ -121,7 +121,7 @@ VITE_ACCEPTANCE_HARNESS=1 RESTART=1 make desktop
 - app 端使用 `profile=one-app`
 - Vite: `:3210`
 - Rust gateway: `:3030`
-- Station: `http://10.37.246.80:18080`
+- Station: `http://192.0.2.10:18080`
 
 真实 Tauri app 日志给出的 WebView 前端事件：
 
@@ -494,8 +494,8 @@ return 0
 
 | Runtime | Value |
 |---|---|
-| Station | `http://10.37.246.80:18080` |
-| Station health | `http://10.37.246.80:18080/sub-oss/healthz` |
+| Station | `http://192.0.2.10:18080` |
+| Station health | `http://192.0.2.10:18080/sub-oss/healthz` |
 | Desktop app gateway | `3030` |
 | Desktop app web | `3210` |
 | Desktop browser gateway | `3031` |
@@ -514,7 +514,7 @@ Desktop 性能采样前的最小 preflight 必须按顺序证明：
 1. Station health 可访问：
 
    ```bash
-   curl -fsS -m 5 http://10.37.246.80:18080/sub-oss/healthz
+   curl -fsS -m 5 http://192.0.2.10:18080/sub-oss/healthz
    ```
 
 2. 目标 gateway 监听，并且 `auth_restore_session` 返回结构化 JSON：
@@ -646,7 +646,7 @@ VITE_ACCEPTANCE_HARNESS=1 RESTART=1 bash tooling/scripts/dev-desktop-web.sh
 
 结果：
 
-- Remote Station 只做 health check：`remote station is ready: http://10.37.246.80:18080/sub-oss/healthz`。
+- Remote Station 只做 health check：`remote station is ready: http://192.0.2.10:18080/sub-oss/healthz`。
 - 未触发 `station-1` deploy。
 - Vite `http://localhost:3211/`: `HTTP 200`, total `0.002466s`。
 - Gateway direct calls:

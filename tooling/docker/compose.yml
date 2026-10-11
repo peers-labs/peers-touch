@@ -131,7 +131,7 @@ services:
     ports:
       - "${STATION_PORT:-18080}:18080"
       # libp2p port for the bootstrap subserver. Same-host coexistence
-      # (Station-2 + Station-4 on 10.37.195.98) requires distinct host
+      # (Station-2 + Station-4 on 192.0.2.60) requires distinct host
       # ports — set LIBP2P_PORT in the per-env file accordingly.
       - "${LIBP2P_PORT:-4001}:4001"
     volumes:

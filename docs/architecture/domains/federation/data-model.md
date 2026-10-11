@@ -392,9 +392,9 @@ name: Peers Testnet
 policy_type: single_admin
 sequencer_station_peer_id: node-a
 members:
-  - node-a / 10.37.94.156:18080
-  - node-b / 10.37.195.98:18080
-  - node-c / 10.37.246.80:18080
+  - node-a / 192.0.2.30:18080
+  - node-b / 192.0.2.60:18080
+  - node-c / 192.0.2.10:18080
 station_owners:
   - node-a/a@p.t
   - node-b/a@p.t

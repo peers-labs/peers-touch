@@ -198,8 +198,8 @@ export default function Login() {
                 <div className="absolute bottom-1 right-1 w-5 h-5 bg-green-500 border-2 border-white rounded-full z-20"></div>
               </div>
               <h1 className="text-2xl font-bold text-slate-900 mb-1">Welcome back,</h1>
-              <h2 className="text-xl font-bold text-slate-800 mb-2">printfcoder</h2>
-              <p className="text-sm text-slate-500">printfcoder@gmail.com</p>
+              <h2 className="text-xl font-bold text-slate-800 mb-2">developer</h2>
+              <p className="text-sm text-slate-500">developer@example.com</p>
             </div>
 
             {/* Actions */}
