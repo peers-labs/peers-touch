@@ -113,10 +113,7 @@ func (m *ReservationManager) Start(ctx context.Context) error {
 	m.started = true
 	m.lock.Unlock()
 	for _, configured := range m.config.Targets {
-		target := Target{
-			RelayPeerID: configured.RelayPeerID,
-			Addresses:   append([]string(nil), configured.Addresses...),
-		}
+		target := cloneTarget(configured)
 		m.group.Add(1)
 		go func() {
 			defer m.group.Done()
@@ -124,6 +121,11 @@ func (m *ReservationManager) Start(ctx context.Context) error {
 		}()
 	}
 	return nil
+}
+
+func cloneTarget(target Target) Target {
+	target.Addresses = append([]string(nil), target.Addresses...)
+	return target
 }
 
 func (m *ReservationManager) Close() error {
