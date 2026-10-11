@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+import tempfile
 import time
+from collections.abc import Mapping
 from pathlib import Path
 
 
@@ -79,11 +82,27 @@ def run_go_tests(test_names: tuple[str, ...]) -> dict[str, object]:
     }
 
 
-def run_command(command: list[str], cwd: Path, timeout: int = 300) -> dict[str, object]:
+def isolated_command_environment(work_root: Path) -> dict[str, str]:
+    target_dir = (work_root / "cargo-target").resolve()
+    if target_dir == REPO_ROOT or REPO_ROOT in target_dir.parents:
+        raise ValueError("Node Connectivity build output must stay outside the repository")
+    return {
+        **os.environ,
+        "CARGO_TARGET_DIR": str(target_dir),
+    }
+
+
+def run_command(
+    command: list[str],
+    cwd: Path,
+    timeout: int = 300,
+    environment: Mapping[str, str] | None = None,
+) -> dict[str, object]:
     started = time.monotonic()
     completed = subprocess.run(
         command,
         cwd=cwd,
+        env=dict(environment) if environment is not None else None,
         capture_output=True,
         text=True,
         check=False,
@@ -162,10 +181,20 @@ def main() -> int:
                         REPO_ROOT,
                     ),
                 ]
-                results.extend(
-                    run_command(command, cwd)
-                    for command, cwd in commands
-                )
+                with tempfile.TemporaryDirectory(
+                    prefix="peers-touch-node-connectivity-",
+                ) as work_root:
+                    environment = isolated_command_environment(
+                        Path(work_root)
+                    )
+                    results.extend(
+                        run_command(
+                            command,
+                            cwd,
+                            environment=environment,
+                        )
+                        for command, cwd in commands
+                    )
             else:
                 command = NATIVE_CUT_COMMANDS[gate_id]
                 results.append(
