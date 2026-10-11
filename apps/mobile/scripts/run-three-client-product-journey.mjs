@@ -1889,6 +1889,23 @@ async function ensureMobileAuthenticated(
   account,
 ) {
   let state = await readClientUiState(client);
+  if (state.surface === 'entry.app-boot') {
+    await waitForUi(
+      clientId,
+      client,
+      'Mobile app boot completion',
+      `
+        const surface = [...document.querySelectorAll('[data-product-surface]')]
+          .find((element) => element.getClientRects().length)
+          ?.getAttribute('data-product-surface') || '';
+        return {
+          ready: Boolean(surface) && surface !== 'entry.app-boot',
+          surface
+        };
+      `,
+    );
+    state = await readClientUiState(client);
+  }
   if (
     state.surface.startsWith('shell.')
     && state.bodyText.includes('Restore Account Identity')
