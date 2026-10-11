@@ -43,11 +43,9 @@ use crate::model::chat::{
 };
 use messaging_core::codec::verification::{verify_authority_event, verify_direct_genesis_event};
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
-use messaging_core::identity::enrollment::{
-    generate_fresh_device_identity_from_seed, load_or_create_device_identity_from_seed,
-};
 use messaging_core::identity::{
-    is_stale_endpoint_error, DeviceEnrollmentManager, FreshDeviceEnrollment,
+    generate_fresh_device_identity_for_device, is_stale_endpoint_error,
+    load_or_create_device_identity_for_device, DeviceEnrollmentManager, FreshDeviceEnrollment,
     FreshDeviceIdentityState,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
@@ -527,10 +525,13 @@ impl MessagingEngine {
         actor_profile_version: u64,
         store: Arc<MessagingStore>,
     ) -> Result<Self, String> {
-        let enrollment = load_or_create_device_identity_from_seed(
+        let device_id = crate::application::key_exchange::device_install::get_or_create_device_id()
+            .map_err(|error| format!("load canonical installation device identity: {error}"))?;
+        let enrollment = load_or_create_device_identity_for_device(
             store.as_ref(),
             &ptid,
-            actor_identity_seed,
+            &device_id,
+            *actor_identity_seed,
             actor_profile_version,
         )?;
         let device = enrollment
@@ -3584,12 +3585,7 @@ impl EngineRegistry {
         archive: &MessagingRecoveryArchive,
         reconciliation: &RecoveryReconciliation,
     ) -> Result<FreshDeviceEnrollment, String> {
-        let (
-            previous_ptid,
-            previous_seed,
-            previous_profile_version,
-            current_device_identity,
-        ) = {
+        let (previous_ptid, previous_seed, previous_profile_version, current_device_identity) = {
             let engines = self
                 .engines
                 .lock()
@@ -3637,15 +3633,13 @@ impl EngineRegistry {
         };
         let preserve_device_continuity =
             previous_seed.as_slice() == archive.actor_identity_seed.as_slice();
-        let device_identity = if preserve_device_continuity {
-            current_device_identity
-        } else {
-            generate_fresh_device_identity_from_seed(
-                &archive.ptid,
-                &archive.actor_identity_seed,
-                archive.actor_profile_version,
-            )?
-        };
+        let device_identity = recovery_device_identity(
+            current_device_identity,
+            &archive.ptid,
+            archive.actor_identity_seed,
+            archive.actor_profile_version,
+            preserve_device_continuity,
+        )?;
         let (worker, worker_token) = {
             let mut workers = self
                 .workers
@@ -4209,6 +4203,32 @@ fn timestamp(unix_ms: i64) -> prost_types::Timestamp {
         seconds: unix_ms.div_euclid(1_000),
         nanos: (unix_ms.rem_euclid(1_000) * 1_000_000) as i32,
     }
+}
+
+fn recovery_device_identity(
+    current: FreshDeviceIdentityState,
+    ptid: &str,
+    actor_identity_seed: [u8; 32],
+    actor_profile_version: u64,
+    preserve_device_continuity: bool,
+) -> Result<FreshDeviceIdentityState, String> {
+    if preserve_device_continuity {
+        return Ok(current);
+    }
+    let device_id = current
+        .enrollment
+        .certificate
+        .device
+        .as_ref()
+        .ok_or_else(|| "messaging replacement recovery device endpoint is unavailable".to_string())?
+        .device_id
+        .clone();
+    generate_fresh_device_identity_for_device(
+        ptid,
+        &device_id,
+        actor_identity_seed,
+        actor_profile_version,
+    )
 }
 
 #[cfg(test)]
@@ -4927,6 +4947,8 @@ mod tests {
 
     #[test]
     fn profile_engine_owns_stable_cross_signed_endpoint_identity() {
+        let canonical_device_id =
+            crate::application::key_exchange::device_install::get_or_create_device_id().unwrap();
         let store = Arc::new(MessagingStore::in_memory().unwrap());
         let first = MessagingEngine::from_profile_store(
             "alice-profile".to_string(),
@@ -4937,7 +4959,7 @@ mod tests {
         )
         .unwrap();
         let device_id = first.endpoint().device_id.clone();
-        assert!(!device_id.is_empty());
+        assert_eq!(device_id, canonical_device_id);
         let pending = store.pending_device_enrollment().unwrap().unwrap();
         let pending_device = pending.certificate.device.as_ref().unwrap();
         assert_eq!(actor_device_ptid(pending_device).unwrap(), "ptid:alice");
@@ -4972,6 +4994,46 @@ mod tests {
             store,
         )
         .is_err());
+
+        let mismatched_store = Arc::new(MessagingStore::in_memory().unwrap());
+        load_or_create_device_identity_for_device(
+            mismatched_store.as_ref(),
+            "ptid:alice",
+            &format!("mismatched-{canonical_device_id}"),
+            [17; 32],
+            3,
+        )
+        .unwrap();
+        assert_eq!(
+            MessagingEngine::from_profile_store(
+                "alice-profile".to_string(),
+                "ptid:alice".to_string(),
+                &[17; 32],
+                3,
+                mismatched_store,
+            )
+            .err()
+            .as_deref(),
+            Some("messaging device identity does not match authenticated session")
+        );
+    }
+
+    #[test]
+    fn recovery_rotates_signing_material_without_rotating_session_device_id() {
+        let current =
+            generate_fresh_device_identity_for_device("ptid:alice", "session-device", [17; 32], 3)
+                .unwrap();
+        let current_signing_key_id = current.enrollment.certificate.signing_key_id.clone();
+
+        let recovered =
+            recovery_device_identity(current, "ptid:alice", [18; 32], 4, false).unwrap();
+        let recovered_device = recovered.enrollment.certificate.device.as_ref().unwrap();
+
+        assert_eq!(recovered_device.device_id, "session-device");
+        assert_ne!(
+            recovered.enrollment.certificate.signing_key_id,
+            current_signing_key_id
+        );
     }
 
     #[test]
