@@ -39,6 +39,9 @@ The product must never rely on visual luck:
 - The viewport MUST NOT allow header, tab bar, side panel, action menu, or system safe area to hide message content.
 - Message metadata MUST NOT compete with content padding.
 - Platform differences MUST preserve shared message semantics.
+- Routine contact rows prioritize avatar and friendly name. Request retry
+  counts and transport metadata stay out of the visible list; identity details
+  remain available on explicit profile inspection.
 
 ## 3. Shared Message Anatomy
 

@@ -16,6 +16,7 @@ interface ChatActorIdentityRowProps {
   identity: ChatActorIdentityProjection;
   avatarSize?: number;
   nameColor?: string;
+  showMetadata?: boolean;
   style?: CSSProperties;
 }
 
@@ -23,6 +24,7 @@ export function ChatActorIdentityRow({
   identity,
   avatarSize = 36,
   nameColor,
+  showMetadata = false,
   style,
 }: ChatActorIdentityRowProps) {
   const { token } = theme.useToken();
@@ -69,7 +71,7 @@ export function ChatActorIdentityRow({
         >
           {identity.displayName}
         </Text>
-        <Flexbox
+        {showMetadata ? <Flexbox
           data-chat-identity-metadata
           gap={0}
           style={{ minWidth: 0 }}
@@ -123,7 +125,7 @@ export function ChatActorIdentityRow({
               {metadata}
             </Text>
           ) : null}
-        </Flexbox>
+        </Flexbox> : null}
       </Flexbox>
     </Flexbox>
   );

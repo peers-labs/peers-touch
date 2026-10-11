@@ -88,9 +88,9 @@ pnpm --filter @peers-touch/prototype-desktop-social-chat dev
 - `UNSYNCED`：真实 Desktop 在 X3DH 进行中显示 `Establishing secure channel…`，
   且只在 DM/MLS 会话真实 ready 后显示锁图标；当前原型仅覆盖稳定加密态。
   下一步由 Chat / Social Owner 在原型状态切换器补 `establishing` 态并完成 L2 截图确认。
-- 同名联系人现在按 PTID 保留独立行，并在 Contacts / Create Group 中以两条
-  可完整阅读的次级身份行分别展示 Federation 与 Home Station domain。头像
-  fallback 以 PTID 而不是显示名稳定取值，且统一由方形 Avatar 组件控制圆角。
+- 同名联系人按 PTID 保留独立行。Contacts / Create Group 默认呈现头像与友好
+  名字；Federation 与 Home Station 信息在主动查看身份详情时展开。头像
+  fallback 以 PTID 稳定取值，由方形 Avatar 组件控制圆角。
 - Create Group 原型现在使用可见联系人选择，并覆盖“失败后保留选择 + inline error
   + Retry”的恢复态；第二次提交进入 mock 成功态。该 mock 只证明交互形态，
   不构成真实 MLS 或 Native Acceptance 证据。
