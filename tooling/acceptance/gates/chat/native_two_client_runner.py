@@ -557,6 +557,7 @@ class NativeTwoClientGate(AcceptanceGate):
         self.steps: list[dict[str, Any]] = []
         self.clients: dict[str, TauriSession] = {}
         self.runtime_instances: list[TauriSession] = []
+        self.runtime_instance_actors: dict[int, str] = {}
         self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
@@ -743,6 +744,7 @@ class NativeTwoClientGate(AcceptanceGate):
             ),
         )
         self.runtime_instances.append(client)
+        self.runtime_instance_actors[id(client)] = actor
         expected_ptid = str(
             self.actor_specs[actor].get("ptid") or ""
         )
@@ -853,6 +855,7 @@ class NativeTwoClientGate(AcceptanceGate):
             ),
         )
         self.runtime_instances.append(client)
+        self.runtime_instance_actors[id(client)] = actor
         expected_ptid = self.ptids[actor]
         self.client_lifecycles.register(client, expected_ptid)
         self.client_lifecycles.transfer_preserved_session(
@@ -1523,12 +1526,27 @@ class NativeTwoClientGate(AcceptanceGate):
     def cleanup_clients(self) -> dict[str, Any]:
         cleanup_errors = self.client_lifecycles.release_all()
 
+        exported_client_ids: set[int] = set()
         for actor, client in self.clients.items():
+            exported_client_ids.add(id(client))
             if not self.save_app_log(client, actor):
                 cleanup_errors.append(
                     {
                         "resource": f"log:{client.profile}",
                         "error": "Native client log was not exported",
+                    }
+                )
+        instance_actors = getattr(self, "runtime_instance_actors", {})
+        for index, client in enumerate(self.runtime_instances, start=1):
+            if id(client) in exported_client_ids:
+                continue
+            actor = instance_actors.get(id(client), "unbound")
+            evidence_name = f"{actor}-runtime-{index}"
+            if not self.save_app_log(client, evidence_name):
+                cleanup_errors.append(
+                    {
+                        "resource": f"log:{client.profile}",
+                        "error": "Native runtime instance log was not exported",
                     }
                 )
 
