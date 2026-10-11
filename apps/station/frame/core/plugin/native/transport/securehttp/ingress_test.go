@@ -8,6 +8,8 @@ import (
 func TestStripUntrustedPeerHeadersPreservesAttachmentMetadata(t *testing.T) {
 	headers := http.Header{}
 	headers.Set(canonicalAttachmentMetadataHeader, "canonical-metadata")
+	headers.Set(canonicalAuthorityStationHeader, "station-peer-id")
+	headers.Set(canonicalConversationHeader, "conversation-id")
 	headers.Set("X-Peers-Remote-Peer", "forged-peer")
 	headers.Set("X-Forwarded-For", "203.0.113.9")
 	headers.Set("X-Libp2p-Peer", "forged-libp2p-peer")
@@ -16,6 +18,12 @@ func TestStripUntrustedPeerHeadersPreservesAttachmentMetadata(t *testing.T) {
 
 	if got := headers.Get(canonicalAttachmentMetadataHeader); got != "canonical-metadata" {
 		t.Fatalf("attachment metadata = %q, want canonical-metadata", got)
+	}
+	if got := headers.Get(canonicalAuthorityStationHeader); got != "station-peer-id" {
+		t.Fatalf("authority Station = %q, want station-peer-id", got)
+	}
+	if got := headers.Get(canonicalConversationHeader); got != "conversation-id" {
+		t.Fatalf("conversation = %q, want conversation-id", got)
 	}
 	for _, name := range []string{
 		"X-Peers-Remote-Peer",
