@@ -4626,12 +4626,31 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 		Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
 		StartedAt: fixture.now,
 	}
+	chatTasks := NewChatTaskService(nil, ChatTaskExecutorIdentity{
+		NodeID:      "node-lifecycle",
+		Incarnation: "incarnation-lifecycle",
+	})
+	executorLease := &persistence.ExecutorLease{
+		LeaseID:          "lease-lifecycle-cancel",
+		TaskID:           authority.TaskID,
+		StepID:           authority.StepID,
+		ExecutorID:       "node-lifecycle/incarnation-lifecycle",
+		ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
+		OwnerNodePeerID:  "node-lifecycle",
+		OwnerIncarnation: "incarnation-lifecycle",
+		FencingToken:     1,
+		Status:           executorLeaseStatusActive,
+		AcquiredAt:       fixture.now,
+		HeartbeatAt:      fixture.now,
+		ExpiresAt:        time.Now().UTC().Add(time.Minute),
+	}
 	for name, record := range map[string]interface{}{
-		"conversation": conversation,
-		"turn":         turn,
-		"attempt":      attempt,
-		"task":         task,
-		"step":         step,
+		"conversation":   conversation,
+		"turn":           turn,
+		"attempt":        attempt,
+		"task":           task,
+		"step":           step,
+		"executor lease": executorLease,
 	} {
 		if err := fixture.db.Create(record).Error; err != nil {
 			t.Fatalf("seed %s: %v", name, err)
@@ -4678,6 +4697,7 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 		toolDispatch:      fixture.service,
 		nudgeState:        domain.NewNudgeState(),
 		admissionResolver: admissionResolver,
+		chatTaskService:   chatTasks,
 		resumeProviderCall: func(
 			ctx context.Context,
 			_ *TurnConfig,
@@ -4934,15 +4954,18 @@ func TestChatTaskServiceBindChatStepToTurn(t *testing.T) {
 		StartedAt: fixture.now,
 	}
 	lease := &persistence.ExecutorLease{
-		LeaseID:      "lease-bind",
-		TaskID:       step.TaskID,
-		StepID:       step.StepID,
-		ExecutorID:   "station-old",
-		ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
-		Status:       chatLeaseStatusActive,
-		AcquiredAt:   fixture.now,
-		HeartbeatAt:  fixture.now,
-		ExpiresAt:    fixture.now.Add(time.Minute),
+		LeaseID:          "lease-bind",
+		TaskID:           step.TaskID,
+		StepID:           step.StepID,
+		ExecutorID:       "node-bind/incarnation-bind",
+		ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
+		OwnerNodePeerID:  "node-bind",
+		OwnerIncarnation: "incarnation-bind",
+		FencingToken:     1,
+		Status:           executorLeaseStatusActive,
+		AcquiredAt:       fixture.now,
+		HeartbeatAt:      fixture.now,
+		ExpiresAt:        time.Now().UTC().Add(time.Minute),
 	}
 	if err := fixture.db.Create(step).Error; err != nil {
 		t.Fatalf("seed running chat step: %v", err)
@@ -4951,8 +4974,18 @@ func TestChatTaskServiceBindChatStepToTurn(t *testing.T) {
 		t.Fatalf("seed chat step lease: %v", err)
 	}
 
-	service := NewChatTaskService(nil)
-	if err := service.BindChatStepToTurn(context.Background(), step.TaskID, step.StepID, "turn-bind"); err != nil {
+	service := NewChatTaskService(nil, ChatTaskExecutorIdentity{
+		NodeID:      "node-bind",
+		Incarnation: "incarnation-bind",
+	})
+	if err := service.BindChatStepToTurn(
+		context.Background(),
+		step.TaskID,
+		step.StepID,
+		"turn-bind",
+		lease.LeaseID,
+		lease.FencingToken,
+	); err != nil {
 		t.Fatalf("bind chat step to turn: %v", err)
 	}
 

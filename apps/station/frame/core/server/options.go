@@ -88,6 +88,17 @@ func WithMetadata(md map[string]string) option.Option {
 	})
 }
 
+// WithMetadataEntry appends one composition-root runtime fact without
+// replacing configured server metadata.
+func WithMetadataEntry(key, value string) option.Option {
+	return wrapper.Wrap(func(opts *Options) {
+		if opts.Metadata == nil {
+			opts.Metadata = make(map[string]string)
+		}
+		opts.Metadata[key] = value
+	})
+}
+
 // WithGlobalWrappers sets global wrappers that will be applied to all handlers.
 func WithGlobalWrappers(wrappers ...Wrapper) option.Option {
 	return wrapper.Wrap(func(opts *Options) {

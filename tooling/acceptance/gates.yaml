@@ -397,6 +397,14 @@
       "tier": "env-evidence",
       "description": "Prove two independent Station processes over one source-attested PostgreSQL runtime share Access, OAuth acknowledgement, Session class activation, revocation, and the Station access keyring."
     },
+    "NCP-G06-AGENT": {
+      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-agent-fencing --gate NCP-G06-AGENT",
+      "timeout_seconds": 420,
+      "environment": "node-connectivity-agent-fencing",
+      "provisioner": "node-connectivity-agent-fencing",
+      "tier": "env-evidence",
+      "description": "Prove two independent Agent worker processes over one source-attested PostgreSQL runtime preserve healthy foreign work, advance the fencing token on expired takeover, reject stale completion, and retain external-effect recovery state."
+    },
     "NCP-G07": {
       "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-native-cut --gate NCP-G07",
       "timeout_seconds": 180,

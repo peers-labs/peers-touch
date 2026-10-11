@@ -30,6 +30,7 @@ STANDARD_STREAM_CLOSURE = "ncp-standard-stream"
 NATIVE_CUT_CLOSURE = "ncp-native-cut"
 DURABLE_EVENTS_CLOSURE = "ncp-durable-events"
 SHARED_ACCESS_CLOSURE = "ncp-shared-access"
+AGENT_FENCING_CLOSURE = "ncp-agent-fencing"
 GATE_TESTS = {
     "NCP-G01": (
         "TestSecureHTTPDirectAndCircuitUseCanonicalHertzRouter",
@@ -89,6 +90,18 @@ SHARED_ACCESS_OAUTH_FUNCTIONAL_TESTS = (
 SHARED_ACCESS_GATE_TESTS = (
     "TestPostgresCrossProcessSharedAccess",
 )
+AGENT_FENCING_FUNCTIONAL_TESTS = (
+    "TestRecoverRunningChatTasksPreservesHealthyForeignLease",
+    "TestRecoverRunningChatTasksTakeoverFencesStaleOwnerCompletion",
+    "TestMigrateExecutorLeaseFencingExpiresLegacyAuthorityAndCreatesActiveFence",
+)
+AGENT_FENCING_FRAME_FUNCTIONAL_TESTS = (
+    "TestWithMetadataEntryPreservesConfiguredMetadata",
+    "TestPrimeServerOptionsWithoutApplicationSubservers",
+)
+AGENT_FENCING_GATE_TESTS = (
+    "TestPostgresCrossProcessAgentFencing",
+)
 DURABLE_EVENTS_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
     {
         "scope": "suite",
@@ -114,6 +127,23 @@ SHARED_ACCESS_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
             "NCP-G05-ACK",
             "NCP-G05-CLASS",
             "NCP-G05-REVOKE",
+        ],
+        "maxProvisioningRuns": 1,
+        "maxClientLaunches": 2,
+        "minWarmReuseRate": 0.66,
+        "requireAttachOnlyScenarios": True,
+        "requireReceiverVisibleProof": True,
+        "allowClientReplacement": False,
+    }
+)
+AGENT_FENCING_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
+    {
+        "scope": "suite",
+        "entryCheckId": "agent-functional",
+        "scenarioIds": [
+            "NCP-G06-HEALTHY",
+            "NCP-G06-TAKEOVER",
+            "NCP-G06-STALE",
         ],
         "maxProvisioningRuns": 1,
         "maxClientLaunches": 2,
@@ -225,6 +255,50 @@ def run_oauth_go_tests(
     )
 
 
+def run_agent_go_tests(
+    test_names: tuple[str, ...],
+    *,
+    environment: Mapping[str, str] | None = None,
+    timeout: int = 300,
+) -> dict[str, object]:
+    pattern = "^(" + "|".join(test_names) + ")$"
+    return run_command(
+        [
+            "go",
+            "test",
+            "./subserver/agent/service/...",
+            "./subserver/agent/infrastructure/persistence",
+            "-run",
+            pattern,
+            "-count=1",
+        ],
+        REPO_ROOT / "apps/station/app",
+        timeout=timeout,
+        environment=environment,
+    )
+
+
+def run_agent_frame_go_tests(
+    test_names: tuple[str, ...],
+    *,
+    timeout: int = 180,
+) -> dict[str, object]:
+    pattern = "^(" + "|".join(test_names) + ")$"
+    return run_command(
+        [
+            "go",
+            "test",
+            "./core/server",
+            "./core/plugin/native/node",
+            "-run",
+            pattern,
+            "-count=1",
+        ],
+        REPO_ROOT / "apps/station/frame",
+        timeout=timeout,
+    )
+
+
 def load_runtime_manifest() -> dict[str, object]:
     raw = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "").strip()
     if not raw:
@@ -254,6 +328,26 @@ def load_shared_access_runtime_manifest() -> dict[str, object]:
         or payload.get("state") != "FIXTURE_READY"
     ):
         raise ValueError("NCP-G05 Runtime Manifest identity is invalid")
+    return payload
+
+
+def load_agent_fencing_runtime_manifest() -> dict[str, object]:
+    raw = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "").strip()
+    if not raw:
+        raise ValueError(
+            "NCP-G06-AGENT requires a provisioned Runtime Manifest"
+        )
+    payload = json.loads(Path(raw).read_text(encoding="utf-8"))
+    if (
+        not isinstance(payload, dict)
+        or payload.get("environmentId")
+        != "node-connectivity-agent-fencing"
+        or payload.get("gateId") != "NCP-G06-AGENT"
+        or payload.get("state") != "FIXTURE_READY"
+    ):
+        raise ValueError(
+            "NCP-G06-AGENT Runtime Manifest identity is invalid"
+        )
     return payload
 
 
@@ -625,6 +719,218 @@ def run_shared_access_gate() -> dict[str, object]:
     }
 
 
+def run_agent_fencing_gate() -> dict[str, object]:
+    manifest = load_agent_fencing_runtime_manifest()
+    services = manifest.get("services")
+    if not isinstance(services, dict):
+        raise ValueError(
+            "NCP-G06-AGENT Runtime Manifest has no services"
+        )
+    postgres = services.get("agent-postgres")
+    if (
+        not isinstance(postgres, dict)
+        or postgres.get("kind") != "postgres"
+        or not postgres.get("runtimeIdentity")
+        or not postgres.get("attestationArtifact")
+    ):
+        raise ValueError(
+            "NCP-G06-AGENT PostgreSQL attestation is incomplete"
+        )
+    endpoint = str(postgres.get("endpoint") or "")
+    if not endpoint.startswith("postgresql://postgres@127.0.0.1:"):
+        raise ValueError(
+            "NCP-G06-AGENT PostgreSQL endpoint is not disposable local"
+        )
+
+    source = manifest.get("source")
+    if not isinstance(source, dict):
+        raise ValueError(
+            "NCP-G06-AGENT Runtime Manifest source is missing"
+        )
+    source_commit = str(source.get("commit") or "")
+    run_id = str(manifest.get("runId") or "")
+    if not source_commit or not run_id:
+        raise ValueError(
+            "NCP-G06-AGENT source or runtime identity is missing"
+        )
+
+    with tempfile.TemporaryDirectory(
+        prefix="peers-touch-ncp-agent-fencing-",
+    ) as raw:
+        process_result_path = Path(raw) / "process-result.json"
+        environment = {
+            **os.environ,
+            "NCP_AGENT_POSTGRES_DSN": endpoint,
+            "NCP_AGENT_RESULT_PATH": str(process_result_path),
+        }
+        command_result = run_agent_go_tests(
+            AGENT_FENCING_GATE_TESTS,
+            environment=environment,
+            timeout=300,
+        )
+        if command_result["status"] != "passed":
+            return {
+                "status": "failed",
+                "results": [command_result],
+            }
+        process_result = json.loads(
+            process_result_path.read_text(encoding="utf-8")
+        )
+
+    expected_scenarios = set(AGENT_FENCING_RUNTIME_REUSE.scenario_ids)
+    scenarios = process_result.get("scenarios")
+    healthy = (
+        scenarios.get("NCP-G06-HEALTHY")
+        if isinstance(scenarios, dict)
+        else None
+    )
+    takeover = (
+        scenarios.get("NCP-G06-TAKEOVER")
+        if isinstance(scenarios, dict)
+        else None
+    )
+    stale = (
+        scenarios.get("NCP-G06-STALE")
+        if isinstance(scenarios, dict)
+        else None
+    )
+    if (
+        process_result.get("status") != "passed"
+        or not isinstance(scenarios, dict)
+        or set(scenarios) != expected_scenarios
+        or not isinstance(healthy, dict)
+        or healthy.get("healthyPreserved") is not True
+        or not isinstance(takeover, dict)
+        or takeover.get("tokenAdvanced") is not True
+        or not isinstance(stale, dict)
+        or stale.get("staleCompletionRejected") is not True
+        or stale.get("terminalRecordCount") != 1
+        or stale.get("externalRecoveryState") != "open"
+    ):
+        raise ValueError(
+            "NCP-G06-AGENT process evidence is incomplete"
+        )
+
+    ledger = SuiteRuntimeLedger(
+        AGENT_FENCING_RUNTIME_REUSE,
+        suite_runtime_id=run_id,
+        source_digest=source_commit,
+        fixture_epoch=run_id,
+    )
+    ledger.record(
+        SuiteRuntimeAction.PROVISION,
+        resource_id=f"environment:{run_id}",
+    )
+    ledger.record(
+        SuiteRuntimeAction.CLIENT_LAUNCH,
+        resource_id="process:agent-node-a",
+    )
+    ledger.record(
+        SuiteRuntimeAction.CLIENT_LAUNCH,
+        resource_id="process:agent-node-b",
+    )
+    for scenario_id in AGENT_FENCING_RUNTIME_REUSE.scenario_ids:
+        ledger.record(
+            SuiteRuntimeAction.SCENARIO_START,
+            scenario_id=scenario_id,
+        )
+        ledger.record(
+            SuiteRuntimeAction.UI_ACTION,
+            scenario_id=scenario_id,
+            resource_id="agent-worker-process:lease-action",
+        )
+        ledger.record(
+            SuiteRuntimeAction.RECEIVER_ASSERTION,
+            scenario_id=scenario_id,
+            resource_id="peer-worker-process:durable-observation",
+        )
+        ledger.record(
+            SuiteRuntimeAction.SUPPORTING_OBSERVATION,
+            scenario_id=scenario_id,
+            resource_id=f"postgres-readback:{scenario_id}",
+        )
+        ledger.record(
+            SuiteRuntimeAction.SCENARIO_END,
+            scenario_id=scenario_id,
+        )
+    ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)
+    suite_report = ledger.require_valid()
+    validate_suite_runtime_report(
+        suite_report,
+        expected_contract=AGENT_FENCING_RUNTIME_REUSE,
+    )
+
+    with ArtifactSession(
+        repo_root=REPO_ROOT,
+        gate_id="NCP-G06-AGENT",
+    ) as artifacts:
+        process_ref = artifacts.write_json(
+            "reports/NCP-G06-AGENT-process-result.json",
+            process_result,
+            role="process-result",
+        )
+        suite_ref = artifacts.write_json(
+            "reports/NCP-G06-AGENT-suite-runtime.json",
+            suite_report,
+            role="suite-runtime",
+        )
+        evidence = {
+            "artifactKind": "acceptance-gate-evidence-report",
+            "gateId": "NCP-G06-AGENT",
+            "gate": "NCP-G06-AGENT",
+            "environment": "node-connectivity-agent-fencing",
+            "status": "PASS",
+            "completionStatus": "DONE",
+            "proofStatus": "PROVEN",
+            "phase": "NCP-06",
+            "bom": ["NCP-NS02", "NCP-NS04"],
+            "spec": [
+                "NCP-G06-AGENT",
+                "node-connectivity-agent-fencing",
+                "ncp-agent-fencing",
+            ],
+            "sampleEmissionAllowed": False,
+            "source": source,
+            "runtime": {
+                "postgres": postgres,
+                "logicalProcesses": ["agent-node-a", "agent-node-b"],
+            },
+            "processResult": process_ref.to_dict(),
+            "suiteRuntime": suite_ref.to_dict(),
+            "suiteRuntimeReportDigest": suite_report["reportDigest"],
+            "observedScope": [
+                "healthy foreign Agent lease survives peer boot",
+                "database-time expiry permits one higher-token takeover",
+                "resumed stale owner cannot commit completion",
+                "current owner commits one terminal domain record",
+                "durable external-effect recovery state is retained",
+            ],
+            "unprovenScope": [
+                "Exactly-once provider effects are not claimed",
+                "Native Desktop and Mobile rendering remain unproven",
+                "OSS fencing remains owned by NCP-G06-OSS",
+            ],
+        }
+        evidence_ref = artifacts.write_json(
+            "reports/NCP-G06-AGENT-evidence.json",
+            evidence,
+            role="evidence",
+        )
+        artifacts.complete(
+            status="passed",
+            completion_status="DONE",
+            proof_status="PROVEN",
+            runtime=evidence["runtime"],
+        )
+    return {
+        "status": "passed",
+        "results": [command_result],
+        "processResult": process_ref.to_dict(),
+        "suiteRuntime": suite_ref.to_dict(),
+        "evidence": evidence_ref.to_dict(),
+    }
+
+
 def isolated_command_environment(work_root: Path) -> dict[str, str]:
     target_dir = (work_root / "cargo-target").resolve()
     if target_dir == REPO_ROOT or REPO_ROOT in target_dir.parents:
@@ -674,6 +980,7 @@ def main() -> int:
             NATIVE_CUT_CLOSURE,
             DURABLE_EVENTS_CLOSURE,
             SHARED_ACCESS_CLOSURE,
+            AGENT_FENCING_CLOSURE,
         ),
     )
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -683,7 +990,7 @@ def main() -> int:
         choices=(
             tuple(GATE_TESTS)
             + tuple(NATIVE_CUT_COMMANDS)
-            + ("NCP-G04", "NCP-G05", "NCP-G08")
+            + ("NCP-G04", "NCP-G05", "NCP-G06-AGENT", "NCP-G08")
         ),
     )
     args = parser.parse_args()
@@ -766,7 +1073,7 @@ def main() -> int:
             results = list(gate_result.pop("results"))
         else:
             parser.error(f"{args.gate} does not belong to {args.closure}")
-    else:
+    elif args.closure == SHARED_ACCESS_CLOSURE:
         if args.functional:
             results = [
                 run_frame_access_go_tests(
@@ -778,6 +1085,19 @@ def main() -> int:
             ]
         elif args.gate == "NCP-G05":
             gate_result = run_shared_access_gate()
+            results = list(gate_result.pop("results"))
+        else:
+            parser.error(f"{args.gate} does not belong to {args.closure}")
+    else:
+        if args.functional:
+            results = [
+                run_agent_go_tests(AGENT_FENCING_FUNCTIONAL_TESTS),
+                run_agent_frame_go_tests(
+                    AGENT_FENCING_FRAME_FUNCTIONAL_TESTS
+                ),
+            ]
+        elif args.gate == "NCP-G06-AGENT":
+            gate_result = run_agent_fencing_gate()
             results = list(gate_result.pop("results"))
         else:
             parser.error(f"{args.gate} does not belong to {args.closure}")
