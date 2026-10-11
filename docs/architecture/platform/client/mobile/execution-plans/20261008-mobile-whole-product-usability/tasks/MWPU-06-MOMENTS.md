@@ -17,6 +17,8 @@
   "runtimeClass": "native-mobile",
   "writeSet": [
     "apps/desktop/src/pages",
+    "apps/desktop/src/runtimes/momentsRuntime.ts",
+    "apps/desktop/src/runtimes/momentsRuntime.test.ts",
     "apps/desktop/src/services/privateMomentsNative.ts",
     "apps/desktop/src/services/socialRealtime.ts",
     "apps/mobile/src/pages/MomentsPage.tsx",
@@ -42,7 +44,7 @@
   "checks": [
     {
       "id": "moments-source",
-      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/moments src/services/socialRealtime.test.ts src/test/moments-store.test.ts && pnpm --dir apps/mobile exec vitest run src/pages/MomentsPage.test.ts src/pages/moments src/features/social/useMomentsDraft.test.ts && node apps/mobile/scripts/run-three-client-product-journey.mjs --self-test",
+      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/moments src/runtimes/momentsRuntime.test.ts src/services/socialRealtime.test.ts src/test/moments-store.test.ts && pnpm --dir apps/mobile exec vitest run src/pages/MomentsPage.test.ts src/pages/moments src/features/social/useMomentsDraft.test.ts && node apps/mobile/scripts/run-three-client-product-journey.mjs --self-test",
       "verificationClass": "SOURCE_CHECK"
     },
     {

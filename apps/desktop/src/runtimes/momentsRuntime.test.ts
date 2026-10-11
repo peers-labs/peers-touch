@@ -592,6 +592,34 @@ describe('momentsRuntime identity fence', () => {
     });
   });
 
+  it('keeps public projection active while private bootstrap retries', async () => {
+    mocks.privateMoments.bootstrap.mockRejectedValueOnce(
+      new Error('private trust unavailable'),
+    );
+
+    momentsRuntime.install();
+    await flushRuntime();
+
+    expect(mocks.moments.syncProjection).toHaveBeenCalledWith('bootstrap');
+    expect(captureMomentsRuntimeScope()).toMatchObject({
+      actorPtid: 'ptid:alice',
+      stationIdentity: 'peer:station-a',
+    });
+    expect(mocks.privateComments.bootstrap).not.toHaveBeenCalled();
+    expect(mocks.privateMoments.reconcile).not.toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    intervalCallbacks[0]();
+    await flushRuntime();
+
+    expect(mocks.moments.syncProjection).toHaveBeenCalledWith(
+      'periodic reconcile',
+    );
+    expect(mocks.privateMoments.bootstrap).toHaveBeenCalledOnce();
+    expect(mocks.privateComments.bootstrap).toHaveBeenCalledOnce();
+    expect(mocks.privateMoments.reconcile).toHaveBeenCalledOnce();
+  });
+
   it('does not hide an authoritative sync failure during periodic resync', async () => {
     momentsRuntime.install();
     await flushRuntime();

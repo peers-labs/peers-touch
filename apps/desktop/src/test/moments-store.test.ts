@@ -2761,7 +2761,7 @@ describe('station moderation bridge: moments projection signal', () => {
 });
 
 describe('moments runtime: realtime recovery', () => {
-  it('retries a failed native bootstrap on the periodic reconciliation tick', async () => {
+  it('keeps public projection active and retries failed native bootstrap on reconciliation', async () => {
     const intervalCallbacks = installEventWindowStub();
     Object.assign(window, { __TAURI_INTERNALS__: {} });
     useSessionStore.setState({
@@ -2775,6 +2775,23 @@ describe('moments runtime: realtime recovery', () => {
       restoring: false,
       sessionEpoch: 9,
     });
+    enqueue('actor_get_my_profile', dataOk({
+      id: 'viewer',
+      displayName: 'Viewer',
+      username: 'viewer',
+      avatar: '',
+    }));
+    enqueue('social_sync_moments_projection',
+      bytesOk(SyncMomentsProjectionResponseSchema, {
+        homeTimeline: {
+          posts: [{ id: 'public-bootstrap-post', authorPtid: 'remote', type: PostType.TEXT }],
+          nextCursor: '',
+          hasMore: false,
+        },
+        publicTimeline: { posts: [], nextCursor: '', hasMore: false },
+      }),
+    );
+    enqueue('social_circle_list_mine', bytesOk(ListMyCirclesResponseSchema, { circles: [] }));
     enqueue('social_private_moments_bootstrap', {
       ok: false,
       error: {
@@ -2786,6 +2803,9 @@ describe('moments runtime: realtime recovery', () => {
     momentsRuntime.install();
 
     await vi.waitFor(() => {
+      expect(useMomentsStore.getState().feeds.home.postIds).toEqual([
+        'public-bootstrap-post',
+      ]);
       expect(invokeMock.mock.calls.filter(
         ([command]) => command === 'social_private_moments_bootstrap',
       )).toHaveLength(1);
@@ -2795,7 +2815,7 @@ describe('moments runtime: realtime recovery', () => {
         'frontend_log',
         {
           input: expect.objectContaining({
-            message: 'moments projection bootstrap failed',
+            message: 'private Moments projection unavailable',
           }),
         },
       );
