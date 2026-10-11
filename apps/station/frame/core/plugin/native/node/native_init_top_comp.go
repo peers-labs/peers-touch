@@ -208,10 +208,16 @@ func (s *native) initComponents(ctx context.Context) (err error) {
 			"logical Station root and Node Host identities must be independent",
 		)
 	}
+	nodeIncarnation, err := newNodeIncarnation()
+	if err != nil {
+		return err
+	}
+	s.nodeIncarnation = nodeIncarnation
 	s.opts.Id = stationPeerID.String()
 	s.opts.ServerOptions = append(
 		s.opts.ServerOptions,
 		server.WithMetadataEntry("node_peer_id", kernel.Host().ID().String()),
+		server.WithMetadataEntry("node_incarnation", nodeIncarnation),
 	)
 
 	// init server
@@ -278,6 +284,17 @@ func (s *native) initComponents(ctx context.Context) (err error) {
 	}
 	if err := s.opts.Server.Init(append([]option.Option{server.WithTransport(s.opts.Transport)}, s.opts.ServerOptions...)...); err != nil {
 		return err
+	}
+	s.cluster, err = newStationClusterAdmission(
+		ctx,
+		processRole,
+		s.opts.Id,
+		kernel.Host().ID().String(),
+		nodeIncarnation,
+		s.opts.Server.Options(),
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Station cluster admission: %w", err)
 	}
 	if processRole == role.Station && relayConfig.Pool.Mode != nativeRelay.PoolModeOff {
 		bootstrapSigner, ok := s.opts.Server.Options().

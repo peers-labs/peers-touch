@@ -238,6 +238,9 @@ fn access_scope<T: serde::Serialize>() -> Result<(String, String, u64), AppResul
         ));
     }
     let active_entry = station_client::station_registry().active_entry();
+    if let Some(entry) = active_entry.as_ref() {
+        binding = binding_service.reconcile_route_revision(entry);
+    }
     let binding_matches_registry = active_entry.as_ref().is_some_and(|entry| {
         binding.station_peer_id.as_deref() == Some(entry.station_peer_id.as_str())
             && binding.active_route_id.as_deref() == Some(entry.active_route_id.as_str())

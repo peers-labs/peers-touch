@@ -36,6 +36,18 @@ type S3Backend struct {
 
 func (b *S3Backend) ClusterShared() bool { return true }
 
+func (b *S3Backend) EnsureClusterBackingIdentity(
+	_ context.Context,
+) (string, error) {
+	digest := sha256.Sum256([]byte(
+		"s3-v1\x00" +
+			strings.ToLower(strings.TrimSpace(b.endpoint)) + "\x00" +
+			strings.TrimSpace(b.bucket) + "\x00" +
+			strings.Trim(b.keyPrefix, "/"),
+	))
+	return hex.EncodeToString(digest[:]), nil
+}
+
 // NewS3Backend constructs an `S3Backend` from a validated `S3Config`.
 // The constructor performs no network I/O — the first request the
 // caller makes is when connectivity / auth gets exercised. This is

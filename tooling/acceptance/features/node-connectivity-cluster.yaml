@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "id": "node-connectivity-cluster",
+  "domain": "station-access",
+  "status": "active",
+  "owners": [
+    "apps/station/frame/core/plugin/native/node/**",
+    "apps/station/frame/core/auth/station_keyring.go",
+    "apps/station/frame/core/facility/storage/**",
+    "apps/station/app/subserver/events/**",
+    "apps/station/app/subserver/agent/**",
+    "apps/station/app/subserver/oss/**",
+    "apps/desktop/src-tauri/src/application/station_binding/**",
+    "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
+    "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
+    "tooling/acceptance/environments/node-connectivity-cluster.yaml",
+    "tooling/acceptance/provisioners/node_connectivity_cluster.py",
+    "tooling/scripts/node-connectivity-journey.py"
+  ],
+  "truth_sources": [
+    "database-time station_node_registry leases bound to logical Station, Node PeerID, authorization epoch, and boot incarnation",
+    "shared PostgreSQL Access keyring and enabled-owner backing digests",
+    "domain-owned Agent and OSS fencing tokens over one PostgreSQL runtime",
+    "generation-bound bytes in one cluster-shared object backend",
+    "Desktop Station registry route revision under one lifecycle generation"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "desktop",
+      "route": "same-Station automatic verified route failover without Session replacement"
+    },
+    {
+      "type": "station",
+      "route": "cluster admission and domain fencing"
+    }
+  ],
+  "required_gates": [
+    "NCP-G04",
+    "NCP-G05",
+    "NCP-G06"
+  ],
+  "acceptance": {
+    "service": [
+      "two distinct node PeerIDs with matching root authorization and backing digests hold live readiness leases",
+      "mismatched database, keyring, schema, enabled-owner, or object backing fails cluster admission",
+      "Agent and OSS use the same process Node/Incarnation identities",
+      "healthy foreign work survives peer boot and expired takeover advances each domain fencing token",
+      "stale Agent completion and stale OSS generation completion are rejected",
+      "one terminal Agent effect and valid OSS refcount/quota state remain",
+      "a failed verified route advances route revision while preserving logical Station lifecycle generation",
+      "safe reads and SSE reconnect through the replacement route while mutations with unknown outcomes are not blindly replayed"
+    ],
+    "surface": []
+  },
+  "negative": [
+    "node-local object backing cannot publish clustered readiness",
+    "node registry lease never authorizes Agent or OSS completion",
+    "route failover never changes Actor, Device, Session, or logical Station scope",
+    "no Gateway, scheduler, broker, profile, object migration, or shared-service reset is introduced"
+  ]
+}

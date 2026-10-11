@@ -431,6 +431,34 @@
       ]
     },
     {
+      "id": "node-connectivity-cluster",
+      "features": [
+        "node-connectivity-cluster"
+      ],
+      "when": {
+        "paths": [
+          "apps/station/frame/core/plugin/native/node/**",
+          "apps/station/frame/core/auth/station_keyring.go",
+          "apps/station/frame/core/facility/storage/**",
+          "apps/station/app/subserver/events/**",
+          "apps/station/app/subserver/agent/**",
+          "apps/station/app/subserver/oss/**",
+          "apps/desktop/src-tauri/src/application/station_binding/**",
+          "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
+          "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
+          "tooling/acceptance/environments/node-connectivity-cluster.yaml",
+          "tooling/acceptance/provisioners/node_connectivity_cluster.py",
+          "tooling/acceptance/features/node-connectivity-cluster.yaml",
+          "tooling/scripts/node-connectivity-journey.py"
+        ]
+      },
+      "require": [
+        "NCP-G04",
+        "NCP-G05",
+        "NCP-G06"
+      ]
+    },
+    {
       "id": "node-connectivity-architecture",
       "features": [
         "node-connectivity-standard-stream"
@@ -447,6 +475,7 @@
         "NCP-G03",
         "NCP-G04",
         "NCP-G05",
+        "NCP-G06",
         "NCP-G06-AGENT",
         "NCP-G06-OSS",
         "NCP-G07",

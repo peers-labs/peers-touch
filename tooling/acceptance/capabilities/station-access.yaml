@@ -467,6 +467,57 @@
       }
     },
     {
+      "id": "node-connectivity-cluster",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["node-connectivity-cluster"],
+      "required_gates": [
+        "NCP-G04",
+        "NCP-G05",
+        "NCP-G06"
+      ],
+      "synthetic_paths": [
+        "apps/station/frame/core/plugin/native/node/cluster_admission.go",
+        "apps/station/frame/core/auth/station_keyring.go",
+        "apps/station/app/subserver/events/events.go",
+        "apps/station/app/subserver/agent/agent.go",
+        "apps/station/app/subserver/oss/oss.go",
+        "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
+        "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
+        "tooling/scripts/node-connectivity-journey.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "database-time station_node_registry leases",
+          "shared PostgreSQL and Access keyring backing digest",
+          "Agent ExecutorLease and OSS WorkerLease fencing",
+          "generation-bound cluster-shared object bytes",
+          "Desktop Station route revision and lifecycle generation"
+        ],
+        "surfaces": [
+          "Station cluster admission",
+          "same-Station Desktop route failover"
+        ],
+        "proven_by": [
+          "NCP-G04",
+          "NCP-G05",
+          "NCP-G06"
+        ],
+        "proven_scope": [
+          "the admission contract rejects undeclared enabled owners and requires matching authorization, schema, declared-owner backing, database, keyring, and object identities",
+          "live node identity is fenced by PeerID plus process incarnation and database-time lease",
+          "Agent and OSS share process node identities but retain independent domain fencing tokens",
+          "healthy foreign work survives peer boot and stale Agent/OSS effects cannot commit after takeover"
+        ],
+        "unproven_scope": [
+          "the complete production Station owner composition remains UNPROVEN and cluster mode fails closed until every enabled owner declares readiness",
+          "real Native Desktop same-Station failover, Session continuity, safe read retry, and mutation reconciliation remain UNPROVEN until the NCP-08 product Journey",
+          "Mobile runtime behavior remains UNPROVEN",
+          "database and object-store infrastructure HA remain operator-owned"
+        ]
+      }
+    },
+    {
       "id": "station-access-desktop-relay-binding",
       "domain": "station-access",
       "direction": "acceptance_validates_product",

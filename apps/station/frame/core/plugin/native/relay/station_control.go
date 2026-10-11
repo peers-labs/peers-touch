@@ -132,7 +132,7 @@ func (c *StationControl) Publish(
 		target,
 		credential,
 		route,
-		"circuit-"+target.RelayPeerID.String(),
+		"circuit-"+target.RelayPeerID.String()+"-"+c.host.ID().String(),
 		peerpb.StationRouteVisibility_STATION_ROUTE_VISIBILITY_PUBLIC,
 		defaultPublicRouteLifetime,
 	)

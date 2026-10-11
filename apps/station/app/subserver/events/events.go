@@ -10,6 +10,7 @@ package events
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
+	"gorm.io/gorm"
 )
 
 const callResolutionSweepInterval = time.Second
@@ -27,6 +29,7 @@ type eventsSubServer struct {
 	status               server.Status
 	addrs                []string
 	bus                  EventBus
+	database             *gorm.DB
 	callResolution       *callResolutionStore
 	callResolutionCancel context.CancelFunc
 	callResolutionDone   chan struct{}
@@ -50,6 +53,7 @@ func (s *eventsSubServer) Init(ctx context.Context, opts ...option.Option) error
 		return err
 	}
 	s.bus = eventBus
+	s.database = rds
 	s.callResolution = callResolution
 	setGlobalBus(s.bus)
 	return nil
@@ -101,7 +105,28 @@ func (s *eventsSubServer) Type() server.SubserverType { return server.SubserverT
 func (s *eventsSubServer) Address() server.SubserverAddress {
 	return server.SubserverAddress{Address: s.addrs}
 }
-func (s *eventsSubServer) Status() server.Status { return s.status }
+func (s *eventsSubServer) Status() server.Status {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.status
+}
+
+// ClusterReadiness verifies the durable cross-node Events backing and returns
+// its credential-free PostgreSQL identity.
+func (s *eventsSubServer) ClusterReadiness(
+	ctx context.Context,
+) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.status != server.StatusRunning || s.bus == nil || s.database == nil {
+		return "", fmt.Errorf("events: cluster runtime is not running")
+	}
+	if !s.database.Migrator().HasTable(&realtimeEventModel{}) ||
+		!s.database.Migrator().HasTable(&actorEventSequenceModel{}) {
+		return "", fmt.Errorf("events: durable cluster schema is incomplete")
+	}
+	return store.PostgresClusterIdentity(ctx, s.database)
+}
 
 func (s *eventsSubServer) reapCallResolutions(ctx context.Context) {
 	ticker := time.NewTicker(callResolutionSweepInterval)

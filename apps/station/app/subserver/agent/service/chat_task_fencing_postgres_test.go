@@ -23,6 +23,23 @@ const (
 	agentFencingAgentID = "ncp-agent-fencing-agent"
 )
 
+func agentFencingNodeIdentity(suffix string) (string, string) {
+	upper := strings.ToUpper(suffix)
+	nodeID := strings.TrimSpace(
+		os.Getenv("NCP_CLUSTER_NODE_" + upper + "_ID"),
+	)
+	incarnation := strings.TrimSpace(
+		os.Getenv("NCP_CLUSTER_NODE_" + upper + "_INCARNATION"),
+	)
+	if nodeID == "" {
+		nodeID = "agent-node-" + suffix
+	}
+	if incarnation == "" {
+		incarnation = "agent-incarnation-" + suffix
+	}
+	return nodeID, incarnation
+}
+
 type agentFencingProcessResult struct {
 	Role                    string `json:"role"`
 	ProcessID               int    `json:"processId"`
@@ -59,8 +76,10 @@ func TestPostgresCrossProcessAgentFencing(t *testing.T) {
 	runtimeRoot := t.TempDir()
 	holder := startAgentFencingHolderProcess(t, dsn, runtimeRoot)
 	ready := waitAgentFencingResult(t, holder.readyPath)
-	if ready.OwnerNodePeerID != "agent-node-a" ||
-		ready.OwnerIncarnation != "agent-incarnation-a" ||
+	nodeA, incarnationA := agentFencingNodeIdentity("a")
+	nodeB, incarnationB := agentFencingNodeIdentity("b")
+	if ready.OwnerNodePeerID != nodeA ||
+		ready.OwnerIncarnation != incarnationA ||
 		ready.FencingToken != 1 {
 		t.Fatalf("node A did not publish the initial authority: %+v", ready)
 	}
@@ -88,8 +107,8 @@ func TestPostgresCrossProcessAgentFencing(t *testing.T) {
 		)
 	}
 	takeover := waitAgentFencingResult(t, watcher.takeoverPath)
-	if takeover.OwnerNodePeerID != "agent-node-b" ||
-		takeover.OwnerIncarnation != "agent-incarnation-b" ||
+	if takeover.OwnerNodePeerID != nodeB ||
+		takeover.OwnerIncarnation != incarnationB ||
 		takeover.FencingToken != ready.FencingToken+1 ||
 		takeover.StepStatus != int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING) {
 		t.Fatalf("node B takeover is invalid: %+v", takeover)
@@ -440,6 +459,7 @@ func startAgentFencingHolderProcess(
 	runtimeRoot string,
 ) *runningAgentFencingProcess {
 	t.Helper()
+	nodeID, incarnation := agentFencingNodeIdentity("a")
 	process := &runningAgentFencingProcess{
 		command: exec.Command(
 			os.Args[0],
@@ -452,8 +472,8 @@ func startAgentFencingHolderProcess(
 	process.command.Env = agentFencingProcessEnvironment(
 		dsn,
 		"hold",
-		"agent-node-a",
-		"agent-incarnation-a",
+		nodeID,
+		incarnation,
 		map[string]string{
 			"NCP_AGENT_READY_PATH":     process.readyPath,
 			"NCP_AGENT_FINAL_PATH":     process.finalPath,
@@ -481,6 +501,7 @@ func startAgentFencingWatcherProcess(
 	runtimeRoot string,
 ) *runningAgentFencingProcess {
 	t.Helper()
+	nodeID, incarnation := agentFencingNodeIdentity("b")
 	process := &runningAgentFencingProcess{
 		command: exec.Command(
 			os.Args[0],
@@ -494,8 +515,8 @@ func startAgentFencingWatcherProcess(
 	process.command.Env = agentFencingProcessEnvironment(
 		dsn,
 		"watch",
-		"agent-node-b",
-		"agent-incarnation-b",
+		nodeID,
+		incarnation,
 		map[string]string{
 			"NCP_AGENT_READY_PATH":     process.readyPath,
 			"NCP_AGENT_TAKEOVER_PATH":  process.takeoverPath,

@@ -21,12 +21,15 @@ package storage
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -66,6 +69,14 @@ type Backend interface {
 // to share a path; S3-protocol storage is true.
 type ClusterSharedBackend interface {
 	ClusterShared() bool
+}
+
+// ClusterBackingIdentityProvider exposes a credential-free identity for the
+// shared object namespace. Cluster admission compares this value across live
+// nodes in addition to requiring ClusterSharedBackend. Implementations may
+// atomically establish a persistent namespace marker during startup.
+type ClusterBackingIdentityProvider interface {
+	EnsureClusterBackingIdentity(context.Context) (string, error)
 }
 
 // Range describes an inclusive byte range request against a Backend.
@@ -172,11 +183,76 @@ type SharedFSBackend struct {
 	*LocalBackend
 }
 
+const sharedFSClusterIdentityFile = ".peers-cluster-backing-id"
+
 func NewSharedFSBackend(root string) *SharedFSBackend {
 	return &SharedFSBackend{LocalBackend: NewLocalBackend(root)}
 }
 
 func (b *SharedFSBackend) ClusterShared() bool { return true }
+
+func (b *SharedFSBackend) EnsureClusterBackingIdentity(
+	ctx context.Context,
+) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(b.root, 0o755); err != nil {
+		return "", fmt.Errorf("create shared-fs cluster root: %w", err)
+	}
+	path := filepath.Join(b.root, sharedFSClusterIdentityFile)
+	var candidate [32]byte
+	if _, err := rand.Read(candidate[:]); err != nil {
+		return "", fmt.Errorf("generate shared-fs cluster identity: %w", err)
+	}
+	temp, err := os.CreateTemp(b.root, ".peers-cluster-backing-id-*")
+	if err != nil {
+		return "", fmt.Errorf("stage shared-fs cluster identity: %w", err)
+	}
+	tempPath := temp.Name()
+	defer func() {
+		_ = temp.Close()
+		_ = os.Remove(tempPath)
+	}()
+	if err := temp.Chmod(0o600); err != nil {
+		return "", fmt.Errorf("protect shared-fs cluster identity: %w", err)
+	}
+	if _, err := fmt.Fprintf(
+		temp,
+		"%s\n",
+		hex.EncodeToString(candidate[:]),
+	); err != nil {
+		return "", fmt.Errorf("write shared-fs cluster identity: %w", err)
+	}
+	if err := temp.Sync(); err != nil {
+		return "", fmt.Errorf("sync shared-fs cluster identity: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		return "", fmt.Errorf("close shared-fs cluster identity: %w", err)
+	}
+	if err := os.Link(tempPath, path); err != nil && !errors.Is(err, os.ErrExist) {
+		return "", fmt.Errorf("publish shared-fs cluster identity: %w", err)
+	}
+
+	for attempt := 0; attempt < 20; attempt++ {
+		value, readErr := os.ReadFile(path)
+		if readErr == nil {
+			identity := strings.TrimSpace(string(value))
+			decoded, decodeErr := hex.DecodeString(identity)
+			if decodeErr == nil && len(decoded) == 32 {
+				return identity, nil
+			}
+		}
+		timer := time.NewTimer(25 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return "", ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return "", fmt.Errorf("shared-fs cluster identity is invalid")
+}
 
 // Save writes a reader to the given key and returns the full path.
 func (b *LocalBackend) Save(ctx context.Context, key string, r io.Reader) (string, error) {

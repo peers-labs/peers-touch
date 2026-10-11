@@ -1,5 +1,6 @@
 use crate::infrastructure::station_registry::{
-    StationEntry, StationRegistry, StationRouteCandidate, StationRouteType,
+    route_attestation_is_current, StationEntry, StationRegistry, StationRouteCandidate,
+    StationRouteHealth, StationRouteType,
 };
 use station_libp2p_http::{Route, Transport};
 use std::fmt;
@@ -16,7 +17,7 @@ static P2P_TRANSPORT: LazyLock<Mutex<Option<Transport>>> = LazyLock::new(|| Mute
 #[derive(Clone)]
 struct RelayProxy {
     origin: String,
-    snapshot: RouteSnapshot,
+    station_peer_id: String,
     transport: Transport,
 }
 
@@ -62,6 +63,15 @@ fn snapshot_from_entry(entry: StationEntry) -> Result<RouteSnapshot, TransportEr
         .active_route()
         .cloned()
         .ok_or_else(|| TransportError::new("active Station route is unavailable"))?;
+    if matches!(
+        route.health,
+        StationRouteHealth::Unavailable | StationRouteHealth::Revoked
+    ) || !route_attestation_is_current(&route, unix_ms())
+    {
+        return Err(TransportError::new(
+            "active Station route is unavailable or expired",
+        ));
+    }
     Ok(RouteSnapshot {
         station_peer_id: entry.station_peer_id,
         route_revision: entry.route_revision,
@@ -101,10 +111,7 @@ pub(crate) fn active_transport_origin(
         .lock()
         .map_err(|_| TransportError::new("Station proxy lock poisoned"))?;
     if let Some(existing) = proxy.as_ref() {
-        if existing.snapshot.station_peer_id == snapshot.station_peer_id
-            && existing.snapshot.route.route_id == snapshot.route.route_id
-            && existing.snapshot.route_revision == snapshot.route_revision
-        {
+        if existing.station_peer_id == snapshot.station_peer_id {
             return Ok(existing.origin.clone());
         }
     }
@@ -116,7 +123,7 @@ pub(crate) fn active_transport_origin(
     let transport = shared_transport()?;
     let state = RelayProxy {
         origin: format!("http://{address}"),
-        snapshot,
+        station_peer_id: snapshot.station_peer_id,
         transport,
     };
     let worker_state = state.clone();
@@ -201,11 +208,42 @@ fn serve_proxy_connection(
     let trace_attachment = request_target.starts_with("/conversation/attachments/objects/");
     let request_range = request_header(&request, "range").unwrap_or("");
     let started = Instant::now();
-    let route = standard_route(&state.snapshot)?;
-    let mut response = state
-        .transport
-        .round_trip(&route, &request)
-        .map_err(|error| TransportError::new(format!("Station HTTP/2 request failed: {error}")))?;
+    let mut snapshot = active_route_snapshot(registry)?;
+    if snapshot.station_peer_id != state.station_peer_id {
+        return Err(TransportError::new(
+            "Station proxy belongs to an inactive Station",
+        ));
+    }
+    let route = standard_route(&snapshot)?;
+    let mut response = match state.transport.round_trip(&route, &request) {
+        Ok(response) => response,
+        Err(first_error) => {
+            let failed_route_id = snapshot.route.route_id.clone();
+            snapshot = activate_failover(registry, &snapshot).map_err(|failover_error| {
+                TransportError::new(format!(
+                    "Station HTTP/2 request failed on {failed_route_id}: {first_error}; \
+                     failover failed: {failover_error}"
+                ))
+            })?;
+            if !request_is_replay_safe(&request) {
+                return Err(TransportError::new(format!(
+                    "Station HTTP/2 request outcome is unknown after route \
+                     {failed_route_id} failed; active route changed to {}",
+                    snapshot.route.route_id
+                )));
+            }
+            let retry_route = standard_route(&snapshot)?;
+            state
+                .transport
+                .round_trip(&retry_route, &request)
+                .map_err(|error| {
+                    TransportError::new(format!(
+                        "Station HTTP/2 request failed after failover to {}: {error}",
+                        snapshot.route.route_id
+                    ))
+                })?
+        }
+    };
     if trace_attachment {
         tracing::info!(
             request_target,
@@ -225,7 +263,7 @@ fn serve_proxy_connection(
             "Station attachment proxy response started"
         );
     }
-    assert_route_current(registry, &state.snapshot)?;
+    assert_route_current(registry, &snapshot)?;
     write!(
         connection,
         "HTTP/1.1 {} {}\r\n",
@@ -250,10 +288,16 @@ fn serve_proxy_connection(
     let mut buffer = [0_u8; 16 * 1024];
     let mut body_bytes = 0_u64;
     loop {
-        let count = response
-            .body
-            .read(&mut buffer)
-            .map_err(|error| TransportError::new(format!("read Station response: {error}")))?;
+        let count = match response.body.read(&mut buffer) {
+            Ok(count) => count,
+            Err(error) => {
+                let _ = activate_failover(registry, &snapshot);
+                return Err(TransportError::new(format!(
+                    "read Station response through {}: {error}",
+                    snapshot.route.route_id
+                )));
+            }
+        };
         if count == 0 {
             if trace_attachment {
                 tracing::info!(
@@ -274,7 +318,7 @@ fn serve_proxy_connection(
             );
         }
         body_bytes = body_bytes.saturating_add(count as u64);
-        assert_route_current(registry, &state.snapshot)?;
+        assert_route_current(registry, &snapshot)?;
         connection
             .write_all(&buffer[..count])
             .and_then(|_| connection.flush())
@@ -282,10 +326,39 @@ fn serve_proxy_connection(
     }
 }
 
+fn activate_failover(
+    registry: &StationRegistry,
+    failed: &RouteSnapshot,
+) -> Result<RouteSnapshot, TransportError> {
+    let entry = registry
+        .failover_route(
+            &failed.station_peer_id,
+            &failed.route.route_id,
+            failed.route_revision,
+        )
+        .map_err(|error| TransportError::new(format!("select Station failover route: {error}")))?;
+    snapshot_from_entry(entry)
+}
+
+fn request_is_replay_safe(request: &[u8]) -> bool {
+    matches!(request_method(request), Some("GET" | "HEAD" | "OPTIONS"))
+}
+
+fn request_method(request: &[u8]) -> Option<&str> {
+    let line_end = request.windows(2).position(|window| window == b"\r\n")?;
+    let request_line = std::str::from_utf8(&request[..line_end]).ok()?;
+    request_line.split_whitespace().next()
+}
+
 fn request_target(request: &[u8]) -> Option<&str> {
     let line_end = request.windows(2).position(|window| window == b"\r\n")?;
     let request_line = std::str::from_utf8(&request[..line_end]).ok()?;
     request_line.split_whitespace().nth(1)
+}
+
+fn unix_ms() -> i64 {
+    i64::try_from(time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000)
+        .unwrap_or(i64::MAX)
 }
 
 fn request_header<'a>(request: &'a [u8], expected_name: &str) -> Option<&'a str> {
@@ -413,5 +486,18 @@ mod tests {
     fn proxy_reads_range_header_case_insensitively() {
         let request = b"GET /object HTTP/1.1\r\nHost: station\r\nRange: bytes=0-31\r\n\r\n";
         assert_eq!(request_header(request, "range"), Some("bytes=0-31"));
+    }
+
+    #[test]
+    fn failover_replays_reads_but_not_mutations_with_unknown_outcomes() {
+        assert!(request_is_replay_safe(
+            b"GET /events/stream HTTP/1.1\r\nHost: station\r\n\r\n"
+        ));
+        assert!(request_is_replay_safe(
+            b"HEAD /object HTTP/1.1\r\nHost: station\r\n\r\n"
+        ));
+        assert!(!request_is_replay_safe(
+            b"POST /conversation/messages HTTP/1.1\r\nHost: station\r\nContent-Length: 0\r\n\r\n"
+        ));
     }
 }

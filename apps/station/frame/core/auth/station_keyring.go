@@ -213,6 +213,34 @@ func getStationAccessKeyring() StationAccessKeyring {
 	return stationAccessKeyring
 }
 
+// StationAccessKeyringReady verifies that this process is bound to the shared
+// Station keyring and returns the non-secret current key ID for cluster
+// admission comparison.
+func StationAccessKeyringReady(
+	ctx context.Context,
+) (string, error) {
+	keyring := getStationAccessKeyring()
+	if keyring == nil {
+		return "", fmt.Errorf(
+			"%w: shared keyring is not initialized",
+			ErrStationAccessKeyringMismatch,
+		)
+	}
+	current, err := keyring.Current(ctx)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(current.ID) == "" ||
+		len(current.Material) == 0 ||
+		current.ID != stationAccessKeyID(current.Material) {
+		return "", fmt.Errorf(
+			"%w: current key is invalid",
+			ErrStationAccessKeyringMismatch,
+		)
+	}
+	return current.ID, nil
+}
+
 func ensureStationAccessKeySlot(
 	tx *gorm.DB,
 	slot string,
