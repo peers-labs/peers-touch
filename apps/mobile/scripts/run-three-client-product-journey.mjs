@@ -9802,6 +9802,10 @@ function recoveryAudioCallControlMatches(label) {
   );
 }
 
+function desktopCallActionSelector(action) {
+  return `[data-chat-call-action="${action}"]`;
+}
+
 async function startRecoveryAudioCall(clientId, client, friendlyName) {
   await openRecoveryConversation(
     clientId,
@@ -9864,10 +9868,17 @@ async function answerRecoveryCall(clientId, client) {
     'incoming recovery audio call',
     client.platform === 'desktop'
       ? `
+          const selector = ${desktopCallActionSelector.toString()};
           const surface = document.querySelector(
             '[data-chat-call-surface][data-chat-call-state="incoming"]'
           );
-          return { ready: Boolean(surface?.getClientRects().length) };
+          const accept = surface?.querySelector(selector('accept'));
+          return {
+            ready: Boolean(
+              surface?.getClientRects().length
+              && accept?.getClientRects().length
+            )
+          };
         `
       : `
           const surface = document.querySelector('.mobile-call-surface');
@@ -9882,15 +9893,11 @@ async function answerRecoveryCall(clientId, client) {
     client,
     client.platform === 'desktop'
       ? `
+          const selector = ${desktopCallActionSelector.toString()};
           const surface = document.querySelector(
             '[data-chat-call-surface][data-chat-call-state="incoming"]'
           );
-          const buttons = [...(surface?.querySelectorAll('button') || [])];
-          const accept = buttons.find((button) => /accept/i.test(
-            button.getAttribute('aria-label')
-            || button.getAttribute('title')
-            || ''
-          )) || buttons.at(-1);
+          const accept = surface?.querySelector(selector('accept'));
           if (!(accept instanceof HTMLElement)) return false;
           accept.click();
           return true;
@@ -9934,15 +9941,11 @@ async function endRecoveryCall(clientId, client) {
     client,
     client.platform === 'desktop'
       ? `
+          const selector = ${desktopCallActionSelector.toString()};
           const surface = document.querySelector(
             '[data-chat-call-surface][data-chat-call-state="active"]'
           );
-          const buttons = [...(surface?.querySelectorAll('button') || [])];
-          const hangup = buttons.find((button) => /hang up|hangup|end call/i.test(
-            button.getAttribute('aria-label')
-            || button.getAttribute('title')
-            || ''
-          )) || buttons.at(-1);
+          const hangup = surface?.querySelector(selector('end'));
           if (!(hangup instanceof HTMLElement)) return false;
           hangup.click();
           return true;
@@ -10172,6 +10175,14 @@ function selfTest(matrix) {
       && !recoveryAudioCallControlMatches('Video call'),
     'SELF_TEST_RECOVERY_AUDIO_CALL_CONTROL',
     'recovery audio call control matching is invalid',
+  );
+  assertContract(
+    desktopCallActionSelector('accept')
+      === '[data-chat-call-action="accept"]'
+      && desktopCallActionSelector('end')
+        === '[data-chat-call-action="end"]',
+    'SELF_TEST_RECOVERY_DESKTOP_CALL_ACTION',
+    'Desktop recovery call action selector is invalid',
   );
   assertContract(
     desktopSocialFeedRecoveryDecision(false, false) === 'feed'
