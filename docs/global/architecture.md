@@ -254,14 +254,14 @@ The source of truth is always the `.proto`, never the generated file.
   - `docs/architecture/platform/runtime/node-connectivity/README.md`
 
 ### Mobile Relay Security
-- **Station identity**: Client scope is pinned to signed `station_peer_id`;
-  URL and Relay identity are route hints only.
+- **Station identity**: Client scope is pinned to logical `station_peer_id`;
+  authorized Node PeerID, URL and Relay identity are route hints only.
 - **End-to-end TLS**: When Mobile uses Relay, TLS 1.3 terminates at Station and
   its SPKI is pinned by the Station-signed route attestation.
-- **Relay opacity**: Relay sees tunnel metadata and bounded ciphertext, not
+- **Relay opacity**: Relay sees Circuit metadata and bounded ciphertext, not
   Station Session credentials or business payload.
-- **No general peer mesh**: Mobile does not expose a peer endpoint or own
-  Federation transport.
+- **No general peer mesh**: the target Mobile transport uses a dial-only Host;
+  it exposes no application listener, Relay service or Federation authority.
 
 ---
 
@@ -270,7 +270,7 @@ The source of truth is always the `.proto`, never the generated file.
 ```
 Desktop / Mobile
         │
-        │ direct TLS or WSS + inner TLS
+        │ direct HTTPS or secure libp2p Direct / Circuit v2
         ▼
    Home Station
         │
@@ -313,9 +313,9 @@ They do not own Station identity, Federation membership or business payload.
 - Subservers are independent
 - Easy to add/remove modules
 
-### 6. **Mobile: Station Relay, No P2P**
-- Mobile 端不内置 libp2p，不参与 P2P mesh
-- Mobile 通过 direct Station API 或 Station-signed opaque Relay route 接入同一 Station
+### 6. **Mobile: Station Access, No Peer Mesh**
+- Mobile 的目标 Native transport 使用 dial-only libp2p Host，不参与公共 P2P mesh
+- Mobile 通过 direct Station API 或已验证 Node 的 Circuit route 接入同一逻辑 Station
 - Relay 不终止 Station Session 或业务 TLS
 - Desktop/Mobile route 差异不改变 shared business scope
 
@@ -346,8 +346,8 @@ User's Home Network
 │   └── Frame + Subservers
 ├── Optional external Relay role (same binary, isolated process)
 └── Clients
-    ├── Desktop app — direct or opaque Relay Station transport
-    └── Mobile app — direct or opaque Relay Station transport
+    ├── Desktop app — direct or standard Relay Circuit Station transport
+    └── Mobile app — direct or standard Relay Circuit Station transport
 ```
 
 ### Federated Network
@@ -358,6 +358,12 @@ Internet
 ├── Station C (charlie.peers.net)
 └── Optional Relay roles for private/NAT Station reachability
 ```
+
+One logical Station may contain one or multiple physical Station nodes. Every
+node has its own PeerID and signed root authorization; N>1 requires shared
+database/object state, durable events and domain fencing. Ingress stays inside
+Frame. Target contracts and outstanding proof are defined by Node Connectivity;
+this topology is not a claim that cluster deployment has already been verified.
 
 ---
 

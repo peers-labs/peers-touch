@@ -13,7 +13,7 @@
   Station 和一个 Relay 的真实运行证明。
 - 双端比较产品语义、状态、错误、安全结果和持久结果，不比较组件树。
 - 安全负向用例与 happy path 同等阻断；unit test 不能替代原生 Journey。
-- Relay 运行单元必须证明不包含 Station 业务 route，且看不到 tunnel 内明文。
+- Relay 运行单元必须证明不包含 Station 业务 route，且只处理标准 Circuit metadata 与密文。
 - 当前接口 inventory、owner、contract 或 consumer 任一缺口均失败。
 
 ## 2. Capability Crosswalk
@@ -24,7 +24,7 @@
 | SAL-C05-C06 | 全部 | 已有边界，需扩展 inventory | SAL-G00/G07 |
 | SAL-C07 统一接入地址 | SAL-J01/J06/J07 | 未实现 | SAL-G03 |
 | SAL-C08 Route-aware binding | SAL-J02/J03/J09 | 未实现 | SAL-G04 |
-| SAL-C09 安全 Relay 隧道 | SAL-J06/J07/J09 | 未实现 | SAL-G05 |
+| SAL-C09 安全 Relay Circuit | SAL-J06/J07/J09 | 已接线，待环境证明 | NCP-G03/G07 |
 | SAL-C10 Station Relay 生命周期 | SAL-J08 | 原型不足 | SAL-G06 |
 | SAL-C11 客户端类别会话 | SAL-J10 | 已实现，待聚合证明 | SAL-G08 |
 
@@ -32,7 +32,7 @@
 
 ### SAL-G00：能力与角色契约
 
-- endpoint discovery、route attestation、mount enrollment、opaque tunnel 和
+- endpoint discovery、route attestation、node enrollment、standard Circuit 和
   Access Gate 均有唯一 owner、Proto contract 与 consumer。
 - Relay role 的启动 allowlist 不包含 Actor、OAuth、Chat、Social、Agent 或
   Federation governance 业务 route。

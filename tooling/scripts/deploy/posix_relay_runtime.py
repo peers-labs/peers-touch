@@ -82,13 +82,11 @@ def _remote_prepare_script() -> str:
             except FileNotFoundError:
                 pass
 
-        signing_key = secret_root / "relay-signing.key"
         operator_key = secret_root / "relay-operator.key"
         ca_key = ca_root / "relay-ca.key"
         ca_cert = secret_root / "relay-ca.crt"
         tls_key = secret_root / "relay-tls.key"
         tls_cert = secret_root / "relay.crt"
-        ensure_secret(signing_key)
         ensure_secret(operator_key)
 
         host = cfg["host"]
@@ -266,7 +264,7 @@ def _remote_prepare_script() -> str:
                 unlink_if_exists(extensions)
                 unlink_if_exists(serial)
 
-        for path in (signing_key, operator_key, ca_key, tls_key):
+        for path in (operator_key, ca_key, tls_key):
             os.chmod(path, 0o600)
         for path in (ca_cert, tls_cert):
             os.chmod(path, 0o644)

@@ -40,15 +40,14 @@ type inviteInfo struct {
 	CreatedAt             string `json:"created_at"`
 }
 
-// ---- DTO: Mount ----
+// ---- DTO: Enrollment ----
 
-type mountInfo struct {
+type enrollmentInfo struct {
 	StationPeerID string `json:"station_peer_id"`
 	Label         string `json:"label"`
 	Status        int32  `json:"status"`
 	Generation    uint64 `json:"generation"`
-	LastHeartbeat string `json:"last_heartbeat"`
-	MountedAt     string `json:"mounted_at"`
+	EnrolledAt    string `json:"enrolled_at"`
 	RevokedAt     string `json:"revoked_at,omitempty"`
 }
 
@@ -143,34 +142,33 @@ func (h *relayHandler) handleRevokeInvite(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }
 
-func (h *relayHandler) handleListMounts(w http.ResponseWriter, r *http.Request) {
-	mounts, err := h.sub.svc.ListOnlineMounts(r.Context())
+func (h *relayHandler) handleListEnrollments(w http.ResponseWriter, r *http.Request) {
+	enrollments, err := h.sub.svc.ListOnlineEnrollments(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorBody("failed to list mounts"))
+		writeJSON(w, http.StatusInternalServerError, errorBody("failed to list enrollments"))
 		return
 	}
 
-	result := make([]mountInfo, 0, len(mounts))
-	for _, m := range mounts {
+	result := make([]enrollmentInfo, 0, len(enrollments))
+	for _, m := range enrollments {
 		revokedAt := ""
 		if m.RevokedAt != nil {
 			revokedAt = m.RevokedAt.Format(time.RFC3339)
 		}
-		result = append(result, mountInfo{
+		result = append(result, enrollmentInfo{
 			StationPeerID: m.StationPeerID,
 			Label:         m.Label,
 			Status:        int32(m.Status),
 			Generation:    m.Generation,
-			LastHeartbeat: m.LastHeartbeat.Format(time.RFC3339),
-			MountedAt:     m.MountedAt.Format(time.RFC3339),
+			EnrolledAt:    m.EnrolledAt.Format(time.RFC3339),
 			RevokedAt:     revokedAt,
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"mounts": result})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"enrollments": result})
 }
 
-func (h *relayHandler) handleDeleteMount(w http.ResponseWriter, r *http.Request) {
+func (h *relayHandler) handleDeleteEnrollment(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var req struct {
@@ -185,32 +183,25 @@ func (h *relayHandler) handleDeleteMount(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if _, err := h.sub.svc.RevokeMount(ctx, req.StationPeerID); err != nil {
-		if errors.Is(err, application.ErrMountNotFound) {
-			writeJSON(w, http.StatusNotFound, errorBody("mount not found"))
+	if _, err := h.sub.svc.RevokeEnrollment(ctx, req.StationPeerID); err != nil {
+		if errors.Is(err, application.ErrEnrollmentNotFound) {
+			writeJSON(w, http.StatusNotFound, errorBody("enrollment not found"))
 			return
 		}
-		logger.Errorf(ctx, "[relay] revoke mount %s: %v", req.StationPeerID, err)
-		writeJSON(w, http.StatusInternalServerError, errorBody("failed to revoke mount"))
+		logger.Errorf(ctx, "[relay] revoke enrollment %s: %v", req.StationPeerID, err)
+		writeJSON(w, http.StatusInternalServerError, errorBody("failed to revoke enrollment"))
 		return
 	}
-	h.sub.streams.Remove(ctx, req.StationPeerID)
-
 	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }
 
 func (h *relayHandler) handleStats(w http.ResponseWriter, r *http.Request) {
-	count, err := h.sub.svc.CountOnlineMounts(r.Context())
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorBody("failed to get stats"))
-		return
-	}
+	nodes, routes, permits := h.sub.opts.Admission.Counts()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"online_stations":   count,
-		"active_streams":    h.sub.streams.Count(),
-		"inflight_forwards": h.sub.streams.Inflight(),
-		"max_stations":      h.sub.opts.MaxStations,
-		"heartbeat_timeout": h.sub.opts.HeartbeatTimeout,
+		"admitted_nodes": nodes,
+		"active_routes":  routes,
+		"active_permits": permits,
+		"max_stations":   h.sub.opts.MaxStations,
 	})
 }

@@ -33,7 +33,7 @@ apps/mobile/
 └── src/runtimes/
 ```
 
-Relay/route/tunnel paths are owned by
+Relay route and Circuit transport paths are owned by
 [Node Connectivity](../../runtime/node-connectivity/module-layout.md) and do
 not appear as Station Access implementation owners.
 

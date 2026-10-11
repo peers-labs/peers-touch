@@ -24,7 +24,6 @@ import (
 const minimumOperatorKeyBytes = 32
 
 type relaySecurityMaterial struct {
-	signingKey  []byte
 	operatorKey []byte
 }
 
@@ -34,29 +33,25 @@ type operatorClaims struct {
 }
 
 func validateRelaySecurityOptions(options *Options) (*relaySecurityMaterial, error) {
-	if strings.TrimSpace(options.StreamListenAddr) == "" {
-		return nil, fmt.Errorf("relay security: stream listen address is required")
-	}
 	publicBaseURL, err := url.Parse(strings.TrimSpace(options.PublicBaseURL))
 	if err != nil || publicBaseURL.Host == "" {
 		return nil, fmt.Errorf("relay security: valid public base URL is required")
 	}
-
-	if err := validateRelayQuotas(options); err != nil {
-		return nil, err
+	if !strings.EqualFold(publicBaseURL.Scheme, "https") &&
+		(!strings.EqualFold(publicBaseURL.Scheme, "http") ||
+			!isLoopbackHost(publicBaseURL.Hostname())) {
+		return nil, fmt.Errorf(
+			"relay security: public base URL must use HTTPS or loopback HTTP",
+		)
 	}
-
-	signingKeyPath := strings.TrimSpace(options.SigningKeyFile)
-	if signingKeyPath == "" {
-		return nil, fmt.Errorf("relay security: signing key file is required")
+	if options.MaxStations <= 0 {
+		return nil, fmt.Errorf("relay security: max-stations must be positive")
 	}
-	signingKey, err := readCredentialFile(
-		"signing key",
-		signingKeyPath,
-		minimumOperatorKeyBytes,
-	)
-	if err != nil {
-		return nil, err
+	if options.Host == nil ||
+		options.Host.Peerstore().PrivKey(options.Host.ID()) == nil {
+		return nil, fmt.Errorf(
+			"relay security: persistent Relay Host identity is required",
+		)
 	}
 
 	operatorKeyPath := strings.TrimSpace(options.OperatorKeyFile)
@@ -71,11 +66,15 @@ func validateRelaySecurityOptions(options *Options) (*relaySecurityMaterial, err
 	if err != nil {
 		return nil, err
 	}
-	if sameFilePath(signingKeyPath, operatorKeyPath) {
-		return nil, fmt.Errorf("relay security: signing and operator keys must be distinct")
+	relayIdentity, err := options.Host.Peerstore().
+		PrivKey(options.Host.ID()).Raw()
+	if err != nil {
+		return nil, fmt.Errorf("relay security: read Relay Host identity: %w", err)
 	}
-	if bytes.Equal(signingKey, operatorKey) {
-		return nil, fmt.Errorf("relay security: signing and operator key material must be distinct")
+	if bytes.Equal(relayIdentity, operatorKey) {
+		return nil, fmt.Errorf(
+			"relay security: Relay Host and operator key material must be distinct",
+		)
 	}
 
 	if strings.TrimSpace(options.OperatorIssuer) == "" {
@@ -88,77 +87,9 @@ func validateRelaySecurityOptions(options *Options) (*relaySecurityMaterial, err
 		return nil, fmt.Errorf("relay security: operator scope is required")
 	}
 
-	hasCert := strings.TrimSpace(options.TLSCertFile) != ""
-	hasKey := strings.TrimSpace(options.TLSKeyFile) != ""
-	if hasCert != hasKey {
-		return nil, fmt.Errorf("relay security: TLS certificate and key must be configured together")
-	}
-	if hasCert {
-		if !strings.EqualFold(publicBaseURL.Scheme, "https") {
-			return nil, fmt.Errorf("relay security: public base URL must use HTTPS")
-		}
-		if _, err := readCredentialFile("TLS certificate", options.TLSCertFile, 1); err != nil {
-			return nil, err
-		}
-		tlsKey, err := readCredentialFile("TLS key", options.TLSKeyFile, 1)
-		if err != nil {
-			return nil, err
-		}
-		if sameFilePath(operatorKeyPath, options.TLSKeyFile) ||
-			sameFilePath(signingKeyPath, options.TLSKeyFile) {
-			return nil, fmt.Errorf("relay security: TLS, signing, and operator keys must be distinct")
-		}
-		if bytes.Equal(tlsKey, operatorKey) || bytes.Equal(tlsKey, signingKey) {
-			return nil, fmt.Errorf("relay security: TLS, signing, and operator key material must be distinct")
-		}
-		return &relaySecurityMaterial{
-			signingKey:  signingKey,
-			operatorKey: operatorKey,
-		}, nil
-	}
-
-	if !options.AllowInsecureLoopback {
-		return nil, fmt.Errorf("relay security: TLS certificate and key are required")
-	}
-	if !isLoopbackAddress(options.StreamListenAddr) {
-		return nil, fmt.Errorf(
-			"relay security: insecure listener %q is not loopback",
-			options.StreamListenAddr,
-		)
-	}
-	if !strings.EqualFold(publicBaseURL.Scheme, "http") ||
-		!isLoopbackHost(publicBaseURL.Hostname()) {
-		return nil, fmt.Errorf(
-			"relay security: insecure public base URL %q is not loopback HTTP",
-			options.PublicBaseURL,
-		)
-	}
 	return &relaySecurityMaterial{
-		signingKey:  signingKey,
 		operatorKey: operatorKey,
 	}, nil
-}
-
-func validateRelayQuotas(options *Options) error {
-	quotas := []struct {
-		name  string
-		value int
-	}{
-		{name: "forward-timeout", value: options.ForwardTimeout},
-		{name: "graceful-drain-timeout", value: options.GracefulDrainTimeout},
-		{name: "heartbeat-timeout", value: options.HeartbeatTimeout},
-		{name: "max-body-size", value: options.MaxBodySize},
-		{name: "max-concurrent-per-station", value: options.MaxConcurrentPerStation},
-		{name: "max-stations", value: options.MaxStations},
-		{name: "stream-ping-interval", value: options.StreamPingInterval},
-		{name: "stream-ping-timeout", value: options.StreamPingTimeout},
-	}
-	for _, quota := range quotas {
-		if quota.value <= 0 {
-			return fmt.Errorf("relay security: quota %s must be positive", quota.name)
-		}
-	}
-	return nil
 }
 
 func readCredentialFile(label, path string, minimumBytes int) ([]byte, error) {
@@ -188,18 +119,6 @@ func sameFilePath(left, right string) bool {
 	left = filepath.Clean(strings.TrimSpace(left))
 	right = filepath.Clean(strings.TrimSpace(right))
 	return left != "." && right != "." && left == right
-}
-
-func isLoopbackAddress(address string) bool {
-	host, _, err := net.SplitHostPort(strings.TrimSpace(address))
-	if err != nil {
-		return false
-	}
-	host = strings.Trim(host, "[]")
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	return isLoopbackHost(host)
 }
 
 func isLoopbackHost(host string) bool {
@@ -243,7 +162,7 @@ func operatorAuthenticationWrapper(
 	)
 }
 
-func mountAuthenticationWrapper(
+func nodeAuthenticationWrapper(
 	service *application.Service,
 	requiredScope string,
 ) server.Wrapper {
@@ -255,11 +174,11 @@ func mountAuthenticationWrapper(
 					writeJSON(
 						w,
 						http.StatusUnauthorized,
-						errorBody("valid Relay mount credential required"),
+						errorBody("valid Relay enrollment credential required"),
 					)
 					return
 				}
-				identity, err := service.AuthenticateMountCredential(
+				identity, err := service.AuthenticateNodeCredential(
 					request.Context(),
 					token,
 					requiredScope,
@@ -268,18 +187,18 @@ func mountAuthenticationWrapper(
 					writeJSON(
 						w,
 						http.StatusUnauthorized,
-						errorBody("valid Relay mount credential required"),
+						errorBody("valid Relay enrollment credential required"),
 					)
 					return
 				}
 				subject := &coreauth.Subject{
 					ID: domain.SubjectRelayAccess + identity.StationPeerID,
 					Attributes: map[string]string{
-						"audience":        domain.MountCredentialAudience,
+						"audience":        domain.NodeCredentialAudience,
 						"scope":           requiredScope,
 						"relay_peer_id":   identity.RelayPeerID,
 						"station_peer_id": identity.StationPeerID,
-						"mount_id":        strconv.FormatUint(identity.MountID, 10),
+						"enrollment_id":   strconv.FormatUint(identity.EnrollmentID, 10),
 						"generation":      strconv.FormatUint(identity.Generation, 10),
 						"jti":             identity.JTI,
 					},

@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.2
-> **Created**: 2026-09-26 | **Updated**: 2026-10-10
+> **Created**: 2026-09-26 | **Updated**: 2026-10-11
 > **Owner**: Identity and Access
 > **Module**: `apps/desktop/`, `apps/mobile/`, `apps/station/frame/touch/`
 
@@ -10,7 +10,7 @@
 
 ## 1. 核心原则
 
-1. `station_peer_id` 是 Station identity；URL 和 Relay route 只是连接位置。
+1. `station_peer_id` 是逻辑 Station identity；物理 Node PeerID、URL 和 Relay route 是连接位置。
 2. Access Gate 是普通客户端唯一准入 owner。
 3. 同一 Station 的 direct/Relay route 共享一个 binding、Session scope 和业务 runtime。
 4. Relay 不是账号、Session、Federation 或业务 authority。
@@ -33,7 +33,7 @@ flowchart LR
     GATE["Station Access Gate"]
     SCOPE["Session / Actor / Device scope"]
     DOMAIN["Station domain APIs"]
-    NODE["Node Connectivity\ndirect or opaque Relay tunnel"]
+    NODE["Node Connectivity\ndirect or standard Relay Circuit"]
 
     UI --> DISC
     DISC --> BIND
@@ -45,14 +45,18 @@ flowchart LR
 ```
 
 Node Connectivity returns a verified Station destination and transport. Station
-Access does not parse Relay frames or own mount credentials. Both direct and
+Access does not parse Circuit frames or own Relay node credentials. Both direct and
 Relay paths enter the same Station identity, Access Gate and canonical router.
+
+Node Connectivity 的目标使用独立 Node PeerID、root delegation 和标准 Circuit v2。
+切节点只推进 route revision；同一逻辑 Station 的 Access/OAuth/Session 使用共享
+DBStore 和 Station-scoped keyring。此处不重新定义签名或传输协议。
 
 ## 3. Sources Of Truth
 
 | Concern | Source of truth | Client projection |
 |---|---|---|
-| Station identity and route proof | Node Connectivity + Station host key | station-keyed binding |
+| Station identity and route proof | Node Connectivity root identity + authorized node signature | station-keyed binding |
 | Access decision | Station Access Gate | current attempt/gate/decision |
 | Actor identity | Station Actor + `ActorRef` | current account/session |
 | Device identity | canonical device registration | current device scope |
@@ -85,9 +89,10 @@ attempt or scope mismatch fails closed.
 ```text
 StationBinding
   station_peer_id
-  pinned_host_public_key
+  pinned_station_root_public_key
   routes[]
   active_route_id
+  active_node_peer_id
   route_revision
   lifecycle_generation
 ```

@@ -47,8 +47,8 @@ func FederationProfile(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	// Federation envelopes MUST embed canonical URLs even when the
-	// request reached us through the Station-terminated opaque tunnel.
+	// Federation envelopes MUST embed canonical URLs even when the request
+	// reached us through a Station-terminated standard libp2p HTTP stream.
 	// The federation identity singleton owns the canonical origin; we
 	// fall back to the request Host only if identity is not yet loaded.
 	id := fednode.LocalIdentitySnapshot()

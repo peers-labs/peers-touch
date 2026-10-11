@@ -535,12 +535,16 @@ mod tests {
     fn route(station_peer_id: &str, route_id: &str, origin: &str) -> VerifiedStationRoute {
         VerifiedStationRoute {
             station_peer_id: station_peer_id.to_string(),
-            station_host_public_key: vec![1, 2, 3],
+            node_peer_id: format!("{station_peer_id}-node"),
+            station_root_public_key: vec![1, 2, 3],
+            node_authorization_digest: [4; 32],
+            authorization_epoch: 1,
             route_id: route_id.to_string(),
             route_generation: 1,
             endpoint_origin: origin.to_string(),
             relay_peer_id: None,
             inner_tls_spki_sha256: None,
+            addresses: vec![origin.to_string()],
             attestation_bytes: None,
             connection_grant: None,
             expires_at_unix_ms: None,

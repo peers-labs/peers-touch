@@ -175,7 +175,8 @@ test('current repository satisfies the module registry', () => {
     'mobile.social.native-parity',
     'oauth.login.broker',
     'relay.control.enrollment',
-    'relay.transport.opaque-tunnel',
+    'relay.transport.circuit',
+    'station.connectivity.node-authorization',
   ]);
 });
 

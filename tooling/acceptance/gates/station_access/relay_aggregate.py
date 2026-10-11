@@ -34,9 +34,10 @@ class GateSpec:
 
 SECURITY_GATES: tuple[GateSpec, ...] = (
     GateSpec("SAL-REL-01", "relay-role-security-contract"),
-    GateSpec("SAL-REL-02", "relay-station-enrollment-e2e"),
-    GateSpec("SAL-REL-03", "relay-endpoint-discovery-contract"),
-    GateSpec("SAL-REL-04", "relay-opaque-tunnel-e2e"),
+    GateSpec("NCP-G01", "NCP-G01"),
+    GateSpec("NCP-G03", "NCP-G03"),
+    GateSpec("NCP-G07", "NCP-G07"),
+    GateSpec("NCP-G08", "NCP-G08"),
 )
 
 UNIFIED_GATES: tuple[GateSpec, ...] = (

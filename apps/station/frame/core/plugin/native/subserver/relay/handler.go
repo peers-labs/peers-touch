@@ -37,8 +37,7 @@ func newRelayHandler(sub *SubServer) *relayHandler {
 // ---- Route table ----
 
 func (h *relayHandler) handlers() []server.Handler {
-	mountJWT := h.sub.mountJWTWrapper
-	mountRotateJWT := h.sub.mountRotateJWTWrapper
+	nodeRotateJWT := h.sub.nodeRotateJWTWrapper
 	routePublishJWT := h.sub.routePublishJWTWrapper
 	operatorJWT := h.sub.operatorJWTWrapper
 	logID := serverwrapper.LogID()
@@ -57,10 +56,10 @@ func (h *relayHandler) handlers() []server.Handler {
 			h.requireAdmin(h.handleListInvites), logID, operatorJWT),
 		server.NewHTTPHandler("relay-invite-revoke", "/api/v1/relay/invite/revoke", server.POST,
 			h.requireAdmin(h.handleRevokeInvite), logID, operatorJWT),
-		server.NewHTTPHandler("relay-mount-list", "/api/v1/relay/mounts", server.GET,
-			h.requireAdmin(h.handleListMounts), logID, operatorJWT),
-		server.NewHTTPHandler("relay-mount-delete", "/api/v1/relay/mount", server.DELETE,
-			h.requireAdmin(h.handleDeleteMount), logID, operatorJWT),
+		server.NewHTTPHandler("relay-enrollment-list", "/api/v1/relay/enrollments", server.GET,
+			h.requireAdmin(h.handleListEnrollments), logID, operatorJWT),
+		server.NewHTTPHandler("relay-enrollment-delete", "/api/v1/relay/enrollment", server.DELETE,
+			h.requireAdmin(h.handleDeleteEnrollment), logID, operatorJWT),
 		server.NewHTTPHandler("relay-stats", "/api/v1/relay/stats", server.GET,
 			h.requireAdmin(h.handleStats), logID, operatorJWT),
 
@@ -76,19 +75,17 @@ func (h *relayHandler) handlers() []server.Handler {
 			server.HTTPHandlerFunc(h.handleRegister), logID),
 		accessendpoint.Handler(h.sub, logID),
 
-		// Station only — requires a current Relay mount credential.
-		server.NewHTTPHandler("relay-heartbeat", "/api/v1/relay/heartbeat", server.POST,
-			h.requireStation(h.handleHeartbeat), logID, mountJWT),
+		// Station only — requires a current Relay enrollment credential.
 		server.NewHTTPHandler(
 			"relay-rotation-challenge",
 			"/api/v1/relay/rotation/challenge",
 			server.POST,
 			h.requireStation(h.handleRotationChallenge),
 			logID,
-			mountRotateJWT,
+			nodeRotateJWT,
 		),
 		server.NewHTTPHandler("relay-token-refresh", "/api/v1/relay/token/refresh", server.POST,
-			h.requireStation(h.handleTokenRefresh), logID, mountRotateJWT),
+			h.requireStation(h.handleTokenRefresh), logID, nodeRotateJWT),
 		server.NewStrictTypedHandler(
 			"relay-route-publish",
 			"/api/v1/relay/routes",
@@ -104,15 +101,6 @@ func (h *relayHandler) handlers() []server.Handler {
 			h.handleRegisterConnectionGrant,
 			logID,
 			routePublishJWT,
-		),
-
-		// Opaque network access. Authentication is completed by TunnelOpen:
-		// client grant reservation or Station mount peer-tunnel scope.
-		server.NewHertzHandler(
-			"relay-opaque-tunnel",
-			"/.well-known/peers-touch/tunnel",
-			server.GET,
-			h.handleTunnel,
 		),
 	}
 }
@@ -172,26 +160,16 @@ func stationPeerIDFromRequest(r *http.Request) (string, bool) {
 	return strings.TrimPrefix(subj.ID, domain.SubjectRelayAccess), true
 }
 
-func mountIdentityFromRequest(
-	r *http.Request,
-) (domain.MountIdentity, bool) {
-	subject := coreauth.GetSubject(r.Context())
-	if subject == nil {
-		return domain.MountIdentity{}, false
-	}
-	return mountIdentityFromSubject(subject.ID, subject.Attributes)
-}
-
-func mountIdentityFromSubject(
+func nodeIdentityFromSubject(
 	subjectID string,
 	attributes map[string]string,
-) (domain.MountIdentity, bool) {
+) (domain.NodeIdentity, bool) {
 	if !strings.HasPrefix(subjectID, domain.SubjectRelayAccess) {
-		return domain.MountIdentity{}, false
+		return domain.NodeIdentity{}, false
 	}
-	mountID, err := strconv.ParseUint(attributes["mount_id"], 10, 64)
-	if err != nil || mountID == 0 {
-		return domain.MountIdentity{}, false
+	enrollmentID, err := strconv.ParseUint(attributes["enrollment_id"], 10, 64)
+	if err != nil || enrollmentID == 0 {
+		return domain.NodeIdentity{}, false
 	}
 	generation, err := strconv.ParseUint(
 		attributes["generation"],
@@ -199,17 +177,17 @@ func mountIdentityFromSubject(
 		64,
 	)
 	if err != nil || generation == 0 {
-		return domain.MountIdentity{}, false
+		return domain.NodeIdentity{}, false
 	}
 	stationPeerID := attributes["station_peer_id"]
 	jti := attributes["jti"]
 	if stationPeerID == "" || jti == "" {
-		return domain.MountIdentity{}, false
+		return domain.NodeIdentity{}, false
 	}
-	return domain.MountIdentity{
+	return domain.NodeIdentity{
 		RelayPeerID:   attributes["relay_peer_id"],
 		StationPeerID: stationPeerID,
-		MountID:       mountID,
+		EnrollmentID:  enrollmentID,
 		Generation:    generation,
 		JTI:           jti,
 	}, true

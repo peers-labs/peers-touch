@@ -1,0 +1,12 @@
+[package]
+name = "station-trust"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+prost-build = "=0.14.3"
+
+[dependencies]
+libp2p-identity = { version = "=0.3.0", features = ["ed25519", "peerid", "rand"] }
+prost = "=0.14.3"
+sha2 = "0.10"

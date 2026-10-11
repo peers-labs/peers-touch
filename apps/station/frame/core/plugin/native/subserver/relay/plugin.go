@@ -13,24 +13,12 @@ var relayOptions struct {
 			Server struct {
 				Subserver struct {
 					Relay struct {
-						Enabled                 bool   `pconf:"enabled"`
-						MaxStations             int    `pconf:"max-stations"`
-						HeartbeatTimeout        int    `pconf:"heartbeat-timeout"`
-						ForwardTimeout          int    `pconf:"forward-timeout"`
-						MaxBodySize             int    `pconf:"max-body-size"`
-						MaxConcurrentPerStation int    `pconf:"max-concurrent-per-station"`
-						StreamPingInterval      int    `pconf:"stream-ping-interval"`
-						StreamPingTimeout       int    `pconf:"stream-ping-timeout"`
-						StreamListenAddr        string `pconf:"stream-listen-addr"`
-						GracefulDrainTimeout    int    `pconf:"graceful-drain-timeout"`
-						TLSCertFile             string `pconf:"tls-cert-file"`
-						TLSKeyFile              string `pconf:"tls-key-file"`
-						AllowInsecureLoopback   bool   `pconf:"allow-insecure-loopback"`
-						SigningKeyFile          string `pconf:"signing-key-file"`
-						OperatorKeyFile         string `pconf:"operator-key-file"`
-						OperatorIssuer          string `pconf:"operator-issuer"`
-						OperatorAudience        string `pconf:"operator-audience"`
-						OperatorScope           string `pconf:"operator-scope"`
+						Enabled          bool   `pconf:"enabled"`
+						MaxStations      int    `pconf:"max-stations"`
+						OperatorKeyFile  string `pconf:"operator-key-file"`
+						OperatorIssuer   string `pconf:"operator-issuer"`
+						OperatorAudience string `pconf:"operator-audience"`
+						OperatorScope    string `pconf:"operator-scope"`
 					} `pconf:"relay"`
 					Turn struct {
 						Enabled    bool   `pconf:"enabled"`
@@ -61,40 +49,6 @@ func (p *relayPlugin) Options() []option.Option {
 
 	if r.MaxStations > 0 {
 		opts = append(opts, WithMaxStations(r.MaxStations))
-	}
-	if r.HeartbeatTimeout > 0 {
-		opts = append(opts, WithHeartbeatTimeout(r.HeartbeatTimeout))
-	}
-	if r.ForwardTimeout > 0 {
-		opts = append(opts, WithForwardTimeout(r.ForwardTimeout))
-	}
-	if r.MaxBodySize > 0 {
-		opts = append(opts, WithMaxBodySize(r.MaxBodySize))
-	}
-	if r.MaxConcurrentPerStation > 0 {
-		opts = append(opts, WithMaxConcurrentPerStation(r.MaxConcurrentPerStation))
-	}
-	if r.StreamPingInterval > 0 {
-		opts = append(opts, WithStreamPingInterval(r.StreamPingInterval))
-	}
-	if r.StreamPingTimeout > 0 {
-		opts = append(opts, WithStreamPingTimeout(r.StreamPingTimeout))
-	}
-	if r.StreamListenAddr != "" {
-		opts = append(opts, WithStreamListenAddr(r.StreamListenAddr))
-	}
-	if r.GracefulDrainTimeout > 0 {
-		opts = append(opts, WithGracefulDrainTimeout(r.GracefulDrainTimeout))
-	}
-	if r.TLSCertFile != "" {
-		opts = append(opts, WithTLSCertFile(r.TLSCertFile))
-	}
-	if r.TLSKeyFile != "" {
-		opts = append(opts, WithTLSKeyFile(r.TLSKeyFile))
-	}
-	opts = append(opts, WithAllowInsecureLoopback(r.AllowInsecureLoopback))
-	if r.SigningKeyFile != "" {
-		opts = append(opts, WithSigningKeyFile(r.SigningKeyFile))
 	}
 	if r.OperatorKeyFile != "" {
 		opts = append(opts, WithOperatorKeyFile(r.OperatorKeyFile))

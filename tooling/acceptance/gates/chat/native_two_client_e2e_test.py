@@ -1067,6 +1067,46 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertTrue(gate.verify_fixture_ready())
         self.assertEqual(gate.direction_order, ["bob", "alice"])
 
+    def test_gate_accepts_explicit_journey_and_station_identity_origin(
+        self,
+    ) -> None:
+        manifest = self.valid_report()["manifest"]
+        actors = {
+            "initialState": "existing",
+            "actors": [
+                {
+                    "role": actor,
+                    "accountRef": f"station-account:{actor}@p.t",
+                    "ptid": f"ptid:{actor}",
+                }
+                for actor in ("alice", "bob")
+            ],
+            "reset": {"authorized": False, "targetVerified": True},
+        }
+        gate = NativeTwoClientGate(
+            manifest=manifest,
+            actor_manifest=actors,
+            runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
+            gate_id="synthetic-relay-gate",
+            allow_existing_fixture=True,
+            journey_id="synthetic-relay-journey",
+            station_identity_url="http://station-identity.example",
+        )
+
+        self.assertEqual(gate.station_url, "http://station-four")
+        self.assertEqual(
+            gate.station_identity_url,
+            "http://station-identity.example",
+        )
+        self.assertEqual(
+            gate.report.station_url,
+            "http://station-identity.example",
+        )
+        self.assertEqual(
+            gate.report.runtime["journey"],
+            "synthetic-relay-journey",
+        )
+
     def test_submitted_recovery_uses_current_profile_contract(self) -> None:
         manifest = self.valid_report()["manifest"]
         actors = {

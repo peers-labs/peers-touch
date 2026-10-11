@@ -7,44 +7,44 @@ import "time"
 const (
 	SubjectRelayAccess = "relay-access:"
 
-	MountCredentialAudience = "peers-touch-relay-mount"
+	NodeCredentialAudience = "peers-touch-relay-enrollment"
 
-	ScopeMountConnect = "relay.mount.connect"
-	ScopeMountRotate  = "relay.mount.rotate"
+	ScopeNodeRotate   = "relay.enrollment.rotate"
 	ScopeRoutePublish = "relay.route.publish"
-	ScopePeerTunnel   = "relay.peer.tunnel"
 
 	StationIdentityDomain       = "peers-touch/station-identity/v1\x00"
 	EnrollmentChallengeDomain   = "peers-touch/relay-enrollment-challenge/v1\x00"
 	EnrollmentChallengeByteSize = 32
 )
 
-// Mount represents a station that is mounted to the relay.
+// Enrollment represents a station that is enrolled to the relay.
 // Pure domain model — no framework or persistence annotations.
-type Mount struct {
-	ID             uint64
-	StationPeerID  string
-	HostPublicKey  []byte
-	Label          string
-	Status         MountStatus
-	Generation     uint64
-	CredentialJTI  string
-	MaxClients     int32
-	BandwidthLimit int64
-	InviteID       uint64
-	LastHeartbeat  time.Time
-	MountedAt      time.Time
-	RevokedAt      *time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+type Enrollment struct {
+	ID                     uint64
+	StationPeerID          string
+	NodePeerID             string
+	StationRootPublicKey   []byte
+	NodeAuthorizationEpoch uint64
+	NodeAuthorizationUntil time.Time
+	Label                  string
+	Status                 EnrollmentStatus
+	Generation             uint64
+	CredentialJTI          string
+	MaxClients             int32
+	BandwidthLimit         int64
+	InviteID               uint64
+	EnrolledAt             time.Time
+	RevokedAt              *time.Time
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
 }
 
-type MountStatus int32
+type EnrollmentStatus int32
 
 const (
-	MountStatusOnline  MountStatus = 1
-	MountStatusOffline MountStatus = 2
-	MountStatusRevoked MountStatus = 3
+	EnrollmentStatusOnline  EnrollmentStatus = 1
+	EnrollmentStatusOffline EnrollmentStatus = 2
+	EnrollmentStatusRevoked EnrollmentStatus = 3
 )
 
 // Invite represents a one-time token that a station uses to register.
@@ -88,7 +88,7 @@ type EnrollmentChallenge struct {
 	InviteDigest  string
 	RelayPeerID   string
 	StationPeerID string
-	MountID       uint64
+	EnrollmentID  uint64
 	Generation    uint64
 	CredentialJTI string
 	Label         string
@@ -99,26 +99,24 @@ type EnrollmentChallenge struct {
 }
 
 type StationIdentityProof struct {
-	ChallengeID   string `json:"challenge_id"`
-	Statement     []byte `json:"statement_bytes"`
-	HostPublicKey []byte `json:"host_public_key"`
-	Signature     []byte `json:"signature"`
+	ChallengeID string `json:"challenge_id"`
+	Response    []byte `json:"response_bytes"`
 }
 
-type MountCredential struct {
+type NodeCredential struct {
 	Token         string
 	RelayPeerID   string
 	StationPeerID string
-	MountID       uint64
+	EnrollmentID  uint64
 	Generation    uint64
 	JTI           string
 	ExpiresAt     time.Time
 }
 
-type MountIdentity struct {
+type NodeIdentity struct {
 	RelayPeerID   string
 	StationPeerID string
-	MountID       uint64
+	EnrollmentID  uint64
 	Generation    uint64
 	JTI           string
 	Scopes        []string

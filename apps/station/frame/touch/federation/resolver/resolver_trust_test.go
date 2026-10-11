@@ -264,12 +264,12 @@ func TestResolveRemoteUsesProtobufAndBindsProfileToLocator(t *testing.T) {
 		_, _ = writer.Write(body)
 	}))
 	defer server.Close()
-	nativefed.ClearRelayClient()
-	nativefed.RegisterRelayClient(resolverRelayClient{
+	nativefed.ClearRelayAccess()
+	nativefed.RegisterRelayAccess(resolverRelayClient{
 		baseURL: server.URL,
 		client:  server.Client(),
 	})
-	t.Cleanup(nativefed.ClearRelayClient)
+	t.Cleanup(nativefed.ClearRelayAccess)
 
 	resolver := New(Config{Now: func() time.Time { return now }})
 	resolved, err := resolver.resolveRemote(

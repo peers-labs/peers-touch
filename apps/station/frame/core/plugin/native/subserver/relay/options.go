@@ -1,189 +1,86 @@
 package relay
 
 import (
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	nativeRelay "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/relay"
 )
 
 type optionsKey struct{}
 
 var wrapper = option.NewWrapper[Options](optionsKey{}, func(options *option.Options) *Options {
-	return &Options{
-		Options: options,
-	}
+	return &Options{Options: options}
 })
 
 type Options struct {
 	*option.Options
 
-	Enabled          bool
-	MaxStations      int
-	HeartbeatTimeout int
+	Enabled       bool
+	MaxStations   int
+	PublicBaseURL string
 
-	// Forward settings
-	ForwardTimeout          int
-	MaxBodySize             int
-	MaxConcurrentPerStation int
-
-	// Stream keepalive
-	StreamPingInterval int
-	StreamPingTimeout  int
-	StreamListenAddr   string
-	PublicBaseURL      string
-
-	// Graceful shutdown
-	GracefulDrainTimeout int
-
-	// TURN integration
 	TurnEnabled    bool
 	TurnPublicIP   string
 	TurnPort       int
 	TurnAuthSecret string
 
-	// TLS for stream listener (Block 8)
-	TLSCertFile           string
-	TLSKeyFile            string
-	AllowInsecureLoopback bool
-	SigningKeyFile        string
-	OperatorKeyFile       string
-	OperatorIssuer        string
-	OperatorAudience      string
-	OperatorScope         string
+	OperatorKeyFile  string
+	OperatorIssuer   string
+	OperatorAudience string
+	OperatorScope    string
+
+	Admission *nativeRelay.Admission
+	Host      host.Host
 }
 
-func WithEnabled(enabled bool) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.Enabled = enabled
-	})
+func WithEnabled(value bool) option.Option {
+	return wrapper.Wrap(func(options *Options) { options.Enabled = value })
 }
 
-func WithMaxStations(max int) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.MaxStations = max
-	})
+func WithMaxStations(value int) option.Option {
+	return wrapper.Wrap(func(options *Options) { options.MaxStations = value })
 }
 
-func WithHeartbeatTimeout(seconds int) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.HeartbeatTimeout = seconds
-	})
+func WithPublicBaseURL(value string) option.Option {
+	return wrapper.Wrap(func(options *Options) { options.PublicBaseURL = value })
 }
 
-func WithForwardTimeout(seconds int) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.ForwardTimeout = seconds
-	})
+func WithTurnEnabled(value bool) option.Option {
+	return wrapper.Wrap(func(options *Options) { options.TurnEnabled = value })
 }
 
-func WithMaxBodySize(bytes int) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.MaxBodySize = bytes
-	})
+func WithTurnPublicIP(value string) option.Option {
+	return wrapper.Wrap(func(options *Options) { options.TurnPublicIP = value })
 }
 
-func WithMaxConcurrentPerStation(n int) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.MaxConcurrentPerStation = n
-	})
+func WithTurnPort(value int) option.Option {
+	return wrapper.Wrap(func(options *Options) { options.TurnPort = value })
 }
 
-func WithStreamPingInterval(seconds int) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.StreamPingInterval = seconds
-	})
+func WithTurnAuthSecret(value string) option.Option {
+	return wrapper.Wrap(func(options *Options) { options.TurnAuthSecret = value })
 }
 
-func WithStreamPingTimeout(seconds int) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.StreamPingTimeout = seconds
-	})
+func WithOperatorKeyFile(value string) option.Option {
+	return wrapper.Wrap(func(options *Options) { options.OperatorKeyFile = value })
 }
 
-func WithStreamListenAddr(addr string) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.StreamListenAddr = addr
-	})
+func WithOperatorIssuer(value string) option.Option {
+	return wrapper.Wrap(func(options *Options) { options.OperatorIssuer = value })
 }
 
-func WithPublicBaseURL(baseURL string) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.PublicBaseURL = baseURL
-	})
+func WithOperatorAudience(value string) option.Option {
+	return wrapper.Wrap(func(options *Options) { options.OperatorAudience = value })
 }
 
-func WithGracefulDrainTimeout(seconds int) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.GracefulDrainTimeout = seconds
-	})
+func WithOperatorScope(value string) option.Option {
+	return wrapper.Wrap(func(options *Options) { options.OperatorScope = value })
 }
 
-func WithTurnEnabled(enabled bool) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.TurnEnabled = enabled
-	})
+func WithAdmission(value *nativeRelay.Admission) option.Option {
+	return wrapper.Wrap(func(options *Options) { options.Admission = value })
 }
 
-func WithTurnPublicIP(ip string) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.TurnPublicIP = ip
-	})
-}
-
-func WithTurnPort(port int) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.TurnPort = port
-	})
-}
-
-func WithTurnAuthSecret(secret string) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.TurnAuthSecret = secret
-	})
-}
-
-func WithTLSCertFile(path string) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.TLSCertFile = path
-	})
-}
-
-func WithTLSKeyFile(path string) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.TLSKeyFile = path
-	})
-}
-
-func WithAllowInsecureLoopback(allow bool) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.AllowInsecureLoopback = allow
-	})
-}
-
-func WithSigningKeyFile(path string) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.SigningKeyFile = path
-	})
-}
-
-func WithOperatorKeyFile(path string) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.OperatorKeyFile = path
-	})
-}
-
-func WithOperatorIssuer(issuer string) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.OperatorIssuer = issuer
-	})
-}
-
-func WithOperatorAudience(audience string) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.OperatorAudience = audience
-	})
-}
-
-func WithOperatorScope(scope string) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.OperatorScope = scope
-	})
+func WithHost(value host.Host) option.Option {
+	return wrapper.Wrap(func(options *Options) { options.Host = value })
 }

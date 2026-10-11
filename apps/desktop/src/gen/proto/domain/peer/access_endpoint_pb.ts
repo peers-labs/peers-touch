@@ -4,13 +4,15 @@
 
 import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { StationNodeAuthorization } from "./station_identity_pb";
+import { file_domain_peer_station_identity } from "./station_identity_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file domain/peer/access_endpoint.proto.
  */
 export const file_domain_peer_access_endpoint: GenFile = /*@__PURE__*/
-  fileDesc("CiFkb21haW4vcGVlci9hY2Nlc3NfZW5kcG9pbnQucHJvdG8SGXBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEiZQoVQWNjZXNzRW5kcG9pbnRSZXF1ZXN0EhEKCWNoYWxsZW5nZRgBIAEoDBIYChBjb25uZWN0aW9uX2dyYW50GAIgASgMEh8KF2NsaWVudF9wcm90b2NvbF92ZXJzaW9uGAMgASgNIo4CChdBY2Nlc3NFbmRwb2ludFN0YXRlbWVudBIRCgljaGFsbGVuZ2UYASABKAwSRAoNZW5kcG9pbnRfcm9sZRgCIAEoDjItLnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuQWNjZXNzRW5kcG9pbnRSb2xlEhgKEGVuZHBvaW50X3BlZXJfaWQYAyABKAkSGAoQY2Fub25pY2FsX29yaWdpbhgEIAEoCRIZChFwcm90b2NvbF92ZXJzaW9ucxgFIAMoDRIUCgxjYXBhYmlsaXRpZXMYBiADKAkSGQoRaXNzdWVkX2F0X3VuaXhfbXMYByABKAMSGgoSZXhwaXJlc19hdF91bml4X21zGAggASgDIq0CChVTdGF0aW9uUm91dGVTdGF0ZW1lbnQSFwoPc3RhdGlvbl9wZWVyX2lkGAEgASgJEhUKDXJlbGF5X3BlZXJfaWQYAiABKAkSEAoIcm91dGVfaWQYAyABKAkSGAoQcm91dGVfZ2VuZXJhdGlvbhgEIAEoBBIdChVpbm5lcl90bHNfc3BraV9zaGEyNTYYBSABKAwSGwoTY2FwYWJpbGl0aWVzX2RpZ2VzdBgGIAEoDBJFCgp2aXNpYmlsaXR5GAcgASgOMjEucGVlcnNfdG91Y2gubW9kZWwucGVlci52MS5TdGF0aW9uUm91dGVWaXNpYmlsaXR5EhkKEWlzc3VlZF9hdF91bml4X21zGAggASgDEhoKEmV4cGlyZXNfYXRfdW5peF9tcxgJIAEoAyJeChdTdGF0aW9uUm91dGVBdHRlc3RhdGlvbhIXCg9zdGF0ZW1lbnRfYnl0ZXMYASABKAwSFwoPaG9zdF9wdWJsaWNfa2V5GAIgASgMEhEKCXNpZ25hdHVyZRgDIAEoDCLYAQofU3RhdGlvbkNvbm5lY3Rpb25HcmFudFN0YXRlbWVudBIQCghncmFudF9pZBgBIAEoCRIXCg9zdGF0aW9uX3BlZXJfaWQYAiABKAkSFQoNcmVsYXlfcGVlcl9pZBgDIAEoCRIQCghyb3V0ZV9pZBgEIAEoCRIYChByb3V0ZV9nZW5lcmF0aW9uGAUgASgEEhAKCG1heF91c2VzGAYgASgNEhkKEWlzc3VlZF9hdF91bml4X21zGAcgASgDEhoKEmV4cGlyZXNfYXRfdW5peF9tcxgIIAEoAyJdChZTdGF0aW9uQ29ubmVjdGlvbkdyYW50EhcKD3N0YXRlbWVudF9ieXRlcxgBIAEoDBIXCg9ob3N0X3B1YmxpY19rZXkYAiABKAwSEQoJc2lnbmF0dXJlGAMgASgMIucBChlTdGF0aW9uQ29ubmVjdGlvbkVudmVsb3BlEhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SFAoMcmVsYXlfb3JpZ2luGAIgASgJEk0KEXJvdXRlX2F0dGVzdGF0aW9uGAMgASgLMjIucGVlcnNfdG91Y2gubW9kZWwucGVlci52MS5TdGF0aW9uUm91dGVBdHRlc3RhdGlvbhJLChBjb25uZWN0aW9uX2dyYW50GAQgASgLMjEucGVlcnNfdG91Y2gubW9kZWwucGVlci52MS5TdGF0aW9uQ29ubmVjdGlvbkdyYW50IscBCiVJc3N1ZVN0YXRpb25Db25uZWN0aW9uTWF0ZXJpYWxSZXF1ZXN0EhAKCHJvdXRlX2lkGAEgASgJEh0KFWlubmVyX3Rsc19zcGtpX3NoYTI1NhgCIAEoDBIbChNjYXBhYmlsaXRpZXNfZGlnZXN0GAMgASgMEh4KFnJvdXRlX2xpZmV0aW1lX3NlY29uZHMYBCABKA0SHgoWZ3JhbnRfbGlmZXRpbWVfc2Vjb25kcxgFIAEoDRIQCghtYXhfdXNlcxgGIAEoDSJlCiZJc3N1ZVN0YXRpb25Db25uZWN0aW9uTWF0ZXJpYWxSZXNwb25zZRIMCgRjb2RlGAEgASgJEhEKCWRlZXBfbGluaxgCIAEoCRIaChJleHBpcmVzX2F0X3VuaXhfbXMYAyABKAMiggIKFkFjY2Vzc0VuZHBvaW50UmVzcG9uc2USQQoHb3V0Y29tZRgBIAEoDjIwLnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuQWNjZXNzRW5kcG9pbnRPdXRjb21lEiAKGGVuZHBvaW50X3N0YXRlbWVudF9ieXRlcxgCIAEoDBIbChNlbmRwb2ludF9wdWJsaWNfa2V5GAMgASgMEhoKEmVuZHBvaW50X3NpZ25hdHVyZRgEIAEoDBJKCg5zdGF0aW9uX3JvdXRlcxgFIAMoCzIyLnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuU3RhdGlvblJvdXRlQXR0ZXN0YXRpb24iawoaUHVibGlzaFN0YXRpb25Sb3V0ZVJlcXVlc3QSTQoRcm91dGVfYXR0ZXN0YXRpb24YASABKAsyMi5wZWVyc190b3VjaC5tb2RlbC5wZWVyLnYxLlN0YXRpb25Sb3V0ZUF0dGVzdGF0aW9uIkkKG1B1Ymxpc2hTdGF0aW9uUm91dGVSZXNwb25zZRIQCghyb3V0ZV9pZBgBIAEoCRIYChByb3V0ZV9nZW5lcmF0aW9uGAIgASgEIqkBCiVSZWdpc3RlclN0YXRpb25Db25uZWN0aW9uR3JhbnRSZXF1ZXN0EhQKDGdyYW50X2RpZ2VzdBgBIAEoDBIQCghncmFudF9pZBgCIAEoCRIQCghyb3V0ZV9pZBgDIAEoCRIYChByb3V0ZV9nZW5lcmF0aW9uGAQgASgEEhAKCG1heF91c2VzGAUgASgNEhoKEmV4cGlyZXNfYXRfdW5peF9tcxgGIAEoAyJSCiZSZWdpc3RlclN0YXRpb25Db25uZWN0aW9uR3JhbnRSZXNwb25zZRIQCghncmFudF9pZBgBIAEoCRIWCg5yZW1haW5pbmdfdXNlcxgCIAEoDSqDAQoSQWNjZXNzRW5kcG9pbnRSb2xlEiQKIEFDQ0VTU19FTkRQT0lOVF9ST0xFX1VOU1BFQ0lGSUVEEAASJwojQUNDRVNTX0VORFBPSU5UX1JPTEVfRElSRUNUX1NUQVRJT04QARIeChpBQ0NFU1NfRU5EUE9JTlRfUk9MRV9SRUxBWRACKv4CChVBY2Nlc3NFbmRwb2ludE91dGNvbWUSJwojQUNDRVNTX0VORFBPSU5UX09VVENPTUVfVU5TUEVDSUZJRUQQABIhCh1BQ0NFU1NfRU5EUE9JTlRfT1VUQ09NRV9SRUFEWRABEikKJUFDQ0VTU19FTkRQT0lOVF9PVVRDT01FX05PX0NBTkRJREFURVMQAhIvCitBQ0NFU1NfRU5EUE9JTlRfT1VUQ09NRV9NVUxUSVBMRV9DQU5ESURBVEVTEAMSKQolQUNDRVNTX0VORFBPSU5UX09VVENPTUVfR1JBTlRfRVhQSVJFRBAEEioKJkFDQ0VTU19FTkRQT0lOVF9PVVRDT01FX0dSQU5UX1JFUExBWUVEEAUSLQopQUNDRVNTX0VORFBPSU5UX09VVENPTUVfR1JBTlRfV1JPTkdfUkVMQVkQBhI3CjNBQ0NFU1NfRU5EUE9JTlRfT1VUQ09NRV9JTlZBTElEX1NUQVRJT05fQVRURVNUQVRJT04QByqQAQoWU3RhdGlvblJvdXRlVmlzaWJpbGl0eRIoCiRTVEFUSU9OX1JPVVRFX1ZJU0lCSUxJVFlfVU5TUEVDSUZJRUQQABIjCh9TVEFUSU9OX1JPVVRFX1ZJU0lCSUxJVFlfUFVCTElDEAESJwojU1RBVElPTl9ST1VURV9WSVNJQklMSVRZX0dSQU5UX09OTFkQAkJHWkVnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9wZWVyO3BlZXJiBnByb3RvMw");
+  fileDesc("CiFkb21haW4vcGVlci9hY2Nlc3NfZW5kcG9pbnQucHJvdG8SGXBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEifQoVQWNjZXNzRW5kcG9pbnRSZXF1ZXN0EhEKCWNoYWxsZW5nZRgBIAEoDBIYChBjb25uZWN0aW9uX2dyYW50GAIgASgMEh8KF2NsaWVudF9wcm90b2NvbF92ZXJzaW9uGAMgASgNEhYKDnNvdXJjZV9wZWVyX2lkGAQgASgJIrECChdBY2Nlc3NFbmRwb2ludFN0YXRlbWVudBIRCgljaGFsbGVuZ2UYASABKAwSRAoNZW5kcG9pbnRfcm9sZRgCIAEoDjItLnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuQWNjZXNzRW5kcG9pbnRSb2xlEhgKEGVuZHBvaW50X3BlZXJfaWQYAyABKAkSGAoQY2Fub25pY2FsX29yaWdpbhgEIAEoCRIZChFwcm90b2NvbF92ZXJzaW9ucxgFIAMoDRIUCgxjYXBhYmlsaXRpZXMYBiADKAkSGQoRaXNzdWVkX2F0X3VuaXhfbXMYByABKAMSGgoSZXhwaXJlc19hdF91bml4X21zGAggASgDEiEKGW5vZGVfYXV0aG9yaXphdGlvbl9kaWdlc3QYCSABKAwitAMKFVN0YXRpb25Sb3V0ZVN0YXRlbWVudBIXCg9zdGF0aW9uX3BlZXJfaWQYASABKAkSFQoNcmVsYXlfcGVlcl9pZBgCIAEoCRIQCghyb3V0ZV9pZBgDIAEoCRIYChByb3V0ZV9nZW5lcmF0aW9uGAQgASgEEh0KFWlubmVyX3Rsc19zcGtpX3NoYTI1NhgFIAEoDBIbChNjYXBhYmlsaXRpZXNfZGlnZXN0GAYgASgMEkUKCnZpc2liaWxpdHkYByABKA4yMS5wZWVyc190b3VjaC5tb2RlbC5wZWVyLnYxLlN0YXRpb25Sb3V0ZVZpc2liaWxpdHkSGQoRaXNzdWVkX2F0X3VuaXhfbXMYCCABKAMSGgoSZXhwaXJlc19hdF91bml4X21zGAkgASgDEhQKDG5vZGVfcGVlcl9pZBgKIAEoCRIhChlub2RlX2F1dGhvcml6YXRpb25fZGlnZXN0GAsgASgMEjkKBGtpbmQYDCABKA4yKy5wZWVyc190b3VjaC5tb2RlbC5wZWVyLnYxLlN0YXRpb25Sb3V0ZUtpbmQSEQoJYWRkcmVzc2VzGA0gAygJIpsBChdTdGF0aW9uUm91dGVBdHRlc3RhdGlvbhIXCg9zdGF0ZW1lbnRfYnl0ZXMYASABKAwSFgoObm9kZV9zaWduYXR1cmUYAiABKAwSTwoSbm9kZV9hdXRob3JpemF0aW9uGAMgASgLMjMucGVlcnNfdG91Y2gubW9kZWwucGVlci52MS5TdGF0aW9uTm9kZUF1dGhvcml6YXRpb24ikQIKH1N0YXRpb25Db25uZWN0aW9uR3JhbnRTdGF0ZW1lbnQSEAoIZ3JhbnRfaWQYASABKAkSFwoPc3RhdGlvbl9wZWVyX2lkGAIgASgJEhUKDXJlbGF5X3BlZXJfaWQYAyABKAkSEAoIcm91dGVfaWQYBCABKAkSGAoQcm91dGVfZ2VuZXJhdGlvbhgFIAEoBBIQCghtYXhfdXNlcxgGIAEoDRIZChFpc3N1ZWRfYXRfdW5peF9tcxgHIAEoAxIaChJleHBpcmVzX2F0X3VuaXhfbXMYCCABKAMSFAoMbm9kZV9wZWVyX2lkGAkgASgJEiEKGW5vZGVfYXV0aG9yaXphdGlvbl9kaWdlc3QYCiABKAwimgEKFlN0YXRpb25Db25uZWN0aW9uR3JhbnQSFwoPc3RhdGVtZW50X2J5dGVzGAEgASgMEhYKDm5vZGVfc2lnbmF0dXJlGAIgASgMEk8KEm5vZGVfYXV0aG9yaXphdGlvbhgDIAEoCzIzLnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuU3RhdGlvbk5vZGVBdXRob3JpemF0aW9uIucBChlTdGF0aW9uQ29ubmVjdGlvbkVudmVsb3BlEhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SFAoMcmVsYXlfb3JpZ2luGAIgASgJEk0KEXJvdXRlX2F0dGVzdGF0aW9uGAMgASgLMjIucGVlcnNfdG91Y2gubW9kZWwucGVlci52MS5TdGF0aW9uUm91dGVBdHRlc3RhdGlvbhJLChBjb25uZWN0aW9uX2dyYW50GAQgASgLMjEucGVlcnNfdG91Y2gubW9kZWwucGVlci52MS5TdGF0aW9uQ29ubmVjdGlvbkdyYW50IpcBCiVJc3N1ZVN0YXRpb25Db25uZWN0aW9uTWF0ZXJpYWxSZXF1ZXN0EhAKCHJvdXRlX2lkGAEgASgJEh4KFnJvdXRlX2xpZmV0aW1lX3NlY29uZHMYBCABKA0SHgoWZ3JhbnRfbGlmZXRpbWVfc2Vjb25kcxgFIAEoDRIQCghtYXhfdXNlcxgGIAEoDUoECAIQA0oECAMQBCJlCiZJc3N1ZVN0YXRpb25Db25uZWN0aW9uTWF0ZXJpYWxSZXNwb25zZRIMCgRjb2RlGAEgASgJEhEKCWRlZXBfbGluaxgCIAEoCRIaChJleHBpcmVzX2F0X3VuaXhfbXMYAyABKAMi0wIKFkFjY2Vzc0VuZHBvaW50UmVzcG9uc2USQQoHb3V0Y29tZRgBIAEoDjIwLnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuQWNjZXNzRW5kcG9pbnRPdXRjb21lEiAKGGVuZHBvaW50X3N0YXRlbWVudF9ieXRlcxgCIAEoDBIbChNlbmRwb2ludF9wdWJsaWNfa2V5GAMgASgMEhoKEmVuZHBvaW50X3NpZ25hdHVyZRgEIAEoDBJKCg5zdGF0aW9uX3JvdXRlcxgFIAMoCzIyLnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuU3RhdGlvblJvdXRlQXR0ZXN0YXRpb24STwoSbm9kZV9hdXRob3JpemF0aW9uGAYgASgLMjMucGVlcnNfdG91Y2gubW9kZWwucGVlci52MS5TdGF0aW9uTm9kZUF1dGhvcml6YXRpb24iawoaUHVibGlzaFN0YXRpb25Sb3V0ZVJlcXVlc3QSTQoRcm91dGVfYXR0ZXN0YXRpb24YASABKAsyMi5wZWVyc190b3VjaC5tb2RlbC5wZWVyLnYxLlN0YXRpb25Sb3V0ZUF0dGVzdGF0aW9uIkkKG1B1Ymxpc2hTdGF0aW9uUm91dGVSZXNwb25zZRIQCghyb3V0ZV9pZBgBIAEoCRIYChByb3V0ZV9nZW5lcmF0aW9uGAIgASgEIqkBCiVSZWdpc3RlclN0YXRpb25Db25uZWN0aW9uR3JhbnRSZXF1ZXN0EhQKDGdyYW50X2RpZ2VzdBgBIAEoDBIQCghncmFudF9pZBgCIAEoCRIQCghyb3V0ZV9pZBgDIAEoCRIYChByb3V0ZV9nZW5lcmF0aW9uGAQgASgEEhAKCG1heF91c2VzGAUgASgNEhoKEmV4cGlyZXNfYXRfdW5peF9tcxgGIAEoAyJSCiZSZWdpc3RlclN0YXRpb25Db25uZWN0aW9uR3JhbnRSZXNwb25zZRIQCghncmFudF9pZBgBIAEoCRIWCg5yZW1haW5pbmdfdXNlcxgCIAEoDSqDAQoSQWNjZXNzRW5kcG9pbnRSb2xlEiQKIEFDQ0VTU19FTkRQT0lOVF9ST0xFX1VOU1BFQ0lGSUVEEAASJwojQUNDRVNTX0VORFBPSU5UX1JPTEVfRElSRUNUX1NUQVRJT04QARIeChpBQ0NFU1NfRU5EUE9JTlRfUk9MRV9SRUxBWRACKv4CChVBY2Nlc3NFbmRwb2ludE91dGNvbWUSJwojQUNDRVNTX0VORFBPSU5UX09VVENPTUVfVU5TUEVDSUZJRUQQABIhCh1BQ0NFU1NfRU5EUE9JTlRfT1VUQ09NRV9SRUFEWRABEikKJUFDQ0VTU19FTkRQT0lOVF9PVVRDT01FX05PX0NBTkRJREFURVMQAhIvCitBQ0NFU1NfRU5EUE9JTlRfT1VUQ09NRV9NVUxUSVBMRV9DQU5ESURBVEVTEAMSKQolQUNDRVNTX0VORFBPSU5UX09VVENPTUVfR1JBTlRfRVhQSVJFRBAEEioKJkFDQ0VTU19FTkRQT0lOVF9PVVRDT01FX0dSQU5UX1JFUExBWUVEEAUSLQopQUNDRVNTX0VORFBPSU5UX09VVENPTUVfR1JBTlRfV1JPTkdfUkVMQVkQBhI3CjNBQ0NFU1NfRU5EUE9JTlRfT1VUQ09NRV9JTlZBTElEX1NUQVRJT05fQVRURVNUQVRJT04QByqQAQoWU3RhdGlvblJvdXRlVmlzaWJpbGl0eRIoCiRTVEFUSU9OX1JPVVRFX1ZJU0lCSUxJVFlfVU5TUEVDSUZJRUQQABIjCh9TVEFUSU9OX1JPVVRFX1ZJU0lCSUxJVFlfUFVCTElDEAESJwojU1RBVElPTl9ST1VURV9WSVNJQklMSVRZX0dSQU5UX09OTFkQAip1ChBTdGF0aW9uUm91dGVLaW5kEiIKHlNUQVRJT05fUk9VVEVfS0lORF9VTlNQRUNJRklFRBAAEh0KGVNUQVRJT05fUk9VVEVfS0lORF9ESVJFQ1QQARIeChpTVEFUSU9OX1JPVVRFX0tJTkRfQ0lSQ1VJVBACQkdaRWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL3BlZXI7cGVlcmIGcHJvdG8z", [file_domain_peer_station_identity]);
 
 /**
  * @generated from message peers_touch.model.peer.v1.AccessEndpointRequest
@@ -30,6 +32,11 @@ export type AccessEndpointRequest = Message<"peers_touch.model.peer.v1.AccessEnd
    * @generated from field: uint32 client_protocol_version = 3;
    */
   clientProtocolVersion: number;
+
+  /**
+   * @generated from field: string source_peer_id = 4;
+   */
+  sourcePeerId: string;
 };
 
 /**
@@ -82,6 +89,11 @@ export type AccessEndpointStatement = Message<"peers_touch.model.peer.v1.AccessE
    * @generated from field: int64 expires_at_unix_ms = 8;
    */
   expiresAtUnixMs: bigint;
+
+  /**
+   * @generated from field: bytes node_authorization_digest = 9;
+   */
+  nodeAuthorizationDigest: Uint8Array;
 };
 
 /**
@@ -139,6 +151,26 @@ export type StationRouteStatement = Message<"peers_touch.model.peer.v1.StationRo
    * @generated from field: int64 expires_at_unix_ms = 9;
    */
   expiresAtUnixMs: bigint;
+
+  /**
+   * @generated from field: string node_peer_id = 10;
+   */
+  nodePeerId: string;
+
+  /**
+   * @generated from field: bytes node_authorization_digest = 11;
+   */
+  nodeAuthorizationDigest: Uint8Array;
+
+  /**
+   * @generated from field: peers_touch.model.peer.v1.StationRouteKind kind = 12;
+   */
+  kind: StationRouteKind;
+
+  /**
+   * @generated from field: repeated string addresses = 13;
+   */
+  addresses: string[];
 };
 
 /**
@@ -158,14 +190,14 @@ export type StationRouteAttestation = Message<"peers_touch.model.peer.v1.Station
   statementBytes: Uint8Array;
 
   /**
-   * @generated from field: bytes host_public_key = 2;
+   * @generated from field: bytes node_signature = 2;
    */
-  hostPublicKey: Uint8Array;
+  nodeSignature: Uint8Array;
 
   /**
-   * @generated from field: bytes signature = 3;
+   * @generated from field: peers_touch.model.peer.v1.StationNodeAuthorization node_authorization = 3;
    */
-  signature: Uint8Array;
+  nodeAuthorization?: StationNodeAuthorization | undefined;
 };
 
 /**
@@ -218,6 +250,16 @@ export type StationConnectionGrantStatement = Message<"peers_touch.model.peer.v1
    * @generated from field: int64 expires_at_unix_ms = 8;
    */
   expiresAtUnixMs: bigint;
+
+  /**
+   * @generated from field: string node_peer_id = 9;
+   */
+  nodePeerId: string;
+
+  /**
+   * @generated from field: bytes node_authorization_digest = 10;
+   */
+  nodeAuthorizationDigest: Uint8Array;
 };
 
 /**
@@ -237,14 +279,14 @@ export type StationConnectionGrant = Message<"peers_touch.model.peer.v1.StationC
   statementBytes: Uint8Array;
 
   /**
-   * @generated from field: bytes host_public_key = 2;
+   * @generated from field: bytes node_signature = 2;
    */
-  hostPublicKey: Uint8Array;
+  nodeSignature: Uint8Array;
 
   /**
-   * @generated from field: bytes signature = 3;
+   * @generated from field: peers_touch.model.peer.v1.StationNodeAuthorization node_authorization = 3;
    */
-  signature: Uint8Array;
+  nodeAuthorization?: StationNodeAuthorization | undefined;
 };
 
 /**
@@ -294,16 +336,6 @@ export type IssueStationConnectionMaterialRequest = Message<"peers_touch.model.p
    * @generated from field: string route_id = 1;
    */
   routeId: string;
-
-  /**
-   * @generated from field: bytes inner_tls_spki_sha256 = 2;
-   */
-  innerTlsSpkiSha256: Uint8Array;
-
-  /**
-   * @generated from field: bytes capabilities_digest = 3;
-   */
-  capabilitiesDigest: Uint8Array;
 
   /**
    * @generated from field: uint32 route_lifetime_seconds = 4;
@@ -383,6 +415,11 @@ export type AccessEndpointResponse = Message<"peers_touch.model.peer.v1.AccessEn
    * @generated from field: repeated peers_touch.model.peer.v1.StationRouteAttestation station_routes = 5;
    */
   stationRoutes: StationRouteAttestation[];
+
+  /**
+   * @generated from field: peers_touch.model.peer.v1.StationNodeAuthorization node_authorization = 6;
+   */
+  nodeAuthorization?: StationNodeAuthorization | undefined;
 };
 
 /**
@@ -597,3 +634,29 @@ export enum StationRouteVisibility {
  */
 export const StationRouteVisibilitySchema: GenEnum<StationRouteVisibility> = /*@__PURE__*/
   enumDesc(file_domain_peer_access_endpoint, 2);
+
+/**
+ * @generated from enum peers_touch.model.peer.v1.StationRouteKind
+ */
+export enum StationRouteKind {
+  /**
+   * @generated from enum value: STATION_ROUTE_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: STATION_ROUTE_KIND_DIRECT = 1;
+   */
+  DIRECT = 1,
+
+  /**
+   * @generated from enum value: STATION_ROUTE_KIND_CIRCUIT = 2;
+   */
+  CIRCUIT = 2,
+}
+
+/**
+ * Describes the enum peers_touch.model.peer.v1.StationRouteKind.
+ */
+export const StationRouteKindSchema: GenEnum<StationRouteKind> = /*@__PURE__*/
+  enumDesc(file_domain_peer_access_endpoint, 3);

@@ -12,7 +12,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -24,18 +23,14 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const (
-	defaultMountCredentialTTL  = 15 * time.Minute
-	maxStationIdentityLifetime = time.Minute
-	stationIdentityClockSkew   = time.Minute
-)
+const defaultNodeCredentialTTL = 15 * time.Minute
 
 var ErrInvalidCredential = errors.New("invalid relay credential")
 
 type credentialClaims struct {
 	CredentialType string   `json:"type"`
 	StationPeerID  string   `json:"station_peer_id"`
-	MountID        uint64   `json:"mount_id"`
+	EnrollmentID   uint64   `json:"enrollment_id"`
 	Generation     uint64   `json:"generation"`
 	Scopes         []string `json:"scope"`
 	jwt.RegisteredClaims
@@ -106,48 +101,46 @@ func (a *CredentialAuthority) DigestInvite(secret string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func (a *CredentialAuthority) IssueMountCredential(
-	mount *domain.Mount,
+func (a *CredentialAuthority) IssueNodeCredential(
+	enrollment *domain.Enrollment,
 	jti string,
-) (*domain.MountCredential, error) {
+) (*domain.NodeCredential, error) {
 	return a.issueCredential(
-		mount,
+		enrollment,
 		jti,
-		"relay_mount",
-		domain.MountCredentialAudience,
+		"relay_enrollment",
+		domain.NodeCredentialAudience,
 		[]string{
-			domain.ScopeMountConnect,
-			domain.ScopeMountRotate,
+			domain.ScopeNodeRotate,
 			domain.ScopeRoutePublish,
-			domain.ScopePeerTunnel,
 		},
-		defaultMountCredentialTTL,
+		defaultNodeCredentialTTL,
 	)
 }
 
 func (a *CredentialAuthority) issueCredential(
-	mount *domain.Mount,
+	enrollment *domain.Enrollment,
 	jti string,
 	credentialType string,
 	audience string,
 	scopes []string,
 	ttl time.Duration,
-) (*domain.MountCredential, error) {
-	if mount == nil || mount.ID == 0 || mount.StationPeerID == "" ||
-		mount.Generation == 0 || jti == "" {
+) (*domain.NodeCredential, error) {
+	if enrollment == nil || enrollment.ID == 0 || enrollment.StationPeerID == "" ||
+		enrollment.Generation == 0 || jti == "" {
 		return nil, ErrInvalidCredential
 	}
 	now := a.now()
 	expiresAt := now.Add(ttl)
 	claims := credentialClaims{
 		CredentialType: credentialType,
-		StationPeerID:  mount.StationPeerID,
-		MountID:        mount.ID,
-		Generation:     mount.Generation,
+		StationPeerID:  enrollment.StationPeerID,
+		EnrollmentID:   enrollment.ID,
+		Generation:     enrollment.Generation,
 		Scopes:         append([]string(nil), scopes...),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    a.relayPeerID,
-			Subject:   subjectForCredential(credentialType, mount.StationPeerID),
+			Subject:   subjectForCredential(credentialType, enrollment.StationPeerID),
 			Audience:  jwt.ClaimStrings{audience},
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -160,12 +153,12 @@ func (a *CredentialAuthority) issueCredential(
 	if err != nil {
 		return nil, fmt.Errorf("sign Relay credential: %w", err)
 	}
-	return &domain.MountCredential{
+	return &domain.NodeCredential{
 		Token:         signed,
 		RelayPeerID:   a.relayPeerID,
-		StationPeerID: mount.StationPeerID,
-		MountID:       mount.ID,
-		Generation:    mount.Generation,
+		StationPeerID: enrollment.StationPeerID,
+		EnrollmentID:  enrollment.ID,
+		Generation:    enrollment.Generation,
 		JTI:           jti,
 		ExpiresAt:     expiresAt,
 	}, nil
@@ -175,7 +168,7 @@ func (a *CredentialAuthority) ValidateCredential(
 	rawToken string,
 	audience string,
 	requiredScope string,
-) (domain.MountIdentity, error) {
+) (domain.NodeIdentity, error) {
 	claims := &credentialClaims{}
 	token, err := jwt.ParseWithClaims(
 		strings.TrimSpace(rawToken),
@@ -195,19 +188,19 @@ func (a *CredentialAuthority) ValidateCredential(
 	if err != nil || !token.Valid ||
 		claims.ID == "" ||
 		claims.StationPeerID == "" ||
-		claims.MountID == 0 ||
+		claims.EnrollmentID == 0 ||
 		claims.Generation == 0 ||
 		claims.Subject != subjectForCredential(
 			claims.CredentialType,
 			claims.StationPeerID,
 		) ||
 		!containsScope(claims.Scopes, requiredScope) {
-		return domain.MountIdentity{}, ErrInvalidCredential
+		return domain.NodeIdentity{}, ErrInvalidCredential
 	}
-	return domain.MountIdentity{
+	return domain.NodeIdentity{
 		RelayPeerID:   a.relayPeerID,
 		StationPeerID: claims.StationPeerID,
-		MountID:       claims.MountID,
+		EnrollmentID:  claims.EnrollmentID,
 		Generation:    claims.Generation,
 		JTI:           claims.ID,
 		Scopes:        append([]string(nil), claims.Scopes...),
@@ -215,62 +208,70 @@ func (a *CredentialAuthority) ValidateCredential(
 	}, nil
 }
 
+type VerifiedNodeIdentity struct {
+	StationPeerID          string
+	NodePeerID             string
+	StationRootPublicKey   []byte
+	AuthorizationEpoch     uint64
+	AuthorizationExpiresAt time.Time
+}
+
 func VerifyStationIdentityProof(
 	proof domain.StationIdentityProof,
 	expectedChallenge []byte,
 	now time.Time,
-) (string, []byte, error) {
+) (*VerifiedNodeIdentity, error) {
 	if len(expectedChallenge) != domain.EnrollmentChallengeByteSize {
-		return "", nil, fmt.Errorf("expected challenge is invalid")
+		return nil, fmt.Errorf("expected challenge is invalid")
+	}
+	if len(proof.Response) == 0 ||
+		len(proof.Response) > peerpb.MaxSignedControlBytes {
+		return nil, fmt.Errorf("Station identity response size is invalid")
+	}
+	response := &peerpb.StationIdentityResponse{}
+	if err := proto.Unmarshal(proof.Response, response); err != nil {
+		return nil, fmt.Errorf("decode Station identity response: %w", err)
+	}
+	canonicalResponse, err := proto.MarshalOptions{Deterministic: true}.
+		Marshal(response)
+	if err != nil || !bytes.Equal(canonicalResponse, proof.Response) {
+		return nil, fmt.Errorf("Station identity response is not canonical")
 	}
 	statement := &peerpb.StationIdentityStatement{}
-	if err := proto.Unmarshal(proof.Statement, statement); err != nil {
-		return "", nil, fmt.Errorf("decode Station identity statement: %w", err)
+	if err := proto.Unmarshal(response.GetStatementBytes(), statement); err != nil {
+		return nil, fmt.Errorf("decode Station identity statement: %w", err)
 	}
-	if !bytes.Equal(statement.GetChallenge(), expectedChallenge) {
-		return "", nil, fmt.Errorf("Station identity challenge mismatch")
+	if strings.TrimSpace(statement.GetCanonicalOrigin()) == "" ||
+		statement.GetCanonicalOrigin() !=
+			strings.TrimSpace(statement.GetCanonicalOrigin()) {
+		return nil, fmt.Errorf("Station canonical origin is missing")
 	}
-	if strings.TrimSpace(statement.GetCanonicalOrigin()) == "" {
-		return "", nil, fmt.Errorf("Station canonical origin is missing")
-	}
-	nowMillis := now.UnixMilli()
-	if statement.GetExpiresAtUnixMs() <= statement.GetIssuedAtUnixMs() ||
-		statement.GetExpiresAtUnixMs()-statement.GetIssuedAtUnixMs() >
-			maxStationIdentityLifetime.Milliseconds() ||
-		statement.GetIssuedAtUnixMs() >
-			nowMillis+stationIdentityClockSkew.Milliseconds() ||
-		statement.GetExpiresAtUnixMs() <
-			nowMillis-stationIdentityClockSkew.Milliseconds() {
-		return "", nil, fmt.Errorf("Station identity validity window is invalid")
-	}
-	if !containsScope(statement.GetCapabilities(), "station-identity") {
-		return "", nil, fmt.Errorf("Station identity capability is missing")
-	}
-	if !sort.StringsAreSorted(statement.GetCapabilities()) ||
-		hasDuplicateStrings(statement.GetCapabilities()) {
-		return "", nil, fmt.Errorf("Station identity capabilities are not canonical")
-	}
-
-	publicKey, err := libp2pcrypto.UnmarshalPublicKey(proof.HostPublicKey)
+	verified, err := peerpb.VerifyStationIdentityResponse(
+		response,
+		expectedChallenge,
+		statement.GetCanonicalOrigin(),
+		[]string{"station-identity"},
+		now,
+	)
 	if err != nil {
-		return "", nil, fmt.Errorf("decode Station host public key: %w", err)
+		return nil, fmt.Errorf("verify Station identity response: %w", err)
 	}
-	if publicKey.Type() != libp2pcrypto.Ed25519 {
-		return "", nil, fmt.Errorf("Station host key must be Ed25519")
-	}
-	stationPeerID, err := peer.IDFromPublicKey(publicKey)
+	rootPublicKey, err := libp2pcrypto.MarshalPublicKey(
+		verified.Authorization.StationRootPublicKey,
+	)
 	if err != nil {
-		return "", nil, fmt.Errorf("derive Station peer ID: %w", err)
+		return nil, fmt.Errorf("encode Station root public key: %w", err)
 	}
-	if statement.GetStationPeerId() != stationPeerID.String() {
-		return "", nil, fmt.Errorf("Station peer ID does not match host key")
-	}
-	signingBytes := append([]byte(domain.StationIdentityDomain), proof.Statement...)
-	verified, err := publicKey.Verify(signingBytes, proof.Signature)
-	if err != nil || !verified {
-		return "", nil, fmt.Errorf("Station identity signature is invalid")
-	}
-	return stationPeerID.String(), append([]byte(nil), proof.HostPublicKey...), nil
+	authorization := verified.Authorization.Statement
+	return &VerifiedNodeIdentity{
+		StationPeerID:        verified.Statement.GetStationPeerId(),
+		NodePeerID:           authorization.GetNodePeerId(),
+		StationRootPublicKey: rootPublicKey,
+		AuthorizationEpoch:   authorization.GetAuthorizationEpoch(),
+		AuthorizationExpiresAt: time.UnixMilli(
+			authorization.GetExpiresAtUnixMs(),
+		).UTC(),
+	}, nil
 }
 
 func randomIdentifier(size int) (string, error) {

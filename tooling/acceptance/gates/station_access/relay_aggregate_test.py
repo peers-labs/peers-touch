@@ -62,9 +62,10 @@ class RelayAggregateTest(unittest.TestCase):
             [spec.gate_id for spec in relay_aggregate.SECURITY_GATES],
             [
                 "relay-role-security-contract",
-                "relay-station-enrollment-e2e",
-                "relay-endpoint-discovery-contract",
-                "relay-opaque-tunnel-e2e",
+                "NCP-G01",
+                "NCP-G03",
+                "NCP-G07",
+                "NCP-G08",
             ],
         )
 

@@ -29,32 +29,70 @@ func (s *SubServer) AccessEndpoint(
 	req *peerpb.AccessEndpointRequest,
 ) (*peerpb.AccessEndpointResponse, error) {
 	if s.host == nil {
-		return nil, fmt.Errorf("Station endpoint identity host is not ready")
+		return nil, fmt.Errorf("Station endpoint node is not ready")
 	}
 	privateKey := s.host.Peerstore().PrivKey(s.host.ID())
 	if privateKey == nil {
-		return nil, fmt.Errorf("Station endpoint identity key is unavailable")
+		return nil, fmt.Errorf("Station endpoint node key is unavailable")
 	}
-	return signAccessEndpoint(
+	now := time.Now().UTC()
+	authorization, err := s.currentNodeAuthorization(now)
+	if err != nil {
+		return nil, err
+	}
+	response, err := signAccessEndpoint(
 		privateKey,
 		s.host.ID(),
+		authorization,
 		canonicalStationOrigin(),
 		req,
-		time.Now().UTC(),
+		now,
 	)
+	if err != nil {
+		return nil, err
+	}
+	if s.opts.CircuitRoutes == nil {
+		return response, nil
+	}
+	for _, route := range s.opts.CircuitRoutes(now) {
+		expiresAt := route.ExpiresAt
+		maxExpiry := now.Add(peerpb.MaxRouteAttestationLifetime)
+		if expiresAt.After(maxExpiry) {
+			expiresAt = maxExpiry
+		}
+		attestation, signErr := s.SignStationRouteAttestation(
+			&peerpb.StationRouteStatement{
+				RelayPeerId:        route.RelayPeerID.String(),
+				RouteId:            "circuit-" + route.RelayPeerID.String(),
+				RouteGeneration:    route.RouteGeneration,
+				InnerTlsSpkiSha256: s.opts.InnerTLSSPKISHA256[:],
+				Visibility: peerpb.
+					StationRouteVisibility_STATION_ROUTE_VISIBILITY_PUBLIC,
+				IssuedAtUnixMs:  now.UnixMilli(),
+				ExpiresAtUnixMs: expiresAt.UnixMilli(),
+			},
+		)
+		if signErr != nil {
+			return nil, fmt.Errorf("sign standard Circuit route: %w", signErr)
+		}
+		response.StationRoutes = append(response.StationRoutes, attestation)
+	}
+	return response, nil
 }
 
 func signAccessEndpoint(
 	privateKey crypto.PrivKey,
 	endpointPeerID peer.ID,
+	authorization *peerpb.StationNodeAuthorization,
 	canonicalOrigin string,
 	req *peerpb.AccessEndpointRequest,
 	now time.Time,
 ) (*peerpb.AccessEndpointResponse, error) {
-	if req == nil || len(req.GetChallenge()) != stationIdentityChallengeSize {
+	if req == nil ||
+		len(req.GetChallenge()) != peerpb.StationIdentityChallengeSize {
 		return nil, fmt.Errorf(
 			"access endpoint challenge must contain exactly %d bytes",
-			stationIdentityChallengeSize,
+			peerpb.StationIdentityChallengeSize,
 		)
 	}
 	if req.GetClientProtocolVersion() != accessProtocolVersion {
@@ -79,18 +117,28 @@ func signAccessEndpoint(
 	if derivedPeerID != endpointPeerID {
 		return nil, fmt.Errorf("Station endpoint key does not match peer ID")
 	}
+	verifiedAuthorization, err := peerpb.VerifyStationNodeAuthorization(
+		authorization,
+		now,
+	)
+	if err != nil ||
+		verifiedAuthorization.Statement.GetNodePeerId() !=
+			endpointPeerID.String() {
+		return nil, fmt.Errorf("Station endpoint node authorization is invalid")
+	}
 
 	capabilities := append([]string(nil), directEndpointCapabilities...)
 	sort.Strings(capabilities)
 	statement := &peerpb.AccessEndpointStatement{
-		Challenge:        append([]byte(nil), req.GetChallenge()...),
-		EndpointRole:     peerpb.AccessEndpointRole_ACCESS_ENDPOINT_ROLE_DIRECT_STATION,
-		EndpointPeerId:   endpointPeerID.String(),
-		CanonicalOrigin:  canonicalOrigin,
-		ProtocolVersions: []uint32{accessProtocolVersion},
-		Capabilities:     capabilities,
-		IssuedAtUnixMs:   now.UnixMilli(),
-		ExpiresAtUnixMs:  now.Add(accessEndpointLifetime).UnixMilli(),
+		Challenge:               append([]byte(nil), req.GetChallenge()...),
+		EndpointRole:            peerpb.AccessEndpointRole_ACCESS_ENDPOINT_ROLE_DIRECT_STATION,
+		EndpointPeerId:          endpointPeerID.String(),
+		CanonicalOrigin:         canonicalOrigin,
+		ProtocolVersions:        []uint32{accessProtocolVersion},
+		Capabilities:            capabilities,
+		IssuedAtUnixMs:          now.UnixMilli(),
+		ExpiresAtUnixMs:         now.Add(accessEndpointLifetime).UnixMilli(),
+		NodeAuthorizationDigest: verifiedAuthorization.Digest[:],
 	}
 	statementBytes, err := proto.MarshalOptions{Deterministic: true}.
 		Marshal(statement)
@@ -112,5 +160,6 @@ func signAccessEndpoint(
 		EndpointStatementBytes: statementBytes,
 		EndpointPublicKey:      publicKey,
 		EndpointSignature:      signature,
+		NodeAuthorization:      authorization,
 	}, nil
 }

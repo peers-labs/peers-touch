@@ -84,7 +84,7 @@ func TestAutoMigratePurgesLegacyInvitePlaintext(t *testing.T) {
 	}
 }
 
-func TestConsumeInviteAndActivateMountIsAtomic(t *testing.T) {
+func TestConsumeInviteAndCreateEnrollmentIsAtomic(t *testing.T) {
 	db, err := gorm.Open(
 		sqlite.Open("file:relay-atomic-enrollment?mode=memory&cache=shared"),
 		&gorm.Config{},
@@ -111,28 +111,31 @@ func TestConsumeInviteAndActivateMountIsAtomic(t *testing.T) {
 	if err := repo.CreateInvite(context.Background(), invite); err != nil {
 		t.Fatalf("create invite: %v", err)
 	}
-	mount := &domain.Mount{
-		StationPeerID: "station-peer",
-		HostPublicKey: []byte{1, 2, 3},
-		CredentialJTI: "jti-1",
+	enrollment := &domain.Enrollment{
+		StationPeerID:          "station-peer",
+		NodePeerID:             "node-peer",
+		StationRootPublicKey:   []byte{1, 2, 3},
+		NodeAuthorizationEpoch: 1,
+		NodeAuthorizationUntil: time.Now().UTC().Add(time.Hour),
+		CredentialJTI:          "jti-1",
 	}
-	activated, err := repo.ConsumeInviteAndActivateMount(
+	activated, err := repo.ConsumeInviteAndCreateEnrollment(
 		context.Background(),
 		invite.ID,
-		mount,
+		enrollment,
 		1,
 	)
 	if err != nil {
-		t.Fatalf("activate mount: %v", err)
+		t.Fatalf("activate enrollment: %v", err)
 	}
 	if activated.Generation != 1 ||
-		activated.Status != domain.MountStatusOffline {
-		t.Fatalf("unexpected activated mount: %+v", activated)
+		activated.Status != domain.EnrollmentStatusOffline {
+		t.Fatalf("unexpected activated enrollment: %+v", activated)
 	}
-	if _, err := repo.ConsumeInviteAndActivateMount(
+	if _, err := repo.ConsumeInviteAndCreateEnrollment(
 		context.Background(),
 		invite.ID,
-		mount,
+		enrollment,
 		1,
 	); err == nil {
 		t.Fatal("consumed invite won a second enrollment")

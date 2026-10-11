@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::PathBuf;
@@ -7,7 +6,7 @@ use std::sync::RwLock;
 
 use crate::infrastructure::station_discovery::VerifiedStationRoute;
 
-const REGISTRY_VERSION: u32 = 2;
+const REGISTRY_VERSION: u32 = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -27,6 +26,9 @@ pub enum StationRouteHealth {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StationRouteCandidate {
+    pub node_peer_id: String,
+    pub node_authorization_digest: Vec<u8>,
+    pub authorization_epoch: u64,
     pub route_id: String,
     pub route_type: StationRouteType,
     pub transport: String,
@@ -34,6 +36,7 @@ pub struct StationRouteCandidate {
     pub relay_peer_id: Option<String>,
     pub route_generation: u64,
     pub inner_tls_spki_sha256: Option<Vec<u8>>,
+    pub addresses: Vec<String>,
     pub attestation_bytes: Option<Vec<u8>>,
     #[serde(default)]
     pub connection_grant: Option<Vec<u8>>,
@@ -47,7 +50,7 @@ pub struct StationRouteCandidate {
 pub struct StationEntry {
     pub station_peer_id: String,
     pub display_name: Option<String>,
-    pub pinned_host_public_key: Vec<u8>,
+    pub pinned_station_root_public_key: Vec<u8>,
     pub routes: Vec<StationRouteCandidate>,
     pub active_route_id: String,
     pub route_revision: u64,
@@ -84,32 +87,26 @@ impl StationRegistry {
             .ok()
             .map(|value| normalize_origin(&value))
             .filter(|value| !value.is_empty());
-        let (state, migrated) = Self::load(&persist_path);
-        let registry = Self {
+        let state = Self::load(&persist_path);
+        Self {
             state: RwLock::new(state),
             persist_path,
             discovery_seed,
-        };
-        if migrated {
-            if let Err(error) = registry.save() {
-                tracing::warn!(error = %error, "station_registry: failed to persist v2 migration");
-            }
         }
-        registry
     }
 
-    fn load(path: &std::path::Path) -> (PersistedData, bool) {
+    fn load(path: &std::path::Path) -> PersistedData {
         let Some(raw) = std::fs::read_to_string(path).ok() else {
-            return (PersistedData::default(), false);
+            return PersistedData::default();
         };
         if let Ok(mut state) = serde_json::from_str::<PersistedData>(&raw) {
+            if state.version != REGISTRY_VERSION {
+                return PersistedData::default();
+            }
             state.sanitize();
-            return (state, false);
+            return state;
         }
-        if let Ok(legacy) = serde_json::from_str::<LegacyPersistedData>(&raw) {
-            return (migrate_legacy(legacy), true);
-        }
-        (PersistedData::default(), false)
+        PersistedData::default()
     }
 
     fn persist(&self, state: &PersistedData) -> io::Result<()> {
@@ -201,7 +198,10 @@ impl StationRegistry {
         display_name: Option<String>,
     ) -> io::Result<StationEntry> {
         if route.station_peer_id.trim().is_empty()
-            || route.station_host_public_key.is_empty()
+            || route.node_peer_id.trim().is_empty()
+            || route.station_root_public_key.is_empty()
+            || route.node_authorization_digest.len() != 32
+            || route.authorization_epoch == 0
             || route.route_id.trim().is_empty()
             || route.endpoint_origin.trim().is_empty()
         {
@@ -222,10 +222,10 @@ impl StationRegistry {
             .iter_mut()
             .find(|entry| entry.station_peer_id == route.station_peer_id)
         {
-            if entry.pinned_host_public_key != route.station_host_public_key {
+            if entry.pinned_station_root_public_key != route.station_root_public_key {
                 return Err(io::Error::new(
                     io::ErrorKind::PermissionDenied,
-                    "Station host identity changed without explicit replacement",
+                    "Station root identity changed without explicit replacement",
                 ));
             }
             if let Some(existing) = entry
@@ -248,7 +248,7 @@ impl StationRegistry {
             next.entries.push(StationEntry {
                 station_peer_id: route.station_peer_id.clone(),
                 display_name,
-                pinned_host_public_key: route.station_host_public_key.clone(),
+                pinned_station_root_public_key: route.station_root_public_key.clone(),
                 routes: vec![candidate],
                 active_route_id: route.route_id.clone(),
                 route_revision: 1,
@@ -512,7 +512,7 @@ impl PersistedData {
                     && route_ids.insert(route.route_id.clone())
             });
             !entry.station_peer_id.is_empty()
-                && !entry.pinned_host_public_key.is_empty()
+                && !entry.pinned_station_root_public_key.is_empty()
                 && entry.active_route().is_some()
                 && station_ids.insert(entry.station_peer_id.clone())
         });
@@ -530,115 +530,10 @@ impl PersistedData {
     }
 }
 
-#[derive(Clone, Default, Deserialize)]
-struct LegacyPersistedData {
-    #[serde(default)]
-    entries: Vec<LegacyStationEntry>,
-    #[serde(default)]
-    active_url: Option<String>,
-    #[serde(default)]
-    federation_signing_key_pins: HashMap<String, LegacyFederationSigningKeyPin>,
-}
-
-#[derive(Clone, Deserialize)]
-struct LegacyStationEntry {
-    url: String,
-    label: Option<String>,
-    peer_id: Option<String>,
-    last_probe: Option<String>,
-    online: bool,
-}
-
-#[derive(Clone, Deserialize)]
-struct LegacyFederationSigningKeyPin {
-    signing_key_id: String,
-    ed25519_public_key: Vec<u8>,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct PersistedFederationSigningKeyPin {
     signing_key_id: String,
     ed25519_public_key: Vec<u8>,
-}
-
-fn migrate_legacy(legacy: LegacyPersistedData) -> PersistedData {
-    let active_origin = legacy.active_url.map(|value| normalize_origin(&value));
-    let now = now_rfc3339();
-    let mut entries: Vec<StationEntry> = Vec::new();
-    let mut active_station_peer_id = None;
-    let mut pins = HashMap::new();
-    for entry in legacy.entries {
-        let Some(station_peer_id) = entry
-            .peer_id
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-        else {
-            continue;
-        };
-        let origin = normalize_origin(&entry.url);
-        if origin.is_empty() {
-            continue;
-        }
-        let route_id = legacy_route_id(&station_peer_id, &origin);
-        let candidate = StationRouteCandidate {
-            route_id: route_id.clone(),
-            route_type: StationRouteType::Direct,
-            transport: "direct_https".to_string(),
-            endpoint_origin: origin.clone(),
-            relay_peer_id: None,
-            route_generation: 1,
-            inner_tls_spki_sha256: None,
-            attestation_bytes: None,
-            connection_grant: None,
-            attestation_expires_at_unix_ms: None,
-            last_verified_at: entry.last_probe.clone().unwrap_or_else(|| now.clone()),
-            last_success_at: entry
-                .online
-                .then(|| entry.last_probe.clone().unwrap_or_else(|| now.clone())),
-            health: if entry.online {
-                StationRouteHealth::Available
-            } else {
-                StationRouteHealth::Degraded
-            },
-        };
-        if let Some(existing) = entries
-            .iter_mut()
-            .find(|existing| existing.station_peer_id == station_peer_id)
-        {
-            existing.routes.push(candidate);
-            existing.updated_at = now.clone();
-        } else {
-            entries.push(StationEntry {
-                station_peer_id: station_peer_id.clone(),
-                display_name: entry.label,
-                pinned_host_public_key: vec![0],
-                routes: vec![candidate],
-                active_route_id: route_id,
-                route_revision: 1,
-                lifecycle_generation: 1,
-                created_at: now.clone(),
-                updated_at: now.clone(),
-            });
-        }
-        if active_origin.as_deref() == Some(origin.as_str()) {
-            active_station_peer_id = Some(station_peer_id.clone());
-        }
-        if let Some(pin) = legacy.federation_signing_key_pins.get(&origin) {
-            pins.insert(
-                station_peer_id,
-                PersistedFederationSigningKeyPin {
-                    signing_key_id: pin.signing_key_id.clone(),
-                    ed25519_public_key: pin.ed25519_public_key.clone(),
-                },
-            );
-        }
-    }
-    PersistedData {
-        version: REGISTRY_VERSION,
-        entries,
-        active_station_peer_id,
-        federation_signing_key_pins: pins,
-    }
 }
 
 fn route_candidate(route: &VerifiedStationRoute, now: &str) -> StationRouteCandidate {
@@ -648,17 +543,21 @@ fn route_candidate(route: &VerifiedStationRoute, now: &str) -> StationRouteCandi
         StationRouteType::Direct
     };
     StationRouteCandidate {
+        node_peer_id: route.node_peer_id.clone(),
+        node_authorization_digest: route.node_authorization_digest.to_vec(),
+        authorization_epoch: route.authorization_epoch,
         route_id: route.route_id.clone(),
         route_type,
         transport: match route_type {
             StationRouteType::Direct => "direct_https",
-            StationRouteType::Relay => "relay_wss_v1",
+            StationRouteType::Relay => "libp2p_http_v1",
         }
         .to_string(),
         endpoint_origin: normalize_origin(&route.endpoint_origin),
         relay_peer_id: route.relay_peer_id.clone(),
         route_generation: route.route_generation,
         inner_tls_spki_sha256: route.inner_tls_spki_sha256.map(|value| value.to_vec()),
+        addresses: route.addresses.clone(),
         attestation_bytes: route.attestation_bytes.clone(),
         connection_grant: route.connection_grant.clone(),
         attestation_expires_at_unix_ms: route.expires_at_unix_ms,
@@ -666,15 +565,6 @@ fn route_candidate(route: &VerifiedStationRoute, now: &str) -> StationRouteCandi
         last_success_at: Some(now.to_string()),
         health: StationRouteHealth::Available,
     }
-}
-
-fn legacy_route_id(station_peer_id: &str, origin: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(b"peers-touch/direct-route/v1\0");
-    hasher.update(station_peer_id.as_bytes());
-    hasher.update([0]);
-    hasher.update(origin.as_bytes());
-    format!("direct-{}", hex::encode(hasher.finalize()))
 }
 
 fn now_rfc3339() -> String {
@@ -722,12 +612,16 @@ mod tests {
     fn route(station: &str, id: &str, origin: &str, relay: bool) -> VerifiedStationRoute {
         VerifiedStationRoute {
             station_peer_id: station.to_string(),
-            station_host_public_key: vec![1, 2, 3],
+            node_peer_id: format!("{station}-node"),
+            station_root_public_key: vec![1, 2, 3],
+            node_authorization_digest: [4; 32],
+            authorization_epoch: 1,
             route_id: id.to_string(),
             route_generation: 1,
             endpoint_origin: origin.to_string(),
             relay_peer_id: relay.then(|| "relay-peer".to_string()),
             inner_tls_spki_sha256: relay.then_some([7; 32]),
+            addresses: vec![origin.to_string()],
             attestation_bytes: relay.then(|| vec![8, 9]),
             connection_grant: None,
             expires_at_unix_ms: relay.then_some(i64::MAX),
@@ -825,41 +719,30 @@ mod tests {
     }
 
     #[test]
-    fn migrates_verified_legacy_entries_once() {
+    fn rejects_pre_root_identity_registry_schema() {
         with_seed(None, || {
-            let dir = temp_dir("legacy");
+            let dir = temp_dir("stale-schema");
             std::fs::write(
                 dir.join("stations.json"),
                 r#"{
+                  "version": 2,
                   "entries":[{
-                    "url":"https://station.example/",
-                    "label":"Home",
-                    "peer_id":"station-one",
-                    "peers_count":3,
-                    "last_probe":"2026-10-07T00:00:00Z",
-                    "online":true
+                    "station_peer_id":"station-one",
+                    "pinned_host_public_key":[1],
+                    "routes":[]
                   }],
-                  "active_url":"https://station.example"
+                  "active_station_peer_id":"station-one"
                 }"#,
             )
             .unwrap();
             let registry = StationRegistry::new(&dir);
-            assert_eq!(
-                registry.active_station_peer_id().as_deref(),
-                Some("station-one")
-            );
-            assert_eq!(
-                registry.active_endpoint_origin().as_deref(),
-                Some("https://station.example")
-            );
-            let persisted = std::fs::read_to_string(dir.join("stations.json")).unwrap();
-            assert!(persisted.contains("\"version\": 2"));
-            assert!(!persisted.contains("\"active_url\""));
+            assert!(registry.list().is_empty());
+            assert_eq!(registry.active_station_peer_id(), None);
         });
     }
 
     #[test]
-    fn rejects_station_host_key_replacement() {
+    fn rejects_station_root_key_replacement() {
         with_seed(None, || {
             let registry = StationRegistry::new(&temp_dir("host-key"));
             registry
@@ -869,7 +752,7 @@ mod tests {
                 )
                 .unwrap();
             let mut attacker = route("station-one", "relay-1", "https://relay.example", true);
-            attacker.station_host_public_key = vec![9, 9, 9];
+            attacker.station_root_public_key = vec![9, 9, 9];
             assert_eq!(
                 registry
                     .upsert_verified_route(&attacker, None)

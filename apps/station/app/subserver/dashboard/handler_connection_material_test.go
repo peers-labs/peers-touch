@@ -7,68 +7,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/peers-labs/peers-touch/station/frame/core/option"
-	relayclient "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay-client"
+	nativeRelay "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/relay"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	peerpb "github.com/peers-labs/peers-touch/station/frame/touch/model/peer"
 )
 
 type connectionMaterialIssuerStub struct {
-	request relayclient.ConnectionMaterialRequest
+	request nativeRelay.ConnectionMaterialRequest
 }
 
 func (s *connectionMaterialIssuerStub) IssueConnectionMaterial(
 	_ context.Context,
-	request relayclient.ConnectionMaterialRequest,
-) (*relayclient.ConnectionMaterial, error) {
+	request nativeRelay.ConnectionMaterialRequest,
+) (*nativeRelay.ConnectionMaterial, error) {
 	s.request = request
-	return &relayclient.ConnectionMaterial{
+	return &nativeRelay.ConnectionMaterial{
 		Code:      "ptc1:payload",
 		DeepLink:  "peers-touch://connect#payload",
 		ExpiresAt: time.Unix(123, 0).UTC(),
 	}, nil
-}
-
-type connectionMaterialSibling struct {
-	connectionMaterialIssuerStub
-}
-
-func (s *connectionMaterialSibling) Name() string {
-	return "relay-client"
-}
-
-func (s *connectionMaterialSibling) Type() server.SubserverType {
-	return server.SubserverTypeHTTP
-}
-
-func (s *connectionMaterialSibling) Status() server.Status {
-	return server.StatusRunning
-}
-
-func (s *connectionMaterialSibling) Address() server.SubserverAddress {
-	return server.SubserverAddress{}
-}
-
-func (s *connectionMaterialSibling) Init(
-	context.Context,
-	...option.Option,
-) error {
-	return nil
-}
-
-func (s *connectionMaterialSibling) Start(
-	context.Context,
-	...option.Option,
-) error {
-	return nil
-}
-
-func (s *connectionMaterialSibling) Stop(context.Context) error {
-	return nil
-}
-
-func (s *connectionMaterialSibling) Handlers() []server.Handler {
-	return nil
 }
 
 type connectionMaterialRequest struct {
@@ -129,15 +86,13 @@ func (r *connectionMaterialResponse) Status() int {
 
 func TestRelayConnectionMaterialHandlerInvokesSiblingIssuer(t *testing.T) {
 	issuer := &connectionMaterialIssuerStub{}
-	handler := &dashboardHandler{
-		sub: &subServer{connectionMaterialIssuer: issuer},
-	}
+	nativeRelay.RegisterConnectionMaterialIssuer(issuer)
+	t.Cleanup(func() { nativeRelay.RegisterConnectionMaterialIssuer(nil) })
+	handler := &dashboardHandler{sub: &subServer{}}
 	result, err := handler.handleIssueRelayConnectionMaterial(
 		context.Background(),
 		&peerpb.IssueStationConnectionMaterialRequest{
 			RouteId:              "private-route",
-			InnerTlsSpkiSha256:   bytes.Repeat([]byte{0x11}, 32),
-			CapabilitiesDigest:   bytes.Repeat([]byte{0x22}, 32),
 			RouteLifetimeSeconds: 3600,
 			GrantLifetimeSeconds: 600,
 			MaxUses:              2,
@@ -153,9 +108,7 @@ func TestRelayConnectionMaterialHandlerInvokesSiblingIssuer(t *testing.T) {
 	if issuer.request.RouteID != "private-route" ||
 		issuer.request.RouteLifetime != time.Hour ||
 		issuer.request.GrantLifetime != 10*time.Minute ||
-		issuer.request.MaxUses != 2 ||
-		len(issuer.request.InnerTLSSPKISHA256) != 32 ||
-		len(issuer.request.CapabilitiesDigest) != 32 {
+		issuer.request.MaxUses != 2 {
 		t.Fatalf("unexpected issuer request: %+v", issuer.request)
 	}
 }
@@ -224,11 +177,12 @@ func TestRelayConnectionMaterialRouteRejectsUnknownJSON(t *testing.T) {
 }
 
 func TestDashboardResolvesRelayConnectionMaterialIssuer(t *testing.T) {
-	issuer := &connectionMaterialSibling{}
-	subserver := &subServer{subservers: []server.Subserver{issuer}}
-	subserver.resolveConnectionMaterialIssuer(context.Background())
+	issuer := &connectionMaterialIssuerStub{}
+	nativeRelay.RegisterConnectionMaterialIssuer(issuer)
+	t.Cleanup(func() { nativeRelay.RegisterConnectionMaterialIssuer(nil) })
+	subserver := &subServer{}
 	if subserver.getConnectionMaterialIssuer() != issuer {
-		t.Fatal("Dashboard did not retain the relay-client issuer")
+		t.Fatal("Dashboard did not resolve the Station Relay runtime issuer")
 	}
 }
 

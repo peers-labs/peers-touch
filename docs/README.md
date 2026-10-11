@@ -215,8 +215,8 @@
   opaque object 协议、stateless validation、恢复与 hard-cut 边界；不新建业务 authority）
 - 服务协调（Relay/Station/Desktop/Mobile 依赖 DAG 与凭据契约）：`architecture/platform/runtime/service-coordination.md`
 - Node Connectivity：`architecture/platform/runtime/node-connectivity/README.md`
-  （active；Relay 运行角色、Station enrollment、签名 route、WSS + inner TLS
-  opaque tunnel 与 Station Access/Federation ownership 边界的唯一真源）
+  （active；已评审的逻辑 Station/Node 身份、Frame 内置接入、libp2p Circuit v2、
+  canonical HTTP/protobuf 与集群就绪目标；候选执行计划待批准，运行时未证明）
 - 本机多 worktree 开发控制面：`architecture/engineering/local-dev/README.md`
   （active；定义 `~/.peers-touch/dev/` 机器级注册表、独立 worktree 绑定、slot 与
   Station capability lease，当前仅有 observed snapshot，尚未接管运行时）

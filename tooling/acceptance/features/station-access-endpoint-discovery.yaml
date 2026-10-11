@@ -9,7 +9,8 @@
     "apps/station/frame/core/plugin/native/subserver/bootstrap/accessendpoint/**",
     "apps/station/frame/core/plugin/native/subserver/relay/application/discovery.go",
     "apps/station/frame/core/plugin/native/subserver/relay/handler_discovery.go",
-    "apps/station/frame/core/plugin/native/subserver/relay-client/connection_material.go",
+    "apps/station/frame/core/plugin/native/relay/connection_material.go",
+    "apps/station/frame/core/plugin/native/relay/station_control.go",
     "apps/station/app/subserver/dashboard/handler.go",
     "apps/station/app/subserver/dashboard/subserver.go",
     "tooling/acceptance/gates/station_access/relay_endpoint_discovery_contract.py"
@@ -17,7 +18,7 @@
   "truth_sources": [
     "Station host identity",
     "Relay endpoint signing identity",
-    "current Relay mount generation",
+    "current Relay node enrollment and ACL generation",
     "Station-signed route attestation and connection grant"
   ],
   "visible_surfaces": [
@@ -41,14 +42,15 @@
   "required_gates": [
     "proto-build",
     "station-api-ownership",
-    "relay-endpoint-discovery-contract"
+    "NCP-G01",
+    "NCP-G07"
   ],
   "acceptance": {
     "service": [
       "Station and Relay return challenge-bound signed endpoint roles through one protobuf contract",
-      "Relay exposes only unexpired public routes whose mount generation is current",
-      "private connection grants are registered before use and consumed atomically",
-      "authenticated Dashboard operators invoke the relay-client issuer through a strict protobuf contract with no-store and no-referrer response policy",
+      "Relay exposes only unexpired public routes whose node enrollment generation is current",
+      "private connection grants are registered before use and atomically converted into source-bound Circuit permits",
+      "authenticated Dashboard operators invoke the Station Relay runtime issuer through a strict protobuf contract with no-store and no-referrer response policy",
       "generated Go, Desktop TypeScript, and Mobile TypeScript bindings derive from one proto"
     ],
     "surface": [

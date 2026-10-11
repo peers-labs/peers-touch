@@ -321,7 +321,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                                     {
                                         "route_id": "relay-primary",
                                         "endpoint_origin": (
-                                            "https://relay.example:4501"
+                                            "https://relay.example:18443"
                                         ),
                                     }
                                 ],
@@ -443,7 +443,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                                         "route_id": "relay-primary",
                                         "route_type": "relay",
                                         "endpoint_origin": (
-                                            "https://relay.example:4501"
+                                            "https://relay.example:18443"
                                         ),
                                         "health": "available",
                                     }
@@ -473,7 +473,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 locator,
                 {
                     "route_type": "direct",
-                    "endpoint_origin": "https://relay.example:4501",
+                    "endpoint_origin": "https://relay.example:18443",
                 },
             )
         )
@@ -483,7 +483,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 locator,
                 {
                     "route_type": "relay",
-                    "endpoint_origin": "https://other.example:4501",
+                    "endpoint_origin": "https://other.example:18443",
                 },
             )
         )
@@ -493,7 +493,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 locator,
                 {
                     "route_type": "relay",
-                    "endpoint_origin": "http://relay.example:4501",
+                    "endpoint_origin": "http://relay.example:18443",
                 },
             )
         )

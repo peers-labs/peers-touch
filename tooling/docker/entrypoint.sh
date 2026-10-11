@@ -27,13 +27,10 @@
 #                                       (Gater: false ⇒ dial only seeds)
 #                                     - federation.direct-inbound
 #                                       (Gater: false ⇒ accept only from seeds)
-#   conf/relay.docker.yml         — relay role only; projects the mandatory
-#                                   listener, TLS, signing-key, operator-policy,
-#                                   and development loopback-exception settings
-#   conf/relay_client.docker.yml  — only when RELAY_CLIENT_ENABLED=true
-#                                   (Station nodes only — turns on the station-side
-#                                    pump that mounts the local Station onto the Relay
-#                                    via /api/v1/relay/register + framed TCP stream)
+#   conf/relay.docker.yml         — relay role only; projects signing and
+#                                   operator policy for Circuit control
+#   conf/relay_pool.docker.yml    — Station role only; configures one standard
+#                                   Circuit Relay target and its control origin
 #   conf/server_host.docker.yml   — only when PEERS_NODE_SERVER_BASEURL is set.
 #                                   Drives:
 #                                     - peers.node.server.baseurl
@@ -58,37 +55,19 @@ case "${PEERS_NODE_ROLE:-}" in
 esac
 
 if [ "$PEERS_NODE_ROLE" = "relay" ]; then
-  : "${RELAY_STREAM_LISTEN_ADDR:?RELAY_STREAM_LISTEN_ADDR is required for relay role}"
   : "${PEERS_NODE_SERVER_BASEURL:?PEERS_NODE_SERVER_BASEURL is required for relay role}"
-  : "${RELAY_SIGNING_KEY_FILE:?RELAY_SIGNING_KEY_FILE is required for relay role}"
+  : "${PEERS_LIBP2P_PUBLIC_ADDRS:?PEERS_LIBP2P_PUBLIC_ADDRS is required for relay role}"
   : "${RELAY_OPERATOR_KEY_FILE:?RELAY_OPERATOR_KEY_FILE is required for relay role}"
   : "${RELAY_OPERATOR_ISSUER:?RELAY_OPERATOR_ISSUER is required for relay role}"
   : "${RELAY_OPERATOR_AUDIENCE:?RELAY_OPERATOR_AUDIENCE is required for relay role}"
   : "${RELAY_OPERATOR_SCOPE:?RELAY_OPERATOR_SCOPE is required for relay role}"
-  case "${RELAY_ALLOW_INSECURE_LOOPBACK:-false}" in
-    true)
-      ;;
-    false)
-      : "${RELAY_TLS_CERT_FILE:?RELAY_TLS_CERT_FILE is required for relay role}"
-      : "${RELAY_TLS_KEY_FILE:?RELAY_TLS_KEY_FILE is required for relay role}"
-      case "$PEERS_NODE_SERVER_BASEURL" in
-        https://*)
-          ;;
-        *)
-          echo "[entrypoint] relay role requires an HTTPS PEERS_NODE_SERVER_BASEURL" >&2
-          exit 1
-          ;;
-      esac
-      ;;
-    *)
-      echo "[entrypoint] RELAY_ALLOW_INSECURE_LOOPBACK must be true or false" >&2
-      exit 1
-      ;;
-  esac
-  if [ "${RELAY_CLIENT_ENABLED:-false}" = "true" ]; then
-    echo "[entrypoint] relay role cannot enable relay-client" >&2
-    exit 1
-  fi
+fi
+
+if [ "$PEERS_NODE_ROLE" = "station" ] &&
+  [ "${STATION_RELAY_ENABLED:-false}" = "true" ]; then
+  : "${STATION_RELAY_PEER_ID:?STATION_RELAY_PEER_ID is required}"
+  : "${STATION_RELAY_MULTIADDR:?STATION_RELAY_MULTIADDR is required}"
+  : "${STATION_RELAY_CONTROL_ORIGIN:?STATION_RELAY_CONTROL_ORIGIN is required}"
 fi
 
 # /app/data is a named volume; subdirectories must be created at runtime
@@ -97,12 +76,14 @@ fi
 #   /app/data/oss                   — OSS local-backend store
 #   /app/data/messaging-attachments — Messaging encrypted attachment blobs
 #   /app/data/social-private-objects — Social encrypted private object blobs
-#   /app/data/libp2pIdentity.key     — transport identity (paths.docker.yml)
-#   /app/data/bootstrap.key          — bootstrap subserver identity (paths.docker.yml)
+#   /app/data/libp2pIdentity.key     — current transport identity (paths.docker.yml)
+#   /app/data/bootstrap.key          — logical Station root identity
+#   /app/data/station-node.key       — bootstrap node identity
 mkdir -p \
   /app/data/oss \
   /app/data/messaging-attachments \
-  /app/data/social-private-objects
+  /app/data/social-private-objects \
+  /app/data/relay-credentials
 
 # ── Node label pattern injection ──────────────────────────────────────────────
 # Expand ${PEERS_NODE_LABEL} in actor.yml using envsubst.
@@ -167,7 +148,8 @@ peers:
     server:
       subserver:
         bootstrap:
-          identity-key: data/bootstrap.key
+          station-root-key-file: data/bootstrap.key
+          node-identity-key-file: data/station-node.key
 EOF
 OVERLAYS="${OVERLAYS}, paths.docker.yml"
 
@@ -231,9 +213,7 @@ if [ -n "$PEERS_BOOTSTRAP_NODES" ] \
   OVERLAYS="${OVERLAYS}, federation.docker.yml"
 fi
 
-# ── relay.docker.yml (Relay subserver TCP stream listener) ──────────────────
-# The relay subserver's TCP listener for station mounts. Emitted only on the
-# Relay node so stations do NOT accidentally accept relay client streams.
+# ── relay.docker.yml (Relay control policy) ─────────────────────────────────
 if [ "$PEERS_NODE_ROLE" = "relay" ]; then
   cat > /app/conf/relay.docker.yml <<EOF
 peers:
@@ -241,11 +221,6 @@ peers:
     server:
       subserver:
         relay:
-          stream-listen-addr: "${RELAY_STREAM_LISTEN_ADDR}"
-          tls-cert-file: "${RELAY_TLS_CERT_FILE:-}"
-          tls-key-file: "${RELAY_TLS_KEY_FILE:-}"
-          allow-insecure-loopback: ${RELAY_ALLOW_INSECURE_LOOPBACK:-false}
-          signing-key-file: "${RELAY_SIGNING_KEY_FILE}"
           operator-key-file: "${RELAY_OPERATOR_KEY_FILE}"
           operator-issuer: "${RELAY_OPERATOR_ISSUER}"
           operator-audience: "${RELAY_OPERATOR_AUDIENCE}"
@@ -254,32 +229,24 @@ EOF
   OVERLAYS="${OVERLAYS}, relay.docker.yml"
 fi
 
-# ── relay_client.docker.yml (Station-side mount onto a remote Relay) ─────────
-# Emitted only when RELAY_CLIENT_ENABLED=true. Stations set this; the Relay
-# itself does NOT — it is the relay endpoint, not a station mounting onto one.
-if [ "$PEERS_NODE_ROLE" = "station" ] && [ "$RELAY_CLIENT_ENABLED" = "true" ]; then
-  : "${RELAY_CLIENT_RELAY_URL:?RELAY_CLIENT_RELAY_URL required when RELAY_CLIENT_ENABLED=true}"
-  : "${RELAY_CLIENT_RELAY_STREAM_ADDR:?RELAY_CLIENT_RELAY_STREAM_ADDR required when RELAY_CLIENT_ENABLED=true}"
-  cat > /app/conf/relay_client.docker.yml <<EOF
+# ── relay_pool.docker.yml (Station standard Circuit target) ─────────────────
+if [ "$PEERS_NODE_ROLE" = "station" ] && [ "${STATION_RELAY_ENABLED:-false}" = "true" ]; then
+  cat > /app/conf/relay_pool.docker.yml <<EOF
 peers:
   node:
-    server:
-      subserver:
-        relay-client:
-          enabled: true
-          relay-url: "${RELAY_CLIENT_RELAY_URL}"
-          relay-stream-addr: "${RELAY_CLIENT_RELAY_STREAM_ADDR}"
-          invite-token: "${RELAY_CLIENT_INVITE_TOKEN:-}"
-          label: "${RELAY_CLIENT_LABEL:-}"
-          local-http-port: ${RELAY_CLIENT_LOCAL_HTTP_PORT:-18080}
-          bootstrap-identity-url: "${RELAY_CLIENT_BOOTSTRAP_IDENTITY_URL:-http://127.0.0.1:18080/sub-bootstrap/station-identity}"
-          token-store-path: "${RELAY_CLIENT_TOKEN_STORE_PATH:-data/relay_token}"
-          use-tls: ${RELAY_CLIENT_USE_TLS:-true}
-          tls-ca-file: "${RELAY_CLIENT_TLS_CA_FILE:-}"
-          tls-insecure-skip-verify: ${RELAY_CLIENT_TLS_INSECURE_SKIP_VERIFY:-false}
-          credential-refresh-interval-sec: ${RELAY_CLIENT_CREDENTIAL_REFRESH_INTERVAL_SEC:-300}
+    relay-pool:
+      mode: custom
+      relays:
+        - peer-id: "${STATION_RELAY_PEER_ID}"
+          addresses:
+            - "${STATION_RELAY_MULTIADDR}"
+          control-origin: "${STATION_RELAY_CONTROL_ORIGIN}"
+          invite-token: "${STATION_RELAY_INVITE_TOKEN:-}"
+          credential-file: "${STATION_RELAY_CREDENTIAL_FILE:-/app/data/relay-credentials/${STATION_RELAY_PEER_ID}.json}"
+          tls-ca-file: "${STATION_RELAY_TLS_CA_FILE:-}"
+          label: "${STATION_RELAY_LABEL:-station}"
 EOF
-  OVERLAYS="${OVERLAYS}, relay_client.docker.yml"
+  OVERLAYS="${OVERLAYS}, relay_pool.docker.yml"
 fi
 
 # ── server_host.docker.yml (per-deployment baseurl) ─────────────────────────
@@ -302,7 +269,7 @@ fi
 # We only append entries the file does not yet mention. Newly emitted overlays
 # are added to the end so hierarchy-merge applies them last.
 if [ -n "$OVERLAYS" ]; then
-  for overlay in store.docker.yml paths.docker.yml federation.docker.yml relay.docker.yml relay_client.docker.yml server_host.docker.yml; do
+  for overlay in store.docker.yml paths.docker.yml federation.docker.yml relay.docker.yml relay_pool.docker.yml server_host.docker.yml; do
     case ",$OVERLAYS," in
       *",$overlay,"*|*", $overlay,"*)
         if ! grep -q "$overlay" /app/conf/peers.yml; then

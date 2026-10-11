@@ -30,7 +30,7 @@ def _config(role: str) -> PosixServiceRuntimeConfig:
         runtime_path=f".peers-touch/runtime/{role}",
         http_port=18080 if role == "station" else 18082,
         public_port=18080 if role == "station" else 18081,
-        stream_port=None if role == "station" else 4501,
+        libp2p_port=None if role == "station" else 4001,
         public_base_url=(
             "http://station.example:18080"
             if role == "station"
@@ -69,7 +69,7 @@ def _status(role: str) -> dict[str, object]:
         "dataOwner": config.data_volume,
         "httpPort": config.http_port,
         "publicPort": config.public_port,
-        "streamPort": config.stream_port,
+        "libp2pPort": config.libp2p_port,
     }
 
 
@@ -91,7 +91,7 @@ class PosixServiceRuntimeTest(unittest.TestCase):
                         "PT_DEPLOY_COMPOSE_SERVICE=relay",
                         "PT_DEPLOY_DATA_VOLUME=pt-relay_peers_data",
                         "PT_DEPLOY_HTTP_PORT=18082",
-                        "PT_DEPLOY_STREAM_PORT=4501",
+                        "PT_DEPLOY_LIBP2P_PORT=4001",
                         "PT_DEPLOY_PUBLIC_BASE_URL=https://10.37.118.48:18081",
                         "PT_DEPLOY_TLS_CA_PATH=/app/relay-secrets/relay-ca.crt",
                         "PT_DEPLOY_OPERATOR_KEY_PATH=/app/relay-secrets/relay-operator.key",
@@ -113,7 +113,7 @@ class PosixServiceRuntimeTest(unittest.TestCase):
         self.assertEqual(config.host, "10.37.118.48")
         self.assertEqual(config.http_port, 18082)
         self.assertEqual(config.public_port, 18081)
-        self.assertEqual(config.stream_port, 4501)
+        self.assertEqual(config.libp2p_port, 4001)
 
     def test_relay_config_rejects_windows_platform(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -192,7 +192,6 @@ class PosixServiceRuntimeTest(unittest.TestCase):
         )
         file_lines = [
             "/app/relay-secrets/relay-operator.key|600|1001|1001|32",
-            "/app/relay-secrets/relay-signing.key|600|1001|1001|32",
             "/app/relay-secrets/relay-tls.key|600|1001|1001|32",
             "/app/relay-secrets/relay-ca.crt|644|1001|1001|512",
             "/app/relay-secrets/relay.crt|644|1001|1001|512",
@@ -240,7 +239,6 @@ class PosixServiceRuntimeTest(unittest.TestCase):
         )
         file_lines = [
             "/app/relay-secrets/relay-operator.key|600|1001|1001|32",
-            "/app/relay-secrets/relay-signing.key|600|1001|1001|32",
             "/app/relay-secrets/relay-tls.key|600|0|0|32",
             "/app/relay-secrets/relay-ca.crt|644|1001|1001|512",
             "/app/relay-secrets/relay.crt|644|1001|1001|512",

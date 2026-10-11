@@ -1,7 +1,7 @@
 ---
 kind: pitfall
 title: First cut of Tier C1 only fired invalidation on tombstone — BY_HANDLE/INDEXED transitions and profile updates left on slow path
-status: active
+status: superseded-by:docs/architecture/platform/runtime/node-connectivity/design.md
 owns:
   - apps/station/frame/touch/actor/locator_hook.go
   - apps/station/frame/touch/actor/profile.go

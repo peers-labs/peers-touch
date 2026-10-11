@@ -355,14 +355,16 @@ func (s *SubServer) federationResolve(c context.Context, ctx *app.RequestContext
 // Response:
 //
 //	{
-//	  "peer_id": "12D3Koo...",
+//	  "station_peer_id": "12D3Koo...",
+//	  "node_peer_id": "12D3Koo...",
 //	  "listen_addrs_raw": ["/ip4/127.0.0.1/tcp/4001"],
 //	  "dial_addrs": ["/ip4/127.0.0.1/tcp/4001/p2p/12D3Koo..."],
 //	  "mdns_enabled": true,
 //	  "dht_mode": "server"
 //	}
 //
-// info returns server basic information (peer ID and listen addresses).
+// info returns the logical Station identity, physical node identity, and
+// node listen addresses.
 func (s *SubServer) info(_ context.Context, ctx *app.RequestContext) {
 	// Collect raw listen addresses
 	var rawAddrs []string
@@ -381,8 +383,10 @@ func (s *SubServer) info(_ context.Context, ctx *app.RequestContext) {
 		}
 	}
 
+	stationPeerID, _ := peer.IDFromPrivateKey(s.opts.StationRootKey)
 	ctx.JSON(http.StatusOK, map[string]interface{}{
-		"peer_id":          s.host.ID().String(),
+		"station_peer_id":  stationPeerID.String(),
+		"node_peer_id":     s.host.ID().String(),
 		"listen_addrs_raw": rawAddrs,
 		"dial_addrs":       dialAddrs,
 		"mdns_enabled":     s.opts.EnableMDNS,

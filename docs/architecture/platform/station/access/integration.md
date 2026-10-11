@@ -49,10 +49,10 @@ Clients:
 owns:
 
 - signed endpoint/route transport contracts;
-- Relay enrollment, mount generation and grants;
+- Relay enrollment, route generation and grants;
 - Relay runtime role and security prerequisites;
-- WSS + inner TLS opaque tunnel;
-- Station peer tunnel adapter and tunnel resource limits.
+- standard Circuit reservation, TLS/HTTP2 ingress and ACL permits;
+- finite Circuit resource limits.
 
 Station Access owns the user-facing effect of those capabilities:
 
@@ -69,7 +69,7 @@ topology mutation remains an operator concern. Relay reachability neither
 creates Federation membership nor supplies a default `federation_id`.
 
 The persisted Actor federated handle remains the only source for
-`ActorRef.acct`; direct, proxied and tunneled requests cannot alter it.
+`ActorRef.acct`; direct and Circuit requests cannot alter it.
 
 ## 5. Persistence And Lifecycle
 
@@ -97,8 +97,8 @@ state. Session and business storage are never keyed by Relay origin.
 - Session tests validate same-class takeover and cross-class coexistence.
 - Native Journeys validate first access, recovery, switching and scoped
   Federation consumption.
-- Node Connectivity Gates validate Relay role, enrollment, discovery and opaque
-  tunnel security.
+- Node Connectivity Gates validate Relay role, enrollment, discovery, Circuit
+  admission and standard-stream security.
 - Architecture module governance validates non-overlapping owners and complete
   active documents.
 
@@ -108,10 +108,10 @@ Station Access documents may reference Relay outcomes required by product
 Journeys and aggregate Acceptance, but they do not define:
 
 - Relay credential fields;
-- mount/enrollment state;
+- node enrollment state;
 - route signature wire;
-- tunnel frame shape;
-- WSS/TLS implementation;
+- Circuit route and permit binding;
+- TLS/HTTP2 ingress implementation;
 - byte/rate/concurrency limits;
 - Relay role allowlist.
 

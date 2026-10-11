@@ -423,7 +423,7 @@ function MobileAppRoot() {
           stationPeerId: identity.stationPeerId,
           url: identity.canonicalOrigin,
         },
-        stationHostPublicKey: route.stationHostPublicKey,
+        stationRootPublicKey: route.stationRootPublicKey,
         route,
       },
       {
@@ -463,7 +463,7 @@ function MobileAppRoot() {
               stationPeerId: identity.stationPeerId,
               url: identity.canonicalOrigin,
             },
-            stationHostPublicKey: route.stationHostPublicKey,
+            stationRootPublicKey: route.stationRootPublicKey,
             route,
           },
           {

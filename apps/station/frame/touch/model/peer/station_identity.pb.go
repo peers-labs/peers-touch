@@ -67,23 +67,224 @@ func (x *StationIdentityRequest) GetChallenge() []byte {
 	return nil
 }
 
-// StationIdentityStatement is the deterministic payload signed by the
-// Station's libp2p Ed25519 host key. Capabilities are sorted by UTF-8 bytes.
+// StationCapabilitySet is sorted by UTF-8 bytes before deterministic
+// serialization and hashing.
+type StationCapabilitySet struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Capabilities  []string               `protobuf:"bytes,1,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StationCapabilitySet) Reset() {
+	*x = StationCapabilitySet{}
+	mi := &file_domain_peer_station_identity_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StationCapabilitySet) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StationCapabilitySet) ProtoMessage() {}
+
+func (x *StationCapabilitySet) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_peer_station_identity_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StationCapabilitySet.ProtoReflect.Descriptor instead.
+func (*StationCapabilitySet) Descriptor() ([]byte, []int) {
+	return file_domain_peer_station_identity_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *StationCapabilitySet) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+// StationNodeAuthorizationStatement delegates one logical Station root to one
+// independently keyed physical node.
+type StationNodeAuthorizationStatement struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	StationPeerId      string                 `protobuf:"bytes,1,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
+	NodePeerId         string                 `protobuf:"bytes,2,opt,name=node_peer_id,json=nodePeerId,proto3" json:"node_peer_id,omitempty"`
+	NodePublicKey      []byte                 `protobuf:"bytes,3,opt,name=node_public_key,json=nodePublicKey,proto3" json:"node_public_key,omitempty"`
+	AuthorizationEpoch uint64                 `protobuf:"varint,4,opt,name=authorization_epoch,json=authorizationEpoch,proto3" json:"authorization_epoch,omitempty"`
+	CapabilitiesDigest []byte                 `protobuf:"bytes,5,opt,name=capabilities_digest,json=capabilitiesDigest,proto3" json:"capabilities_digest,omitempty"`
+	IssuedAtUnixMs     int64                  `protobuf:"varint,6,opt,name=issued_at_unix_ms,json=issuedAtUnixMs,proto3" json:"issued_at_unix_ms,omitempty"`
+	ExpiresAtUnixMs    int64                  `protobuf:"varint,7,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *StationNodeAuthorizationStatement) Reset() {
+	*x = StationNodeAuthorizationStatement{}
+	mi := &file_domain_peer_station_identity_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StationNodeAuthorizationStatement) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StationNodeAuthorizationStatement) ProtoMessage() {}
+
+func (x *StationNodeAuthorizationStatement) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_peer_station_identity_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StationNodeAuthorizationStatement.ProtoReflect.Descriptor instead.
+func (*StationNodeAuthorizationStatement) Descriptor() ([]byte, []int) {
+	return file_domain_peer_station_identity_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *StationNodeAuthorizationStatement) GetStationPeerId() string {
+	if x != nil {
+		return x.StationPeerId
+	}
+	return ""
+}
+
+func (x *StationNodeAuthorizationStatement) GetNodePeerId() string {
+	if x != nil {
+		return x.NodePeerId
+	}
+	return ""
+}
+
+func (x *StationNodeAuthorizationStatement) GetNodePublicKey() []byte {
+	if x != nil {
+		return x.NodePublicKey
+	}
+	return nil
+}
+
+func (x *StationNodeAuthorizationStatement) GetAuthorizationEpoch() uint64 {
+	if x != nil {
+		return x.AuthorizationEpoch
+	}
+	return 0
+}
+
+func (x *StationNodeAuthorizationStatement) GetCapabilitiesDigest() []byte {
+	if x != nil {
+		return x.CapabilitiesDigest
+	}
+	return nil
+}
+
+func (x *StationNodeAuthorizationStatement) GetIssuedAtUnixMs() int64 {
+	if x != nil {
+		return x.IssuedAtUnixMs
+	}
+	return 0
+}
+
+func (x *StationNodeAuthorizationStatement) GetExpiresAtUnixMs() int64 {
+	if x != nil {
+		return x.ExpiresAtUnixMs
+	}
+	return 0
+}
+
+type StationNodeAuthorization struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	StatementBytes       []byte                 `protobuf:"bytes,1,opt,name=statement_bytes,json=statementBytes,proto3" json:"statement_bytes,omitempty"`
+	StationRootPublicKey []byte                 `protobuf:"bytes,2,opt,name=station_root_public_key,json=stationRootPublicKey,proto3" json:"station_root_public_key,omitempty"`
+	RootSignature        []byte                 `protobuf:"bytes,3,opt,name=root_signature,json=rootSignature,proto3" json:"root_signature,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *StationNodeAuthorization) Reset() {
+	*x = StationNodeAuthorization{}
+	mi := &file_domain_peer_station_identity_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StationNodeAuthorization) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StationNodeAuthorization) ProtoMessage() {}
+
+func (x *StationNodeAuthorization) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_peer_station_identity_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StationNodeAuthorization.ProtoReflect.Descriptor instead.
+func (*StationNodeAuthorization) Descriptor() ([]byte, []int) {
+	return file_domain_peer_station_identity_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *StationNodeAuthorization) GetStatementBytes() []byte {
+	if x != nil {
+		return x.StatementBytes
+	}
+	return nil
+}
+
+func (x *StationNodeAuthorization) GetStationRootPublicKey() []byte {
+	if x != nil {
+		return x.StationRootPublicKey
+	}
+	return nil
+}
+
+func (x *StationNodeAuthorization) GetRootSignature() []byte {
+	if x != nil {
+		return x.RootSignature
+	}
+	return nil
+}
+
+// StationIdentityStatement is the deterministic challenge-bound payload signed
+// by the authorized node key. Capabilities are sorted by UTF-8 bytes.
 type StationIdentityStatement struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Challenge       []byte                 `protobuf:"bytes,1,opt,name=challenge,proto3" json:"challenge,omitempty"`
-	StationPeerId   string                 `protobuf:"bytes,2,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
-	CanonicalOrigin string                 `protobuf:"bytes,3,opt,name=canonical_origin,json=canonicalOrigin,proto3" json:"canonical_origin,omitempty"`
-	Capabilities    []string               `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
-	IssuedAtUnixMs  int64                  `protobuf:"varint,5,opt,name=issued_at_unix_ms,json=issuedAtUnixMs,proto3" json:"issued_at_unix_ms,omitempty"`
-	ExpiresAtUnixMs int64                  `protobuf:"varint,6,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	Challenge               []byte                 `protobuf:"bytes,1,opt,name=challenge,proto3" json:"challenge,omitempty"`
+	StationPeerId           string                 `protobuf:"bytes,2,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
+	CanonicalOrigin         string                 `protobuf:"bytes,3,opt,name=canonical_origin,json=canonicalOrigin,proto3" json:"canonical_origin,omitempty"`
+	Capabilities            []string               `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	IssuedAtUnixMs          int64                  `protobuf:"varint,5,opt,name=issued_at_unix_ms,json=issuedAtUnixMs,proto3" json:"issued_at_unix_ms,omitempty"`
+	ExpiresAtUnixMs         int64                  `protobuf:"varint,6,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
+	NodeAuthorizationDigest []byte                 `protobuf:"bytes,7,opt,name=node_authorization_digest,json=nodeAuthorizationDigest,proto3" json:"node_authorization_digest,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *StationIdentityStatement) Reset() {
 	*x = StationIdentityStatement{}
-	mi := &file_domain_peer_station_identity_proto_msgTypes[1]
+	mi := &file_domain_peer_station_identity_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -95,7 +296,7 @@ func (x *StationIdentityStatement) String() string {
 func (*StationIdentityStatement) ProtoMessage() {}
 
 func (x *StationIdentityStatement) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_peer_station_identity_proto_msgTypes[1]
+	mi := &file_domain_peer_station_identity_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -108,7 +309,7 @@ func (x *StationIdentityStatement) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StationIdentityStatement.ProtoReflect.Descriptor instead.
 func (*StationIdentityStatement) Descriptor() ([]byte, []int) {
-	return file_domain_peer_station_identity_proto_rawDescGZIP(), []int{1}
+	return file_domain_peer_station_identity_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *StationIdentityStatement) GetChallenge() []byte {
@@ -153,18 +354,25 @@ func (x *StationIdentityStatement) GetExpiresAtUnixMs() int64 {
 	return 0
 }
 
+func (x *StationIdentityStatement) GetNodeAuthorizationDigest() []byte {
+	if x != nil {
+		return x.NodeAuthorizationDigest
+	}
+	return nil
+}
+
 type StationIdentityResponse struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	StatementBytes []byte                 `protobuf:"bytes,1,opt,name=statement_bytes,json=statementBytes,proto3" json:"statement_bytes,omitempty"`
-	HostPublicKey  []byte                 `protobuf:"bytes,2,opt,name=host_public_key,json=hostPublicKey,proto3" json:"host_public_key,omitempty"`
-	Signature      []byte                 `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state             protoimpl.MessageState    `protogen:"open.v1"`
+	StatementBytes    []byte                    `protobuf:"bytes,1,opt,name=statement_bytes,json=statementBytes,proto3" json:"statement_bytes,omitempty"`
+	NodeSignature     []byte                    `protobuf:"bytes,2,opt,name=node_signature,json=nodeSignature,proto3" json:"node_signature,omitempty"`
+	NodeAuthorization *StationNodeAuthorization `protobuf:"bytes,3,opt,name=node_authorization,json=nodeAuthorization,proto3" json:"node_authorization,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *StationIdentityResponse) Reset() {
 	*x = StationIdentityResponse{}
-	mi := &file_domain_peer_station_identity_proto_msgTypes[2]
+	mi := &file_domain_peer_station_identity_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -176,7 +384,7 @@ func (x *StationIdentityResponse) String() string {
 func (*StationIdentityResponse) ProtoMessage() {}
 
 func (x *StationIdentityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_peer_station_identity_proto_msgTypes[2]
+	mi := &file_domain_peer_station_identity_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -189,7 +397,7 @@ func (x *StationIdentityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StationIdentityResponse.ProtoReflect.Descriptor instead.
 func (*StationIdentityResponse) Descriptor() ([]byte, []int) {
-	return file_domain_peer_station_identity_proto_rawDescGZIP(), []int{2}
+	return file_domain_peer_station_identity_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *StationIdentityResponse) GetStatementBytes() []byte {
@@ -199,16 +407,16 @@ func (x *StationIdentityResponse) GetStatementBytes() []byte {
 	return nil
 }
 
-func (x *StationIdentityResponse) GetHostPublicKey() []byte {
+func (x *StationIdentityResponse) GetNodeSignature() []byte {
 	if x != nil {
-		return x.HostPublicKey
+		return x.NodeSignature
 	}
 	return nil
 }
 
-func (x *StationIdentityResponse) GetSignature() []byte {
+func (x *StationIdentityResponse) GetNodeAuthorization() *StationNodeAuthorization {
 	if x != nil {
-		return x.Signature
+		return x.NodeAuthorization
 	}
 	return nil
 }
@@ -219,18 +427,34 @@ const file_domain_peer_station_identity_proto_rawDesc = "" +
 	"\n" +
 	"\"domain/peer/station_identity.proto\x12\x19peers_touch.model.peer.v1\"6\n" +
 	"\x16StationIdentityRequest\x12\x1c\n" +
-	"\tchallenge\x18\x01 \x01(\fR\tchallenge\"\x87\x02\n" +
+	"\tchallenge\x18\x01 \x01(\fR\tchallenge\":\n" +
+	"\x14StationCapabilitySet\x12\"\n" +
+	"\fcapabilities\x18\x01 \x03(\tR\fcapabilities\"\xcf\x02\n" +
+	"!StationNodeAuthorizationStatement\x12&\n" +
+	"\x0fstation_peer_id\x18\x01 \x01(\tR\rstationPeerId\x12 \n" +
+	"\fnode_peer_id\x18\x02 \x01(\tR\n" +
+	"nodePeerId\x12&\n" +
+	"\x0fnode_public_key\x18\x03 \x01(\fR\rnodePublicKey\x12/\n" +
+	"\x13authorization_epoch\x18\x04 \x01(\x04R\x12authorizationEpoch\x12/\n" +
+	"\x13capabilities_digest\x18\x05 \x01(\fR\x12capabilitiesDigest\x12)\n" +
+	"\x11issued_at_unix_ms\x18\x06 \x01(\x03R\x0eissuedAtUnixMs\x12+\n" +
+	"\x12expires_at_unix_ms\x18\a \x01(\x03R\x0fexpiresAtUnixMs\"\xa1\x01\n" +
+	"\x18StationNodeAuthorization\x12'\n" +
+	"\x0fstatement_bytes\x18\x01 \x01(\fR\x0estatementBytes\x125\n" +
+	"\x17station_root_public_key\x18\x02 \x01(\fR\x14stationRootPublicKey\x12%\n" +
+	"\x0eroot_signature\x18\x03 \x01(\fR\rrootSignature\"\xc3\x02\n" +
 	"\x18StationIdentityStatement\x12\x1c\n" +
 	"\tchallenge\x18\x01 \x01(\fR\tchallenge\x12&\n" +
 	"\x0fstation_peer_id\x18\x02 \x01(\tR\rstationPeerId\x12)\n" +
 	"\x10canonical_origin\x18\x03 \x01(\tR\x0fcanonicalOrigin\x12\"\n" +
 	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\x12)\n" +
 	"\x11issued_at_unix_ms\x18\x05 \x01(\x03R\x0eissuedAtUnixMs\x12+\n" +
-	"\x12expires_at_unix_ms\x18\x06 \x01(\x03R\x0fexpiresAtUnixMs\"\x88\x01\n" +
+	"\x12expires_at_unix_ms\x18\x06 \x01(\x03R\x0fexpiresAtUnixMs\x12:\n" +
+	"\x19node_authorization_digest\x18\a \x01(\fR\x17nodeAuthorizationDigest\"\xcd\x01\n" +
 	"\x17StationIdentityResponse\x12'\n" +
-	"\x0fstatement_bytes\x18\x01 \x01(\fR\x0estatementBytes\x12&\n" +
-	"\x0fhost_public_key\x18\x02 \x01(\fR\rhostPublicKey\x12\x1c\n" +
-	"\tsignature\x18\x03 \x01(\fR\tsignatureBGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/peer;peerb\x06proto3"
+	"\x0fstatement_bytes\x18\x01 \x01(\fR\x0estatementBytes\x12%\n" +
+	"\x0enode_signature\x18\x02 \x01(\fR\rnodeSignature\x12b\n" +
+	"\x12node_authorization\x18\x03 \x01(\v23.peers_touch.model.peer.v1.StationNodeAuthorizationR\x11nodeAuthorizationBGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/peer;peerb\x06proto3"
 
 var (
 	file_domain_peer_station_identity_proto_rawDescOnce sync.Once
@@ -244,18 +468,22 @@ func file_domain_peer_station_identity_proto_rawDescGZIP() []byte {
 	return file_domain_peer_station_identity_proto_rawDescData
 }
 
-var file_domain_peer_station_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_domain_peer_station_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_domain_peer_station_identity_proto_goTypes = []any{
-	(*StationIdentityRequest)(nil),   // 0: peers_touch.model.peer.v1.StationIdentityRequest
-	(*StationIdentityStatement)(nil), // 1: peers_touch.model.peer.v1.StationIdentityStatement
-	(*StationIdentityResponse)(nil),  // 2: peers_touch.model.peer.v1.StationIdentityResponse
+	(*StationIdentityRequest)(nil),            // 0: peers_touch.model.peer.v1.StationIdentityRequest
+	(*StationCapabilitySet)(nil),              // 1: peers_touch.model.peer.v1.StationCapabilitySet
+	(*StationNodeAuthorizationStatement)(nil), // 2: peers_touch.model.peer.v1.StationNodeAuthorizationStatement
+	(*StationNodeAuthorization)(nil),          // 3: peers_touch.model.peer.v1.StationNodeAuthorization
+	(*StationIdentityStatement)(nil),          // 4: peers_touch.model.peer.v1.StationIdentityStatement
+	(*StationIdentityResponse)(nil),           // 5: peers_touch.model.peer.v1.StationIdentityResponse
 }
 var file_domain_peer_station_identity_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	3, // 0: peers_touch.model.peer.v1.StationIdentityResponse.node_authorization:type_name -> peers_touch.model.peer.v1.StationNodeAuthorization
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_domain_peer_station_identity_proto_init() }
@@ -269,7 +497,7 @@ func file_domain_peer_station_identity_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_peer_station_identity_proto_rawDesc), len(file_domain_peer_station_identity_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

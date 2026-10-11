@@ -3,6 +3,7 @@ package native
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/signal"
 	"syscall"
@@ -24,7 +25,8 @@ var (
 )
 
 type native struct {
-	opts *node.Options
+	opts   *node.Options
+	kernel *p2pKernel
 	node.AbstractService
 }
 
@@ -59,6 +61,9 @@ func (s *native) Start(ctx context.Context) error {
 		if err := fn(); err != nil {
 			return err
 		}
+	}
+	if err := s.kernel.Start(ctx); err != nil {
+		return errors.Join(err, s.kernel.Close())
 	}
 
 	ready := make(chan interface{})
@@ -112,12 +117,15 @@ func (s *native) Stop(ctx context.Context) error {
 	logger.Infof(ctx, "stop native peers' node. begin to execute stop hooks")
 
 	if err := s.opts.Server.Stop(ctx); err != nil {
-		return err
+		gerr = errors.Join(gerr, err)
+	}
+	if err := s.kernel.Close(); err != nil {
+		gerr = errors.Join(gerr, err)
 	}
 
 	logger.Infof(ctx, "stop native peers' node. begin to execute config close")
 	if err := s.opts.Config.Close(); err != nil {
-		return err
+		gerr = errors.Join(gerr, err)
 	}
 
 	logger.Infof(ctx, "stop native peers' node. begin to execute after stop hooks")

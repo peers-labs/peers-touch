@@ -352,6 +352,49 @@
       "tier": "ci-structure",
       "description": "Parse Station handler registrations with Go AST and fail closed on API ownership, canonical route, owner root, superseded proto, and forbidden truth-store violations."
     },
+    "NCP-G01": {
+      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-standard-stream --gate NCP-G01",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove two authorized Station node keys under one logical root, exact libp2p PeerID and TLS SPKI binding, direct and Circuit authentication, pre-credential spoof rejection, and borrowed Host lifecycle."
+    },
+    "NCP-G02": {
+      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-standard-stream --gate NCP-G02",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove standard TLS 1.3 HTTP/2 over direct and Circuit libp2p streams reaches the existing Hertz router with route parameters, wrappers, canonical protobuf errors, SSE Flush, streamed attachment bodies, cancellation, and untrusted peer-header stripping."
+    },
+    "NCP-G03": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.node_connectivity_native_e2e"
+      ],
+      "timeout_seconds": 3600,
+      "environment": "station-access-relay-role",
+      "provisioner": "station-access-relay-role",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Run two exact-source Native Desktop actors through the standard Circuit route and prove receiver-visible text, DELIVERED and READ receipts, plus receiver-opened 32 MiB attachment byte identity."
+    },
+    "NCP-G07": {
+      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-native-cut --gate NCP-G07",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove bounded standard Circuit admission: enrolled reservation, public route, source-bound one-use permit, same-generation renewal, expiry, and revoke fail closed."
+    },
+    "NCP-G08": {
+      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-native-cut --gate NCP-G08",
+      "timeout_seconds": 420,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Aggregate Rust-Go Circuit interop, Relay ACL semantics, and the zero-old-data-plane inventory for the atomic native transport cut."
+    },
     "station-access-capability-contract": {
       "command": "python3 -m tooling.acceptance.gates.station_access.capability_contract",
       "timeout_seconds": 180,
@@ -366,51 +409,6 @@
       "provisioner": "station-access-relay-role",
       "tier": "env-evidence",
       "description": "Validate explicit Station/Relay composition and attach to exact-source Linux/POSIX owner-managed runtimes to prove isolated processes, live route inventory, TLS 1.3-only negotiation, dedicated operator protection, restricted secret modes, positive quotas, deployment wiring, and zero hardcoded debug egress."
-    },
-    "relay-station-enrollment-e2e": {
-      "argv": [
-        "python3",
-        "-m",
-        "tooling.acceptance.gates.station_access.relay_enrollment_e2e"
-      ],
-      "ephemeralCapabilities": [
-        "station-access.relay-enrollment-operator"
-      ],
-      "timeout_seconds": 1200,
-      "environment": "station-access-relay-role",
-      "provisioner": "station-access-relay-role",
-      "tier": "env-evidence",
-      "description": "Prove Linux Station host-key PoP enrollment through the one Linux Relay, hash-only one-time invites, Relay EdDSA credential rotation, generation revoke, stream closure, and explicit re-enrollment."
-    },
-    "relay-endpoint-discovery-contract": {
-      "argv": [
-        "python3",
-        "-m",
-        "tooling.acceptance.gates.station_access.relay_endpoint_discovery_contract"
-      ],
-      "ephemeralCapabilities": [
-        "station-access.endpoint-discovery-probe"
-      ],
-      "timeout_seconds": 1200,
-      "environment": "station-access-relay-role",
-      "provisioner": "station-access-relay-role",
-      "tier": "env-evidence",
-      "description": "Prove challenge-bound signed Station and Relay discovery plus the authenticated, non-cacheable Dashboard connection-material issuance boundary."
-    },
-    "relay-opaque-tunnel-e2e": {
-      "argv": [
-        "python3",
-        "-m",
-        "tooling.acceptance.gates.station_access.relay_opaque_tunnel_e2e"
-      ],
-      "ephemeralCapabilities": [
-        "station-access.relay-opaque-tunnel"
-      ],
-      "timeout_seconds": 1200,
-      "environment": "station-access-relay-role",
-      "provisioner": "station-access-relay-role",
-      "tier": "env-evidence",
-      "description": "Prove the exact-source binary Relay tunnel, Station-owned inner TLS 1.3 and SPKI binding, bounded framing, protocol rejection, and opaque payload handling."
     },
     "station-access-desktop-relay-native-e2e": {
       "argv": [
@@ -462,7 +460,7 @@
       "timeout_seconds": 180,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Require current-source DONE and PROVEN evidence for Relay role isolation, enrollment, signed discovery, and opaque tunnel security."
+      "description": "Require current-source DONE and PROVEN evidence for Relay role isolation, enrollment, signed discovery, standard Circuit admission, and native route security."
     },
     "unified-relay-station-access-aggregate-e2e": {
       "command": "python3 -m tooling.acceptance.gates.station_access.relay_aggregate",

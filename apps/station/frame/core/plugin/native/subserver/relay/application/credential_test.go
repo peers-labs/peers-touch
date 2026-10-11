@@ -8,21 +8,21 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
 )
 
-func TestMountCredentialUsesRelayEdDSAClaims(t *testing.T) {
+func TestNodeCredentialUsesRelayEdDSAClaims(t *testing.T) {
 	authority, err := NewCredentialAuthority(
-		[]byte("relay-signing-material-for-credential-test"),
+		[]byte("relay-host-material-for-credential-test"),
 	)
 	if err != nil {
 		t.Fatalf("create credential authority: %v", err)
 	}
-	mount := &domain.Mount{
+	enrollment := &domain.Enrollment{
 		ID:            42,
 		StationPeerID: "station-peer",
 		Generation:    7,
 	}
-	credential, err := authority.IssueMountCredential(mount, "credential-jti")
+	credential, err := authority.IssueNodeCredential(enrollment, "credential-jti")
 	if err != nil {
-		t.Fatalf("issue mount credential: %v", err)
+		t.Fatalf("issue enrollment credential: %v", err)
 	}
 
 	claims := &credentialClaims{}
@@ -31,7 +31,7 @@ func TestMountCredentialUsesRelayEdDSAClaims(t *testing.T) {
 		claims,
 	)
 	if err != nil {
-		t.Fatalf("parse mount credential: %v", err)
+		t.Fatalf("parse enrollment credential: %v", err)
 	}
 	if token.Method.Alg() != jwt.SigningMethodEdDSA.Alg() {
 		t.Fatalf("algorithm = %q, want EdDSA", token.Method.Alg())
@@ -40,20 +40,18 @@ func TestMountCredentialUsesRelayEdDSAClaims(t *testing.T) {
 		t.Fatalf("issuer = %q, want %q", claims.Issuer, authority.RelayPeerID())
 	}
 	if len(claims.Audience) != 1 ||
-		claims.Audience[0] != domain.MountCredentialAudience {
+		claims.Audience[0] != domain.NodeCredentialAudience {
 		t.Fatalf("audience = %v", claims.Audience)
 	}
 	if claims.ID != "credential-jti" ||
-		claims.StationPeerID != mount.StationPeerID ||
-		claims.MountID != mount.ID ||
-		claims.Generation != mount.Generation {
-		t.Fatalf("mount claims were not preserved: %+v", claims)
+		claims.StationPeerID != enrollment.StationPeerID ||
+		claims.EnrollmentID != enrollment.ID ||
+		claims.Generation != enrollment.Generation {
+		t.Fatalf("enrollment claims were not preserved: %+v", claims)
 	}
 	for _, required := range []string{
-		domain.ScopeMountConnect,
-		domain.ScopeMountRotate,
+		domain.ScopeNodeRotate,
 		domain.ScopeRoutePublish,
-		domain.ScopePeerTunnel,
 	} {
 		if !containsScope(claims.Scopes, required) {
 			t.Fatalf("scope %q missing from %v", required, claims.Scopes)
@@ -62,11 +60,11 @@ func TestMountCredentialUsesRelayEdDSAClaims(t *testing.T) {
 
 	identity, err := authority.ValidateCredential(
 		credential.Token,
-		domain.MountCredentialAudience,
-		domain.ScopeMountRotate,
+		domain.NodeCredentialAudience,
+		domain.ScopeNodeRotate,
 	)
 	if err != nil {
-		t.Fatalf("validate mount credential: %v", err)
+		t.Fatalf("validate enrollment credential: %v", err)
 	}
 	if identity.JTI != "credential-jti" ||
 		!identity.ExpiresAt.After(time.Now()) {
@@ -74,19 +72,19 @@ func TestMountCredentialUsesRelayEdDSAClaims(t *testing.T) {
 	}
 	if _, err := authority.ValidateCredential(
 		credential.Token,
-		domain.MountCredentialAudience,
+		domain.NodeCredentialAudience,
 		"relay.unknown",
 	); err == nil {
-		t.Fatal("mount credential was accepted for an unknown scope")
+		t.Fatal("enrollment credential was accepted for an unknown scope")
 	}
 }
 
 func TestInviteDigestIsKeyedAndDoesNotEqualSecret(t *testing.T) {
-	first, err := NewCredentialAuthority([]byte("first-relay-signing-material-32-bytes"))
+	first, err := NewCredentialAuthority([]byte("first-relay-host-material-32-bytes"))
 	if err != nil {
 		t.Fatalf("create first authority: %v", err)
 	}
-	second, err := NewCredentialAuthority([]byte("second-relay-signing-material-32-bytes"))
+	second, err := NewCredentialAuthority([]byte("second-relay-host-material-32-bytes"))
 	if err != nil {
 		t.Fatalf("create second authority: %v", err)
 	}
