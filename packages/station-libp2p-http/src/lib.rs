@@ -60,7 +60,7 @@ pub struct Response {
 }
 
 pub struct BodyReader {
-    receiver: mpsc::Receiver<Result<Vec<u8>, String>>,
+    receiver: tokio_mpsc::Receiver<Result<Vec<u8>, String>>,
     current: Cursor<Vec<u8>>,
     complete: bool,
 }
@@ -73,16 +73,16 @@ impl Read for BodyReader {
         if self.complete {
             return Ok(0);
         }
-        match self.receiver.recv() {
-            Ok(Ok(bytes)) => {
+        match self.receiver.blocking_recv() {
+            Some(Ok(bytes)) => {
                 self.current = Cursor::new(bytes);
                 self.current.read(output)
             }
-            Ok(Err(error)) => {
+            Some(Err(error)) => {
                 self.complete = true;
                 Err(io::Error::other(error))
             }
-            Err(_) => {
+            None => {
                 self.complete = true;
                 Ok(0)
             }
@@ -454,7 +454,7 @@ async fn execute_request(
     let status = response.status();
     let headers = response.headers().clone();
     let mut body = response.into_body();
-    let (body_sender, body_receiver) = mpsc::sync_channel(8);
+    let (body_sender, body_receiver) = tokio_mpsc::channel(8);
     reply
         .send(Ok(Response {
             status,
@@ -470,13 +470,13 @@ async fn execute_request(
         match next {
             Ok(bytes) => {
                 let length = bytes.len();
-                if body_sender.send(Ok(bytes.to_vec())).is_err() {
+                if body_sender.send(Ok(bytes.to_vec())).await.is_err() {
                     return Ok(());
                 }
                 let _ = body.flow_control().release_capacity(length);
             }
             Err(error) => {
-                let _ = body_sender.send(Err(error.to_string()));
+                let _ = body_sender.send(Err(error.to_string())).await;
                 return Ok(());
             }
         }
