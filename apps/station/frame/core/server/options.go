@@ -52,7 +52,7 @@ type Options struct {
 	// These wrappers are applied before handler-specific wrappers
 	GlobalWrappers []Wrapper
 
-	// SubserverInstances holds the initialised Subserver instances keyed by name.
+	// SubserverInstances holds instances keyed by their registration name.
 	// Populated by BaseServer.init() after each subserver is created and initialised,
 	// so that any subserver (e.g. dashboard) can discover its siblings at Start time.
 	SubserverInstances map[string]Subserver
