@@ -1515,24 +1515,36 @@ function desktopListenerPid(clientId, client) {
 }
 
 function desktopExecutable(clientId, pid) {
+  const processCommand = execFileSync(
+    'ps',
+    ['-p', String(pid), '-o', 'comm='],
+    { encoding: 'utf8' },
+  ).trim();
+  const executableName = path.basename(processCommand);
   const output = execFileSync(
     'lsof',
     ['-nP', '-a', '-p', String(pid), '-d', 'txt', '-Fn'],
     { encoding: 'utf8' },
   );
-  const candidates = [...new Set(
-    output
+  const candidates = desktopExecutableCandidates(output, executableName);
+  assertContract(
+    /^peers-touch-[a-z0-9][a-z0-9-]*$/.test(executableName)
+      && candidates.length === 1,
+    'DESKTOP_EXECUTABLE_IDENTITY_INVALID',
+    `${clientId} native executable is ambiguous: `
+      + `${executableName} -> ${candidates.join(', ')}`,
+  );
+  return candidates[0];
+}
+
+function desktopExecutableCandidates(lsofOutput, executableName) {
+  return [...new Set(
+    lsofOutput
       .split('\n')
       .filter((line) => line.startsWith('n'))
       .map((line) => line.slice(1))
-      .filter((candidate) => path.basename(candidate) === 'peers-touch-desktop'),
+      .filter((candidate) => path.basename(candidate) === executableName),
   )];
-  assertContract(
-    candidates.length === 1,
-    'DESKTOP_EXECUTABLE_IDENTITY_INVALID',
-    `${clientId} native executable is ambiguous: ${candidates.join(', ')}`,
-  );
-  return candidates[0];
 }
 
 function processEnvironmentValue(command, key) {
@@ -10206,6 +10218,20 @@ function selfTest(matrix) {
       ),
     'SELF_TEST_DESKTOP_ACTIVATION_RESTORE',
     'Desktop activation restore must survive a restarted owner process',
+  );
+  assertContract(
+    desktopExecutableCandidates(
+      [
+        'p42',
+        'ftxt',
+        'n/runtime/peers-touch-mwpu-9184c533-bob',
+        'ftxt',
+        'n/usr/lib/dyld',
+      ].join('\n'),
+      'peers-touch-mwpu-9184c533-bob',
+    )[0] === '/runtime/peers-touch-mwpu-9184c533-bob',
+    'SELF_TEST_DESKTOP_EXECUTABLE_IDENTITY',
+    'Desktop executable identity must allow a PID-owned runtime-unique binary',
   );
   assertContract(
     retryCallSurfaceIsTerminal('desktop', { state: 'no-answer' })
