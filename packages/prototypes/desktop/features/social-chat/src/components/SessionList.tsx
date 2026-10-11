@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import { Pin, BellOff, EyeOff, Trash2, CheckCheck, Volume2, VolumeX, Plus, RefreshCw, UserPlus, Users, X } from 'lucide-react';
+import { useState, useMemo, type ReactNode } from 'react';
+import { Pin, BellOff, EyeOff, Trash2, CheckCheck, Volume2, VolumeX, Plus, RefreshCw, UserPlus, Users, X, Search, MessageSquare } from 'lucide-react';
 import { Button } from '@lobehub/ui';
 import { Alert } from 'antd';
 import { Flexbox } from 'react-layout-kit';
@@ -148,6 +148,48 @@ export function SessionList({
     () => new Set(),
   );
   const [groupError, setGroupError] = useState('');
+  const [searchText, setSearchText] = useState('');
+
+  const searchQuery = searchText.trim().toLowerCase();
+
+  const visibleConversations = useMemo(() => {
+    if (!searchQuery) return conversations;
+    return conversations.filter((conversation) => {
+      const haystack = [
+        conversation.name,
+        conversation.lastMessage,
+        conversation.trustLabel,
+        conversation.detailHint,
+      ].join(' ').toLowerCase();
+      return haystack.includes(searchQuery);
+    });
+  }, [conversations, searchQuery]);
+
+  // Contacts not already represented by an open conversation, offered as a
+  // direct-open row in the search dropdown (matches ChatSearchDropdown).
+  const openPeerIds = useMemo(
+    () => new Set(conversations.map((conversation) => conversation.peerPtid).filter(Boolean)),
+    [conversations],
+  );
+  const searchContacts = useMemo(() => {
+    if (!searchQuery) return [];
+    return CONTACTS.filter((contact) => {
+      if (openPeerIds.has(contact.id)) return false;
+      const haystack = [
+        contact.name,
+        contact.username,
+        contact.federatedHandle,
+        contact.homeStation,
+        contact.federationName,
+      ].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(searchQuery);
+    }).slice(0, 6);
+  }, [searchQuery, openPeerIds]);
+
+  const openContactDirect = (name: string, peerId: string) => {
+    onCreateFriend(name, peerId);
+    setSearchText('');
+  };
 
   const closeCreateSurface = () => {
     setCreateMenuOpen(false);
@@ -420,7 +462,7 @@ export function SessionList({
       )}
 
       {/* Search */}
-      <div style={{ padding: `${T.space2}px ${T.space3}px` }}>
+      <div style={{ padding: `${T.space2}px ${T.space3}px`, position: 'relative' }}>
         <div
           style={{
             height: 32,
@@ -428,23 +470,137 @@ export function SessionList({
             background: T.bgMuted,
             display: 'flex',
             alignItems: 'center',
-            padding: `0 ${T.space3}px`,
+            padding: `0 ${T.space2}px`,
             gap: T.space2,
-            color: T.textTertiary,
-            fontSize: T.fontMd,
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="8" />
-            <path d="m21 21-4.35-4.35" />
-          </svg>
-          <span>Search</span>
+          <Search size={14} color={T.textQuaternary} aria-hidden />
+          <input
+            data-chat-session-search
+            value={searchText}
+            onChange={(event) => setSearchText(event.target.value)}
+            placeholder="Search"
+            aria-label="Search conversations and contacts"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              border: 'none',
+              outline: 'none',
+              background: 'transparent',
+              color: T.text,
+              fontSize: T.fontMd,
+            }}
+          />
+          {searchText ? (
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => setSearchText('')}
+              style={{ border: 'none', background: 'transparent', color: T.textQuaternary, cursor: 'pointer', display: 'flex', padding: 0 }}
+            >
+              <X size={14} />
+            </button>
+          ) : null}
         </div>
+        {searchQuery ? (
+          <div
+            data-chat-search-dropdown
+            style={{
+              position: 'absolute',
+              top: 'calc(100% - 4px)',
+              left: T.space3,
+              right: T.space3,
+              zIndex: 40,
+              maxHeight: 320,
+              overflowY: 'auto',
+              border: `1px solid ${T.border}`,
+              borderRadius: T.radiusLg,
+              background: T.bg,
+              boxShadow: '0 16px 40px rgba(15,23,42,0.18)',
+              padding: T.space1,
+            }}
+          >
+            {visibleConversations.length === 0 && searchContacts.length === 0 ? (
+              <div style={{ padding: `${T.space3}px ${T.space2}px`, color: T.textTertiary, fontSize: T.fontSm }}>
+                No conversations or contacts found
+              </div>
+            ) : null}
+            {visibleConversations.map((conversation) => (
+              <button
+                key={`search-${conversation.id}`}
+                type="button"
+                data-chat-search-result={conversation.id}
+                onClick={() => {
+                  onSelect(conversation.id);
+                  setSearchText('');
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: T.space2,
+                  padding: `${T.space2}px ${T.space2}px`,
+                  border: 'none',
+                  borderRadius: T.radiusMd,
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  color: 'inherit',
+                }}
+                onMouseEnter={(event) => { event.currentTarget.style.background = T.bgHover; }}
+                onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent'; }}
+              >
+                <MessageSquare size={15} color={T.textTertiary} aria-hidden />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: T.fontSm, fontWeight: 700, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {conversation.name}
+                  </span>
+                  <span style={{ display: 'block', fontSize: T.fontXs, color: T.textTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {conversation.lastMessage}
+                  </span>
+                </span>
+              </button>
+            ))}
+            {searchContacts.map((contact) => (
+              <button
+                key={`search-contact-${contact.id}`}
+                type="button"
+                data-chat-search-contact={contact.id}
+                onClick={() => openContactDirect(contact.name, contact.id)}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: T.space2,
+                  padding: `${T.space2}px ${T.space2}px`,
+                  border: 'none',
+                  borderRadius: T.radiusMd,
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  color: 'inherit',
+                }}
+                onMouseEnter={(event) => { event.currentTarget.style.background = T.bgHover; }}
+                onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent'; }}
+              >
+                <UserPlus size={15} color={T.primary} aria-hidden />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: T.fontSm, fontWeight: 700, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {contact.name}
+                  </span>
+                  <span style={{ display: 'block', fontSize: T.fontXs, color: T.textTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {contact.federatedHandle || contact.homeStation || contact.id}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {/* Conversation list */}
       <div style={{ flex: 1, overflow: 'auto' }}>
-        {conversations.map((conv) => {
+        {visibleConversations.map((conv) => {
           const isActive = conv.id === activeId;
           const menuItems = [
             {

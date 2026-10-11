@@ -1,13 +1,18 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   CONVERSATIONS,
   CURRENT_USER,
+  CHAT_JOURNEY_LOCALE,
   GROUP_MEMBERS,
   MESSAGES,
   type MockConversation,
   type MockGroupMember,
   type MockGroupRole,
 } from './mock';
+import {
+  CHAT_JOURNEY,
+  CHAT_JOURNEY_MESSAGE_ID,
+} from '../../../../shared/chat-journey';
 
 export interface ChatState {
   conversations: MockConversation[];
@@ -16,6 +21,7 @@ export interface ChatState {
 }
 
 export function useChatState() {
+  const retryTimers = useRef<Set<number>>(new Set());
   const [conversations, setConversations] = useState(CONVERSATIONS);
   const [groupMembers, setGroupMembers] = useState(GROUP_MEMBERS);
   const [messagesByConversation, setMessagesByConversation] = useState(MESSAGES);
@@ -25,6 +31,11 @@ export function useChatState() {
   const activeConversation = conversations.find((c) => c.id === activeId) ?? null;
   const messages = activeId ? messagesByConversation[activeId] ?? [] : [];
   const activeGroupMembers = activeId ? groupMembers[activeId] ?? [] : [];
+
+  useEffect(() => () => {
+    retryTimers.current.forEach((timer) => window.clearTimeout(timer));
+    retryTimers.current.clear();
+  }, []);
 
   const selectConversation = useCallback((id: string) => {
     setActiveId(id);
@@ -103,6 +114,126 @@ export function useChatState() {
       lastMessageTime: nextMessage.timestamp,
       unread: 0,
     } : c)));
+  }, []);
+
+  const sendAttachment = useCallback((id: string, file: File) => {
+    const isImage = file.type.startsWith('image/');
+    const objectUrl = URL.createObjectURL(file);
+    const sizeLabel = file.size < 1024
+      ? `${file.size} B`
+      : file.size < 1024 * 1024
+        ? `${(file.size / 1024).toFixed(1)} KB`
+        : `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+    const nextMessage = {
+      id: `attach-${Date.now()}`,
+      senderId: CURRENT_USER.id,
+      content: '',
+      timestamp: Date.now(),
+      type: (isImage ? 'image' : 'file') as 'image' | 'file',
+      status: 'sent' as const,
+      attachmentName: file.name,
+      attachmentMeta: sizeLabel,
+      attachmentUrl: objectUrl,
+    };
+    setMessagesByConversation((prev) => ({
+      ...prev,
+      [id]: [...(prev[id] ?? []), nextMessage],
+    }));
+    setConversations((prev) => prev.map((c) => (c.id === id ? {
+      ...c,
+      lastMessage: isImage ? `[Image] ${file.name}` : `[File] ${file.name}`,
+      lastMessageTime: nextMessage.timestamp,
+      unread: 0,
+    } : c)));
+  }, []);
+
+  const editMessage = useCallback((conversationId: string, messageId: string, content: string) => {
+    const text = content.trim();
+    if (!text) return;
+    // Editing preserves the original send timestamp/order; only the body and
+    // the edited marker change (mirrors the Station envelope edit semantics).
+    setMessagesByConversation((prev) => ({
+      ...prev,
+      [conversationId]: (prev[conversationId] ?? []).map((message) => (
+        message.id === messageId
+          ? { ...message, content: text, edited: true }
+          : message
+      )),
+    }));
+  }, []);
+
+  const retryMessage = useCallback((id: string, messageId: string) => {
+    const isJourney = messageId === CHAT_JOURNEY_MESSAGE_ID;
+
+    // Generic retries only flip the delivery status. The CHAT-CRAFT-J01
+    // scenario additionally reconciles m4 and appends the peer follow-up;
+    // that journey copy must never leak into an ordinary conversation.
+    const transitionStatus = (status: 'sending' | 'delivered') => (prev: typeof MESSAGES) => {
+      const current = prev[id] ?? [];
+      // The row can disappear while the retry is in flight (Clear history).
+      if (!current.some((message) => message.id === messageId)) return prev;
+      return {
+        ...prev,
+        [id]: current.map((message) => (
+          message.id === messageId ? { ...message, status } : message
+        )),
+      };
+    };
+
+    setMessagesByConversation(transitionStatus('sending'));
+
+    const timer = window.setTimeout(() => {
+      retryTimers.current.delete(timer);
+      setMessagesByConversation((prev) => {
+        const current = prev[id] ?? [];
+        if (!current.some((message) => message.id === messageId)) return prev;
+        const messages = current.map((message) => {
+          if (message.id === messageId) {
+            return { ...message, status: 'delivered' as const };
+          }
+          if (isJourney && message.id === 'm4') {
+            return {
+              ...message,
+              content: CHAT_JOURNEY_LOCALE === 'zh'
+                ? '远端 Station 已确认该消息。'
+                : 'Remote Station acknowledged this message.',
+            };
+          }
+          return message;
+        });
+        if (!isJourney || messages.some((message) => message.id === 'release-hold-ack')) {
+          return { ...prev, [id]: messages };
+        }
+        return {
+          ...prev,
+          [id]: [
+            ...messages,
+            {
+              id: 'release-hold-ack',
+              senderId: 'user-1',
+              content: CHAT_JOURNEY.messages.followup[CHAT_JOURNEY_LOCALE],
+              timestamp: Date.now(),
+              type: 'text' as const,
+            },
+          ],
+        };
+      });
+      // Only the scripted journey updates the session preview with the
+      // follow-up copy; a generic retry leaves the last-message preview alone.
+      if (isJourney) {
+        setConversations((prev) => prev.map((conversation) => (
+          conversation.id === id
+            ? {
+                ...conversation,
+                lastMessage: CHAT_JOURNEY.messages.followup[CHAT_JOURNEY_LOCALE],
+                lastMessageTime: Date.now(),
+                unread: 0,
+              }
+            : conversation
+        )));
+      }
+    }, 900);
+    retryTimers.current.add(timer);
   }, []);
 
   const sendVoiceMessage = useCallback((id: string, durationSeconds: number) => {
@@ -196,6 +327,9 @@ export function useChatState() {
       trustLabel: 'Pending verification',
       trustTone: 'attention',
       detailHint: `Maps to Friend create/list flow · peer: ${peerId.trim() || 'station/user id pending'}`,
+      // Structural identity key: lets the session-search dropdown dedupe this
+      // contact instead of opening another identical friend session.
+      peerPtid: peerId.trim() || undefined,
       background: 'Default',
     };
     setConversations((prev) => [next, ...prev]);
@@ -266,6 +400,7 @@ export function useChatState() {
     activeId,
     activeConversation,
     messages,
+    messagesByConversation,
     currentUserId: CURRENT_USER.id,
     groupMembers: activeGroupMembers,
     showDetail,
@@ -279,6 +414,9 @@ export function useChatState() {
     clearConversationData,
     setConversationBackgroundImage,
     sendMessage,
+    sendAttachment,
+    editMessage,
+    retryMessage,
     sendVoiceMessage,
     renameGroup,
     removeGroupMember,

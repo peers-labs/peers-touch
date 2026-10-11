@@ -621,7 +621,12 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   const showModernChatReview = modernChatState.startsWith('modern-');
   const showV2ProductReview = modernChatState.startsWith('v2-');
   const showAuthPrototype = modernChatState.startsWith('auth-oauth-');
-  const defaultPage = showModernChatReview || showV2ProductReview ? 'agent' : initialPage ?? 'applets';
+  const requestedSurface = typeof window === 'undefined'
+    ? ''
+    : new URLSearchParams(window.location.search).get('surface') ?? '';
+  const defaultPage = showModernChatReview || showV2ProductReview
+    ? 'agent'
+    : initialPage ?? (requestedSurface === 'chat' ? 'chat' : 'applets');
   const [page, setPage] = useState(defaultPage);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [authPrototypeComplete, setAuthPrototypeComplete] = useState(false);

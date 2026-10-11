@@ -33,6 +33,7 @@ const { Text } = Typography;
 
 type EvidenceScenario =
   | 'journey'
+  | 'chat-delivery-recovery'
   | 'station-removal'
   | 'session-revoked'
   | 'long-lists'
@@ -43,6 +44,7 @@ type EvidenceScenario =
 
 const evidenceScenarioOptions: Array<{ label: string; value: EvidenceScenario }> = [
   { label: 'Default journey', value: 'journey' },
+  { label: 'Chat / delivery recovery', value: 'chat-delivery-recovery' },
   { label: 'Station removal confirmation', value: 'station-removal' },
   { label: 'Station identity mismatch', value: 'station-identity-mismatch' },
   { label: 'OAuth expired', value: 'oauth-expired' },
@@ -196,14 +198,17 @@ export function MobilePrototype() {
     }
 
     const shellRecovery = shellScenarios.find((scenario) => scenario === evidenceScenario);
-    if ((socialScenario || shellRecovery || longLists || launchState === 'shell') && activeStation) {
+    if ((socialScenario || shellRecovery || longLists || evidenceScenario === 'chat-delivery-recovery' || launchState === 'shell') && activeStation) {
       return (
         <MobileShell
-          key={longLists ? evidenceScenario : socialScenario ?? 'shell'}
+          key={longLists || evidenceScenario === 'chat-delivery-recovery'
+            ? evidenceScenario
+            : socialScenario ?? 'shell'}
           stationLabel={activeStation.label}
           onChangeStation={handleBackToLaunch}
           recoveryScenario={shellRecovery}
           longLists={longLists}
+          focusChatJourney={evidenceScenario === 'chat-delivery-recovery'}
           searchDemo={evidenceScenario === 'search-controlled'
             ? { state: searchState, dispatch: dispatchSearch } : undefined}
           socialScenario={socialScenario}
