@@ -2,6 +2,7 @@ import { createDesktopStore } from './createDesktopStore';
 import { api, AuthCommandException, type AuthSessionResponse } from '../services/desktop_api';
 import { markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
+import { primeResolvedLocal } from '../components/common/SquareAvatar';
 import {
   accessSubmissionDescriptor,
   completeAccessSubmission,
@@ -25,6 +26,9 @@ export interface CurrentUser {
    *  local file caching is owned by the UserSquareAvatar component / Rust
    *  avatar_cache infrastructure. */
   avatarUrl?: string;
+  /** Persisted local avatar file (from the native account identity). Kept so
+   *  session transitions can warm the avatar cache before the shell mounts. */
+  avatarLocalPath?: string;
   loginMethod: string;
   loginProvider?: string;
 }
@@ -91,6 +95,7 @@ function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'passwo
     name: resp.name || '',
     email: resp.email || '',
     avatarUrl: resp.avatar_url || undefined,
+    avatarLocalPath: resp.avatar_local_path || undefined,
     loginMethod: (resp.login_method as 'password' | 'oauth') || fallbackMethod,
     loginProvider: provider,
   };
@@ -194,6 +199,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
       const method = resp.login_method || 'password';
       const isOAuth = method !== 'password';
       const user = userFromAuthResponse(resp, isOAuth ? 'oauth' : 'password', isOAuth ? method : undefined);
+      if (user?.avatarUrl) primeResolvedLocal(user.avatarUrl, user.avatarLocalPath);
       set((state) => ({
         currentUser: user,
         authenticated: Boolean(user),
@@ -245,6 +251,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
       isOAuth ? 'oauth' : 'password',
       isOAuth ? method : undefined,
     );
+    if (user?.avatarUrl) primeResolvedLocal(user.avatarUrl, user.avatarLocalPath);
     set((state) => ({
       currentUser: user,
       authenticated: Boolean(user),
@@ -254,6 +261,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
   },
 
   activateAppletLaunchSession: (user) => {
+    if (user.avatarUrl) primeResolvedLocal(user.avatarUrl, user.avatarLocalPath);
     set((state) => ({
       currentUser: user,
       authenticated: true,
