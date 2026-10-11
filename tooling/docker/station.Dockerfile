@@ -7,6 +7,8 @@ ARG BASE_IMAGE=docker.m.daocloud.io/library/ubuntu:22.04
 # ─── Stage 1: Builder ─────────────────────────────────────────────────────────
 FROM ${BUILDER_IMAGE} AS builder
 
+ARG GO_VERSION=1.24.6
+
 RUN if ! command -v go >/dev/null 2>&1; then \
       sed -i \
         -e 's|http://archive.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' \
