@@ -6412,18 +6412,25 @@ async function waitForCallSurface(
           const surface = document.querySelector('[data-chat-call-surface]');
           const state = surface?.getAttribute('data-chat-call-state') || '';
           const media = surface?.getAttribute('data-chat-call-media-kind') || '';
+          const peerName = surface?.getAttribute('data-chat-call-peer-name') || '';
           return {
             ready: Boolean(surface?.getClientRects().length)
               && state === expectedState
-              && media === mediaKind,
+              && media === mediaKind
+              && Boolean(peerName.trim())
+              && !/^(ptid:|unknown)/i.test(peerName),
             state,
             mediaKind: media,
+            peerPtid: surface?.getAttribute('data-chat-call-peer-ptid') || '',
+            peerName,
             text: (surface?.innerText || '').replace(/\\s+/g, ' ').trim()
           };
         `
       : `
-          const [expectedState] = arguments;
+          const [expectedState, mediaKind] = arguments;
           const surface = document.querySelector('.mobile-call-surface');
+          const media = surface?.getAttribute('data-chat-call-media-kind') || '';
+          const peerName = surface?.getAttribute('data-chat-call-peer-name') || '';
           const buttons = [...(surface?.querySelectorAll('button') || [])];
           const incoming = buttons.some((button) => (
             button.classList.contains('accept')
@@ -6443,10 +6450,15 @@ async function waitForCallSurface(
                   && !connected
                   && !terminal;
           return {
-            ready,
+            ready: ready
+              && media === mediaKind
+              && Boolean(peerName.trim())
+              && !/^(ptid:|unknown)/i.test(peerName),
             incoming,
             connected,
             terminal,
+            peerPtid: surface?.getAttribute('data-chat-call-peer-ptid') || '',
+            peerName,
             text: (surface?.innerText || '').replace(/\\s+/g, ' ').trim()
           };
         `,
@@ -6454,7 +6466,11 @@ async function waitForCallSurface(
   );
   assertContract(
     !friendlyName
-      || state.text.toLowerCase().includes(friendlyName.toLowerCase()),
+      || (
+        chatConversationRowMatches('friend', friendlyName, state.peerPtid, '')
+        && Boolean(state.peerName.trim())
+        && !/^ptid:/i.test(state.peerName)
+      ),
     'CHAT_CALL_FRIENDLY_IDENTITY_MISSING',
     `${clientId} ${mediaKind} call surface does not identify ${friendlyName}`,
   );
@@ -6663,7 +6679,7 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
       )
     ));
   }
-  const bobCoralRequest = (await step(
+  await step(
     'ios-coral',
     'chat-coral-request-bob',
     () => requestMobileFriendship(
@@ -6672,7 +6688,7 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
       'bob',
       'Bob',
     ),
-  )).result;
+  );
   await step(
     'desktop-bob',
     'chat-bob-accept-coral',
@@ -6680,7 +6696,6 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
       'desktop-bob',
       manifest.clients['desktop-bob'],
       'Carol',
-      bobCoralRequest.peerPtid,
     ),
   );
 

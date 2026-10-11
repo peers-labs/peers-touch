@@ -28,7 +28,6 @@ import {
   Minimize2,
   PanelTop,
   Phone,
-  PhoneIncoming,
   PhoneOff,
   Settings,
   Video,
@@ -41,6 +40,8 @@ import {
 } from '../../modules/p2p/callP2p';
 import { log } from '../../utils/logger';
 import { ActionIcon, toast } from '@lobehub/ui';
+import { useSocialChatStore } from '../../store/socialChat';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
 
 const { Text } = Typography;
 
@@ -92,6 +93,13 @@ export function CallSurface() {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const peerProfile = useSocialChatStore(
+    (state) => active ? state.peerProfiles[active.peerPtid] ?? null : null,
+  );
+  const peerName = peerProfile?.display_name?.trim()
+    || peerProfile?.username?.trim()
+    || t('chat.social.sessionList.unknown');
+  const peerAvatar = peerProfile?.avatar || '';
 
   // Subscribe once. Snapshot in == snapshot in state; we filter
   // terminal states (idle/ended) by clearing `active`.
@@ -246,6 +254,8 @@ export function CallSurface() {
     const incomingSurface = (
       <Flexbox
         data-chat-call-surface
+        data-chat-call-peer-ptid={peerPtid}
+        data-chat-call-peer-name={peerName}
         data-chat-call-state="incoming"
         data-chat-call-media-kind={snapshot.mediaKind}
         data-chat-call-display-mode="compact"
@@ -284,7 +294,7 @@ export function CallSurface() {
             color: token.colorPrimary,
           }}
         >
-          <PhoneIncoming size={20} />
+          <UserSquareAvatar remoteUrl={peerAvatar} name={peerName} size={40} />
         </Flexbox>
         <Flexbox flex={1} style={{ minWidth: 0 }}>
           <Text strong ellipsis style={{ fontSize: 13 }}>
@@ -293,7 +303,7 @@ export function CallSurface() {
             })}
           </Text>
           <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
-            {t('chat.social.call.incomingFrom', { from: peerPtid })}
+            {t('chat.social.call.incomingFrom', { from: peerName })}
           </Text>
         </Flexbox>
         <Flexbox horizontal align="center" gap={4} style={{ flexShrink: 0 }}>
@@ -302,14 +312,14 @@ export function CallSurface() {
             title={t('chat.social.call.decline')}
             size={{ blockSize: 32, size: 15 }}
             onClick={handleDecline}
-            style={{ borderRadius: 999, background: token.colorError, color: token.colorTextLightSolid }}
+            style={{ borderRadius: token.borderRadiusSM, background: token.colorError, color: token.colorTextLightSolid }}
           />
           <ActionIcon
             icon={isVideo ? Video : Phone}
             title={t('chat.social.call.accept')}
             size={{ blockSize: 32, size: 15 }}
             onClick={() => void handleAccept()}
-            style={{ borderRadius: 999, background: token.colorSuccess, color: token.colorTextLightSolid }}
+            style={{ borderRadius: token.borderRadiusSM, background: token.colorSuccess, color: token.colorTextLightSolid }}
           />
         </Flexbox>
       </Flexbox>
@@ -370,7 +380,7 @@ export function CallSurface() {
         ? t('chat.social.call.ringing')
         : t('chat.social.call.connecting');
   const neutralControlStyle = {
-    borderRadius: 999,
+    borderRadius: token.borderRadiusSM,
     border: `1px solid ${token.colorBorderSecondary}`,
     background: token.colorBgContainer,
     color: token.colorTextSecondary,
@@ -411,7 +421,7 @@ export function CallSurface() {
         title={hasMedia ? t('chat.social.call.hangup') : t('chat.social.call.cancel')}
         size={{ blockSize: 32, size: 15 }}
         onClick={handleHangup}
-        style={{ borderRadius: 999, background: token.colorError, color: token.colorTextLightSolid }}
+        style={{ borderRadius: token.borderRadiusSM, background: token.colorError, color: token.colorTextLightSolid }}
       />
     </Flexbox>
   );
@@ -420,6 +430,8 @@ export function CallSurface() {
     <Flexbox
       ref={surfaceRef}
       data-chat-call-surface
+      data-chat-call-peer-ptid={peerPtid}
+      data-chat-call-peer-name={peerName}
       data-chat-call-state={snapshot.state}
       data-chat-call-media-kind={snapshot.mediaKind}
       data-chat-call-display-mode={effectiveDisplayMode}
@@ -471,10 +483,10 @@ export function CallSurface() {
               color: token.colorPrimary,
             }}
           >
-            <Phone size={20} />
+            <UserSquareAvatar remoteUrl={peerAvatar} name={peerName} size={40} />
           </Flexbox>
           <Flexbox flex={1} style={{ minWidth: 0 }}>
-            <Text strong ellipsis style={{ fontSize: 13 }}>{peerPtid}</Text>
+            <Text strong ellipsis style={{ fontSize: 13 }}>{peerName}</Text>
             <Text type="secondary" ellipsis style={{ fontSize: 11 }}>{status}</Text>
           </Flexbox>
           {callControls}
@@ -609,7 +621,7 @@ export function CallSurface() {
           }}
         >
           <Flexbox horizontal align="center" justify="space-between" gap={8} style={{ minWidth: 0, flex: 1 }}>
-            <Text strong ellipsis>{peerPtid}</Text>
+            <Text strong ellipsis>{peerName}</Text>
             <Text type="secondary" style={{ fontSize: 12, flexShrink: 0 }}>{status}</Text>
           </Flexbox>
           {callControls}

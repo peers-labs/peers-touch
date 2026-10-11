@@ -4,7 +4,7 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, Tooltip, toast } from '@lobehub/ui';
 import { Empty, Spin, theme, Typography } from 'antd';
 import {
-  Inbox, Phone, Server, RefreshCw, Video, MoreHorizontal,
+  Inbox, Phone, RefreshCw, Video, MoreHorizontal,
   Lock,
 } from 'lucide-react';
 import {
@@ -14,10 +14,7 @@ import {
   socialThreadKey,
 } from '../../store/socialChat';
 import { useCryptoStore } from '../../store/cryptoStore';
-import {
-  useActiveChatFederationSlice,
-  useActiveSocialChatSlice,
-} from './useActiveSocialChatStore';
+import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { SearchMessagesModal } from './SearchMessagesModal';
 import { callP2p } from '../../modules/p2p/callP2p';
 import { groupCallManager } from '../../modules/groupCall';
@@ -53,7 +50,6 @@ import { ForwardPickerModal } from './ForwardPickerModal';
 import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 import type { DirectConversationOpenIntent } from './contactSelection';
-import { resolveFederationStationName } from '../../store/federation';
 
 const { Text } = Typography;
 const REACTION_PROJECTION_TIMEOUT_MS = 8_000;
@@ -160,9 +156,6 @@ export function ChatMessageArea({
     reactToMessage: s.reactToMessage,
     pinMessage: s.pinMessage,
   }));
-  const actorStationEntries = useActiveChatFederationSlice(
-    (state) => state.actorStationEntries,
-  );
   const [inputValue, setInputValue] = useState('');
   const draftsRef = useRef<Record<string, string>>({});
   const prevActiveRef = useRef<string | null>(null);
@@ -212,12 +205,6 @@ export function ChatMessageArea({
     : undefined;
 
   const currentName = activeConversation?.title || '';
-  const authorityStationId = activeConversation?.authorityStationId?.trim() || '';
-  const authorityStationName = resolveFederationStationName({
-    actorPtid: activeConversation?.peerPtid,
-    stationPeerId: authorityStationId,
-    actorStationEntries,
-  });
 
   const subtitle = (() => {
     if (activeTab === 'friend') return '';
@@ -970,41 +957,6 @@ export function ChatMessageArea({
                     <Lock size={13} style={{ color: token.colorTextTertiary, marginLeft: 2 }} />
                   </Tooltip>
                 )}
-                <span
-                  data-chat-station="authority"
-                  data-chat-station-id={authorityStationId}
-                  data-chat-station-name={authorityStationName}
-                  data-chat-station-state={authorityStationId ? 'available' : 'unavailable'}
-                  title={authorityStationName || t('chat.social.detail.authorityStationUnavailable')}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    minWidth: 0,
-                    maxWidth: 'min(180px, 24vw)',
-                    padding: '1px 6px',
-                    borderRadius: 999,
-                    background: token.colorFillQuaternary,
-                    color: token.colorTextTertiary,
-                    fontSize: 10,
-                    lineHeight: '16px',
-                    flexShrink: 1,
-                  }}
-                >
-                  <Server aria-hidden="true" size={11} style={{ flexShrink: 0 }} />
-                  <span
-                    style={{
-                      minWidth: 0,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {authorityStationName
-                      ? `${t('chat.social.findPeople.scopeStation')} · ${authorityStationName}`
-                      : t('chat.social.detail.authorityStationUnavailable')}
-                  </span>
-                </span>
               </Flexbox>
               {headerSubtitle && (
                 <Text type="secondary" style={{ fontSize: 12 }}>
