@@ -389,6 +389,14 @@
       "tier": "env-evidence",
       "description": "Prove two independent Events processes over one source-attested PostgreSQL runtime preserve per-Actor order, committed-only delivery, durable device isolation, high-water replay after process exit, and bounded missed-wake repair."
     },
+    "NCP-G05": {
+      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-shared-access --gate NCP-G05",
+      "timeout_seconds": 420,
+      "environment": "node-connectivity-shared-access",
+      "provisioner": "node-connectivity-shared-access",
+      "tier": "env-evidence",
+      "description": "Prove two independent Station processes over one source-attested PostgreSQL runtime share Access, OAuth acknowledgement, Session class activation, revocation, and the Station access keyring."
+    },
     "NCP-G07": {
       "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-native-cut --gate NCP-G07",
       "timeout_seconds": 180,

@@ -363,6 +363,30 @@
       ]
     },
     {
+      "id": "node-connectivity-shared-access",
+      "features": [
+        "node-connectivity-shared-access"
+      ],
+      "when": {
+        "paths": [
+          "apps/station/frame/core/auth/**",
+          "apps/station/frame/core/facility/session/**",
+          "apps/station/frame/touch/accessgate/**",
+          "apps/station/frame/touch/auth/**",
+          "apps/station/frame/touch/model/db/access_gate.go",
+          "apps/station/app/subserver/oauth/**",
+          "tooling/acceptance/environments/node-connectivity-shared-access.yaml",
+          "tooling/acceptance/provisioners/node_connectivity_postgres.py",
+          "tooling/acceptance/provisioners/node_connectivity_shared_access.py",
+          "tooling/acceptance/features/node-connectivity-shared-access.yaml",
+          "tooling/scripts/node-connectivity-journey.py"
+        ]
+      },
+      "require": [
+        "NCP-G05"
+      ]
+    },
+    {
       "id": "node-connectivity-architecture",
       "features": [
         "node-connectivity-standard-stream"
@@ -378,6 +402,7 @@
         "NCP-G02",
         "NCP-G03",
         "NCP-G04",
+        "NCP-G05",
         "NCP-G07",
         "NCP-G08"
       ]

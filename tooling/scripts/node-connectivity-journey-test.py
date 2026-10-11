@@ -124,6 +124,72 @@ class NodeConnectivityJourneyTest(unittest.TestCase):
         self.assertEqual(report["closureId"], "ncp-durable-events")
         self.assertEqual(report["executionClass"], "functional")
 
+    def test_shared_access_functional_uses_closed_test_sets(self) -> None:
+        observed_frame: list[tuple[str, ...]] = []
+        observed_oauth: list[tuple[str, ...]] = []
+
+        def run_frame(
+            tests: tuple[str, ...],
+            **_: object,
+        ) -> dict[str, object]:
+            observed_frame.append(tests)
+            return {
+                "command": ["go", "test"],
+                "durationMs": 1,
+                "status": "passed",
+                "returnCode": 0,
+            }
+
+        def run_oauth(
+            tests: tuple[str, ...],
+            **_: object,
+        ) -> dict[str, object]:
+            observed_oauth.append(tests)
+            return {
+                "command": ["go", "test"],
+                "durationMs": 1,
+                "status": "passed",
+                "returnCode": 0,
+            }
+
+        output = io.StringIO()
+        with (
+            mock.patch.object(
+                JOURNEY,
+                "run_frame_access_go_tests",
+                side_effect=run_frame,
+            ),
+            mock.patch.object(
+                JOURNEY,
+                "run_oauth_go_tests",
+                side_effect=run_oauth,
+            ),
+            mock.patch.object(
+                JOURNEY.sys,
+                "argv",
+                [
+                    str(SCRIPT),
+                    "--closure",
+                    "ncp-shared-access",
+                    "--functional",
+                ],
+            ),
+            contextlib.redirect_stdout(output),
+        ):
+            self.assertEqual(JOURNEY.main(), 0)
+
+        self.assertEqual(
+            observed_frame,
+            [JOURNEY.SHARED_ACCESS_FRAME_FUNCTIONAL_TESTS],
+        )
+        self.assertEqual(
+            observed_oauth,
+            [JOURNEY.SHARED_ACCESS_OAUTH_FUNCTIONAL_TESTS],
+        )
+        report = json.loads(output.getvalue())
+        self.assertEqual(report["closureId"], "ncp-shared-access")
+        self.assertEqual(report["executionClass"], "functional")
+
 
 if __name__ == "__main__":
     unittest.main()

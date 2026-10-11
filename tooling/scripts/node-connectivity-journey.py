@@ -29,6 +29,7 @@ from tooling.acceptance.core import (
 STANDARD_STREAM_CLOSURE = "ncp-standard-stream"
 NATIVE_CUT_CLOSURE = "ncp-native-cut"
 DURABLE_EVENTS_CLOSURE = "ncp-durable-events"
+SHARED_ACCESS_CLOSURE = "ncp-shared-access"
 GATE_TESTS = {
     "NCP-G01": (
         "TestSecureHTTPDirectAndCircuitUseCanonicalHertzRouter",
@@ -70,6 +71,24 @@ DURABLE_EVENTS_GATE_TESTS = (
     "TestPostgresCrossNodeWakeOrderingAndRollback",
     "TestPostgresCrossProcessDurableEvents",
 )
+SHARED_ACCESS_FRAME_FUNCTIONAL_TESTS = (
+    "TestStationAccessKeyringSharesJWTAuthorityAcrossNodes",
+    "TestStationAccessKeyringRejectsSecretAndSchemaMismatch",
+    "TestJWTValidationAcceptsPreKeyIDTokenThroughSharedKeyring",
+    "TestCustomJWTProviderDoesNotInheritStationAccessKeyring",
+    "TestDBStoreCreateWithKickReplacesSameClassAndPreservesOtherClasses",
+    "TestDBStoreConcurrentSameClassActivationConvergesToOneWinner",
+    "TestRevokeReplacedAccessGateSessionsRevokesSameClassAndPreservesOtherClasses",
+)
+SHARED_ACCESS_OAUTH_FUNCTIONAL_TESTS = (
+    "TestBrokerBridgeUsesCandidateAndAcknowledgementLifecycle",
+    "TestOAuthAcknowledgeClearsEnvelopeAndActivatesPersistedSession",
+    "TestOAuthAcknowledgeReplacesOnlySameClientClass",
+    "TestOAuthConcurrentStatusFinalizesExactlyOnce",
+)
+SHARED_ACCESS_GATE_TESTS = (
+    "TestPostgresCrossProcessSharedAccess",
+)
 DURABLE_EVENTS_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
     {
         "scope": "suite",
@@ -78,6 +97,23 @@ DURABLE_EVENTS_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
             "NCP-G04-ORDER",
             "NCP-G04-DEVICE",
             "NCP-G04-WAKE-LOSS",
+        ],
+        "maxProvisioningRuns": 1,
+        "maxClientLaunches": 2,
+        "minWarmReuseRate": 0.66,
+        "requireAttachOnlyScenarios": True,
+        "requireReceiverVisibleProof": True,
+        "allowClientReplacement": False,
+    }
+)
+SHARED_ACCESS_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
+    {
+        "scope": "suite",
+        "entryCheckId": "access-functional",
+        "scenarioIds": [
+            "NCP-G05-ACK",
+            "NCP-G05-CLASS",
+            "NCP-G05-REVOKE",
         ],
         "maxProvisioningRuns": 1,
         "maxClientLaunches": 2,
@@ -144,6 +180,51 @@ def run_events_go_tests(
     )
 
 
+def run_frame_access_go_tests(
+    test_names: tuple[str, ...],
+    *,
+    timeout: int = 180,
+) -> dict[str, object]:
+    pattern = "^(" + "|".join(test_names) + ")$"
+    return run_command(
+        [
+            "go",
+            "test",
+            "./core/auth/...",
+            "./core/facility/session/...",
+            "./touch/auth/...",
+            "./touch/accessgate/...",
+            "-run",
+            pattern,
+            "-count=1",
+        ],
+        REPO_ROOT / "apps/station/frame",
+        timeout=timeout,
+    )
+
+
+def run_oauth_go_tests(
+    test_names: tuple[str, ...],
+    *,
+    environment: Mapping[str, str] | None = None,
+    timeout: int = 300,
+) -> dict[str, object]:
+    pattern = "^(" + "|".join(test_names) + ")$"
+    return run_command(
+        [
+            "go",
+            "test",
+            "./subserver/oauth",
+            "-run",
+            pattern,
+            "-count=1",
+        ],
+        REPO_ROOT / "apps/station/app",
+        timeout=timeout,
+        environment=environment,
+    )
+
+
 def load_runtime_manifest() -> dict[str, object]:
     raw = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "").strip()
     if not raw:
@@ -157,6 +238,22 @@ def load_runtime_manifest() -> dict[str, object]:
         or payload.get("state") != "FIXTURE_READY"
     ):
         raise ValueError("NCP-G04 Runtime Manifest identity is invalid")
+    return payload
+
+
+def load_shared_access_runtime_manifest() -> dict[str, object]:
+    raw = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "").strip()
+    if not raw:
+        raise ValueError("NCP-G05 requires a provisioned Runtime Manifest")
+    payload = json.loads(Path(raw).read_text(encoding="utf-8"))
+    if (
+        not isinstance(payload, dict)
+        or payload.get("environmentId")
+        != "node-connectivity-shared-access"
+        or payload.get("gateId") != "NCP-G05"
+        or payload.get("state") != "FIXTURE_READY"
+    ):
+        raise ValueError("NCP-G05 Runtime Manifest identity is invalid")
     return payload
 
 
@@ -338,6 +435,196 @@ def run_durable_events_gate() -> dict[str, object]:
     }
 
 
+def run_shared_access_gate() -> dict[str, object]:
+    manifest = load_shared_access_runtime_manifest()
+    services = manifest.get("services")
+    if not isinstance(services, dict):
+        raise ValueError("NCP-G05 Runtime Manifest has no services")
+    postgres = services.get("access-postgres")
+    if (
+        not isinstance(postgres, dict)
+        or postgres.get("kind") != "postgres"
+        or not postgres.get("runtimeIdentity")
+        or not postgres.get("attestationArtifact")
+    ):
+        raise ValueError("NCP-G05 PostgreSQL attestation is incomplete")
+    endpoint = str(postgres.get("endpoint") or "")
+    if not endpoint.startswith("postgresql://postgres@127.0.0.1:"):
+        raise ValueError("NCP-G05 PostgreSQL endpoint is not disposable local")
+
+    source = manifest.get("source")
+    if not isinstance(source, dict):
+        raise ValueError("NCP-G05 Runtime Manifest source is missing")
+    source_commit = str(source.get("commit") or "")
+    run_id = str(manifest.get("runId") or "")
+    if not source_commit or not run_id:
+        raise ValueError("NCP-G05 source or runtime identity is missing")
+
+    with tempfile.TemporaryDirectory(
+        prefix="peers-touch-ncp-shared-access-",
+    ) as raw:
+        process_result_path = Path(raw) / "process-result.json"
+        environment = {
+            **os.environ,
+            "NCP_ACCESS_POSTGRES_DSN": endpoint,
+            "NCP_ACCESS_RESULT_PATH": str(process_result_path),
+        }
+        command_result = run_oauth_go_tests(
+            SHARED_ACCESS_GATE_TESTS,
+            environment=environment,
+            timeout=300,
+        )
+        if command_result["status"] != "passed":
+            return {
+                "status": "failed",
+                "results": [command_result],
+            }
+        process_result = json.loads(
+            process_result_path.read_text(encoding="utf-8")
+        )
+    expected_scenarios = set(SHARED_ACCESS_RUNTIME_REUSE.scenario_ids)
+    scenarios = process_result.get("scenarios")
+    acknowledgement = (
+        scenarios.get("NCP-G05-ACK")
+        if isinstance(scenarios, dict)
+        else None
+    )
+    if (
+        process_result.get("status") != "passed"
+        or not isinstance(scenarios, dict)
+        or set(scenarios) != expected_scenarios
+        or not isinstance(acknowledgement, dict)
+        or acknowledgement.get("sessionIdStable") is not True
+        or acknowledgement.get("idempotentReplay") is not True
+        or acknowledgement.get("keyMismatchRejected") is not True
+    ):
+        raise ValueError("NCP-G05 process evidence is incomplete")
+
+    ledger = SuiteRuntimeLedger(
+        SHARED_ACCESS_RUNTIME_REUSE,
+        suite_runtime_id=run_id,
+        source_digest=source_commit,
+        fixture_epoch=run_id,
+    )
+    ledger.record(
+        SuiteRuntimeAction.PROVISION,
+        resource_id=f"environment:{run_id}",
+    )
+    ledger.record(
+        SuiteRuntimeAction.CLIENT_LAUNCH,
+        resource_id="process:access-node-a",
+    )
+    ledger.record(
+        SuiteRuntimeAction.CLIENT_LAUNCH,
+        resource_id="process:access-node-b",
+    )
+    for scenario_id in SHARED_ACCESS_RUNTIME_REUSE.scenario_ids:
+        ledger.record(
+            SuiteRuntimeAction.SCENARIO_START,
+            scenario_id=scenario_id,
+        )
+        ledger.record(
+            SuiteRuntimeAction.UI_ACTION,
+            scenario_id=scenario_id,
+            resource_id="access-client-process:canonical-action",
+        )
+        ledger.record(
+            SuiteRuntimeAction.RECEIVER_ASSERTION,
+            scenario_id=scenario_id,
+            resource_id="peer-node-process:session-observation",
+        )
+        ledger.record(
+            SuiteRuntimeAction.SUPPORTING_OBSERVATION,
+            scenario_id=scenario_id,
+            resource_id=f"postgres-readback:{scenario_id}",
+        )
+        ledger.record(
+            SuiteRuntimeAction.SCENARIO_END,
+            scenario_id=scenario_id,
+        )
+    ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)
+    suite_report = ledger.require_valid()
+    validate_suite_runtime_report(
+        suite_report,
+        expected_contract=SHARED_ACCESS_RUNTIME_REUSE,
+    )
+
+    with ArtifactSession(
+        repo_root=REPO_ROOT,
+        gate_id="NCP-G05",
+    ) as artifacts:
+        process_ref = artifacts.write_json(
+            "reports/NCP-G05-process-result.json",
+            process_result,
+            role="process-result",
+        )
+        suite_ref = artifacts.write_json(
+            "reports/NCP-G05-suite-runtime.json",
+            suite_report,
+            role="suite-runtime",
+        )
+        evidence = {
+            "artifactKind": "acceptance-gate-evidence-report",
+            "gateId": "NCP-G05",
+            "gate": "NCP-G05",
+            "environment": "node-connectivity-shared-access",
+            "status": "PASS",
+            "completionStatus": "DONE",
+            "proofStatus": "PROVEN",
+            "phase": "NCP-05",
+            "bom": ["NCP-NS01", "NCP-NS03", "NCP-NS04"],
+            "spec": [
+                "NCP-G05",
+                "node-connectivity-shared-access",
+                "ncp-shared-access",
+            ],
+            "sampleEmissionAllowed": False,
+            "source": source,
+            "runtime": {
+                "postgres": postgres,
+                "logicalProcesses": [
+                    "access-node-a",
+                    "access-node-b",
+                ],
+            },
+            "processResult": process_ref.to_dict(),
+            "suiteRuntime": suite_ref.to_dict(),
+            "suiteRuntimeReportDigest": suite_report["reportDigest"],
+            "observedScope": [
+                "Access attempt start on node A and OAuth acknowledgement on node B",
+                "Station key ID and one logical Session survive the node handoff",
+                "idempotent acknowledgement preserves the Session ID",
+                "concurrent same-class activation converges to one winner",
+                "other canonical client classes remain active",
+                "revocation on node B is enforced by validation on node A",
+                "keyring configuration mismatch fails node initialization",
+            ],
+            "unprovenScope": [
+                "External OAuth provider exchange is not exercised",
+                "Native login rendering remains owned by NCP-08",
+                "Mobile runtime behavior remains unproven",
+            ],
+        }
+        evidence_ref = artifacts.write_json(
+            "reports/NCP-G05-evidence.json",
+            evidence,
+            role="evidence",
+        )
+        artifacts.complete(
+            status="passed",
+            completion_status="DONE",
+            proof_status="PROVEN",
+            runtime=evidence["runtime"],
+        )
+    return {
+        "status": "passed",
+        "results": [command_result],
+        "processResult": process_ref.to_dict(),
+        "suiteRuntime": suite_ref.to_dict(),
+        "evidence": evidence_ref.to_dict(),
+    }
+
+
 def isolated_command_environment(work_root: Path) -> dict[str, str]:
     target_dir = (work_root / "cargo-target").resolve()
     if target_dir == REPO_ROOT or REPO_ROOT in target_dir.parents:
@@ -386,6 +673,7 @@ def main() -> int:
             STANDARD_STREAM_CLOSURE,
             NATIVE_CUT_CLOSURE,
             DURABLE_EVENTS_CLOSURE,
+            SHARED_ACCESS_CLOSURE,
         ),
     )
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -395,7 +683,7 @@ def main() -> int:
         choices=(
             tuple(GATE_TESTS)
             + tuple(NATIVE_CUT_COMMANDS)
-            + ("NCP-G04", "NCP-G08")
+            + ("NCP-G04", "NCP-G05", "NCP-G08")
         ),
     )
     args = parser.parse_args()
@@ -468,13 +756,28 @@ def main() -> int:
                         / "apps/station/frame/core/plugin/native",
                     )
                 )
-    else:
+    elif args.closure == DURABLE_EVENTS_CLOSURE:
         if args.functional:
             results = [
                 run_events_go_tests(DURABLE_EVENTS_FUNCTIONAL_TESTS)
             ]
         elif args.gate == "NCP-G04":
             gate_result = run_durable_events_gate()
+            results = list(gate_result.pop("results"))
+        else:
+            parser.error(f"{args.gate} does not belong to {args.closure}")
+    else:
+        if args.functional:
+            results = [
+                run_frame_access_go_tests(
+                    SHARED_ACCESS_FRAME_FUNCTIONAL_TESTS
+                ),
+                run_oauth_go_tests(
+                    SHARED_ACCESS_OAUTH_FUNCTIONAL_TESTS
+                ),
+            ]
+        elif args.gate == "NCP-G05":
+            gate_result = run_shared_access_gate()
             results = list(gate_result.pop("results"))
         else:
             parser.error(f"{args.gate} does not belong to {args.closure}")

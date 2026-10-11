@@ -22,12 +22,13 @@ import (
 )
 
 const (
-	accessGateSchemaRevision  = uint32(1)
-	submissionStateProcessing = "processing"
-	submissionStateCompleted  = "completed"
-	submissionLease           = 30 * time.Second
-	maxGenericFieldCount      = 32
-	maxGenericStringBytes     = 4096
+	accessGateSchemaRevision    = uint32(1)
+	submissionStateProcessing   = "processing"
+	submissionStateCompleted    = "completed"
+	submissionLease             = 30 * time.Second
+	maxGenericFieldCount        = 32
+	maxGenericStringBytes       = 4096
+	submissionFingerprintDomain = "peers-touch.access-gate.submission.v1\x00"
 )
 
 var secretFieldName = regexp.MustCompile(`(?i)(password|passwd|secret|token|credential|private[_-]?key|url|uri|binary|script|code)`)
@@ -83,28 +84,54 @@ func accessGateSchemaDigest(actionID, submitAction, schema string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func submissionPayloadHash(req *pb.SubmitAccessGateRequest) (string, error) {
-	return submissionPayloadHashWithKey(req, []byte(coreauth.Get().Secret))
+func submissionPayloadHash(
+	ctx context.Context,
+	req *pb.SubmitAccessGateRequest,
+	keyID string,
+) (string, string, error) {
+	data, err := submissionPayloadBytes(req)
+	if err != nil {
+		return "", "", err
+	}
+	return coreauth.StationAccessMAC(
+		ctx,
+		keyID,
+		submissionFingerprintDomain,
+		data,
+	)
 }
 
 func submissionPayloadHashWithKey(
 	req *pb.SubmitAccessGateRequest,
 	key []byte,
 ) (string, error) {
-	if req == nil {
-		return "", errors.New("access gate submission is required")
-	}
 	if len(key) == 0 {
 		return "", errors.New("access gate submission fingerprint key is required")
 	}
-	data, err := proto.MarshalOptions{Deterministic: true}.Marshal(req)
+	data, err := submissionPayloadBytes(req)
 	if err != nil {
-		return "", fmt.Errorf("encode access gate submission fingerprint: %w", err)
+		return "", err
 	}
 	mac := hmac.New(sha256.New, key)
-	_, _ = mac.Write([]byte("peers-touch.access-gate.submission.v1\x00"))
+	_, _ = mac.Write([]byte(submissionFingerprintDomain))
 	_, _ = mac.Write(data)
 	return hex.EncodeToString(mac.Sum(nil)), nil
+}
+
+func submissionPayloadBytes(
+	req *pb.SubmitAccessGateRequest,
+) ([]byte, error) {
+	if req == nil {
+		return nil, errors.New("access gate submission is required")
+	}
+	data, err := proto.MarshalOptions{Deterministic: true}.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"encode access gate submission fingerprint: %w",
+			err,
+		)
+	}
+	return data, nil
 }
 
 // BeginSubmission validates the exact current descriptor and claims the stable
@@ -118,10 +145,6 @@ func BeginSubmission(ctx context.Context, req *pb.SubmitAccessGateRequest) (*Sub
 	if submissionID == "" {
 		return nil, errors.New("access gate submission id is required")
 	}
-	payloadHash, err := submissionPayloadHash(req)
-	if err != nil {
-		return nil, err
-	}
 
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
@@ -132,8 +155,23 @@ func BeginSubmission(ctx context.Context, req *pb.SubmitAccessGateRequest) (*Sub
 		Where("attempt_id = ? AND submission_id = ?", req.GetAttemptId(), submissionID).
 		First(&existing).Error
 	if findErr == nil {
+		keyID, payloadHash, err := submissionPayloadHash(
+			ctx,
+			req,
+			existing.FingerprintKeyID,
+		)
+		if err != nil {
+			return nil, err
+		}
 		if existing.PayloadHash != payloadHash {
 			return nil, errors.New("access gate submission id was reused with different input")
+		}
+		if existing.FingerprintKeyID == "" {
+			if err := rds.WithContext(ctx).Model(&existing).
+				Update("fingerprint_key_id", keyID).Error; err != nil {
+				return nil, err
+			}
+			existing.FingerprintKeyID = keyID
 		}
 		attempt, ok := findAttempt(ctx, req.GetAttemptId())
 		if !ok {
@@ -167,13 +205,18 @@ func BeginSubmission(ctx context.Context, req *pb.SubmitAccessGateRequest) (*Sub
 	if err != nil {
 		return nil, err
 	}
+	keyID, payloadHash, err := submissionPayloadHash(ctx, req, "")
+	if err != nil {
+		return nil, err
+	}
 	row := &dbmodel.AccessGateSubmission{
-		AttemptID:    req.GetAttemptId(),
-		SubmissionID: submissionID,
-		GateID:       req.GetGateId(),
-		ActionID:     req.GetActionId(),
-		PayloadHash:  payloadHash,
-		State:        submissionStateProcessing,
+		AttemptID:        req.GetAttemptId(),
+		SubmissionID:     submissionID,
+		GateID:           req.GetGateId(),
+		ActionID:         req.GetActionId(),
+		FingerprintKeyID: keyID,
+		PayloadHash:      payloadHash,
+		State:            submissionStateProcessing,
 	}
 	if err := rds.WithContext(ctx).Create(row).Error; err != nil {
 		return nil, fmt.Errorf("claim access gate submission: %w", err)

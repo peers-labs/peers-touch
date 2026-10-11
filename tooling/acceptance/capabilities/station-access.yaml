@@ -380,6 +380,50 @@
       }
     },
     {
+      "id": "node-connectivity-shared-access",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["node-connectivity-shared-access"],
+      "required_gates": [
+        "NCP-G05"
+      ],
+      "synthetic_paths": [
+        "apps/station/frame/core/auth/station_keyring.go",
+        "apps/station/frame/core/auth/jwt.go",
+        "apps/station/frame/core/facility/session/db_store.go",
+        "apps/station/frame/touch/accessgate/attempt_store.go",
+        "apps/station/frame/touch/accessgate/submission.go",
+        "apps/station/frame/touch/accessgate/session_finalizer.go",
+        "apps/station/app/subserver/oauth/repository.go",
+        "apps/station/app/subserver/oauth/shared_access_postgres_test.go",
+        "tooling/scripts/node-connectivity-journey.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "shared PostgreSQL Access and OAuth lifecycle rows",
+          "shared actor_sessions activation authority",
+          "Station-scoped access keyring with explicit key IDs"
+        ],
+        "surfaces": [
+          "canonical Station Access and OAuth acknowledgement services"
+        ],
+        "proven_by": [
+          "NCP-G05"
+        ],
+        "proven_scope": [
+          "Access start on node A and OAuth acknowledgement on node B preserve one Session identity",
+          "cross-node JWT issue and validation use the same persisted key ID",
+          "same-class activation has one winner while another class remains active",
+          "remote Session revocation is enforced on the other node",
+          "keyring or schema revision mismatch fails initialization"
+        ],
+        "unproven_scope": [
+          "external OAuth provider exchange is not exercised",
+          "native login rendering and Mobile runtime behavior remain owned by NCP-08"
+        ]
+      }
+    },
+    {
       "id": "station-access-desktop-relay-binding",
       "domain": "station-access",
       "direction": "acceptance_validates_product",
