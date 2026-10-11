@@ -207,6 +207,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
         setSearchError(t('chat.social.findPeople.catalogNoFederation'));
         return;
       }
+
       if (!localSearch && !catalogSearch) {
         throw localSearchError || catalogSearchError || new Error('Search unavailable');
       }

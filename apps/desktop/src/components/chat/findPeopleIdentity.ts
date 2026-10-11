@@ -19,6 +19,8 @@ export interface ActorSearchResult {
   homeStationName?: string;
 }
 
+export type FindPeopleScopeKind = 'federation' | 'station';
+
 export interface FindPeopleScopePresentation {
   name: string;
   labelKey: 'chat.social.findPeople.scopeFederationNamed';
@@ -118,7 +120,7 @@ export function catalogEntryToSearchResult(
 }
 
 /** Structural shape of the local actor-search API item (see desktop_api). */
-interface LocalActorSearchItem {
+export interface LocalActorSearchItem {
   actorPtid: string;
   username: string;
   displayName: string;
