@@ -579,7 +579,7 @@ except DriverError as error:
     if "permission inspection timed out" not in str(error):
         raise
     pressed = False
-print("pressed" if pressed else "missing")
+sys.stdout.write("pressed" if pressed else "missing")
   `.trim();
   const accepted = [];
   for (const kind of expectedKinds) {
