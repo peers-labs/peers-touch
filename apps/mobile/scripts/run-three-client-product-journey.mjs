@@ -8613,6 +8613,28 @@ async function submitSocialComment(
     commentText,
     `${clientId}-social-comment`,
   );
+  await waitForUi(
+    clientId,
+    client,
+    'Social comment composer readiness',
+    `
+      const button = [...document.querySelectorAll(arguments[0])]
+        .find((candidate) => candidate instanceof HTMLButtonElement);
+      const composer = button?.closest(
+        '[data-moments-comment-composer-state]'
+      );
+      return {
+        ready: Boolean(button)
+          && button.getClientRects().length > 0
+          && !button.disabled,
+        disabled: button?.disabled ?? null,
+        composerState: composer?.getAttribute(
+          'data-moments-comment-composer-state'
+        ) ?? null
+      };
+    `,
+    [sendSelector],
+  );
   await clickVisibleSelector(
     client,
     sendSelector,
