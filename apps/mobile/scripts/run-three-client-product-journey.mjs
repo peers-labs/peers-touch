@@ -3943,18 +3943,15 @@ async function acceptIncomingFriendship(
             ) || element.getAttribute(
               'data-chat-friend-request-peer-ptid'
             ) || '';
-            return (expectedPeerPtid && ptid === expectedPeerPtid)
-              || (element.innerText || '').toLowerCase().includes(
+            if (expectedPeerPtid) return ptid === expectedPeerPtid;
+            return (element.innerText || '').toLowerCase().includes(
                 friendlyName.toLowerCase()
               );
           };
           const requests = [...document.querySelectorAll(
             '[data-chat-friend-request-direction="incoming"]'
           )].filter((element) => element.getClientRects().length);
-          const request = requests.find(matches)
-            || (!expectedPeerPtid && requests.length === 1
-              ? requests[0]
-              : null);
+          const request = requests.find(matches);
           const requestPeerPtid = request?.getAttribute(
             'data-chat-friend-request-peer-ptid'
           ) || '';
@@ -3992,18 +3989,15 @@ async function acceptIncomingFriendship(
                 'data-friend-request-sender-ptid'
               )
               || '';
-            return (expectedPeerPtid && ptid === expectedPeerPtid)
-              || (element.innerText || '').toLowerCase().includes(
+            if (expectedPeerPtid) return ptid === expectedPeerPtid;
+            return (element.innerText || '').toLowerCase().includes(
                 friendlyName.toLowerCase()
               );
           };
           const requests = [...document.querySelectorAll(
             '[data-friend-request-direction="incoming"]'
           )].filter((element) => element.getClientRects().length);
-          const request = requests.find(matches)
-            || (!expectedPeerPtid && requests.length === 1
-              ? requests[0]
-              : null);
+          const request = requests.find(matches);
           const requestPeerPtid = request?.getAttribute(
             'data-friend-request-sender-ptid'
           ) || '';

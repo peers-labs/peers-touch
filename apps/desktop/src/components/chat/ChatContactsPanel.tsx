@@ -453,11 +453,6 @@ export function ChatContactsPanel({
                   {t(`chat.social.contacts.direction.${direction}`)}
                 </Tag>
                 {statusTag(request.status)}
-                <Tag>
-                  {t('chat.social.contacts.requestAttempts', {
-                    count: attemptCount,
-                  })}
-                </Tag>
               </Flexbox>
               {isPendingIncoming ? (
                 <Flexbox horizontal gap={6}>
@@ -697,6 +692,7 @@ export function ChatContactsPanel({
                     identity={friend}
                     avatarSize={avatarSize}
                     nameColor={isSelected ? token.colorPrimary : undefined}
+                    showMetadata={false}
                   />
                   <ChevronRight
                     size={14}

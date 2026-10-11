@@ -9,9 +9,11 @@ const { Text } = Typography;
 export function ContactIdentityRow({
   contact,
   selected = false,
+  showMetadata = false,
 }: {
   contact: MockUser;
   selected?: boolean;
+  showMetadata?: boolean;
 }) {
   const { token } = theme.useToken();
   const federation = contact.federationName || '';
@@ -38,7 +40,7 @@ export function ContactIdentityRow({
         >
           {contact.name}
         </Text>
-        {federation ? (
+        {showMetadata && federation ? (
           <Text
             data-prototype-identity-federation
             type="secondary"
@@ -54,7 +56,7 @@ export function ContactIdentityRow({
             Federation: {federation}
           </Text>
         ) : null}
-        {station ? (
+        {showMetadata && station ? (
           <Text
             data-prototype-identity-station
             type="secondary"
