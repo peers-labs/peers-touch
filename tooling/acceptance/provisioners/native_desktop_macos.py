@@ -406,6 +406,7 @@ class NativeDesktopMacOSProvisioner:
             session.start()
             session.wait_for_ready()
             session.wait_for_acceptance_harness()
+            session.driver.set_window_rect(x=100, y=100)
             process_id = session.process_id
             if process_id is None:
                 raise ProvisioningError(
