@@ -6491,37 +6491,16 @@ async function clickCallSurfaceControl(
           ? '[data-chat-call-surface]'
           : '.mobile-call-surface'
       );
-      const buttons = [...(surface?.querySelectorAll('button') || [])]
-        .filter((button) => button.getClientRects().length);
       const action = arguments[1];
-      const button = buttons.find((candidate) => {
-        if (action === 'accept') {
-          return candidate.classList.contains('accept')
-            || (
-              candidate.querySelector('svg.lucide-phone')
-              && !candidate.querySelector('svg.lucide-phone-off')
-            );
-        }
-        if (action === 'decline' || action === 'end') {
-          return candidate.classList.contains('danger')
-            || Boolean(candidate.querySelector('svg.lucide-phone-off'));
-        }
-        if (action === 'microphone') {
-          return Boolean(candidate.querySelector(
-            'svg.lucide-mic, svg.lucide-mic-off'
-          ));
-        }
-        if (action === 'camera') {
-          return Boolean(candidate.querySelector(
-            'svg.lucide-camera, svg.lucide-camera-off'
-          ));
-        }
-        if (action === 'dismiss') {
-          return Boolean(candidate.querySelector('svg.lucide-x'));
-        }
-        return false;
-      });
-      if (!(button instanceof HTMLButtonElement) || button.disabled) {
+      const button = surface?.querySelector(
+        '[data-chat-call-action="' + CSS.escape(action) + '"]'
+      );
+      if (
+        !(button instanceof HTMLElement)
+        || !button.getClientRects().length
+        || button.getAttribute('aria-disabled') === 'true'
+        || (button instanceof HTMLButtonElement && button.disabled)
+      ) {
         return { ok: false };
       }
       const before = button.getAttribute('aria-label')
