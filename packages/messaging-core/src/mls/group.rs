@@ -111,6 +111,30 @@ struct PersistedMlsJoinProviderPool {
     provider_states: Vec<Vec<u8>>,
 }
 
+pub fn welcome_key_package_refs(welcome_bytes: &[u8]) -> Result<Vec<String>, String> {
+    let welcome = MlsMessageIn::tls_deserialize(&mut Cursor::new(welcome_bytes))
+        .map_err(|error| format!("deserialize welcome: {error:?}"))?
+        .into_welcome()
+        .ok_or("message is not a Welcome")?;
+    Ok(welcome
+        .secrets()
+        .iter()
+        .map(|secret| hex::encode(secret.new_member().as_slice()))
+        .collect())
+}
+
+pub fn public_key_package_ref(key_package: &[u8]) -> Result<String, String> {
+    let provider = PeersMLSProvider::new();
+    let package = KeyPackageIn::tls_deserialize(&mut Cursor::new(key_package))
+        .map_err(|error| format!("deserialize kp: {error:?}"))?
+        .validate(provider.crypto(), ProtocolVersion::Mls10)
+        .map_err(|error| format!("validate kp: {error:?}"))?;
+    package
+        .hash_ref(provider.crypto())
+        .map(|reference| hex::encode(reference.as_slice()))
+        .map_err(|error| format!("key package reference: {error:?}"))
+}
+
 pub struct MlsGroupManager {
     sessions: Mutex<HashMap<String, MlsGroupSession>>,
     pending_transitions: Mutex<HashMap<String, PendingMlsTransition>>,
@@ -556,7 +580,11 @@ impl MlsGroupManager {
             break;
         }
         let Some((provider_index, group)) = matched else {
-            return Err("stage welcome: NoMatchingKeyPackage".to_string());
+            return Err(format!(
+                "stage welcome: NoMatchingKeyPackage; providers={}; key_package_refs={}",
+                providers.len(),
+                welcome_key_package_refs(welcome_bytes)?.join(",")
+            ));
         };
         let leaves = group_leaf_identities(&group)?;
         validate_welcome_leaf_changes(&leaves, changes)?;
