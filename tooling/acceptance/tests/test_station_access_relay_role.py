@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
+import os
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from tooling.acceptance.core import (
+    ActorIdentity,
     ENVIRONMENTS_DIR,
     EnvironmentContract,
     ProvisioningState,
@@ -19,6 +23,9 @@ from tooling.acceptance.provisioners import (
 from tooling.acceptance.provisioners.station_access_relay_role import (
     DESKTOP_RELAY_NATIVE_GATE_ID,
     NODE_CONNECTIVITY_NATIVE_GATE_ID,
+    NODE_CONNECTIVITY_STORAGE_MARKER,
+    NODE_CONNECTIVITY_STORAGE_ROOTS_ENV,
+    _prepare_node_connectivity_storage,
     _relay_discovery_endpoint,
     _service_source_compatibility,
     _validate_runtime_status,
@@ -397,8 +404,20 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
                 "resolve_existing_actor_identity",
-                side_effect=lambda _url, role: SimpleNamespace(role=role),
+                side_effect=lambda _url, role: ActorIdentity(
+                    role=role,
+                    account_ref=f"station-account:{role}@p.t",
+                    ptid=f"ptid:{role}",
+                ),
             ) as resolve_actor,
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "_prepare_node_connectivity_storage",
+                return_value={
+                    "alice": Path("/state/alice"),
+                    "bob": Path("/state/bob"),
+                },
+            ) as prepare_storage,
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
                 "persist_actor_manifest",
@@ -426,6 +445,10 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             2,
         )
         self.assertEqual(
+            {client.storage_lifecycle for client in manifest.clients},
+            {"persistent"},
+        )
+        self.assertEqual(
             len({client.webdriver_port for client in manifest.clients}),
             2,
         )
@@ -439,7 +462,129 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         self.assertEqual(actor_manifest.initial_state, "existing")
         self.assertFalse(actor_manifest.reset_authorized)
         self.assertTrue(actor_manifest.target_verified)
-        self.assertEqual(len(provisioner.cleanup()), 1)
+        self.assertEqual(
+            {actor.device_policy for actor in actor_manifest.actors},
+            {"persistent-acceptance"},
+        )
+        prepare_storage.assert_called_once()
+        self.assertEqual(len(provisioner.cleanup()), 0)
+
+    def test_ncp_storage_reuses_actor_bound_persistent_roots(self) -> None:
+        actors = (
+            ActorIdentity(
+                role="alice",
+                account_ref="station-account:alice@p.t",
+                ptid="ptid:alice",
+                device_policy="persistent-acceptance",
+            ),
+            ActorIdentity(
+                role="bob",
+                account_ref="station-account:bob@p.t",
+                ptid="ptid:bob",
+                device_policy="persistent-acceptance",
+            ),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            alice = Path(temporary) / "alice"
+            bob = Path(temporary) / "bob"
+            with patch.dict(
+                os.environ,
+                {
+                    NODE_CONNECTIVITY_STORAGE_ROOTS_ENV: (
+                        f"{alice},{bob}"
+                    )
+                },
+            ):
+                first = _prepare_node_connectivity_storage(
+                    profile_name="one",
+                    station_peer_id="station-peer",
+                    actors=actors,
+                    run_id="run-1",
+                )
+                sentinel = first["alice"] / "identity-state"
+                sentinel.write_text("retained", encoding="utf-8")
+                second = _prepare_node_connectivity_storage(
+                    profile_name="one",
+                    station_peer_id="station-peer",
+                    actors=actors,
+                    run_id="run-2",
+                )
+
+            self.assertEqual(first, second)
+            self.assertEqual(
+                sentinel.read_text(encoding="utf-8"),
+                "retained",
+            )
+            marker = json.loads(
+                (
+                    first["alice"] / NODE_CONNECTIVITY_STORAGE_MARKER
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(marker["actorPtid"], "ptid:alice")
+            self.assertEqual(marker["stationPeerId"], "station-peer")
+            self.assertEqual(
+                marker["devicePolicy"],
+                "persistent-acceptance",
+            )
+
+    def test_ncp_storage_rejects_actor_identity_drift_without_deletion(
+        self,
+    ) -> None:
+        actors = (
+            ActorIdentity(
+                role="alice",
+                account_ref="station-account:alice@p.t",
+                ptid="ptid:alice",
+            ),
+            ActorIdentity(
+                role="bob",
+                account_ref="station-account:bob@p.t",
+                ptid="ptid:bob",
+            ),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            alice = Path(temporary) / "alice"
+            bob = Path(temporary) / "bob"
+            with patch.dict(
+                os.environ,
+                {
+                    NODE_CONNECTIVITY_STORAGE_ROOTS_ENV: (
+                        f"{alice},{bob}"
+                    )
+                },
+            ):
+                _prepare_node_connectivity_storage(
+                    profile_name="one",
+                    station_peer_id="station-peer",
+                    actors=actors,
+                    run_id="run-1",
+                )
+                sentinel = alice / "identity-state"
+                sentinel.write_text("retained", encoding="utf-8")
+                changed = (
+                    ActorIdentity(
+                        role="alice",
+                        account_ref="station-account:alice@p.t",
+                        ptid="ptid:alice-replaced",
+                    ),
+                    actors[1],
+                )
+
+                with self.assertRaisesRegex(
+                    BlockedError,
+                    "storage identity does not match",
+                ):
+                    _prepare_node_connectivity_storage(
+                        profile_name="one",
+                        station_peer_id="station-peer",
+                        actors=changed,
+                        run_id="run-2",
+                    )
+
+            self.assertEqual(
+                sentinel.read_text(encoding="utf-8"),
+                "retained",
+            )
 
     def test_runtime_status_accepts_linux_compose_identity(self) -> None:
         evidence = _validate_runtime_status(

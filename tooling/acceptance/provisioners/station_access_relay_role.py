@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import os
 import shutil
 import socket
 import subprocess
@@ -21,12 +22,14 @@ from tooling.acceptance.core.attestation import (
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.core.evidence_store import (
     current_artifact_ref,
+    workspace_id,
     write_current_artifact,
 )
 from tooling.acceptance.core.provisioner import (
     EnvironmentProvisioner,
 )
 from tooling.acceptance.core.provisioning import (
+    ActorIdentity,
     ActorManifest,
     ClientRuntime,
     EnvironmentContract,
@@ -60,6 +63,10 @@ DESKTOP_RELAY_GATE_IDS = frozenset(
 )
 DESKTOP_RELAY_CLIENT_ID = "desktop-relay"
 NODE_CONNECTIVITY_CLIENT_IDS = ("alice", "bob")
+NODE_CONNECTIVITY_STORAGE_ROOTS_ENV = (
+    "PT_NCP_NATIVE_PERSISTENT_STORAGE_ROOTS"
+)
+NODE_CONNECTIVITY_STORAGE_MARKER = ".pt-ncp-native-state.json"
 CHAT_FIXTURE_CREDENTIAL_REF = (
     "fixture:apps/station/app/conf/actor.yml#preset_users"
 )
@@ -359,6 +366,155 @@ def _available_ports(count: int) -> tuple[int, ...]:
             listener.close()
 
 
+def _prepare_node_connectivity_storage(
+    *,
+    profile_name: str,
+    station_peer_id: str,
+    actors: tuple[ActorIdentity, ...],
+    run_id: str,
+) -> dict[str, Path]:
+    actors_by_role = {actor.role: actor for actor in actors}
+    if (
+        set(actors_by_role) != set(NODE_CONNECTIVITY_CLIENT_IDS)
+        or not station_peer_id
+    ):
+        raise BlockedError(
+            reason="NCP Native identity scope is incomplete",
+            resource="client-isolation:persistent-storage",
+        )
+
+    raw_roots = os.environ.get(
+        NODE_CONNECTIVITY_STORAGE_ROOTS_ENV,
+        "",
+    ).strip()
+    if raw_roots:
+        configured = tuple(
+            Path(value.strip()).expanduser().resolve()
+            for value in raw_roots.split(",")
+            if value.strip()
+        )
+        if len(configured) != len(NODE_CONNECTIVITY_CLIENT_IDS):
+            raise BlockedError(
+                reason=(
+                    "NCP Native storage override requires one root per client"
+                ),
+                resource="client-isolation:persistent-storage",
+            )
+        roots = dict(zip(NODE_CONNECTIVITY_CLIENT_IDS, configured))
+    else:
+        station_scope = hashlib.sha256(
+            station_peer_id.encode("utf-8")
+        ).hexdigest()[:16]
+        base = (
+            Path.home()
+            / ".peers-touch"
+            / "dev"
+            / "workspaces"
+            / workspace_id(REPO_ROOT)
+            / "runtime"
+            / "acceptance-state"
+            / "station-access-relay-role"
+            / profile_name
+            / station_scope
+        )
+        roots = {
+            role: (
+                base
+                / role
+                / hashlib.sha256(
+                    actors_by_role[role].ptid.encode("utf-8")
+                ).hexdigest()[:16]
+                / "desktop-app"
+            )
+            for role in NODE_CONNECTIVITY_CLIENT_IDS
+        }
+
+    if len(set(roots.values())) != len(NODE_CONNECTIVITY_CLIENT_IDS):
+        raise BlockedError(
+            reason="NCP Native storage roots must be distinct",
+            resource="client-isolation:persistent-storage",
+        )
+
+    for role, root in roots.items():
+        expected_marker = {
+            "schemaVersion": 1,
+            "environmentId": StationAccessRelayRoleProvisioner.environment_id,
+            "gateId": NODE_CONNECTIVITY_NATIVE_GATE_ID,
+            "profile": f"{profile_name}-{role}",
+            "role": role,
+            "actorPtid": actors_by_role[role].ptid,
+            "stationPeerId": station_peer_id,
+            "devicePolicy": "persistent-acceptance",
+        }
+        marker = root / NODE_CONNECTIVITY_STORAGE_MARKER
+        if root.exists():
+            if (
+                root.is_symlink()
+                or not root.is_dir()
+                or any(path.is_symlink() for path in root.rglob("*"))
+            ):
+                raise BlockedError(
+                    reason=f"NCP Native {role} storage root is unsafe",
+                    resource=f"client-persistent-storage:{role}",
+                )
+            try:
+                actual_marker = json.loads(
+                    marker.read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError) as error:
+                raise BlockedError(
+                    reason=(
+                        f"NCP Native {role} storage marker is unavailable: "
+                        f"{error}"
+                    ),
+                    resource=f"client-persistent-storage:{role}",
+                ) from error
+            if actual_marker != expected_marker:
+                raise BlockedError(
+                    reason=(
+                        f"NCP Native {role} storage identity does not match "
+                        "the selected Station Actor"
+                    ),
+                    resource=f"client-persistent-storage:{role}",
+                )
+            continue
+
+        root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        temporary = root.with_name(f".{root.name}.init-{run_id}")
+        if temporary.exists():
+            raise BlockedError(
+                reason=(
+                    f"NCP Native {role} storage initialization is already "
+                    "pending"
+                ),
+                resource=f"client-persistent-storage:{role}",
+            )
+        try:
+            temporary.mkdir(mode=0o700)
+            temporary_marker = (
+                temporary / NODE_CONNECTIVITY_STORAGE_MARKER
+            )
+            temporary_marker.write_text(
+                json.dumps(expected_marker, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            if os.name != "nt":
+                temporary_marker.chmod(0o600)
+            os.replace(temporary, root)
+        except Exception as error:
+            shutil.rmtree(temporary, ignore_errors=True)
+            if isinstance(error, BlockedError):
+                raise
+            raise BlockedError(
+                reason=(
+                    f"NCP Native {role} storage initialization failed: "
+                    f"{error}"
+                ),
+                resource=f"client-persistent-storage:{role}",
+            ) from error
+    return roots
+
+
 def config_host(endpoint: str) -> str:
     from urllib.parse import urlparse
 
@@ -561,11 +717,19 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
             cleanup_resources: tuple[str, ...] = ()
             actor_manifest_ref: dict[str, Any] | None = None
             credential_refs: tuple[str, ...] = ()
+            actors: tuple[ActorIdentity, ...] = ()
             client_ids: tuple[str, ...] = ()
             if gate_id in DESKTOP_RELAY_GATE_IDS:
                 client_ids = (DESKTOP_RELAY_CLIENT_ID,)
             elif gate_id == NODE_CONNECTIVITY_NATIVE_GATE_ID:
                 client_ids = NODE_CONNECTIVITY_CLIENT_IDS
+                actors = tuple(
+                    dataclasses.replace(
+                        resolve_existing_actor_identity(station_url, role),
+                        device_policy="persistent-acceptance",
+                    )
+                    for role in NODE_CONNECTIVITY_CLIENT_IDS
+                )
 
             if client_ids:
                 declared = {
@@ -580,15 +744,33 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                         ),
                         resource=f"gate-environment:{gate_id}",
                     )
-                runtime_root = Path(
-                    tempfile.mkdtemp(
-                        prefix=f"pt-relay-native-{manifest.run_id}-"
+                storage_roots: dict[str, Path]
+                storage_lifecycle = "ephemeral"
+                if gate_id == NODE_CONNECTIVITY_NATIVE_GATE_ID:
+                    storage_roots = _prepare_node_connectivity_storage(
+                        profile_name=profile_name,
+                        station_peer_id=station_attestation.runtime_identity,
+                        actors=actors,
+                        run_id=manifest.run_id,
                     )
-                )
-                self.register_cleanup(
-                    f"client-storage:{runtime_root}",
-                    lambda: shutil.rmtree(runtime_root, ignore_errors=True),
-                )
+                    storage_lifecycle = "persistent"
+                else:
+                    runtime_root = Path(
+                        tempfile.mkdtemp(
+                            prefix=f"pt-relay-native-{manifest.run_id}-"
+                        )
+                    )
+                    self.register_cleanup(
+                        f"client-storage:{runtime_root}",
+                        lambda: shutil.rmtree(
+                            runtime_root,
+                            ignore_errors=True,
+                        ),
+                    )
+                    storage_roots = {
+                        client_id: runtime_root / client_id / "storage"
+                        for client_id in client_ids
+                    }
                 ports = _available_ports(3 * len(client_ids))
                 clients = tuple(
                     ClientRuntime(
@@ -600,7 +782,8 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                         renderer_port=ports[index * 3 + 1],
                         webdriver_port=ports[index * 3 + 2],
                         profile=f"{profile_name}-{client_id}",
-                        storage_root=str(runtime_root / client_id / "storage"),
+                        storage_root=str(storage_roots[client_id]),
+                        storage_lifecycle=storage_lifecycle,
                         required_service_roles=(
                             client_contract.required_service_roles
                         ),
@@ -611,10 +794,6 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                 )
                 cleanup_resources = self.contract.cleanup.resources
             if gate_id == NODE_CONNECTIVITY_NATIVE_GATE_ID:
-                actors = tuple(
-                    resolve_existing_actor_identity(station_url, role)
-                    for role in NODE_CONNECTIVITY_CLIENT_IDS
-                )
                 _, _, actor_manifest_ref = persist_actor_manifest(
                     ActorManifest(
                         fixture_id="node-connectivity-existing-actors",

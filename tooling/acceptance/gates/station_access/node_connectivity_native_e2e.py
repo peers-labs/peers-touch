@@ -56,6 +56,7 @@ ATTACHMENT_CHUNK = (
     b"peers-touch-node-connectivity-circuit-attachment-v1\n"
 ) * 2048
 NCP_ASSERTIONS = {
+    "native_actor_identity_state_persistent",
     "native_clients_use_circuit_route",
     "native_text_read",
     "native_attachment_receiver_visible",
@@ -148,6 +149,38 @@ class NodeConnectivityNativeGate(NativeTwoClientGate):
                 "Native Circuit clients do not share one active conversation"
             )
         return identities.pop()
+
+    def _prove_persistent_identity_state(self) -> dict[str, Any]:
+        evidence = {
+            actor: {
+                "storageRoot": str(
+                    self.client_specs[actor].get("storage_root") or ""
+                ),
+                "storageLifecycle": str(
+                    self.client_specs[actor].get("storage_lifecycle") or ""
+                ),
+                "devicePolicy": str(
+                    self.actor_specs[actor].get("devicePolicy") or ""
+                ),
+            }
+            for actor in ("alice", "bob")
+        }
+        roots = [
+            Path(item["storageRoot"]) for item in evidence.values()
+        ]
+        self.assert_condition(
+            "native_actor_identity_state_persistent",
+            len(set(roots)) == 2
+            and all(
+                item["storageLifecycle"] == "persistent"
+                and item["devicePolicy"] == "persistent-acceptance"
+                and root.is_dir()
+                and not root.is_symlink()
+                for item, root in zip(evidence.values(), roots)
+            ),
+            json.dumps(evidence, sort_keys=True),
+        )
+        return evidence
 
     def _prove_circuit_routes(self) -> dict[str, Any]:
         station = _mapping(self.services.get("station"), "Station service")
@@ -471,10 +504,12 @@ class NodeConnectivityNativeGate(NativeTwoClientGate):
             return evidence
 
     def prove_additional_journey_assertions(self) -> None:
+        identity_state = self._prove_persistent_identity_state()
         routes = self.step("route.circuit", self._prove_circuit_routes)
         read = self.step("receipt.read", self._prove_read_receipt)
         attachment = self._prove_attachment()
         self.report.runtime["nodeConnectivity"] = {
+            "identityState": identity_state,
             "routes": routes,
             "read": read,
             "attachment": attachment,
@@ -502,6 +537,7 @@ def validate_ncp_report(report: dict[str, Any]) -> None:
         "node-connectivity evidence is required",
     )
     routes = evidence.get("routes")
+    identity_state = evidence.get("identityState")
     read = evidence.get("read")
     attachment = evidence.get("attachment")
     manifest = report.get("manifest")
@@ -525,6 +561,26 @@ def validate_ncp_report(report: dict[str, Any]) -> None:
         station.get("runtimeIdentity") or ""
     )
     relay_locator = str(relay.get("endpoint") or "")
+    require(
+        isinstance(identity_state, dict)
+        and set(identity_state) == {"alice", "bob"}
+        and len(
+            {
+                str(item.get("storageRoot") or "")
+                for item in identity_state.values()
+                if isinstance(item, dict)
+            }
+        )
+        == 2
+        and all(
+            isinstance(item, dict)
+            and item.get("storageLifecycle") == "persistent"
+            and item.get("devicePolicy") == "persistent-acceptance"
+            and bool(item.get("storageRoot"))
+            for item in identity_state.values()
+        ),
+        "Native Actor identity storage must be persistent and isolated",
+    )
     require(
         isinstance(routes, dict) and set(routes) == {"alice", "bob"},
         "both Native clients require Circuit route evidence",
