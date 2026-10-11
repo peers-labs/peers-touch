@@ -129,6 +129,7 @@ func TestSignAccessEndpointRejectsGrantUnsupportedVersionAndWrongNode(
 
 func TestStationRouteAndGrantBindRootNodeRelayAndTLS(t *testing.T) {
 	fixture := newStationIdentityFixture(t)
+	relayPeerID := "12D3KooWLpZy2EgZ6SC2pgJFHjM13j1ygz7DXCfm9HiPeNQZ1uaW"
 	authorization, err := peerpb.VerifyStationNodeAuthorization(
 		fixture.authorization,
 		fixture.now,
@@ -138,7 +139,7 @@ func TestStationRouteAndGrantBindRootNodeRelayAndTLS(t *testing.T) {
 	}
 	routeStatement := &peerpb.StationRouteStatement{
 		StationPeerId:           authorization.Statement.GetStationPeerId(),
-		RelayPeerId:             "relay-peer",
+		RelayPeerId:             relayPeerID,
 		RouteId:                 "route-1",
 		RouteGeneration:         3,
 		InnerTlsSpkiSha256:      bytes.Repeat([]byte{0x11}, sha256.Size),
@@ -149,7 +150,7 @@ func TestStationRouteAndGrantBindRootNodeRelayAndTLS(t *testing.T) {
 		NodePeerId:              authorization.Statement.GetNodePeerId(),
 		NodeAuthorizationDigest: authorization.Digest[:],
 		Kind:                    peerpb.StationRouteKind_STATION_ROUTE_KIND_CIRCUIT,
-		Addresses:               []string{"/p2p/relay-peer/p2p-circuit/p2p/" + authorization.Statement.GetNodePeerId()},
+		Addresses:               []string{"/ip4/127.0.0.1/tcp/4001/p2p/" + relayPeerID + "/p2p-circuit/p2p/" + authorization.Statement.GetNodePeerId()},
 	}
 	route, err := peerpb.SignStationRouteAttestation(
 		fixture.nodeKey,
@@ -162,7 +163,7 @@ func TestStationRouteAndGrantBindRootNodeRelayAndTLS(t *testing.T) {
 	}
 	verifiedRoute, err := peerpb.VerifyStationRouteAttestation(
 		route,
-		"relay-peer",
+		relayPeerID,
 		fixture.now,
 	)
 	if err != nil {
@@ -172,11 +173,24 @@ func TestStationRouteAndGrantBindRootNodeRelayAndTLS(t *testing.T) {
 		verifiedRoute.Statement.GetNodePeerId() {
 		t.Fatal("route collapsed logical Station and node identity")
 	}
+	relativeRoute := proto.Clone(routeStatement).(*peerpb.StationRouteStatement)
+	relativeRoute.Addresses = []string{
+		"/p2p/" + relayPeerID + "/p2p-circuit/p2p/" +
+			authorization.Statement.GetNodePeerId(),
+	}
+	if _, err := peerpb.SignStationRouteAttestation(
+		fixture.nodeKey,
+		fixture.authorization,
+		relativeRoute,
+		fixture.now,
+	); err == nil {
+		t.Fatal("route without a Relay dial prefix was signed")
+	}
 
 	grantStatement := &peerpb.StationConnectionGrantStatement{
 		GrantId:                 "grant-1",
 		StationPeerId:           authorization.Statement.GetStationPeerId(),
-		RelayPeerId:             "relay-peer",
+		RelayPeerId:             relayPeerID,
 		RouteId:                 "route-1",
 		RouteGeneration:         3,
 		MaxUses:                 1,
@@ -206,6 +220,7 @@ func TestStationRouteRejectsRelaySPKIAndAuthorizationSubstitution(
 	t *testing.T,
 ) {
 	fixture := newStationIdentityFixture(t)
+	relayPeerID := "12D3KooWLpZy2EgZ6SC2pgJFHjM13j1ygz7DXCfm9HiPeNQZ1uaW"
 	authorization, err := peerpb.VerifyStationNodeAuthorization(
 		fixture.authorization,
 		fixture.now,
@@ -215,7 +230,7 @@ func TestStationRouteRejectsRelaySPKIAndAuthorizationSubstitution(
 	}
 	statement := &peerpb.StationRouteStatement{
 		StationPeerId:           authorization.Statement.GetStationPeerId(),
-		RelayPeerId:             "relay-peer",
+		RelayPeerId:             relayPeerID,
 		RouteId:                 "route-1",
 		RouteGeneration:         1,
 		InnerTlsSpkiSha256:      bytes.Repeat([]byte{1}, sha256.Size),
@@ -226,7 +241,7 @@ func TestStationRouteRejectsRelaySPKIAndAuthorizationSubstitution(
 		NodePeerId:              authorization.Statement.GetNodePeerId(),
 		NodeAuthorizationDigest: authorization.Digest[:],
 		Kind:                    peerpb.StationRouteKind_STATION_ROUTE_KIND_CIRCUIT,
-		Addresses:               []string{"/p2p/relay-peer/p2p-circuit/p2p/" + authorization.Statement.GetNodePeerId()},
+		Addresses:               []string{"/ip4/127.0.0.1/tcp/4001/p2p/" + relayPeerID + "/p2p-circuit/p2p/" + authorization.Statement.GetNodePeerId()},
 	}
 	route, err := peerpb.SignStationRouteAttestation(
 		fixture.nodeKey,
@@ -251,7 +266,7 @@ func TestStationRouteRejectsRelaySPKIAndAuthorizationSubstitution(
 		Marshal(tamperedStatement)
 	if _, err := peerpb.VerifyStationRouteAttestation(
 		route,
-		"relay-peer",
+		relayPeerID,
 		fixture.now,
 	); err == nil {
 		t.Fatal("route with substituted TLS SPKI was accepted")
@@ -261,7 +276,7 @@ func TestStationRouteRejectsRelaySPKIAndAuthorizationSubstitution(
 	route.NodeAuthorization = other.authorization
 	if _, err := peerpb.VerifyStationRouteAttestation(
 		route,
-		"relay-peer",
+		relayPeerID,
 		fixture.now,
 	); err == nil {
 		t.Fatal("route with substituted node authorization was accepted")

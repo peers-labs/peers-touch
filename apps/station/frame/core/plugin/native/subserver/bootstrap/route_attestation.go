@@ -78,13 +78,7 @@ func bindNodeRouteStatement(
 		verified.Statement.GetCapabilitiesDigest()...,
 	)
 	statement.Kind = peerpb.StationRouteKind_STATION_ROUTE_KIND_CIRCUIT
-	statement.Addresses = []string{
-		fmt.Sprintf(
-			"/p2p/%s/p2p-circuit/p2p/%s",
-			statement.GetRelayPeerId(),
-			statement.GetNodePeerId(),
-		),
-	}
+	statement.Addresses = append([]string(nil), statement.GetAddresses()...)
 	sort.Strings(statement.Addresses)
 	if statement.GetExpiresAtUnixMs()-statement.GetIssuedAtUnixMs() >
 		peerpb.MaxRouteAttestationLifetime.Milliseconds() {
