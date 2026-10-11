@@ -91,13 +91,13 @@ export default function Login() {
                   {/* Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <h2 className="text-base font-semibold text-slate-900 truncate">printfcoder</h2>
+                      <h2 className="text-base font-semibold text-slate-900 truncate">developer</h2>
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-600 border border-emerald-100">
                         Active
                       </span>
                     </div>
                     <p className="text-sm text-slate-500 truncate mb-3">
-                      GitHub · printfcoder@gmail.com
+                      GitHub · developer@example.com
                     </p>
 
                     {/* Timestamps */}

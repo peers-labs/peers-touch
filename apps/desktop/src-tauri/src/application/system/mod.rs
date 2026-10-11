@@ -317,6 +317,66 @@ pub fn share_get(input: ShareIdInput) -> AppResult<StubPayload> {
     )
 }
 
+struct LogTailChunk {
+    cursor: usize,
+    lines: Vec<String>,
+    truncated: bool,
+    reset: bool,
+}
+
+fn is_application_log_file(name: &str) -> bool {
+    name == "app.log" || name.starts_with("app.log.")
+}
+
+fn tail_log_content(
+    content: &str,
+    requested_cursor: i64,
+    limit: usize,
+    max_bytes: usize,
+) -> LogTailChunk {
+    let file_size = content.len();
+    let limit = limit.max(1);
+    let max_bytes = max_bytes.max(1);
+    let reset = requested_cursor > 0 && requested_cursor as usize > file_size;
+    let requested_start = if requested_cursor < 0 || reset {
+        0
+    } else {
+        (requested_cursor as usize).min(file_size)
+    };
+    let use_tail_snapshot =
+        requested_cursor < 0 || reset || file_size.saturating_sub(requested_start) > max_bytes;
+    let mut start = if use_tail_snapshot {
+        file_size.saturating_sub(max_bytes)
+    } else {
+        requested_start
+    };
+    while start < file_size && !content.is_char_boundary(start) {
+        start += 1;
+    }
+
+    let mut window = &content[start..];
+    if start > 0 {
+        window = window
+            .find('\n')
+            .map(|line_end| &window[line_end + 1..])
+            .unwrap_or_default();
+    }
+    let mut lines = window
+        .lines()
+        .rev()
+        .take(limit)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    lines.reverse();
+
+    LogTailChunk {
+        cursor: file_size,
+        lines,
+        truncated: start > requested_start,
+        reset,
+    }
+}
+
 pub fn logs_tail(input: LogsTailInput) -> AppResult<StubPayload> {
     let limit = input.limit.unwrap_or(200) as usize;
     let max_bytes = input.max_bytes.unwrap_or(512_000) as usize;
@@ -339,7 +399,7 @@ pub fn logs_tail(input: LogsTailInput) -> AppResult<StubPayload> {
         .filter_map(|e| e.ok())
         .filter(|e| {
             let name = e.file_name().to_string_lossy().to_string();
-            name.ends_with(".log") || name.ends_with(".jsonl") || name.starts_with("app.log.")
+            is_application_log_file(&name)
         })
         .collect();
     log_files.sort_by_key(|e| {
@@ -369,46 +429,68 @@ pub fn logs_tail(input: LogsTailInput) -> AppResult<StubPayload> {
 
     let content = fs::read_to_string(&file_path).unwrap_or_default();
     let file_size = content.len();
-    let cursor = if input.cursor < 0 {
-        0
-    } else {
-        (input.cursor as usize).min(file_size)
-    };
-
-    let reset = input.cursor > 0 && (input.cursor as usize) > file_size;
-    let effective = if cursor < file_size {
-        &content[cursor..]
-    } else {
-        ""
-    };
-    let truncated = effective.len() > max_bytes;
-    let byte_limited = if truncated {
-        &effective[..max_bytes]
-    } else {
-        effective
-    };
-
-    let lines: Vec<&str> = byte_limited.lines().collect();
-    let output_lines: Vec<&str> = if lines.len() > limit {
-        lines[lines.len() - limit..].to_vec()
-    } else {
-        lines
-    };
-    let new_cursor = if truncated {
-        cursor + max_bytes
-    } else {
-        file_size
-    };
+    let chunk = tail_log_content(&content, input.cursor, limit, max_bytes);
 
     success_payload(
         "logs_tail",
         json!({
-            "file": file_name, "cursor": new_cursor, "size": file_size,
-            "lines": output_lines, "truncated": truncated,
-            "reset": reset,
+            "file": file_name, "cursor": chunk.cursor, "size": file_size,
+            "lines": chunk.lines, "truncated": chunk.truncated,
+            "reset": chunk.reset,
             "limit": limit, "max_bytes": max_bytes
         }),
     )
+}
+
+#[cfg(test)]
+mod log_tail_tests {
+    use super::{is_application_log_file, tail_log_content};
+
+    #[test]
+    fn initial_snapshot_returns_latest_lines() {
+        let content = (0..100)
+            .map(|index| format!("line-{index}\n"))
+            .collect::<String>();
+
+        let chunk = tail_log_content(&content, -1, 3, 80);
+
+        assert_eq!(chunk.lines, ["line-97", "line-98", "line-99"]);
+        assert_eq!(chunk.cursor, content.len());
+        assert!(chunk.truncated);
+        assert!(!chunk.reset);
+    }
+
+    #[test]
+    fn oversized_incremental_backlog_jumps_to_latest_window() {
+        let content = (0..100)
+            .map(|index| format!("line-{index}\n"))
+            .collect::<String>();
+
+        let chunk = tail_log_content(&content, 10, 2, 40);
+
+        assert_eq!(chunk.lines, ["line-98", "line-99"]);
+        assert_eq!(chunk.cursor, content.len());
+        assert!(chunk.truncated);
+    }
+
+    #[test]
+    fn truncated_file_resets_with_current_content_instead_of_emptying() {
+        let content = "new-1\nnew-2\n";
+
+        let chunk = tail_log_content(content, 10_000, 20, 1_024);
+
+        assert_eq!(chunk.lines, ["new-1", "new-2"]);
+        assert_eq!(chunk.cursor, content.len());
+        assert!(chunk.reset);
+    }
+
+    #[test]
+    fn log_selection_excludes_unrelated_jsonl_files() {
+        assert!(is_application_log_file("app.log"));
+        assert!(is_application_log_file("app.log.2026-10-08"));
+        assert!(!is_application_log_file("storage-migration.jsonl"));
+        assert!(!is_application_log_file("acceptance.log"));
+    }
 }
 
 pub fn oauth_simulate_lark_start(input: OAuthSimulateStartInput) -> AppResult<StubPayload> {

@@ -46,7 +46,7 @@ peers:
   store:
     rds:
       gorm:
-        - dsn: host=localhost user=printfcoder dbname=peers_touch port=15432 sslmode=disable
+        - dsn: host=localhost user=developer dbname=peers_touch port=15432 sslmode=disable
 """,
         encoding="utf-8",
     )

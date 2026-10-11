@@ -261,7 +261,7 @@
   "provider.skills.import.ok": "Import",
   "provider.skills.import.desc1": "1. SKILL.md direct link (raw file address)",
   "provider.skills.import.desc2": "2. Git repository address. Supports git/http. Please ensure you have pull access locally.",
-  "provider.skills.import.placeholder": "https://code.byted.org/org/repo.git or git@code.byted.org:org/repo.git",
+  "provider.skills.import.placeholder": "https://github.com/org/repo.git or git@github.com:org/repo.git",
   "provider.skills.zip.title": "Upload Skill ZIP",
   "provider.skills.zip.cancel": "Cancel",
   "provider.skills.zip.validate": "Validate",
