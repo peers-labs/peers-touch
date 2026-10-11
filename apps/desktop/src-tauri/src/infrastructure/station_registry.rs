@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::RwLock;
 
 /// A single known Station entry with optional metadata from probing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StationEntry {
     pub url: String,
     pub label: Option<String>,
@@ -39,14 +39,17 @@ impl StationRegistry {
     /// Create a new registry, loading persisted state from `config_dir/stations.json`.
     pub fn new(config_dir: &std::path::Path) -> Self {
         let persist_path = config_dir.join("stations.json");
-        let (state, seeded) = Self::load(&persist_path);
+        let (state, migrated) = Self::load(&persist_path);
         let registry = Self {
             state: RwLock::new(state),
             persist_path,
         };
-        if seeded {
+        if migrated {
             if let Err(error) = registry.save() {
-                tracing::warn!(error = %error, "station_registry: failed to persist Station seed");
+                tracing::warn!(
+                    error = %error,
+                    "station_registry: failed to persist normalized Station registry"
+                );
             }
         }
         registry
@@ -58,35 +61,54 @@ impl StationRegistry {
     fn load(path: &std::path::Path) -> (PersistedData, bool) {
         let seed_url = std::env::var("PEERS_STATION_URL")
             .ok()
-            .map(|url| normalize_url(&url))
+            .map(|url| normalize_station_url(&url))
             .filter(|url| !url.is_empty());
 
         let mut state = std::fs::read_to_string(path)
             .ok()
             .and_then(|content| serde_json::from_str::<PersistedData>(&content).ok())
             .unwrap_or_default();
+        let original_state = state.clone();
 
         state.entries.iter_mut().for_each(|entry| {
-            entry.url = normalize_url(&entry.url);
+            entry.url = normalize_station_url(&entry.url);
         });
+        let pin_urls = state
+            .federation_signing_key_pins
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        for url in pin_urls {
+            let normalized = normalize_station_url(&url);
+            if normalized == url {
+                continue;
+            }
+            if let Some(pin) = state.federation_signing_key_pins.remove(&url) {
+                if !normalized.is_empty() {
+                    state
+                        .federation_signing_key_pins
+                        .entry(normalized)
+                        .or_insert(pin);
+                }
+            }
+        }
         let mut seen_urls = HashSet::new();
         state
             .entries
             .retain(|entry| !entry.url.is_empty() && seen_urls.insert(entry.url.clone()));
         state.active_url = state
             .active_url
-            .map(|url| normalize_url(&url))
+            .map(|url| normalize_station_url(&url))
             .filter(|url| state.entries.iter().any(|entry| entry.url == *url));
 
-        let mut seeded = false;
         if let Some(seed_url) = seed_url {
             if !state.entries.iter().any(|entry| entry.url == seed_url) {
                 state.entries.push(empty_entry(seed_url));
-                seeded = true;
             }
         }
 
-        (state, seeded)
+        let migrated = state != original_state;
+        (state, migrated)
     }
 
     fn persist(&self, state: &PersistedData) -> io::Result<()> {
@@ -116,7 +138,7 @@ impl StationRegistry {
 
     /// Switch the active station URL. Persists immediately.
     pub fn set_active(&self, url: &str) -> io::Result<()> {
-        let normalized = normalize_url(url);
+        let normalized = normalize_station_url(url);
         if normalized.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -151,7 +173,7 @@ impl StationRegistry {
 
     /// Add or refresh a station entry by normalized URL.
     pub fn add(&self, mut entry: StationEntry) -> io::Result<()> {
-        entry.url = normalize_url(&entry.url);
+        entry.url = normalize_station_url(&entry.url);
         if entry.url.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -195,7 +217,7 @@ impl StationRegistry {
 
     /// Remove a station by URL. Persists immediately.
     pub fn remove(&self, url: &str) -> io::Result<()> {
-        let normalized = normalize_url(url);
+        let normalized = normalize_station_url(url);
         let mut state = self
             .state
             .write()
@@ -220,7 +242,7 @@ impl StationRegistry {
         peers_count: Option<u32>,
         online: bool,
     ) -> io::Result<()> {
-        let normalized = normalize_url(url);
+        let normalized = normalize_station_url(url);
         let mut state = self
             .state
             .write()
@@ -263,7 +285,7 @@ impl StationRegistry {
         signing_key_id: &str,
         ed25519_public_key: [u8; 32],
     ) -> io::Result<FederationSigningKeyPin> {
-        let normalized = normalize_url(url);
+        let normalized = normalize_station_url(url);
         if normalized.is_empty()
             || station_peer_id.trim().is_empty()
             || signing_key_id.trim().is_empty()
@@ -324,7 +346,7 @@ impl StationRegistry {
         &self,
         url: &str,
     ) -> io::Result<Option<FederationSigningKeyPin>> {
-        let normalized = normalize_url(url);
+        let normalized = normalize_station_url(url);
         let state = self
             .state
             .read()
@@ -371,7 +393,7 @@ fn now_rfc3339() -> String {
 }
 
 /// On-disk JSON structure for `stations.json`.
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct PersistedData {
     #[serde(default)]
     entries: Vec<StationEntry>,
@@ -388,8 +410,13 @@ struct PersistedFederationSigningKeyPin {
     ed25519_public_key: Vec<u8>,
 }
 
-fn normalize_url(url: &str) -> String {
-    url.trim().trim_end_matches('/').to_string()
+pub(crate) fn normalize_station_url(url: &str) -> String {
+    let normalized = url.trim().trim_end_matches('/');
+    if normalized.is_empty() || normalized.contains("://") {
+        normalized.to_string()
+    } else {
+        format!("http://{normalized}")
+    }
 }
 
 fn empty_entry(url: String) -> StationEntry {
@@ -451,6 +478,78 @@ mod tests {
             let registry = StationRegistry::new(&dir);
             assert_eq!(registry.active_url(), None);
             assert_eq!(registry.list()[0].url, "http://seed.example");
+        });
+    }
+
+    #[test]
+    fn bare_station_url_defaults_to_http_across_registry_operations() {
+        with_seed(None, || {
+            let dir = temp_dir("bare-url");
+            let registry = StationRegistry::new(&dir);
+            registry
+                .add(empty_entry("192.0.2.60:18280/".to_string()))
+                .unwrap();
+            registry.set_active("192.0.2.60:18280").unwrap();
+
+            assert_eq!(registry.list()[0].url, "http://192.0.2.60:18280");
+            assert_eq!(
+                registry.active_url().as_deref(),
+                Some("http://192.0.2.60:18280")
+            );
+            assert_eq!(
+                normalize_station_url(" https://station.example/// "),
+                "https://station.example"
+            );
+        });
+    }
+
+    #[test]
+    fn persisted_bare_url_and_federation_pin_are_migrated() {
+        with_seed(None, || {
+            let dir = temp_dir("bare-url-migration");
+            let persisted = PersistedData {
+                entries: vec![StationEntry {
+                    url: "192.0.2.60:18280".to_string(),
+                    label: None,
+                    peer_id: Some("station-peer-1".to_string()),
+                    peers_count: None,
+                    last_probe: None,
+                    online: false,
+                }],
+                active_url: Some("192.0.2.60:18280".to_string()),
+                federation_signing_key_pins: HashMap::from([(
+                    "192.0.2.60:18280".to_string(),
+                    PersistedFederationSigningKeyPin {
+                        station_peer_id: "station-peer-1".to_string(),
+                        signing_key_id: "key-1".to_string(),
+                        ed25519_public_key: vec![7; 32],
+                    },
+                )]),
+            };
+            std::fs::write(
+                dir.join("stations.json"),
+                serde_json::to_string(&persisted).unwrap(),
+            )
+            .unwrap();
+
+            let registry = StationRegistry::new(&dir);
+            assert_eq!(
+                registry.active_url().as_deref(),
+                Some("http://192.0.2.60:18280")
+            );
+            assert!(registry
+                .federation_signing_key_pin("192.0.2.60:18280")
+                .unwrap()
+                .is_some());
+
+            let saved = std::fs::read_to_string(dir.join("stations.json")).unwrap();
+            let saved: PersistedData = serde_json::from_str(&saved).unwrap();
+            assert!(saved
+                .federation_signing_key_pins
+                .contains_key("http://192.0.2.60:18280"));
+            assert!(!saved
+                .federation_signing_key_pins
+                .contains_key("192.0.2.60:18280"));
         });
     }
 

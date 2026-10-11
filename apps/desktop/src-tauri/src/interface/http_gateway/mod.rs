@@ -64,6 +64,7 @@ use crate::application::tts as app_tts;
 
 // Actor & chat modules use station_client + proto directly
 use crate::infrastructure::station_client;
+use crate::infrastructure::station_registry::normalize_station_url;
 use crate::interface::tauri_commands::actor::actor_profile_to_json;
 use crate::interface::tauri_commands::oss::{
     safe_temp_filename, OssKeyInput, OssListMyFilesInput, OssResolveUrlInput,
@@ -6425,7 +6426,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }))
         }
         "station_set_active" => {
-            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            let url = normalize_station_url(args.get("url").and_then(|v| v.as_str()).unwrap_or(""));
             if url.is_empty() {
                 to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::InvalidArgument,
@@ -6434,7 +6435,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ))
             } else {
                 let reg = crate::infrastructure::station_client::station_registry();
-                reg.set_active(url);
+                reg.set_active(&url);
                 let payload = json!({ "active_url": url });
                 to_json(AppResult::success(StubPayload {
                     command: "station_set_active".into(),
@@ -6448,7 +6449,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             ),
         ),
         "station_add" => {
-            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            let url = normalize_station_url(args.get("url").and_then(|v| v.as_str()).unwrap_or(""));
             if url.is_empty() {
                 to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::InvalidArgument,
@@ -6457,12 +6458,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ))
             } else {
                 let (online, label, peer_id, peers_count) =
-                    crate::infrastructure::station_client::probe_station(url);
+                    crate::infrastructure::station_client::probe_station(&url);
                 let now = time::OffsetDateTime::now_utc()
                     .format(&time::format_description::well_known::Rfc3339)
                     .unwrap_or_else(|_| "unknown".to_string());
                 let entry = crate::infrastructure::station_registry::StationEntry {
-                    url: url.trim_end_matches('/').to_string(),
+                    url,
                     label: label.clone(),
                     peer_id: peer_id.clone(),
                     peers_count,
@@ -6478,7 +6479,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "station_remove" => {
-            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            let url = normalize_station_url(args.get("url").and_then(|v| v.as_str()).unwrap_or(""));
             if url.is_empty() {
                 to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::InvalidArgument,
@@ -6487,7 +6488,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ))
             } else {
                 let reg = crate::infrastructure::station_client::station_registry();
-                reg.remove(url);
+                reg.remove(&url);
                 let payload = json!({ "removed": url });
                 to_json(AppResult::success(StubPayload {
                     command: "station_remove".into(),
@@ -6496,7 +6497,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "station_probe" => {
-            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            let url = normalize_station_url(args.get("url").and_then(|v| v.as_str()).unwrap_or(""));
             if url.is_empty() {
                 to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::InvalidArgument,
@@ -6505,9 +6506,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ))
             } else {
                 let (online, label, peer_id, peers_count) =
-                    crate::infrastructure::station_client::probe_station(url);
+                    crate::infrastructure::station_client::probe_station(&url);
                 let reg = crate::infrastructure::station_client::station_registry();
-                reg.update_probe(url, label.clone(), peer_id.clone(), peers_count, online);
+                reg.update_probe(&url, label.clone(), peer_id.clone(), peers_count, online);
                 let payload = json!({
                     "url": url,
                     "online": online,
