@@ -37,6 +37,7 @@ export function MobileShell({
   socialDemo,
   dispatchSocialDemo,
   longLists = false,
+  focusChatJourney = false,
   searchDemo,
 }: {
   stationLabel: string;
@@ -47,6 +48,7 @@ export function MobileShell({
   socialDemo: SocialDemoState;
   dispatchSocialDemo: Dispatch<SocialDemoAction>;
   longLists?: boolean;
+  focusChatJourney?: boolean;
   searchDemo?: SearchDemoControl;
 }) {
   const [listMemory] = useState(() => new PrototypeListMemory());
@@ -57,7 +59,11 @@ export function MobileShell({
     socialScenario === 'find-people-member' || socialScenario === 'find-people-no-membership'
       || socialScenario === 'request-unknown',
   );
-  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(() => (
+    focusChatJourney
+      ? demoConversations.find((conversation) => conversation.key === 'dev-team') ?? null
+      : null
+  ));
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<GroupItem | null>(null);
   const [selectedSetting, setSelectedSetting] = useState<SettingEntry | null>(null);

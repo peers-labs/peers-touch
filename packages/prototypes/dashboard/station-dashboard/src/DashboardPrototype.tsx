@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Lock,
   Monitor,
+  MessageSquareText,
   Network,
   Radio,
   Server,
@@ -25,27 +26,28 @@ import {
   Settings,
   ChevronRight,
 } from 'lucide-react';
+import { ChatOperationsPage } from './ChatOperationsPage';
 
 // ---------------------------------------------------------------------------
 // Token Palette — mirrors desktop shell design tokens
 // ---------------------------------------------------------------------------
 
 const T = {
-  primary: '#6b5bd6',
-  primaryLight: '#8b7fe8',
-  primaryBg: '#f3f1fd',
+  primary: '#365f46',
+  primaryLight: '#547a60',
+  primaryBg: '#e7efe9',
   bg: '#ffffff',
-  pageBg: '#f7f8fa',
-  navBg: '#1a1a2e',
-  navHover: '#252545',
-  navActive: '#6b5bd6',
-  navText: '#a0a0c0',
-  navTextActive: '#ffffff',
-  border: '#e8e8e8',
-  borderLight: '#f0f0f0',
-  text: '#1a1a2e',
-  textSecondary: '#6b7280',
-  textMuted: '#9ca3af',
+  pageBg: '#f5f6f3',
+  navBg: '#f7f8f5',
+  navHover: '#ecefe9',
+  navActive: '#e3e9e2',
+  navText: '#626961',
+  navTextActive: '#202420',
+  border: '#dfe3dd',
+  borderLight: '#ecefe9',
+  text: '#202420',
+  textSecondary: '#687068',
+  textMuted: '#929991',
   success: '#10b981',
   successBg: '#ecfdf5',
   warning: '#f59e0b',
@@ -67,6 +69,7 @@ const T = {
 
 type PageId =
   | 'overview'
+  | 'messaging'
   | 'transport'
   | 'actors'
   | 'sessions'
@@ -88,6 +91,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { id: 'messaging', label: 'Messaging', icon: MessageSquareText },
   { id: 'transport', label: 'Transport', icon: Radio },
   { id: 'actors', label: 'Actors', icon: Users },
   { id: 'sessions', label: 'Sessions', icon: Monitor },
@@ -1812,12 +1816,14 @@ const buttonStyle: React.CSSProperties = {
 // ---------------------------------------------------------------------------
 
 export function DashboardPrototype() {
-  const [activePage, setActivePage] = useState<PageId>('overview');
+  const [activePage, setActivePage] = useState<PageId>('messaging');
 
   const renderPage = () => {
     switch (activePage) {
       case 'overview':
         return <OverviewPage />;
+      case 'messaging':
+        return <ChatOperationsPage />;
       case 'transport':
         return <TransportPage />;
       case 'actors':
@@ -1857,10 +1863,10 @@ export function DashboardPrototype() {
           display: 'flex',
           flexDirection: 'column',
           flexShrink: 0,
-          position: 'fixed',
+          position: 'sticky',
           top: 0,
-          left: 0,
-          bottom: 0,
+          alignSelf: 'flex-start',
+          height: '100vh',
           zIndex: 100,
         }}
       >
@@ -1911,14 +1917,14 @@ export function DashboardPrototype() {
         </nav>
 
         {/* Bottom info */}
-        <div style={{ padding: '12px 16px', borderTop: '1px solid #2a2a4e', fontSize: 10, color: T.navText }}>
+        <div style={{ padding: '12px 16px', borderTop: `1px solid ${T.border}`, fontSize: 10, color: T.navText }}>
           <div>peers-station-prod-01</div>
           <div style={{ marginTop: 2 }}>v1.4.2 | uptime 14d</div>
         </div>
       </aside>
 
       {/* Main content */}
-      <main style={{ flex: 1, marginLeft: 220, padding: 28, minWidth: 0 }}>
+      <main style={{ flex: 1, padding: 28, minWidth: 0 }}>
         {renderPage()}
       </main>
     </div>

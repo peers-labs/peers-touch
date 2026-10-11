@@ -2,6 +2,15 @@
  * Mock data for the social chat prototype.
  * Represents realistic conversation and member states.
  */
+import {
+  CHAT_JOURNEY,
+  CHAT_JOURNEY_MESSAGE_ID,
+  resolveChatJourneyLocale,
+} from '../../../../shared/chat-journey';
+
+export const CHAT_JOURNEY_LOCALE = typeof window === 'undefined'
+  ? 'en'
+  : resolveChatJourneyLocale(window.location.search, window.navigator.language);
 
 export interface MockUser {
   id: string;
@@ -26,8 +35,10 @@ export interface MockMessage {
   status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
   attachmentName?: string;
   attachmentMeta?: string;
+  attachmentUrl?: string;
   durationSeconds?: number;
   transferState?: 'ready' | 'failed';
+  edited?: boolean;
 }
 
 export interface MockConversation {
@@ -48,6 +59,13 @@ export interface MockConversation {
   myNickname?: string;
   background?: string;
   backgroundImage?: string;
+  // Friend identity (mirrors real ChatDetailPanel PublicProfileCard)
+  handle?: string;
+  station?: string;
+  peerPtid?: string;
+  federationId?: string;
+  chatKindLabel?: string;
+  stats?: { posts: number; followers: number; following: number };
 }
 
 export type MockGroupRole = 'owner' | 'admin' | 'member';
@@ -123,17 +141,17 @@ export const CONVERSATIONS: MockConversation[] = [
   {
     id: 'conv-1',
     type: 'group',
-    name: 'Engineering Team',
+    name: CHAT_JOURNEY.conversationName[CHAT_JOURNEY_LOCALE],
     avatar: '',
-    lastMessage: 'Sarah: Let me check the deployment logs',
+    lastMessage: CHAT_JOURNEY.messages.outbound[CHAT_JOURNEY_LOCALE],
     lastMessageTime: Date.now() - 120_000,
-    unread: 3,
+    unread: 1,
     muted: false,
     pinned: true,
-    memberCount: 7,
+    memberCount: CHAT_JOURNEY.participants,
     trustLabel: 'Owner controls available',
     trustTone: 'verified',
-    detailHint: 'Owner view: invite, admin, mute, transfer ownership, dissolve.',
+    detailHint: `${CHAT_JOURNEY.station} · encrypted group`,
     myNickname: 'Alex',
     background: 'Calm blue',
   },
@@ -152,6 +170,12 @@ export const CONVERSATIONS: MockConversation[] = [
     trustTone: 'verified',
     detailHint: 'Private chat: identity verification and block controls are visible.',
     background: 'Default',
+    handle: '@sarah',
+    station: 'peers-touch-station',
+    peerPtid: 'ptid:sarah-7c10',
+    federationId: 'fed-friends',
+    chatKindLabel: 'Standard chat',
+    stats: { posts: 0, followers: 0, following: 0 },
   },
   {
     id: 'conv-3',
@@ -185,6 +209,11 @@ export const CONVERSATIONS: MockConversation[] = [
     trustTone: 'attention',
     detailHint: 'Private chat: prompt identity verification before trusting sensitive content.',
     background: 'Graphite',
+    handle: '@david',
+    station: 'peers-touch-station',
+    peerPtid: 'ptid:david-33aa',
+    chatKindLabel: 'Standard chat',
+    stats: { posts: 12, followers: 4, following: 18 },
   },
   {
     id: 'conv-5',
@@ -218,26 +247,27 @@ export const CONVERSATIONS: MockConversation[] = [
     trustTone: 'local',
     detailHint: 'Private chat: lightweight details without protocol noise.',
     background: 'Default',
+    handle: '@lisa',
+    station: 'peers-touch-station',
+    peerPtid: 'ptid:lisa-9b21',
+    chatKindLabel: 'Standard chat',
+    stats: { posts: 0, followers: 0, following: 0 },
   },
 ];
 
 export const MESSAGES: Record<string, MockMessage[]> = {
   'conv-1': [
-    { id: 'm1', senderId: 'user-3', content: 'The new build is ready for testing', timestamp: Date.now() - 600_000, type: 'text' },
-    { id: 'm2', senderId: 'user-1', content: 'Great! I\'ll run the integration tests now', timestamp: Date.now() - 540_000, type: 'text' },
-    { id: 'm3', senderId: 'user-self', content: 'I noticed a memory leak in the WebSocket handler, looking into it', timestamp: Date.now() - 480_000, type: 'text' },
-    { id: 'm3a', senderId: 'system', content: 'Sarah Kim joined from the Singapore station.', timestamp: Date.now() - 450_000, type: 'system' },
-    { id: 'm4', senderId: 'user-1', content: 'Oh that might explain the connection drops we\'ve been seeing', timestamp: Date.now() - 420_000, type: 'text' },
-    { id: 'm5', senderId: 'user-4', content: 'Should we hold off on the release until that\'s fixed?', timestamp: Date.now() - 360_000, type: 'text' },
-    { id: 'm6', senderId: 'user-self', content: 'Yeah, give me an hour. The issue is in the reconnection backoff logic', timestamp: Date.now() - 300_000, type: 'text', status: 'read' },
-    { id: 'm7', senderId: 'user-3', content: 'Release notes draft is attached.', timestamp: Date.now() - 240_000, type: 'file', attachmentName: 'release-notes-draft.md', attachmentMeta: '18 KB Markdown' },
-    { id: 'm8', senderId: 'user-1', content: 'Let me check the deployment logs', timestamp: Date.now() - 120_000, type: 'text' },
+    { id: 'm1', senderId: 'user-3', content: CHAT_JOURNEY_LOCALE === 'zh' ? 'Frankfurt Station 的重连验证仍在运行。' : 'Reconnect verification is still running against the Frankfurt Station.', timestamp: Date.now() - 540_000, type: 'text' },
+    { id: 'm2', senderId: 'user-1', content: CHAT_JOURNEY.messages.inbound[CHAT_JOURNEY_LOCALE], timestamp: Date.now() - 360_000, type: 'text' },
+    { id: CHAT_JOURNEY_MESSAGE_ID, senderId: 'user-self', content: CHAT_JOURNEY.messages.outbound[CHAT_JOURNEY_LOCALE], timestamp: Date.now() - 240_000, type: 'text', status: 'failed' },
+    { id: 'm4', senderId: 'system', content: CHAT_JOURNEY_LOCALE === 'zh' ? '加密消息已保存在本机，正在等待远端确认。' : 'Encrypted payload saved locally. Remote acknowledgement is pending.', timestamp: Date.now() - 210_000, type: 'system' },
   ],
   'conv-2': [
     { id: 'f1', senderId: 'user-1', content: 'Hey, are you free for coffee tomorrow?', timestamp: Date.now() - 600_000, type: 'text' },
     { id: 'f2', senderId: 'user-self', content: 'Sure! How about 3pm at the usual place?', timestamp: Date.now() - 540_000, type: 'text', status: 'read' },
     { id: 'f2a', senderId: 'user-1', content: 'I also marked the address on the map.', timestamp: Date.now() - 420_000, type: 'image', attachmentName: 'coffee-location.png', attachmentMeta: 'Map screenshot' },
     { id: 'f2b', senderId: 'user-1', content: '', timestamp: Date.now() - 360_000, type: 'voice', durationSeconds: 14, transferState: 'ready' },
+    { id: 'f2c', senderId: 'user-1', content: 'Design notes are up: https://design.peers-touch.dev/release-room', timestamp: Date.now() - 330_000, type: 'text' },
     { id: 'f3', senderId: 'user-1', content: 'Sounds good, see you tomorrow!', timestamp: Date.now() - 300_000, type: 'text' },
   ],
   'conv-3': [
@@ -285,8 +315,78 @@ export const GROUP_MEMBERS: Record<string, MockGroupMember[]> = {
     { userId: 'user-2', role: 'admin', muted: false, joinedAt: Date.now() - 7_200_000 },
     { userId: 'user-self', role: 'member', muted: false, joinedAt: Date.now() - 6_800_000 },
     { userId: 'user-3', role: 'member', muted: false, joinedAt: Date.now() - 6_400_000 },
-    { userId: 'user-4', role: 'member', muted: false, joinedAt: Date.now() - 5_900_000 },
+    { userId: 'user-4', role: 'member', muted: true, joinedAt: Date.now() - 5_900_000 },
     { userId: 'user-5', role: 'member', muted: false, joinedAt: Date.now() - 5_200_000 },
     { userId: 'user-6', role: 'member', muted: false, joinedAt: Date.now() - 4_600_000 },
   ],
 };
+
+// ── Contacts book: friend requests + saved groups ───────────────
+// Mirrors real apps/desktop ChatContactsPanel semantics.
+// Status enum: 1 pending · 2 accepted · 3 rejected.
+export type ContactRequestDirection = 'incoming' | 'outgoing';
+export type ContactRequestStatus = 1 | 2 | 3;
+
+export interface MockContactRequest {
+  id: string;
+  name: string;
+  initials: string;
+  identityKey: string;
+  direction: ContactRequestDirection;
+  status: ContactRequestStatus;
+  attempts: number;
+  message?: string;
+  federationName?: string;
+  homeStation?: string;
+  handle?: string;
+}
+
+export const INITIAL_FRIEND_REQUESTS: MockContactRequest[] = [
+  {
+    id: 'cr-acceptance',
+    name: 'Acceptance 9464d14b335d',
+    initials: 'A',
+    identityKey: 'ptid:acceptance-9464d14b335d',
+    direction: 'incoming',
+    status: 2,
+    attempts: 2,
+    federationName: 'Friends Federation',
+    homeStation: 'acceptance.dev',
+    handle: '@acceptance-9464@acceptance.dev',
+  },
+  {
+    id: 'cr-carol',
+    name: 'Carol',
+    initials: 'C',
+    identityKey: 'ptid:carol-2f8a',
+    direction: 'incoming',
+    status: 2,
+    attempts: 1,
+    federationName: 'Friends Federation',
+    homeStation: 'local.dev',
+    handle: '@carol@local.dev',
+  },
+  {
+    id: 'cr-dana',
+    name: 'Dana Park',
+    initials: 'DP',
+    identityKey: 'ptid:dana-7c10',
+    direction: 'incoming',
+    status: 1,
+    attempts: 1,
+    message: "Let's reconnect after the federation upgrade.",
+    federationName: 'Friends Federation',
+    homeStation: 'relay-eu.dev',
+    handle: '@dana@relay-eu.dev',
+  },
+];
+
+export interface MockSavedGroup {
+  conversationId: string;
+  name: string;
+  memberCount: number;
+}
+
+export const SAVED_GROUPS: MockSavedGroup[] = [
+  { conversationId: 'conv-3', name: 'Design Review', memberCount: 4 },
+];

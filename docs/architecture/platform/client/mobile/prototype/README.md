@@ -1,8 +1,8 @@
 # Mobile Prototype
 
-> **Status**: confirmed
+> **Status**: pending-review
 > **Version**: v1.0
-> **Created**: 2026-07-08 | **Updated**: 2026-09-13
+> **Created**: 2026-07-08 | **Updated**: 2026-10-11
 > **Owner**: Mobile Product Team
 > **Module**: `packages/prototypes/mobile/chat/`
 
@@ -23,6 +23,8 @@ The prototype covers:
 - Me/profile and selected-only settings details.
 - Evidence scenarios for Station identity mismatch, OAuth expiry, session
   revocation, unknown write outcome, ledger capacity, and restored drafts.
+- Cross-platform `CHAT-CRAFT-J01` delivery failure and recovery, backed by the
+  shared fixture at `packages/prototypes/shared/chat-journey.ts`.
 
 ## Source Alignment
 
@@ -31,7 +33,7 @@ The prototype covers:
 | Shell tabs and tabbar badge behavior | `apps/mobile/src/components/MobileShell.tsx` |
 | Chat list, thread, action surface boundaries | `apps/mobile/src/pages/ChatPage.tsx` |
 | Friend conversation projection | `apps/mobile/src/features/social/socialProjection.ts` |
-| Group conversation projection | `apps/mobile/src/features/social/socialStore.ts`, `apps/mobile/src/runtimes/messagingRuntime.ts` |
+| Group conversation projection | `apps/mobile/src/features/group/groupProjection.ts` |
 | Find people and create group | `apps/mobile/src/pages/ContactsPage.tsx` |
 | Access gate launch state | `apps/mobile/src/App.tsx`, `apps/mobile/src/features/auth/AccessGateHost.tsx` |
 | OAuth progress and recovery | MS-C03 / MS-J01 / MS-PA03 / MS-PA25 |
@@ -61,6 +63,7 @@ make -w run-prototype
 The out-of-device `Evidence scenario` selector exposes:
 
 - default journey;
+- Chat delivery recovery;
 - Station removal confirmation;
 - Station identity mismatch;
 - OAuth expired;
@@ -75,6 +78,37 @@ Each state is also directly reproducible from the standalone prototype with
 `?scenario=<scenario-id>`.
 The default journey also includes Station removal confirmation, disabled
 WeChat/call affordances, and device-only message flag copy.
+
+### 2026-10-11 Chat Delivery Recovery
+
+`?scenario=chat-delivery-recovery` opens the shared `CHAT-CRAFT-J01` Release
+Room directly inside the standard `ChatThread`. The failed outgoing message
+remains in context, the recovery surface explains that the encrypted payload is
+stored locally, and Retry moves the message through sending to delivered before
+appending the peer acknowledgement. The recovery path reuses the existing
+thread; it does not replace the action sheet, composer, pinned tab, details
+panel, or any other Chat feature.
+
+Craft evidence:
+
+- Positive calibration: touch-first recovery, preserved conversation context,
+  local feedback, and no false delivery success.
+- Negative calibration: no phone-width right drawer, global error page,
+  decorative motion, or color-only state.
+- L2: 1440px Portal frame and 430px Chinese direct render were opened; content,
+  composer, recovery action, and device frame do not overlap or overflow.
+- L3: touch/click Retry completes failed → sending → delivered and peer
+  acknowledgement; reduced-motion mode remains understandable.
+- L4: new controls have accessible names, the primary recovery target is
+  44px high, no console/page errors were observed, and local lab metrics were
+  `CLS=0.0128`, `LCP=188ms`.
+- Evidence root:
+  `~/.peers-touch/dev/workspaces/48035cb460a725a5/evidence/chat-craft/20261011/`.
+- `UNPROVEN`: native iOS/Android, VoiceOver/TalkBack device proof, real
+  Station/Relay delivery, and production field performance.
+
+This amendment is `pending-review`. Earlier confirmed prototype history does
+not confer confirmation on the changed Chat Journey.
 
 ### 2026-09-19 Message Action Semantics
 
