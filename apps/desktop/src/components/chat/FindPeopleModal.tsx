@@ -17,6 +17,8 @@ import {
   catalogEntryToSearchResult,
   findPeopleScopePresentation,
   friendRequestFederationId,
+  localActorToSearchResult,
+  mergeActorSearchResults,
   resolvedProfileToSearchResult,
   type ActorSearchResult,
 } from './findPeopleIdentity';
@@ -135,7 +137,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
 
   const parsed = useMemo(() => parseHandleInput(searchText), [searchText]);
   const activeFederationId = selectedFederationId || defaultFederationId;
-  const blockedByGate = !activeFederationId;
+  const blockedByGate = parsed.isFederated && parsed.hasHost && !activeFederationId;
 
   const handleSearch = async () => {
     const trimmed = searchText.trim();
@@ -143,23 +145,50 @@ export function FindPeopleModal({ open, onClose }: Props) {
     setSearchError('');
     setSearching(true);
     try {
-      if (!activeFederationId) {
-        setSearchError(t('chat.social.findPeople.catalogNoFederation'));
-        return;
-      }
       if (parsed.isFederated && parsed.hasHost) {
+        if (!activeFederationId) {
+          setSearchError(t('chat.social.findPeople.catalogNoFederation'));
+          return;
+        }
         const view = await api.federationResolve(activeFederationId, parsed.canonical);
         const item = resolvedProfileToSearchResult(view);
         setResults(item ? [item] : []);
         return;
       }
-      const resp = await api.federationCatalogSearch({
-        federation_id: activeFederationId,
-        prefix: parsed.localPart || trimmed.replace(/^@/, ''),
-        page_size: 20,
-      });
-      rememberCatalogEntries(resp.entries ?? []);
-      setResults((resp.entries || []).map(catalogEntryToSearchResult));
+
+      const query = parsed.localPart || trimmed.replace(/^@/, '');
+      let localSearchError: unknown;
+      let catalogSearchError: unknown;
+      const [localSearch, catalogSearch] = await Promise.all([
+        api.actorSearchActors(query).catch((error: unknown) => {
+          localSearchError = error;
+          return null;
+        }),
+        activeFederationId
+          ? api.federationCatalogSearch({
+              federation_id: activeFederationId,
+              prefix: query,
+              page_size: 20,
+            }).catch((error: unknown) => {
+              catalogSearchError = error;
+              return null;
+            })
+          : Promise.resolve(null),
+      ]);
+
+      if (!localSearch && !catalogSearch) {
+        throw localSearchError || catalogSearchError || new Error('Search unavailable');
+      }
+
+      const localResults = (localSearch?.items ?? [])
+        .map(localActorToSearchResult)
+        .filter((item): item is ActorSearchResult => item !== null);
+      const catalogEntries = catalogSearch?.entries ?? [];
+      rememberCatalogEntries(catalogEntries);
+      setResults(mergeActorSearchResults(
+        localResults,
+        catalogEntries.map(catalogEntryToSearchResult),
+      ));
     } catch (e: unknown) {
       const fallback = parsed.isFederated && parsed.hasHost
         ? t('chat.social.findPeople.resolveFailed', { handle: parsed.canonical })
