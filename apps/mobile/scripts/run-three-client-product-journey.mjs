@@ -1129,6 +1129,7 @@ async function activateForegroundClient(clientId, client) {
           : null,
       );
     }
+    activateDesktopProcess(desktopPid);
     const result = await webdriverRequest(
       webdriverEndpoint(client, '/execute/async'),
       {
@@ -1136,7 +1137,9 @@ async function activateForegroundClient(clientId, client) {
         body: JSON.stringify({
           script: `
             const done = arguments[arguments.length - 1];
-            window.__TAURI__.window.getCurrentWindow().setFocus()
+            const appWindow = window.__TAURI__.window.getCurrentWindow();
+            appWindow.show()
+              .then(() => appWindow.setFocus())
               .then(() => done({ ok: true }))
               .catch((error) => done({ ok: false, error: String(error) }));
           `,
@@ -1149,32 +1152,20 @@ async function activateForegroundClient(clientId, client) {
       'WEBDRIVER_CLIENT_NOT_FOREGROUND',
       `${clientId} could not focus its native window: ${result?.error || 'unknown error'}`,
     );
-    try {
-      execFileSync(
-        'osascript',
-        [
-          '-e',
-          'tell application "System Events" to set frontmost of first process '
-            + `whose unix id is ${desktopPid} to true`,
-        ],
-        { encoding: 'utf8' },
-      );
-    } catch (error) {
-      throw new JourneyContractError(
-        'DESKTOP_NATIVE_ACTIVATION_FAILED',
-        `${clientId} could not activate process ${desktopPid}: ${error.message}`,
-      );
-    }
     await waitForUi(
       clientId,
       client,
       'Desktop native window focus',
       `
         return {
-          ready: document.hasFocus()
-            && document.visibilityState === 'visible'
+          ready: document.visibilityState === 'visible'
         };
       `,
+    );
+    assertContract(
+      frontmostDesktopPid() === desktopPid,
+      'DESKTOP_NATIVE_ACTIVATION_FAILED',
+      `${clientId} process ${desktopPid} is not the OS foreground application`,
     );
     return null;
   }
@@ -1206,7 +1197,7 @@ function desktopProcessAttribute(pid, attribute) {
     [
       '-e',
       'tell application "System Events" to get '
-        + `${attribute} of first application process whose unix id is ${pid}`,
+        + `${attribute} of (first application process whose unix id is ${pid})`,
     ],
     { encoding: 'utf8' },
   ).trim();
@@ -1228,7 +1219,11 @@ function frontmostDesktopApplication() {
 function frontmostDesktopPid() {
   return Number(execFileSync(
     'osascript',
-    ['-e', 'tell application "System Events" to get unix id of first process whose frontmost is true'],
+    [
+      '-e',
+      'tell application "System Events" to get unix id of '
+        + '(first application process whose frontmost is true)',
+    ],
     { encoding: 'utf8' },
   ).trim());
 }
@@ -1240,17 +1235,31 @@ function desktopActivationTargetMatches(target, application) {
   return Boolean(target.name && application.name === target.name);
 }
 
-function restoreDesktopApplication(target) {
-  if (processIsAlive(target.pid)) {
+function activateDesktopProcess(pid) {
+  try {
     execFileSync(
       'osascript',
       [
         '-e',
-        'tell application "System Events" to set frontmost of first process '
-          + `whose unix id is ${target.pid} to true`,
+        'tell application "System Events" to set visible of '
+          + `(first application process whose unix id is ${pid}) to true`,
+        '-e',
+        'tell application "System Events" to set frontmost of '
+          + `(first application process whose unix id is ${pid}) to true`,
       ],
       { encoding: 'utf8' },
     );
+  } catch (error) {
+    throw new JourneyContractError(
+      'DESKTOP_NATIVE_ACTIVATION_FAILED',
+      `Could not activate Desktop process ${pid}: ${error.message}`,
+    );
+  }
+}
+
+function restoreDesktopApplication(target) {
+  if (processIsAlive(target.pid)) {
+    activateDesktopProcess(target.pid);
     return;
   }
   if (target.bundleId) {
@@ -1708,7 +1717,7 @@ async function probeClient(clientId, client, evidenceDir) {
         && foreground.visibilityState === 'visible'
         && (
           client.platform !== 'desktop'
-          || foreground.hasFocus === true
+          || frontmostDesktopPid() === desktopListenerPid(clientId, client)
         ),
       'WEBDRIVER_CLIENT_NOT_FOREGROUND',
       `${clientId} is not visible and focused`,
