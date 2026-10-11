@@ -9796,6 +9796,12 @@ async function dismissTerminalCallSurface(clientId, client) {
   return state;
 }
 
+function recoveryAudioCallControlMatches(label) {
+  return ['voice call', 'start audio call'].includes(
+    String(label || '').trim().toLowerCase(),
+  );
+}
+
 async function startRecoveryAudioCall(clientId, client, friendlyName) {
   await openRecoveryConversation(
     clientId,
@@ -9806,10 +9812,11 @@ async function startRecoveryAudioCall(clientId, client, friendlyName) {
   const started = await executeWebScript(
     client,
     `
+      const matches = ${recoveryAudioCallControlMatches.toString()};
       const buttons = [...document.querySelectorAll('button')]
         .filter((button) => button.getClientRects().length);
       const target = buttons.find((button) => (
-        /start audio call/i.test(
+        matches(
           button.getAttribute('aria-label')
           || button.getAttribute('title')
           || ''
@@ -10158,6 +10165,13 @@ function selfTest(matrix) {
       && recoveryDetailSignature('', '') === '',
     'SELF_TEST_RECOVERY_DETAIL_SIGNATURE',
     'recovery detail signature fallback is invalid',
+  );
+  assertContract(
+    recoveryAudioCallControlMatches('Voice call')
+      && recoveryAudioCallControlMatches('Start audio call')
+      && !recoveryAudioCallControlMatches('Video call'),
+    'SELF_TEST_RECOVERY_AUDIO_CALL_CONTROL',
+    'recovery audio call control matching is invalid',
   );
   assertContract(
     desktopSocialFeedRecoveryDecision(false, false) === 'feed'
