@@ -22,6 +22,8 @@ const (
 	ProtocolID protocol.ID = "/peers-touch/station-http/1.0.0"
 
 	canonicalAttachmentMetadataHeader = "X-Peers-Attachment-Metadata-Bin"
+	canonicalAuthorityStationHeader   = "X-Peers-Authority-Station-Id"
+	canonicalConversationHeader       = "X-Peers-Conversation-Id"
 
 	DefaultHandshakeTimeout     = 10 * time.Second
 	DefaultIdleTimeout          = 5 * time.Minute
@@ -274,7 +276,7 @@ func newStreamingLoopbackProxy(
 func stripUntrustedPeerHeaders(headers http.Header) {
 	for name := range headers {
 		canonical := http.CanonicalHeaderKey(name)
-		if canonical == canonicalAttachmentMetadataHeader {
+		if isCanonicalClientHeader(canonical) {
 			continue
 		}
 		if canonical == "Forwarded" ||
@@ -286,6 +288,17 @@ func stripUntrustedPeerHeaders(headers http.Header) {
 			strings.HasPrefix(canonical, "X-P2p-") {
 			headers.Del(name)
 		}
+	}
+}
+
+func isCanonicalClientHeader(name string) bool {
+	switch name {
+	case canonicalAttachmentMetadataHeader,
+		canonicalAuthorityStationHeader,
+		canonicalConversationHeader:
+		return true
+	default:
+		return false
 	}
 }
 
