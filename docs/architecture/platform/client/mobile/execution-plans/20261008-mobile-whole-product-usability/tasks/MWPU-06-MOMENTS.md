@@ -23,6 +23,7 @@
     "apps/mobile/src/pages/moments",
     "apps/mobile/src/features/social",
     "apps/mobile/src/styles.css",
+    "apps/mobile/scripts/run-three-client-product-journey.mjs",
     "apps/station/app/subserver/social",
     "packages/prototypes/mobile/chat",
     "tooling/acceptance/gates/mobile"
@@ -41,7 +42,7 @@
   "checks": [
     {
       "id": "moments-source",
-      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/moments src/services/socialRealtime.test.ts src/test/moments-store.test.ts && pnpm --dir apps/mobile exec vitest run src/pages/MomentsPage.test.ts src/pages/moments src/features/social/useMomentsDraft.test.ts",
+      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/moments src/services/socialRealtime.test.ts src/test/moments-store.test.ts && pnpm --dir apps/mobile exec vitest run src/pages/MomentsPage.test.ts src/pages/moments src/features/social/useMomentsDraft.test.ts && node apps/mobile/scripts/run-three-client-product-journey.mjs --self-test",
       "verificationClass": "SOURCE_CHECK"
     },
     {

@@ -36,6 +36,7 @@ const requiredPhases = Object.freeze([
   'social',
   'recovery',
 ]);
+const foregroundBoundPhases = Object.freeze([...requiredPhases]);
 const requiredScenarioIds = Object.freeze([
   'entry-station-login',
   'entry-restore-logout-relogin',
@@ -7817,6 +7818,668 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
   return { ...report, reportPath, tracePath };
 }
 
+async function navigateSocialFeed(
+  clientId,
+  client,
+  scope = 'explore',
+) {
+  if (client.platform === 'desktop') {
+    await navigateDesktopPrimary(
+      clientId,
+      client,
+      'moments',
+      '[data-page="moments"] main',
+    );
+    const closedDetail = await executeWebScript(
+      client,
+      `
+        const region = document.querySelector('[data-moments-comments-region]');
+        if (!region) return false;
+        const button = region
+          .closest('main')
+          ?.querySelector('button:has(svg.lucide-chevron-left)');
+        if (!(button instanceof HTMLButtonElement)) return false;
+        button.click();
+        return true;
+      `,
+    );
+    if (closedDetail) {
+      await waitForUi(
+        clientId,
+        client,
+        'Desktop Social feed after detail',
+        `
+          return {
+            ready: !document.querySelector('[data-moments-comments-region]')
+              && Boolean(document.querySelector('[data-page="moments"] main'))
+          };
+        `,
+      );
+    }
+    const value = scope === 'explore' ? 'explore' : 'feed';
+    const selected = await executeWebScript(
+      client,
+      `
+        const input = document.querySelector(
+          'input[type="radio"][value="' + arguments[0] + '"]'
+        );
+        const target = input?.closest('label') || input?.parentElement;
+        if (!(target instanceof HTMLElement)) return false;
+        target.click();
+        return true;
+      `,
+      [value],
+    );
+    assertContract(
+      selected === true,
+      'SOCIAL_SCOPE_CONTROL_MISSING',
+      `${clientId} cannot select the ${scope} Social feed`,
+    );
+    await waitForUi(
+      clientId,
+      client,
+      `Desktop Social ${scope} feed`,
+      `
+        const input = document.querySelector(
+          'input[type="radio"][value="' + arguments[0] + '"]'
+        );
+        return {
+          ready: Boolean(
+            input?.checked
+            || input?.closest('.ant-segmented-item-selected')
+          )
+        };
+      `,
+      [value],
+    );
+    return { scope, surface: 'desktop-moments' };
+  }
+
+  await navigateMobileShell(
+    clientId,
+    client,
+    'moments',
+    '[data-product-surface="moments.feed"]',
+  );
+  await clickSelector(
+    client,
+    `[data-acceptance-id="social-feed-scope-${scope}"]`,
+    `open-social-${scope}`,
+  );
+  await waitForUi(
+    clientId,
+    client,
+    `Mobile Social ${scope} feed`,
+    `
+      const tab = document.querySelector(arguments[0]);
+      return {
+        ready: tab?.getAttribute('aria-selected') === 'true'
+      };
+    `,
+    [`[data-acceptance-id="social-feed-scope-${scope}"]`],
+  );
+  return { scope, surface: 'moments.feed' };
+}
+
+async function waitForSocialPost(clientId, client, content) {
+  return waitForUi(
+    clientId,
+    client,
+    `Social post ${content}`,
+    client.platform === 'desktop'
+      ? `
+          const main = document.querySelector('[data-page="moments"] main');
+          const cards = main
+            ? [...main.querySelectorAll('div')].filter((element) => (
+                element instanceof HTMLElement
+                && element.getClientRects().length
+                && getComputedStyle(element).cursor === 'pointer'
+                && (element.innerText || '').includes(arguments[0])
+              ))
+            : [];
+          cards.sort(
+            (left, right) => (
+              (left.innerText || '').length - (right.innerText || '').length
+            ),
+          );
+          const card = cards[0];
+          return {
+            ready: Boolean(card),
+            postId: '',
+            text: (card?.innerText || '').replace(/\\s+/g, ' ').trim()
+          };
+        `
+      : `
+          const card = [...document.querySelectorAll(
+            'article[data-acceptance-id="social-moment-card"][data-post-id]'
+          )].find((element) => (
+            element.getClientRects().length
+            && (element.innerText || '').includes(arguments[0])
+          ));
+          return {
+            ready: Boolean(card),
+            postId: card?.getAttribute('data-post-id') || '',
+            text: (card?.innerText || '').replace(/\\s+/g, ' ').trim()
+          };
+        `,
+    [content],
+  );
+}
+
+function assertSocialAuthor(clientId, snapshot, authorName) {
+  assertContract(
+    snapshot?.text?.includes(authorName),
+    'SOCIAL_AUTHOR_IDENTITY_MISMATCH',
+    `${clientId} did not render ${authorName} with the expected Social post`,
+  );
+}
+
+async function openSocialPost(clientId, client, content, authorName) {
+  const feedSnapshot = await waitForSocialPost(clientId, client, content);
+  assertSocialAuthor(clientId, feedSnapshot, authorName);
+  const opened = await executeWebScript(
+    client,
+    client.platform === 'desktop'
+      ? `
+          const main = document.querySelector('[data-page="moments"] main');
+          const cards = main
+            ? [...main.querySelectorAll('div')].filter((element) => (
+                element instanceof HTMLElement
+                && element.getClientRects().length
+                && getComputedStyle(element).cursor === 'pointer'
+                && (element.innerText || '').includes(arguments[0])
+              ))
+            : [];
+          cards.sort(
+            (left, right) => (
+              (left.innerText || '').length - (right.innerText || '').length
+            ),
+          );
+          if (!(cards[0] instanceof HTMLElement)) return false;
+          cards[0].click();
+          return true;
+        `
+      : `
+          const card = [...document.querySelectorAll(
+            'article[data-acceptance-id="social-moment-card"][data-post-id]'
+          )].find((element) => (
+            element.getClientRects().length
+            && (element.innerText || '').includes(arguments[0])
+          ));
+          const button = card?.querySelector(
+            '[data-acceptance-id="social-thread-open"]'
+          );
+          if (!(button instanceof HTMLButtonElement)) return false;
+          button.click();
+          return true;
+        `,
+    [content],
+  );
+  assertContract(
+    opened === true,
+    'SOCIAL_POST_OPEN_FAILED',
+    `${clientId} could not open Social post ${content}`,
+  );
+  const detail = await waitForUi(
+    clientId,
+    client,
+    `Social detail ${content}`,
+    client.platform === 'desktop'
+      ? `
+          const region = document.querySelector('[data-moments-comments-region]');
+          const main = document.querySelector('[data-page="moments"] main');
+          return {
+            ready: Boolean(region)
+              && (main?.innerText || '').includes(arguments[0]),
+            text: (main?.innerText || '').replace(/\\s+/g, ' ').trim()
+          };
+        `
+      : `
+          const surface = document.querySelector(
+            '[data-product-surface="moments.detail-comments"]'
+          );
+          return {
+            ready: Boolean(surface?.getClientRects().length)
+              && (surface?.innerText || '').includes(arguments[0]),
+            text: (surface?.innerText || '').replace(/\\s+/g, ' ').trim()
+          };
+        `,
+    [content],
+  );
+  assertSocialAuthor(clientId, detail, authorName);
+  return {
+    authorName,
+    content,
+    postId: feedSnapshot.postId,
+    text: detail.text,
+  };
+}
+
+async function publishSocialPost(clientId, client, content) {
+  await navigateSocialFeed(clientId, client, 'home');
+  if (client.platform === 'desktop') {
+    const opened = await executeWebScript(
+      client,
+      `
+        const page = document.querySelector('[data-page="moments"]');
+        const button = page
+          ? [...page.querySelectorAll('button')].find((candidate) => (
+              candidate instanceof HTMLButtonElement
+              && candidate.getClientRects().length
+              && !candidate.disabled
+              && Boolean(candidate.querySelector('svg.lucide-plus'))
+            ))
+          : null;
+        if (!(button instanceof HTMLButtonElement)) return false;
+        button.click();
+        return true;
+      `,
+    );
+    assertContract(
+      opened === true,
+      'SOCIAL_COMPOSER_OPEN_FAILED',
+      `${clientId} could not open the Desktop Social composer`,
+    );
+    await waitForUi(
+      clientId,
+      client,
+      'Desktop Social composer',
+      `
+        return {
+          ready: Boolean(
+            document.querySelector(
+              '#moments-composer [data-moments-composer-input]'
+            )
+          )
+        };
+      `,
+    );
+    await setInputValue(
+      client,
+      '#moments-composer [data-moments-composer-input]',
+      content,
+      'desktop-social-content',
+    );
+    await clickVisibleSelector(
+      client,
+      '#moments-composer button.ant-btn-primary:not([disabled])',
+      'desktop-social-publish',
+    );
+    await waitForUi(
+      clientId,
+      client,
+      'Desktop Social publish completion',
+      `
+        return {
+          ready: !document.querySelector('#moments-composer')
+        };
+      `,
+    );
+  } else {
+    await clickSelector(
+      client,
+      '[data-acceptance-id="social-composer-open"]',
+      'mobile-social-composer-open',
+    );
+    await waitForUi(
+      clientId,
+      client,
+      'Mobile Social composer',
+      `
+        return {
+          ready: Boolean(
+            document.querySelector('[data-acceptance-id="social-composer"]')
+          )
+        };
+      `,
+    );
+    await setInputValue(
+      client,
+      '[data-acceptance-id="social-composer-text"]',
+      content,
+      'mobile-social-content',
+    );
+    await clickSelector(
+      client,
+      '[data-acceptance-id="social-composer-publish"]',
+      'mobile-social-publish',
+    );
+    await waitForUi(
+      clientId,
+      client,
+      'Mobile Social publish completion',
+      `
+        return {
+          ready: !document.querySelector(
+            '[data-acceptance-id="social-composer"]'
+          )
+        };
+      `,
+    );
+  }
+  return waitForSocialPost(clientId, client, content);
+}
+
+async function reactToOpenSocialPost(clientId, client, content) {
+  if (client.platform === 'desktop') {
+    const opened = await executeWebScript(
+      client,
+      `
+        const main = document.querySelector('[data-page="moments"] main');
+        if (!(main?.innerText || '').includes(arguments[0])) return false;
+        const trigger = [...main.querySelectorAll('button')].find((button) => (
+          button instanceof HTMLButtonElement
+          && button.getClientRects().length
+          && !button.disabled
+          && Boolean(button.querySelector('svg.lucide-thumbs-up'))
+        ));
+        if (!(trigger instanceof HTMLButtonElement)) return false;
+        trigger.click();
+        return true;
+      `,
+      [content],
+    );
+    assertContract(
+      opened === true,
+      'SOCIAL_REACTION_CONTROL_MISSING',
+      `${clientId} cannot open the Social reaction picker`,
+    );
+    await waitForUi(
+      clientId,
+      client,
+      'Desktop Social reaction picker',
+      `
+        return {
+          ready: [...document.querySelectorAll('.ant-popover button')].some(
+            (button) => (
+              button.getClientRects().length
+              && (button.textContent || '').includes('❤️')
+            )
+          )
+        };
+      `,
+    );
+    const reacted = await executeWebScript(
+      client,
+      `
+        const button = [...document.querySelectorAll('.ant-popover button')]
+          .find((candidate) => (
+            candidate instanceof HTMLButtonElement
+            && candidate.getClientRects().length
+            && !candidate.disabled
+            && (candidate.textContent || '').includes('❤️')
+          ));
+        if (!(button instanceof HTMLButtonElement)) return false;
+        button.click();
+        return true;
+      `,
+    );
+    assertContract(
+      reacted === true,
+      'SOCIAL_REACTION_FAILED',
+      `${clientId} could not select the Social LOVE reaction`,
+    );
+  } else {
+    await clickVisibleSelector(
+      client,
+      '[data-acceptance-id="social-reaction-open"]',
+      'mobile-social-love',
+    );
+  }
+  return waitForSocialLoveReaction(clientId, client, content);
+}
+
+async function waitForSocialLoveReaction(clientId, client, content) {
+  return waitForUi(
+    clientId,
+    client,
+    `Social LOVE reaction on ${content}`,
+    client.platform === 'desktop'
+      ? `
+          const main = document.querySelector('[data-page="moments"] main');
+          const button = main
+            ? [...main.querySelectorAll('button')].find((candidate) => (
+                candidate.getClientRects().length
+                && (candidate.textContent || '').includes('❤️')
+                && /[1-9]/.test(candidate.textContent || '')
+              ))
+            : null;
+          return {
+            ready: Boolean(button)
+              && (main?.innerText || '').includes(arguments[0]),
+            reaction: (button?.textContent || '').replace(/\\s+/g, ' ').trim(),
+            text: (main?.innerText || '').replace(/\\s+/g, ' ').trim()
+          };
+        `
+      : `
+          const surface = document.querySelector(
+            '[data-product-surface="moments.detail-comments"]'
+          );
+          const reaction = surface?.querySelector('.moments-reaction-tag');
+          return {
+            ready: Boolean(reaction)
+              && (reaction?.textContent || '').includes('❤️')
+              && /[1-9]/.test(reaction?.textContent || '')
+              && (surface?.innerText || '').includes(arguments[0]),
+            reaction: (reaction?.textContent || '').replace(/\\s+/g, ' ').trim(),
+            text: (surface?.innerText || '').replace(/\\s+/g, ' ').trim()
+          };
+        `,
+    [content],
+  );
+}
+
+async function receiveOpenSocialPost(
+  clientId,
+  client,
+  content,
+  authorName,
+) {
+  await navigateSocialFeed(clientId, client, 'explore');
+  return openSocialPost(clientId, client, content, authorName);
+}
+
+async function runSocialPhase(manifest, evidenceDir, preflight) {
+  const interactionTrace = [];
+  const sequenceRef = { value: 0 };
+  const step = async (clientId, stepId, action) => {
+    const client = manifest.clients[clientId];
+    await activateForegroundClient(clientId, client);
+    await selectWebContext(client);
+    sequenceRef.value += 1;
+    return recordJourneyStep({
+      clientId,
+      client,
+      evidenceDir,
+      interactionTrace,
+      sequence: sequenceRef.value,
+      stepId,
+      action,
+    });
+  };
+
+  for (const clientId of requiredClientIds) {
+    await step(clientId, 'social-authenticated-precondition', () => (
+      ensureAuthenticated(
+        clientId,
+        manifest.clients[clientId],
+        manifest.stationUrl,
+      )
+    ));
+  }
+
+  const stamp = Date.now();
+  const alicePost = `MWPU Alice Social ${stamp}`;
+  const coralPost = `MWPU Carol Social ${stamp}`;
+
+  await step(
+    'android-alice',
+    'social-alice-publish',
+    () => publishSocialPost(
+      'android-alice',
+      manifest.clients['android-alice'],
+      alicePost,
+    ),
+  );
+  await step(
+    'desktop-bob',
+    'social-bob-receive-open-alice',
+    () => receiveOpenSocialPost(
+      'desktop-bob',
+      manifest.clients['desktop-bob'],
+      alicePost,
+      'Alice',
+    ),
+  );
+  await step(
+    'ios-coral',
+    'social-coral-receive-open-alice',
+    () => receiveOpenSocialPost(
+      'ios-coral',
+      manifest.clients['ios-coral'],
+      alicePost,
+      'Alice',
+    ),
+  );
+  await step(
+    'desktop-bob',
+    'social-bob-love-alice',
+    () => reactToOpenSocialPost(
+      'desktop-bob',
+      manifest.clients['desktop-bob'],
+      alicePost,
+    ),
+  );
+  for (const clientId of ['android-alice', 'ios-coral']) {
+    await step(
+      clientId,
+      'social-alice-love-converged',
+      async () => {
+        await receiveOpenSocialPost(
+          clientId,
+          manifest.clients[clientId],
+          alicePost,
+          'Alice',
+        );
+        return waitForSocialLoveReaction(
+          clientId,
+          manifest.clients[clientId],
+          alicePost,
+        );
+      },
+    );
+  }
+
+  await step(
+    'ios-coral',
+    'social-coral-publish',
+    () => publishSocialPost(
+      'ios-coral',
+      manifest.clients['ios-coral'],
+      coralPost,
+    ),
+  );
+  await step(
+    'android-alice',
+    'social-alice-receive-open-coral',
+    () => receiveOpenSocialPost(
+      'android-alice',
+      manifest.clients['android-alice'],
+      coralPost,
+      'Carol',
+    ),
+  );
+  await step(
+    'desktop-bob',
+    'social-bob-receive-open-coral',
+    () => receiveOpenSocialPost(
+      'desktop-bob',
+      manifest.clients['desktop-bob'],
+      coralPost,
+      'Carol',
+    ),
+  );
+  await step(
+    'android-alice',
+    'social-alice-love-coral',
+    () => reactToOpenSocialPost(
+      'android-alice',
+      manifest.clients['android-alice'],
+      coralPost,
+    ),
+  );
+  for (const clientId of ['desktop-bob', 'ios-coral']) {
+    await step(
+      clientId,
+      'social-coral-love-converged',
+      async () => {
+        await receiveOpenSocialPost(
+          clientId,
+          manifest.clients[clientId],
+          coralPost,
+          'Carol',
+        );
+        return waitForSocialLoveReaction(
+          clientId,
+          manifest.clients[clientId],
+          coralPost,
+        );
+      },
+    );
+  }
+
+  for (const clientId of requiredClientIds) {
+    await step(
+      clientId,
+      'social-native-relaunch-and-feed-reopen',
+      async () => {
+        const client = manifest.clients[clientId];
+        const relaunch = await relaunchClient(clientId, client, evidenceDir);
+        await ensureAuthenticated(clientId, client, manifest.stationUrl);
+        await navigateSocialFeed(clientId, client, 'explore');
+        const alice = await waitForSocialPost(clientId, client, alicePost);
+        const coral = await openSocialPost(
+          clientId,
+          client,
+          coralPost,
+          'Carol',
+        );
+        const reaction = await waitForSocialLoveReaction(
+          clientId,
+          client,
+          coralPost,
+        );
+        return { alice, coral, reaction, relaunch };
+      },
+    );
+  }
+
+  const report = {
+    kind: 'peers-touch-three-client-product-journey-result',
+    schemaVersion: 1,
+    phase: 'social',
+    status: 'PASS',
+    source: preflight.source,
+    stationUrl: manifest.stationUrl,
+    scenarioIds: preflight.scenarioIds,
+    preflight: path.join(evidenceDir, 'preflight.json'),
+    posts: {
+      alice: alicePost,
+      coral: coralPost,
+    },
+    interactionTrace,
+    observedAt: new Date().toISOString(),
+  };
+  const reportPath = path.join(evidenceDir, 'result.json');
+  const tracePath = path.join(evidenceDir, 'interaction-trace.json');
+  writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  writeFileSync(
+    tracePath,
+    `${JSON.stringify(interactionTrace, null, 2)}\n`,
+  );
+  return { ...report, reportPath, tracePath };
+}
+
 function normalizeRecoveryText(value) {
   return String(value || '')
     .replace(/\s+/g, ' ')
@@ -8606,6 +9269,11 @@ async function runRecoveryPhase(manifest, evidenceDir, preflight) {
 function selfTest(matrix) {
   const matrixSummary = validateMatrix(matrix);
   assertContract(
+    requiredPhases.every((phase) => foregroundBoundPhases.includes(phase)),
+    'SELF_TEST_PHASE_BINDING',
+    'every declared phase must have a foreground UI binding',
+  );
+  assertContract(
     scenariosForPhase(matrix, 'chat').length === 6,
     'SELF_TEST_CHAT_COUNT',
     'chat phase scenario count changed unexpectedly',
@@ -8624,6 +9292,11 @@ function selfTest(matrix) {
     scenariosForPhase(matrix, 'recovery').length === 2,
     'SELF_TEST_RECOVERY_COUNT',
     'recovery phase scenario count changed unexpectedly',
+  );
+  assertContract(
+    scenariosForPhase(matrix, 'social').length === 2,
+    'SELF_TEST_SOCIAL_COUNT',
+    'social phase scenario count changed unexpectedly',
   );
   assertContract(
     normalizeRecoveryText('  one\n two  ') === 'one two',
@@ -8911,7 +9584,7 @@ async function main() {
     process.stdout.write(`${JSON.stringify(preflight, null, 2)}\n`);
     return;
   }
-  if (!['entry', 'shell', 'contacts', 'chat', 'recovery'].includes(options.phase)) {
+  if (!foregroundBoundPhases.includes(options.phase)) {
     throw new JourneyContractError(
       'PHASE_UI_BINDING_REQUIRED',
       [
@@ -8933,7 +9606,9 @@ async function main() {
         ? await runContactsPhase(manifest, evidenceDir, preflight)
         : options.phase === 'chat'
           ? await runChatPhase(manifest, evidenceDir, preflight)
-          : await runRecoveryPhase(manifest, evidenceDir, preflight);
+          : options.phase === 'social'
+            ? await runSocialPhase(manifest, evidenceDir, preflight)
+            : await runRecoveryPhase(manifest, evidenceDir, preflight);
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
