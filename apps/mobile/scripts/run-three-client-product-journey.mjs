@@ -3797,14 +3797,15 @@ async function searchMobilePerson(clientId, client, query, friendlyName) {
     client,
     `search result for ${friendlyName}`,
     `
-      const friendlyName = arguments[0].toLowerCase();
       const query = arguments[1].toLowerCase();
+      const matchesActor = ${chatConversationRowMatches.toString()};
       const cards = [...document.querySelectorAll(
         '[data-people-result-ptid]'
       )].filter((element) => element.getClientRects().length);
       const card = cards.find((element) => {
-        const text = (element.innerText || '').toLowerCase();
-        return text.includes(friendlyName) || text.includes(query);
+        return matchesActor(
+          'friend', query, element.getAttribute('data-people-result-ptid') || '', '',
+        );
       });
       return {
         ready: Boolean(card),
@@ -3937,6 +3938,7 @@ async function acceptIncomingFriendship(
     client.platform === 'desktop'
       ? `
           const [friendlyName, expectedPeerPtid] = arguments;
+          const matchesActor = ${chatConversationRowMatches.toString()};
           const matches = (element) => {
             const ptid = element.getAttribute(
               'data-chat-contact-ptid'
@@ -3944,9 +3946,7 @@ async function acceptIncomingFriendship(
               'data-chat-friend-request-peer-ptid'
             ) || '';
             if (expectedPeerPtid) return ptid === expectedPeerPtid;
-            return (element.innerText || '').toLowerCase().includes(
-                friendlyName.toLowerCase()
-              );
+            return matchesActor('friend', friendlyName, ptid, '');
           };
           const requests = [...document.querySelectorAll(
             '[data-chat-friend-request-direction="incoming"]'
@@ -3983,6 +3983,7 @@ async function acceptIncomingFriendship(
         `
       : `
           const [friendlyName, expectedPeerPtid] = arguments;
+          const matchesActor = ${chatConversationRowMatches.toString()};
           const matches = (element) => {
             const ptid = element.getAttribute('data-contact-ptid')
               || element.getAttribute(
@@ -3990,9 +3991,7 @@ async function acceptIncomingFriendship(
               )
               || '';
             if (expectedPeerPtid) return ptid === expectedPeerPtid;
-            return (element.innerText || '').toLowerCase().includes(
-                friendlyName.toLowerCase()
-              );
+            return matchesActor('friend', friendlyName, ptid, '');
           };
           const requests = [...document.querySelectorAll(
             '[data-friend-request-direction="incoming"]'
@@ -8608,6 +8607,18 @@ function selfTest(matrix) {
         'Bob',
         'ptid:v1:actor:peers:p:bob:123',
         'Bob No messages yet',
+      )
+      && chatConversationRowMatches(
+        'friend',
+        'Alice',
+        'ptid:v1:actor:peers:p:alice:123',
+        'Acceptance 9464d14b335d',
+      )
+      && !chatConversationRowMatches(
+        'friend',
+        'Alice',
+        'ptid:v1:actor:peers:p:carol:123',
+        'Alice',
       ),
     'SELF_TEST_CHAT_CONVERSATION_IDENTITY',
     'chat conversation matching must use visible group titles and friend PTIDs',

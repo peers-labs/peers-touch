@@ -42,6 +42,8 @@ The product must never rely on visual luck:
 - Routine contact rows prioritize avatar and friendly name. Request retry
   counts and transport metadata stay out of the visible list; identity details
   remain available on explicit profile inspection.
+- Conversation list subtitles show message previews. Routine Station and
+  federation metadata remain available in conversation or contact details.
 
 ## 3. Shared Message Anatomy
 

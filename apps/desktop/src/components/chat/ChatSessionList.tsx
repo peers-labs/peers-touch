@@ -568,12 +568,6 @@ export function ChatSessionList({
               const timeStr = relativeTime(new Date(c.lastActivityMs), t);
               const unread = c.visibleUnread;
               const localState = conversationLocalState[`${c.kind}:${c.id}`];
-              const identityMetadata = c.kind === 'friend'
-                ? [
-                    c.homeStationName || c.homeStationDomain,
-                    c.federationName,
-                  ].filter(Boolean).join(' · ')
-                : '';
 
               let subtitle = '';
               if (c.preview) {
@@ -599,9 +593,6 @@ export function ChatSessionList({
                 } else {
                   subtitle = text;
                 }
-              }
-              if (identityMetadata) {
-                subtitle = [identityMetadata, subtitle].filter(Boolean).join(' · ');
               }
 
               const contextMenuTarget = `context-menu:chat:${c.kind}:${c.id}`;
