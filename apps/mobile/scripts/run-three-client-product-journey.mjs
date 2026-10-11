@@ -27,6 +27,7 @@ const requiredClients = Object.freeze({
 });
 const requiredClientIds = Object.freeze(Object.keys(requiredClients));
 const desktopActivationOwners = new Map();
+const desktopActivationHolds = new Set();
 const requiredPhases = Object.freeze([
   'entry',
   'shell',
@@ -85,6 +86,7 @@ const invalidPassport = 'invalid-entry-proof';
 const uiWaitTimeoutMs = 45_000;
 const uiPollIntervalMs = 250;
 const nativeRelaunchTimeoutMs = 60_000;
+const desktopActivationRestoreTimeoutMs = 5_000;
 
 class JourneyContractError extends Error {
   constructor(code, message) {
@@ -1119,10 +1121,12 @@ async function activateForegroundClient(clientId, client) {
   if (client.platform === 'desktop') {
     const desktopPid = desktopListenerPid(clientId, client);
     if (!desktopActivationOwners.has(clientId)) {
-      const previousPid = frontmostDesktopPid();
+      const previousApplication = frontmostDesktopApplication();
       desktopActivationOwners.set(
         clientId,
-        previousPid !== desktopPid ? { previousPid, desktopPid, client } : null,
+        previousApplication.pid !== desktopPid
+          ? { previousApplication, desktopPid, client }
+          : null,
       );
     }
     const result = await webdriverRequest(
@@ -1196,6 +1200,31 @@ async function activateForegroundClient(clientId, client) {
   return state;
 }
 
+function desktopProcessAttribute(pid, attribute) {
+  const value = execFileSync(
+    'osascript',
+    [
+      '-e',
+      'tell application "System Events" to get '
+        + `${attribute} of first application process whose unix id is ${pid}`,
+    ],
+    { encoding: 'utf8' },
+  ).trim();
+  return value === 'missing value' ? '' : value;
+}
+
+function desktopApplicationForPid(pid) {
+  return {
+    bundleId: desktopProcessAttribute(pid, 'bundle identifier'),
+    name: desktopProcessAttribute(pid, 'name'),
+    pid,
+  };
+}
+
+function frontmostDesktopApplication() {
+  return desktopApplicationForPid(frontmostDesktopPid());
+}
+
 function frontmostDesktopPid() {
   return Number(execFileSync(
     'osascript',
@@ -1204,57 +1233,111 @@ function frontmostDesktopPid() {
   ).trim());
 }
 
+function desktopActivationTargetMatches(target, application) {
+  if (!target || !application) return false;
+  if (processIsAlive(target.pid) && application.pid === target.pid) return true;
+  if (target.bundleId && application.bundleId === target.bundleId) return true;
+  return Boolean(target.name && application.name === target.name);
+}
+
+function restoreDesktopApplication(target) {
+  if (processIsAlive(target.pid)) {
+    execFileSync(
+      'osascript',
+      [
+        '-e',
+        'tell application "System Events" to set frontmost of first process '
+          + `whose unix id is ${target.pid} to true`,
+      ],
+      { encoding: 'utf8' },
+    );
+    return;
+  }
+  if (target.bundleId) {
+    execFileSync('open', ['-b', target.bundleId], { encoding: 'utf8' });
+    return;
+  }
+  assertContract(
+    target.name,
+    'DESKTOP_ACTIVATION_OWNER_INVALID',
+    'Desktop activation owner has no reusable application identity',
+  );
+  execFileSync('open', ['-a', target.name], { encoding: 'utf8' });
+}
+
+async function waitForDesktopActivationRestore(target) {
+  const deadline = Date.now() + desktopActivationRestoreTimeoutMs;
+  let application = null;
+  while (Date.now() < deadline) {
+    application = frontmostDesktopApplication();
+    if (desktopActivationTargetMatches(target, application)) return application;
+    await sleep(100);
+  }
+  throw new JourneyContractError(
+    'DESKTOP_ACTIVATION_RELEASE_FAILED',
+    `Desktop activation restored ${application?.name || 'unknown'} instead of ${target.name || target.bundleId || target.pid}`,
+  );
+}
+
 async function releaseForegroundClient(clientId, client) {
   if (client.platform !== 'desktop') return;
+  if (desktopActivationHolds.has(clientId)) return;
   const owner = desktopActivationOwners.get(clientId);
   desktopActivationOwners.delete(clientId);
-  if (!owner || frontmostDesktopPid() !== owner.desktopPid) return;
+  if (!owner) return;
+  const target = owner.previousApplication;
   assertContract(
-    Number.isInteger(owner.previousPid) && owner.previousPid > 0,
+    Number.isInteger(target?.pid) && target.pid > 0,
     'DESKTOP_ACTIVATION_OWNER_INVALID',
     `${clientId} has no valid previous application to restore`,
   );
   try {
-    const yielded = await webdriverRequest(
-      webdriverEndpoint(client, '/execute/async'),
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          script: `
-            const done = arguments[arguments.length - 1];
-            window.__TAURI__.core.invoke('acceptance_yield_activation', {
-              targetPid: arguments[0]
-            }).then(done).catch((error) => done({ ok: false, error: String(error) }));
-          `,
-          args: [owner.previousPid],
-        }),
-      },
-    );
-    if (yielded?.ok !== true) {
-      process.stderr.write(
-        `Desktop activation yield observation: ${JSON.stringify(yielded)}\n`,
+    if (processIsAlive(target.pid)) {
+      const yielded = await webdriverRequest(
+        webdriverEndpoint(client, '/execute/async'),
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            script: `
+              const done = arguments[arguments.length - 1];
+              window.__TAURI__.core.invoke('acceptance_yield_activation', {
+                targetPid: arguments[0]
+              }).then(done).catch((error) => done({ ok: false, error: String(error) }));
+            `,
+            args: [target.pid],
+          }),
+        },
       );
+      if (yielded?.ok !== true) {
+        process.stderr.write(
+          `Desktop activation yield observation: ${JSON.stringify(yielded)}\n`,
+        );
+      }
     }
   } catch (error) {
     process.stderr.write(`Desktop activation yield observation: ${error.message}\n`);
   } finally {
-    if (frontmostDesktopPid() === owner.desktopPid) {
-      execFileSync(
-        'osascript',
-        [
-          '-e',
-          'tell application "System Events" to set frontmost of first process '
-            + `whose unix id is ${owner.previousPid} to true`,
-        ],
-        { encoding: 'utf8' },
-      );
+    const application = frontmostDesktopApplication();
+    if (!desktopActivationTargetMatches(target, application)) {
+      restoreDesktopApplication(target);
     }
   }
+  await waitForDesktopActivationRestore(target);
+}
+
+async function holdDesktopForeground(clientId, client) {
   assertContract(
-    frontmostDesktopPid() !== owner.desktopPid,
-    'DESKTOP_ACTIVATION_RELEASE_FAILED',
-    `${clientId} retained OS foreground activation after its action`,
+    client.platform === 'desktop',
+    'DESKTOP_ACTIVATION_HOLD_INVALID',
+    `${clientId} is not a Desktop client`,
   );
+  await activateForegroundClient(clientId, client);
+  desktopActivationHolds.add(clientId);
+}
+
+async function releaseDesktopForegroundHold(clientId, client) {
+  desktopActivationHolds.delete(clientId);
+  await releaseForegroundClient(clientId, client);
 }
 
 function processIsAlive(pid) {
@@ -7195,55 +7278,66 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
     ),
   );
 
-  await step(
-    'android-alice',
-    'chat-alice-start-audio-call-bob',
-    async () => {
-      await openChatConversation(
-        'android-alice',
-        manifest.clients['android-alice'],
-        'friend',
-        'Bob',
-      );
-      await clickConversationHeaderCall(
-        'android-alice',
-        manifest.clients['android-alice'],
-        'audio',
-      );
-      return waitForCallSurface(
-        'android-alice',
-        manifest.clients['android-alice'],
-        'outgoing',
-        'audio',
-        'Bob',
-      );
-    },
-  );
-  await step(
+  await holdDesktopForeground(
     'desktop-bob',
-    'chat-bob-answer-audio-call',
-    async () => {
-      await waitForCallSurface(
-        'desktop-bob',
-        manifest.clients['desktop-bob'],
-        'incoming',
-        'audio',
-        'Alice',
-      );
-      await clickCallSurfaceControl(
-        'desktop-bob',
-        manifest.clients['desktop-bob'],
-        'accept',
-      );
-      return waitForCallSurface(
-        'desktop-bob',
-        manifest.clients['desktop-bob'],
-        'active',
-        'audio',
-        'Alice',
-      );
-    },
+    manifest.clients['desktop-bob'],
   );
+  try {
+    await step(
+      'android-alice',
+      'chat-alice-start-audio-call-bob',
+      async () => {
+        await openChatConversation(
+          'android-alice',
+          manifest.clients['android-alice'],
+          'friend',
+          'Bob',
+        );
+        await clickConversationHeaderCall(
+          'android-alice',
+          manifest.clients['android-alice'],
+          'audio',
+        );
+        return waitForCallSurface(
+          'android-alice',
+          manifest.clients['android-alice'],
+          'outgoing',
+          'audio',
+          'Bob',
+        );
+      },
+    );
+    await step(
+      'desktop-bob',
+      'chat-bob-answer-audio-call',
+      async () => {
+        await waitForCallSurface(
+          'desktop-bob',
+          manifest.clients['desktop-bob'],
+          'incoming',
+          'audio',
+          'Alice',
+        );
+        await clickCallSurfaceControl(
+          'desktop-bob',
+          manifest.clients['desktop-bob'],
+          'accept',
+        );
+        return waitForCallSurface(
+          'desktop-bob',
+          manifest.clients['desktop-bob'],
+          'active',
+          'audio',
+          'Alice',
+        );
+      },
+    );
+  } finally {
+    await releaseDesktopForegroundHold(
+      'desktop-bob',
+      manifest.clients['desktop-bob'],
+    );
+  }
   await step(
     'android-alice',
     'chat-alice-audio-call-connected',
@@ -7430,80 +7524,91 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
     );
   }
 
-  await step(
+  await holdDesktopForeground(
     'desktop-bob',
-    'chat-bob-start-video-call-coral',
-    async () => {
-      await openChatConversation(
-        'desktop-bob',
-        manifest.clients['desktop-bob'],
-        'friend',
-        'Carol',
-      );
-      await clickConversationHeaderCall(
-        'desktop-bob',
-        manifest.clients['desktop-bob'],
-        'video',
-      );
-      return waitForCallSurface(
-        'desktop-bob',
-        manifest.clients['desktop-bob'],
-        'outgoing',
-        'video',
-        'Carol',
-      );
-    },
+    manifest.clients['desktop-bob'],
   );
-  await step(
-    'ios-coral',
-    'chat-coral-answer-bob-video-call',
-    async () => {
-      await waitForCallSurface(
-        'ios-coral',
-        manifest.clients['ios-coral'],
-        'incoming',
-        'video',
-        'Bob',
-      );
-      await clickCallSurfaceControl(
-        'ios-coral',
-        manifest.clients['ios-coral'],
-        'accept',
-        'video',
-      );
-      return waitForCallSurface(
-        'ios-coral',
-        manifest.clients['ios-coral'],
-        'active',
-        'video',
-        'Bob',
-      );
-    },
-  );
-  await step(
-    'desktop-bob',
-    'chat-bob-toggle-video-controls',
-    async () => {
-      await waitForCallSurface(
-        'desktop-bob',
-        manifest.clients['desktop-bob'],
-        'active',
-        'video',
-        'Carol',
-      );
-      const microphone = await toggleCallControl(
-        'desktop-bob',
-        manifest.clients['desktop-bob'],
-        'microphone',
-      );
-      const camera = await toggleCallControl(
-        'desktop-bob',
-        manifest.clients['desktop-bob'],
-        'camera',
-      );
-      return { camera, microphone };
-    },
-  );
+  try {
+    await step(
+      'desktop-bob',
+      'chat-bob-start-video-call-coral',
+      async () => {
+        await openChatConversation(
+          'desktop-bob',
+          manifest.clients['desktop-bob'],
+          'friend',
+          'Carol',
+        );
+        await clickConversationHeaderCall(
+          'desktop-bob',
+          manifest.clients['desktop-bob'],
+          'video',
+        );
+        return waitForCallSurface(
+          'desktop-bob',
+          manifest.clients['desktop-bob'],
+          'outgoing',
+          'video',
+          'Carol',
+        );
+      },
+    );
+    await step(
+      'ios-coral',
+      'chat-coral-answer-bob-video-call',
+      async () => {
+        await waitForCallSurface(
+          'ios-coral',
+          manifest.clients['ios-coral'],
+          'incoming',
+          'video',
+          'Bob',
+        );
+        await clickCallSurfaceControl(
+          'ios-coral',
+          manifest.clients['ios-coral'],
+          'accept',
+          'video',
+        );
+        return waitForCallSurface(
+          'ios-coral',
+          manifest.clients['ios-coral'],
+          'active',
+          'video',
+          'Bob',
+        );
+      },
+    );
+    await step(
+      'desktop-bob',
+      'chat-bob-toggle-video-controls',
+      async () => {
+        await waitForCallSurface(
+          'desktop-bob',
+          manifest.clients['desktop-bob'],
+          'active',
+          'video',
+          'Carol',
+        );
+        const microphone = await toggleCallControl(
+          'desktop-bob',
+          manifest.clients['desktop-bob'],
+          'microphone',
+        );
+        const camera = await toggleCallControl(
+          'desktop-bob',
+          manifest.clients['desktop-bob'],
+          'camera',
+        );
+        return { camera, microphone };
+      },
+    );
+  } finally {
+    await releaseDesktopForegroundHold(
+      'desktop-bob',
+      manifest.clients['desktop-bob'],
+    );
+  }
   await step(
     'ios-coral',
     'chat-coral-toggle-video-controls-and-end',
@@ -8339,34 +8444,45 @@ async function runRecoveryPhase(manifest, evidenceDir, preflight) {
     });
   }
 
-  await step(
-    'android-alice',
-    'recovery-fresh-audio-call-start',
-    () => startRecoveryAudioCall(
+  await holdDesktopForeground(
+    'desktop-bob',
+    manifest.clients['desktop-bob'],
+  );
+  try {
+    await step(
       'android-alice',
-      manifest.clients['android-alice'],
-      'Bob',
-    ),
-  );
-  await step(
-    'desktop-bob',
-    'recovery-fresh-audio-call-answer',
-    () => answerRecoveryCall(
+      'recovery-fresh-audio-call-start',
+      () => startRecoveryAudioCall(
+        'android-alice',
+        manifest.clients['android-alice'],
+        'Bob',
+      ),
+    );
+    await step(
       'desktop-bob',
-      manifest.clients['desktop-bob'],
-    ),
-  );
-  await step(
-    'desktop-bob',
-    'recovery-fresh-audio-call-end',
-    async () => {
-      await endRecoveryCall(
+      'recovery-fresh-audio-call-answer',
+      () => answerRecoveryCall(
         'desktop-bob',
         manifest.clients['desktop-bob'],
-      );
-      return { ended: true };
-    },
-  );
+      ),
+    );
+    await step(
+      'desktop-bob',
+      'recovery-fresh-audio-call-end',
+      async () => {
+        await endRecoveryCall(
+          'desktop-bob',
+          manifest.clients['desktop-bob'],
+        );
+        return { ended: true };
+      },
+    );
+  } finally {
+    await releaseDesktopForegroundHold(
+      'desktop-bob',
+      manifest.clients['desktop-bob'],
+    );
+  }
   for (const clientId of requiredClientIds) {
     await step(
       clientId,
@@ -8550,6 +8666,18 @@ function selfTest(matrix) {
     'SELF_TEST_STALE_ELEMENT_RETRY',
     'stale element retry classification is invalid',
   );
+  assertContract(
+    desktopActivationTargetMatches(
+      { bundleId: 'cn.trae.app', name: 'Trae CN', pid: 42 },
+      { bundleId: 'cn.trae.app', name: 'Trae CN', pid: 84 },
+    )
+      && !desktopActivationTargetMatches(
+        { bundleId: 'cn.trae.app', name: 'Trae CN', pid: 42 },
+        { bundleId: 'com.peers.touch', name: 'Peers', pid: 84 },
+      ),
+    'SELF_TEST_DESKTOP_ACTIVATION_RESTORE',
+    'Desktop activation restore must survive a restarted owner process',
+  );
   const readyImageDraft = selectNewReadyAttachmentDraft({
     drafts: [
       {
@@ -8718,6 +8846,7 @@ async function main() {
 main().catch(async (error) => {
   for (const [clientId, owner] of desktopActivationOwners) {
     try {
+      desktopActivationHolds.delete(clientId);
       await releaseForegroundClient(clientId, owner?.client ?? { platform: 'desktop' });
     } catch (cleanupError) {
       process.stderr.write(`FAIL DESKTOP_ACTIVATION_RELEASE: ${cleanupError.message}\n`);
