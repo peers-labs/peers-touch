@@ -1138,8 +1138,7 @@ async function activateForegroundClient(clientId, client) {
           script: `
             const done = arguments[arguments.length - 1];
             const appWindow = window.__TAURI__.window.getCurrentWindow();
-            appWindow.show()
-              .then(() => appWindow.setFocus())
+            appWindow.setFocus()
               .then(() => done({ ok: true }))
               .catch((error) => done({ ok: false, error: String(error) }));
           `,
