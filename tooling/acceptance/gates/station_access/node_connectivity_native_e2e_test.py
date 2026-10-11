@@ -108,6 +108,8 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
                     "id": actor,
                     "actor": actor,
                     "runtime": "native-tauri",
+                    "storage_root": f"/state/{actor}",
+                    "storage_lifecycle": "persistent",
                     "required_service_roles": ["station"],
                     "service_bindings": {
                         "station": {
@@ -126,6 +128,7 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
                     "role": actor,
                     "accountRef": f"station-account:{actor}@p.t",
                     "ptid": f"ptid:{actor}",
+                    "devicePolicy": "persistent-acceptance",
                 }
                 for actor in ("alice", "bob")
             ],
@@ -169,6 +172,14 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
             },
             "runtime": {
                 "nodeConnectivity": {
+                    "identityState": {
+                        actor: {
+                            "storageRoot": f"/state/{actor}",
+                            "storageLifecycle": "persistent",
+                            "devicePolicy": "persistent-acceptance",
+                        }
+                        for actor in ("alice", "bob")
+                    },
                     "routes": {
                         actor: {
                             "stationPeerId": "station-peer",
@@ -212,6 +223,10 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
 
     def test_proof_contract_requires_native_receiver_closure(self) -> None:
         self.assertTrue(NCP_ASSERTIONS <= NCP_REQUIRED_ASSERTIONS)
+        self.assertIn(
+            "native_actor_identity_state_persistent",
+            NCP_REQUIRED_ASSERTIONS,
+        )
         self.assertIn("fixture.existing", NCP_REQUIRED_STEPS)
         self.assertNotIn("fixture.reset", NCP_REQUIRED_STEPS)
         for step in (
