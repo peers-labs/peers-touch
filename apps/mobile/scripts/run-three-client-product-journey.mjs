@@ -1311,6 +1311,10 @@ function activateDesktopProcess(pid) {
         'tell application "System Events" to set visible of '
           + `(first application process whose unix id is ${pid}) to true`,
         '-e',
+        'tell application "System Events" to tell '
+          + `(first application process whose unix id is ${pid}) `
+          + 'to perform action "AXRaise" of window 1',
+        '-e',
         'tell application "System Events" to set frontmost of '
           + `(first application process whose unix id is ${pid}) to true`,
       ],
