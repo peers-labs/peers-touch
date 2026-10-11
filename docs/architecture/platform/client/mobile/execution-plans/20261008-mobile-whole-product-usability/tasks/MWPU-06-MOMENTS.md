@@ -68,9 +68,9 @@
   "runtimeReuse": {
     "scope": "suite",
     "entryCheckId": "moments-foreground-functional",
-    "scenarioIds": ["alice-publish", "bob-like", "coral-publish", "three-client-feed-convergence"],
+    "scenarioIds": ["moments-publish-receive", "moments-react-comment", "moments-reply-rollback", "moments-draft-recovery"],
     "maxProvisioningRuns": 1,
-    "maxClientLaunches": 3,
+    "maxClientLaunches": 2,
     "minWarmReuseRate": 0.66,
     "requireAttachOnlyScenarios": true,
     "requireReceiverVisibleProof": true,
