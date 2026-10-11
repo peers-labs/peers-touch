@@ -60,6 +60,19 @@ fn rust_client_reaches_go_station_over_standard_circuit() {
         .expect("open SSE");
     assert_eq!(read_body(&mut events.body), b"data: one\n\ndata: two\n\n");
 
+    let _blocked_event_one = transport
+        .round_trip(
+            &fixture.route,
+            b"GET /events-blocking HTTP/1.1\r\nHost: station\r\nAccept: text/event-stream\r\nContent-Length: 0\r\n\r\n",
+        )
+        .expect("open first unread SSE");
+    let _blocked_event_two = transport
+        .round_trip(
+            &fixture.route,
+            b"GET /events-blocking HTTP/1.1\r\nHost: station\r\nAccept: text/event-stream\r\nContent-Length: 0\r\n\r\n",
+        )
+        .expect("open second unread SSE");
+
     let upload = vec![0x5a; 32 * 1024 * 1024];
     let request = upload_request(&upload);
     let mut response = transport
@@ -74,6 +87,19 @@ fn rust_client_reaches_go_station_over_standard_circuit() {
             .and_then(|value| value.to_str().ok()),
         Some(expected.as_str())
     );
+
+    let mut download = transport
+        .round_trip(
+            &fixture.route,
+            b"GET /download HTTP/1.1\r\nHost: station\r\nContent-Length: 0\r\n\r\n",
+        )
+        .expect("download 1 MiB attachment chunk");
+    let body = read_body(&mut download.body);
+    assert_eq!(body.len(), (1 << 20) + 16);
+    assert!(body
+        .iter()
+        .enumerate()
+        .all(|(index, byte)| *byte == (index % 251) as u8));
 }
 
 fn start_fixture() -> Fixture {

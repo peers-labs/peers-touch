@@ -21,6 +21,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	relayclient "github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/client"
+	relayv2 "github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/relay"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/transport/securehttp"
@@ -123,7 +124,7 @@ func TestSecureHTTPDirectAndCircuitUseCanonicalHertzRouter(t *testing.T) {
 
 	assertCanonicalProtobufError(t, ctx, circuitClient)
 	assertStreamingUpload(t, ctx, directClient, fixture)
-	assertStreamingDownload(t, ctx, directClient, fixture)
+	assertStreamingDownload(t, ctx, circuitClient, fixture)
 	assertSSEFlush(t, ctx, circuitClient, fixture)
 	assertCancellation(t, directClient, fixture)
 
@@ -369,7 +370,7 @@ func (f *secureHTTPHandlerFixture) handleDownload(
 	if !ok {
 		return fmt.Errorf("download response is not streaming")
 	}
-	payload := []byte("streamed-attachment-body")
+	payload := secureHTTPDownloadPayload()
 	response.SetHeader("Content-Type", "application/octet-stream")
 	return streaming.SetBodyStream(
 		&closeSignalReader{
@@ -763,6 +764,14 @@ func assertStreamingUpload(
 	}
 }
 
+func secureHTTPDownloadPayload() []byte {
+	payload := make([]byte, (1<<20)+16)
+	for index := range payload {
+		payload[index] = byte(index % 251)
+	}
+	return payload
+}
+
 func assertStreamingDownload(
 	t *testing.T,
 	ctx context.Context,
@@ -788,8 +797,8 @@ func assertStreamingDownload(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(body) != "streamed-attachment-body" {
-		t.Fatalf("download body = %q", body)
+	if !bytes.Equal(body, secureHTTPDownloadPayload()) {
+		t.Fatalf("download body length = %d", len(body))
 	}
 	select {
 	case <-fixture.downloadClosed:
@@ -930,7 +939,19 @@ func newSecureHTTPRelay(t *testing.T) host.Host {
 	valueHost, err := libp2p.New(
 		libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"),
 		libp2p.ForceReachabilityPublic(),
-		libp2p.EnableRelayService(),
+		libp2p.EnableRelayService(relayv2.WithResources(relayv2.Resources{
+			Limit: &relayv2.RelayLimit{
+				Duration: time.Hour,
+				Data:     64 << 20,
+			},
+			ReservationTTL:         time.Hour,
+			MaxReservations:        16,
+			MaxCircuits:            16,
+			BufferSize:             32 << 10,
+			MaxReservationsPerPeer: 1,
+			MaxReservationsPerIP:   16,
+			MaxReservationsPerASN:  16,
+		})),
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -6,7 +6,7 @@ use std::fmt;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{LazyLock, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const MAX_PROXY_REQUEST_BYTES: usize = 64 * 1024 * 1024;
 
@@ -197,11 +197,27 @@ fn serve_proxy_connection(
         .and_then(|_| connection.set_write_timeout(Some(timeout)))
         .map_err(|error| TransportError::new(format!("configure Station proxy: {error}")))?;
     let request = read_http_request(&mut connection)?;
+    let request_target = request_target(&request).unwrap_or("");
+    let trace_attachment = request_target.starts_with("/conversation/attachments/objects/");
+    let started = Instant::now();
     let route = standard_route(&state.snapshot)?;
     let mut response = state
         .transport
         .round_trip(&route, &request)
         .map_err(|error| TransportError::new(format!("Station HTTP/2 request failed: {error}")))?;
+    if trace_attachment {
+        tracing::info!(
+            request_target,
+            status = response.status.as_u16(),
+            response_headers_ms = started.elapsed().as_millis(),
+            content_length = response
+                .headers
+                .get("content-length")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or(""),
+            "Station attachment proxy response started"
+        );
+    }
     assert_route_current(registry, &state.snapshot)?;
     write!(
         connection,
@@ -225,20 +241,44 @@ fn serve_proxy_connection(
     write!(connection, "Connection: close\r\n\r\n")
         .map_err(|error| TransportError::new(format!("write Station response: {error}")))?;
     let mut buffer = [0_u8; 16 * 1024];
+    let mut body_bytes = 0_u64;
     loop {
         let count = response
             .body
             .read(&mut buffer)
             .map_err(|error| TransportError::new(format!("read Station response: {error}")))?;
         if count == 0 {
+            if trace_attachment {
+                tracing::info!(
+                    request_target,
+                    body_bytes,
+                    response_complete_ms = started.elapsed().as_millis(),
+                    "Station attachment proxy response completed"
+                );
+            }
             return Ok(());
         }
+        if trace_attachment && body_bytes == 0 {
+            tracing::info!(
+                request_target,
+                count,
+                first_body_chunk_ms = started.elapsed().as_millis(),
+                "Station attachment proxy first response chunk"
+            );
+        }
+        body_bytes = body_bytes.saturating_add(count as u64);
         assert_route_current(registry, &state.snapshot)?;
         connection
             .write_all(&buffer[..count])
             .and_then(|_| connection.flush())
             .map_err(|error| TransportError::new(format!("write Station response: {error}")))?;
     }
+}
+
+fn request_target(request: &[u8]) -> Option<&str> {
+    let line_end = request.windows(2).position(|window| window == b"\r\n")?;
+    let request_line = std::str::from_utf8(&request[..line_end]).ok()?;
+    request_line.split_whitespace().nth(1)
 }
 
 fn read_http_request(stream: &mut TcpStream) -> Result<Vec<u8>, TransportError> {
@@ -249,9 +289,7 @@ fn read_http_request(stream: &mut TcpStream) -> Result<Vec<u8>, TransportError> 
             .read(&mut buffer)
             .map_err(|error| TransportError::new(format!("read Station request: {error}")))?;
         if count == 0 {
-            return Err(TransportError::new(
-                "Station request ended before headers",
-            ));
+            return Err(TransportError::new("Station request ended before headers"));
         }
         request.extend_from_slice(&buffer[..count]);
         if request.len() > MAX_PROXY_REQUEST_BYTES {
@@ -298,9 +336,10 @@ fn request_content_length(headers: &str) -> Result<usize, TransportError> {
                     "Station request has duplicate Content-Length",
                 ));
             }
-            content_length = Some(value.trim().parse::<usize>().map_err(|_| {
-                TransportError::new("Station request has invalid Content-Length")
-            })?);
+            content_length =
+                Some(value.trim().parse::<usize>().map_err(|_| {
+                    TransportError::new("Station request has invalid Content-Length")
+                })?);
         }
     }
     Ok(content_length.unwrap_or(0))
@@ -344,10 +383,9 @@ mod tests {
 
     #[test]
     fn proxy_rejects_chunked_and_ambiguous_lengths() {
-        assert!(request_content_length(
-            "POST /upload HTTP/1.1\r\nTransfer-Encoding: chunked"
-        )
-        .is_err());
+        assert!(
+            request_content_length("POST /upload HTTP/1.1\r\nTransfer-Encoding: chunked").is_err()
+        );
         assert!(request_content_length(
             "POST /upload HTTP/1.1\r\nContent-Length: 4\r\nContent-Length: 4"
         )
