@@ -193,6 +193,13 @@ class NodeConnectivityPostgresProcessProvisioner(EnvironmentProvisioner):
                     media_type="application/json",
                 ).to_dict(),
             )
+            services = {self.service_id: attestation}
+            services.update(
+                self._additional_services(
+                    manifest=manifest,
+                    runtime_root=runtime_root,
+                )
+            )
 
             declared = {
                 client.id: client for client in self.contract.clients
@@ -215,7 +222,10 @@ class NodeConnectivityPostgresProcessProvisioner(EnvironmentProvisioner):
                     renderer_port=0,
                     webdriver_port=0,
                     profile=self.environment_id,
-                    storage_root="<shared-postgresql>",
+                    storage_root=self._client_storage_root(
+                        client_id=client_id,
+                        runtime_root=runtime_root,
+                    ),
                     storage_lifecycle="ephemeral",
                     required_service_roles=(
                         declared[client_id].required_service_roles
@@ -229,7 +239,7 @@ class NodeConnectivityPostgresProcessProvisioner(EnvironmentProvisioner):
             manifest = dataclasses.replace(
                 manifest,
                 state=ProvisioningState.PROVISIONED,
-                services={self.service_id: attestation},
+                services=services,
                 clients=clients,
                 cleanup_resources=self.contract.cleanup.resources,
             )
@@ -255,6 +265,23 @@ class NodeConnectivityPostgresProcessProvisioner(EnvironmentProvisioner):
                 reason=blocked.reason,
                 resource=blocked.resource,
             )
+
+    def _additional_services(
+        self,
+        *,
+        manifest: RuntimeManifest,
+        runtime_root: Path,
+    ) -> dict[str, ServiceAttestation]:
+        return {}
+
+    def _client_storage_root(
+        self,
+        *,
+        client_id: str,
+        runtime_root: Path,
+    ) -> str:
+        del client_id, runtime_root
+        return "<shared-postgresql>"
 
     def _run(self, command: list[str], *, timeout: int = 60) -> str:
         completed = subprocess.run(

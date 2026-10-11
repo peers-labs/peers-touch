@@ -90,6 +90,7 @@ one prepared runtime and never build, deploy or create accounts.
 | NCP-G04 | two Station nodes, shared DB/object backend; send on A, subscribe on B; kill A | committed ordered events reach B, device-only events stay private, cursor resumes within 30 s |
 | NCP-G05 | Access attempt on A, acknowledge/use Session on B; concurrent same-class activation | one class winner, prior same-class revoked, other classes preserved, same logical Station |
 | NCP-G06-AGENT | healthy Agent lease on A; boot B, expire/take over, then resume A | healthy work survives B boot, takeover advances the token, stale A cannot commit, one terminal domain record |
+| NCP-G06-OSS | upload/read across two OSS processes; hold GC on A, expire/take over on B, replace bytes, resume A | digest-equal authorized read, healthy lease exclusion, higher-token takeover, replacement generation survives stale delete, stale completion rejected, valid quota/refcount |
 | NCP-G06 | healthy Agent lease on A; start B, pause A, expire/takeover and resume A; concurrent OSS GC | healthy work survives B boot, stale token cannot commit, one domain effect and valid object refcounts |
 | NCP-G07 | forced short test reservation renewal, route refresh, revoke, slow consumer and quota exhaustion | renewal preserves healthy SSE, revoke denies/retires node circuits, finite memory/admission and typed recovery |
 | NCP-G08 | constructor/consumer inventory and final source-bound native proof | one Host/process, no old production data plane, Mobile contract builds; Mobile runtime remains unproven until native check |

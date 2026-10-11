@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "id": "node-connectivity-shared-objects",
+  "domain": "station-access",
+  "status": "active",
+  "owners": [
+    "apps/station/app/subserver/oss/db/model/oss_blobs.go",
+    "apps/station/app/subserver/oss/db/repo/blob_repo.go",
+    "apps/station/app/subserver/oss/service/file_service.go",
+    "apps/station/app/subserver/oss/worker/lock.go",
+    "apps/station/app/subserver/oss/worker/db_lock.go",
+    "apps/station/app/subserver/oss/worker/blob_gc.go",
+    "apps/station/frame/core/facility/storage",
+    "tooling/acceptance/environments/node-connectivity-oss-fencing.yaml",
+    "tooling/acceptance/provisioners/node_connectivity_oss_fencing.py",
+    "tooling/scripts/node-connectivity-journey.py"
+  ],
+  "truth_sources": [
+    "shared PostgreSQL oss_blobs, oss_files, oss_buckets, oss_audit, and oss_worker_leases rows",
+    "generation-bound bytes in the configured cluster-shared OSS backend"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "station",
+      "route": "owner-authorized OSS upload, read, lifecycle, and worker execution"
+    }
+  ],
+  "required_gates": [
+    "NCP-G06-OSS"
+  ],
+  "acceptance": {
+    "service": [
+      "upload on node A and owner-authorized read on node B return matching bytes",
+      "booting node B does not take a healthy OSS worker lease from node A",
+      "database-time expiry permits node B takeover with a strictly higher fencing token",
+      "GC binds one immutable physical generation and atomically revalidates zero references",
+      "replacement upload advances generation and survives a resumed stale delete",
+      "stale completion is rejected while refcount and bucket quota readback stay valid",
+      "default local backing cannot declare cluster readiness"
+    ],
+    "surface": []
+  },
+  "negative": [
+    "no second scheduler, broker, or object migration service is introduced",
+    "existing local objects are not moved, reset, or deleted during configuration",
+    "a database token alone does not authorize deletion of an unversioned physical key",
+    "S3 vendor-specific behavior and integrated Agent plus OSS failover are not claimed"
+  ]
+}

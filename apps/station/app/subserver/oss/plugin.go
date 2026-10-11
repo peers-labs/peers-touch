@@ -132,13 +132,21 @@ func init() {
 			logger.Errorf(ctx, "[oss] PTID schema migration failed: %v", err)
 			return
 		}
-		_ = rds.AutoMigrate(
+		if err := rds.AutoMigrate(
 			&ossmodel.Audit{},
 			&ossmodel.Blob{},
+			&ossmodel.BlobGCGeneration{},
 			&ossmodel.Bucket{},
 			&ossmodel.FileMeta{},
 			&ossmodel.Meta{},
-		)
+			&ossmodel.WorkerLease{},
+		); err != nil {
+			logger.Errorf(ctx, "[oss] schema migration failed: %v", err)
+			return
+		}
+		if err := ossrepo.MigrateBlobGenerations(rds); err != nil {
+			logger.Errorf(ctx, "[oss] blob generation migration failed: %v", err)
+		}
 	})
 	plugin.SubserverPlugins["oss"] = &ossPlugin{}
 }

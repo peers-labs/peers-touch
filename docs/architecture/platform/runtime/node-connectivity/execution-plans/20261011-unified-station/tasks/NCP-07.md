@@ -26,8 +26,10 @@
 
 ## Current Snapshot
 
-OSS explicitly supplies NewMemLock to its scheduler; doc claims about advisory
-locks cannot substitute for this live source.
+OSS now supplies a database-time node/incarnation/token lease through the
+existing scheduler lock port. Blob metadata carries immutable generation and
+physical storage-key identity; `local` remains single-node, while `shared-fs`
+and S3 can satisfy cluster-shared backing.
 
 ## Verification Contract
 

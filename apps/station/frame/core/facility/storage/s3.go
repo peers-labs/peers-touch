@@ -34,6 +34,8 @@ type S3Backend struct {
 	useSSL    bool
 }
 
+func (b *S3Backend) ClusterShared() bool { return true }
+
 // NewS3Backend constructs an `S3Backend` from a validated `S3Config`.
 // The constructor performs no network I/O — the first request the
 // caller makes is when connectivity / auth gets exercised. This is

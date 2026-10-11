@@ -412,6 +412,25 @@
       ]
     },
     {
+      "id": "node-connectivity-shared-objects",
+      "features": [
+        "node-connectivity-shared-objects"
+      ],
+      "when": {
+        "paths": [
+          "apps/station/app/subserver/oss/**",
+          "apps/station/frame/core/facility/storage/**",
+          "tooling/acceptance/environments/node-connectivity-oss-fencing.yaml",
+          "tooling/acceptance/provisioners/node_connectivity_oss_fencing.py",
+          "tooling/acceptance/features/node-connectivity-shared-objects.yaml",
+          "tooling/scripts/node-connectivity-journey.py"
+        ]
+      },
+      "require": [
+        "NCP-G06-OSS"
+      ]
+    },
+    {
       "id": "node-connectivity-architecture",
       "features": [
         "node-connectivity-standard-stream"
@@ -429,6 +448,7 @@
         "NCP-G04",
         "NCP-G05",
         "NCP-G06-AGENT",
+        "NCP-G06-OSS",
         "NCP-G07",
         "NCP-G08"
       ]

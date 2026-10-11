@@ -112,15 +112,15 @@ func (o *PrivateSocialResetOwner) InspectResetObject(
 			err,
 		)
 	}
-	blobDigest, err := o.inspectBlobBytes(ctx, metadata)
+	blob, err := o.loadBlob(ctx, metadata.Backend, metadata.Key)
+	if err != nil {
+		return infrastructure.ResetObjectInspection{}, err
+	}
+	blobDigest, err := o.inspectBlobBytes(ctx, metadata, blob)
 	if err != nil {
 		return infrastructure.ResetObjectInspection{}, err
 	}
 	references, err := o.liveReferences(ctx, metadata.Backend, metadata.Key)
-	if err != nil {
-		return infrastructure.ResetObjectInspection{}, err
-	}
-	blob, err := o.loadBlob(ctx, metadata.Backend, metadata.Key)
 	if err != nil {
 		return infrastructure.ResetObjectInspection{}, err
 	}
@@ -221,7 +221,7 @@ func (o *PrivateSocialResetOwner) DeleteResetObject(
 				target,
 			)
 		}
-		blobDigest, err := o.inspectBlobBytes(ctx, metadata)
+		blobDigest, err := o.inspectBlobBytes(ctx, metadata, blob)
 		if err != nil {
 			return err
 		}
@@ -367,7 +367,7 @@ func (o *PrivateSocialResetOwner) VerifyResetObjectDeleted(
 	if len(references) == 0 {
 		return nil
 	}
-	if _, err := o.inspectBlobBytes(ctx, metadata); err != nil {
+	if _, err := o.inspectBlobBytes(ctx, metadata, blob); err != nil {
 		return err
 	}
 
@@ -428,8 +428,13 @@ func (o *PrivateSocialResetOwner) validateMetadataIdentity(
 func (o *PrivateSocialResetOwner) inspectBlobBytes(
 	ctx context.Context,
 	metadata *ossmodel.FileMeta,
+	blob *ossmodel.Blob,
 ) (string, error) {
-	reader, size, _, err := o.backend.Open(ctx, metadata.Key, nil)
+	storageKey := metadata.Key
+	if blob != nil && blob.StorageKey != "" {
+		storageKey = blob.StorageKey
+	}
+	reader, size, _, err := o.backend.Open(ctx, storageKey, nil)
 	if err != nil {
 		return "", newObjectResetError(
 			infrastructure.ResetCodeObjectDigestMismatch,

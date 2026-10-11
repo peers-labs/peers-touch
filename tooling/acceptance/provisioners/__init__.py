@@ -45,6 +45,9 @@ from .node_connectivity_agent_fencing import (
 from .node_connectivity_durable_events import (
     NodeConnectivityDurableEventsProvisioner,
 )
+from .node_connectivity_oss_fencing import (
+    NodeConnectivityOSSFencingProvisioner,
+)
 from .node_connectivity_shared_access import (
     NodeConnectivitySharedAccessProvisioner,
 )
@@ -107,6 +110,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ),
     NodeConnectivityDurableEventsProvisioner.environment_id: (
         NodeConnectivityDurableEventsProvisioner
+    ),
+    NodeConnectivityOSSFencingProvisioner.environment_id: (
+        NodeConnectivityOSSFencingProvisioner
     ),
     NodeConnectivitySharedAccessProvisioner.environment_id: (
         NodeConnectivitySharedAccessProvisioner
@@ -229,6 +235,7 @@ __all__ = [
     "NativeTauriCurrentProfileProvisioner",
     "NodeConnectivityAgentFencingProvisioner",
     "NodeConnectivityDurableEventsProvisioner",
+    "NodeConnectivityOSSFencingProvisioner",
     "NodeConnectivitySharedAccessProvisioner",
     "OAuth2ClientLocalBrowserProvisioner",
     "OAuth2ClientLocalServiceProvisioner",

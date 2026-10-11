@@ -46,6 +46,23 @@ func TestFactoryRejectsMissingLocalRoot(t *testing.T) {
 	}
 }
 
+func TestFactorySharedFSIsExplicitlyClusterShared(t *testing.T) {
+	backend, err := New(Config{
+		Driver: DriverSharedFS,
+		Local:  &LocalConfig{Root: t.TempDir()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	shared, ok := backend.(ClusterSharedBackend)
+	if !ok || !shared.ClusterShared() {
+		t.Fatalf("shared-fs backend did not declare shared scope: %T", backend)
+	}
+	if NewLocalBackend(t.TempDir()).ClusterShared() {
+		t.Fatal("local backend must not declare cluster-shared scope")
+	}
+}
+
 // TestFactoryRejectsUnknownDriver — typos must surface as fatal at
 // process startup, not silently degrade to local. This is the
 // difference between "operator forgot to set the value" (handled
