@@ -8775,6 +8775,41 @@ async function recoverMobileSocialDraft(
   );
   await sleep(2_000);
   const relaunch = await relaunchClient(clientId, client, evidenceDir);
+  await waitForUi(
+    clientId,
+    client,
+    'Social draft restore confirmation',
+    `
+      const overlay = document.querySelector(
+        '[data-acceptance-id="recovery-draft-restore"]'
+      );
+      const restore = document.querySelector(
+        '[data-acceptance-id="recovery-draft-restore-action"]'
+      );
+      return {
+        ready: Boolean(overlay?.getClientRects().length)
+          && restore instanceof HTMLButtonElement
+          && !restore.disabled
+      };
+    `,
+  );
+  await clickVisibleSelector(
+    client,
+    '[data-acceptance-id="recovery-draft-restore-action"]',
+    `${clientId}-social-draft-restore`,
+  );
+  await waitForUi(
+    clientId,
+    client,
+    'Social draft restore completion',
+    `
+      return {
+        ready: !document.querySelector(
+          '[data-acceptance-id="recovery-draft-restore"]'
+        )
+      };
+    `,
+  );
   await ensureAuthenticated(clientId, client, stationUrl);
   await openMobileSocialComposer(clientId, client);
   const restored = await waitForUi(
