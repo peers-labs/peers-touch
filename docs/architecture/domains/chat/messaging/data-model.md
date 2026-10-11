@@ -235,6 +235,14 @@ membership和actor device rows，并验证plan hash；不一致时plan转`SUPERS
 membership、epoch或queue mutation。KeyPackage reservation只在成功transition中消费；
 expired/superseded plan释放未消费package。
 
+MLS KeyPackage is one-time join material. A published local row records upload
+history, not proof that the private join provider remains available. OpenMLS
+removes that private material after a successful Welcome. A disposable Station
+lane reset must preserve publication history and must never mark every published
+KeyPackage for upload again. The publisher replenishes the Station deficit with
+fresh packages and atomically persists their private provider pool before upload.
+Resetting the Station cannot recreate private material consumed on the device.
+
 ### 3.2 Device Queue
 
 ```sql

@@ -2366,10 +2366,7 @@ impl MessagingStore {
                     WHERE state = 'published';
                  UPDATE messaging_one_time_prekeys
                     SET state = 'awaiting_publication'
-                    WHERE state = 'available';
-                 UPDATE messaging_mls_key_packages
-                    SET state = 'awaiting_publication'
-                    WHERE state = 'published';",
+                    WHERE state = 'available';",
             )
             .map_err(|error| error.to_string())?;
         transaction
@@ -8631,85 +8628,6 @@ impl MessagingStore {
             )
             .optional()
             .map_err(|error| error.to_string())
-    }
-
-    #[cfg(feature = "acceptance-webdriver")]
-    pub fn mls_welcome_public_provenance(&self) -> Result<String, String> {
-        use messaging_core::mls::group::{public_key_package_ref, welcome_key_package_refs};
-        use messaging_core::proto::chat::{
-            DeviceEventDelivery, MlsQueuePayload, PreparedEndpointPayloadKind,
-        };
-
-        let connection = self.connection()?;
-        let mut packages = connection
-            .prepare(
-                "SELECT package_id, data, state, created_at_unix_ms
-                 FROM messaging_mls_key_packages ORDER BY created_at_unix_ms LIMIT 1024",
-            )
-            .map_err(|error| error.to_string())?;
-        let packages = packages
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, Vec<u8>>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, i64>(3)?,
-                ))
-            })
-            .map_err(|error| error.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())?;
-        let packages = packages
-            .into_iter()
-            .map(|(id, bytes, state, created)| {
-                public_key_package_ref(&bytes)
-                    .map(|reference| (reference, (id, state, created)))
-            })
-            .collect::<Result<BTreeMap<_, _>, _>>()?;
-        let mut inbox = connection
-            .prepare(
-                "SELECT event_id, lane_sequence, payload, state
-                 FROM messaging_inbox_items ORDER BY lane_sequence DESC LIMIT 512",
-            )
-            .map_err(|error| error.to_string())?;
-        let rows = inbox
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, i64>(1)?,
-                    row.get::<_, Vec<u8>>(2)?,
-                    row.get::<_, String>(3)?,
-                ))
-            })
-            .map_err(|error| error.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())?;
-        let mut welcomes = Vec::new();
-        for (event_id, lane_sequence, bytes, state) in rows {
-            let Ok(delivery) = DeviceEventDelivery::decode(bytes.as_slice()) else {
-                continue;
-            };
-            if delivery.payload_kind != PreparedEndpointPayloadKind::MlsWelcome as i32 {
-                continue;
-            }
-            let payload = MlsQueuePayload::decode(delivery.endpoint_payload.as_slice())
-                .map_err(|error| error.to_string())?;
-            let references = welcome_key_package_refs(&payload.opaque_mls_bytes)?;
-            let known = references
-                .iter()
-                .filter_map(|reference| {
-                    packages.get(reference).map(|package| (reference, package))
-                })
-                .collect::<Vec<_>>();
-            welcomes.push(serde_json::json!({
-                "event_id": event_id,
-                "lane_sequence": lane_sequence,
-                "state": state,
-                "key_package_refs": references,
-                "published_matches": known,
-            }));
-        }
-        serde_json::to_string(&welcomes).map_err(|error| error.to_string())
     }
 
     pub fn save_mls_join_provider_pool(
@@ -15008,6 +14926,111 @@ mod tests {
     }
 
     #[test]
+    fn station_lane_reset_never_republishes_consumed_mls_join_material() {
+        use messaging_core::mls::group::{MlsGroupManager, MlsMemberKeyPackage};
+        use messaging_core::mls::key_packages::{MlsKeyPackagePublisher, MlsKeyPackageTransport};
+        use messaging_core::proto::actor::ActorDeviceRef;
+        use messaging_core::proto::key_exchange::UploadMlsKeyPackageRequest;
+        use std::sync::Arc;
+
+        #[derive(Default)]
+        struct Directory {
+            packages: Mutex<Vec<Vec<u8>>>,
+        }
+        impl MlsKeyPackageTransport for Directory {
+            fn upload(&self, request: &UploadMlsKeyPackageRequest) -> Result<(), String> {
+                self.packages
+                    .lock()
+                    .unwrap()
+                    .push(request.key_package.clone());
+                Ok(())
+            }
+            fn available_count(&self, _: &ActorDeviceRef) -> Result<u64, String> {
+                Ok(self.packages.lock().unwrap().len() as u64)
+            }
+        }
+
+        let store = Arc::new(MessagingStore::in_memory().unwrap());
+        let fresh = generate_fresh_device_identity("ptid:bob", [12; 32], 1).unwrap();
+        store.install_fresh_device_identity(&fresh).unwrap();
+        let device_id = fresh
+            .enrollment
+            .certificate
+            .device
+            .as_ref()
+            .unwrap()
+            .device_id
+            .clone();
+        store.complete_device_enrollment(&device_id).unwrap();
+        let bob = Arc::new(MlsGroupManager::new());
+        bob.actor_identity().init("ptid:bob", &device_id).unwrap();
+        let publisher = MlsKeyPackagePublisher::new(
+            store.clone(),
+            bob.clone(),
+            CoreCryptoEndpoint {
+                ptid: "ptid:bob".into(),
+                device_id: device_id.clone(),
+            },
+        )
+        .unwrap();
+        let directory = Directory::default();
+        publisher.publish(100, &directory).unwrap();
+        let consumed_package = directory.packages.lock().unwrap()[0].clone();
+        let alice = MlsGroupManager::new();
+        alice
+            .actor_identity()
+            .init("ptid:alice", "alice-device")
+            .unwrap();
+        let genesis = alice
+            .create_group(
+                "before-reset",
+                &[MlsMemberKeyPackage {
+                    ptid: "ptid:bob".into(),
+                    device_id: device_id.clone(),
+                    key_package: consumed_package.clone(),
+                }],
+            )
+            .unwrap();
+        bob.join_group("before-reset", &genesis.welcome_bytes).unwrap();
+        store
+            .save_mls_join_provider_pool(&bob.export_pending_join_providers().unwrap(), 101)
+            .unwrap();
+        store
+            .persist_claimed_item(
+                "old-item", "old-event", "before-reset", 1, 1, &[1; 32], b"old", 102,
+            )
+            .unwrap();
+        directory.packages.lock().unwrap().clear();
+        store
+            .persist_claimed_item(
+                "new-item", "new-event", "after-reset", 1, 2, &[2; 32], b"new", 103,
+            )
+            .unwrap();
+
+        publisher.publish(104, &directory).unwrap();
+        let uploaded = directory.packages.lock().unwrap().clone();
+        assert_eq!(uploaded.len(), 5);
+        assert!(
+            !uploaded.contains(&consumed_package),
+            "a consumed one-time KeyPackage must never become available after Station reset"
+        );
+        for (index, key_package) in uploaded.into_iter().enumerate() {
+            let group_id = format!("after-reset-{index}");
+            let invitation = alice
+                .create_group(
+                    &group_id,
+                    &[MlsMemberKeyPackage {
+                        ptid: "ptid:bob".into(),
+                        device_id: device_id.clone(),
+                        key_package,
+                    }],
+                )
+                .unwrap();
+            bob.join_group(&group_id, &invitation.welcome_bytes).unwrap();
+        }
+    }
+
+    #[test]
     fn conversation_projection_round_trip_preserves_member_roles() {
         let store = MessagingStore::in_memory().unwrap();
         let projection = ConversationProjection {
@@ -17797,7 +17820,7 @@ mod tests {
                     |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, String>(1)?)),
                 )
                 .unwrap(),
-            (vec![7_u8, 8, 9], "awaiting_publication".to_string())
+            (vec![7_u8, 8, 9], "published".to_string())
         );
     }
 

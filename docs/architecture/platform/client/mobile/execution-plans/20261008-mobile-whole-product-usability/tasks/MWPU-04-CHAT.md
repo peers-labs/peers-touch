@@ -46,6 +46,7 @@
     "packages/client-chat-core/src/chatEmojis.ts",
     "packages/client-chat-core/src/index.ts",
     "packages/locales",
+    "docs/architecture/domains/chat/messaging/data-model.md",
     "docs/client/chat/chat-ux-contract.md",
     "docs/client/mobile/chat-layout-contract.md",
     "docs/client/common/ui-identity/components.md",
