@@ -155,13 +155,33 @@ def read_service_runtime_identity(service_url: str) -> str:
         ) from error
     data = payload.get("data") if isinstance(payload, dict) else None
     identity = data if isinstance(data, dict) else payload
-    peer_id = str(identity.get("peer_id") or "") if isinstance(identity, dict) else ""
-    if not peer_id:
+    station_peer_id = (
+        str(identity.get("station_peer_id") or "")
+        if isinstance(identity, dict)
+        else ""
+    )
+    node_peer_id = (
+        str(identity.get("node_peer_id") or "")
+        if isinstance(identity, dict)
+        else ""
+    )
+    if not station_peer_id or not node_peer_id:
         raise BlockedError(
-            reason=f"Service runtime identity at {url} has no peer_id",
+            reason=(
+                f"Service runtime identity at {url} must expose independent "
+                "station_peer_id and node_peer_id"
+            ),
             resource=f"service-identity:{url}",
         )
-    return peer_id
+    if station_peer_id == node_peer_id:
+        raise BlockedError(
+            reason=(
+                f"Service runtime identity at {url} reuses one PeerID for "
+                "logical Station and physical Node"
+            ),
+            resource=f"service-identity:{url}",
+        )
+    return station_peer_id
 
 
 def _local_source_identity() -> tuple[str, str, str]:
