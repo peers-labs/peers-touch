@@ -561,12 +561,64 @@ function permissionAlertMatches(text, expectedKinds) {
   ));
 }
 
+function acceptDesktopMediaPermission(clientId, client, expectedKinds) {
+  const desktopPid = desktopListenerPid(clientId, client);
+  const probe = `
+import sys
+from tooling.acceptance.core import DriverError
+from tooling.acceptance.drivers.native import create_native_desktop_adapter
+
+adapter = create_native_desktop_adapter()
+adapter.activate_process(int(sys.argv[1]))
+try:
+    pressed = adapter.accept_media_capture_permission_to_process(
+        int(sys.argv[1])
+    )
+except DriverError as error:
+    if "permission inspection timed out" not in str(error):
+        raise
+    pressed = False
+print("pressed" if pressed else "missing")
+  `.trim();
+  const accepted = [];
+  for (const kind of expectedKinds) {
+    let result;
+    try {
+      result = execFileSync(
+        'python3',
+        ['-c', probe, String(desktopPid)],
+        {
+          cwd: repoRoot,
+          encoding: 'utf8',
+          env: { ...process.env, PYTHONPATH: repoRoot },
+          timeout: 7_000,
+        },
+      ).trim();
+    } catch (error) {
+      throw new JourneyContractError(
+        'DESKTOP_MEDIA_PERMISSION_DRIVER_FAILED',
+        `${clientId} could not inspect the ${kind} permission sheet: ${error.message}`,
+      );
+    }
+    assertContract(
+      ['missing', 'pressed'].includes(result),
+      'DESKTOP_MEDIA_PERMISSION_RESULT_INVALID',
+      `${clientId} returned an invalid ${kind} permission result: ${result}`,
+    );
+    if (result === 'missing') break;
+    accepted.push(kind);
+  }
+  return accepted;
+}
+
 async function acceptPendingPermissionAlerts(
   clientId,
   client,
   expectedKinds,
 ) {
-  if (client.platform === 'desktop') return [];
+  if (client.platform === 'desktop') {
+    return acceptDesktopMediaPermission(clientId, client, expectedKinds);
+  }
   const originalContext = await webdriverRequest(
     webdriverEndpoint(client, '/context'),
   );
