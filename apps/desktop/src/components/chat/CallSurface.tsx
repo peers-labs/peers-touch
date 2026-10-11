@@ -308,6 +308,8 @@ export function CallSurface() {
         </Flexbox>
         <Flexbox horizontal align="center" gap={4} style={{ flexShrink: 0 }}>
           <ActionIcon
+            data-chat-call-action="decline"
+            aria-label={t('chat.social.call.decline')}
             icon={PhoneOff}
             title={t('chat.social.call.decline')}
             size={{ blockSize: 32, size: 15 }}
@@ -315,6 +317,8 @@ export function CallSurface() {
             style={{ borderRadius: token.borderRadiusSM, background: token.colorError, color: token.colorTextLightSolid }}
           />
           <ActionIcon
+            data-chat-call-action="accept"
+            aria-label={t('chat.social.call.accept')}
             icon={isVideo ? Video : Phone}
             title={t('chat.social.call.accept')}
             size={{ blockSize: 32, size: 15 }}
@@ -390,6 +394,8 @@ export function CallSurface() {
     <Flexbox horizontal align="center" gap={4} style={{ flexShrink: 0 }}>
       {hasMedia && (
         <ActionIcon
+          data-chat-call-action="microphone"
+          aria-label={snapshot.micMuted ? t('chat.social.call.unmuteMic') : t('chat.social.call.muteMic')}
           icon={snapshot.micMuted ? MicOff : Mic}
           title={snapshot.micMuted ? t('chat.social.call.unmuteMic') : t('chat.social.call.muteMic')}
           size={{ blockSize: 32, size: 15 }}
@@ -399,6 +405,8 @@ export function CallSurface() {
       )}
       {hasMedia && isVideo && (
         <ActionIcon
+          data-chat-call-action="camera"
+          aria-label={snapshot.cameraOff ? t('chat.social.call.cameraOn') : t('chat.social.call.cameraOff')}
           icon={snapshot.cameraOff ? CameraOff : Camera}
           title={snapshot.cameraOff ? t('chat.social.call.cameraOn') : t('chat.social.call.cameraOff')}
           size={{ blockSize: 32, size: 15 }}
@@ -417,6 +425,8 @@ export function CallSurface() {
         </Dropdown>
       )}
       <ActionIcon
+        data-chat-call-action="end"
+        aria-label={hasMedia ? t('chat.social.call.hangup') : t('chat.social.call.cancel')}
         icon={PhoneOff}
         title={hasMedia ? t('chat.social.call.hangup') : t('chat.social.call.cancel')}
         size={{ blockSize: 32, size: 15 }}

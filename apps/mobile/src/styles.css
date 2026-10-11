@@ -5061,3 +5061,146 @@ select,
   cursor: default;
   opacity: 0.58;
 }
+
+.mobile-call-surface {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: calc(var(--safe-area-top) + 24px) 20px
+    calc(var(--safe-area-bottom) + 24px);
+  overflow: hidden;
+  background: var(--brand-surface);
+  color: var(--ant-color-text, #1f232c);
+}
+
+.mobile-call-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.mobile-call-copy {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  text-align: center;
+}
+
+.mobile-call-copy strong {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-call-copy > span {
+  color: var(--ant-color-text-secondary, #666);
+  font-size: 14px;
+}
+
+.mobile-call-copy .mobile-call-error {
+  color: var(--ant-color-error, #b42318);
+}
+
+.mobile-call-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+.mobile-call-control {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--ant-color-fill-secondary, #f0f0f0);
+  color: inherit;
+}
+
+.mobile-call-control.accept {
+  background: var(--ant-color-success, #379d4a);
+  color: #fff;
+}
+
+.mobile-call-control.danger {
+  background: var(--ant-color-error, #ec5e41);
+  color: #fff;
+}
+
+.mobile-call-control.selected {
+  background: var(--ant-color-primary, #222);
+  color: var(--ant-color-text-light-solid, #fff);
+}
+
+.mobile-call-control:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 3px;
+}
+
+.mobile-call-video-stage {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #111;
+}
+
+.mobile-call-remote-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.mobile-call-local-video {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: min(28%, 120px);
+  aspect-ratio: 3 / 4;
+  border-radius: 8px;
+  background: #111;
+  object-fit: cover;
+}
+
+.mobile-call-surface > audio {
+  display: none;
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .mobile-call-surface {
+    gap: 12px;
+    padding-block: 12px;
+  }
+
+  .mobile-call-surface:has(.mobile-call-video-stage) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 0.4fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+
+  .mobile-call-video-stage {
+    grid-row: 1 / span 2;
+    height: 100%;
+  }
+}

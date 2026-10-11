@@ -96,6 +96,7 @@ export function MobileCallSurface() {
           <>
             <button
               type="button"
+              data-chat-call-action="decline"
               className="mobile-call-control danger"
               aria-label={t('mobile.call.decline')}
               onClick={() => { void run(() => mobileCallManager.rejectCall()); }}
@@ -104,6 +105,7 @@ export function MobileCallSurface() {
             </button>
             <button
               type="button"
+              data-chat-call-action="accept"
               className="mobile-call-control accept"
               aria-label={t('mobile.call.accept')}
               onClick={() => { void run(() => mobileCallManager.acceptCall()); }}
@@ -117,6 +119,7 @@ export function MobileCallSurface() {
           <>
             <button
               type="button"
+              data-chat-call-action="microphone"
               className={`mobile-call-control ${snapshot.micMuted ? 'selected' : ''}`}
               aria-label={t(snapshot.micMuted ? 'mobile.call.unmute' : 'mobile.call.mute')}
               onClick={() => mobileCallManager.toggleMicrophone()}
@@ -126,6 +129,7 @@ export function MobileCallSurface() {
             {snapshot.mediaKind === 'video' ? (
               <button
                 type="button"
+                data-chat-call-action="camera"
                 className={`mobile-call-control ${snapshot.cameraOff ? 'selected' : ''}`}
                 aria-label={t(snapshot.cameraOff ? 'mobile.call.cameraOn' : 'mobile.call.cameraOff')}
                 onClick={() => mobileCallManager.toggleCamera()}
@@ -135,6 +139,7 @@ export function MobileCallSurface() {
             ) : null}
             <button
               type="button"
+              data-chat-call-action="end"
               className="mobile-call-control danger"
               aria-label={t('mobile.call.end')}
               onClick={() => { void run(() => mobileCallManager.endCall()); }}
@@ -147,6 +152,7 @@ export function MobileCallSurface() {
         {snapshot.state === 'outgoing' ? (
           <button
             type="button"
+            data-chat-call-action="end"
             className="mobile-call-control danger"
             aria-label={t('mobile.call.cancel')}
             onClick={() => { void run(() => mobileCallManager.endCall()); }}
@@ -158,6 +164,7 @@ export function MobileCallSurface() {
         {terminal ? (
           <button
             type="button"
+            data-chat-call-action="dismiss"
             className="mobile-call-control"
             aria-label={t('common.action.close')}
             onClick={() => mobileCallManager.dismiss()}

@@ -271,6 +271,12 @@ evidence:
 
 ## 14. Message Presentation And Actions
 
+The global Mobile call surface owns the viewport while a call is visible.
+Caller identity, state and 52px rounded-square controls remain within system
+safe areas. Active video has one flexible remote stage and a bounded local
+preview; short landscape places controls beside the media stage. Product
+controls expose semantic call actions and localized accessible names.
+
 ```yaml
 surface: mobile.chat.thread
 scenario: readable-owner-aligned-message-actions
