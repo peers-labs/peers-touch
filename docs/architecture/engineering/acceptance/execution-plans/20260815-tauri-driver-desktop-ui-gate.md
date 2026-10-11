@@ -138,7 +138,7 @@ with TauriDriver(port=4445) as td:
 1. **P2-0** 修复 frontend API log 明文记录 password/token 的根因，补 TS + Rust 测试
 2. **P2-1** 扩展 `tauri_webdriver.py`：环境注入、隔离 profile/storage/gateway、稳定 renderer wait
 3. **P2-2** 重写 `desktop_dom_message_visible.py`：Station 绑定 → login → sync → session row → message DOM
-4. **P2-3** 使用 `http://10.37.94.156:18080` Acceptance Station，重置标准账号/临时数据
+4. **P2-3** 使用 `http://192.0.2.30:18080` Acceptance Station，重置标准账号/临时数据
 5. **P2-4** 更新 gate registry、feature contract 和 Make 环境语义
 6. **P2-5** 运行单客户端 native DOM gate 并保存 screenshot、DOM、app log
 
@@ -294,8 +294,8 @@ cd apps/desktop && pnpm run check && pnpm run test && pnpm run build
 make acceptance-driver-build
 make acceptance-driver-smoke
 CHAT_ACCEPTANCE_RESET=1 \
-  CHAT_DESKTOP_DOM_STATION_URL=http://10.37.94.156:18080 \
-  CHAT_NATIVE_STATION_URL=http://10.37.94.156:18080 \
+  CHAT_DESKTOP_DOM_STATION_URL=http://192.0.2.30:18080 \
+  CHAT_NATIVE_STATION_URL=http://192.0.2.30:18080 \
   make acceptance-chat-domain-validation
 
 # 预期结果：

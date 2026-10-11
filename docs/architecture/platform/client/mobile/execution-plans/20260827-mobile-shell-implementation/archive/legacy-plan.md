@@ -983,7 +983,7 @@ replace W9-D's iOS/Android two-Station cell, or waive its hard-cut prerequisite.
 #### 2026-09-12 Git-Server Workflow Sync
 
 - **Authorization and binding**: the Owner requested synchronization from
-  `Administrator@10.36.3.187:D:/workspace/peers-touch.git`, skill refresh, and continued
+  `Administrator@198.51.100.60:D:/workspace/peers-touch.git`, skill refresh, and continued
   Mobile work without overwriting additions or resurrecting deletions.
   The server's default branch is `fix/windows-native-chat-closure` at
   `5a8217ad6f507b667effbeb626ecc6764cf5e9ff`. Merge
@@ -3772,11 +3772,11 @@ source identity and resume those items in dependency order.
 - The 2026-09-05 runtime acquisition injected two verified disposable Station
   deployments and Relay into the Mobile Acceptance Provisioner. The new
   primary runtime at
-  `10.37.118.48:18132` uses isolated Compose project
+  `192.0.2.20:18132` uses isolated Compose project
   `pt-mobile-shell-primary`, separate PostgreSQL and identity volumes, libp2p
   port `4012`, and clean Station commit
   `770e4ec8ae6d0e6fe2ed3d66a76ea89ffff27f55`. The existing secondary runtime
-  at `10.37.94.156:18132` runs clean Station commit
+  at `192.0.2.30:18132` runs clean Station commit
   `82073af5dc367ed1fb5184d40c29e50cdd5c4956`. Both expose distinct PeerIDs,
   report federation ready with one connected seed, and pass
   `verify_reset_target`.
@@ -3812,7 +3812,7 @@ source identity and resume those items in dependency order.
   `ad546dac2f26dccf48902321339aa91cd711f26c` with workspace digest
   `sha256:5e80b39d46a15d8772fa2d26efa69a8c05dfe2073ac3c9c62a2795977130b41b`.
   Each records both Station deployment attestations before failing closed on
-  `station-identity:http://10.37.118.48:18081/app-meta/version`; the shared
+  `station-identity:http://192.0.2.20:18081/app-meta/version`; the shared
   Relay returns HTTP 404 for the required source-attestation endpoint.
 - Both final runs are `BLOCKED/UNPROVEN` for product proof, while cleanup is
   independently `passed` and `secretScan.status=passed`. No Fixture reset,

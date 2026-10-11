@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-07
-covered_docs_hash: 857f93829dc273d8744c92c7080b38badbca3c2ca922dac7a733ef7cca45ae79
+last_verified_at: 2026-10-08
+covered_docs_hash: 414a828f79af1d43e692507607a6fc9a6b3c56aa47b9614b6d2e8a97e90d84e3
 
 covered_docs:
   - AGENTS.md
@@ -178,6 +178,16 @@ fixtures proving both surfaces without preserving the identifier in source.
 `pt-github-review/SKILL.md` records the new blocking code. No knowledge entry
 is required because the hard rule and regression test fully encode the
 repository-wide invariant.
+
+## 2026-10-08 Public Repository Hygiene Review
+
+Tracked source, tests, documentation, and historical evidence must not expose
+private deployment ranges, internal repository domains, or machine-specific
+operator identities. Runtime deployment coordinates now come from
+environment-scoped secrets; documentation and deterministic tests use reserved
+TEST-NET examples. The `private-environment-reference` hard rule and its
+generated regression fixtures block recurrence without retaining forbidden
+values in tracked fixture files.
 
 ## 2026-10-03 Review
 

@@ -867,22 +867,39 @@ pub(crate) struct PreparedAccountSwitchSession {
 }
 
 pub(crate) fn prepare_account_switch_session(
-    account_id: &str,
+    raw_account_id: &str,
 ) -> Result<PrevalidatedAccountSwitchSession, AppResult<AuthSessionPayload>> {
-    if account_id.trim().is_empty() {
+    if raw_account_id.trim().is_empty() {
         return Err(unauthorized(
             "missing account",
             json!({ "command": "account_switch", "reason": "account_missing" }),
         ));
     }
-    if session_vault::account_requires_pin(account_id) {
+    let identity_state = crate::infrastructure::auth_identity::read_state().map_err(|error| {
+        unauthorized(
+            format!("account lookup failed: {error}"),
+            json!({ "command": "account_switch", "reason": "account_missing" }),
+        )
+    })?;
+    // Resolve any provider-scoped alias to the stable canonical id for the
+    // person, so a switch lands on the row that owns the PIN/session.
+    let Some(account_id) = crate::infrastructure::auth_identity::canonical_account_id(
+        &identity_state.accounts,
+        raw_account_id,
+    ) else {
+        return Err(unauthorized(
+            "missing account",
+            json!({ "command": "account_switch", "reason": "account_missing" }),
+        ));
+    };
+    if session_vault::account_requires_pin(&account_id) {
         return Err(unauthorized(
             "pin required",
             json!({ "command": "account_switch", "reason": "pin_required" }),
         ));
     }
 
-    let blob = match session_vault::load_raw_session_for_account(account_id, None) {
+    let blob = match session_vault::load_raw_session_for_account(&account_id, None) {
         Ok(Some(blob)) => blob,
         Ok(None) => {
             return Err(unauthorized(
@@ -893,7 +910,7 @@ pub(crate) fn prepare_account_switch_session(
         Err(error) => return Err(session_vault_to_app(error)),
     };
     let expected_actor_ptid =
-        session_vault::actor_ptid_for_account(account_id).ok_or_else(|| {
+        session_vault::actor_ptid_for_account(&account_id).ok_or_else(|| {
             unauthorized(
                 "account has no canonical actor PTID",
                 json!({ "command": "account_switch", "reason": "actor_ptid_missing" }),
@@ -910,7 +927,7 @@ pub(crate) fn prepare_account_switch_session(
     }
 
     Ok(PrevalidatedAccountSwitchSession {
-        account_id: account_id.to_string(),
+        account_id,
         actor_ptid: expected_actor_ptid,
         token: initial_session.token,
     })

@@ -10,7 +10,7 @@ use crate::application::station_binding::{self, StationBindingError};
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
-use crate::infrastructure::station_registry::StationEntry;
+use crate::infrastructure::station_registry::{normalize_station_url, StationEntry};
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -46,7 +46,8 @@ pub(crate) fn station_set_active_with_state(
     input: StationUrlInput,
     state: &AppState,
 ) -> AppResult<StubPayload> {
-    if input.url.is_empty() {
+    let requested_url = normalize_station_url(&input.url);
+    if requested_url.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "url is required", None);
     }
     let _transition = match state.identity_transition.lock() {
@@ -61,8 +62,7 @@ pub(crate) fn station_set_active_with_state(
     };
     let registry = station_client::station_registry();
     let binding_service = station_binding::service();
-    let requested_url = input.url.trim().trim_end_matches('/');
-    let selection_changes = binding_service.selection_changes(registry, requested_url);
+    let selection_changes = binding_service.selection_changes(registry, &requested_url);
     if selection_changes {
         if let Err(error) = state.secure_content.shutdown() {
             return AppResult::fail(
@@ -75,7 +75,7 @@ pub(crate) fn station_set_active_with_state(
             );
         }
     }
-    let binding = match binding_service.switch(registry, &input.url) {
+    let binding = match binding_service.switch(registry, &requested_url) {
         Ok(binding) => binding,
         Err(error) => return binding_error(error),
     };
@@ -140,15 +140,16 @@ pub(crate) fn station_binding_complete_authenticated(
 
 #[tauri::command]
 pub fn station_add(input: StationUrlInput) -> AppResult<StubPayload> {
-    if input.url.is_empty() {
+    let url = normalize_station_url(&input.url);
+    if url.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "url is required", None);
     }
-    let (online, label, peer_id, peers_count) = station_client::probe_station(&input.url);
+    let (online, label, peer_id, peers_count) = station_client::probe_station(&url);
     let now = time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "unknown".to_string());
     let entry = StationEntry {
-        url: input.url.trim_end_matches('/').to_string(),
+        url,
         label,
         peer_id,
         peers_count,
@@ -159,9 +160,28 @@ pub fn station_add(input: StationUrlInput) -> AppResult<StubPayload> {
     if let Err(error) = reg.add(entry.clone()) {
         return registry_error("station_add", error);
     }
+    // Auto-select a reachable Station when the user has no active one yet.
+    // Run it through the binding switch (not just registry.set_active) so the
+    // identity handshake completes and the login gate reaches AccessGate;
+    // otherwise the Station is reachable-but-unverified and login stays stuck.
+    let mut binding = station_binding::service().state();
+    if online && reg.active_url().is_none() {
+        match station_binding::service().switch(reg, &entry.url) {
+            Ok(switched) => binding = switched,
+            Err(error) => {
+                tracing::warn!(url = %entry.url, error = %error.message,
+                    "failed to auto-verify added Station");
+            }
+        }
+    }
+    let payload = serde_json::json!({
+        "entry": entry,
+        "active_url": binding.bound_url,
+        "binding": binding,
+    });
     AppResult::success(StubPayload {
         command: "station_add".to_string(),
-        status: serde_json::to_string(&entry).unwrap_or_default(),
+        status: serde_json::to_string(&payload).unwrap_or_default(),
     })
 }
 
@@ -177,7 +197,8 @@ pub(crate) fn station_remove_with_state(
     input: StationUrlInput,
     state: &AppState,
 ) -> AppResult<StubPayload> {
-    if input.url.is_empty() {
+    let url = normalize_station_url(&input.url);
+    if url.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "url is required", None);
     }
     let _transition = match state.identity_transition.lock() {
@@ -191,9 +212,7 @@ pub(crate) fn station_remove_with_state(
         }
     };
     let registry = station_client::station_registry();
-    let removing_active = registry.active_url().is_some_and(|active| {
-        active.trim_end_matches('/') == input.url.trim().trim_end_matches('/')
-    });
+    let removing_active = registry.active_url().is_some_and(|active| active == url);
     if removing_active {
         if let Err(error) = state.secure_content.shutdown() {
             return AppResult::fail(
@@ -206,11 +225,10 @@ pub(crate) fn station_remove_with_state(
             );
         }
     }
-    let (binding, was_selected) =
-        match station_binding::service().remove_station(registry, &input.url) {
-            Ok(result) => result,
-            Err(error) => return binding_error(error),
-        };
+    let (binding, was_selected) = match station_binding::service().remove_station(registry, &url) {
+        Ok(result) => result,
+        Err(error) => return binding_error(error),
+    };
     if was_selected {
         if let Err(error) = auth_service::detach_for_station_switch(state) {
             return AppResult::fail(
@@ -226,7 +244,7 @@ pub(crate) fn station_remove_with_state(
         }
     }
     let payload = serde_json::json!({
-        "removed": input.url,
+        "removed": url,
         "was_selected": was_selected,
         "binding": binding,
     });
@@ -238,22 +256,18 @@ pub(crate) fn station_remove_with_state(
 
 #[tauri::command]
 pub fn station_probe(input: StationUrlInput) -> AppResult<StubPayload> {
-    if input.url.is_empty() {
+    let url = normalize_station_url(&input.url);
+    if url.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "url is required", None);
     }
-    let (online, label, peer_id, peers_count) = station_client::probe_station(&input.url);
+    let (online, label, peer_id, peers_count) = station_client::probe_station(&url);
     let reg = station_client::station_registry();
-    if let Err(error) = reg.update_probe(
-        &input.url,
-        label.clone(),
-        peer_id.clone(),
-        peers_count,
-        online,
-    ) {
+    if let Err(error) = reg.update_probe(&url, label.clone(), peer_id.clone(), peers_count, online)
+    {
         return registry_error("station_probe", error);
     }
     let payload = serde_json::json!({
-        "url": input.url,
+        "url": url,
         "online": online,
         "label": label,
         "peer_id": peer_id,

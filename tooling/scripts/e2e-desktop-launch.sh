@@ -8,7 +8,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Inherit all PEERS_ATELIER_FULL_E2E_* env vars from parent
 export PT_STATION_SKIP_DEPLOY=true
 export PT_STATION_MODE=remote
-export PEERS_STATION_URL="${PEERS_STATION_URL:-http://10.37.94.156:18080}"
+: "${PEERS_STATION_URL:?PEERS_STATION_URL is required for remote Desktop E2E}"
+export PEERS_STATION_URL
 export STATION_PORT="${PT_STATION_PORT:-18080}"
 export GATEWAY_PORT="${PT_DESKTOP_APP_GATEWAY_PORT:-3230}"
 export WEB_PORT="${PT_DESKTOP_APP_WEB_PORT:-3410}"

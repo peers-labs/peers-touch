@@ -46,7 +46,7 @@ peers:
   store:
     rds:
       gorm:
-        - dsn: host=localhost user=printfcoder dbname=peers_touch port=15432 sslmode=disable
+        - dsn: host=localhost user=developer dbname=peers_touch port=15432 sslmode=disable
 """,
         encoding="utf-8",
     )
@@ -305,8 +305,8 @@ class DesktopTelemetryRuntimeClosureGateTest(unittest.TestCase):
                     [
                         "PT_DEV_PROFILE=one",
                         "PT_STATION_MODE=remote",
-                        "PT_STATION_URL=http://10.37.246.80:18080",
-                        "PT_STATION_HEALTH_URL=http://10.37.246.80:18080/sub-oss/healthz",
+                        "PT_STATION_URL=http://192.0.2.10:18080",
+                        "PT_STATION_HEALTH_URL=http://192.0.2.10:18080/sub-oss/healthz",
                     ]
                 ),
                 encoding="utf-8",
@@ -321,7 +321,7 @@ class DesktopTelemetryRuntimeClosureGateTest(unittest.TestCase):
                 "name": "remote-station-health",
                 "status": "pass",
                 "proofStatus": "PROVEN",
-                "url": "http://10.37.246.80:18080/sub-oss/healthz",
+                "url": "http://192.0.2.10:18080/sub-oss/healthz",
                 "reason": "remote Station health check passed",
             }
             with mock.patch.object(module, "run_command", side_effect=fake_run), mock.patch.object(
@@ -336,7 +336,7 @@ class DesktopTelemetryRuntimeClosureGateTest(unittest.TestCase):
         self.assertEqual(report["managedRuntimeClosure"], "remote-profile-station")
         self.assertEqual(report["summary"]["remoteRuntimeClosureProofStatus"], "PROVEN")
         self.assertEqual(report["summary"]["remoteRuntimeClosure"]["profile"], "one")
-        self.assertEqual(report["summary"]["remoteRuntimeClosure"]["stationURL"], "http://10.37.246.80:18080")
+        self.assertEqual(report["summary"]["remoteRuntimeClosure"]["stationURL"], "http://192.0.2.10:18080")
         self.assertEqual(report["summary"]["failedChecks"], [])
         self.assertEqual(report["blockedDownstreamProofs"], [])
         self.assertEqual(report["issueBreakdown"], [])

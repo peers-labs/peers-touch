@@ -23,11 +23,11 @@ build_on_host() {
   source "$env_file"
 
   local host="${PT_DEPLOY_HOST:-}"
-  local user="${PT_DEPLOY_USER:-shuxian}"
+  local user="${PT_DEPLOY_USER:-}"
   local path="${PT_DEPLOY_PATH:-peers-touch}"
 
-  if [[ -z "$host" ]]; then
-    echo "[SKIP] $env_name — no PT_DEPLOY_HOST"
+  if [[ -z "$host" || -z "$user" ]]; then
+    echo "[SKIP] $env_name — no PT_DEPLOY_HOST or PT_DEPLOY_USER"
     return
   fi
 

@@ -3,7 +3,7 @@
 > **Status**: superseded
 > **Version**: v1.3
 > **Created**: 2026-07-10 | **Updated**: 2026-07-20
-> **Owner**: @printfcoder
+> **Owner**: @developer
 > **Module**: `apps/desktop/src/kernel/`, `tooling/scripts/`
 > **Depends on**: Phase 0 evidence infrastructure (6/6 PROVEN, tauri-webview cell closed)
 > **Architecture source**: `docs/architecture/platform/client/frontend-runtime/design.md`

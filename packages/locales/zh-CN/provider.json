@@ -261,7 +261,7 @@
   "provider.skills.import.ok": "导入",
   "provider.skills.import.desc1": "1. SKILL.md 直链（原始文件地址）",
   "provider.skills.import.desc2": "2. Git 仓库地址，支持 git/http。请确保本地有拉取权限。",
-  "provider.skills.import.placeholder": "https://code.byted.org/org/repo.git 或 git@code.byted.org:org/repo.git",
+  "provider.skills.import.placeholder": "https://github.com/org/repo.git 或 git@github.com:org/repo.git",
   "provider.skills.zip.title": "上传技能 ZIP",
   "provider.skills.zip.cancel": "取消",
   "provider.skills.zip.validate": "验证",

@@ -1025,7 +1025,7 @@ export function WelcomeLoginPrototype() {
       <div className="pt-login-status">
         <div className="pt-status-pill">
           <Server size={14} />
-          10.37.246.80:18080
+          192.0.2.10:18080
           <span className="pt-status-dot" />
         </div>
         <div className="pt-status-pill">

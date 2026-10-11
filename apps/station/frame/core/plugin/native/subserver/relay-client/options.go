@@ -23,12 +23,12 @@ type Options struct {
 	// but Start short-circuits after logging "disabled".
 	Enabled bool
 
-	// RelayURL is the relay node's HTTP base URL, e.g. http://10.37.118.48:18081.
+	// RelayURL is the relay node's HTTP base URL, e.g. http://192.0.2.20:18081.
 	// Used for /api/v1/relay/register and /api/v1/relay/token/refresh.
 	RelayURL string
 
 	// RelayStreamAddr is the relay node's TCP stream listen address, e.g.
-	// 10.37.118.48:4501. The relay client opens a long-lived TCP connection
+	// 192.0.2.20:4501. The relay client opens a long-lived TCP connection
 	// here after acquiring a relay_token via RelayURL.
 	RelayStreamAddr string
 

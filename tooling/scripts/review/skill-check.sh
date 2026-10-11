@@ -233,6 +233,7 @@ required_rules=(
   "repository-debug-artifact"
   "station-profile-bypass"
   "unauthorized-environment-creation"
+  "private-environment-reference"
   "Proto Review"
   "Station Review"
   "Desktop Review"
@@ -1274,6 +1275,40 @@ else
   fi
   rm -rf "$retired_reference_fixture"
   rm -f /tmp/pt-retired-reference.$$
+
+  private_environment_fixture="$(mktemp -d)"
+  private_ip_prefix="10"
+  private_ip_network="37"
+  private_domain_prefix="code"
+  private_domain_suffix="byted.org"
+  printf 'station=http://%s.%s.0.1:18080\nrepository=https://%s.%s/org/repo.git\n' \
+    "$private_ip_prefix" "$private_ip_network" \
+    "$private_domain_prefix" "$private_domain_suffix" \
+    > "$private_environment_fixture/config.env"
+  if tooling/scripts/review/hard-rules.sh \
+    --fixture-dir "$private_environment_fixture" >/tmp/pt-private-environment.$$ 2>&1; then
+    fail "hard-rules.sh must reject private environment references"
+  fi
+  private_environment_findings="$(
+    grep -c '\[private-environment-reference\]' /tmp/pt-private-environment.$$ || true
+  )"
+  if [[ "$private_environment_findings" -lt 2 ]]; then
+    cat /tmp/pt-private-environment.$$
+    fail "hard-rules.sh must report private network and internal domain references"
+  fi
+  rm -rf "$private_environment_fixture"
+  rm -f /tmp/pt-private-environment.$$
+
+  public_example_fixture="$(mktemp -d)"
+  printf 'station=http://192.0.2.10:18080\nrepository=https://github.com/org/repo.git\n' \
+    > "$public_example_fixture/config.env"
+  if ! tooling/scripts/review/hard-rules.sh \
+    --fixture-dir "$public_example_fixture" >/tmp/pt-public-example.$$ 2>&1; then
+    cat /tmp/pt-public-example.$$
+    fail "hard-rules.sh must allow TEST-NET and public repository examples"
+  fi
+  rm -rf "$public_example_fixture"
+  rm -f /tmp/pt-public-example.$$
 
   growth_fixture_count="$(find "$fixtures_dir" -mindepth 1 -maxdepth 1 -type d -name 'growth-*' | wc -l | tr -d ' ')"
   if [[ "$growth_fixture_count" -lt 4 ]]; then

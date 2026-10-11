@@ -167,10 +167,10 @@ describe('AccessGateHost shared Auth identity', () => {
         lastUsedAt: 1,
         ptid: 'alice',
         stationPeerId: 'station-peer',
-        stationUrl: 'http://10.37.94.156:18132',
+        stationUrl: 'http://192.0.2.30:18132',
       }],
-      stationLabel: '10.37.94.156:18132',
-      stationUrl: 'http://10.37.94.156:18132',
+      stationLabel: '192.0.2.30:18132',
+      stationUrl: 'http://192.0.2.30:18132',
     });
 
     expect(markup).toContain('auth-gate-logo');
@@ -178,7 +178,7 @@ describe('AccessGateHost shared Auth identity', () => {
     expect(markup).toContain('mobile.auth.welcomeBackTitle');
     expect(markup).toContain('common.stationPicker.fallbackLabel');
     expect(markup).not.toContain('PEERS TOUCH MOBILE');
-    expect(markup).not.toContain('10.37.94.156');
+    expect(markup).not.toContain('192.0.2.30');
     expect(source.indexOf('<Card className="auth-gate-card"')).toBeLessThan(
       source.indexOf('<section className="auth-gate-brand">'),
     );
@@ -187,12 +187,12 @@ describe('AccessGateHost shared Auth identity', () => {
   it('preserves a friendly Station label and hides address-shaped labels', () => {
     expect(authStationLabel(
       'Mobile Development',
-      'http://10.37.94.156:18132',
+      'http://192.0.2.30:18132',
       'Station',
     )).toBe('Mobile Development');
     expect(authStationLabel(
-      '10.37.94.156:18132',
-      'http://10.37.94.156:18132',
+      '192.0.2.30:18132',
+      'http://192.0.2.30:18132',
       'Station',
     )).toBe('Station');
   });

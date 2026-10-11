@@ -314,6 +314,7 @@ Treat these as blocking unless the user explicitly asks for exploratory review:
 | `hardcoded-ui-string` | user-facing text literal outside i18n |
 | `silent-error` | swallowed errors, ignored errors, empty catches, or missing context |
 | `logging-security` | logs tokens, passwords, secrets, or PII |
+| `private-environment-reference` | tracked content exposes private deployment addresses, internal domains, or machine-specific operator identities |
 | `architecture-boundary` | lower layer redefines architecture or platform ownership |
 | `architecture-module-governance` | a changed active architecture module is unregistered, incomplete, overlaps another module, or references undeclared capabilities |
 | `duplicate-side-effect-import` | same dynamic import path appears 2+ times in a single file |
@@ -326,7 +327,7 @@ Treat these as blocking unless the user explicitly asks for exploratory review:
 Keywords intentionally present for freshness checks: hardcoded secrets, No mock,
 hardcoded-ui-string, silent error, generated, runtime projection, CODEOWNERS,
 user-home-absolute-path, retired-product-reference, repository-debug-artifact, station-profile-bypass,
-unauthorized-environment-creation.
+unauthorized-environment-creation, private-environment-reference.
 
 ## Operational Knowledge
 

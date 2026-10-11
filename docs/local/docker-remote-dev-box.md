@@ -40,13 +40,14 @@ cp tooling/docker/.env.example tooling/docker/.env.<name>
 make docker-station REMOTE=<name>
 ```
 
-## Registered Remotes
+## Example Remote
 
 | Context Name | Host | SSH User | Notes |
 |-------------|------|----------|-------|
-| `dev-box` | `10.37.118.48` | `shuxian` | Office dev server, Docker 26.1.4 |
+| `dev-box` | `192.0.2.20` | `operator` | Documentation-only TEST-NET example |
 
-> Add more rows as you create new contexts.
+Keep real host and operator values only in the machine-local Docker context and
+gitignored deployment environment.
 
 ## How It Works
 

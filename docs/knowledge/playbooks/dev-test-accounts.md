@@ -68,8 +68,8 @@ social graph 边，使 unified Conversation 的 relationship gate 认可该好�
 
 | Station | Profile | 账号 | 联邦身份示例 |
 |---------|---------|------|-------------|
-| Station One (246.80) | `one` | alice, bob, carol | `@alice@10.37.246.80:18080` |
-| Station Two (118.48) | `two` | alice, bob, carol | `@alice@10.37.118.48:18080` |
+| Station One | `one` | alice, bob, carol | `@alice@192.0.2.10:18080` |
+| Station Two | `two` | alice, bob, carol | `@alice@192.0.2.20:18080` |
 | Station Three (local) | `three` | alice, bob, carol | `@alice@localhost:18080` |
 
 **跨站好友** 不自动 seed（需要完整的 Send Request → Accept 流程）。典型跨站测试对：

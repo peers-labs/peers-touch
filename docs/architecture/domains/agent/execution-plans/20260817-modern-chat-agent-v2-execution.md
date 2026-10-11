@@ -1154,7 +1154,7 @@ and zero local-path leakage.
   root filesystem was full and PostgreSQL could not extend a relation during
   Fixture reset. A whole-disk audit identified `/var/lib/docker` as the
   dominant owner. A label-scoped prune removed only unreferenced
-  `pt-shuxian-peers-group-chat / station` image generations, reclaimed
+  `pt-operator-peers-group-chat / station` image generations, reclaimed
   2.298 GB, and restored healthy PostgreSQL and Station containers without
   touching volumes, running images, unrelated projects, or shared build cache.
 - The changed-environment retry under outer run
@@ -6323,7 +6323,7 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   remain unclaimed.
 - The owner authorized destructive Fixture reset on 2026-09-03. The protected
   `station-two:18080` guard remains intact; execution moved to canonical
-  disposable profile `chat-native-disposable` at `10.37.94.156:18132`.
+  disposable profile `chat-native-disposable` at `192.0.2.30:18132`.
   Disposable database recreation removed an obsolete schema that prevented
   Station startup, and exact source
   `92f7b5090ffc22e4218a18f7a0de5cde09ae3c4d` then reached

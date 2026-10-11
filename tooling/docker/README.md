@@ -4,11 +4,15 @@ Five-node test topology, fully isolated at the Docker layer:
 
 | Env | Host | Profile | Port |
 |-----|------|---------|------|
-| `pt-relay`              | 10.37.118.48 | relay   | 18081 |
-| `pt-station-1`          | 10.37.246.80 | station | 18080 |
-| `pt-station-2`          | 10.37.195.98 | station | 18080 |
-| `pt-station-relay-only` | 10.37.195.98 | station | 18082 |
+| `pt-relay`              | 192.0.2.20 | relay   | 18081 |
+| `pt-station-1`          | 192.0.2.10 | station | 18080 |
+| `pt-station-2`          | 192.0.2.60 | station | 18080 |
+| `pt-station-relay-only` | 192.0.2.60 | station | 18082 |
 | `pt-station-local`      | localhost    | station | 18080 |
+
+The `192.0.2.0/24` addresses are documentation-only TEST-NET examples. Real
+remote hosts and SSH users come from machine-local deploy environments or
+GitHub Environment secrets.
 
 Each environment is **its own compose project** (`COMPOSE_PROJECT_NAME=pt-<env>`),
 ships **its own postgres container**, and runs on **its own bridge network**.
@@ -88,8 +92,9 @@ GitHub Actions workflow [`deploy-station.yml`](../../.github/workflows/deploy-st
 - `workflow_dispatch` — manual deploy of one env or all four remote envs.
 - `push tag v*.*.*` — auto-deploy to all four remote envs.
 - Build runs **on each remote** via `docker --context` over SSH. No GHCR.
-- Per-env Secrets (`PEERS_AUTH_SECRET`, `PEERS_DB_PASSWORD`) live in
-  GitHub Environments named identically to the envs.
+- Per-env Secrets (`PEERS_AUTH_SECRET`, `PEERS_DB_PASSWORD`,
+  `PT_DEPLOY_HOST`, `PT_DEPLOY_USER`) live in GitHub Environments named
+  identically to the envs.
 
 ## Architecture notes
 
@@ -103,10 +108,10 @@ GitHub Actions workflow [`deploy-station.yml`](../../.github/workflows/deploy-st
   Dockerfile edits.
 - **Healthcheck endpoint**: `/sub-oss/healthz` (public probe). The compose
   healthcheck and the CI verify step both consume this endpoint.
-- **Same-host coexistence**: `pt-station-2` and `pt-station-relay-only`
-  share `10.37.195.98`. Two compose projects, two bridge networks, two
-  postgres containers — they only share the Docker daemon. Their libp2p
-  ports use distinct host-side mappings (`4001` vs `4002`).
+- **Same-host coexistence**: `pt-station-2` and `pt-station-relay-only` may
+  share one configured host. Two compose projects, two bridge networks, and
+  two postgres containers keep them isolated; their libp2p ports use distinct
+  host-side mappings (`4001` vs `4002`).
 - **Hierarchy-merge overlays** (no source-tree edits): `entrypoint.sh`
   emits `store.docker.yml` (DSN), `paths.docker.yml` (key paths under
   `/app/data`), and `bootstrap.docker.yml` (DHT seeds) into `/app/conf/`

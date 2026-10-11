@@ -196,7 +196,7 @@ deploy-environment creation.
 | `PT_DEV_SLOT` | yes | `0` | Port slot for multi-profile isolation |
 | `PT_STATION_MODE` | yes | `local` or `remote` | How Station is run (see §3) |
 | `PT_STATION_NAME` | yes | `one` | Human-readable Station label |
-| `PT_STATION_URL` | yes | `http://10.37.246.80:18080` | Station base URL |
+| `PT_STATION_URL` | yes | `http://192.0.2.10:18080` | Station base URL |
 | `PT_STATION_PORT` | yes | `18080` | Station HTTP port |
 | `PT_STATION_DEPLOY_ENV` | if remote | `station-1` | Maps to `.local/deploy/envs/<name>.env` |
 | `PT_STATION_HEALTH_URL` | recommended | `http://host:port/sub-oss/healthz` | Health check endpoint |
@@ -206,6 +206,10 @@ deploy-environment creation.
 | `PT_DESKTOP_APP_GATEWAY_PORT` | yes | `3030` | Desktop Tauri BFF port |
 | `PT_DESKTOP_APP_WEB_PORT` | yes | `3210` | Desktop Tauri web port |
 | `PT_MOBILE_WEB_PORT` | if mobile | `5173` | Mobile dev server port |
+
+Addresses in this document use RFC 5737 TEST-NET ranges. Real deployment
+coordinates belong only to the sibling environment repository or machine-local
+profile state.
 
 ### 2.5 Deploy Env Files
 
@@ -284,7 +288,7 @@ With profile active, the developer's machine runs:
                                │ (if remote mode)
                                ▼
 ┌─────────────────────────────────────────────────────┐
-│ Remote Station Host (e.g. 10.37.246.80)              │
+│ Remote Station Host (e.g. 192.0.2.10)              │
 │  Station              → :18080                       │
 │  PostgreSQL           → :5432                        │
 └─────────────────────────────────────────────────────┘
