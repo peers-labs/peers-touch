@@ -14,8 +14,6 @@ from tooling.acceptance.gates.mobile.simulator_social_e2e import (
     IOS_SOCIAL_ENVIRONMENT_ID,
     IOS_SOCIAL_PARITY_SCENARIOS,
     IOS_SOCIAL_RUNTIME_REUSE,
-    MOMENTS_RUNTIME_REUSE,
-    MOMENTS_SCENARIOS,
     SCENARIO_GATES,
     SimulatorSocialGate,
 )
@@ -248,19 +246,6 @@ class SimulatorSocialGateTests(unittest.TestCase):
             SimulatorSocialGate("ios-social-parity").environment_id,
             IOS_SOCIAL_ENVIRONMENT_ID,
         )
-
-    def test_moments_declares_the_task_reuse_contract(self) -> None:
-        self.assertEqual(
-            MOMENTS_RUNTIME_REUSE.scenario_ids,
-            MOMENTS_SCENARIOS,
-        )
-        self.assertEqual(MOMENTS_RUNTIME_REUSE.max_provisioning_runs, 1)
-        self.assertEqual(MOMENTS_RUNTIME_REUSE.max_client_launches, 2)
-        self.assertGreaterEqual(
-            MOMENTS_RUNTIME_REUSE.min_warm_reuse_rate,
-            0.66,
-        )
-        self.assertFalse(MOMENTS_RUNTIME_REUSE.allow_client_replacement)
 
     def test_active_scenario_cleanup_preserves_failed_suite_report(self) -> None:
         gate = SimulatorSocialGate("ios-social-parity")
@@ -1030,7 +1015,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertTrue(result["recentMessagePreserved"])
         self.assertTrue(result["restartStable"])
 
-    def test_moments_journey_requires_receiver_and_rollback_readback(
+    def test_moments_harness_is_domain_proof_not_foreground_suite_evidence(
         self,
     ) -> None:
         draft = {
@@ -1116,11 +1101,6 @@ class SimulatorSocialGateTests(unittest.TestCase):
         )
 
         gate = SimulatorSocialGate("moments")
-        gate._start_moments_suite_runtime(
-            manifest={"runId": "fixture-moments"},
-            source_identity={"commit": "a" * 40},
-            journey_id="run",
-        )
         result = gate._run_moments_journey(
             sender_session=SenderSession(),
             receiver_session=ReceiverSession(),
@@ -1136,13 +1116,9 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertTrue(result["reactionCommitted"])
         self.assertTrue(result["reactionRolledBack"])
         self.assertTrue(result["draftRestartReadback"])
+        self.assertIsNone(gate.suite_runtime_ledger)
         self.assertEqual(cleanup_error, "")
-        self.assertIsNotNone(suite_report)
-        self.assertEqual(suite_report["result"], "PASS")
-        self.assertEqual(suite_report["proofState"], "SUPPORTING")
-        self.assertEqual(suite_report["metrics"]["provisioningRuns"], 1)
-        self.assertEqual(suite_report["metrics"]["clientLaunches"], 2)
-        self.assertEqual(suite_report["metrics"]["completedScenarios"], 4)
+        self.assertIsNone(suite_report)
 
 
 if __name__ == "__main__":

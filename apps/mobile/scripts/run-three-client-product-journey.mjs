@@ -62,6 +62,25 @@ const requiredEvidence = Object.freeze([
   'accessibility-tree',
   'receiver-visible-result',
 ]);
+const socialRuntimeReuse = Object.freeze({
+  scope: 'suite',
+  entryCheckId: 'moments-foreground-functional',
+  scenarioIds: Object.freeze([
+    'moments-publish-receive',
+    'moments-react-comment',
+    'moments-reply-rollback',
+    'moments-draft-recovery',
+  ]),
+  maxProvisioningRuns: 1,
+  maxClientLaunches: 3,
+  minWarmReuseRate: 0.66,
+  requireAttachOnlyScenarios: true,
+  requireReceiverVisibleProof: true,
+  allowClientReplacement: false,
+});
+const socialSuiteRuntimeModule = (
+  'tooling.acceptance.gates.mobile.three_client_suite_runtime'
+);
 const externalPreconditions = Object.freeze(new Set([
   'clean-isolated-storage',
   'livekit-healthy',
@@ -1840,6 +1859,147 @@ function defaultEvidenceDir(phase) {
     'three-client',
     `${stamp}-${phase}`,
   );
+}
+
+function suiteRuntimeEvent(
+  action,
+  {
+    scenarioId = '',
+    resourceId = '',
+    durationSeconds = 0,
+  } = {},
+) {
+  return {
+    action,
+    scenarioId,
+    resourceId,
+    durationSeconds,
+  };
+}
+
+function createSocialSuiteRuntimeInput(manifest, preflight, evidenceDir) {
+  const runtimeIdentity = requiredClientIds.map((clientId) => {
+    const client = manifest.clients[clientId];
+    return {
+      clientId,
+      deviceId: client.deviceId,
+      sessionId: client.webdriver.sessionId,
+      storageId: client.storageId,
+    };
+  });
+  const fixtureEpoch = createHash('sha256')
+    .update(JSON.stringify(runtimeIdentity))
+    .digest('hex');
+  const events = [
+    suiteRuntimeEvent('provision', {
+      resourceId: `runtime:${fixtureEpoch}`,
+    }),
+    suiteRuntimeEvent('account-provision', {
+      resourceId: 'actors:alice,bob,coral',
+    }),
+  ];
+  for (const clientId of requiredClientIds) {
+    events.push(
+      suiteRuntimeEvent('client-launch', {
+        resourceId: `client:${clientId}`,
+      }),
+      suiteRuntimeEvent('login', {
+        resourceId: `login:${clientId}`,
+      }),
+    );
+  }
+  return {
+    input: {
+      schemaVersion: 1,
+      kind: 'peers-touch-three-client-suite-runtime-input',
+      suiteRuntimeId: `mwpu-06-${path.basename(evidenceDir)}`,
+      sourceDigest: preflight.source.head,
+      fixtureEpoch,
+      runtimeReuse: socialRuntimeReuse,
+      events,
+    },
+    startScenario(scenarioId) {
+      assertContract(
+        socialRuntimeReuse.scenarioIds.includes(scenarioId),
+        'SUITE_SCENARIO_UNDECLARED',
+        `Social Suite scenario ${scenarioId} is not declared`,
+      );
+      events.push(suiteRuntimeEvent('scenario-start', { scenarioId }));
+      return Date.now();
+    },
+    finishScenario(
+      scenarioId,
+      startedAt,
+      {
+        uiAction,
+        receiverAssertion,
+        supportingObservation,
+      },
+    ) {
+      const durationSeconds = Math.max(0, (Date.now() - startedAt) / 1_000);
+      events.push(
+        suiteRuntimeEvent('ui-action', {
+          scenarioId,
+          resourceId: uiAction,
+          durationSeconds,
+        }),
+        suiteRuntimeEvent('receiver-assertion', {
+          scenarioId,
+          resourceId: receiverAssertion,
+        }),
+        suiteRuntimeEvent('supporting-observation', {
+          scenarioId,
+          resourceId: supportingObservation,
+        }),
+        suiteRuntimeEvent('scenario-end', { scenarioId }),
+      );
+    },
+    complete() {
+      events.push(suiteRuntimeEvent('cleanup-complete', {
+        resourceId: 'foreground-ownership-released',
+      }));
+    },
+  };
+}
+
+function emitSocialSuiteRuntimeReport(suiteRuntime, evidenceDir) {
+  const inputPath = path.join(evidenceDir, 'suite-runtime-input.json');
+  const reportPath = path.join(evidenceDir, 'suite-runtime.json');
+  writeFileSync(
+    inputPath,
+    `${JSON.stringify(suiteRuntime.input, null, 2)}\n`,
+  );
+  try {
+    execFileSync(
+      'python3',
+      [
+        '-m',
+        socialSuiteRuntimeModule,
+        '--input',
+        inputPath,
+        '--output',
+        reportPath,
+      ],
+      {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    );
+  } catch (error) {
+    const detail = error?.stderr?.toString?.().trim()
+      || error?.message
+      || String(error);
+    throw new JourneyContractError(
+      'SUITE_RUNTIME_REPORT_FAILED',
+      `three-client Social Suite Runtime report failed: ${detail}`,
+    );
+  }
+  return {
+    inputPath,
+    report: readJson(reportPath, 'three-client Social Suite Runtime report'),
+    reportPath,
+  };
 }
 
 async function runPreflight(matrix, phase, runtimeManifestPath, evidenceDir) {
@@ -8358,9 +8518,304 @@ async function receiveOpenSocialPost(
   return openSocialPost(clientId, client, content, authorName);
 }
 
+async function waitForSocialComment(clientId, client, commentText) {
+  return waitForUi(
+    clientId,
+    client,
+    `Social comment ${commentText}`,
+    client.platform === 'desktop'
+      ? `
+          const thread = document.querySelector('[data-moments-comment-thread]');
+          return {
+            ready: Boolean(thread?.getClientRects().length)
+              && (thread?.innerText || '').includes(arguments[0]),
+            text: (thread?.innerText || '').replace(/\\s+/g, ' ').trim()
+          };
+        `
+      : `
+          const thread = [...document.querySelectorAll(
+            '[data-acceptance-id="social-moment-thread"]'
+          )].find((candidate) => (
+            candidate.getClientRects().length
+            && (candidate.innerText || '').includes(arguments[0])
+          ));
+          return {
+            ready: Boolean(thread),
+            text: (thread?.innerText || '').replace(/\\s+/g, ' ').trim()
+          };
+        `,
+    [commentText],
+  );
+}
+
+async function submitSocialComment(
+  clientId,
+  client,
+  commentText,
+  replyToContent = '',
+) {
+  if (replyToContent) {
+    const replyOpened = await executeWebScript(
+      client,
+      client.platform === 'desktop'
+        ? `
+            const thread = document.querySelector('[data-moments-comment-thread]');
+            const button = thread
+              ? [...thread.querySelectorAll('button.ant-btn-link')].find(
+                  (candidate) => (
+                    candidate.getClientRects().length
+                    && !candidate.disabled
+                    && !candidate.classList.contains('ant-btn-dangerous')
+                    && (candidate.closest('div')?.innerText || '')
+                      .includes(arguments[0])
+                  )
+                )
+              : null;
+            if (!(button instanceof HTMLButtonElement)) return false;
+            button.click();
+            return true;
+          `
+        : `
+            const item = [...document.querySelectorAll(
+              '.moments-comment-item'
+            )].find((candidate) => (
+              candidate.getClientRects().length
+              && (candidate.innerText || '').includes(arguments[0])
+            ));
+            const button = item?.querySelector(
+              '.moments-comment-item__actions button'
+            );
+            if (!(button instanceof HTMLButtonElement)) return false;
+            button.click();
+            return true;
+          `,
+      [replyToContent],
+    );
+    assertContract(
+      replyOpened === true,
+      'SOCIAL_COMMENT_REPLY_CONTROL_MISSING',
+      `${clientId} could not reply to Social comment ${replyToContent}`,
+    );
+  }
+  const inputSelector = client.platform === 'desktop'
+    ? '[data-moments-comment-thread] textarea'
+    : '[data-acceptance-id="social-comment-input"]';
+  const sendSelector = client.platform === 'desktop'
+    ? (
+        '[data-moments-comment-thread] '
+        + '[data-moments-comment-composer-state] '
+        + 'button.ant-btn-primary:not([disabled])'
+      )
+    : '[data-acceptance-id="social-comment-send"]';
+  await setInputValue(
+    client,
+    inputSelector,
+    commentText,
+    `${clientId}-social-comment`,
+  );
+  await clickVisibleSelector(
+    client,
+    sendSelector,
+    `${clientId}-social-comment-send`,
+  );
+  return waitForSocialComment(clientId, client, commentText);
+}
+
+async function removeSocialLoveReaction(clientId, client, content) {
+  const removed = await executeWebScript(
+    client,
+    client.platform === 'desktop'
+      ? `
+          const main = document.querySelector('[data-page="moments"] main');
+          if (!(main?.innerText || '').includes(arguments[0])) return false;
+          const button = [...main.querySelectorAll('button')].find(
+            (candidate) => (
+              candidate instanceof HTMLButtonElement
+              && candidate.getClientRects().length
+              && !candidate.disabled
+              && (candidate.textContent || '').includes('❤️')
+              && /[1-9]/.test(candidate.textContent || '')
+            )
+          );
+          if (!(button instanceof HTMLButtonElement)) return false;
+          button.click();
+          return true;
+        `
+      : `
+          const button = document.querySelector(
+            '[data-acceptance-id="social-reaction-open"].reacted'
+          );
+          if (!(button instanceof HTMLButtonElement) || button.disabled) {
+            return false;
+          }
+          button.click();
+          return true;
+        `,
+    [content],
+  );
+  assertContract(
+    removed === true,
+    'SOCIAL_REACTION_ROLLBACK_FAILED',
+    `${clientId} could not remove the Social LOVE reaction`,
+  );
+  return waitForSocialLoveReactionAbsent(clientId, client, content);
+}
+
+async function waitForSocialLoveReactionAbsent(clientId, client, content) {
+  return waitForUi(
+    clientId,
+    client,
+    `Social LOVE reaction rollback on ${content}`,
+    client.platform === 'desktop'
+      ? `
+          const main = document.querySelector('[data-page="moments"] main');
+          const reaction = main
+            ? [...main.querySelectorAll('button')].find((candidate) => (
+                candidate.getClientRects().length
+                && (candidate.textContent || '').includes('❤️')
+                && /[1-9]/.test(candidate.textContent || '')
+              ))
+            : null;
+          return {
+            ready: (main?.innerText || '').includes(arguments[0])
+              && !reaction,
+            text: (main?.innerText || '').replace(/\\s+/g, ' ').trim()
+          };
+        `
+      : `
+          const details = [...document.querySelectorAll(
+            '[data-product-surface="moments.detail-comments"]'
+          )].map((surface) => ({
+            surface,
+            article: surface.closest(
+              'article[data-acceptance-id="social-moment-card"]'
+            ) ?? surface.querySelector(
+              'article[data-acceptance-id="social-moment-card"]'
+            )
+          })).find(({ surface, article }) => (
+            surface.getClientRects().length
+            && article?.getClientRects().length
+            && (article.innerText || '').includes(arguments[0])
+          ));
+          const reaction = details?.article?.querySelector(
+            '.moments-reaction-tag'
+          );
+          return {
+            ready: Boolean(details) && !reaction,
+            text: (details?.article?.innerText || '').replace(/\\s+/g, ' ').trim()
+          };
+        `,
+    [content],
+  );
+}
+
+async function openMobileSocialComposer(clientId, client) {
+  assertContract(
+    client.platform !== 'desktop',
+    'SOCIAL_DRAFT_MOBILE_REQUIRED',
+    'Social draft recovery requires a Mobile client',
+  );
+  await navigateSocialFeed(clientId, client, 'home');
+  await clickVisibleSelector(
+    client,
+    '[data-acceptance-id="social-composer-open"]',
+    `${clientId}-social-draft-open`,
+  );
+  return waitForUi(
+    clientId,
+    client,
+    'Mobile Social draft composer',
+    `
+      const composer = document.querySelector(
+        '[data-acceptance-id="social-composer"]'
+      );
+      return {
+        ready: Boolean(composer?.getClientRects().length)
+      };
+    `,
+  );
+}
+
+async function recoverMobileSocialDraft(
+  clientId,
+  client,
+  stationUrl,
+  evidenceDir,
+  draftText,
+) {
+  await openMobileSocialComposer(clientId, client);
+  await setInputValue(
+    client,
+    '[data-acceptance-id="social-composer-text"]',
+    draftText,
+    `${clientId}-social-draft`,
+  );
+  await sleep(2_000);
+  const relaunch = await relaunchClient(clientId, client, evidenceDir);
+  await ensureAuthenticated(clientId, client, stationUrl);
+  await openMobileSocialComposer(clientId, client);
+  const restored = await waitForUi(
+    clientId,
+    client,
+    `restored Social draft ${draftText}`,
+    `
+      const input = document.querySelector(
+        '[data-acceptance-id="social-composer-text"]'
+      );
+      return {
+        ready: input instanceof HTMLTextAreaElement
+          && input.value === arguments[0],
+        text: input instanceof HTMLTextAreaElement ? input.value : ''
+      };
+    `,
+    [draftText],
+  );
+  return { relaunch, restored };
+}
+
+async function clearMobileSocialDraft(clientId, client) {
+  await waitForUi(
+    clientId,
+    client,
+    'restored Social draft clear action',
+    `
+      const button = document.querySelector(
+        '[data-acceptance-id="social-composer-clear"]'
+      );
+      return {
+        ready: button instanceof HTMLButtonElement && !button.disabled
+      };
+    `,
+  );
+  await clickVisibleSelector(
+    client,
+    '[data-acceptance-id="social-composer-clear"]',
+    `${clientId}-social-draft-clear`,
+  );
+  return waitForUi(
+    clientId,
+    client,
+    'cleared Social draft',
+    `
+      const input = document.querySelector(
+        '[data-acceptance-id="social-composer-text"]'
+      );
+      return {
+        ready: input instanceof HTMLTextAreaElement && input.value === '',
+        text: input instanceof HTMLTextAreaElement ? input.value : ''
+      };
+    `,
+  );
+}
+
 async function runSocialPhase(manifest, evidenceDir, preflight) {
   const interactionTrace = [];
   const sequenceRef = { value: 0 };
+  const suiteRuntime = createSocialSuiteRuntimeInput(
+    manifest,
+    preflight,
+    evidenceDir,
+  );
   const step = async (clientId, stepId, action) => {
     const client = manifest.clients[clientId];
     await activateForegroundClient(clientId, client);
@@ -8390,7 +8845,13 @@ async function runSocialPhase(manifest, evidenceDir, preflight) {
   const stamp = Date.now();
   const alicePost = `MWPU Alice Social ${stamp}`;
   const coralPost = `MWPU Carol Social ${stamp}`;
+  const bobComment = `MWPU Bob comment ${stamp}`;
+  const coralReply = `MWPU Carol reply ${stamp}`;
+  const coralDraft = `MWPU Carol draft ${stamp}`;
 
+  const publishStarted = suiteRuntime.startScenario(
+    'moments-publish-receive',
+  );
   await step(
     'android-alice',
     'social-alice-publish',
@@ -8420,6 +8881,19 @@ async function runSocialPhase(manifest, evidenceDir, preflight) {
       'Alice',
     ),
   );
+  suiteRuntime.finishScenario(
+    'moments-publish-receive',
+    publishStarted,
+    {
+      uiAction: 'android-alice:publish',
+      receiverAssertion: 'desktop-bob+ios-coral:alice-post-open',
+      supportingObservation: 'trace:social-alice-publish',
+    },
+  );
+
+  const reactionStarted = suiteRuntime.startScenario(
+    'moments-react-comment',
+  );
   await step(
     'desktop-bob',
     'social-bob-love-alice',
@@ -8448,7 +8922,80 @@ async function runSocialPhase(manifest, evidenceDir, preflight) {
       },
     );
   }
+  await step(
+    'desktop-bob',
+    'social-bob-comment-alice',
+    () => submitSocialComment(
+      'desktop-bob',
+      manifest.clients['desktop-bob'],
+      bobComment,
+    ),
+  );
+  for (const clientId of ['android-alice', 'ios-coral']) {
+    await step(
+      clientId,
+      'social-bob-comment-converged',
+      () => waitForSocialComment(
+        clientId,
+        manifest.clients[clientId],
+        bobComment,
+      ),
+    );
+  }
+  suiteRuntime.finishScenario(
+    'moments-react-comment',
+    reactionStarted,
+    {
+      uiAction: 'desktop-bob:love+comment',
+      receiverAssertion: 'android-alice+ios-coral:reaction+comment-visible',
+      supportingObservation: 'trace:social-bob-comment-alice',
+    },
+  );
 
+  const replyStarted = suiteRuntime.startScenario(
+    'moments-reply-rollback',
+  );
+  await step(
+    'ios-coral',
+    'social-coral-reply-bob',
+    () => submitSocialComment(
+      'ios-coral',
+      manifest.clients['ios-coral'],
+      coralReply,
+      bobComment,
+    ),
+  );
+  for (const clientId of ['android-alice', 'desktop-bob']) {
+    await step(
+      clientId,
+      'social-coral-reply-converged',
+      () => waitForSocialComment(
+        clientId,
+        manifest.clients[clientId],
+        coralReply,
+      ),
+    );
+  }
+  await step(
+    'desktop-bob',
+    'social-bob-love-alice-rollback',
+    () => removeSocialLoveReaction(
+      'desktop-bob',
+      manifest.clients['desktop-bob'],
+      alicePost,
+    ),
+  );
+  for (const clientId of ['android-alice', 'ios-coral']) {
+    await step(
+      clientId,
+      'social-alice-love-rollback-converged',
+      () => waitForSocialLoveReactionAbsent(
+        clientId,
+        manifest.clients[clientId],
+        alicePost,
+      ),
+    );
+  }
   await step(
     'ios-coral',
     'social-coral-publish',
@@ -8506,7 +9053,40 @@ async function runSocialPhase(manifest, evidenceDir, preflight) {
       },
     );
   }
+  suiteRuntime.finishScenario(
+    'moments-reply-rollback',
+    replyStarted,
+    {
+      uiAction: 'ios-coral:reply+desktop-bob:reaction-rollback',
+      receiverAssertion: (
+        'android-alice+desktop-bob+ios-coral:reply+rollback+coral-post'
+      ),
+      supportingObservation: 'trace:social-coral-love-converged',
+    },
+  );
 
+  const recoveryStarted = suiteRuntime.startScenario(
+    'moments-draft-recovery',
+  );
+  await step(
+    'ios-coral',
+    'social-coral-draft-relaunch-restore',
+    () => recoverMobileSocialDraft(
+      'ios-coral',
+      manifest.clients['ios-coral'],
+      manifest.stationUrl,
+      evidenceDir,
+      coralDraft,
+    ),
+  );
+  await step(
+    'ios-coral',
+    'social-coral-draft-clear',
+    () => clearMobileSocialDraft(
+      'ios-coral',
+      manifest.clients['ios-coral'],
+    ),
+  );
   for (const clientId of requiredClientIds) {
     await step(
       clientId,
@@ -8532,6 +9112,20 @@ async function runSocialPhase(manifest, evidenceDir, preflight) {
       },
     );
   }
+  suiteRuntime.finishScenario(
+    'moments-draft-recovery',
+    recoveryStarted,
+    {
+      uiAction: 'ios-coral:draft+relaunch+clear',
+      receiverAssertion: 'three-client:posts+reaction-survive-relaunch',
+      supportingObservation: 'trace:social-native-relaunch-and-feed-reopen',
+    },
+  );
+  suiteRuntime.complete();
+  const suiteRuntimeResult = emitSocialSuiteRuntimeReport(
+    suiteRuntime,
+    evidenceDir,
+  );
 
   const report = {
     kind: 'peers-touch-three-client-product-journey-result',
@@ -8546,7 +9140,18 @@ async function runSocialPhase(manifest, evidenceDir, preflight) {
       alice: alicePost,
       coral: coralPost,
     },
+    comments: {
+      bob: bobComment,
+      coralReply,
+    },
     interactionTrace,
+    suiteRuntime: {
+      inputPath: suiteRuntimeResult.inputPath,
+      reportPath: suiteRuntimeResult.reportPath,
+      reportDigest: suiteRuntimeResult.report.reportDigest,
+      result: suiteRuntimeResult.report.result,
+      proofState: suiteRuntimeResult.report.proofState,
+    },
     observedAt: new Date().toISOString(),
   };
   const reportPath = path.join(evidenceDir, 'result.json');
