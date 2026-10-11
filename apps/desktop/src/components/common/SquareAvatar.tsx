@@ -27,7 +27,6 @@ async function resolveLocalPath(remoteUrl: string): Promise<CacheEntry> {
   }
   const existing = inflight.get(remoteUrl);
   if (existing) return existing;
-
   const promise = (async () => {
     try {
       const data = await api.avatarResolveLocal(remoteUrl);
@@ -45,6 +44,26 @@ async function resolveLocalPath(remoteUrl: string): Promise<CacheEntry> {
 
   inflight.set(remoteUrl, promise);
   return promise;
+}
+
+/**
+ * Seed the in-memory resolved-path cache *before* an avatar mounts.
+ *
+ * The backend identity already carries the persisted `avatar_local_path`;
+ * session transitions call this synchronously before flipping to
+ * authenticated so the nav avatar renders its `<img>` on the first frame
+ * instead of flashing the gradient placeholder while an IPC round trip
+ * completes. Also warms WebKit's image cache for the asset URL.
+ */
+export function primeResolvedLocal(remoteUrl: string, localPath?: string | null): void {
+  const key = downloadableAvatarSource(remoteUrl);
+  const path = localPath?.trim();
+  if (!key || !path) return;
+  if (resolveCache.get(key) === path) return;
+  resolveCache.set(key, path);
+  // Pre-decode the asset so the mounted <img> paints without an empty frame.
+  const preloader = new Image();
+  preloader.src = convertFileSrc(path);
 }
 
 export interface SquareAvatarProps {

@@ -4,6 +4,8 @@ import type { FederationResolveView } from '../../services/desktop_api';
 import {
   findPeopleScopePresentation,
   friendRequestFederationId,
+  localActorToSearchResult,
+  mergeActorSearchResults,
   resolvedProfileToSearchResult,
 } from './findPeopleIdentity';
 
@@ -73,6 +75,48 @@ describe('Find People identity projection', () => {
     } as unknown as FederationResolveView;
 
     expect(resolvedProfileToSearchResult(view)).toBeNull();
+  });
+
+  it('projects local Station actors without requiring catalog visibility', () => {
+    expect(localActorToSearchResult({
+      actorPtid: 'ptid:developer',
+      username: 'developer',
+      displayName: '小小先',
+      avatar: '',
+      homeStationPeerId: 'station-local',
+    })).toEqual({
+      id: 'ptid:developer',
+      username: 'developer',
+      displayName: '小小先',
+      avatar: '',
+      homeStationPeerId: 'station-local',
+    });
+  });
+
+  it('merges local and Federation results by canonical Actor PTID', () => {
+    const local = localActorToSearchResult({
+      actorPtid: 'ptid:alice',
+      username: 'alice',
+      displayName: 'Alice local',
+      avatar: '',
+      homeStationPeerId: 'station-local',
+    });
+    const catalog = {
+      id: 'ptid:alice',
+      username: 'alice',
+      displayName: 'Alice verified',
+      avatar: '',
+      homeStationPeerId: 'station-local',
+      federation: {
+        handle: '@alice@station.example',
+        homeStationDomain: 'station.example',
+        fromCache: false,
+        isLocal: true,
+        locatorSeq: 1,
+      },
+    };
+
+    expect(mergeActorSearchResults(local ? [local] : [], [catalog])).toEqual([catalog]);
   });
 
   it('reuses the unique relationship federation for a rejected-request retry', () => {
