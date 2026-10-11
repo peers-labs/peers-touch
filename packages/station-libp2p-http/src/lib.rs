@@ -26,7 +26,8 @@ use x509_parser::parse_x509_certificate;
 const STATION_HTTP_PROTOCOL: &str = "/peers-touch/station-http/1.0.0";
 const MAX_HEADER_BYTES: usize = 32 << 10;
 const MAX_BODY_BYTES: usize = 64 << 20;
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+const CONTROL_TIMEOUT: Duration = Duration::from_secs(15);
+const RESPONSE_TIMEOUT: Duration = Duration::from_secs(305);
 
 #[derive(Clone, Debug)]
 pub struct Route {
@@ -143,7 +144,7 @@ impl Transport {
                 TransportError::new(format!("start Station transport thread: {error}"))
             })?;
         ready_receiver
-            .recv_timeout(REQUEST_TIMEOUT)
+            .recv_timeout(CONTROL_TIMEOUT)
             .map_err(|_| TransportError::new("Station transport did not start"))?
             .map_err(TransportError::new)?;
         Ok(Self {
@@ -175,7 +176,7 @@ impl Transport {
             })
             .map_err(|_| TransportError::new("Station transport is unavailable"))?;
         dial_receiver
-            .recv_timeout(REQUEST_TIMEOUT)
+            .recv_timeout(CONTROL_TIMEOUT)
             .map_err(|_| TransportError::new("Station route dial timed out"))?
             .map_err(TransportError::new)?;
 
@@ -189,7 +190,7 @@ impl Transport {
             })
             .map_err(|_| TransportError::new("Station transport is unavailable"))?;
         reply_receiver
-            .recv_timeout(REQUEST_TIMEOUT)
+            .recv_timeout(RESPONSE_TIMEOUT)
             .map_err(|_| TransportError::new("Station HTTP response timed out"))?
             .map_err(TransportError::new)
     }
@@ -606,4 +607,16 @@ fn build_swarm(keypair: identity::Keypair) -> Result<Swarm<Behaviour>, Transport
         })
         .map_err(|error| TransportError::new(format!("build P2P behaviour: {error}")))
         .map(|builder| builder.build())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn response_timeout_covers_long_running_standard_requests() {
+        assert_eq!(CONTROL_TIMEOUT, Duration::from_secs(15));
+        assert_eq!(RESPONSE_TIMEOUT, Duration::from_secs(305));
+        assert!(RESPONSE_TIMEOUT > CONTROL_TIMEOUT);
+    }
 }
