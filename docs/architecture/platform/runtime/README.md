@@ -18,4 +18,4 @@ multiple processes without owning a product domain.
 |---|---|
 | [storage.md](./storage.md) | Unified runtime storage roots and path ownership |
 | [service-coordination.md](./service-coordination.md) | Relay, Station, Desktop, and Mobile dependency DAG |
-| [node-connectivity/](./node-connectivity/README.md) | Station/Relay roles, signed routes and end-to-end TLS opaque tunnel |
+| [node-connectivity/](./node-connectivity/README.md) | Logical Station / node identity, Frame ingress, Circuit v2 and cluster readiness target |

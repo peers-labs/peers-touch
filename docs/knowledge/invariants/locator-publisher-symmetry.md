@@ -1,7 +1,7 @@
 ---
 kind: invariant
 title: Every PublishVisibility caller is either user-driven or maintenance — no third category
-status: active
+status: superseded-by:docs/architecture/platform/runtime/node-connectivity/design.md
 owns:
   - apps/station/frame/touch/actor/locator_hook.go
   - apps/station/frame/touch/actor/profile.go

@@ -31,7 +31,7 @@ def _config() -> PosixServiceRuntimeConfig:
         runtime_path=".peers-touch/runtime/relay-1",
         http_port=18082,
         public_port=18081,
-        stream_port=4501,
+        libp2p_port=4001,
         public_base_url="https://10.37.118.48:18081",
         compose_project="pt-relay",
         compose_service="relay",
@@ -50,7 +50,7 @@ class PosixRelayRuntimeTest(unittest.TestCase):
 
         self.assertIn('secret_root.mkdir(parents=True, exist_ok=True)', script)
         self.assertIn('os.chmod(secret_root, 0o700)', script)
-        self.assertIn('relay-signing.key', script)
+        self.assertNotIn('relay-signing.key', script)
         self.assertIn('relay-operator.key', script)
         self.assertIn('ca_key = ca_root / "relay-ca.key"', script)
         self.assertNotIn('ca_key = secret_root / "relay-ca.key"', script)

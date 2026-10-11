@@ -30,7 +30,7 @@ class WindowsRuntimeScriptTest(unittest.TestCase):
                         "PT_DEPLOY_PLATFORM=windows",
                         "PT_DEPLOY_HTTP_PORT=18081",
                         "PT_DEPLOY_PUBLIC_BASE_URL=https://relay.example:18081",
-                        "PT_DEPLOY_STREAM_PORT=4501",
+                        "PT_DEPLOY_LIBP2P_PORT=4001",
                         "PT_DEPLOY_TASK_NAME=PeersTouch-relay",
                     )
                 )

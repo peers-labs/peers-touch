@@ -1709,7 +1709,7 @@ function addVerifiedStation(
         stationPeerId: verified.stationPeerId,
         url: verified.canonicalOrigin,
       },
-      stationHostPublicKey: verified.route.stationHostPublicKey,
+      stationRootPublicKey: verified.route.stationRootPublicKey,
       route: verified.route,
     },
     {

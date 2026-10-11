@@ -38,7 +38,7 @@
 2. 客户端验证 Relay endpoint identity，并将 role 分类为 `RELAY`。
 3. Relay 只返回 opt-in、未过期、由 Station host key 签名的 route attestation。
 4. 一个候选时自动选中；多个候选时展示 Station 名称、身份摘要和可达状态。
-5. 客户端经 opaque tunnel 与目标 Station 完成端到端 TLS 和 Station identity 校验。
+5. 客户端经标准 Circuit 与目标 Station 完成端到端 TLS 和 Station identity 校验。
 6. 后续 Access Gate、Session 和业务页面与直连路径完全相同。
 
 UI 主标题始终是 Home Station。连接摘要只显示 `直连` 或 `经 <Relay label>`。
@@ -48,9 +48,9 @@ UI 主标题始终是 Home Station。连接摘要只显示 `直连` 或 `经 <Re
 1. 用户粘贴 Station 签发的 `peers-touch://connect#...` 链接或 `ptc1:` 代码。
 2. 客户端解析其中的 Relay origin、不可猜 route handle、Station route
    attestation 和短期 connection grant。
-3. Relay 校验 grant 的 hash、有效期、scope 与使用次数后建立 tunnel，不公开该
-   Station 的目录记录。
-4. 客户端独立验证 Station 签名和 tunnel 内证书绑定。
+3. Relay 校验 grant 的 hash、有效期、scope 与使用次数后签发 source-bound
+   Circuit permit，不公开该 Station 的目录记录。
+4. 客户端独立验证 Station 签名和 Circuit 内证书绑定。
 5. 连接材料失效时显示可恢复的 typed failure，不退化为公共目录猜测。
 
 连接材料位于 deep-link fragment 或本地输入值，不作为 HTTP URL query、Referer、
@@ -80,9 +80,9 @@ analytics 或日志字段发送。
 
 1. Relay operator 创建定向、短期、一次性 invite，明文只显示一次。
 2. Station 用 host key 对 Relay challenge、invite ID 和期望 Relay identity 签名。
-3. Relay 验证 proof-of-possession，原子消费 invite 并创建新 mount generation。
-4. Station 建立强制 TLS 的控制流，周期性轮换短期 mount credential。
-5. operator 撤销 mount 后，Relay 立即关闭流并拒绝旧 generation 重连。
+3. Relay 验证 proof-of-possession，原子消费 invite 并创建新 enrollment generation。
+4. Station 通过签名控制面轮换短期 node credential，并续订标准 reservation。
+5. operator 撤销 enrollment 后，Relay 移除 ACL admission、关闭 Node 连接并拒绝旧 generation。
 6. Station 可用新的 invite 显式恢复；过期缓存不得阻止重新 enrollment。
 
 ## 8. 失败与恢复
@@ -91,12 +91,12 @@ analytics 或日志字段发送。
 |---|---|
 | endpoint 不可达或 role 未知 | 保留输入，typed retry；不猜接口 |
 | Relay identity、Station 签名或证书绑定不匹配 | 凭据提交前 fail closed |
-| Relay 无候选 | 显示无可用 Station；不暴露 mount inventory |
+| Relay 无候选 | 显示无可用 Station；不暴露 enrollment inventory |
 | Relay 多候选 | 明确选择，不按返回顺序静默绑定 |
 | route/grant 过期或撤销 | 停止该 route，保留同 Station 其他候选 |
-| tunnel 中断 | bounded reconnect；不切换 Station identity |
+| Circuit 中断 | bounded reconnect；不切换 Station identity |
 | Access Gate 不支持或 attempt 过期 | canonical typed failure/restart |
-| mount credential 过期 | Station 轮换或重新 enrollment；不信任非空缓存 |
+| node credential 过期 | Station 轮换或重新 enrollment；不信任非空缓存 |
 | 配额耗尽 | typed overload + retry-after；不得静默截断 |
 
 ## 9. SAL-J10：跨类别共存与同类别接管

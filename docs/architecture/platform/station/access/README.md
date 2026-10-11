@@ -27,10 +27,10 @@
 
 - Federation Ledger 与 membership，见
   [Federation Domain](../../../domains/federation/README.md)；
-- Relay enrollment、signed route、运行角色与 opaque tunnel，见
+- Relay enrollment、signed route、运行角色与标准 Circuit，见
   [Node Connectivity](../../runtime/node-connectivity/README.md)；
 - Chat、Social、Agent 等业务 API；
-- Relay invite、mount、证书或配额的普通客户端管理 UI；
+- Relay invite、node enrollment、证书或配额的普通客户端管理 UI；
 - Browser 客户端。
 
 ## 2. 背景

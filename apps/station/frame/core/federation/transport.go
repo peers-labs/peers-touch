@@ -44,7 +44,7 @@ type RelayAccess interface {
 type LiveRelayAccess struct{}
 
 func (LiveRelayAccess) Available() bool {
-	client := nativefed.RelayClient()
+	client := nativefed.RelayAccessSnapshot()
 	return client != nil && client.Available()
 }
 
@@ -53,7 +53,7 @@ func (LiveRelayAccess) RoundTrip(
 	targetStationPeerID string,
 	request *http.Request,
 ) (*http.Response, error) {
-	client := nativefed.RelayClient()
+	client := nativefed.RelayAccessSnapshot()
 	if client == nil {
 		return nil, nativefed.ErrRelayNotConnected
 	}

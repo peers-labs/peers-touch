@@ -4,18 +4,13 @@ import {
   activeStationEntry,
   activeStationRoute,
   activateStationRoute,
-  addStationRoute,
   emptyStationRegistry,
   loadStationRegistry,
   persistStationRegistry,
   type StoredStationRegistry,
 } from '../features/station/stationRegistry';
 import { verifyBoundStationRoute } from '../features/station/stationConnection';
-import {
-  activateStationRouteBinding,
-  discoverStationEndpoint,
-  restoreStationRouteBinding,
-} from '../services/mobileCommands';
+import { restoreStationRouteBinding } from '../services/mobileCommands';
 import { purgeLegacyMobileIdentityStorage } from '../storage/mobileClientStorage';
 
 interface StationRegistryPersistence {
@@ -109,37 +104,15 @@ export async function bootstrapStationRuntime(): Promise<StoredStationRegistry> 
   const route = station ? activeStationRoute(station) : null;
   if (!station || !route) return loaded;
   try {
-    if (route.sourceRef && !route.routeId.startsWith('legacy-direct:')) {
-      await restoreStationRouteBinding({
-        stationPeerId: station.stationPeerId,
-        routeId: route.routeId,
-        routeGeneration: route.routeGeneration,
-        routeRevision: station.routeRevision ?? 1,
-        sourceRef: route.sourceRef,
-        endpointOrigin: route.endpointOrigin,
-      });
-      return loaded;
-    }
-    const discovery = await discoverStationEndpoint(route.endpointOrigin);
-    const verifiedRoute = discovery.routes.find(
-      (candidate) => candidate.stationPeerId === station.stationPeerId,
-    );
-    if (!verifiedRoute) throw new Error('mobile.launch.stationIdentityMismatch');
-    const upgraded = addStationRoute(loaded, {
-      identity: {
-        stationPeerId: station.stationPeerId,
-        url: station.url,
-      },
-      stationHostPublicKey: verifiedRoute.stationHostPublicKey,
-      route: verifiedRoute,
-    });
-    if (!upgraded.ok) throw new Error(upgraded.error);
-    loaded = await stationRegistryRuntime.update(() => upgraded.registry);
-    await activateStationRouteBinding({
+    await restoreStationRouteBinding({
       stationPeerId: station.stationPeerId,
-      routeId: verifiedRoute.routeId,
-      routeRevision: activeStationEntry(loaded)?.routeRevision ?? 1,
+      routeId: route.routeId,
+      routeGeneration: route.routeGeneration,
+      routeRevision: station.routeRevision ?? 1,
+      sourceRef: route.sourceRef,
+      endpointOrigin: route.endpointOrigin,
     });
+    return loaded;
   } catch {
     loaded = await stationRegistryRuntime.update((current) => ({
       ...current,

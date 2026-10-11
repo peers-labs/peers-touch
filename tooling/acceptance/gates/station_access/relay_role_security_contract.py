@@ -44,7 +44,6 @@ _TLS12_PROTOCOL_REJECTION_MARKERS = (
 _RELAY_SECRET_FILES = frozenset(
     {
         "relay-operator.key",
-        "relay-signing.key",
         "relay-ca.crt",
         "relay-tls.key",
         "relay.crt",
@@ -166,15 +165,44 @@ def validate_relay_role_source_contract() -> None:
         (
             "validateRelaySecurityOptions(s.opts)",
             "operatorAuthenticationWrapper(",
-            "tls.VersionTLS13",
-            "s.opts.AllowInsecureLoopback",
+            "s.opts.Host.Peerstore()",
+            "s.opts.Admission",
         ),
         "Relay security composition",
     )
+
+    relay_runtime_source = _read(
+        "apps/station/frame/core/plugin/native/relay/runtime.go"
+    )
+    _require_tokens(
+        relay_runtime_source,
+        (
+            "libp2p.ForceReachabilityPublic()",
+            "libp2p.EnableRelayService(",
+            "relayv2.WithResources(",
+            "relayv2.WithACL(r.admission)",
+        ),
+        "standard Circuit Relay runtime",
+    )
     _reject_tokens(
-        relay_source,
-        ("tls.VersionTLS12",),
-        "Relay TLS listener",
+        relay_runtime_source,
+        ("WithInfiniteLimits",),
+        "standard Circuit Relay runtime",
+    )
+
+    admission_source = _read(
+        "apps/station/frame/core/plugin/native/relay/admission.go"
+    )
+    _require_tokens(
+        admission_source,
+        (
+            "func (a *Admission) AllowReserve(",
+            "func (a *Admission) AllowConnect(",
+            "func (a *Admission) RevokeNode(",
+            "valueHost.Network().ClosePeer(nodePeerID)",
+            "permit.RemainingUses--",
+        ),
+        "standard Circuit admission",
     )
 
     handler_source = _read(
@@ -196,12 +224,27 @@ def validate_relay_role_source_contract() -> None:
     _require_tokens(
         config_source,
         (
-            "allow-insecure-loopback: false",
-            'signing-key-file: ""',
+            "enabled: true",
+            "max-stations: 100",
             'operator-key-file: ""',
             'operator-issuer: ""',
             'operator-audience: ""',
             'operator-scope: ""',
+        ),
+        "Relay fail-closed configuration",
+    )
+    _reject_tokens(
+        config_source,
+        (
+            "heartbeat-timeout:",
+            "forward-timeout:",
+            "stream-ping-interval:",
+            "stream-ping-timeout:",
+            "stream-listen-addr:",
+            "tls-cert-file:",
+            "tls-key-file:",
+            "allow-insecure-loopback:",
+            "signing-key-file:",
         ),
         "Relay fail-closed configuration",
     )
@@ -212,8 +255,7 @@ def validate_relay_role_source_contract() -> None:
         (
             "PEERS_NODE_ROLE: station",
             "PEERS_NODE_ROLE: relay",
-            "RELAY_TLS_CERT_FILE:",
-            "RELAY_SIGNING_KEY_FILE:",
+            "PEERS_LIBP2P_PUBLIC_ADDRS:",
             "RELAY_OPERATOR_KEY_FILE:",
             '"http://127.0.0.1:18080/healthz"',
             "relay-proxy:",
@@ -229,7 +271,7 @@ def validate_relay_role_source_contract() -> None:
             "listen 18443 ssl",
             "ssl_protocols TLSv1.3",
             "proxy_pass http://127.0.0.1:18080",
-            "proxy_set_header Upgrade $http_upgrade",
+            "proxy_set_header Connection \"\"",
             "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for",
         ),
         "Relay NGINX TLS boundary",
@@ -240,10 +282,8 @@ def validate_relay_role_source_contract() -> None:
         entrypoint_source,
         (
             'case "${PEERS_NODE_ROLE:-}" in',
-            "RELAY_TLS_CERT_FILE is required for relay role",
-            "RELAY_SIGNING_KEY_FILE is required for relay role",
+            "PEERS_LIBP2P_PUBLIC_ADDRS is required for relay role",
             "RELAY_OPERATOR_KEY_FILE is required for relay role",
-            "relay role cannot enable relay-client",
         ),
         "Docker role preflight",
     )
@@ -616,7 +656,7 @@ def _validate_runtime_evidence(
         or tls_termination.get("upstream") != "http://127.0.0.1:18080"
     ):
         raise GateError("Attached Station/Relay runtime security is incomplete")
-    stream_endpoint = str(security.get("streamEndpoint") or "")
+    circuit_endpoint = str(security.get("circuitEndpoint") or "")
     public_endpoint = str(security.get("publicEndpoint") or "")
     trust_anchor = _required_object(
         security.get("tlsTrustAnchor"),
@@ -629,7 +669,7 @@ def _validate_runtime_evidence(
         "Relay TLS trust anchor",
     )
     if (
-        not stream_endpoint
+        not circuit_endpoint.startswith(("/dns4/", "/ip4/", "/ip6/"))
         or public_endpoint != str(relay.get("endpoint") or "").rstrip("/")
         or not str(trust_anchor.get("sha256") or "").startswith("sha256:")
         or trust_anchor_ref.get("mediaType") != "application/x-pem-file"
@@ -643,7 +683,7 @@ def _validate_runtime_evidence(
         "relayRuntime": relay_runtime,
         "relayStorageSecurity": storage_security,
         "tlsTermination": tls_termination,
-        "streamEndpoint": stream_endpoint,
+        "circuitEndpoint": circuit_endpoint,
         "publicEndpoint": public_endpoint,
         "tlsTrustAnchor": trust_anchor,
     }
@@ -705,7 +745,7 @@ def validate_relay_role_runtime_contract() -> dict[str, Any]:
         raise GateError(
             f"Relay exposes forbidden Station routes: {unexpected_routes}"
         )
-    tls = _probe_tls(str(evidence["streamEndpoint"]))
+    tls = _probe_tls(str(evidence["publicEndpoint"]))
     return {
         "environmentId": ENVIRONMENT_ID,
         "sourceCommit": evidence["sourceCommit"],
@@ -740,8 +780,10 @@ class RelayRoleSecurityContractGate(AcceptanceGate):
         return {
             "proven_scope": [
                 "explicit Station/Relay process role and composition allowlists",
-                "fail-closed Relay TLS, signing-key, operator-policy, and "
-                "quota configuration",
+                "one persistent libp2p Host identity for Relay control and Circuit",
+                "fail-closed public address, operator-policy, and finite "
+                "Circuit quota configuration",
+                "deny-by-default reservation and source-bound connection ACL",
                 "dedicated operator credential issuer, audience, scope, and key",
                 "Relay health and operator-protected metrics route inventory",
                 "exact-source isolated Station and Relay processes on the "
@@ -753,8 +795,7 @@ class RelayRoleSecurityContractGate(AcceptanceGate):
             ],
             "unproven_scope": [
                 "public CA certificate negotiation and hostile-client load behavior",
-                "proof-of-possession enrollment, signed discovery, and "
-                "opaque tunnel behavior",
+                "native Desktop product behavior remains owned by NCP-G03",
             ],
             "runtime": runtime,
         }

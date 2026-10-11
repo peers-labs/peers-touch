@@ -4,6 +4,8 @@ package peers_touch.model.peer.v1;
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/peer;peer";
 
+import "domain/peer/station_identity.proto";
+
 enum AccessEndpointRole {
   ACCESS_ENDPOINT_ROLE_UNSPECIFIED = 0;
   ACCESS_ENDPOINT_ROLE_DIRECT_STATION = 1;
@@ -27,10 +29,17 @@ enum StationRouteVisibility {
   STATION_ROUTE_VISIBILITY_GRANT_ONLY = 2;
 }
 
+enum StationRouteKind {
+  STATION_ROUTE_KIND_UNSPECIFIED = 0;
+  STATION_ROUTE_KIND_DIRECT = 1;
+  STATION_ROUTE_KIND_CIRCUIT = 2;
+}
+
 message AccessEndpointRequest {
   bytes challenge = 1;
   bytes connection_grant = 2;
   uint32 client_protocol_version = 3;
+  string source_peer_id = 4;
 }
 
 message AccessEndpointStatement {
@@ -42,6 +51,7 @@ message AccessEndpointStatement {
   repeated string capabilities = 6;
   int64 issued_at_unix_ms = 7;
   int64 expires_at_unix_ms = 8;
+  bytes node_authorization_digest = 9;
 }
 
 message StationRouteStatement {
@@ -54,12 +64,16 @@ message StationRouteStatement {
   StationRouteVisibility visibility = 7;
   int64 issued_at_unix_ms = 8;
   int64 expires_at_unix_ms = 9;
+  string node_peer_id = 10;
+  bytes node_authorization_digest = 11;
+  StationRouteKind kind = 12;
+  repeated string addresses = 13;
 }
 
 message StationRouteAttestation {
   bytes statement_bytes = 1;
-  bytes host_public_key = 2;
-  bytes signature = 3;
+  bytes node_signature = 2;
+  StationNodeAuthorization node_authorization = 3;
 }
 
 message StationConnectionGrantStatement {
@@ -71,12 +85,14 @@ message StationConnectionGrantStatement {
   uint32 max_uses = 6;
   int64 issued_at_unix_ms = 7;
   int64 expires_at_unix_ms = 8;
+  string node_peer_id = 9;
+  bytes node_authorization_digest = 10;
 }
 
 message StationConnectionGrant {
   bytes statement_bytes = 1;
-  bytes host_public_key = 2;
-  bytes signature = 3;
+  bytes node_signature = 2;
+  StationNodeAuthorization node_authorization = 3;
 }
 
 message StationConnectionEnvelope {
@@ -88,8 +104,7 @@ message StationConnectionEnvelope {
 
 message IssueStationConnectionMaterialRequest {
   string route_id = 1;
-  bytes inner_tls_spki_sha256 = 2;
-  bytes capabilities_digest = 3;
+  reserved 2, 3;
   uint32 route_lifetime_seconds = 4;
   uint32 grant_lifetime_seconds = 5;
   uint32 max_uses = 6;
@@ -107,6 +122,7 @@ message AccessEndpointResponse {
   bytes endpoint_public_key = 3;
   bytes endpoint_signature = 4;
   repeated StationRouteAttestation station_routes = 5;
+  StationNodeAuthorization node_authorization = 6;
 }
 
 message PublishStationRouteRequest {

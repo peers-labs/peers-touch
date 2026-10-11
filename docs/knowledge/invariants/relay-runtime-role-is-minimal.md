@@ -32,9 +32,9 @@ business subservers, and every native plugin except the Relay plugin. New
 plugins are denied until the role allowlist is deliberately updated.
 
 Relay deployment MUST fail when its public origin, reviewed outer TLS boundary,
-signing key, operator policy, or quotas are missing. An external TLS terminator
+persistent Relay Host identity, operator policy, or quotas are missing. An external TLS terminator
 may proxy only to an explicit loopback listener in the same network namespace.
-Relay operator routes MUST use a signing key, issuer, audience, and scope that
+Relay operator routes MUST use a key, issuer, audience, and scope that
 are independent from Station application JWTs.
 
 Relay service hosts MUST use the reviewed Linux/POSIX runtime contract.

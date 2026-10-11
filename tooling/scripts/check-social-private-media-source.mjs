@@ -24,17 +24,11 @@ export const REQUIRED_GO_TESTS = Object.freeze([
   'TestFederatedPrivateObjectRecipientRejectsRevokedEndpointBeforeMint',
   'TestFederatedPrivateObjectDenialsReturnCanonicalNotFound',
   'TestFederatedPrivateObjectRecipientProxyPartitionsAndValidatesHeaders',
-  'TestProtocolTunnelFrameRoundTrip',
-  'TestOpaqueTunnelChainWithNetPipe',
-  'TestTunnelAdmissionEnforcesAndReleasesAllDimensions',
-  'TestTunnelRateLimiterResetsOnlyAtWindowBoundary',
-  'TestStreamEntryRateLimiterAggregatesConcurrentTunnels',
-  'TestStreamTunnelMultiplexesAndReleasesCancellation',
-  'TestStreamTunnelRejectsOversizeSequenceAndQueueGrowth',
-  'TestStreamTunnelDrainsBufferedDataBeforeTerminalState',
-  'TestInboundTunnelDrainsBufferedDataBeforeTerminalState',
-  'TestRelayTunnelURLRequiresProtectedOrLoopbackTransport',
-  'TestPeerTunnelRejectsRedirect',
+  'TestAdmissionFailsClosedAndConsumesPrivatePermit',
+  'TestAdmissionRenewalPreservesRouteAndRevocationFailsClosed',
+  'TestSecureHTTPDirectAndCircuitUseCanonicalHertzRouter',
+  'TestSecureHTTPRejectsWrongRouteSPKIBeforeRequestBody',
+  'TestSecureHTTPIngressCloseDoesNotCloseBorrowedHost',
 ]);
 
 export const REQUIRED_RUST_TESTS = Object.freeze([
@@ -52,7 +46,8 @@ export const REQUIRED_VITEST_TESTS = Object.freeze([
 const GO_PACKAGES = Object.freeze([
   './frame/core/auth/federation/...',
   './frame/core/federation/...',
-  './frame/core/plugin/native/subserver/relay-client/...',
+  './frame/core/plugin/native/relay/...',
+  './frame/core/plugin/server/hertz/...',
   './frame/core/plugin/native/subserver/relay/...',
   './app/subserver/social/...',
 ]);

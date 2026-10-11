@@ -15,27 +15,29 @@ import (
 
 // ---- Persistent Object models (GORM) ----
 
-type mountPO struct {
-	ID             uint64 `gorm:"primaryKey;autoIncrement:false"`
-	StationPeerID  string `gorm:"size:255;uniqueIndex;uniqueIndex:idx_relay_mount_station_generation,priority:1"`
-	HostPublicKey  []byte
-	Label          string             `gorm:"size:255"`
-	Status         domain.MountStatus `gorm:"index"`
-	Generation     uint64             `gorm:"not null;default:1;uniqueIndex:idx_relay_mount_station_generation,priority:2"`
-	CredentialJTI  string             `gorm:"size:128;index"`
-	MaxClients     int32
-	BandwidthLimit int64
-	InviteID       uint64    `gorm:"index"`
-	LastHeartbeat  time.Time `gorm:"index"`
-	MountedAt      time.Time
-	RevokedAt      *time.Time `gorm:"index"`
-	CreatedAt      time.Time  `gorm:"autoCreateTime"`
-	UpdatedAt      time.Time  `gorm:"autoUpdateTime"`
+type enrollmentPO struct {
+	ID                     uint64 `gorm:"primaryKey;autoIncrement:false"`
+	StationPeerID          string `gorm:"size:255;uniqueIndex;uniqueIndex:idx_relay_enrollment_station_generation,priority:1"`
+	NodePeerID             string `gorm:"size:255;uniqueIndex"`
+	StationRootPublicKey   []byte
+	NodeAuthorizationEpoch uint64
+	NodeAuthorizationUntil time.Time               `gorm:"index"`
+	Label                  string                  `gorm:"size:255"`
+	Status                 domain.EnrollmentStatus `gorm:"index"`
+	Generation             uint64                  `gorm:"not null;default:1;uniqueIndex:idx_relay_enrollment_station_generation,priority:2"`
+	CredentialJTI          string                  `gorm:"size:128;index"`
+	MaxClients             int32
+	BandwidthLimit         int64
+	InviteID               uint64 `gorm:"index"`
+	EnrolledAt             time.Time
+	RevokedAt              *time.Time `gorm:"index"`
+	CreatedAt              time.Time  `gorm:"autoCreateTime"`
+	UpdatedAt              time.Time  `gorm:"autoUpdateTime"`
 }
 
-func (*mountPO) TableName() string { return "relay_mount" }
+func (*enrollmentPO) TableName() string { return "relay_enrollment" }
 
-func (m *mountPO) BeforeCreate(_ *gorm.DB) error {
+func (m *enrollmentPO) BeforeCreate(_ *gorm.DB) error {
 	if m.ID == 0 {
 		m.ID = id.NextID()
 	}
@@ -68,43 +70,47 @@ func (i *invitePO) BeforeCreate(_ *gorm.DB) error {
 
 // ---- domain ↔ PO converters ----
 
-func toDomainMount(po mountPO) domain.Mount {
-	return domain.Mount{
-		ID:             po.ID,
-		StationPeerID:  po.StationPeerID,
-		HostPublicKey:  append([]byte(nil), po.HostPublicKey...),
-		Label:          po.Label,
-		Status:         po.Status,
-		Generation:     po.Generation,
-		CredentialJTI:  po.CredentialJTI,
-		MaxClients:     po.MaxClients,
-		BandwidthLimit: po.BandwidthLimit,
-		InviteID:       po.InviteID,
-		LastHeartbeat:  po.LastHeartbeat,
-		MountedAt:      po.MountedAt,
-		RevokedAt:      po.RevokedAt,
-		CreatedAt:      po.CreatedAt,
-		UpdatedAt:      po.UpdatedAt,
+func toDomainEnrollment(po enrollmentPO) domain.Enrollment {
+	return domain.Enrollment{
+		ID:                     po.ID,
+		StationPeerID:          po.StationPeerID,
+		NodePeerID:             po.NodePeerID,
+		StationRootPublicKey:   append([]byte(nil), po.StationRootPublicKey...),
+		NodeAuthorizationEpoch: po.NodeAuthorizationEpoch,
+		NodeAuthorizationUntil: po.NodeAuthorizationUntil,
+		Label:                  po.Label,
+		Status:                 po.Status,
+		Generation:             po.Generation,
+		CredentialJTI:          po.CredentialJTI,
+		MaxClients:             po.MaxClients,
+		BandwidthLimit:         po.BandwidthLimit,
+		InviteID:               po.InviteID,
+		EnrolledAt:             po.EnrolledAt,
+		RevokedAt:              po.RevokedAt,
+		CreatedAt:              po.CreatedAt,
+		UpdatedAt:              po.UpdatedAt,
 	}
 }
 
-func toMountPO(m *domain.Mount) mountPO {
-	return mountPO{
-		ID:             m.ID,
-		StationPeerID:  m.StationPeerID,
-		HostPublicKey:  append([]byte(nil), m.HostPublicKey...),
-		Label:          m.Label,
-		Status:         m.Status,
-		Generation:     m.Generation,
-		CredentialJTI:  m.CredentialJTI,
-		MaxClients:     m.MaxClients,
-		BandwidthLimit: m.BandwidthLimit,
-		InviteID:       m.InviteID,
-		LastHeartbeat:  m.LastHeartbeat,
-		MountedAt:      m.MountedAt,
-		RevokedAt:      m.RevokedAt,
-		CreatedAt:      m.CreatedAt,
-		UpdatedAt:      m.UpdatedAt,
+func toEnrollmentPO(m *domain.Enrollment) enrollmentPO {
+	return enrollmentPO{
+		ID:                     m.ID,
+		StationPeerID:          m.StationPeerID,
+		NodePeerID:             m.NodePeerID,
+		StationRootPublicKey:   append([]byte(nil), m.StationRootPublicKey...),
+		NodeAuthorizationEpoch: m.NodeAuthorizationEpoch,
+		NodeAuthorizationUntil: m.NodeAuthorizationUntil,
+		Label:                  m.Label,
+		Status:                 m.Status,
+		Generation:             m.Generation,
+		CredentialJTI:          m.CredentialJTI,
+		MaxClients:             m.MaxClients,
+		BandwidthLimit:         m.BandwidthLimit,
+		InviteID:               m.InviteID,
+		EnrolledAt:             m.EnrolledAt,
+		RevokedAt:              m.RevokedAt,
+		CreatedAt:              m.CreatedAt,
+		UpdatedAt:              m.UpdatedAt,
 	}
 }
 
@@ -186,25 +192,26 @@ func (r *GormRepo) AutoMigrate() error {
 				}
 			}
 		}
-		if err := tx.AutoMigrate(&mountPO{}, &invitePO{}); err != nil {
+		if err := tx.AutoMigrate(&enrollmentPO{}, &invitePO{}); err != nil {
 			return err
 		}
 
 		now := time.Now().UTC()
-		result := tx.Model(&mountPO{}).
+		result := tx.Model(&enrollmentPO{}).
 			Where(
-				"status <> ? AND (generation = 0 OR credential_jti = ? OR host_public_key IS NULL OR length(host_public_key) = 0)",
-				domain.MountStatusRevoked,
+				"status <> ? AND (generation = 0 OR credential_jti = ? OR node_peer_id = ? OR station_root_public_key IS NULL OR length(station_root_public_key) = 0 OR node_authorization_epoch = 0)",
+				domain.EnrollmentStatusRevoked,
+				"",
 				"",
 			).
 			Updates(map[string]interface{}{
 				"generation":     gorm.Expr("CASE WHEN generation = 0 THEN 1 ELSE generation + 1 END"),
 				"credential_jti": "",
-				"status":         domain.MountStatusRevoked,
+				"status":         domain.EnrollmentStatusRevoked,
 				"revoked_at":     &now,
 			})
 		if result.Error != nil {
-			return fmt.Errorf("invalidate legacy relay mounts: %w", result.Error)
+			return fmt.Errorf("invalidate legacy relay enrollments: %w", result.Error)
 		}
 		return nil
 	})
@@ -234,17 +241,17 @@ func (r *GormRepo) GetInviteBySecretDigest(ctx context.Context, secretDigest str
 	return &out, nil
 }
 
-func (r *GormRepo) ConsumeInviteAndActivateMount(
+func (r *GormRepo) ConsumeInviteAndCreateEnrollment(
 	ctx context.Context,
 	inviteID uint64,
-	mount *domain.Mount,
+	enrollment *domain.Enrollment,
 	maxStations int,
-) (*domain.Mount, error) {
+) (*domain.Enrollment, error) {
 	r.enrollmentMu.Lock()
 	defer r.enrollmentMu.Unlock()
 
 	now := time.Now().UTC()
-	var activated domain.Mount
+	var activated domain.Enrollment
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&invitePO{}).
 			Where(
@@ -255,7 +262,7 @@ func (r *GormRepo) ConsumeInviteAndActivateMount(
 			).
 			Updates(map[string]interface{}{
 				"status":      domain.InviteStatusConsumed,
-				"consumed_by": mount.StationPeerID,
+				"consumed_by": enrollment.StationPeerID,
 				"consumed_at": &now,
 			})
 		if result.Error != nil {
@@ -265,9 +272,9 @@ func (r *GormRepo) ConsumeInviteAndActivateMount(
 			return fmt.Errorf("%w: invite_id=%d", domain.ErrInviteAlreadyConsumed, inviteID)
 		}
 
-		var current mountPO
+		var current enrollmentPO
 		getErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("station_peer_id = ?", mount.StationPeerID).
+			Where("station_peer_id = ?", enrollment.StationPeerID).
 			First(&current).Error
 		if getErr != nil && !errorsIsRecordNotFound(getErr) {
 			return getErr
@@ -275,8 +282,8 @@ func (r *GormRepo) ConsumeInviteAndActivateMount(
 
 		if errorsIsRecordNotFound(getErr) && maxStations > 0 {
 			var count int64
-			if err := tx.Model(&mountPO{}).
-				Where("status <> ?", domain.MountStatusRevoked).
+			if err := tx.Model(&enrollmentPO{}).
+				Where("status <> ?", domain.EnrollmentStatusRevoked).
 				Count(&count).Error; err != nil {
 				return err
 			}
@@ -285,10 +292,9 @@ func (r *GormRepo) ConsumeInviteAndActivateMount(
 			}
 		}
 
-		next := toMountPO(mount)
-		next.Status = domain.MountStatusOffline
-		next.LastHeartbeat = now
-		next.MountedAt = now
+		next := toEnrollmentPO(enrollment)
+		next.Status = domain.EnrollmentStatusOffline
+		next.EnrolledAt = now
 		next.RevokedAt = nil
 		if errorsIsRecordNotFound(getErr) {
 			next.Generation = 1
@@ -303,7 +309,7 @@ func (r *GormRepo) ConsumeInviteAndActivateMount(
 				return err
 			}
 		}
-		activated = toDomainMount(next)
+		activated = toDomainEnrollment(next)
 		return nil
 	})
 	if err != nil {
@@ -337,155 +343,135 @@ func (r *GormRepo) ExpireStaleInvites(ctx context.Context) (int64, error) {
 	return result.RowsAffected, result.Error
 }
 
-// ---- Mount ----
+// ---- Enrollment ----
 
-func (r *GormRepo) GetMountByStationPeerID(ctx context.Context, stationPeerID string) (*domain.Mount, error) {
-	var po mountPO
+func (r *GormRepo) GetEnrollmentByStationPeerID(ctx context.Context, stationPeerID string) (*domain.Enrollment, error) {
+	var po enrollmentPO
 	if err := r.db.WithContext(ctx).Where("station_peer_id = ?", stationPeerID).First(&po).Error; err != nil {
 		return nil, err
 	}
-	out := toDomainMount(po)
+	out := toDomainEnrollment(po)
 	return &out, nil
 }
 
-func (r *GormRepo) ActivateMount(
-	ctx context.Context,
-	identity domain.MountIdentity,
-) error {
-	result := r.db.WithContext(ctx).Model(&mountPO{}).
-		Where(
-			"id = ? AND station_peer_id = ? AND generation = ? AND credential_jti = ? AND status <> ?",
-			identity.MountID,
-			identity.StationPeerID,
-			identity.Generation,
-			identity.JTI,
-			domain.MountStatusRevoked,
-		).
-		Update("status", domain.MountStatusOnline)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return domain.ErrMountCredentialStale
-	}
-	return nil
-}
-
-func (r *GormRepo) UpdateMountStatus(
+func (r *GormRepo) UpdateEnrollmentStatus(
 	ctx context.Context,
 	stationPeerID string,
 	generation uint64,
-	status domain.MountStatus,
+	status domain.EnrollmentStatus,
 ) error {
-	result := r.db.WithContext(ctx).Model(&mountPO{}).
+	result := r.db.WithContext(ctx).Model(&enrollmentPO{}).
 		Where(
 			"station_peer_id = ? AND generation = ? AND status <> ?",
 			stationPeerID,
 			generation,
-			domain.MountStatusRevoked,
+			domain.EnrollmentStatusRevoked,
 		).
 		Update("status", status)
 	if result.Error != nil {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return domain.ErrMountCredentialStale
+		return domain.ErrNodeCredentialStale
 	}
 	return nil
 }
 
-func (r *GormRepo) UpdateHeartbeat(
+func (r *GormRepo) RotateNodeCredential(
 	ctx context.Context,
-	stationPeerID string,
-	generation uint64,
-	credentialJTI string,
-) error {
-	result := r.db.WithContext(ctx).Model(&mountPO{}).
-		Where(
-			"station_peer_id = ? AND generation = ? AND credential_jti = ? AND status <> ?",
-			stationPeerID,
-			generation,
-			credentialJTI,
-			domain.MountStatusRevoked,
-		).
-		Update("last_heartbeat", time.Now().UTC())
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return domain.ErrMountCredentialStale
-	}
-	return nil
-}
-
-func (r *GormRepo) RotateMountCredential(
-	ctx context.Context,
-	current domain.MountIdentity,
+	current domain.NodeIdentity,
 	nextCredentialJTI string,
-) (*domain.Mount, error) {
+) (*domain.Enrollment, error) {
 	r.enrollmentMu.Lock()
 	defer r.enrollmentMu.Unlock()
 
-	result := r.db.WithContext(ctx).Model(&mountPO{}).
+	result := r.db.WithContext(ctx).Model(&enrollmentPO{}).
 		Where(
 			"id = ? AND station_peer_id = ? AND generation = ? AND credential_jti = ? AND status <> ?",
-			current.MountID,
+			current.EnrollmentID,
 			current.StationPeerID,
 			current.Generation,
 			current.JTI,
-			domain.MountStatusRevoked,
+			domain.EnrollmentStatusRevoked,
 		).
 		Updates(map[string]interface{}{
-			"generation":     current.Generation + 1,
 			"credential_jti": nextCredentialJTI,
 		})
 	if result.Error != nil {
 		return nil, result.Error
 	}
 	if result.RowsAffected == 0 {
-		return nil, domain.ErrMountCredentialStale
+		return nil, domain.ErrNodeCredentialStale
 	}
-	return r.GetMountByStationPeerID(ctx, current.StationPeerID)
+	return r.GetEnrollmentByStationPeerID(ctx, current.StationPeerID)
 }
 
-func (r *GormRepo) RevokeMount(
+func (r *GormRepo) UpdateNodeAuthorization(
+	ctx context.Context,
+	current domain.NodeIdentity,
+	nodeAuthorizationEpoch uint64,
+	nodeAuthorizationUntil time.Time,
+) error {
+	result := r.db.WithContext(ctx).Model(&enrollmentPO{}).
+		Where(
+			"id = ? AND station_peer_id = ? AND generation = ? AND credential_jti = ? AND status <> ?",
+			current.EnrollmentID,
+			current.StationPeerID,
+			current.Generation,
+			current.JTI,
+			domain.EnrollmentStatusRevoked,
+		).
+		Updates(map[string]interface{}{
+			"node_authorization_epoch": nodeAuthorizationEpoch,
+			"node_authorization_until": nodeAuthorizationUntil.UTC(),
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domain.ErrNodeCredentialStale
+	}
+	return nil
+}
+
+func (r *GormRepo) RevokeEnrollment(
 	ctx context.Context,
 	stationPeerID string,
-) (*domain.Mount, error) {
+) (*domain.Enrollment, error) {
 	r.enrollmentMu.Lock()
 	defer r.enrollmentMu.Unlock()
 
-	var revoked domain.Mount
+	var revoked domain.Enrollment
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var current mountPO
+		var current enrollmentPO
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("station_peer_id = ?", stationPeerID).
 			First(&current).Error; err != nil {
 			if errorsIsRecordNotFound(err) {
-				return domain.ErrMountNotFound
+				return domain.ErrEnrollmentNotFound
 			}
 			return err
 		}
 		now := time.Now().UTC()
-		result := tx.Model(&mountPO{}).
+		result := tx.Model(&enrollmentPO{}).
 			Where("id = ? AND generation = ?", current.ID, current.Generation).
 			Updates(map[string]interface{}{
 				"generation":     current.Generation + 1,
 				"credential_jti": "",
-				"status":         domain.MountStatusRevoked,
+				"status":         domain.EnrollmentStatusRevoked,
 				"revoked_at":     &now,
 			})
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected == 0 {
-			return domain.ErrMountCredentialStale
+			return domain.ErrNodeCredentialStale
 		}
 		current.Generation++
 		current.CredentialJTI = ""
-		current.Status = domain.MountStatusRevoked
+		current.Status = domain.EnrollmentStatusRevoked
 		current.RevokedAt = &now
-		revoked = toDomainMount(current)
+		revoked = toDomainEnrollment(current)
 		return nil
 	})
 	if err != nil {
@@ -494,32 +480,42 @@ func (r *GormRepo) RevokeMount(
 	return &revoked, nil
 }
 
-func (r *GormRepo) ListOnlineMounts(ctx context.Context) ([]domain.Mount, error) {
-	var pos []mountPO
-	if err := r.db.WithContext(ctx).Where("status = ?", domain.MountStatusOnline).Find(&pos).Error; err != nil {
+func (r *GormRepo) ListOnlineEnrollments(ctx context.Context) ([]domain.Enrollment, error) {
+	var pos []enrollmentPO
+	if err := r.db.WithContext(ctx).Where("status = ?", domain.EnrollmentStatusOnline).Find(&pos).Error; err != nil {
 		return nil, err
 	}
-	out := make([]domain.Mount, 0, len(pos))
+	out := make([]domain.Enrollment, 0, len(pos))
 	for _, po := range pos {
-		out = append(out, toDomainMount(po))
+		out = append(out, toDomainEnrollment(po))
 	}
 	return out, nil
 }
 
-func (r *GormRepo) CountOnlineMounts(ctx context.Context) (int64, error) {
-	var count int64
-	err := r.db.WithContext(ctx).Model(&mountPO{}).
-		Where("status = ?", domain.MountStatusOnline).
-		Count(&count).Error
-	return count, err
+func (r *GormRepo) ListAdmittedEnrollments(ctx context.Context) ([]domain.Enrollment, error) {
+	var pos []enrollmentPO
+	if err := r.db.WithContext(ctx).
+		Where(
+			"status <> ? AND node_authorization_until > ?",
+			domain.EnrollmentStatusRevoked,
+			time.Now().UTC(),
+		).
+		Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.Enrollment, 0, len(pos))
+	for _, po := range pos {
+		out = append(out, toDomainEnrollment(po))
+	}
+	return out, nil
 }
 
-func (r *GormRepo) MarkStaleOffline(ctx context.Context, timeout time.Duration) (int64, error) {
-	cutoff := time.Now().UTC().Add(-timeout)
-	result := r.db.WithContext(ctx).Model(&mountPO{}).
-		Where("status = ? AND last_heartbeat < ?", domain.MountStatusOnline, cutoff).
-		Update("status", domain.MountStatusOffline)
-	return result.RowsAffected, result.Error
+func (r *GormRepo) CountOnlineEnrollments(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&enrollmentPO{}).
+		Where("status = ?", domain.EnrollmentStatusOnline).
+		Count(&count).Error
+	return count, err
 }
 
 func errorsIsRecordNotFound(err error) bool {

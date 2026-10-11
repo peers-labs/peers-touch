@@ -27,7 +27,6 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _CONTAINER_PATH = re.compile(r"^/[A-Za-z0-9._/-]+$")
 _RELAY_SECRET_PATHS = (
     "/app/relay-secrets/relay-operator.key",
-    "/app/relay-secrets/relay-signing.key",
     "/app/relay-secrets/relay-tls.key",
 )
 _RELAY_PUBLIC_PATHS = (
@@ -104,7 +103,7 @@ class PosixServiceRuntimeConfig:
     runtime_path: str
     http_port: int
     public_port: int
-    stream_port: int | None
+    libp2p_port: int | None
     public_base_url: str
     compose_project: str
     compose_service: str
@@ -182,9 +181,9 @@ class PosixServiceRuntimeConfig:
                 f"{environment_name} public URL has an invalid port"
             ) from error
 
-        stream_port = _port(
+        libp2p_port = _port(
             values,
-            "PT_DEPLOY_STREAM_PORT",
+            "PT_DEPLOY_LIBP2P_PORT",
             source,
             required=role == "relay",
         )
@@ -193,9 +192,9 @@ class PosixServiceRuntimeConfig:
         tls_ca_path = ""
         operator_key_path = ""
         if role == "relay":
-            if public_port in {http_port, stream_port}:
+            if public_port in {http_port, libp2p_port}:
                 raise ProvisioningError(
-                    "Relay public, control, and stream ports must be distinct"
+                    "Relay public, control, and libp2p ports must be distinct"
                 )
             tls_ca_path = _container_path(
                 _required(values, "PT_DEPLOY_TLS_CA_PATH", source),
@@ -238,7 +237,7 @@ class PosixServiceRuntimeConfig:
             runtime_path=runtime_path,
             http_port=http_port,
             public_port=public_port,
-            stream_port=stream_port,
+            libp2p_port=libp2p_port,
             public_base_url=public_base_url,
             compose_project=compose_project,
             compose_service=compose_service,
@@ -265,7 +264,7 @@ class PosixServiceRuntimeConfig:
             "deployPath": self.deploy_path,
             "httpPort": self.http_port,
             "publicPort": self.public_port,
-            "streamPort": self.stream_port,
+            "libp2pPort": self.libp2p_port,
             "composeProject": self.compose_project,
             "composeService": self.compose_service,
             "dataVolume": self.data_volume,
@@ -357,7 +356,7 @@ def inspect_posix_runtime(
             "dataOwner": cfg["dataVolume"],
             "httpPort": cfg["httpPort"],
             "publicPort": cfg["publicPort"],
-            "streamPort": cfg["streamPort"],
+            "libp2pPort": cfg["libp2pPort"],
         }
         print(json.dumps(payload, sort_keys=True))
         """

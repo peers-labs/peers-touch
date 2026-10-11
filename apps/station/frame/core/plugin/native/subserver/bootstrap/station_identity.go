@@ -5,109 +5,77 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"sort"
 	"strings"
 	"time"
 
-	"github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/peer"
 	cfg "github.com/peers-labs/peers-touch/station/frame/core/config"
 	peerpb "github.com/peers-labs/peers-touch/station/frame/touch/model/peer"
-	"google.golang.org/protobuf/proto"
 )
 
-const (
-	stationIdentityChallengeSize = 32
-	stationIdentityLifetime      = time.Minute
-	stationIdentityDomain        = "peers-touch/station-identity/v1\x00"
-)
-
-var stationIdentityCapabilities = []string{
+var stationNodeCapabilities = []string{
 	"access-gate",
 	"actor-ptid",
+	"endpoint-discovery",
 	"station-identity",
+	"station-route",
 }
 
 func (s *SubServer) stationIdentity(
 	_ context.Context,
 	req *peerpb.StationIdentityRequest,
 ) (*peerpb.StationIdentityResponse, error) {
+	return s.SignStationIdentityResponse(req.GetChallenge())
+}
+
+func (s *SubServer) SignStationIdentityResponse(
+	challenge []byte,
+) (*peerpb.StationIdentityResponse, error) {
 	if s.host == nil {
-		return nil, fmt.Errorf("station identity host is not ready")
+		return nil, fmt.Errorf("Station node host is not ready")
 	}
-	privateKey := s.host.Peerstore().PrivKey(s.host.ID())
-	if privateKey == nil {
-		return nil, fmt.Errorf("station identity host private key is unavailable")
+	now := time.Now().UTC()
+	authorization, err := s.currentNodeAuthorization(now)
+	if err != nil {
+		return nil, err
 	}
-	return signStationIdentity(
-		privateKey,
-		s.host.ID(),
+	return peerpb.SignStationIdentityResponse(
+		s.host.Peerstore().PrivKey(s.host.ID()),
+		authorization,
 		canonicalStationOrigin(),
-		req.GetChallenge(),
-		time.Now().UTC(),
+		challenge,
+		stationNodeCapabilities,
+		now,
 	)
 }
 
-func signStationIdentity(
-	privateKey crypto.PrivKey,
-	stationPeerID peer.ID,
-	canonicalOrigin string,
-	challenge []byte,
+func (s *SubServer) currentNodeAuthorization(
 	now time.Time,
-) (*peerpb.StationIdentityResponse, error) {
-	if len(challenge) != stationIdentityChallengeSize {
-		return nil, fmt.Errorf(
-			"station identity challenge must contain exactly %d bytes",
-			stationIdentityChallengeSize,
-		)
-	}
-	if privateKey.Type() != crypto.Ed25519 {
-		return nil, fmt.Errorf("station identity host key must be Ed25519")
-	}
-	if stationPeerID == "" {
-		return nil, fmt.Errorf("station identity peer ID is unavailable")
-	}
-	if canonicalOrigin == "" {
-		return nil, fmt.Errorf("station identity canonical origin is unavailable")
-	}
+) (*peerpb.StationNodeAuthorization, error) {
+	s.nodeAuthorizationLock.Lock()
+	defer s.nodeAuthorizationLock.Unlock()
 
-	derivedPeerID, err := peer.IDFromPrivateKey(privateKey)
+	if current := s.nodeAuthorization; current != nil {
+		verified, err := peerpb.VerifyStationNodeAuthorization(current, now)
+		if err == nil &&
+			verified.Statement.GetExpiresAtUnixMs() >
+				now.Add(peerpb.MaxRouteAttestationLifetime).UnixMilli() {
+			return current, nil
+		}
+	}
+	if s.opts.StationRootKey == nil || s.host == nil {
+		return nil, fmt.Errorf("Station identity keys are unavailable")
+	}
+	authorization, err := peerpb.SignDefaultStationNodeAuthorization(
+		s.opts.StationRootKey,
+		s.host.Peerstore().PubKey(s.host.ID()),
+		stationNodeCapabilities,
+		now,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("derive station identity peer ID: %w", err)
+		return nil, fmt.Errorf("authorize Station node: %w", err)
 	}
-	if derivedPeerID != stationPeerID {
-		return nil, fmt.Errorf("station identity host key does not match peer ID")
-	}
-
-	capabilities := append([]string(nil), stationIdentityCapabilities...)
-	sort.Strings(capabilities)
-	statement := &peerpb.StationIdentityStatement{
-		Challenge:       append([]byte(nil), challenge...),
-		StationPeerId:   stationPeerID.String(),
-		CanonicalOrigin: canonicalOrigin,
-		Capabilities:    capabilities,
-		IssuedAtUnixMs:  now.UnixMilli(),
-		ExpiresAtUnixMs: now.Add(stationIdentityLifetime).UnixMilli(),
-	}
-	statementBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(statement)
-	if err != nil {
-		return nil, fmt.Errorf("marshal station identity statement: %w", err)
-	}
-	signatureInput := append([]byte(stationIdentityDomain), statementBytes...)
-	signature, err := privateKey.Sign(signatureInput)
-	if err != nil {
-		return nil, fmt.Errorf("sign station identity statement: %w", err)
-	}
-	publicKey, err := crypto.MarshalPublicKey(privateKey.GetPublic())
-	if err != nil {
-		return nil, fmt.Errorf("marshal station identity public key: %w", err)
-	}
-
-	return &peerpb.StationIdentityResponse{
-		StatementBytes: statementBytes,
-		HostPublicKey:  publicKey,
-		Signature:      signature,
-	}, nil
+	s.nodeAuthorization = authorization
+	return authorization, nil
 }
 
 func canonicalStationOrigin() string {

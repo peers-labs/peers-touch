@@ -1475,17 +1475,10 @@ export async function messagingDeactivate(
   return invoke<MessagingRuntimeStatus>('messaging_deactivate', { input });
 }
 
-export interface VerifyStationIdentityProofInput {
-  requestedOrigin: string;
-  challenge: number[];
-  statementBytes: number[];
-  hostPublicKey: number[];
-  signature: number[];
-  requiredCapabilities: string[];
-}
-
 export interface VerifiedStationIdentity {
   stationPeerId: string;
+  nodePeerId: string;
+  authorizationEpoch: number;
   canonicalOrigin: string;
   capabilities: string[];
   verifiedAt: number;
@@ -1493,24 +1486,22 @@ export interface VerifiedStationIdentity {
   routeType?: StationRouteType;
 }
 
-export async function verifyStationIdentityProof(
-  input: VerifyStationIdentityProofInput,
-): Promise<VerifiedStationIdentity> {
-  return invoke<VerifiedStationIdentity>('station_identity_verify', { input });
-}
-
 export type StationRouteType = 'direct' | 'relay';
 
 export interface NativeStationRouteCandidate {
   stationPeerId: string;
-  stationHostPublicKey: number[];
+  nodePeerId: string;
+  stationRootPublicKey: number[];
+  nodeAuthorizationDigest: number[];
+  authorizationEpoch: number;
   routeId: string;
   routeType: StationRouteType;
-  transport: 'direct_https' | 'relay_wss_v1';
+  transport: 'direct_https' | 'libp2p_http_v1';
   endpointOrigin: string;
   relayPeerId?: string;
   routeGeneration: number;
   innerTlsSpkiSha256?: number[];
+  addresses: string[];
   attestationBytes?: number[];
   attestationExpiresAtUnixMs?: number;
   sourceRef: string;

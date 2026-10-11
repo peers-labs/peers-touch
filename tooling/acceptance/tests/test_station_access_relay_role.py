@@ -18,10 +18,8 @@ from tooling.acceptance.provisioners import (
 )
 from tooling.acceptance.provisioners.station_access_relay_role import (
     DESKTOP_RELAY_NATIVE_GATE_ID,
-    DISCOVERY_REQUEST_TIMEOUT_SECONDS,
-    ENROLLMENT_REQUEST_TIMEOUT_SECONDS,
-    OPAQUE_TUNNEL_REQUEST_TIMEOUT_SECONDS,
-    _relay_route_endpoint,
+    NODE_CONNECTIVITY_NATIVE_GATE_ID,
+    _relay_discovery_endpoint,
     _service_source_compatibility,
     _validate_runtime_status,
 )
@@ -42,7 +40,7 @@ def _config(role: str) -> SimpleNamespace:
         known_hosts_file="",
         http_port=http_port,
         public_port=18080 if role == "station" else 18081,
-        stream_port=4501 if role == "relay" else None,
+        libp2p_port=4001 if role == "relay" else None,
         data_volume=f"pt-{role}_peers_data",
     )
 
@@ -66,7 +64,7 @@ def _status(role: str, process_id: int) -> dict[str, object]:
         "dataOwner": f"pt-{role}_peers_data",
         "httpPort": 18080 if role == "station" else 18082,
         "publicPort": 18080 if role == "station" else 18081,
-        "streamPort": 4501 if role == "relay" else None,
+        "libp2pPort": 4001 if role == "relay" else None,
     }
 
 
@@ -288,7 +286,7 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         )
         self.assertEqual(
             persist_station_route.call_args.kwargs[
-                "relay_transport_endpoint"
+                "relay_discovery_endpoint"
             ],
             "https://relay.example:18081",
         )
@@ -297,7 +295,150 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             (18101, 18102, 18103),
         )
         self.assertTrue(manifest.cleanup_registered)
-        self.assertEqual(manifest.cleanup_resources, ("storage",))
+        self.assertEqual(
+            manifest.cleanup_resources,
+            ("processes", "ports", "storage", "sessions"),
+        )
+        self.assertEqual(len(provisioner.cleanup()), 1)
+
+    def test_ncp_native_gate_allocates_two_relay_bound_existing_actors(
+        self,
+    ) -> None:
+        provisioner = StationAccessRelayRoleProvisioner(self.contract)
+        profile = {
+            "PT_STATION_MODE": "remote",
+            "PT_STATION_URL": "http://station.example",
+            "PT_STATION_HEALTH_URL": "http://station.example/healthz",
+            "PT_STATION_DEPLOY_ENV": "station-1",
+            "PT_RELAY_MODE": "remote",
+            "PT_RELAY_URL": "https://relay.example:18081",
+            "PT_RELAY_HEALTH_URL": "https://relay.example:18081/healthz",
+            "PT_RELAY_DEPLOY_ENV": "relay-1",
+        }
+        actor_ref = {
+            "artifactKind": "acceptance-artifact-ref",
+            "workspaceId": "1" * 16,
+            "gateId": NODE_CONNECTIVITY_NATIVE_GATE_ID,
+            "runId": "20261006T100000000000Z-" + "2" * 32,
+            "path": "runtime/actor-manifest.json",
+            "sha256": "3" * 64,
+            "mediaType": "application/json",
+        }
+        with (
+            patch.object(provisioner, "_git_commit", return_value=COMMIT),
+            patch.object(
+                provisioner,
+                "_git_workspace_digest",
+                return_value="clean",
+            ),
+            patch.object(
+                provisioner,
+                "_resolve_active_profile",
+                return_value=("one", Path("/profile"), 0, profile),
+            ),
+            patch.object(provisioner, "_station_ready", return_value=True),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "PosixServiceRuntimeConfig.load",
+                side_effect=(_config("station"), _config("relay")),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "resolve_remote_source_identity",
+                return_value=(COMMIT, "clean", PROTO_DIGEST),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "source_proto_digest",
+                return_value=PROTO_DIGEST,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "inspect_posix_runtime",
+                side_effect=(_status("station", 101), _status("relay", 202)),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "audit_posix_relay_security",
+                return_value={"rootAclProtected": True},
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "resolve_posix_relay_trust_anchor",
+                return_value=(b"certificate", "sha256:" + "d" * 64),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "produce_station_attestation",
+                return_value=_attestation("station", "station"),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "_persist_relay_attestation",
+                return_value=_attestation("relay", "relay"),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "_persist_station_route_attestation",
+                return_value=_attestation("station-via-relay", "station"),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "_available_ports",
+                return_value=(
+                    18101,
+                    18102,
+                    18103,
+                    18111,
+                    18112,
+                    18113,
+                ),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "resolve_existing_actor_identity",
+                side_effect=lambda _url, role: SimpleNamespace(role=role),
+            ) as resolve_actor,
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "persist_actor_manifest",
+                return_value=(SimpleNamespace(), Path("/actors"), actor_ref),
+            ) as persist_actors,
+        ):
+            manifest = provisioner.provision(
+                NODE_CONNECTIVITY_NATIVE_GATE_ID
+            )
+
+        self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
+        self.assertEqual(
+            tuple(client.id for client in manifest.clients),
+            ("alice", "bob"),
+        )
+        self.assertEqual(
+            {
+                client.service_bindings["station"].service_id
+                for client in manifest.clients
+            },
+            {"station-via-relay"},
+        )
+        self.assertEqual(
+            len({client.storage_root for client in manifest.clients}),
+            2,
+        )
+        self.assertEqual(
+            len({client.webdriver_port for client in manifest.clients}),
+            2,
+        )
+        self.assertEqual(manifest.actor_manifest_ref, actor_ref)
+        self.assertEqual(
+            manifest.credential_refs,
+            ("fixture:apps/station/app/conf/actor.yml#preset_users",),
+        )
+        self.assertEqual(resolve_actor.call_count, 2)
+        actor_manifest = persist_actors.call_args.args[0]
+        self.assertEqual(actor_manifest.initial_state, "existing")
+        self.assertFalse(actor_manifest.reset_authorized)
+        self.assertTrue(actor_manifest.target_verified)
         self.assertEqual(len(provisioner.cleanup()), 1)
 
     def test_runtime_status_accepts_linux_compose_identity(self) -> None:
@@ -401,30 +542,24 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
 
         self.assertIsNone(compatibility)
 
-    def test_relay_route_endpoint_uses_public_https_listener(self) -> None:
+    def test_relay_discovery_endpoint_uses_public_https_listener(self) -> None:
         self.assertEqual(
-            _relay_route_endpoint(
+            _relay_discovery_endpoint(
                 "https://relay.example:18081",
                 {"publicPort": 18081},
             ),
             "https://relay.example:18081",
         )
 
-    def test_relay_route_endpoint_rejects_missing_public_port(self) -> None:
+    def test_relay_discovery_endpoint_rejects_missing_public_port(self) -> None:
         with self.assertRaisesRegex(
             BlockedError,
             "no valid public HTTPS endpoint",
         ):
-            _relay_route_endpoint(
+            _relay_discovery_endpoint(
                 "https://relay.example:18081",
                 {"publicPort": None},
             )
 
-    def test_relay_capability_timeouts_cover_gate_request_budgets(self) -> None:
-        self.assertEqual(OPAQUE_TUNNEL_REQUEST_TIMEOUT_SECONDS, 180.0)
-        self.assertEqual(DISCOVERY_REQUEST_TIMEOUT_SECONDS, 180.0)
-        self.assertEqual(ENROLLMENT_REQUEST_TIMEOUT_SECONDS, 240.0)
-
 if __name__ == "__main__":
-    unittest.main()
     unittest.main()

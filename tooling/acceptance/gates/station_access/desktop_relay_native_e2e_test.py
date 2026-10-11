@@ -22,7 +22,7 @@ class DesktopRelayNativeGateTest(unittest.TestCase):
         self.assertTrue(
             is_relay_transport(
                 "http://10.36.3.187:18081",
-                "https://10.36.3.187:4501",
+                "https://10.36.3.187:18443",
             )
         )
         self.assertFalse(

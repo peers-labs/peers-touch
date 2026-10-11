@@ -27,7 +27,7 @@
 - 具体 Station handler、repository、database migration 实现。
 - 客户端如何选择 Home Station、持久化 binding 或执行 Access Gate；见
   [Station Access](../../platform/station/access/README.md)。
-- Relay enrollment、route attestation、opaque tunnel、运行角色和资源边界；见
+- Relay enrollment、route attestation、standard Circuit、运行角色和资源边界；见
   [Node Connectivity](../../platform/runtime/node-connectivity/README.md)。
 - 完整公链、token、gas、PoW/PoS 或通用区块链系统。
 
@@ -62,7 +62,7 @@ Node Connectivity 提供无业务 authority 的共享传输能力，但不属于
 9. 所有 Catalog、Resolver、Station list、Public actor list 查询必须显式带 Federation 语境。
 10. 跨 Station 身份语义必须复用 `ActorRef` / federated handle / `station_peer_id`，不得发明并行 Account 身份模型。
 11. Federation 只依赖 authenticated Station-to-Station transport，不拥有其
-    enrollment、route、credential 或 tunnel 实现。
+    enrollment、route、credential、Circuit 或 stream 实现。
 
 ---
 

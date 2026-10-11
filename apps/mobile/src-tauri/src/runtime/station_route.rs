@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::io::{self, Cursor, Read, Write};
-use std::net::{TcpListener, TcpStream, ToSocketAddrs};
-use std::sync::{Arc, LazyLock, Mutex, RwLock};
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::sync::{LazyLock, Mutex, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
@@ -15,21 +15,11 @@ use reqwest::header::{
     HeaderName, HeaderValue, CONNECTION, CONTENT_LENGTH, HOST, TRANSFER_ENCODING,
 };
 use reqwest::{Method, Url};
-use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use rustls::crypto::{verify_tls12_signature, verify_tls13_signature, CryptoProvider};
-use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-use rustls::{
-    ClientConfig, ClientConnection, DigitallySignedStruct, RootCertStore, SignatureScheme,
-    StreamOwned,
-};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use station_libp2p_http::{Route as StandardRoute, Transport as StandardTransport};
+use station_trust::{verify_node_authorization_bytes, verify_station_route_attestation_bytes};
 use tauri::State;
-use tungstenite::client::IntoClientRequest;
-use tungstenite::http::header::SEC_WEBSOCKET_PROTOCOL;
-use tungstenite::stream::MaybeTlsStream;
-use tungstenite::{client_tls_with_config, connect, Connector, Message as WsMessage, WebSocket};
-use x509_parser::parse_x509_certificate;
 
 use crate::commands::station::{
     verify_station_identity_proof, VerifiedStationIdentity as BaseVerifiedStationIdentity,
@@ -43,33 +33,21 @@ mod peer_proto {
     include!(concat!(env!("OUT_DIR"), "/peers_touch.model.peer.v1.rs"));
 }
 
-use crate::secure_content::proto::federation::v1::{
-    relay_tunnel_frame, RelayTunnelCancel, RelayTunnelCloseReason, RelayTunnelData,
-    RelayTunnelFrame, RelayTunnelOpen, RelayTunnelPurpose,
-};
 use peer_proto::{
     AccessEndpointOutcome, AccessEndpointRequest, AccessEndpointResponse, AccessEndpointRole,
     StationConnectionEnvelope, StationIdentityRequest, StationIdentityResponse,
-    StationIdentityStatement, StationRouteAttestation, StationRouteStatement,
-    StationRouteVisibility,
+    StationIdentityStatement, StationRouteAttestation,
 };
 
 const ACCESS_PATH: &str = "/.well-known/peers-touch/access";
 const IDENTITY_PATH: &str = "/sub-bootstrap/station-identity";
-const TUNNEL_PATH: &str = "/.well-known/peers-touch/tunnel";
-const TUNNEL_SUBPROTOCOL: &str = "peers-touch.tunnel.v1";
 const PROTOBUF_CONTENT_TYPE: &str = "application/protobuf";
 const ACCESS_ENDPOINT_DOMAIN: &[u8] = b"peers-touch/access-endpoint/v1\0";
-const STATION_ROUTE_DOMAIN: &[u8] = b"peers-touch/station-route/v1\0";
 const ACCESS_PROTOCOL_VERSION: u32 = 1;
-const TUNNEL_PROTOCOL_VERSION: u32 = 1;
 const CHALLENGE_SIZE: usize = 32;
 const CLOCK_SKEW_MS: i64 = 60_000;
-const MAX_ROUTE_LIFETIME_MS: i64 = 24 * 60 * 60 * 1_000;
 const MAX_DISCOVERY_RESPONSE_BYTES: usize = 64 * 1024;
-const MAX_OUTER_FRAME_BYTES: usize = 65 * 1024;
-const DEFAULT_MAX_FRAME_BYTES: usize = 64 * 1024;
-const MAX_PROXY_REQUEST_BYTES: usize = 32 * 1024 * 1024;
+const MAX_PROXY_REQUEST_BYTES: usize = 64 * 1024 * 1024;
 const ROUTE_SOURCE_KEY_PREFIX: &str = "peers-touch.mobile.station-route-source.v1.";
 
 static ROUTES: LazyLock<RouteRuntime> = LazyLock::new(RouteRuntime::default);
@@ -85,7 +63,10 @@ pub enum StationRouteType {
 #[serde(rename_all = "camelCase")]
 pub struct StationRouteCandidate {
     pub station_peer_id: String,
-    pub station_host_public_key: Vec<u8>,
+    pub node_peer_id: String,
+    pub station_root_public_key: Vec<u8>,
+    pub node_authorization_digest: Vec<u8>,
+    pub authorization_epoch: u64,
     pub route_id: String,
     pub route_type: StationRouteType,
     pub transport: String,
@@ -93,6 +74,7 @@ pub struct StationRouteCandidate {
     pub relay_peer_id: Option<String>,
     pub route_generation: u64,
     pub inner_tls_spki_sha256: Option<Vec<u8>>,
+    pub addresses: Vec<String>,
     pub attestation_bytes: Option<Vec<u8>>,
     pub attestation_expires_at_unix_ms: Option<i64>,
     pub source_ref: String,
@@ -176,6 +158,8 @@ pub struct StationRouteBindingProjection {
 #[serde(rename_all = "camelCase")]
 pub struct VerifiedStationIdentity {
     pub station_peer_id: String,
+    pub node_peer_id: String,
+    pub authorization_epoch: u64,
     pub canonical_origin: String,
     pub capabilities: Vec<String>,
     pub verified_at: u64,
@@ -188,6 +172,7 @@ struct RouteRuntime {
     discovered: RwLock<HashMap<(String, String), CachedRoute>>,
     active: RwLock<Option<ActiveRoute>>,
     proxy_origin: Mutex<Option<String>>,
+    standard_transport: Mutex<Option<StandardTransport>>,
 }
 
 impl RouteRuntime {
@@ -282,6 +267,20 @@ impl RouteRuntime {
         let value = format!("http://{address}");
         *origin = Some(value.clone());
         Ok(value)
+    }
+
+    fn standard_transport(&self) -> MobileResult<StandardTransport> {
+        let mut transport = self
+            .standard_transport
+            .lock()
+            .map_err(|_| route_error("runtimeLock"))?;
+        if let Some(transport) = transport.as_ref() {
+            return Ok(transport.clone());
+        }
+        let started =
+            StandardTransport::start().map_err(|_| route_error("standardTransportStart"))?;
+        *transport = Some(started.clone());
+        Ok(started)
     }
 
     fn remove(&self, station_peer_id: &str, route_id: &str) -> MobileResult<()> {
@@ -415,6 +414,10 @@ fn discover_station_input(input: &str) -> MobileResult<VerifiedDiscovery> {
         challenge: challenge.to_vec(),
         connection_grant: parsed.connection_grant.clone().unwrap_or_default(),
         client_protocol_version: ACCESS_PROTOCOL_VERSION,
+        source_peer_id: ROUTES
+            .standard_transport()?
+            .client_peer_id()
+            .to_string(),
     };
     let endpoint = format!("{}{}", parsed.origin, ACCESS_PATH);
     let mut client = Client::builder()
@@ -497,13 +500,31 @@ fn verify_discovery_response(
             {
                 return Err(discovery_error("directOutcomeInvalid"));
             }
-            let route_id = direct_route_id(&statement.endpoint_peer_id, &canonical_origin);
-            let source_ref = route_source_ref(&statement.endpoint_peer_id, &route_id);
+            let node_authorization = response
+                .node_authorization
+                .as_ref()
+                .ok_or_else(|| discovery_error("nodeAuthorizationMissing"))?;
+            let verified_authorization =
+                verify_node_authorization_bytes(&node_authorization.encode_to_vec(), now_unix_ms)
+                    .map_err(|_| discovery_error("nodeAuthorizationInvalid"))?;
+            if verified_authorization.node_peer_id != statement.endpoint_peer_id
+                || verified_authorization.node_public_key != endpoint_public_key
+                || statement.node_authorization_digest
+                    != verified_authorization.authorization_digest
+            {
+                return Err(discovery_error("nodeAuthorizationMismatch"));
+            }
+            let route_id =
+                direct_route_id(&verified_authorization.station_peer_id, &canonical_origin);
+            let source_ref = route_source_ref(&verified_authorization.station_peer_id, &route_id);
             (
                 VerifiedEndpointRole::DirectStation,
                 vec![StationRouteCandidate {
-                    station_peer_id: statement.endpoint_peer_id.clone(),
-                    station_host_public_key: endpoint_public_key,
+                    station_peer_id: verified_authorization.station_peer_id,
+                    node_peer_id: verified_authorization.node_peer_id,
+                    station_root_public_key: verified_authorization.station_root_public_key,
+                    node_authorization_digest: verified_authorization.authorization_digest.to_vec(),
+                    authorization_epoch: verified_authorization.authorization_epoch,
                     route_id,
                     route_type: StationRouteType::Direct,
                     transport: "direct_https".to_string(),
@@ -511,6 +532,7 @@ fn verify_discovery_response(
                     relay_peer_id: None,
                     route_generation: 1,
                     inner_tls_spki_sha256: None,
+                    addresses: vec![canonical_origin.clone()],
                     attestation_bytes: None,
                     attestation_expires_at_unix_ms: None,
                     source_ref,
@@ -518,6 +540,11 @@ fn verify_discovery_response(
             )
         }
         AccessEndpointRole::Relay => {
+            if response.node_authorization.is_some()
+                || !statement.node_authorization_digest.is_empty()
+            {
+                return Err(discovery_error("relayNodeAuthorizationInvalid"));
+            }
             verify_relay_outcome(&response)?;
             let mut routes = Vec::with_capacity(response.station_routes.len());
             for attestation in &response.station_routes {
@@ -576,46 +603,30 @@ fn verify_route_attestation(
     relay_origin: &str,
     now_unix_ms: i64,
 ) -> MobileResult<StationRouteCandidate> {
-    let statement = StationRouteStatement::decode(attestation.statement_bytes.as_slice())
-        .map_err(|_| route_error("attestationInvalid"))?;
-    if statement.encode_to_vec() != attestation.statement_bytes
-        || statement.station_peer_id.trim().is_empty()
-        || statement.relay_peer_id != relay_peer_id
-        || statement.route_id.trim().is_empty()
-        || statement.route_generation == 0
-        || statement.inner_tls_spki_sha256.len() != 32
-        || statement.capabilities_digest.len() != 32
-        || !matches!(
-            StationRouteVisibility::try_from(statement.visibility).ok(),
-            Some(StationRouteVisibility::Public | StationRouteVisibility::GrantOnly)
-        )
-        || statement.issued_at_unix_ms > now_unix_ms + CLOCK_SKEW_MS
-        || statement.expires_at_unix_ms <= now_unix_ms
-        || statement.expires_at_unix_ms <= statement.issued_at_unix_ms
-        || statement.expires_at_unix_ms - statement.issued_at_unix_ms > MAX_ROUTE_LIFETIME_MS
-    {
-        return Err(route_error("attestationInvalid"));
-    }
-    let station_host_public_key = verify_signed_statement(
-        &attestation.host_public_key,
-        &attestation.signature,
-        STATION_ROUTE_DOMAIN,
-        &attestation.statement_bytes,
-        &statement.station_peer_id,
-    )?;
-    let source_ref = route_source_ref(&statement.station_peer_id, &statement.route_id);
+    let attestation_bytes = attestation.encode_to_vec();
+    let verified = verify_station_route_attestation_bytes(
+        &attestation_bytes,
+        Some(relay_peer_id),
+        now_unix_ms,
+    )
+    .map_err(|_| route_error("attestationInvalid"))?;
+    let source_ref = route_source_ref(&verified.station_peer_id, &verified.route_id);
     Ok(StationRouteCandidate {
-        station_peer_id: statement.station_peer_id,
-        station_host_public_key,
-        route_id: statement.route_id,
+        station_peer_id: verified.station_peer_id,
+        node_peer_id: verified.node_peer_id,
+        station_root_public_key: verified.station_root_public_key,
+        node_authorization_digest: verified.authorization_digest.to_vec(),
+        authorization_epoch: verified.authorization_epoch,
+        route_id: verified.route_id,
         route_type: StationRouteType::Relay,
-        transport: "relay_wss_v1".to_string(),
+        transport: "libp2p_http_v1".to_string(),
         endpoint_origin: relay_origin.to_string(),
         relay_peer_id: Some(relay_peer_id.to_string()),
-        route_generation: statement.route_generation,
-        inner_tls_spki_sha256: Some(statement.inner_tls_spki_sha256),
-        attestation_bytes: Some(attestation.encode_to_vec()),
-        attestation_expires_at_unix_ms: Some(statement.expires_at_unix_ms),
+        route_generation: verified.route_generation,
+        inner_tls_spki_sha256: Some(verified.inner_tls_spki_sha256.to_vec()),
+        addresses: verified.addresses,
+        attestation_bytes: Some(attestation_bytes),
+        attestation_expires_at_unix_ms: Some(verified.expires_at_unix_ms),
         source_ref,
     })
 }
@@ -792,8 +803,13 @@ fn verify_station_identity_response(
 ) -> MobileResult<VerifiedStationIdentity> {
     let statement = StationIdentityStatement::decode(proof.statement_bytes.as_slice())
         .map_err(|_| identity_error("invalidStatement"))?;
+    let proof_bytes = proof.encode_to_vec();
     let BaseVerifiedStationIdentity {
         station_peer_id,
+        node_peer_id,
+        station_root_public_key,
+        node_authorization_digest,
+        authorization_epoch,
         canonical_origin,
         capabilities,
         verified_at,
@@ -801,9 +817,7 @@ fn verify_station_identity_response(
         VerifyStationIdentityProofInput {
             requested_origin: statement.canonical_origin,
             challenge: challenge.to_vec(),
-            statement_bytes: proof.statement_bytes,
-            host_public_key: proof.host_public_key.clone(),
-            signature: proof.signature,
+            response_bytes: proof_bytes,
             required_capabilities: vec![
                 "access-gate".to_string(),
                 "actor-ptid".to_string(),
@@ -813,7 +827,10 @@ fn verify_station_identity_response(
         now_unix_ms,
     )?;
     if station_peer_id != route.candidate.station_peer_id
-        || proof.host_public_key != route.candidate.station_host_public_key
+        || node_peer_id != route.candidate.node_peer_id
+        || station_root_public_key != route.candidate.station_root_public_key
+        || node_authorization_digest.as_slice() != route.candidate.node_authorization_digest
+        || authorization_epoch != route.candidate.authorization_epoch
     {
         return Err(identity_error("routeIdentityMismatch"));
     }
@@ -825,6 +842,8 @@ fn verify_station_identity_response(
     ROUTES.assert_current(route)?;
     Ok(VerifiedStationIdentity {
         station_peer_id,
+        node_peer_id,
+        authorization_epoch,
         canonical_origin,
         capabilities,
         verified_at,
@@ -857,54 +876,71 @@ fn serve_proxy_connection(mut connection: TcpStream) -> MobileResult<()> {
     let request = read_http_request(&mut connection)?;
     match route.candidate.route_type {
         StationRouteType::Direct => forward_direct(connection, &route, request, timeout),
-        StationRouteType::Relay => {
-            let request = force_connection_close(request)?;
-            if request_headers_accept_event_stream(&request) {
-                return relay_stream_response(connection, &route, &request, timeout);
-            }
-            let response = relay_round_trip(&route, &request, timeout)?;
-            ROUTES.assert_current(&route)?;
-            connection
-                .write_all(&response)
-                .map_err(|_| route_error("proxyWrite"))
-        }
+        StationRouteType::Relay => forward_standard_route(connection, &route, &request),
     }
 }
 
-fn request_headers_accept_event_stream(request: &[u8]) -> bool {
-    let Some(header_end) = find_header_end(request) else {
-        return false;
-    };
-    std::str::from_utf8(&request[..header_end])
-        .ok()
-        .is_some_and(|headers| {
-            headers.lines().any(|line| {
-                line.split_once(':').is_some_and(|(name, value)| {
-                    name.eq_ignore_ascii_case("accept")
-                        && value
-                            .split(',')
-                            .any(|item| item.trim().eq_ignore_ascii_case("text/event-stream"))
-                })
-            })
-        })
+fn standard_route(route: &ActiveRoute) -> MobileResult<StandardRoute> {
+    if route.candidate.route_type != StationRouteType::Relay
+        || route.candidate.transport != "libp2p_http_v1"
+    {
+        return Err(route_error("standardRouteInvalid"));
+    }
+    let inner_tls_spki_sha256 = route
+        .candidate
+        .inner_tls_spki_sha256
+        .as_deref()
+        .and_then(|value| value.try_into().ok())
+        .ok_or_else(|| route_error("innerTlsPinMissing"))?;
+    let dial_multiaddr = route
+        .candidate
+        .addresses
+        .iter()
+        .find(|address| address.contains("/p2p-circuit/"))
+        .cloned()
+        .ok_or_else(|| route_error("circuitAddressMissing"))?;
+    Ok(StandardRoute {
+        node_peer_id: route.candidate.node_peer_id.clone(),
+        dial_multiaddr,
+        inner_tls_spki_sha256,
+    })
 }
 
-fn relay_stream_response(
+fn forward_standard_route(
     mut connection: TcpStream,
     route: &ActiveRoute,
     request: &[u8],
-    timeout: Duration,
 ) -> MobileResult<()> {
-    let mut stream = open_inner_tls(route, timeout)?;
-    stream
-        .write_all(request)
-        .and_then(|_| stream.flush())
-        .map_err(|_| route_error("innerTlsWrite"))?;
-    let mut buffer = [0_u8; 8192];
+    let route_spec = standard_route(route)?;
+    let transport = ROUTES.standard_transport()?;
+    let mut response = transport
+        .round_trip(&route_spec, request)
+        .map_err(|_| route_error("standardRoundTrip"))?;
+    ROUTES.assert_current(route)?;
+    write!(
+        connection,
+        "HTTP/1.1 {} {}\r\n",
+        response.status.as_u16(),
+        response.status.canonical_reason().unwrap_or("")
+    )
+    .map_err(|_| route_error("proxyWrite"))?;
+    for (name, value) in &response.headers {
+        if name.as_str().eq_ignore_ascii_case("connection")
+            || name.as_str().eq_ignore_ascii_case("transfer-encoding")
+        {
+            continue;
+        }
+        let value = value.to_str().map_err(|_| route_error("responseInvalid"))?;
+        write!(connection, "{}: {}\r\n", name.as_str(), value)
+            .map_err(|_| route_error("proxyWrite"))?;
+    }
+    write!(connection, "Connection: close\r\n\r\n").map_err(|_| route_error("proxyWrite"))?;
+    let mut buffer = [0_u8; 16 * 1024];
     loop {
-        let count = stream
+        let count = response
+            .body
             .read(&mut buffer)
-            .map_err(|_| route_error("innerTlsRead"))?;
+            .map_err(|_| route_error("standardResponseRead"))?;
         if count == 0 {
             return Ok(());
         }
@@ -1092,293 +1128,8 @@ fn request_content_length(headers: &str) -> MobileResult<usize> {
     Ok(content_length.unwrap_or(0))
 }
 
-fn response_content_length(headers: &str) -> MobileResult<usize> {
-    let mut content_length = None;
-    for line in headers.lines() {
-        let Some((name, value)) = line.split_once(':') else {
-            continue;
-        };
-        if name.eq_ignore_ascii_case("transfer-encoding") {
-            return Err(route_error("chunkedResponseUnsupported"));
-        }
-        if name.eq_ignore_ascii_case("content-length") {
-            if content_length.is_some() {
-                return Err(route_error("responseLengthAmbiguous"));
-            }
-            content_length = Some(
-                value
-                    .trim()
-                    .parse::<usize>()
-                    .map_err(|_| route_error("responseLengthInvalid"))?,
-            );
-        }
-    }
-    content_length.ok_or_else(|| route_error("responseLengthMissing"))
-}
-
 fn find_header_end(bytes: &[u8]) -> Option<usize> {
     bytes.windows(4).position(|window| window == b"\r\n\r\n")
-}
-
-fn force_connection_close(request: Vec<u8>) -> MobileResult<Vec<u8>> {
-    let header_end = find_header_end(&request).ok_or_else(|| route_error("requestInvalid"))?;
-    let headers =
-        std::str::from_utf8(&request[..header_end]).map_err(|_| route_error("requestInvalid"))?;
-    let mut rewritten = String::new();
-    for line in headers.split("\r\n") {
-        if !line
-            .split_once(':')
-            .is_some_and(|(name, _)| name.eq_ignore_ascii_case("connection"))
-        {
-            rewritten.push_str(line);
-            rewritten.push_str("\r\n");
-        }
-    }
-    rewritten.push_str("Connection: close\r\n\r\n");
-    let mut output = rewritten.into_bytes();
-    output.extend_from_slice(&request[header_end + 4..]);
-    Ok(output)
-}
-
-fn relay_round_trip(
-    route: &ActiveRoute,
-    request: &[u8],
-    timeout: Duration,
-) -> MobileResult<Vec<u8>> {
-    let mut stream = open_inner_tls(route, timeout)?;
-    stream
-        .write_all(request)
-        .and_then(|_| stream.flush())
-        .map_err(|_| route_error("innerTlsWrite"))?;
-    read_http_response(&mut stream)
-}
-
-fn read_http_response<R: Read>(stream: &mut R) -> MobileResult<Vec<u8>> {
-    let mut response = Vec::with_capacity(4096);
-    let mut buffer = [0_u8; 8192];
-    let header_end = loop {
-        let count = stream
-            .read(&mut buffer)
-            .map_err(|_| route_error("innerTlsRead"))?;
-        if count == 0 {
-            return Err(route_error("responseTruncated"));
-        }
-        response.extend_from_slice(&buffer[..count]);
-        if response.len() > MAX_PROXY_REQUEST_BYTES {
-            return Err(route_error("responseTooLarge"));
-        }
-        if let Some(index) = find_header_end(&response) {
-            break index;
-        }
-    };
-    let headers =
-        std::str::from_utf8(&response[..header_end]).map_err(|_| route_error("responseInvalid"))?;
-    let content_length = response_content_length(headers)?;
-    let total = header_end + 4 + content_length;
-    if total > MAX_PROXY_REQUEST_BYTES {
-        return Err(route_error("responseTooLarge"));
-    }
-    while response.len() < total {
-        let count = stream
-            .read(&mut buffer)
-            .map_err(|_| route_error("innerTlsRead"))?;
-        if count == 0 {
-            return Err(route_error("responseTruncated"));
-        }
-        response.extend_from_slice(&buffer[..count]);
-        if response.len() > MAX_PROXY_REQUEST_BYTES {
-            return Err(route_error("responseTooLarge"));
-        }
-    }
-    response.truncate(total);
-    Ok(response)
-}
-
-fn open_inner_tls(
-    route: &ActiveRoute,
-    timeout: Duration,
-) -> MobileResult<StreamOwned<ClientConnection, TunnelStream>> {
-    let tunnel = open_relay_tunnel(route, timeout)?;
-    let expected_spki = route
-        .candidate
-        .inner_tls_spki_sha256
-        .clone()
-        .filter(|value| value.len() == 32)
-        .ok_or_else(|| route_error("innerTlsPinMissing"))?;
-    let provider = Arc::new(rustls::crypto::ring::default_provider());
-    let verifier = Arc::new(PinnedSpkiVerifier {
-        expected_spki,
-        provider: provider.clone(),
-    });
-    let mut config = ClientConfig::builder_with_provider(provider)
-        .with_protocol_versions(&[&rustls::version::TLS13])
-        .map_err(|_| route_error("innerTlsConfig"))?
-        .dangerous()
-        .with_custom_certificate_verifier(verifier)
-        .with_no_client_auth();
-    config.alpn_protocols = vec![b"http/1.1".to_vec()];
-    let server_name = ServerName::try_from("peers-touch-station")
-        .map_err(|_| route_error("innerTlsServerName"))?
-        .to_owned();
-    let connection = ClientConnection::new(Arc::new(config), server_name)
-        .map_err(|_| route_error("innerTlsClient"))?;
-    Ok(StreamOwned::new(connection, tunnel))
-}
-
-fn open_relay_tunnel(route: &ActiveRoute, timeout: Duration) -> MobileResult<TunnelStream> {
-    if route.candidate.route_type != StationRouteType::Relay {
-        return Err(route_error("routeTypeInvalid"));
-    }
-    ensure_route_current(&route.candidate)?;
-    let mut endpoint = Url::parse(&route.candidate.endpoint_origin)
-        .map_err(|_| route_error("relayOriginInvalid"))?;
-    match endpoint.scheme() {
-        "https" => endpoint
-            .set_scheme("wss")
-            .map_err(|_| route_error("relaySchemeInvalid"))?,
-        "http" if endpoint.host_str().is_some_and(is_loopback_host) => endpoint
-            .set_scheme("ws")
-            .map_err(|_| route_error("relaySchemeInvalid"))?,
-        _ => return Err(route_error("relayRequiresTls")),
-    }
-    endpoint.set_path(TUNNEL_PATH);
-    endpoint.set_query(None);
-    endpoint.set_fragment(None);
-    let relay_host = endpoint
-        .host_str()
-        .ok_or_else(|| route_error("relayOriginInvalid"))?
-        .to_string();
-    let relay_port = endpoint
-        .port_or_known_default()
-        .ok_or_else(|| route_error("relayOriginInvalid"))?;
-    let mut request = endpoint
-        .as_str()
-        .into_client_request()
-        .map_err(|_| route_error("relayRequestInvalid"))?;
-    request.headers_mut().insert(
-        SEC_WEBSOCKET_PROTOCOL,
-        tungstenite::http::HeaderValue::from_static(TUNNEL_SUBPROTOCOL),
-    );
-    let connector = acceptance_relay_tls_connector()?;
-    let (mut socket, response) = match connector {
-        Some(connector) => {
-            let address = (relay_host.as_str(), relay_port)
-                .to_socket_addrs()
-                .map_err(|_| route_error("relayUnavailable"))?
-                .next()
-                .ok_or_else(|| route_error("relayUnavailable"))?;
-            let stream = TcpStream::connect_timeout(&address, timeout)
-                .map_err(|_| route_error("relayUnavailable"))?;
-            stream
-                .set_read_timeout(Some(timeout))
-                .map_err(|_| route_error("relayUnavailable"))?;
-            stream
-                .set_write_timeout(Some(timeout))
-                .map_err(|_| route_error("relayUnavailable"))?;
-            client_tls_with_config(request, stream, None, Some(connector))
-                .map_err(|_| route_error("relayUnavailable"))?
-        }
-        None => connect(request).map_err(|_| route_error("relayUnavailable"))?,
-    };
-    if response
-        .headers()
-        .get(SEC_WEBSOCKET_PROTOCOL)
-        .and_then(|value| value.to_str().ok())
-        != Some(TUNNEL_SUBPROTOCOL)
-    {
-        return Err(route_error("relaySubprotocolMismatch"));
-    }
-    set_socket_timeout(socket.get_mut(), timeout)?;
-    let mut nonce = vec![0_u8; 32];
-    rand::thread_rng().fill_bytes(&mut nonce);
-    let cached = ROUTES.cached(&route.candidate.station_peer_id, &route.candidate.route_id)?;
-    let parsed = parse_input(&cached.source_input)?;
-    let open = RelayTunnelFrame {
-        protocol_version: TUNNEL_PROTOCOL_VERSION,
-        payload: Some(relay_tunnel_frame::Payload::Open(RelayTunnelOpen {
-            route_id: route.candidate.route_id.clone(),
-            route_generation: route.candidate.route_generation,
-            client_nonce: nonce,
-            connection_grant: parsed.connection_grant.unwrap_or_default(),
-            target_station_peer_id: String::new(),
-            purpose: RelayTunnelPurpose::ClientAccess as i32,
-        })),
-    };
-    socket
-        .send(WsMessage::Binary(open.encode_to_vec().into()))
-        .map_err(|_| route_error("relayOpenWrite"))?;
-    let opened = loop {
-        let message = socket.read().map_err(|_| route_error("relayOpenRead"))?;
-        match message {
-            WsMessage::Binary(bytes) => {
-                if bytes.len() > MAX_OUTER_FRAME_BYTES {
-                    return Err(route_error("relayFrameTooLarge"));
-                }
-                let frame = RelayTunnelFrame::decode(bytes.as_ref())
-                    .map_err(|_| route_error("relayFrameInvalid"))?;
-                if frame.protocol_version != TUNNEL_PROTOCOL_VERSION {
-                    return Err(route_error("relayVersionMismatch"));
-                }
-                match frame.payload {
-                    Some(relay_tunnel_frame::Payload::Opened(opened)) => break opened,
-                    Some(relay_tunnel_frame::Payload::Close(_)) => {
-                        return Err(route_error("relayRejected"))
-                    }
-                    _ => return Err(route_error("relayOpenInvalid")),
-                }
-            }
-            WsMessage::Ping(payload) => socket
-                .send(WsMessage::Pong(payload))
-                .map_err(|_| route_error("relayPongFailed"))?,
-            _ => return Err(route_error("relayFrameInvalid")),
-        }
-    };
-    if opened.tunnel_id == 0
-        || opened.relay_nonce.len() != 32
-        || opened.route_attestation.as_slice()
-            != route
-                .candidate
-                .attestation_bytes
-                .as_deref()
-                .unwrap_or_default()
-    {
-        return Err(route_error("relayMetadataInvalid"));
-    }
-    let max_frame_bytes = opened
-        .limits
-        .as_ref()
-        .map(|limits| limits.max_frame_bytes as usize)
-        .filter(|value| *value > 0 && *value <= DEFAULT_MAX_FRAME_BYTES)
-        .ok_or_else(|| route_error("relayLimitsInvalid"))?;
-    Ok(TunnelStream {
-        socket,
-        tunnel_id: opened.tunnel_id,
-        max_frame_bytes,
-        next_write_sequence: 1,
-        next_read_sequence: 1,
-        read_buffer: Cursor::new(Vec::new()),
-        closed: false,
-    })
-}
-
-fn acceptance_relay_tls_connector() -> MobileResult<Option<Connector>> {
-    let Some(encoded) = option_env!("PT_ACCEPTANCE_RELAY_CA_DER_B64") else {
-        return Ok(None);
-    };
-    let certificate = STANDARD
-        .decode(encoded)
-        .map_err(|_| route_error("relayTrustAnchorInvalid"))?;
-    let mut roots = RootCertStore::empty();
-    roots
-        .add(CertificateDer::from(certificate))
-        .map_err(|_| route_error("relayTrustAnchorInvalid"))?;
-    let provider = Arc::new(rustls::crypto::ring::default_provider());
-    let config = ClientConfig::builder_with_provider(provider)
-        .with_protocol_versions(&[&rustls::version::TLS13])
-        .map_err(|_| route_error("relayTrustAnchorInvalid"))?
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-    Ok(Some(Connector::Rustls(Arc::new(config))))
 }
 
 fn acceptance_relay_discovery_certificate() -> MobileResult<Option<reqwest::Certificate>> {
@@ -1391,211 +1142,6 @@ fn acceptance_relay_discovery_certificate() -> MobileResult<Option<reqwest::Cert
     reqwest::Certificate::from_der(&certificate)
         .map(Some)
         .map_err(|_| discovery_error("relayTrustAnchorInvalid"))
-}
-
-fn is_loopback_host(host: &str) -> bool {
-    host.eq_ignore_ascii_case("localhost")
-        || host
-            .parse::<std::net::IpAddr>()
-            .is_ok_and(|ip| ip.is_loopback())
-}
-
-fn set_socket_timeout(
-    stream: &mut MaybeTlsStream<TcpStream>,
-    timeout: Duration,
-) -> MobileResult<()> {
-    let tcp = match stream {
-        MaybeTlsStream::Plain(stream) => stream,
-        MaybeTlsStream::Rustls(stream) => stream.get_mut(),
-        _ => return Err(route_error("relayTlsBackendUnsupported")),
-    };
-    tcp.set_read_timeout(Some(timeout))
-        .and_then(|_| tcp.set_write_timeout(Some(timeout)))
-        .map_err(|_| route_error("relayTimeout"))
-}
-
-struct TunnelStream {
-    socket: WebSocket<MaybeTlsStream<TcpStream>>,
-    tunnel_id: u64,
-    max_frame_bytes: usize,
-    next_write_sequence: u64,
-    next_read_sequence: u64,
-    read_buffer: Cursor<Vec<u8>>,
-    closed: bool,
-}
-
-impl Read for TunnelStream {
-    fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
-        if self.read_buffer.position() < self.read_buffer.get_ref().len() as u64 {
-            return self.read_buffer.read(output);
-        }
-        self.read_buffer = Cursor::new(Vec::new());
-        loop {
-            let message = self.socket.read().map_err(io::Error::other)?;
-            match message {
-                WsMessage::Binary(bytes) => {
-                    let frame = RelayTunnelFrame::decode(bytes.as_ref())
-                        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-                    if frame.protocol_version != TUNNEL_PROTOCOL_VERSION {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "Relay protocol version mismatch",
-                        ));
-                    }
-                    match frame.payload {
-                        Some(relay_tunnel_frame::Payload::Data(data))
-                            if data.tunnel_id == self.tunnel_id
-                                && data.sequence == self.next_read_sequence
-                                && !data.ciphertext.is_empty()
-                                && data.ciphertext.len() <= self.max_frame_bytes =>
-                        {
-                            self.next_read_sequence += 1;
-                            self.read_buffer = Cursor::new(data.ciphertext);
-                            return self.read_buffer.read(output);
-                        }
-                        Some(relay_tunnel_frame::Payload::Close(close))
-                            if close.tunnel_id == self.tunnel_id =>
-                        {
-                            self.closed = true;
-                            return Ok(0);
-                        }
-                        _ => {
-                            return Err(io::Error::new(
-                                io::ErrorKind::InvalidData,
-                                "invalid Relay tunnel frame",
-                            ))
-                        }
-                    }
-                }
-                WsMessage::Ping(payload) => self
-                    .socket
-                    .send(WsMessage::Pong(payload))
-                    .map_err(io::Error::other)?,
-                WsMessage::Close(_) => {
-                    self.closed = true;
-                    return Ok(0);
-                }
-                _ => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "non-binary Relay tunnel frame",
-                    ))
-                }
-            }
-        }
-    }
-}
-
-impl Write for TunnelStream {
-    fn write(&mut self, input: &[u8]) -> io::Result<usize> {
-        if self.closed {
-            return Err(io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "Relay tunnel closed",
-            ));
-        }
-        if input.is_empty() {
-            return Ok(0);
-        }
-        let size = input.len().min(self.max_frame_bytes);
-        let frame = RelayTunnelFrame {
-            protocol_version: TUNNEL_PROTOCOL_VERSION,
-            payload: Some(relay_tunnel_frame::Payload::Data(RelayTunnelData {
-                tunnel_id: self.tunnel_id,
-                sequence: self.next_write_sequence,
-                ciphertext: input[..size].to_vec(),
-            })),
-        };
-        self.socket
-            .send(WsMessage::Binary(frame.encode_to_vec().into()))
-            .map_err(io::Error::other)?;
-        self.next_write_sequence += 1;
-        Ok(size)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.socket.flush().map_err(io::Error::other)
-    }
-}
-
-impl Drop for TunnelStream {
-    fn drop(&mut self) {
-        if self.closed {
-            return;
-        }
-        let frame = RelayTunnelFrame {
-            protocol_version: TUNNEL_PROTOCOL_VERSION,
-            payload: Some(relay_tunnel_frame::Payload::Cancel(RelayTunnelCancel {
-                tunnel_id: self.tunnel_id,
-                reason: RelayTunnelCloseReason::Cancelled as i32,
-            })),
-        };
-        let _ = self
-            .socket
-            .send(WsMessage::Binary(frame.encode_to_vec().into()));
-        let _ = self.socket.close(None);
-    }
-}
-
-#[derive(Debug)]
-struct PinnedSpkiVerifier {
-    expected_spki: Vec<u8>,
-    provider: Arc<CryptoProvider>,
-}
-
-impl ServerCertVerifier for PinnedSpkiVerifier {
-    fn verify_server_cert(
-        &self,
-        end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _server_name: &ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: UnixTime,
-    ) -> Result<ServerCertVerified, rustls::Error> {
-        let (_, certificate) = parse_x509_certificate(end_entity.as_ref())
-            .map_err(|_| rustls::Error::General("invalid inner TLS certificate".to_string()))?;
-        let digest = Sha256::digest(certificate.public_key().raw);
-        if digest.as_slice() != self.expected_spki {
-            return Err(rustls::Error::General(
-                "inner TLS SPKI mismatch".to_string(),
-            ));
-        }
-        Ok(ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        message: &[u8],
-        certificate: &CertificateDer<'_>,
-        signature: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        verify_tls12_signature(
-            message,
-            certificate,
-            signature,
-            &self.provider.signature_verification_algorithms,
-        )
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        message: &[u8],
-        certificate: &CertificateDer<'_>,
-        signature: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        verify_tls13_signature(
-            message,
-            certificate,
-            signature,
-            &self.provider.signature_verification_algorithms,
-        )
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        self.provider
-            .signature_verification_algorithms
-            .supported_schemes()
-    }
 }
 
 fn discovery_error(reason: &str) -> MobileError {
@@ -1629,9 +1175,6 @@ impl fmt::Display for ActiveRoute {
 
 #[cfg(test)]
 mod tests {
-    use ed25519_dalek::{Signer, SigningKey};
-    use rand::rngs::OsRng;
-
     use super::*;
 
     #[test]
@@ -1654,12 +1197,12 @@ mod tests {
         assert!(endpoint_origin_is_valid(
             AccessEndpointRole::Relay,
             "http://relay.example:18081",
-            "https://relay.example:4501",
+            "https://relay.example:18443",
         ));
         assert!(!endpoint_origin_is_valid(
             AccessEndpointRole::Relay,
             "http://relay.example:18081",
-            "http://relay.example:4501",
+            "http://relay.example:18443",
         ));
     }
 
@@ -1670,97 +1213,19 @@ mod tests {
             relay_origin: "https://relay.example:443".to_string(),
             route_attestation: Some(StationRouteAttestation {
                 statement_bytes: vec![1],
-                host_public_key: vec![2],
-                signature: vec![3],
+                node_signature: vec![2],
+                node_authorization: None,
             }),
             connection_grant: Some(peer_proto::StationConnectionGrant {
                 statement_bytes: vec![4],
-                host_public_key: vec![5],
-                signature: vec![6],
+                node_signature: vec![5],
+                node_authorization: None,
             }),
         };
         let encoded = format!("ptc1:{}", URL_SAFE_NO_PAD.encode(envelope.encode_to_vec()));
         let parsed = parse_input(&encoded).expect("connection material");
         assert_eq!(parsed.origin, "https://relay.example:443");
         assert!(parsed.connection_grant.is_some());
-    }
-
-    #[test]
-    fn relay_route_verification_binds_station_and_relay_identities() {
-        let now = 1_800_000_000_000_i64;
-        let station_key = SigningKey::generate(&mut OsRng);
-        let station_public = PublicKey::from(
-            libp2p_identity::ed25519::PublicKey::try_from_bytes(
-                station_key.verifying_key().as_bytes(),
-            )
-            .unwrap(),
-        );
-        let station_peer_id = station_public.to_peer_id().to_string();
-        let statement = StationRouteStatement {
-            station_peer_id: station_peer_id.clone(),
-            relay_peer_id: "relay-a".to_string(),
-            route_id: "route-a".to_string(),
-            route_generation: 7,
-            inner_tls_spki_sha256: vec![7; 32],
-            capabilities_digest: vec![8; 32],
-            visibility: StationRouteVisibility::Public as i32,
-            issued_at_unix_ms: now,
-            expires_at_unix_ms: now + 60_000,
-        };
-        let bytes = statement.encode_to_vec();
-        let mut signed = STATION_ROUTE_DOMAIN.to_vec();
-        signed.extend_from_slice(&bytes);
-        let route = verify_route_attestation(
-            &StationRouteAttestation {
-                statement_bytes: bytes,
-                host_public_key: station_public.encode_protobuf(),
-                signature: station_key.sign(&signed).to_bytes().to_vec(),
-            },
-            "relay-a",
-            "https://relay.example:443",
-            now,
-        )
-        .expect("valid route");
-        assert_eq!(route.station_peer_id, station_peer_id);
-        assert_eq!(route.route_generation, 7);
-        assert_eq!(route.route_type, StationRouteType::Relay);
-    }
-
-    #[test]
-    fn relay_route_verification_rejects_expired_generation() {
-        let now = 1_800_000_000_000_i64;
-        let station_key = SigningKey::generate(&mut OsRng);
-        let station_public = PublicKey::from(
-            libp2p_identity::ed25519::PublicKey::try_from_bytes(
-                station_key.verifying_key().as_bytes(),
-            )
-            .unwrap(),
-        );
-        let statement = StationRouteStatement {
-            station_peer_id: station_public.to_peer_id().to_string(),
-            relay_peer_id: "relay-a".to_string(),
-            route_id: "route-a".to_string(),
-            route_generation: 1,
-            inner_tls_spki_sha256: vec![7; 32],
-            capabilities_digest: vec![8; 32],
-            visibility: StationRouteVisibility::Public as i32,
-            issued_at_unix_ms: now - 120_000,
-            expires_at_unix_ms: now - 1,
-        };
-        let bytes = statement.encode_to_vec();
-        let mut signed = STATION_ROUTE_DOMAIN.to_vec();
-        signed.extend_from_slice(&bytes);
-        assert!(verify_route_attestation(
-            &StationRouteAttestation {
-                statement_bytes: bytes,
-                host_public_key: station_public.encode_protobuf(),
-                signature: station_key.sign(&signed).to_bytes().to_vec(),
-            },
-            "relay-a",
-            "https://relay.example:443",
-            now,
-        )
-        .is_err());
     }
 
     #[test]
@@ -1772,24 +1237,42 @@ mod tests {
     }
 
     #[test]
-    fn relay_response_stops_at_declared_content_length() {
-        let mut response =
-            Cursor::new(b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nabcignored".to_vec());
-        assert_eq!(
-            read_http_response(&mut response).unwrap(),
-            b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nabc"
-        );
-    }
-
-    #[test]
-    fn relay_response_rejects_missing_or_chunked_length() {
-        assert!(
-            read_http_response(&mut Cursor::new(b"HTTP/1.1 200 OK\r\n\r\nbody".to_vec())).is_err()
-        );
-        assert!(read_http_response(&mut Cursor::new(
-            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n".to_vec()
-        ))
-        .is_err());
+    fn standard_route_requires_transport_circuit_address_and_tls_pin() {
+        let mut route = ActiveRoute {
+            candidate: StationRouteCandidate {
+                station_peer_id: "station-a".to_string(),
+                node_peer_id: "node-a".to_string(),
+                station_root_public_key: vec![1],
+                node_authorization_digest: vec![2; 32],
+                authorization_epoch: 1,
+                route_id: "route-a".to_string(),
+                route_type: StationRouteType::Relay,
+                transport: "libp2p_http_v1".to_string(),
+                endpoint_origin: "https://relay.example:443".to_string(),
+                relay_peer_id: Some("relay-a".to_string()),
+                route_generation: 1,
+                inner_tls_spki_sha256: Some(vec![3; 32]),
+                addresses: vec![
+                    "/dns4/relay.example/tcp/4001/p2p/relay-a/p2p-circuit/p2p/node-a".to_string(),
+                ],
+                attestation_bytes: Some(vec![4]),
+                attestation_expires_at_unix_ms: None,
+                source_ref: "source-a".to_string(),
+            },
+            route_revision: 1,
+        };
+        assert!(standard_route(&route).is_ok());
+        route.candidate.transport = "unsupported_transport".to_string();
+        assert!(standard_route(&route).is_err());
+        route.candidate.transport = "libp2p_http_v1".to_string();
+        route.candidate.addresses.clear();
+        assert!(standard_route(&route).is_err());
+        route
+            .candidate
+            .addresses
+            .push("/dns4/relay.example/tcp/4001/p2p/relay-a/p2p-circuit/p2p/node-a".to_string());
+        route.candidate.inner_tls_spki_sha256 = None;
+        assert!(standard_route(&route).is_err());
     }
 
     fn read_http_request_from_bytes(bytes: &[u8]) -> MobileResult<Vec<u8>> {

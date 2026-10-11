@@ -580,15 +580,16 @@ use user `a` with password `1` and PIN `111111` unless instructed otherwise.
 
 ## Service Coordination & Troubleshooting
 
-When encountering cross-service issues (relay-client not registered, DHT seeds
+When encountering cross-service issues (Circuit reservation rejected, DHT seeds
 not connecting, federation resolve failing, session kicked after Station
 redeploy), consult:
 
 - **`docs/architecture/platform/runtime/service-coordination.md`** — Dependency DAG, credential
-  contracts (relay invite → mount → token), bootstrap node requirements, and
-  troubleshooting index.
+  contracts (Relay invite → node enrollment → reservation/route), bootstrap
+  node requirements, and troubleshooting index.
 
 Key diagnostics:
 - `curl <station>/actor/federation/health` — check DHT readiness and seed status
-- Station logs: grep `relay-client` for mount errors
-- "relay-client not registered" → Station needs a relay invite token (§8 of the doc)
+- Station logs: inspect Relay enrollment, reservation, and route-publication errors
+- "Circuit reservation rejected" → verify node enrollment generation, ACL admission,
+  Relay public address, and the current Station route (§6 of the doc)

@@ -34,8 +34,6 @@ import (
 	fednode "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
-	"github.com/peers-labs/peers-touch/station/frame/touch/federation/invalidation"
-	invpb "github.com/peers-labs/peers-touch/station/frame/touch/federation/invalidation/pb"
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
@@ -113,33 +111,6 @@ func fillFederationFieldsForLocalSignUp(a *db.Actor) {
 	}
 }
 
-// PublishVisibilityOption tunes the side-effects of PublishVisibility.
-// The zero value matches the user-driven case (broadcast invalidation
-// fires after a successful publish); maintenance callers must pass an
-// explicit option to disable broadcast.
-type PublishVisibilityOption func(*publishVisibilityOpts)
-
-type publishVisibilityOpts struct {
-	suppressBroadcast bool
-}
-
-// WithoutBroadcast tells PublishVisibility NOT to fire the relay
-// invalidation broadcast on success.
-//
-// Use this from the periodic republisher path, where the locator_seq
-// bump is purely a freshness keep-alive and receivers' caches are
-// already valid. Firing a broadcast on every republish would generate
-// per-actor relay traffic every Republisher.Interval, which is a
-// thunder herd with no semantic meaning (the envelope content didn't
-// change).
-//
-// The user-driven paths (SignUp, UpdateVisibility, UpdateProfile,
-// the operator-triggered locatorPublish endpoint) MUST NOT pass this
-// option — they want fast cache invalidation across the federation.
-func WithoutBroadcast() PublishVisibilityOption {
-	return func(o *publishVisibilityOpts) { o.suppressBroadcast = true }
-}
-
 // PublishVisibility synchronises the DHT with the actor's current
 // Visibility column. It MUST be called after every write that flips
 // Visibility (SignUp, future UpdateVisibility endpoint).
@@ -151,17 +122,7 @@ func WithoutBroadcast() PublishVisibilityOption {
 //
 // The function increments touch_actor.locator_seq atomically before signing
 // so two concurrent publishes never reuse a seq.
-//
-// Side-effects (Tier C1 push-style invalidation):
-//   - HIDDEN/UNSPECIFIED branch always emits a REASON_TOMBSTONE broadcast.
-//   - BY_HANDLE/INDEXED branch emits a REASON_VISIBILITY_FLIP broadcast
-//     by default. Maintenance callers (republisher) opt out with
-//     WithoutBroadcast().
-func PublishVisibility(ctx context.Context, actorID uint64, opts ...PublishVisibilityOption) error {
-	var o publishVisibilityOpts
-	for _, apply := range opts {
-		apply(&o)
-	}
+func PublishVisibility(ctx context.Context, actorID uint64) error {
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
 		return fmt.Errorf("locator hook: db: %w", err)
@@ -220,20 +181,6 @@ func PublishVisibility(ctx context.Context, actorID uint64, opts ...PublishVisib
 			return err
 		}
 		logger.Infof(ctx, "[locator hook] published handle=%s seq=%d visibility=%d", a.FederatedHandle, a.LocatorSeq, a.Visibility)
-		// Tier C1 — push-style invalidation. The receiver gates on
-		// `event.LocatorSeq >= cached.LocatorSeq`, so a fresh seq
-		// always wins; emitting the broadcast unconditionally on a
-		// user-driven publish is correct (any receiver with a cached
-		// envelope will refetch on demand, picking up whatever
-		// content/visibility changed).
-		//
-		// Maintenance republishes pass WithoutBroadcast() because
-		// they bump the seq purely for freshness — the envelope
-		// content is identical and broadcasting on every loop would
-		// flood the relay with no semantic gain.
-		if !o.suppressBroadcast {
-			publishInvalidationAsync(a.FederatedHandle, a.LocatorSeq, invpb.FederationInvalidation_REASON_VISIBILITY_FLIP)
-		}
 	default:
 		// HIDDEN or UNSPECIFIED — tombstone removes the handle from
 		// remote DHT replicas. We tombstone unconditionally on hidden
@@ -244,80 +191,8 @@ func PublishVisibility(ctx context.Context, actorID uint64, opts ...PublishVisib
 			return err
 		}
 		logger.Infof(ctx, "[locator hook] tombstoned handle=%s seq=%d", a.FederatedHandle, a.LocatorSeq)
-		// Tier C1 — push-style invalidation. The DHT tombstone reaches
-		// remote stations slowly (next republish or peer's TTL). The
-		// pub/sub broadcast lets every station mounted on the same
-		// relay drop their cached envelope NOW, so a hidden actor stops
-		// surfacing within seconds rather than hours.
-		//
-		// Best-effort: a relay-down or empty-fan-out is logged inside
-		// publishInvalidationAsync and does NOT fail the user-visible
-		// PUT path. The slow path (DHT tombstone + receiver TTL) is
-		// always there as a safety net.
-		publishInvalidationAsync(a.FederatedHandle, a.LocatorSeq, invpb.FederationInvalidation_REASON_TOMBSTONE)
 	}
 	return nil
-}
-
-// publishInvalidationAsync emits a Broadcast frame on the relay
-// stream. We fire-and-forget because:
-//
-//   - The user-visible path (PUT visibility) returned successfully as
-//     soon as the row was updated; the invalidation broadcast is a
-//     speed-of-propagation optimisation, not a correctness gate.
-//   - Errors are mapped to log lines + Prometheus once we add metrics;
-//     they never bubble into the response.
-//   - A 5s timeout caps the goroutine lifetime when the relay is
-//     down (the underlying Publish has its own SetWriteDeadline; the
-//     timeout here just prevents goroutine leaks if the registry
-//     handle hangs synchronously for some reason).
-func publishInvalidationAsync(handle string, seq uint64, reason invpb.FederationInvalidation_Reason) {
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		rc := fednode.RelayClient()
-		if rc == nil {
-			// "no registered relay-client" is the SAME observable state
-			// as "stream down" from the perspective of an operator:
-			// the broadcast didn't go out and the slow path will catch
-			// up. Counted under the same label so dashboards don't
-			// distinguish between two flavours of the same outcome.
-			invalidation.RecordPublishRelayNotConnected()
-			logger.Debugf(ctx, "[locator hook] skipping invalidation handle=%s seq=%d (relay-client not registered)", handle, seq)
-			return
-		}
-
-		body, err := invalidation.Encode(&invpb.FederationInvalidation{
-			FederatedHandle: handle,
-			LocatorSeq:      seq,
-			Reason:          reason,
-		})
-		if err != nil {
-			invalidation.RecordPublishEncodeError()
-			logger.Warnf(ctx, "[locator hook] invalidation encode handle=%s err=%v", handle, err)
-			return
-		}
-
-		if err := rc.Publish(ctx, invalidation.Topic, body); err != nil {
-			// Treat NOT-CONNECTED as debug-level: the slow path will
-			// still propagate via DHT republish + receiver TTL. Other
-			// errors imply a write failure mid-flight; warn so they
-			// surface in dashboards.
-			if errors.Is(err, fednode.ErrRelayNotConnected) {
-				invalidation.RecordPublishRelayNotConnected()
-				logger.Debugf(ctx, "[locator hook] invalidation skipped handle=%s seq=%d (relay stream down)", handle, seq)
-				return
-			}
-			invalidation.RecordPublishError()
-			logger.Warnf(ctx, "[locator hook] invalidation publish handle=%s seq=%d err=%v", handle, seq, err)
-			return
-		}
-
-		invalidation.RecordPublishOK()
-		logger.Infof(ctx, "[locator hook] invalidation published handle=%s seq=%d reason=%s",
-			handle, seq, reason.String())
-	}()
 }
 
 // currentInboxRelayMounts returns the Relay origins (today: one configured
@@ -333,13 +208,9 @@ func publishInvalidationAsync(handle string, seq uint64, reason invpb.Federation
 // informed.
 //
 // Empty slice when:
-//   - relay-client subserver is disabled (single-station deploy
-//     where the station is directly reachable, no relay hop needed
-//     or even possible)
-//   - relay-client is enabled but has not yet finished register
-//     (initial startup window — the next periodic republish will
-//     re-emit with mounts populated, see frame/touch/federation/
-//     republisher).
+//   - the standard Relay pool is disabled for a directly reachable Station
+//   - enrollment or reservation has not completed; the next periodic
+//     republish will project the current Relay origin.
 //
 // We deliberately use RelayOrigin — a stable canonical identifier —
 // rather than the human label (`opts.Label` is the *station's* name
@@ -347,7 +218,7 @@ func publishInvalidationAsync(handle string, seq uint64, reason invpb.Federation
 // the same relay produce the same origin, which is the comparison
 // the resolver needs.
 func currentInboxRelayMounts() []string {
-	rc := fednode.RelayClient()
+	rc := fednode.RelayAccessSnapshot()
 	if rc == nil || !rc.Available() {
 		return nil
 	}

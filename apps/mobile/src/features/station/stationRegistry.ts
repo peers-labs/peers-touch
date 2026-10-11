@@ -12,7 +12,7 @@ export interface MobileStationEntry {
   lastCheckedAt?: number;
   online?: boolean;
   identityVerified?: boolean;
-  pinnedHostPublicKey?: number[];
+  pinnedStationRootPublicKey?: number[];
   routes?: MobileStationRouteCandidate[];
   activeRouteId?: string;
   routeRevision?: number;
@@ -20,13 +20,17 @@ export interface MobileStationEntry {
 }
 
 export interface MobileStationRouteCandidate {
+  nodePeerId: string;
+  nodeAuthorizationDigest: number[];
+  authorizationEpoch: number;
   routeId: string;
   routeType: StationRouteType;
-  transport: 'direct_https' | 'relay_wss_v1';
+  transport: 'direct_https' | 'libp2p_http_v1';
   endpointOrigin: string;
   relayPeerId?: string;
   routeGeneration: number;
   innerTlsSpkiSha256?: number[];
+  addresses: string[];
   attestationBytes?: number[];
   attestationExpiresAtUnixMs?: number;
   sourceRef: string;
@@ -53,31 +57,23 @@ export interface VerifiedStationInput {
 
 export interface VerifiedStationRouteInput {
   identity: VerifiedStationInput;
-  stationHostPublicKey: number[];
+  stationRootPublicKey: number[];
   route: NativeStationRouteCandidate;
 }
 
-const STATION_REGISTRY_KEY = 'peers-touch.mobile.station-registry.v2';
-const LEGACY_STATION_REGISTRY_KEY = 'peers-touch.mobile.station-registry.v1';
+const STATION_REGISTRY_KEY = 'peers-touch.mobile.station-registry.v3';
 
 export async function loadStationRegistry(): Promise<StoredStationRegistry> {
   const repository = createMobileAppStorageRuntime().repositories.stationRegistry;
   try {
-    const current = await repository.readValue(STATION_REGISTRY_KEY) as Partial<StoredStationRegistry> | null;
-    const legacy = current
-      ? null
-      : await repository.readValue(LEGACY_STATION_REGISTRY_KEY) as Partial<StoredStationRegistry> | null;
-    const parsed = current ?? legacy;
+    const parsed = await repository.readValue(
+      STATION_REGISTRY_KEY,
+    ) as Partial<StoredStationRegistry> | null;
     if (!parsed) return createEmptyStationRegistry();
     const registry = parseStoredStationRegistry(parsed);
     if (!registry) {
       await repository.remove(STATION_REGISTRY_KEY);
-      await repository.remove(LEGACY_STATION_REGISTRY_KEY);
       return createEmptyStationRegistry();
-    }
-    if (legacy) {
-      await repository.write(STATION_REGISTRY_KEY, registry);
-      await repository.remove(LEGACY_STATION_REGISTRY_KEY);
     }
     return registry;
   } catch {
@@ -106,63 +102,6 @@ export function parseStoredStationRegistry(value: unknown): StoredStationRegistr
   };
 }
 
-export function addStationEntry(
-  registry: StoredStationRegistry,
-  input: VerifiedStationInput,
-  status: StationStatusInput = {},
-  identityVerified: boolean = true,
-): { ok: true; registry: StoredStationRegistry } | { ok: false; error: string } {
-  const stationPeerId = input.stationPeerId.trim();
-  const normalized = normalizeVerifiedStationUrl(input.url);
-  if (!stationPeerId || !normalized) return { ok: false, error: 'mobile.launch.stationIdentityInvalid' };
-  if (identityVerified) {
-    const conflictingUrl = registry.entries.find(
-      (entry) => (
-        normalizeVerifiedStationUrl(entry.url) === normalized
-        && entry.stationPeerId !== stationPeerId
-      ),
-    );
-    if (conflictingUrl) return { ok: false, error: 'mobile.launch.stationIdentityMismatch' };
-  }
-
-  const now = Date.now();
-  const entries = registry.entries.filter((entry) => entry.stationPeerId !== stationPeerId);
-  const existing = registry.entries.find((entry) => entry.stationPeerId === stationPeerId);
-  const directRoute = legacyDirectRoute(stationPeerId, normalized, now);
-  const nextEntry: MobileStationEntry = existing
-    ? {
-        ...existing,
-        url: normalized,
-        lastUsedAt: now,
-        identityVerified,
-        routes: existing.routes?.length ? existing.routes : [directRoute],
-        activeRouteId: existing.activeRouteId || directRoute.routeId,
-        routeRevision: existing.routeRevision || 1,
-        lifecycleGeneration: existing.lifecycleGeneration || 1,
-      }
-    : {
-        stationPeerId,
-        url: normalized,
-        label: extractStationLabel(normalized),
-        createdAt: now,
-        lastUsedAt: now,
-        identityVerified,
-        routes: [directRoute],
-        activeRouteId: directRoute.routeId,
-        routeRevision: 1,
-        lifecycleGeneration: 1,
-      };
-  const checkedEntry = applyStationStatus(nextEntry, status);
-
-  return {
-    ok: true,
-    registry: {
-      activeStationPeerId: stationPeerId,
-      entries: [checkedEntry, ...entries].sort(compareRecentlyUsed),
-    },
-  };
-}
-
 export function addStationRoute(
   registry: StoredStationRegistry,
   input: VerifiedStationRouteInput,
@@ -176,15 +115,15 @@ export function addStationRoute(
     || !canonicalOrigin
     || !route
     || input.route.stationPeerId.trim() !== stationPeerId
-    || input.stationHostPublicKey.length === 0
-    || !equalBytes(input.stationHostPublicKey, input.route.stationHostPublicKey)
+    || input.stationRootPublicKey.length === 0
+    || !equalBytes(input.stationRootPublicKey, input.route.stationRootPublicKey)
   ) {
     return { ok: false, error: 'mobile.launch.stationIdentityInvalid' };
   }
   const existing = registry.entries.find((entry) => entry.stationPeerId === stationPeerId);
   if (
-    existing?.pinnedHostPublicKey?.length
-    && !equalBytes(existing.pinnedHostPublicKey, input.stationHostPublicKey)
+    existing?.pinnedStationRootPublicKey?.length
+    && !equalBytes(existing.pinnedStationRootPublicKey, input.stationRootPublicKey)
   ) {
     return { ok: false, error: 'mobile.launch.stationIdentityMismatch' };
   }
@@ -214,7 +153,7 @@ export function addStationRoute(
     createdAt: existing?.createdAt ?? now,
     lastUsedAt: now,
     identityVerified: true,
-    pinnedHostPublicKey: [...input.stationHostPublicKey],
+    pinnedStationRootPublicKey: [...input.stationRootPublicKey],
     routes,
     activeRouteId: route.routeId,
     routeRevision: existing
@@ -368,11 +307,7 @@ export function activeStationEntry(registry: StoredStationRegistry): MobileStati
 }
 
 export function stationRoutes(entry: MobileStationEntry): MobileStationRouteCandidate[] {
-  if (entry.routes?.length) return entry.routes;
-  const normalized = normalizeVerifiedStationUrl(entry.url);
-  return normalized
-    ? [legacyDirectRoute(entry.stationPeerId, normalized, entry.lastCheckedAt ?? entry.createdAt)]
-    : [];
+  return entry.routes ?? [];
 }
 
 export function activeStationRoute(
@@ -448,14 +383,34 @@ function normalizeRouteCandidate(
   value: NativeStationRouteCandidate | MobileStationRouteCandidate,
 ): MobileStationRouteCandidate | null {
   const routeId = value.routeId?.trim();
+  const nodePeerId = value.nodePeerId?.trim();
   const endpointOrigin = normalizeVerifiedStationUrl(value.endpointOrigin);
+  const transportValid = (
+    (value.routeType === 'direct' && value.transport === 'direct_https')
+    || (value.routeType === 'relay' && value.transport === 'libp2p_http_v1')
+  );
+  const addresses = value.addresses
+    ?.map((address) => address.trim())
+    .filter(Boolean) ?? [];
   if (
     !routeId
+    || !nodePeerId
     || !endpointOrigin
     || !['direct', 'relay'].includes(value.routeType)
-    || !['direct_https', 'relay_wss_v1'].includes(value.transport)
+    || !transportValid
+    || value.nodeAuthorizationDigest?.length !== 32
+    || !Number.isSafeInteger(value.authorizationEpoch)
+    || value.authorizationEpoch < 1
     || !Number.isSafeInteger(value.routeGeneration)
     || value.routeGeneration < 1
+    || addresses.length === 0
+    || (
+      value.routeType === 'relay'
+      && (
+        value.innerTlsSpkiSha256?.length !== 32
+        || !addresses.some((address) => address.includes('/p2p-circuit/'))
+      )
+    )
   ) {
     return null;
   }
@@ -464,6 +419,9 @@ function normalizeRouteCandidate(
     ? value.health
     : 'available';
   return {
+    nodePeerId,
+    nodeAuthorizationDigest: [...value.nodeAuthorizationDigest],
+    authorizationEpoch: value.authorizationEpoch,
     routeId,
     routeType: value.routeType,
     transport: value.transport,
@@ -473,6 +431,7 @@ function normalizeRouteCandidate(
     ...(value.innerTlsSpkiSha256?.length
       ? { innerTlsSpkiSha256: [...value.innerTlsSpkiSha256] }
       : {}),
+    addresses,
     ...(value.attestationBytes?.length
       ? { attestationBytes: [...value.attestationBytes] }
       : {}),
@@ -487,24 +446,6 @@ function normalizeRouteCandidate(
       ? { lastSuccessAt: value.lastSuccessAt }
       : {}),
     health,
-  };
-}
-
-function legacyDirectRoute(
-  stationPeerId: string,
-  endpointOrigin: string,
-  verifiedAt: number,
-): MobileStationRouteCandidate {
-  return {
-    routeId: `legacy-direct:${stationPeerId}:${endpointOrigin}`,
-    routeType: 'direct',
-    transport: 'direct_https',
-    endpointOrigin,
-    routeGeneration: 1,
-    sourceRef: '',
-    lastVerifiedAt: verifiedAt,
-    lastSuccessAt: verifiedAt,
-    health: 'available',
   };
 }
 
@@ -569,6 +510,11 @@ function isSameStationEntry(a: MobileStationEntry, b: MobileStationEntry): boole
     a.lastCheckedAt === b.lastCheckedAt &&
     a.online === b.online &&
     a.identityVerified === b.identityVerified &&
+    equalBytes(
+      a.pinnedStationRootPublicKey ?? [],
+      b.pinnedStationRootPublicKey ?? [],
+    ) &&
+    JSON.stringify(a.routes ?? []) === JSON.stringify(b.routes ?? []) &&
     a.activeRouteId === b.activeRouteId &&
     a.routeRevision === b.routeRevision &&
     a.lifecycleGeneration === b.lifecycleGeneration
@@ -585,7 +531,18 @@ function isStationEntry(value: unknown): value is MobileStationEntry {
     normalizeVerifiedStationUrl(entry.url) !== null &&
     typeof entry.label === 'string' &&
     typeof entry.createdAt === 'number' &&
-    typeof entry.lastUsedAt === 'number'
+    typeof entry.lastUsedAt === 'number' &&
+    Array.isArray(entry.pinnedStationRootPublicKey) &&
+    entry.pinnedStationRootPublicKey.length > 0 &&
+    Array.isArray(entry.routes) &&
+    entry.routes.length > 0 &&
+    entry.routes.every((route) => normalizeRouteCandidate(route) !== null) &&
+    typeof entry.activeRouteId === 'string' &&
+    entry.routes.some((route) => route.routeId === entry.activeRouteId) &&
+    Number.isSafeInteger(entry.routeRevision) &&
+    (entry.routeRevision ?? 0) > 0 &&
+    Number.isSafeInteger(entry.lifecycleGeneration) &&
+    (entry.lifecycleGeneration ?? 0) > 0
   );
 }
 

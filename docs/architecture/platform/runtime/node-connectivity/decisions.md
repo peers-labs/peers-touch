@@ -2,400 +2,296 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-10-10 | **Updated**: 2026-10-10
+> **Created**: 2026-10-10 | **Updated**: 2026-10-11
 > **Owner**: Architecture Team
-
----
 
 ## Decision Index
 
 | ID | Decision | Status |
 |---|---|---|
-| NCP-D01 | Node Connectivity is the only Relay protocol owner | accepted |
-| NCP-D02 | Station and Relay share one binary with explicit roles | accepted |
-| NCP-D03 | End-to-end TLS opaque tunnel is the only Relay data plane | accepted |
-| NCP-D04 | Relay has no Station, Federation, or business authority | accepted |
-| NCP-D05 | Station identity is independent from route | accepted |
-| NCP-D06 | Enrollment binds host-key proof and generation revocation | accepted |
-| NCP-D07 | Station signs every Relay route and inner TLS SPKI | accepted |
-| NCP-D08 | Relay frames are bounded protobuf without HTTP metadata | accepted |
-| NCP-D09 | Client and Station-peer callers use separate scopes | accepted |
-| NCP-D10 | Circuit Relay/libp2p replacement is not a parallel current architecture | accepted |
-| NCP-D11 | Relay service hosts use Linux/POSIX only | accepted |
+| NCP-D01 | One connectivity architecture owner | accepted |
+| NCP-D02 | Station / Relay roles; ingress inside existing Frame | accepted |
+| NCP-D03 | Standard Circuit v2 plus Station-terminated TLS | accepted |
+| NCP-D04 | Relay owns transport admission only | accepted |
+| NCP-D05 | Logical Station identity independent from Node PeerID | accepted |
+| NCP-D06 | Enrollment binds node delegation and revocation epoch | accepted |
+| NCP-D07 | Authorized node signs route and TLS SPKI | accepted |
+| NCP-D08 | Library wire; generated control; finite resource limits | accepted |
+| NCP-D09 | Transport callers do not imply business authorization | accepted |
+| NCP-D10 | Atomic standard-transport cut; canonical HTTP APIs retained | accepted |
+| NCP-D11 | Linux/POSIX Relay service hosting | accepted |
+| NCP-D12 | One Host per process with borrowed consumers | accepted |
+| NCP-D13 | Shared state is mandatory for cluster readiness | accepted |
+| NCP-D14 | Durable ordered event replay across nodes | accepted |
+| NCP-D15 | Domain-owned fenced leases and safe recovery | accepted |
 
-## NCP-D01: Node Connectivity Is The Only Relay Protocol Owner
+These target decisions passed the architecture review recorded in
+`integration.md`. Implementation and product proof remain outstanding.
+Current source is not described as already implementing these decisions.
 
-**Status**: accepted
-**Date**: 2026-10-10
-
-### Context
-
-Station Access and Federation both described enrollment, route attestation,
-tunnel frames, runtime role and resource limits. Two active definitions make
-protocol ownership and change impact ambiguous.
-
-### Decision
-
-`docs/architecture/platform/runtime/node-connectivity/` exclusively owns Node
-reachability and Relay internals. Station Access owns user/session lifecycle and
-consumes verified routes. Federation owns governance and peer business
-authorization and consumes authenticated transport.
-
-### Rationale
-
-One transport owner prevents protocol and security drift while preserving the
-three-layer business boundaries.
-
-### Alternatives Considered
-
-- Keep protocol copies synchronized: rejected because they inevitably diverge.
-- Move Relay into Federation: rejected because client access also uses Relay.
-- Move Relay into Station Access: rejected because Station-to-Station transport
-  is not a client login concern.
-
-### Consequences
-
-Other active modules may state required outcomes and caller-specific policy but
-must reference this module for wire, credentials, role composition and limits.
-
-## NCP-D02: Station And Relay Share One Binary With Explicit Roles
+## NCP-D01: One Connectivity Architecture Owner
 
 **Status**: accepted
-**Date**: 2026-10-10
+**Date**: 2026-10-11
 
 ### Context
-
-A separate Relay repository would duplicate release, crypto, Model and runtime
-governance. Loading the full Station surface on an Internet-facing Relay would
-expose unrelated business handlers.
-
+Client access and Station peer delivery consume the same reachability mechanism.
 ### Decision
-
-The same binary supports explicit `station` and `relay` roles.
-`PEERS_NODE_ROLE` is resolved once. The Relay allowlist loads only Relay
-capabilities and rejects Touch, application subservers and unknown plugins.
-
+This module owns identity-to-node authorization, routes and transport.
+Access owns user/session lifecycle; Federation owns membership and peer policy.
 ### Rationale
-
-Shared source avoids protocol forks; deny-by-default role composition limits the
-public attack surface.
-
+One wire owner prevents divergent security and lifecycle implementations.
 ### Alternatives Considered
-
-- Separate Relay service/repository: rejected as a second implementation owner.
-- Full Station process plus Relay feature flag: rejected as an unsafe denylist.
-- Implicit role from ports or container name: rejected as non-auditable.
-
+Transport owned by Access or Federation duplicates the other caller's contract.
 ### Consequences
+Domains reference this module and keep their own state, APIs and authorization.
 
-Missing role or production security inputs stop startup. A future hybrid role
-requires its own explicit decision and allowlist proof.
-
-## NCP-D03: End-To-End TLS Opaque Tunnel Is The Only Relay Data Plane
+## NCP-D02: Two Roles And Existing Frame Ingress
 
 **Status**: accepted
-**Date**: 2026-10-10
+**Date**: 2026-10-11
 
 ### Context
-
-Transparent Relay forwarding exposed method, path, headers, Authorization and
-body. Outer TLS alone still terminates plaintext at Relay.
-
+Station already has server/transport registration; another service adds no
+business authority or required network boundary.
 ### Decision
-
-Caller and Station establish TLS 1.3 inside the Relay byte stream. Relay
-forwards only bounded ciphertext and tunnel lifecycle frames. Station owns the
-inner TLS ingress and canonical router.
-
+Only `station` and `relay` roles exist. Station's Frame accepts standard streams
+and forwards through its canonical handler registry; no Gateway service is added.
 ### Rationale
-
-Standard TLS provides confidentiality, integrity and Station authentication
-without creating a new business protocol or trusting Relay with credentials.
-
+N=1 needs no extra process; N>1 duplicates Station nodes, not an ingress tier.
 ### Alternatives Considered
-
-- Transparent reverse proxy: rejected because Relay sees credentials/content.
-- Outer TLS only: rejected because Relay remains the plaintext endpoint.
-- Custom AEAD/Noise protocol: rejected without an independent crypto review.
-
+Standalone Gateway adds deployment, auth propagation and another failure point.
 ### Consequences
+Ingress lifecycle stays inside Station; Relay remains a strict role allowlist.
 
-Route attestation must pin inner TLS SPKI. TLS rotation and route publication
-are one lifecycle. The Relay cannot optimize by interpreting business payload.
-
-## NCP-D04: Relay Has No Station, Federation, Or Business Authority
+## NCP-D03: Circuit V2 And Station TLS
 
 **Status**: accepted
-**Date**: 2026-10-10
+**Date**: 2026-10-11
 
 ### Context
-
-Relay is an Internet-facing availability service. Letting it decide Access,
-Federation membership or business routing would turn compromise of transport
-infrastructure into compromise of shared truth.
-
+Current WSS/mount framing is self-owned; standard Circuit supports secure streams.
 ### Decision
-
-Relay owns endpoint identity, enrollment, route directory, mount/tunnel
-lifecycle, quotas, metrics and operator policy only. Station remains identity,
-Access, Session and business authority. Federation remains membership, Ledger
-and peer-policy authority.
-
+Direct and relayed libp2p streams carry TLS 1.3/HTTP2 to Frame ingress, which
+streams into the existing loopback Hertz router. The delegated node SPKI is
+verified before credentials; no handler registry is copied.
 ### Rationale
-
-The trust boundary limits Relay compromise to availability and observable
-connection metadata.
-
+Relay cannot inspect HTTP, while existing application protocols remain intact.
 ### Alternatives Considered
-
-- Central Station registry at Relay: rejected as centralized authority.
-- Relay business fan-out by path/topic: rejected as domain ownership leakage.
-
+Transparent forwarding loses confidentiality; a new command protocol expands
+every business consumer; bespoke crypto creates unnecessary review obligations.
 ### Consequences
+Nested security costs framing/handshakes. HTTP2 streaming parity must be proven.
 
-Relay cannot mint Actor/Session/Federation claims or infer membership from a
-mount.
-
-## NCP-D05: Station Identity Is Independent From Route
+## NCP-D04: Relay Admission Only
 
 **Status**: accepted
-**Date**: 2026-10-10
+**Date**: 2026-10-11
 
 ### Context
-
-URL-keyed state treats the same Station reached directly or through Relay as
-different identities and can duplicate Session/cache/runtime scope.
-
+Relay compromise must not grant Actor, Session or Federation authority.
 ### Decision
-
-`station_peer_id` derived from the Station host key is the identity key.
-Direct origin, Relay origin, route ID and route generation are replaceable route
-candidates. Route changes rebuild transport only; Station identity changes
-require explicit replacement.
-
+Relay owns its enrollment, grants, ACL, reservations, quotas and discovery.
+It never parses decrypted application requests or emits business events.
 ### Rationale
-
-Identity/location separation supports private Station reachability without
-moving business trust to Relay.
-
+The trust boundary limits compromise to availability and transport metadata.
 ### Alternatives Considered
-
-- URL identity with aliases: rejected because aliases retain split truth.
-- Relay PeerID as Station identity: rejected because Relay owns no Station state.
-
+Relay routing by method/topic leaks domain information and duplicates policy.
 ### Consequences
+Relay cannot enforce encrypted per-business quotas; Station must enforce them.
 
-ActorRef and federated handle must never be reconstructed from request host,
-proxy or tunnel endpoint.
-
-## NCP-D06: Enrollment Binds Host-Key Proof And Generation Revocation
+## NCP-D05: Logical Station And Independent Nodes
 
 **Status**: accepted
-**Date**: 2026-10-10
+**Date**: 2026-10-11
 
 ### Context
-
-An invite or claimed PeerID cannot prove possession of the Station private key.
-Deleting a mount row without fencing credentials permits stale reconnect.
-
+One Host key cannot represent concurrent physical peers without identity conflict.
 ### Decision
-
-Relay challenges the enrolling Station. Station signs the challenge and Relay
-binding with its host key; Relay derives `station_peer_id`. Invite consume and
-mount generation creation are atomic. Credentials carry issuer, audience,
-scope, JTI, expiry, Station PeerID and generation.
-
+Keep `station_peer_id` as logical identity derived from a separate root key.
+Each node, including N=1, owns a unique transport key and root authorization.
 ### Rationale
-
-Proof-of-possession prevents identity spoofing; generation makes rotation and
-revocation mechanically enforceable.
-
+Station/Actor/cache scope survives node addition, failover and route rotation.
 ### Alternatives Considered
-
-- Trust a request header PeerID: rejected as forgeable.
-- Shared Station JWT secret: rejected because roles and audiences collapse.
-- Row deletion only: rejected because existing credentials survive.
-
+Shared PeerID causes connection collision; node identity as business identity
+turns cluster membership into account migration.
 ### Consequences
+An operator signing boundary is required. Root change is explicit identity replacement.
 
-Invite plaintext is returned once and persisted only as a digest. Revocation
-closes streams, rejects refresh/reconnect and withdraws routes.
-
-## NCP-D07: Station Signs Every Relay Route And Inner TLS SPKI
+## NCP-D06: Delegated Enrollment And Epoch
 
 **Status**: accepted
-**Date**: 2026-10-10
+**Date**: 2026-10-11
 
 ### Context
-
-Relay can describe reachability but cannot vouch for the Station business
-identity without becoming a trust authority.
-
+Circuit authenticates PeerID, not membership in a logical Station.
 ### Decision
-
-Each route attestation is signed by the Station host key and binds Station
-PeerID, Relay PeerID, route ID, generation, inner TLS SPKI, capability digest,
-visibility and lifetime.
-
+Enrollment validates root-to-node authorization and node key possession.
+Atomic invite consume creates authorization epoch and admission records.
+Renewal retains epoch; revocation advances it and denies stale credentials.
 ### Rationale
-
-Callers can verify route and destination independently of Relay.
-
+Proof-of-possession prevents identity claims; epoch fences removed nodes.
 ### Alternatives Considered
-
-- Relay-signed Station directory: rejected because Relay could substitute a
-  destination.
-- Web PKI hostname only: rejected because URL is not Station identity.
-
+Trusting headers is forgeable; deleting a row leaves issued credentials usable.
 ### Consequences
+Offline clients have bounded certificate-expiry exposure, not instant global revocation.
 
-Route or TLS key rotation requires a new signed attestation. Stale generation
-cannot establish a new tunnel.
-
-## NCP-D08: Relay Frames Are Bounded Protobuf Without HTTP Metadata
+## NCP-D07: Signed Node Routes
 
 **Status**: accepted
-**Date**: 2026-10-10
+**Date**: 2026-10-11
 
 ### Context
-
-Request/response frames and header maps let Relay inspect or mutate application
-semantics and create unbounded allocation risk.
-
+Relay discovery cannot authorize a destination on the Station's behalf.
 ### Decision
-
-The only outer messages are generated `Open`, `Opened`, `Data`, `Cancel` and
-`Close` frames. Data is opaque ciphertext. Size, sequence, byte, rate,
-concurrency, deadline and queue bounds are checked before forwarding.
-
+An authorized node signs logical Station, node PeerID, Relay PeerID, route,
+authorization epoch, capability digest, TLS SPKI and bounded lifetime.
 ### Rationale
-
-The smallest wire surface makes opacity and resource use auditable.
-
+Clients verify destination independently of Relay.
 ### Alternatives Considered
-
-- Bounded HTTP metadata frames: rejected because Relay still learns business
-  routing and credentials.
-- Untyped byte envelope with ad hoc JSON metadata: rejected as non-canonical.
-
+Relay-signed destination or hostname-only trust permits endpoint substitution.
 ### Consequences
+Route and TLS rotation are coordinated. Delegation verification adds control data.
 
-Relay errors describe tunnel lifecycle only. Station/application errors remain
-inside inner TLS.
-
-## NCP-D09: Client And Station-Peer Callers Use Separate Scopes
+## NCP-D08: Standard Wire And Finite Limits
 
 **Status**: accepted
-**Date**: 2026-10-10
+**Date**: 2026-10-11
 
 ### Context
-
-Client access and Federation peer traffic share reachability but have different
-identities and authorization owners.
-
+Pinned Circuit defaults are 2 minutes and 128 KiB per direction, unsuitable for
+the intended SSE/file workload without explicit configuration.
 ### Decision
-
-`CLIENT_ACCESS` uses a public route or Station connection grant and is
-authorized by Station Access after inner TLS. `FEDERATION_PEER` requires the
-caller Station's current mount credential with peer-tunnel scope and is
-authorized by the target Station's typed peer capability/domain policy.
-
+Use library Circuit framing, generated protobuf control and finite connection,
+stream, memory, bandwidth and request limits. Bulk and realtime use separate budgets.
 ### Rationale
-
-Shared transport avoids duplicate data planes without conflating business
-authorization.
-
+Standard wire removes custom transport ownership; explicit budgets prevent outages.
 ### Alternatives Considered
-
-- One generic bearer token: rejected because caller classes and revocation
-  semantics differ.
-- Federation policy authorizes clients: rejected as a cross-domain privilege
-  escalation.
-
+Infinite limits invite exhaustion; default limits cause routine connection resets.
 ### Consequences
+Workload configuration must be evaluated; no capacity or performance claim is implied.
 
-Purpose mismatch, grant on peer traffic, or absent peer scope fails before any
-Station request is forwarded.
-
-## NCP-D10: Circuit Relay/Libp2p Replacement Is Not A Parallel Current Architecture
+## NCP-D09: Separate Transport And Domain Authorization
 
 **Status**: accepted
-**Date**: 2026-10-10
+**Date**: 2026-10-11
 
 ### Context
-
-An architecture-v2 candidate proposed one libp2p Kernel, Circuit Relay v2,
-native Rust swarms, DCUtR, a new Station command protocol and broad naming
-migration. That package also deleted the implemented WSS/inner-TLS tunnel.
-
+Native clients and Station peers share transport with different domain authority.
 ### Decision
-
-The candidate is not merged as a second target. Current Relay stays on the
-accepted WSS + inner TLS opaque tunnel. One-kernel, Circuit Relay, DCUtR,
-client-wide libp2p and naming changes remain outside this architecture.
-
-A future replacement requires a new accepted product/security architecture,
-an end-to-end migration plan, comparative runtime proof, and one atomic removal
-of the current tunnel. It cannot arrive as a compatibility path.
-
+Relay ACL validates public or source-bound private admission. Station validates
+Session/Access or typed Federation peer policy inside encrypted HTTP.
 ### Rationale
-
-The candidate contradicts `SAL-D09` and Federation `D-15`, replaces verified
-code with unproven topology, and expands far beyond Relay completion.
-
+Connectivity membership cannot become Federation or user membership.
 ### Alternatives Considered
-
-- Merge both data planes: rejected as permanent split-brain.
-- Rename current tunnel as a compatibility adapter: rejected as hidden debt.
-- Bulk-copy the candidate worktree: rejected because it contains unrelated
-  cross-product edits and destructive deletions.
-
+One generic bearer credential collapses audience and revocation boundaries.
 ### Consequences
+Private Circuit admission needs a prior control exchange bound to source PeerID.
 
-Current source, Gates and active docs use one Relay protocol. Git history and
-the candidate worktree remain research evidence, not active truth.
-
-## NCP-D11: Relay Service Hosts Use Linux/POSIX Only
+## NCP-D10: One Atomic Transport Replacement
 
 **Status**: accepted
-**Date**: 2026-10-10
+**Date**: 2026-10-11
 
 ### Context
-
-Relay is a long-running infrastructure service with an outer TLS boundary,
-isolated secrets, process supervision, logs, metrics and capacity controls.
-Maintaining a Windows Relay adapter, deployment profile and evidence path would
-create a second service-host contract for the same transport role.
-
+The authorized goal replaces the self-owned data plane without compatibility baggage.
 ### Decision
-
-Relay service hosts use the reviewed Linux/POSIX runtime contract. Production,
-development simulation and Acceptance share that contract. The canonical
-deployment uses Docker Compose with an NGINX TLS terminator and a loopback-only
-Relay control upstream.
-
-Windows has no Relay service adapter, deploy profile, compile gate or
-service-host evidence. Windows Desktop remains a supported client and proves
-its Relay journey against the Linux Relay. Windows Station support is governed
-separately and does not expand the Relay host matrix.
-
+Canonical HTTP paths, protobuf business payloads and SSE remain.
+All direct/Relay native and Federation consumers switch together; custom WSS,
+mount framing, heartbeat/reconnect and bespoke transport-message consumers are deleted.
 ### Rationale
-
-One service-host contract keeps TLS, secret ownership, supervision and
-operational evidence consistent and prevents an unexercised security branch.
-
+One atomic cut prevents two data planes and limits business change.
 ### Alternatives Considered
-
-- Support Linux and Windows Relay hosts: rejected as duplicate deployment and
-  security ownership.
-- Keep dormant Windows Relay code: rejected because dead paths remain
-  maintainable and invokable.
-- Use Windows for local Relay simulation only: rejected because simulation
-  must preserve production runtime behavior.
-
+Dual running or a runtime fallback retains a second truth; bulk candidate copying
+imports unrelated changes and unsupported business protocol changes.
 ### Consequences
+Older incompatible clients fail explicitly. Rollback is source/deployment revert.
 
-Current plans, profiles, deploy dispatch and Acceptance attach only to
-Linux/POSIX Relay runtimes. Windows-native runtime tooling rejects the Relay
-role. Reintroducing another Relay host platform requires a new architecture
-decision and complete deployment, security and lifecycle proof.
+## NCP-D11: Linux/POSIX Relay Host
+
+**Status**: accepted
+**Date**: 2026-10-11
+
+### Context
+Relay supervision, secrets, TLS, network policy and evidence already have one host owner.
+### Decision
+Retain Linux/POSIX hosting. Windows/Desktop and Mobile remain clients;
+Station host support is separately governed.
+### Rationale
+Transport replacement does not require another service-host contract.
+### Alternatives Considered
+Dormant Windows Relay hosting creates an unverified security/operations branch.
+### Consequences
+Circuit listeners and control TLS change the existing deployment in place.
+
+## NCP-D12: One Host Per Process
+
+**Status**: accepted
+**Date**: 2026-10-11
+
+### Context
+Registry already accepts a shared Host, but bootstrap/client constructors still exist.
+### Decision
+The composition root owns Host/DHT/resource manager. All adapters borrow them;
+one owner closes them after dependent components drain.
+### Rationale
+One PeerID and network policy per process prevents conflicting advertised identities.
+### Alternatives Considered
+Independent Hosts per plugin duplicate listeners, keys, reconnect and shutdown.
+### Consequences
+Constructor/close ownership must change across every actual consumer.
+
+## NCP-D13: Cluster Readiness Requires Shared Truth
+
+**Status**: accepted
+**Date**: 2026-10-11
+
+### Context
+Two processes against local object bytes or independent auth material do not make HA.
+### Decision
+N>1 requires shared PostgreSQL, object backend, Access keyring, node registry,
+schema compatibility and cluster-safe enabled domain owners.
+### Rationale
+Any ready node must read and authorize the same committed user state.
+### Alternatives Considered
+Sticky routing merely hides local state; a `clustered=true` switch cannot migrate owners.
+### Consequences
+Local-to-shared storage conversion is an explicit verified maintenance operation.
+Database/object-store HA and cross-region replication are outside this module.
+
+## NCP-D14: Shared Durable Event Order
+
+**Status**: accepted
+**Date**: 2026-10-11
+
+### Context
+Current live fanout is local; persisted events omit target device and sort local ULIDs.
+### Decision
+Events owner allocates transactionally ordered per-Actor cursors, persists target
+device and uses wake hints plus durable replay on all subscriber nodes.
+### Rationale
+A missed notification cannot lose committed data or leak device-specific events.
+### Alternatives Considered
+Process ULIDs plus shared DB do not define commit order; Relay pubsub leaks ownership.
+### Consequences
+Per-Actor sequencing serializes that actor's durable emissions. Replay is bounded;
+retention gaps invoke canonical cold recovery, never silent cursor advancement.
+
+## NCP-D15: Domain-Owned Fencing
+
+**Status**: accepted
+**Date**: 2026-10-11
+
+### Context
+Agent startup scans all running steps; OSS explicitly injects an in-memory lock.
+### Decision
+Extend existing domain lease/lock ports with node incarnation and monotonic fencing.
+Recovery claims only expired ownership, and all durable completion checks its token.
+### Rationale
+Another healthy node must survive peer boot, pause, partition and takeover.
+### Alternatives Considered
+Global RUNNING settlement or node-registry heartbeat alone does not fence stale writes.
+### Consequences
+External side effects still need idempotency or an ambiguous outcome; no exactly-once
+provider guarantee follows from a database lease. OSS claims immutable generations
+transactionally, so stale deletes cannot remove replacement bytes.

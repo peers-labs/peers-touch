@@ -2,126 +2,112 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-10-10 | **Updated**: 2026-10-10
+> **Created**: 2026-10-10 | **Updated**: 2026-10-11
 > **Owner**: Architecture Team
 
----
-
-## 1. Current Layout
+## 1. Existing Extension Points
 
 ```text
 model/domain/
-├── peer/
-│   ├── station_identity.proto
-│   └── access_endpoint.proto
-└── federation/
-    └── relay_transport.proto
+├── peer/station_identity.proto
+└── peer/access_endpoint.proto
 
-apps/station/
-├── frame/core/runtime/role/
-│   ├── role.go
-│   └── role_test.go
-├── frame/core/plugin/native/subserver/
+apps/station/frame/
+├── peers.go
+├── core/runtime/role/
+├── core/plugin/native/
+│   ├── node/native_init_top_comp.go
 │   ├── relay/
-│   │   ├── application/
-│   │   ├── client/
-│   │   ├── domain/
-│   │   ├── infrastructure/
-│   │   ├── protocol/
-│   │   ├── handler_*.go
-│   │   ├── stream.go
-│   │   ├── tunnel_admission.go
-│   │   └── websocket.go
-│   └── relay-client/
-│       ├── enrollment.go
-│       ├── connection_material.go
-│       ├── inner_tls.go
-│       ├── peer_tunnel.go
-│       └── subserver.go
-└── frame/core/federation/
-    ├── routes.go
-    └── transport.go
+│   ├── transport/securehttp/
+│   ├── registry/
+│   ├── federation/
+│   └── subserver/
+│       ├── bootstrap/
+│       └── relay/
+└── core/plugin/server/
+    └── hertz/
 
+apps/station/app/subserver/
+├── events/
+├── agent/infrastructure/persistence/executor_lease.go
+├── agent/service/chat_task_service.go
+└── oss/worker/
+
+packages/
+├── station-libp2p-http/
+└── station-trust/
+
+apps/desktop/src-tauri/src/infrastructure/
+├── station_discovery.rs
+├── station_registry.rs
+└── station_transport.rs
+
+apps/mobile/src-tauri/
 tooling/acceptance/
-├── environments/station-access-relay-role.yaml
-├── provisioners/
-│   ├── posix_service_runtime.py
-│   └── station_access_relay_role.py
-└── gates/station_access/relay_opaque_tunnel_e2e.py
-
 tooling/docker/
-├── compose.yml
-└── relay-nginx.conf.template
-
 tooling/scripts/deploy/
-├── deploy.sh
-├── posix_relay_runtime.py
-└── windows_runtime.py
 ```
 
-## 2. Responsibilities
+This inventory names current directories. New adapters are introduced inside
+these owners when their vertical cut is implemented; this document does not
+pretend an unimplemented directory already exists.
 
-| Path | Owns | Must not own |
+## 2. Target Responsibilities
+
+| Owner | Responsibility | Forbidden ownership |
 |---|---|---|
-| `model/domain/peer/` | signed endpoint, Station identity, route and connection material | runtime storage or UI |
-| `model/domain/federation/relay_transport.proto` | opaque tunnel frame semantics | Federation governance payload |
-| `runtime/role/` | one explicit process role and capability allowlists | business policy |
-| `subserver/relay/domain/` | Relay identity, invite, mount, route and grant model | Station Session or Federation membership |
-| `subserver/relay/application/` | enrollment, rotation, revocation, route/grant admission | payload forwarding details |
-| `subserver/relay/infrastructure/` | Relay-owned persistence | Station/Federation tables |
-| `subserver/relay/protocol/` | bounded mount-stream tunnel framing | HTTP/business metadata |
-| `subserver/relay/handler_tunnel.go` | WSS admission and ciphertext forwarding | inner TLS or Station routing |
-| `subserver/relay/stream.go` | mount stream, tunnel multiplexing, ordering/backpressure | blocking domain work in read loop |
-| `subserver/relay-client/` | Station enrollment, mount, route publication and inner TLS ingress | Federation governance |
-| `frame/core/federation/transport.go` | direct/Relay route adapter for typed peer delivery | Relay credential truth |
-| Linux deploy/runtime adapters | Compose ownership, NGINX outer TLS, Relay secrets and exact-source inspection | business policy or Windows Relay dispatch |
-| Windows runtime adapter | Windows Station deployment and explicit Relay-role rejection | Relay service hosting |
-| Acceptance provisioner | exact-source Station/Relay runtime lifecycle and opaque capability injection | Gate assertions |
-| Acceptance Gate | source contract and runtime tunnel assertions | provisioning or deployment |
+| Model peer contracts | root delegation, node identity, route and connection material | runtime storage and sockets |
+| Model Relay control | enrollment, permits and generated operator messages | Circuit framing or HTTP business wire |
+| Frame composition root | one Host/DHT/resource manager and lifecycle injection | application task scheduling |
+| Native transport | secure direct/circuit dial and stream-backed connection | per-business command decoding |
+| Native registry/bootstrap | signed route discovery and borrowed Host | constructing independent Hosts |
+| Server ingress adapter | TLS/HTTP2 and streaming loopback into existing Hertz router | new Gateway authority or copied handler registry |
+| Relay domain/application | enrolled node, grant and ACL projections | Actor/Session/Federation membership |
+| Relay library adapter | Circuit service and public resource/admission APIs | custom mount/tunnel reader |
+| Station Relay control | enrollment, standard reservation and signed route publication | custom transport heartbeat/reconnect |
+| Federation transport | verified route selection and typed peer request | Relay storage or domain policy duplication |
+| Events owner | durable sequencing, device filter and cross-node subscriber replay | Relay pubsub or business authority |
+| Agent owner | existing lease fencing and expired-owner recovery | global healthy-task settlement |
+| OSS owner | shared backend and fenced existing worker lock | second scheduler service |
+| Rust StationTransport | route/revision-bound dial, HTTP and cancellation | Session truth or foreign-Station business bypass |
+| Linux runtime owner | listeners, control TLS, quotas, exact source and cleanup | additional Relay host platform |
 
-## 3. Dependency Direction
+## 3. Allowed Dependencies
 
 ```text
-generated endpoint and tunnel contracts
-  <- Relay domain/application
-  <- Relay HTTP/WSS and mount-stream adapters
-  <- Station relay-client
-  <- Station Access or Federation caller adapters
+Model signed control
+  <- Frame identity / node registry
+  <- Relay enrollment and admission
+  <- route verifier
 
-Station/Federation business owner
-  -> canonical router / typed capability
-  -> direct transport or opaque Relay transport
+composition root -> Host / DHT / resource manager
+                 -> borrowed transport / registry / bootstrap / Relay adapters
+                 -> Frame ingress -> streaming loopback -> existing Hertz router
+
+Desktop / Mobile Rust StationTransport
+  -> verified route -> standard stream -> Station canonical API
+Federation transport
+  -> verified route -> standard stream -> target peer capability/policy
+
+domain transaction -> durable events log -> cross-node wake/replay -> local SSE
+domain worker -> domain lease/lock port -> shared database fencing
 ```
 
-Allowed:
+Relay cannot import `apps/station/app/subserver/{agent,conversation,oss,...}`.
+Business services cannot import libp2p. Transport does not generate domain
+retries; Access and domain owners reconcile their own idempotent operations.
+Adapters cannot close borrowed Host or publish readiness before required shared
+owners pass. Root key signing does not belong to ordinary node request handlers.
 
-- Relay application depends on its domain and repository ports.
-- Relay framing depends on generated tunnel contracts and fixed limits.
-- Station relay-client depends on Station host identity and canonical router.
-- Federation transport depends on a narrow `RelayAccess` interface.
-- Station Access consumes verified endpoint/route projections.
+## 4. Generation And Governance
 
-Forbidden:
+Proto changes precede generated Go/Rust/TS projection. Use current Model build
+paths; never hand-edit generated contracts. The architecture registry records
+current capability owners and existing contract roots. It does not contain a
+permanent blacklist of old names or proposed non-existent paths.
 
-- Relay imports Station application business subservers.
-- Federation app manipulates tunnel maps, mount tokens or sockets.
-- UI or business runtimes receive operator/mount credentials.
-- Relay frame contains HTTP/business metadata.
-- A second Relay data plane, fallback forward route or compatibility listener.
-
-## 4. Generated Code
-
-Proto changes start under `model/domain/`. Generated files follow existing
-Model generation commands. Generated `.pb.go` or client bindings are not edited
-manually and are not independent contract roots.
-
-## 5. Operational Knowledge
-
-The current implementation remains governed by:
-
-- `docs/knowledge/invariants/relay-runtime-role-is-minimal.md`;
-- `docs/knowledge/invariants/relay-readloop-discipline.md`.
-
-Knowledge entries are not protocol truth. If implementation deletes the custom
-mount stream in a future accepted replacement, those entries must be marked
-`superseded-by` in the same atomic change.
+Operational knowledge stays append-only. At the atomic transport cut, the
+custom-reader invariant is superseded by a narrow standard-transport resource/
+admission invariant. Role minimality continues, with updated listener/control
+verification. Domain-specific cluster knowledge belongs to Events, Agent and
+OSS, not to a general Gateway.

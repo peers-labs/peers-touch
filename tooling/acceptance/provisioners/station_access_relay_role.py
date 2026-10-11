@@ -19,7 +19,6 @@ from tooling.acceptance.core.attestation import (
     source_proto_digest,
 )
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
-from tooling.acceptance.core.launch_context import EphemeralGateLaunchContext
 from tooling.acceptance.core.evidence_store import (
     current_artifact_ref,
     write_current_artifact,
@@ -28,12 +27,17 @@ from tooling.acceptance.core.provisioner import (
     EnvironmentProvisioner,
 )
 from tooling.acceptance.core.provisioning import (
+    ActorManifest,
     ClientRuntime,
     EnvironmentContract,
     ProvisioningState,
     RuntimeManifest,
     ServiceAttestation,
     utc_now,
+)
+from tooling.acceptance.fixtures.chat_native_actors import (
+    persist_actor_manifest,
+    resolve_existing_actor_identity,
 )
 from tooling.acceptance.provisioners.remote_source_identity import (
     resolve_remote_source_identity,
@@ -44,22 +48,8 @@ from tooling.acceptance.provisioners.posix_service_runtime import (
     inspect_posix_runtime,
     resolve_posix_relay_trust_anchor,
 )
-from tooling.acceptance.gates.station_access.relay_enrollment_e2e import (
-    CAPABILITY_ID as ENROLLMENT_CAPABILITY_ID,
-    GATE_ID as ENROLLMENT_GATE_ID,
-    RelayEnrollmentCapabilityHandler,
-)
-from tooling.acceptance.gates.station_access.relay_endpoint_discovery_contract import (
-    CAPABILITY_ID as DISCOVERY_CAPABILITY_ID,
-    GATE_ID as DISCOVERY_GATE_ID,
-    RelayEndpointDiscoveryCapabilityHandler,
-)
-from tooling.acceptance.gates.station_access.relay_opaque_tunnel_e2e import (
-    CAPABILITY_ID as OPAQUE_TUNNEL_CAPABILITY_ID,
-    GATE_ID as OPAQUE_TUNNEL_GATE_ID,
-    RelayOpaqueTunnelCapabilityHandler,
-)
 ROLE_SECURITY_GATE_ID = "relay-role-security-contract"
+NODE_CONNECTIVITY_NATIVE_GATE_ID = "NCP-G03"
 DESKTOP_RELAY_NATIVE_GATE_ID = "station-access-desktop-relay-native-e2e"
 DESKTOP_RELAY_WINDOWS_GATE_ID = "station-access-desktop-relay-windows-e2e"
 DESKTOP_RELAY_GATE_IDS = frozenset(
@@ -69,9 +59,10 @@ DESKTOP_RELAY_GATE_IDS = frozenset(
     }
 )
 DESKTOP_RELAY_CLIENT_ID = "desktop-relay"
-OPAQUE_TUNNEL_REQUEST_TIMEOUT_SECONDS = 180.0
-DISCOVERY_REQUEST_TIMEOUT_SECONDS = 180.0
-ENROLLMENT_REQUEST_TIMEOUT_SECONDS = 240.0
+NODE_CONNECTIVITY_CLIENT_IDS = ("alice", "bob")
+CHAT_FIXTURE_CREDENTIAL_REF = (
+    "fixture:apps/station/app/conf/actor.yml#preset_users"
+)
 SERVICE_RUNTIME_IRRELEVANT_PREFIXES = (
     "apps/desktop/",
     "apps/mobile/",
@@ -180,7 +171,7 @@ def _validate_runtime_status(
     status_commit = str(status.get("sourceCommit") or "")
     http_port = status.get("httpPort")
     public_port = status.get("publicPort")
-    stream_port = status.get("streamPort")
+    libp2p_port = status.get("libp2pPort")
     source_compatibility = _service_source_compatibility(
         status_commit,
         source_commit,
@@ -196,7 +187,7 @@ def _validate_runtime_status(
         or not status.get("containerId")
         or http_port != config.http_port
         or public_port != config.public_port
-        or stream_port != config.stream_port
+        or libp2p_port != config.libp2p_port
     ):
         raise BlockedError(
             reason=(
@@ -220,7 +211,7 @@ def _validate_runtime_status(
         "dataOwner": str(status.get("dataOwner") or ""),
         "httpPort": http_port,
         "publicPort": public_port,
-        "streamPort": stream_port,
+        "libp2pPort": libp2p_port,
         "sourceCompatibility": {
             "runtime": source_compatibility,
             "build": build_compatibility,
@@ -280,8 +271,8 @@ def _persist_relay_attestation(
             ),
             "upstream": "http://127.0.0.1:18080",
         },
-        "streamEndpoint": (
-            f"tls://{config_host(relay_url)}:{relay_runtime['streamPort']}"
+        "circuitEndpoint": (
+            f"/dns4/{config_host(relay_url)}/tcp/{relay_runtime['libp2pPort']}"
         ),
         "publicEndpoint": relay_url,
         "tlsTrustAnchor": {
@@ -313,7 +304,7 @@ def _persist_station_route_attestation(
     *,
     environment_id: str,
     relay_locator: str,
-    relay_transport_endpoint: str,
+    relay_discovery_endpoint: str,
     station_attestation: ServiceAttestation,
     relay_attestation: ServiceAttestation,
 ) -> ServiceAttestation:
@@ -339,7 +330,7 @@ def _persist_station_route_attestation(
         "stationAttestationRef": dict(station_attestation.artifact_ref),
         "relayServiceId": relay_attestation.service_id,
         "relayAttestationRef": dict(relay_attestation.artifact_ref),
-        "transportEndpoint": relay_transport_endpoint,
+        "discoveryEndpoint": relay_discovery_endpoint,
     }
     relative_path = "runtime/services/station-via-relay/attestation.json"
     write_current_artifact(
@@ -380,7 +371,7 @@ def config_host(endpoint: str) -> str:
     return host
 
 
-def _relay_route_endpoint(
+def _relay_discovery_endpoint(
     relay_url: str,
     relay_runtime: Mapping[str, Any],
 ) -> str:
@@ -402,7 +393,7 @@ def _relay_route_endpoint(
 
 
 class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
-    """Attach the role-security Gate to existing Station and Relay runtimes."""
+    """Attach Station Access Gates to existing Station and Relay runtimes."""
 
     environment_id = "station-access-relay-role"
 
@@ -412,106 +403,12 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
         self._relay_config: PosixServiceRuntimeConfig | None = None
         self._relay_trust_anchor: bytes | None = None
 
-    def create_gate_launch_context(
-        self,
-        *,
-        gate_id: str,
-        evidence_run_id: str,
-        provisioning_run_id: str,
-        required_capabilities: tuple[str, ...],
-    ) -> EphemeralGateLaunchContext | None:
-        if not required_capabilities:
-            return None
-        if (
-            gate_id == OPAQUE_TUNNEL_GATE_ID
-            and required_capabilities == (OPAQUE_TUNNEL_CAPABILITY_ID,)
-            and self._manifest is not None
-            and self._manifest.is_ready()
-            and evidence_run_id != provisioning_run_id
-            and evidence_run_id == self.evidence_run.run_id
-            and provisioning_run_id == self._manifest.run_id
-            and self._station_config is not None
-            and self._relay_config is not None
-            and self._relay_trust_anchor is not None
-        ):
-            context = EphemeralGateLaunchContext(
-                required_capabilities=required_capabilities,
-                request_timeout_seconds=OPAQUE_TUNNEL_REQUEST_TIMEOUT_SECONDS,
-            )
-            context.register_capability(
-                OPAQUE_TUNNEL_CAPABILITY_ID,
-                RelayOpaqueTunnelCapabilityHandler(
-                    self._station_config.transport(),
-                    self._relay_config.transport(),
-                    self._station_config,
-                    self._relay_config,
-                    self._relay_trust_anchor,
-                ),
-            )
-            return context
-        if (
-            gate_id == DISCOVERY_GATE_ID
-            and required_capabilities == (DISCOVERY_CAPABILITY_ID,)
-            and self._manifest is not None
-            and self._manifest.is_ready()
-            and evidence_run_id != provisioning_run_id
-            and evidence_run_id == self.evidence_run.run_id
-            and provisioning_run_id == self._manifest.run_id
-            and self._station_config is not None
-            and self._relay_config is not None
-        ):
-            context = EphemeralGateLaunchContext(
-                required_capabilities=required_capabilities,
-                request_timeout_seconds=DISCOVERY_REQUEST_TIMEOUT_SECONDS,
-            )
-            context.register_capability(
-                DISCOVERY_CAPABILITY_ID,
-                RelayEndpointDiscoveryCapabilityHandler(
-                    self._station_config.transport(),
-                    self._relay_config.transport(),
-                    self._station_config,
-                    self._relay_config,
-                ),
-            )
-            return context
-        if (
-            gate_id != ENROLLMENT_GATE_ID
-            or required_capabilities != (ENROLLMENT_CAPABILITY_ID,)
-            or self._manifest is None
-            or not self._manifest.is_ready()
-            or evidence_run_id == provisioning_run_id
-            or evidence_run_id != self.evidence_run.run_id
-            or provisioning_run_id != self._manifest.run_id
-            or self._station_config is None
-            or self._relay_config is None
-        ):
-            raise BlockedError(
-                reason="Relay enrollment capability contract is incomplete",
-                resource=f"ephemeral-capabilities:{gate_id}",
-            )
-        context = EphemeralGateLaunchContext(
-            required_capabilities=required_capabilities,
-            request_timeout_seconds=ENROLLMENT_REQUEST_TIMEOUT_SECONDS,
-        )
-        context.register_capability(
-            ENROLLMENT_CAPABILITY_ID,
-            RelayEnrollmentCapabilityHandler(
-                self._station_config.transport(),
-                self._relay_config.transport(),
-                self._station_config,
-                self._relay_config,
-            ),
-        )
-        return context
-
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
         try:
             if gate_id not in {
                 ROLE_SECURITY_GATE_ID,
-                ENROLLMENT_GATE_ID,
-                DISCOVERY_GATE_ID,
-                OPAQUE_TUNNEL_GATE_ID,
+                NODE_CONNECTIVITY_NATIVE_GATE_ID,
                 *DESKTOP_RELAY_GATE_IDS,
             }:
                 raise BlockedError(
@@ -653,7 +550,7 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
             station_route_attestation = _persist_station_route_attestation(
                 environment_id=self.environment_id,
                 relay_locator=relay_url,
-                relay_transport_endpoint=_relay_route_endpoint(
+                relay_discovery_endpoint=_relay_discovery_endpoint(
                     relay_url,
                     relay_runtime,
                 ),
@@ -662,49 +559,76 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
             )
             clients: tuple[ClientRuntime, ...] = ()
             cleanup_resources: tuple[str, ...] = ()
+            actor_manifest_ref: dict[str, Any] | None = None
+            credential_refs: tuple[str, ...] = ()
+            client_ids: tuple[str, ...] = ()
             if gate_id in DESKTOP_RELAY_GATE_IDS:
+                client_ids = (DESKTOP_RELAY_CLIENT_ID,)
+            elif gate_id == NODE_CONNECTIVITY_NATIVE_GATE_ID:
+                client_ids = NODE_CONNECTIVITY_CLIENT_IDS
+
+            if client_ids:
                 declared = {
                     client.id: client for client in self.contract.clients
                 }
-                if set(declared) != {DESKTOP_RELAY_CLIENT_ID}:
+                missing_clients = sorted(set(client_ids) - set(declared))
+                if missing_clients:
                     raise BlockedError(
                         reason=(
-                            "Desktop Relay environment must declare one "
-                            "native client"
+                            "Relay environment is missing Native clients: "
+                            + ", ".join(missing_clients)
                         ),
                         resource=f"gate-environment:{gate_id}",
                     )
                 runtime_root = Path(
                     tempfile.mkdtemp(
-                        prefix=f"pt-desktop-relay-{manifest.run_id}-"
+                        prefix=f"pt-relay-native-{manifest.run_id}-"
                     )
                 )
                 self.register_cleanup(
                     f"client-storage:{runtime_root}",
                     lambda: shutil.rmtree(runtime_root, ignore_errors=True),
                 )
-                gateway_port, renderer_port, webdriver_port = _available_ports(
-                    3
-                )
-                client_contract = declared[DESKTOP_RELAY_CLIENT_ID]
-                clients = (
+                ports = _available_ports(3 * len(client_ids))
+                clients = tuple(
                     ClientRuntime(
-                        id=DESKTOP_RELAY_CLIENT_ID,
+                        id=client_id,
                         actor=client_contract.actor,
                         runtime=client_contract.runtime,
                         worktree=str(REPO_ROOT),
-                        gateway_port=gateway_port,
-                        renderer_port=renderer_port,
-                        webdriver_port=webdriver_port,
-                        profile=f"{profile_name}-desktop-relay",
-                        storage_root=str(runtime_root / "storage"),
+                        gateway_port=ports[index * 3],
+                        renderer_port=ports[index * 3 + 1],
+                        webdriver_port=ports[index * 3 + 2],
+                        profile=f"{profile_name}-{client_id}",
+                        storage_root=str(runtime_root / client_id / "storage"),
                         required_service_roles=(
                             client_contract.required_service_roles
                         ),
                         service_bindings=client_contract.service_bindings,
-                    ),
+                    )
+                    for index, client_id in enumerate(client_ids)
+                    for client_contract in (declared[client_id],)
                 )
                 cleanup_resources = self.contract.cleanup.resources
+            if gate_id == NODE_CONNECTIVITY_NATIVE_GATE_ID:
+                actors = tuple(
+                    resolve_existing_actor_identity(station_url, role)
+                    for role in NODE_CONNECTIVITY_CLIENT_IDS
+                )
+                _, _, actor_manifest_ref = persist_actor_manifest(
+                    ActorManifest(
+                        fixture_id="node-connectivity-existing-actors",
+                        environment_id=self.environment_id,
+                        run_id=manifest.run_id,
+                        created_at=utc_now(),
+                        actors=actors,
+                        credential_refs=(CHAT_FIXTURE_CREDENTIAL_REF,),
+                        reset_authorized=False,
+                        target_verified=True,
+                        initial_state="existing",
+                    )
+                )
+                credential_refs = (CHAT_FIXTURE_CREDENTIAL_REF,)
             manifest = dataclasses.replace(
                 manifest,
                 state=ProvisioningState.PROVISIONED,
@@ -713,6 +637,8 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                     "relay": relay_attestation,
                     "station-via-relay": station_route_attestation,
                 },
+                actor_manifest_ref=actor_manifest_ref,
+                credential_refs=credential_refs,
                 clients=clients,
                 cleanup_resources=cleanup_resources,
             )

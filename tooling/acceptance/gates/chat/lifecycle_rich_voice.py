@@ -9,7 +9,6 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
 
 from tooling.acceptance.core import AcceptanceGate, GateError
@@ -18,7 +17,6 @@ from tooling.acceptance.drivers.native import (
     NativeControlSnapshot,
     NativeDesktopRuntimeBinding,
     NativeKey,
-    NativeModifier,
 )
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
 from tooling.acceptance.drivers.tauri import TauriSession
@@ -27,6 +25,7 @@ from tooling.acceptance.fixtures.chat_attachment_fault_proxy import (
     ATTACHMENT_UPLOAD_BEGIN_PATH,
     AcceptanceStationAttachmentFaultProxy,
 )
+from tooling.acceptance.gates.chat.native_file_picker import select_native_file
 from tooling.acceptance.gates.chat.native_support import (
     async_harness,
     enter_chat_page,
@@ -105,287 +104,19 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
         source_path: Path,
     ) -> None:
         client = self.clients[actor]
-        if client.process_id is None:
-            raise GateError(f"{actor} Native file chooser has no owning process")
-        selected_path = self.runtime_binding.stage_native_file(
-            actor,
-            source_path.resolve(),
-        )
-        adapter = self.runtime_binding.native_adapter
-        cooperative_activation = (
-            self.runtime_binding.request_cooperative_activation(
-                client,
-                tuple(self.clients.values()),
-            )
-        )
-
-        def native_app_ready(_: Any) -> NativeControlSnapshot | None:
-            control = (
-                adapter.focused_control(client.process_id or 0)
-                if cooperative_activation
-                else adapter.activate_and_focused_control(
-                    client.process_id or 0
-                )
-            )
-            ready = (
-                control.window_count >= 1
-                and control.main_window
-                and control.frontmost
-                and control.kind not in {
-                    "list",
-                    "text-field",
-                    "application-dialog",
-                }
-            )
-            return control if ready else None
-
-        baseline = WebDriverWait(
-            client.driver,
-            30,
-            poll_frequency=0.05,
-        ).until(native_app_ready)
         trigger = client.find_element(trigger_selector, STEP_TIMEOUT)
         if not trigger.is_displayed() or not trigger.is_enabled():
             raise GateError(
                 f"{actor} Native file chooser trigger is not actionable"
             )
-        trigger.click()
-
-        def panel_open(control: NativeControlSnapshot) -> bool:
-            return (
-                control.window_count > baseline.window_count
-                or control.dialog_count > baseline.dialog_count
-                or (
-                    control.kind in {"list", "text-field"}
-                    and control.kind != baseline.kind
-                )
-            )
-
-        def restore_native_window() -> None:
-            restored_activation = (
-                self.runtime_binding.request_cooperative_activation(
-                    client,
-                    tuple(self.clients.values()),
-                )
-            )
-
-            def native_window_restored(
-                _: Any,
-            ) -> NativeControlSnapshot | None:
-                control = (
-                    adapter.focused_control(client.process_id or 0)
-                    if cooperative_activation
-                    else adapter.activate_and_focused_control(
-                        client.process_id or 0
-                    )
-                )
-                document_focused = bool(
-                    client.driver.execute_script("return document.hasFocus()")
-                )
-                restored = (
-                    control.window_count >= baseline.window_count
-                    and not panel_open(control)
-                    and control.main_window
-                    and control.frontmost
-                    and document_focused
-                    and control.kind != "application-dialog"
-                )
-                return control if restored else None
-
-            WebDriverWait(
-                client.driver,
-                30,
-                poll_frequency=0.05,
-            ).until(native_window_restored)
-
-        def panel_snapshot() -> NativeControlSnapshot:
-            return adapter.focused_control(client.process_id or 0)
-
-        WebDriverWait(
-            client.driver,
-            30,
-            poll_frequency=0.05,
-        ).until(
-            lambda _: (
-                control
-                if panel_open(
-                    control := panel_snapshot()
-                )
-                else None
-            )
+        select_native_file(
+            actor=actor,
+            client=client,
+            sessions=tuple(self.clients.values()),
+            runtime_binding=self.runtime_binding,
+            source_path=source_path,
+            trigger=trigger.click,
         )
-        selected_control = adapter.select_file_chooser_path_to_process(
-            client.process_id,
-            str(selected_path),
-        )
-        if selected_control is not None:
-            if selected_control.dialog_count:
-                raise GateError(
-                    "Native file chooser selection was not committed"
-                )
-            if adapter.platform == "macos":
-                restore_native_window()
-            return
-        if adapter.platform == "win32":
-            raise GateError(
-                "Native file chooser selection returned no Win32 control"
-            )
-
-        def revealed_field_snapshot() -> NativeControlSnapshot:
-            return adapter.focused_control(client.process_id or 0)
-
-        path_control: NativeControlSnapshot | None = None
-        for reveal_attempt in range(1, 5):
-            if adapter.platform == "macos":
-                revealed_control = (
-                    adapter.reveal_file_chooser_location_to_process(
-                        client.process_id
-                    )
-                )
-            elif cooperative_activation:
-                owner = adapter.focused_control(client.process_id or 0)
-                if (
-                    not owner.frontmost
-                    or owner.actual_frontmost_pid != client.process_id
-                ):
-                    self.runtime_binding.request_cooperative_activation(
-                        client,
-                        tuple(self.clients.values()),
-                    )
-                adapter.reveal_file_chooser_location()
-                revealed_control = None
-            else:
-                revealed_control = (
-                    adapter.reveal_file_chooser_location_to_process(
-                        client.process_id
-                    )
-                )
-            if revealed_control is not None:
-                if revealed_control.kind != "text-field":
-                    raise GateError(
-                        "Native file chooser reveal returned an invalid control: "
-                        f"{revealed_control.to_dict()}"
-                    )
-                path_control = revealed_control
-                break
-            try:
-                path_control = WebDriverWait(
-                    client.driver,
-                    2.5,
-                    poll_frequency=0.05,
-                ).until(
-                    lambda _: (
-                        control
-                        if (
-                            control := revealed_field_snapshot()
-                        ).kind
-                        == "text-field"
-                        else None
-                    )
-                )
-                break
-            except TimeoutException:
-                continue
-        if path_control is None:
-            raise GateError(
-                "Native file chooser did not expose its location field "
-                "after bounded target-owned retries"
-            )
-
-        def post_chooser_key(
-            key: NativeKey,
-            *,
-            modifiers: tuple[NativeModifier, ...] = (),
-            private_source: bool = False,
-        ) -> None:
-            if cooperative_activation:
-                adapter.post_key(
-                    key,
-                    modifiers=modifiers,
-                    private_source=private_source,
-                )
-                return
-            adapter.post_key_to_process(
-                client.process_id,
-                key,
-                modifiers=modifiers,
-                private_source=private_source,
-            )
-
-        clipboard = adapter.read_clipboard()
-        try:
-            selected_path_bytes = str(selected_path).encode("utf-8")
-            adapter.write_clipboard(selected_path_bytes)
-            if adapter.read_clipboard() != selected_path_bytes:
-                raise GateError(
-                    "Native file chooser clipboard path did not round-trip"
-                )
-            post_chooser_key(
-                NativeKey.A,
-                modifiers=(NativeModifier.PRIMARY,),
-            )
-            post_chooser_key(
-                NativeKey.V,
-                modifiers=(NativeModifier.PRIMARY,),
-            )
-            WebDriverWait(
-                client.driver,
-                10,
-                poll_frequency=0.05,
-            ).until(
-                lambda _: (
-                    control
-                    if (
-                        (
-                            control := adapter.focused_control(
-                                client.process_id or 0
-                            )
-                        ).kind
-                        == "text-field"
-                        and control.value == str(selected_path)
-                    )
-                    else None
-                )
-            )
-        finally:
-            adapter.write_clipboard(clipboard)
-        post_chooser_key(
-            NativeKey.ENTER,
-            private_source=True,
-        )
-
-        def selection_or_dialog_ready(_: Any) -> dict[str, object] | None:
-            control = adapter.focused_control(client.process_id or 0)
-            if control.window_count < baseline.window_count:
-                return None
-            if control.kind == "application-dialog":
-                return {"selected": False}
-            if panel_open(control) and control.kind != "text-field":
-                return {"selected": False}
-            if (
-                not panel_open(control)
-                and control.main_window
-                and control.frontmost
-                and control.focused_window
-                and control.kind != "application-dialog"
-            ):
-                return {"selected": True}
-            return None
-
-        intermediate = WebDriverWait(
-            client.driver,
-            30,
-            poll_frequency=0.05,
-        ).until(
-            selection_or_dialog_ready
-        )
-        if not intermediate["selected"]:
-            post_chooser_key(
-                NativeKey.ENTER,
-                private_source=True,
-            )
-
-        restore_native_window()
 
     def _restart_client_preserving_state(self, actor: str) -> TauriSession:
         predecessor = self.clients[actor]

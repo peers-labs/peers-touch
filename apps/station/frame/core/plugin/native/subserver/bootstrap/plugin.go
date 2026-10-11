@@ -2,8 +2,11 @@ package bootstrap
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/peers-labs/peers-touch/station/frame/core/config"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
@@ -19,14 +22,13 @@ var bootstrapOptions struct {
 	Peers struct {
 		Node struct {
 			Server struct {
+				BaseURL   string `pconf:"baseurl"`
 				Subserver struct {
 					Bootstrap struct {
 						Enabled            bool          `pconf:"enabled"`
 						EnableMDNS         bool          `pconf:"enable-mdns"`
-						IdentityKey        string        `pconf:"identity-key"`
-						ListenAddrs        []string      `pconf:"listen-addrs"`
+						StationRootKeyFile string        `pconf:"station-root-key-file"`
 						DHTRefreshInterval time.Duration `pconf:"dht-refresh-interval"`
-						Libp2pInsecure     bool          `pconf:"libp2p-insecure"`
 					} `pconf:"bootstrap"`
 				} `pconf:"subserver"`
 			} `pconf:"server"`
@@ -35,6 +37,24 @@ var bootstrapOptions struct {
 }
 
 type bootstrap struct{}
+
+// StationRootKey returns the persistent logical Station identity. It is
+// independent from the process Host key.
+func StationRootKey() (crypto.PrivKey, error) {
+	rootKeyPath := bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.StationRootKeyFile
+	if rootKeyPath == "" {
+		rootKeyPath = "bootstrap.key"
+	}
+	rootKey, err := loadOrGenerateKey(rootKeyPath)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"load logical Station root from %s: %w",
+			rootKeyPath,
+			err,
+		)
+	}
+	return rootKey, nil
+}
 
 // Name returns the plugin identifier.
 func (p *bootstrap) Name() string {
@@ -49,20 +69,19 @@ func (p *bootstrap) Options() []option.Option {
 	var opts []option.Option
 
 	opts = append(opts, WithEnabled(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.Enabled))
-	opts = append(opts, WithListenAddrs(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.ListenAddrs))
 	opts = append(opts, WithMDNS(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.EnableMDNS))
-	opts = append(opts, WithLibp2pInsecure(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.Libp2pInsecure))
+	opts = append(
+		opts,
+		WithStationDomain(
+			stationDomain(bootstrapOptions.Peers.Node.Server.BaseURL),
+		),
+	)
 
-	keyPath := bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.IdentityKey
-	if keyPath == "" {
-		keyPath = "bootstrap.key"
-	}
-	privKey, err := loadOrGenerateKey(keyPath)
+	rootKey, err := StationRootKey()
 	if err != nil {
-		panic(fmt.Errorf("failed to load identity key from %s: %w", keyPath, err))
+		panic(err)
 	}
-	opts = append(opts, WithIdentityKey(privKey))
-	opts = append(opts, WithPrivateKey(privKey))
+	opts = append(opts, WithStationRootKey(rootKey))
 
 	dhtRefreshInterval := bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.DHTRefreshInterval
 	if dhtRefreshInterval == 0 {
@@ -71,6 +90,17 @@ func (p *bootstrap) Options() []option.Option {
 	opts = append(opts, WithDHTRefreshInterval(dhtRefreshInterval*time.Second))
 
 	return opts
+}
+
+func stationDomain(origin string) string {
+	parsed, err := url.Parse(strings.TrimSpace(origin))
+	if err != nil || parsed.User != nil || parsed.Host == "" {
+		return ""
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return ""
+	}
+	return strings.ToLower(parsed.Host)
 }
 
 // Enabled reports whether the bootstrap subserver is enabled.

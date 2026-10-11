@@ -20,9 +20,9 @@ func (h *relayHandler) handlePublishStationRoute(
 	ctx context.Context,
 	req *peerpb.PublishStationRouteRequest,
 ) (*peerpb.PublishStationRouteResponse, error) {
-	identity, ok := mountIdentityFromContext(ctx)
+	identity, ok := nodeIdentityFromContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("valid Relay mount identity is required")
+		return nil, fmt.Errorf("valid Relay enrollment identity is required")
 	}
 	statement, err := h.sub.svc.PublishStationRoute(
 		ctx,
@@ -42,9 +42,9 @@ func (h *relayHandler) handleRegisterConnectionGrant(
 	ctx context.Context,
 	req *peerpb.RegisterStationConnectionGrantRequest,
 ) (*peerpb.RegisterStationConnectionGrantResponse, error) {
-	identity, ok := mountIdentityFromContext(ctx)
+	identity, ok := nodeIdentityFromContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("valid Relay mount identity is required")
+		return nil, fmt.Errorf("valid Relay enrollment identity is required")
 	}
 	record, err := h.sub.svc.RegisterConnectionGrant(ctx, identity, req)
 	if err != nil {
@@ -56,10 +56,10 @@ func (h *relayHandler) handleRegisterConnectionGrant(
 	}, nil
 }
 
-func mountIdentityFromContext(ctx context.Context) (domain.MountIdentity, bool) {
+func nodeIdentityFromContext(ctx context.Context) (domain.NodeIdentity, bool) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
-		return domain.MountIdentity{}, false
+		return domain.NodeIdentity{}, false
 	}
-	return mountIdentityFromSubject(subject.ID, subject.Attributes)
+	return nodeIdentityFromSubject(subject.ID, subject.Attributes)
 }

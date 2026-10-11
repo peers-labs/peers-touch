@@ -136,11 +136,11 @@ GitHub Actions workflow [`deploy-station.yml`](../../.github/workflows/deploy-st
   at startup, then appends them to `peers.yml`'s `includes:` list.
   `apps/station/app/conf/peers.yml` and `sub_bootstrap.yml` are
   **never modified** — overlays win by being last.
-- **Persistent libp2p identities**: a single named volume
-  `peers_data:/app/data` persists both `libp2pIdentity.key` (transport)
-  and `bootstrap.key` (bootstrap subserver), so PeerIDs survive container
-  recreation. `make pt-discover-relay` therefore only needs to run once
-  per topology (until you `pt-down ENV=pt-relay -v`).
+- **Persistent identities**: a single named volume `peers_data:/app/data`
+  persists `bootstrap.key` as the logical Station root and
+  `station-node.key` as the physical node identity. The current transport key
+  remains persisted until the NCP-03 atomic transport cut removes that data
+  plane.
 - **Federation rollout — two-step plan** (see [`.localenv`](../../.localenv) §6):
     - Step 1 (this PR): libp2p layer — DHT seed wiring via overlays.
       Zero station Go code change.

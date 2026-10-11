@@ -1,14 +1,12 @@
 package bootstrap
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"sort"
 	"time"
 
-	"github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
 	peerpb "github.com/peers-labs/peers-touch/station/frame/touch/model/peer"
-	"google.golang.org/protobuf/proto"
 )
 
 func (s *SubServer) SignStationRouteAttestation(
@@ -17,11 +15,19 @@ func (s *SubServer) SignStationRouteAttestation(
 	if s.host == nil {
 		return nil, fmt.Errorf("Station route signer is not ready")
 	}
-	return signStationRouteAttestation(
+	now := time.Now().UTC()
+	authorization, err := s.currentNodeAuthorization(now)
+	if err != nil {
+		return nil, err
+	}
+	if err := bindNodeRouteStatement(statement, authorization, now); err != nil {
+		return nil, err
+	}
+	return peerpb.SignStationRouteAttestation(
 		s.host.Peerstore().PrivKey(s.host.ID()),
-		s.host.ID(),
+		authorization,
 		statement,
-		time.Now().UTC(),
+		now,
 	)
 }
 
@@ -31,116 +37,88 @@ func (s *SubServer) SignStationConnectionGrant(
 	if s.host == nil {
 		return nil, fmt.Errorf("Station grant signer is not ready")
 	}
-	return signStationConnectionGrant(
+	now := time.Now().UTC()
+	authorization, err := s.currentNodeAuthorization(now)
+	if err != nil {
+		return nil, err
+	}
+	if err := bindNodeGrantStatement(statement, authorization, now); err != nil {
+		return nil, err
+	}
+	return peerpb.SignStationConnectionGrant(
 		s.host.Peerstore().PrivKey(s.host.ID()),
-		s.host.ID(),
+		authorization,
 		statement,
-		time.Now().UTC(),
+		now,
 	)
 }
 
-func signStationRouteAttestation(
-	privateKey crypto.PrivKey,
-	stationPeerID peer.ID,
+func bindNodeRouteStatement(
 	statement *peerpb.StationRouteStatement,
+	authorization *peerpb.StationNodeAuthorization,
 	now time.Time,
-) (*peerpb.StationRouteAttestation, error) {
-	if statement == nil ||
-		statement.GetStationPeerId() != stationPeerID.String() ||
-		statement.GetRelayPeerId() == "" ||
-		statement.GetRouteId() == "" ||
-		statement.GetRouteGeneration() == 0 ||
-		len(statement.GetInnerTlsSpkiSha256()) != 32 ||
-		len(statement.GetCapabilitiesDigest()) != 32 ||
-		(statement.GetVisibility() !=
-			peerpb.StationRouteVisibility_STATION_ROUTE_VISIBILITY_PUBLIC &&
-			statement.GetVisibility() !=
-				peerpb.StationRouteVisibility_STATION_ROUTE_VISIBILITY_GRANT_ONLY) ||
-		statement.GetIssuedAtUnixMs() > now.Add(time.Minute).UnixMilli() ||
-		statement.GetExpiresAtUnixMs() <= now.UnixMilli() ||
-		statement.GetExpiresAtUnixMs()-statement.GetIssuedAtUnixMs() >
-			domain.MaxRouteAttestationLifetime.Milliseconds() {
-		return nil, fmt.Errorf("Station route statement is invalid")
+) error {
+	verified, err := peerpb.VerifyStationNodeAuthorization(authorization, now)
+	if err != nil || statement == nil {
+		return fmt.Errorf("Station route authorization is invalid")
 	}
-	return signStationStatement(
-		privateKey,
-		stationPeerID,
-		statement,
-		domain.StationRouteDomain,
-		func(statementBytes, publicKey, signature []byte) *peerpb.StationRouteAttestation {
-			return &peerpb.StationRouteAttestation{
-				StatementBytes: statementBytes,
-				HostPublicKey:  publicKey,
-				Signature:      signature,
-			}
-		},
+	if statement.GetStationPeerId() != "" &&
+		statement.GetStationPeerId() !=
+			verified.Statement.GetStationPeerId() {
+		return fmt.Errorf("Station route logical identity does not match authorization")
+	}
+	if statement.GetRelayPeerId() == "" {
+		return fmt.Errorf("Station circuit route Relay identity is missing")
+	}
+	statement.StationPeerId = verified.Statement.GetStationPeerId()
+	statement.NodePeerId = verified.Statement.GetNodePeerId()
+	statement.NodeAuthorizationDigest = verified.Digest[:]
+	statement.CapabilitiesDigest = append(
+		[]byte(nil),
+		verified.Statement.GetCapabilitiesDigest()...,
 	)
+	statement.Kind = peerpb.StationRouteKind_STATION_ROUTE_KIND_CIRCUIT
+	statement.Addresses = []string{
+		fmt.Sprintf(
+			"/p2p/%s/p2p-circuit/p2p/%s",
+			statement.GetRelayPeerId(),
+			statement.GetNodePeerId(),
+		),
+	}
+	sort.Strings(statement.Addresses)
+	if statement.GetExpiresAtUnixMs()-statement.GetIssuedAtUnixMs() >
+		peerpb.MaxRouteAttestationLifetime.Milliseconds() {
+		statement.ExpiresAtUnixMs = statement.GetIssuedAtUnixMs() +
+			peerpb.MaxRouteAttestationLifetime.Milliseconds()
+	}
+	if len(statement.GetInnerTlsSpkiSha256()) != sha256.Size {
+		return fmt.Errorf("Station route TLS SPKI digest is invalid")
+	}
+	return nil
 }
 
-func signStationConnectionGrant(
-	privateKey crypto.PrivKey,
-	stationPeerID peer.ID,
+func bindNodeGrantStatement(
 	statement *peerpb.StationConnectionGrantStatement,
+	authorization *peerpb.StationNodeAuthorization,
 	now time.Time,
-) (*peerpb.StationConnectionGrant, error) {
-	if statement == nil ||
-		statement.GetStationPeerId() != stationPeerID.String() ||
-		statement.GetRelayPeerId() == "" ||
-		statement.GetRouteId() == "" ||
-		statement.GetRouteGeneration() == 0 ||
-		statement.GetGrantId() == "" ||
-		statement.GetMaxUses() == 0 ||
-		statement.GetMaxUses() > domain.MaxConnectionGrantUses ||
-		statement.GetIssuedAtUnixMs() > now.Add(time.Minute).UnixMilli() ||
-		statement.GetExpiresAtUnixMs() <= now.UnixMilli() ||
-		statement.GetExpiresAtUnixMs()-statement.GetIssuedAtUnixMs() >
-			domain.MaxConnectionGrantLifetime.Milliseconds() {
-		return nil, fmt.Errorf("Station connection grant statement is invalid")
+) error {
+	if statement == nil {
+		return fmt.Errorf("Station grant statement is invalid")
 	}
-	return signStationStatement(
-		privateKey,
-		stationPeerID,
-		statement,
-		domain.ConnectionGrantDomain,
-		func(statementBytes, publicKey, signature []byte) *peerpb.StationConnectionGrant {
-			return &peerpb.StationConnectionGrant{
-				StatementBytes: statementBytes,
-				HostPublicKey:  publicKey,
-				Signature:      signature,
-			}
-		},
-	)
-}
-
-func signStationStatement[T proto.Message](
-	privateKey crypto.PrivKey,
-	stationPeerID peer.ID,
-	statement proto.Message,
-	signatureDomain string,
-	build func([]byte, []byte, []byte) T,
-) (T, error) {
-	var zero T
-	if privateKey == nil || privateKey.Type() != crypto.Ed25519 {
-		return zero, fmt.Errorf("Station signing key must be Ed25519")
-	}
-	derivedPeerID, err := peer.IDFromPrivateKey(privateKey)
-	if err != nil || derivedPeerID != stationPeerID {
-		return zero, fmt.Errorf("Station signing key does not match peer ID")
-	}
-	statementBytes, err := proto.MarshalOptions{Deterministic: true}.
-		Marshal(statement)
-	if err != nil {
-		return zero, fmt.Errorf("marshal Station signed statement: %w", err)
-	}
-	signature, err := privateKey.Sign(
-		append([]byte(signatureDomain), statementBytes...),
+	verified, err := peerpb.VerifyStationNodeAuthorization(
+		authorization,
+		now,
 	)
 	if err != nil {
-		return zero, fmt.Errorf("sign Station statement: %w", err)
+		return fmt.Errorf("Station grant authorization is invalid")
 	}
-	publicKey, err := crypto.MarshalPublicKey(privateKey.GetPublic())
-	if err != nil {
-		return zero, fmt.Errorf("marshal Station public key: %w", err)
+	if statement.GetStationPeerId() != "" &&
+		statement.GetStationPeerId() !=
+			verified.Statement.GetStationPeerId() {
+		return fmt.Errorf("Station grant logical identity does not match authorization")
 	}
-	return build(statementBytes, publicKey, signature), nil
+	statement.StationPeerId = verified.Statement.GetStationPeerId()
+	statement.NodePeerId = verified.Statement.GetNodePeerId()
+	statement.NodeAuthorizationDigest = verified.Digest[:]
+	return nil
 }

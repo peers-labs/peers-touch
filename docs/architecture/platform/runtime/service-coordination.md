@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.0
-> **Created**: 2026-07-24 | **Updated**: 2026-10-10
+> **Created**: 2026-07-24 | **Updated**: 2026-10-11
 > **Owner**: Architecture Team
 
 ---
@@ -14,7 +14,7 @@ isolation among Relay, Station, Desktop, Mobile and optional LiveKit runtimes.
 
 It does not define:
 
-- Relay protocols, enrollment, route attestation or tunnel framing; see
+- Relay protocols, enrollment, route attestation or standard stream semantics; see
   [Node Connectivity](./node-connectivity/README.md);
 - Station Access product/session behavior;
 - Federation governance;
@@ -24,8 +24,8 @@ It does not define:
 
 | Runtime | Responsibility | Identity/authority |
 |---|---|---|
-| Relay role | public discovery, mount control and opaque tunnel | Relay endpoint/operator authority only |
-| Station role | business truth, Access Gate, persistence and Federation | Station host identity and domain authorities |
+| Relay role | signed discovery, enrollment, Circuit reservation and ACL | Relay endpoint/operator authority only |
+| Station role | Frame ingress, business truth, Access Gate, persistence and Federation | logical Station identity, authorized node and domain authorities |
 | Desktop | native client runtime and UI | device-local identity plus pinned Station |
 | Mobile | native client runtime and UI | device-local identity plus pinned Station |
 | LiveKit | optional shared group-media SFU | cluster media credentials |
@@ -37,7 +37,7 @@ The current role set is `station | relay`; no hybrid role is implied.
 
 ```text
 Relay role (optional for direct-only Station)
-  -> Station relay-client enrolls/mounts
+  -> Station Relay control enrolls/reserves
   -> Station publishes signed Relay route
 
 Station role
@@ -59,18 +59,19 @@ LiveKit (optional)
 
 Relay is not globally required before Station. A Station may start and serve
 direct routes while Relay enrollment retries. A route is published only while
-its mount/generation is current.
+delegation, admission epoch and reservation remain current.
 
 ## 4. Credential Ownership
 
 | Artifact | Issuer/owner | Consumer | Boundary |
 |---|---|---|---|
-| Station host key | Station | endpoint/route verifiers | Station identity and signatures |
-| Relay signing key | Relay | Station/client endpoint verifiers | Relay endpoint/control identity |
+| Station root key | Station operator signing boundary | node authorization verifier | logical Station identity |
+| Node key and root delegation | physical Station node | endpoint/route/TLS verifiers | unique Node PeerID and authorized ingress |
+| Relay Host key | Relay | Station/client endpoint verifiers | Relay PeerID and endpoint/control identity |
 | Relay operator credential | operator policy | Relay admin/metrics | never accepted as Station Session |
-| Relay mount credential | Relay control plane | Station relay-client | mount scopes only |
-| Station connection grant | Station | Relay client tunnel admission | route/generation/use bounded |
-| Station Session | Station Access Gate | Station canonical APIs | remains inside inner TLS |
+| Relay node credential | Relay control plane | Station Relay control | enrollment/reservation/control scopes only |
+| Station connection grant | Station | Relay Circuit admission | source/destination/route/generation/use bounded |
+| Station Session | Station Access Gate | Station canonical APIs | remains inside node-key-bound TLS |
 | Federation peer authorization | source/target Station owners | typed peer capabilities | never interpreted by Relay |
 | LiveKit token | Station group-call owner | client media SDK | room/media only |
 
@@ -83,9 +84,10 @@ never exposed to Client Web/UI.
 
 ```text
 resolve PEERS_NODE_ROLE=relay
-  -> validate public origin/TLS/signing/operator/quota inputs
+  -> validate public libp2p address, Host identity, operator TLS/policy and Circuit quotas
   -> initialize Relay-owned storage
-  -> expose health/discovery/control/tunnel allowlist
+  -> create one Host/resource manager and Circuit ACL
+  -> expose health/discovery/control/Circuit allowlist
   -> ready
 ```
 
@@ -93,10 +95,12 @@ resolve PEERS_NODE_ROLE=relay
 
 ```text
 resolve PEERS_NODE_ROLE=station
-  -> initialize Station data and domain owners
+  -> initialize shared Station data/keyring and domain owners
+  -> create one unique-node Host and validate root delegation
+  -> validate schema/object backing and domain cluster readiness
   -> expose signed identity and canonical APIs
-  -> optionally enroll/mount with configured Relay
-  -> publish route only after mount + attestation succeed
+  -> optionally enroll/reserve with configured Relay
+  -> publish route only after reservation + attestation succeed
   -> ready
 ```
 
@@ -118,8 +122,8 @@ unless the selected product action explicitly requires them.
 
 | Failure | Required behavior |
 |---|---|
-| Relay unavailable at Station boot | Station remains direct-capable; mount retries boundedly |
-| Relay mount revoked/expired | withdraw route; reject old generation; Station identity unchanged |
+| Relay unavailable at Station boot | Station remains direct-capable; reservation retries boundedly |
+| Relay admission revoked/expired | withdraw route; reject old epoch; Station identity unchanged |
 | Client Relay route unavailable | preserve Station binding and report typed route failure |
 | Station unavailable | clients retain identity/binding and enter offline/retry state |
 | LiveKit unavailable | group media unavailable; Station Access/Chat remain available |
@@ -128,8 +132,11 @@ unless the selected product action explicitly requires them.
 
 ## 7. Resource Ownership
 
-- Relay owns its listener, TLS material, mount/tunnel state and metrics.
-- Station owns database, canonical APIs, relay-client mount and business state.
+- Relay owns Host/listeners, control TLS, enrollment/reservation/ACL and metrics.
+- Station owns node Host, Frame ingress, canonical APIs, reservations and domain state.
+- One logical Station's DB/object/keyring owners are shared by ready nodes; Events
+  and domain leases govern cross-node delivery and recovery. DB partition prevents
+  readiness/mutation; a peer node boot must not settle healthy foreign work.
 - Desktop/Mobile own local client processes, secure storage and projections.
 - LiveKit owns media runtime resources.
 - Acceptance provisioners own temporary runtime cells, credentials, tunnels and
@@ -141,7 +148,8 @@ cleanup receipt.
 ## 8. Verification
 
 - role allowlists prove Relay has no Station business routes;
-- Node Connectivity formal Gate proves enrollment and opaque tunnel behavior;
+- Node Connectivity formal Gates prove delegation, enrollment, canonical streams,
+  finite limits, renewal and revocation;
 - Station Access Journeys prove direct/Relay paths reach the same Station scope;
 - Federation Journeys prove peer delivery has receiver-visible parity;
 - LiveKit tests are independent from Relay evidence;

@@ -1,0 +1,20 @@
+[package]
+name = "station-libp2p-http"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bytes = "1"
+h2 = "0.4"
+http = "1"
+libp2p = { version = "0.57", default-features = false, features = ["dns", "ed25519", "identify", "macros", "noise", "ping", "relay", "tcp", "tokio", "yamux"] }
+libp2p-stream = "0.5.0-alpha"
+rustls = { version = "0.23", features = ["ring"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "sync", "time"] }
+tokio-rustls = "0.26"
+tokio-util = { version = "0.7", features = ["compat"] }
+x509-parser = "0.17"
+
+[dev-dependencies]
+serde_json = "1"

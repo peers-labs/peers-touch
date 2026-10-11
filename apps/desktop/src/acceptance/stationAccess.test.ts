@@ -100,7 +100,7 @@ describe('configureAcceptanceStation', () => {
 
   it('uses the signed Relay transport origin instead of the discovery locator', async () => {
     const locator = 'http://relay.invalid:18081';
-    const transport = 'https://relay.invalid:4501';
+    const transport = 'https://relay.invalid:18443';
     const stationApi = {
       stationAdd: vi.fn(async () => ({
         role: 'relay' as const,

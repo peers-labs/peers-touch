@@ -2,16 +2,24 @@ package native
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
+	"time"
 
-	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/peers-labs/peers-touch/station/frame/core/client"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/peers-labs/peers-touch/station/frame/core/config"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
 	registryNative "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
+	nativeRelay "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/relay"
+	bootstrapNative "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap"
+	relayControl "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay"
+	transportNative "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/transport"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/transport/securehttp"
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/runtime/role"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -56,7 +64,7 @@ func (s *native) Init(ctx context.Context, opts ...option.Option) error {
 	return nil
 }
 
-func (s *native) initComponents(ctx context.Context) error {
+func (s *native) initComponents(ctx context.Context) (err error) {
 	// set Logger
 	// only change if we have the logger and type differs
 	if s.opts.Logger == nil {
@@ -91,11 +99,6 @@ func (s *native) initComponents(ctx context.Context) error {
 		logger.Infof(ctx, "identity service initialized and injected")
 	}
 
-	// TODO init transport with option
-	// It's important to note that libp2p transport is used by default.
-	// Transport handles libp2p host for the communication between nodes.
-	// It should be able to send and receive messages.
-	// It should also be able to handle the connection establishment and disconnection.
 	if s.opts.Transport == nil {
 		transportName := config.Get("peers.node.transport.name").String(plugin.NativePluginName)
 		if len(transportName) > 0 {
@@ -109,9 +112,56 @@ func (s *native) initComponents(ctx context.Context) error {
 		s.opts.Transport = transportPlugin.New()
 		s.opts.TransportOptions = append(s.opts.TransportOptions, transportPlugin.Options()...)
 	}
-
-	if err := s.opts.Transport.Init(s.opts.TransportOptions...); err != nil {
+	processRole, err := role.FromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("initialize process role: %w", err)
+	}
+	relayConfig, err := nativeRelay.ConfigFromRegistered()
+	if err != nil {
+		return fmt.Errorf("resolve standard Relay config: %w", err)
+	}
+	relayRuntime, err := nativeRelay.NewRuntime(
+		relayConfig,
+		processRole == role.Station,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize standard Relay runtime: %w", err)
+	}
+	kernel, err := newP2PKernel(
+		s.opts.Transport,
+		relayRuntime.LibP2POptions(processRole == role.Relay),
+		s.opts.TransportOptions...,
+	)
+	if err != nil {
+		return fmt.Errorf("init P2P kernel Host: %w", err)
+	}
+	s.kernel = kernel
+	initialized := false
+	defer func() {
+		if initialized {
+			return
+		}
+		if closeErr := kernel.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+	}()
+	if err := kernel.AttachComponent(relayRuntime); err != nil {
+		return fmt.Errorf("attach standard Relay runtime: %w", err)
+	}
+	if err := s.opts.Transport.Init(
+		append(
+			s.opts.TransportOptions,
+			transportNative.WithHost(kernel.Host()),
+		)...,
+	); err != nil {
 		return fmt.Errorf("init transport err: %s", err)
+	}
+	nodeIdentity, err := securehttp.NewNodeTLSIdentity(
+		kernel.Host().Peerstore().PrivKey(kernel.Host().ID()),
+		time.Now(),
+	)
+	if err != nil {
+		return fmt.Errorf("create secure HTTP Node identity: %w", err)
 	}
 
 	// init registry
@@ -129,27 +179,39 @@ func (s *native) initComponents(ctx context.Context) error {
 		s.opts.Registry = plugin.RegistryPlugins[registryName].New(registry.WithStore(s.opts.Store))
 	}
 
-	var sharedHost host.Host
-	if nt, ok := s.opts.Transport.(interface{ Host() host.Host }); ok {
-		sharedHost = nt.Host()
-	}
-	if sharedHost == nil {
-		return fmt.Errorf("init registry err: missing libp2p host from transport")
-	}
 	if len(s.opts.PrivateKey) == 0 {
 		return fmt.Errorf("init registry err: missing private key")
 	}
-	if err := s.opts.Registry.Init(ctx, append(s.opts.RegistryOptions, registryNative.WithHost(sharedHost), registry.WithPrivateKey(s.opts.PrivateKey))...); err != nil {
+	if err := s.opts.Registry.Init(
+		ctx,
+		append(
+			s.opts.RegistryOptions,
+			registryNative.WithHost(kernel.Host()),
+			registry.WithPrivateKey(s.opts.PrivateKey),
+		)...,
+	); err != nil {
 		return fmt.Errorf("init registry err: %v", err)
 	}
+	if err := kernel.AttachDHT(s.opts.Registry); err != nil {
+		return fmt.Errorf("init P2P kernel DHT: %w", err)
+	}
+	rootKey, err := bootstrapNative.StationRootKey()
+	if err != nil {
+		return err
+	}
+	stationPeerID, err := peer.IDFromPrivateKey(rootKey)
+	if err != nil {
+		return fmt.Errorf("derive logical Station PeerID: %w", err)
+	}
+	if stationPeerID == kernel.Host().ID() {
+		return fmt.Errorf(
+			"logical Station root and Node Host identities must be independent",
+		)
+	}
+	s.opts.Id = stationPeerID.String()
 
 	// init server
 	if s.opts.Server == nil {
-		processRole, err := role.FromContext(ctx)
-		if err != nil {
-			return fmt.Errorf("initialize server role: %w", err)
-		}
-
 		serverName := config.Get("peers.node.server.name").String(plugin.NativePluginName)
 		if len(serverName) > 0 {
 			if plugin.ServerPlugins[serverName] == nil {
@@ -169,7 +231,36 @@ func (s *native) initComponents(ctx context.Context) error {
 				continue
 			}
 			if p.Enabled() {
-				s.opts.ServerOptions = append(s.opts.ServerOptions, server.WithSubServer(name, p.New))
+				var subserverOptions []option.Option
+				if name == "bootstrap" {
+					subserverOptions = append(
+						subserverOptions,
+						bootstrapNative.WithKernel(
+							kernel.Host(),
+							kernel.DHT(),
+						),
+						bootstrapNative.WithStationRootKey(rootKey),
+						bootstrapNative.WithCircuitRoutes(
+							nodeIdentity.SPKISHA256(),
+							relayRuntime.LiveRoutes,
+						),
+					)
+				}
+				if name == "relay" {
+					subserverOptions = append(
+						subserverOptions,
+						relayControl.WithAdmission(relayRuntime.Admission()),
+						relayControl.WithHost(kernel.Host()),
+					)
+				}
+				s.opts.ServerOptions = append(
+					s.opts.ServerOptions,
+					server.WithSubServer(
+						name,
+						p.New,
+						subserverOptions...,
+					),
+				)
 			} else {
 				logger.Infof(ctx, "subserver [%s] is disabled", name)
 			}
@@ -184,25 +275,36 @@ func (s *native) initComponents(ctx context.Context) error {
 	if err := s.opts.Server.Init(append([]option.Option{server.WithTransport(s.opts.Transport)}, s.opts.ServerOptions...)...); err != nil {
 		return err
 	}
-
-	// init client
-	if s.opts.Client == nil {
-		clientName := config.Get("peers.client.name").String(plugin.NativePluginName)
-		if len(clientName) > 0 {
-			if plugin.ClientPlugins[clientName] == nil {
-				logger.Errorf(ctx, "client %s not found, use native by default", clientName)
-				clientName = plugin.NativePluginName
-			}
+	if processRole == role.Station && relayConfig.Pool.Mode != nativeRelay.PoolModeOff {
+		bootstrapSigner, ok := s.opts.Server.Options().
+			SubserverInstances["bootstrap"].(nativeRelay.StationControlSigner)
+		if !ok {
+			return fmt.Errorf(
+				"configure Station Relay control: bootstrap signer is unavailable",
+			)
 		}
-
-		logger.Infof(ctx, "initial client's name is: %s", clientName)
-		s.opts.Client = plugin.ClientPlugins[clientName].New()
+		if err := relayRuntime.ConfigureStationControl(
+			bootstrapSigner,
+			nodeIdentity.SPKISHA256(),
+		); err != nil {
+			return fmt.Errorf("configure Station Relay control: %w", err)
+		}
 	}
-
-	if err := s.opts.Client.Init(append([]option.Option{client.Transport(s.opts.Transport), client.Registry(s.opts.Registry)}, s.opts.ClientOptions...)...); err != nil {
+	backendURL, err := secureHTTPBackendURL(s.opts.Server.Options().Address)
+	if err != nil {
 		return err
 	}
-
+	ingress, err := securehttp.NewIngress(securehttp.IngressConfig{
+		BackendURL: backendURL,
+		Identity:   nodeIdentity,
+	})
+	if err != nil {
+		return fmt.Errorf("create secure HTTP ingress: %w", err)
+	}
+	if err := kernel.AttachComponent(ingress); err != nil {
+		return fmt.Errorf("attach secure HTTP ingress: %w", err)
+	}
+	initialized = true
 	return nil
 }
 
@@ -210,4 +312,18 @@ func (s *native) primeServerOptions() {
 	// Server constructors read typed options before Init. Roles without
 	// app-level server options still need that option context initialized.
 	s.opts.Apply(server.WithTransport(s.opts.Transport))
+}
+
+func secureHTTPBackendURL(address string) (*url.URL, error) {
+	_, port, err := net.SplitHostPort(address)
+	if err != nil || port == "" {
+		return nil, fmt.Errorf(
+			"secure HTTP ingress requires a Station listen address with port: %q",
+			address,
+		)
+	}
+	return &url.URL{
+		Scheme: "http",
+		Host:   net.JoinHostPort("127.0.0.1", port),
+	}, nil
 }

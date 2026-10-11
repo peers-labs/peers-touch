@@ -44,9 +44,33 @@
           "required_kind": "station"
         }
       }
+    },
+    {
+      "id": "alice",
+      "actor": "alice",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-via-relay",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "bob",
+      "actor": "bob",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-via-relay",
+          "required_kind": "station"
+        }
+      }
     }
   ],
   "cleanup": {
-    "resources": ["storage"]
+    "resources": ["processes", "ports", "storage", "sessions"]
   }
 }

@@ -32,7 +32,7 @@ import (
 // string-matching wrapped errors.
 var (
 	ErrLocalIdentityMissing      = errors.New("resolver: local station identity not registered")
-	ErrRelayUnavailable          = errors.New("resolver: relay-client not registered")
+	ErrRelayUnavailable          = errors.New("resolver: standard Relay route is unavailable")
 	ErrEmptyResponse             = errors.New("resolver: empty profile response")
 	ErrTombstoned                = errors.New("resolver: actor withdrawn (tombstone)")
 	ErrFederationContextRequired = errors.New(
@@ -494,7 +494,7 @@ func (r *Resolver) resolveLocal(
 // relayMountMatches reports whether `localBase` appears in the
 // locator-advertised mount list. Comparison is trailing-slash-
 // tolerant — the locator hook publishes the trimmed form, but a
-// future relay-client implementation that publishes its own mount
+// standard Relay runtime that publishes its active reservation
 // list might not be as careful, so we trim both sides at compare
 // time. Case-sensitive: relay base URLs are URL-typed strings, and
 // the host portion is the only part that's case-insensitive in
@@ -514,14 +514,14 @@ func relayMountMatches(mounts []string, localBase string) bool {
 }
 
 // resolveRemote sends GET /actor/federation/profile?handle=<canon> through
-// the local relay-client's scoped opaque tunnel. The Relay sees only bounded
+// the local standard Circuit route. The Relay carries only encrypted
 // ciphertext and the target Station identity.
 func (r *Resolver) resolveRemote(
 	ctx context.Context,
 	canon string,
 	rec *locatorpb.ActorLocatorRecord,
 ) (*Resolved, error) {
-	rc := fednode.RelayClient()
+	rc := fednode.RelayAccessSnapshot()
 	if rc == nil || !rc.Available() {
 		return nil, ErrRelayUnavailable
 	}

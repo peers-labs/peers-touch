@@ -71,7 +71,6 @@ func TestRoleCompositionAllowlists(t *testing.T) {
 		"launcher",
 		"oauth",
 		"oss",
-		"relay-client",
 		"turn",
 	}
 	if got := Station.PluginSubservers(); !reflect.DeepEqual(got, wantStationPlugins) {

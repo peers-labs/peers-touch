@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.1
-> **Created**: 2026-09-27 | **Updated**: 2026-10-10
+> **Created**: 2026-09-27 | **Updated**: 2026-10-11
 > **Owner**: Identity and Access
 
 ---
@@ -12,26 +12,28 @@
 ```text
 VerifiedStationTarget
   station_peer_id
-  pinned_host_public_key
+  pinned_station_root_public_key
   canonical_origin
   capabilities[]
   verified_at
 ```
 
-Endpoint identity, Station identity, Relay route, connection grant and tunnel
+Endpoint identity, Station identity, Relay route, connection grant and Circuit
 contracts are defined by
 [Node Connectivity](../../runtime/node-connectivity/data-model.md).
 Station Access receives only a verified target and never treats URL, Relay
-PeerID or route ID as identity.
+PeerID, physical Node PeerID or route ID as identity. Node authorization and
+signature are verified against the logical Station root by Node Connectivity.
 
 ## 2. Station Binding
 
 ```text
 StationBinding
   station_peer_id
-  pinned_host_public_key
+  pinned_station_root_public_key
   routes: RouteCandidate[]
   active_route_id
+  active_node_peer_id
   route_revision
   lifecycle_generation
   created_at
@@ -40,6 +42,7 @@ StationBinding
 RouteCandidate
   route_id
   route_type: DIRECT | RELAY
+  node_peer_id
   endpoint_origin
   relay_peer_id?
   attestation_digest?
@@ -69,6 +72,7 @@ AccessScope
 TransportScope
   station_peer_id
   active_route_id
+  active_node_peer_id
   route_revision
 ```
 
@@ -76,6 +80,10 @@ Session, Messaging, Federation context, cache and projections use
 `AccessScope`. Only connection selection uses `TransportScope`. A transport
 failure cannot mutate ActorRef or regenerate a federated handle from request
 host.
+
+Access attempts, Session records and credential/keyring recovery share the
+logical Station database/keyring across ready nodes. Node PeerID and route
+revision never enter the business Session concurrency key.
 
 ## 4. Access Attempt
 
@@ -190,5 +198,5 @@ access.gate.cancel
 ```
 
 The API registry owns method/path/Proto/Station owner. Node Connectivity owns
-Relay endpoint and tunnel capabilities. This document does not copy either
+Relay endpoint and standard Circuit capabilities. This document does not copy either
 registry.

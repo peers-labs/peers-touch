@@ -10,8 +10,32 @@ message StationIdentityRequest {
   bytes challenge = 1;
 }
 
-// StationIdentityStatement is the deterministic payload signed by the
-// Station's libp2p Ed25519 host key. Capabilities are sorted by UTF-8 bytes.
+// StationCapabilitySet is sorted by UTF-8 bytes before deterministic
+// serialization and hashing.
+message StationCapabilitySet {
+  repeated string capabilities = 1;
+}
+
+// StationNodeAuthorizationStatement delegates one logical Station root to one
+// independently keyed physical node.
+message StationNodeAuthorizationStatement {
+  string station_peer_id = 1;
+  string node_peer_id = 2;
+  bytes node_public_key = 3;
+  uint64 authorization_epoch = 4;
+  bytes capabilities_digest = 5;
+  int64 issued_at_unix_ms = 6;
+  int64 expires_at_unix_ms = 7;
+}
+
+message StationNodeAuthorization {
+  bytes statement_bytes = 1;
+  bytes station_root_public_key = 2;
+  bytes root_signature = 3;
+}
+
+// StationIdentityStatement is the deterministic challenge-bound payload signed
+// by the authorized node key. Capabilities are sorted by UTF-8 bytes.
 message StationIdentityStatement {
   bytes challenge = 1;
   string station_peer_id = 2;
@@ -19,10 +43,11 @@ message StationIdentityStatement {
   repeated string capabilities = 4;
   int64 issued_at_unix_ms = 5;
   int64 expires_at_unix_ms = 6;
+  bytes node_authorization_digest = 7;
 }
 
 message StationIdentityResponse {
   bytes statement_bytes = 1;
-  bytes host_public_key = 2;
-  bytes signature = 3;
+  bytes node_signature = 2;
+  StationNodeAuthorization node_authorization = 3;
 }

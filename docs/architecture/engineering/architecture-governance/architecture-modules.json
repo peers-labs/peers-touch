@@ -597,15 +597,24 @@
         "NCP-D08",
         "NCP-D09",
         "NCP-D10",
-        "NCP-D11"
+        "NCP-D11",
+        "NCP-D12",
+        "NCP-D13",
+        "NCP-D14",
+        "NCP-D15"
       ],
       "governedPaths": [
         "apps/station/frame/core/federation",
+        "apps/station/frame/core/plugin/native/relay",
         "apps/station/frame/core/plugin/native/subserver/relay",
-        "apps/station/frame/core/plugin/native/subserver/relay-client",
+        "apps/station/frame/core/plugin/native/transport",
+        "apps/station/frame/core/plugin/native/registry",
+        "apps/station/frame/core/plugin/native/subserver/bootstrap",
         "apps/station/frame/core/runtime/role",
+        "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
+        "apps/mobile/src-tauri/src/runtime/station_route.rs",
         "docs/architecture/platform/runtime/node-connectivity",
-        "model/domain/federation/relay_transport.proto"
+        "packages/station-libp2p-http"
       ],
       "capabilities": [
         {
@@ -617,36 +626,64 @@
             "docs/architecture/platform/runtime/node-connectivity"
           ],
           "consumers": [
-            "apps/station/frame/core/plugin/native/subserver/relay-client"
+            "apps/station/frame/core/plugin/native/relay/station_control.go"
           ],
           "allowedDependencies": [
             "model.domain.peer",
-            "station.host-identity"
+            "station.logical-identity",
+            "station.node-authorization"
           ],
           "evidenceGates": [
-            "relay-station-enrollment-e2e",
+            "NCP-G07",
             "relay-role-security-contract"
           ]
         },
         {
-          "id": "relay.transport.opaque-tunnel",
+          "id": "relay.transport.circuit",
           "owner": "node.connectivity",
           "contractRoots": [
-            "model/domain/federation/relay_transport.proto",
+            "apps/station/frame/core/plugin/native/transport/securehttp",
+            "packages/station-libp2p-http",
             "docs/architecture/platform/runtime/node-connectivity"
           ],
           "consumers": [
             "apps/station/frame/core/federation",
-            "apps/station/frame/core/plugin/native/subserver/relay-client"
+            "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
+            "apps/mobile/src-tauri/src/runtime/station_route.rs"
           ],
           "allowedDependencies": [
             "model.domain.peer",
             "station.canonical-router",
             "tls.1.3",
-            "websocket.binary"
+            "libp2p.circuit-v2",
+            "http2"
           ],
           "evidenceGates": [
-            "relay-opaque-tunnel-e2e"
+            "NCP-G02",
+            "NCP-G03",
+            "NCP-G07",
+            "NCP-G08"
+          ]
+        },
+        {
+          "id": "station.connectivity.node-authorization",
+          "owner": "node.connectivity",
+          "contractRoots": [
+            "docs/architecture/platform/runtime/node-connectivity"
+          ],
+          "consumers": [
+            "apps/station/frame/core/plugin/native/subserver/bootstrap",
+            "apps/station/frame/core/plugin/native/transport",
+            "apps/station/frame/core/plugin/native/registry"
+          ],
+          "allowedDependencies": [
+            "model.domain.peer",
+            "station.logical-identity",
+            "station.canonical-router"
+          ],
+          "evidenceGates": [
+            "NCP-G01",
+            "NCP-G08"
           ]
         }
       ],

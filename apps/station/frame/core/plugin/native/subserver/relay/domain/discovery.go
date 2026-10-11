@@ -11,19 +11,20 @@ import (
 
 const (
 	AccessEndpointDomain  = "peers-touch/access-endpoint/v1\x00"
-	StationRouteDomain    = "peers-touch/station-route/v1\x00"
-	ConnectionGrantDomain = "peers-touch/station-connection-grant/v1\x00"
+	StationRouteDomain    = peerpb.StationRouteDomain
+	ConnectionGrantDomain = peerpb.ConnectionGrantDomain
 
 	AccessProtocolVersion       = uint32(1)
 	DiscoveryChallengeSize      = 32
-	MaxRouteAttestationLifetime = 24 * time.Hour
-	MaxConnectionGrantLifetime  = 15 * time.Minute
-	MaxConnectionGrantUses      = uint32(32)
+	MaxRouteAttestationLifetime = peerpb.MaxRouteAttestationLifetime
+	MaxConnectionGrantLifetime  = peerpb.MaxConnectionGrantLifetime
+	MaxConnectionGrantUses      = peerpb.MaxConnectionGrantUses
 )
 
 type RouteRecord struct {
 	RouteID          string
 	StationPeerID    string
+	NodePeerID       string
 	RelayPeerID      string
 	RouteGeneration  uint64
 	Visibility       peerpb.StationRouteVisibility
@@ -40,7 +41,6 @@ type GrantRecord struct {
 	RouteGeneration uint64
 	MaxUses         uint32
 	RemainingUses   uint32
-	ReservedUses    uint32
 	ExpiresAt       time.Time
 }
 

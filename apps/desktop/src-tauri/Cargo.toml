@@ -24,9 +24,6 @@ serde_yaml = "0.9"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 urlencoding = "2"
 reqwest = { version = "0.12", features = ["blocking", "json", "multipart", "rustls-tls", "stream"] }
-rustls = "0.23"
-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
-x509-parser = "0.17"
 rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 ed25519-dalek = { version = "2", features = ["pem", "rand_core"] }
@@ -56,6 +53,8 @@ ulid = "1.1"
 bip39 = { version = "2", features = ["rand"] }
 messaging-core = { path = "../../../packages/messaging-core" }
 secure-content-core = { path = "../../../packages/secure-content-core" }
+station-trust = { path = "../../../packages/station-trust" }
+station-libp2p-http = { path = "../../../packages/station-libp2p-http" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 dispatch2 = "0.3.1"

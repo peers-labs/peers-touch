@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.2
-> **Created**: 2026-09-26 | **Updated**: 2026-10-10
+> **Created**: 2026-09-26 | **Updated**: 2026-10-11
 > **Owner**: Identity and Access
 
 ---
@@ -24,6 +24,9 @@
 | SAL-D11 | Relay 使用显式最小运行角色 | superseded by NCP-D02 |
 | SAL-D12 | 一个 actor 每个 canonical client class 只保留一个 active Session | accepted |
 | SAL-D13 | Relay 服务宿主仅支持 Linux/POSIX | superseded by NCP-D11 |
+
+Superseded 条目只保留历史上下文。当前逻辑 Station / Node delegation、Circuit v2、
+Frame ingress、renewal/revocation 和集群目标统一由 Node Connectivity 定义。
 
 ## SAL-D01：双端统一按语义和结果衡量
 
@@ -270,7 +273,7 @@ Desktop URL-keyed registry 必须硬切；Mobile 现有 `station_peer_id` regist
 **Date**: 2026-10-06
 
 当前协议真源见
-[`NCP-D03`](../../runtime/node-connectivity/decisions.md#ncp-d03-end-to-end-tls-opaque-tunnel-is-the-only-relay-data-plane)。
+[`NCP-D03`](../../runtime/node-connectivity/decisions.md#ncp-d03-circuit-v2-and-station-tls)。
 
 ### Context
 
@@ -307,7 +310,7 @@ backpressure；旧 transparent forward 在迁移完成后删除。
 **Date**: 2026-10-06
 
 当前 enrollment 真源见
-[`NCP-D06`](../../runtime/node-connectivity/decisions.md#ncp-d06-enrollment-binds-host-key-proof-and-generation-revocation)。
+[`NCP-D06`](../../runtime/node-connectivity/decisions.md#ncp-d06-delegated-enrollment-and-epoch)。
 
 ### Context
 
@@ -344,7 +347,7 @@ invite 只存 hash 且明文只返回一次；注册、刷新、撤销和恢复�
 **Date**: 2026-10-06
 
 当前 role 真源见
-[`NCP-D02`](../../runtime/node-connectivity/decisions.md#ncp-d02-station-and-relay-share-one-binary-with-explicit-roles)。
+[`NCP-D02`](../../runtime/node-connectivity/decisions.md#ncp-d02-two-roles-and-existing-frame-ingress)。
 
 ### Context
 

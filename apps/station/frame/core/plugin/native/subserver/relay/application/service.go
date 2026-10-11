@@ -14,21 +14,22 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
+	nativeRelay "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/relay"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
 )
 
 var (
-	ErrInviteNotFound    = errors.New("invite not found")
-	ErrInviteInactive    = errors.New("invite is not active")
-	ErrInviteExpired     = errors.New("invite has expired")
-	ErrChallengeInvalid  = errors.New("enrollment challenge is invalid")
-	ErrChallengeExpired  = errors.New("enrollment challenge has expired")
-	ErrProofInvalid      = errors.New("station host-key proof is invalid")
-	ErrStationMismatch   = errors.New("station identity does not match invite")
-	ErrCapacityFull      = errors.New("relay capacity exceeded")
-	ErrMountNotFound     = errors.New("mount not found")
-	ErrCredentialInvalid = errors.New("relay credential is invalid")
-	ErrInvalidRequest    = errors.New("relay enrollment request is invalid")
+	ErrInviteNotFound     = errors.New("invite not found")
+	ErrInviteInactive     = errors.New("invite is not active")
+	ErrInviteExpired      = errors.New("invite has expired")
+	ErrChallengeInvalid   = errors.New("enrollment challenge is invalid")
+	ErrChallengeExpired   = errors.New("enrollment challenge has expired")
+	ErrProofInvalid       = errors.New("station host-key proof is invalid")
+	ErrStationMismatch    = errors.New("station identity does not match invite")
+	ErrCapacityFull       = errors.New("relay capacity exceeded")
+	ErrEnrollmentNotFound = errors.New("enrollment not found")
+	ErrCredentialInvalid  = errors.New("relay credential is invalid")
+	ErrInvalidRequest     = errors.New("relay enrollment request is invalid")
 )
 
 const defaultChallengeTTL = 90 * time.Second
@@ -36,6 +37,7 @@ const defaultChallengeTTL = 90 * time.Second
 type Service struct {
 	repo      domain.Repository
 	authority *CredentialAuthority
+	admission *nativeRelay.Admission
 	now       func() time.Time
 
 	challengeMu sync.Mutex
@@ -49,15 +51,46 @@ type Service struct {
 func NewService(
 	repo domain.Repository,
 	authority *CredentialAuthority,
+	admission *nativeRelay.Admission,
 ) *Service {
 	return &Service{
 		repo:       repo,
 		authority:  authority,
+		admission:  admission,
 		now:        func() time.Time { return time.Now().UTC() },
 		challenges: make(map[string]domain.EnrollmentChallenge),
 		routes:     make(map[string]domain.RouteRecord),
 		grants:     make(map[string]domain.GrantRecord),
 	}
+}
+
+func (s *Service) HydrateAdmission(ctx context.Context) error {
+	if s == nil || s.admission == nil {
+		return fmt.Errorf("standard Circuit admission is unavailable")
+	}
+	enrollments, err := s.repo.ListAdmittedEnrollments(ctx)
+	if err != nil {
+		return err
+	}
+	for _, enrollment := range enrollments {
+		nodePeerID, decodeErr := peer.Decode(enrollment.NodePeerID)
+		if decodeErr != nil {
+			return fmt.Errorf(
+				"decode admitted Node PeerID for %s: %w",
+				enrollment.StationPeerID,
+				decodeErr,
+			)
+		}
+		if err := s.admission.AdmitNode(nativeRelay.NodeAdmission{
+			StationPeerID: enrollment.StationPeerID,
+			NodePeerID:    nodePeerID,
+			Generation:    enrollment.Generation,
+			ExpiresAt:     enrollment.NodeAuthorizationUntil,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) RelayPeerID() string {
@@ -156,10 +189,10 @@ func (s *Service) BeginRotationChallenge(
 	ctx context.Context,
 	currentToken string,
 ) (*domain.EnrollmentChallenge, error) {
-	identity, mount, err := s.authenticateMountCredential(
+	identity, enrollment, err := s.authenticateNodeCredential(
 		ctx,
 		currentToken,
-		domain.ScopeMountRotate,
+		domain.ScopeNodeRotate,
 	)
 	if err != nil {
 		return nil, err
@@ -168,10 +201,10 @@ func (s *Service) BeginRotationChallenge(
 		Operation:     domain.ChallengeOperationRotate,
 		RelayPeerID:   s.authority.RelayPeerID(),
 		StationPeerID: identity.StationPeerID,
-		MountID:       identity.MountID,
+		EnrollmentID:  identity.EnrollmentID,
 		Generation:    identity.Generation,
 		CredentialJTI: identity.JTI,
-		Label:         mount.Label,
+		Label:         enrollment.Label,
 	})
 }
 
@@ -232,8 +265,8 @@ func (s *Service) deleteExpiredChallengesLocked(now time.Time) {
 // ---- Registration and credential rotation ----
 
 type RegisterResult struct {
-	Credential *domain.MountCredential
-	Mount      *domain.Mount
+	Credential *domain.NodeCredential
+	Enrollment *domain.Enrollment
 }
 
 func (s *Service) Register(
@@ -270,7 +303,7 @@ func (s *Service) Register(
 		return nil, ErrInviteExpired
 	}
 
-	stationPeerID, hostPublicKey, err := VerifyStationIdentityProof(
+	verifiedNode, err := VerifyStationIdentityProof(
 		proof,
 		challenge.Challenge,
 		s.now(),
@@ -279,7 +312,7 @@ func (s *Service) Register(
 		return nil, fmt.Errorf("%w: %v", ErrProofInvalid, err)
 	}
 	if invite.IntendedStationPeerID != "" &&
-		invite.IntendedStationPeerID != stationPeerID {
+		invite.IntendedStationPeerID != verifiedNode.StationPeerID {
 		return nil, ErrStationMismatch
 	}
 
@@ -287,17 +320,20 @@ func (s *Service) Register(
 	if err != nil {
 		return nil, fmt.Errorf("generate credential id: %w", err)
 	}
-	mount, err := s.repo.ConsumeInviteAndActivateMount(
+	enrollment, err := s.repo.ConsumeInviteAndCreateEnrollment(
 		ctx,
 		invite.ID,
-		&domain.Mount{
-			StationPeerID:  stationPeerID,
-			HostPublicKey:  hostPublicKey,
-			Label:          firstNonEmpty(challenge.Label, invite.Label),
-			CredentialJTI:  jti,
-			MaxClients:     invite.MaxClients,
-			BandwidthLimit: invite.BandwidthLimit,
-			InviteID:       invite.ID,
+		&domain.Enrollment{
+			StationPeerID:          verifiedNode.StationPeerID,
+			NodePeerID:             verifiedNode.NodePeerID,
+			StationRootPublicKey:   verifiedNode.StationRootPublicKey,
+			NodeAuthorizationEpoch: verifiedNode.AuthorizationEpoch,
+			NodeAuthorizationUntil: verifiedNode.AuthorizationExpiresAt,
+			Label:                  firstNonEmpty(challenge.Label, invite.Label),
+			CredentialJTI:          jti,
+			MaxClients:             invite.MaxClients,
+			BandwidthLimit:         invite.BandwidthLimit,
+			InviteID:               invite.ID,
 		},
 		maxStations,
 	)
@@ -308,25 +344,39 @@ func (s *Service) Register(
 		case errors.Is(err, domain.ErrRelayCapacityFull):
 			return nil, ErrCapacityFull
 		default:
-			return nil, fmt.Errorf("activate Relay mount: %w", err)
+			return nil, fmt.Errorf("activate Relay enrollment: %w", err)
 		}
 	}
-	credential, err := s.authority.IssueMountCredential(mount, jti)
+	nodePeerID, err := peer.Decode(enrollment.NodePeerID)
+	if err != nil {
+		_, _ = s.repo.RevokeEnrollment(ctx, enrollment.StationPeerID)
+		return nil, fmt.Errorf("decode enrolled Node PeerID: %w", err)
+	}
+	if err := s.admission.AdmitNode(nativeRelay.NodeAdmission{
+		StationPeerID: enrollment.StationPeerID,
+		NodePeerID:    nodePeerID,
+		Generation:    enrollment.Generation,
+		ExpiresAt:     enrollment.NodeAuthorizationUntil,
+	}); err != nil {
+		_, _ = s.repo.RevokeEnrollment(ctx, enrollment.StationPeerID)
+		return nil, fmt.Errorf("admit enrolled Relay node: %w", err)
+	}
+	credential, err := s.authority.IssueNodeCredential(enrollment, jti)
 	if err != nil {
 		return nil, err
 	}
-	return &RegisterResult{Credential: credential, Mount: mount}, nil
+	return &RegisterResult{Credential: credential, Enrollment: enrollment}, nil
 }
 
 func (s *Service) RotateCredential(
 	ctx context.Context,
 	currentToken string,
 	proof domain.StationIdentityProof,
-) (*domain.MountCredential, error) {
-	current, mount, err := s.authenticateMountCredential(
+) (*domain.NodeCredential, error) {
+	current, enrollment, err := s.authenticateNodeCredential(
 		ctx,
 		currentToken,
-		domain.ScopeMountRotate,
+		domain.ScopeNodeRotate,
 	)
 	if err != nil {
 		return nil, err
@@ -339,12 +389,12 @@ func (s *Service) RotateCredential(
 		return nil, err
 	}
 	if challenge.StationPeerID != current.StationPeerID ||
-		challenge.MountID != current.MountID ||
+		challenge.EnrollmentID != current.EnrollmentID ||
 		challenge.Generation != current.Generation ||
 		challenge.CredentialJTI != current.JTI {
 		return nil, ErrChallengeInvalid
 	}
-	stationPeerID, hostPublicKey, err := VerifyStationIdentityProof(
+	verifiedNode, err := VerifyStationIdentityProof(
 		proof,
 		challenge.Challenge,
 		s.now(),
@@ -352,8 +402,12 @@ func (s *Service) RotateCredential(
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrProofInvalid, err)
 	}
-	if stationPeerID != current.StationPeerID ||
-		subtle.ConstantTimeCompare(hostPublicKey, mount.HostPublicKey) != 1 {
+	if verifiedNode.StationPeerID != current.StationPeerID ||
+		verifiedNode.NodePeerID != enrollment.NodePeerID ||
+		subtle.ConstantTimeCompare(
+			verifiedNode.StationRootPublicKey,
+			enrollment.StationRootPublicKey,
+		) != 1 {
 		return nil, ErrStationMismatch
 	}
 
@@ -361,120 +415,125 @@ func (s *Service) RotateCredential(
 	if err != nil {
 		return nil, fmt.Errorf("generate credential id: %w", err)
 	}
-	mount, err = s.repo.RotateMountCredential(ctx, current, nextJTI)
+	if err := s.repo.UpdateNodeAuthorization(
+		ctx,
+		current,
+		verifiedNode.AuthorizationEpoch,
+		verifiedNode.AuthorizationExpiresAt,
+	); err != nil {
+		return nil, ErrCredentialInvalid
+	}
+	enrollment, err = s.repo.RotateNodeCredential(ctx, current, nextJTI)
 	if err != nil {
 		return nil, ErrCredentialInvalid
 	}
-	return s.authority.IssueMountCredential(mount, nextJTI)
+	enrollment.NodeAuthorizationEpoch = verifiedNode.AuthorizationEpoch
+	enrollment.NodeAuthorizationUntil = verifiedNode.AuthorizationExpiresAt
+	nodePeerID, err := peer.Decode(enrollment.NodePeerID)
+	if err != nil {
+		return nil, ErrCredentialInvalid
+	}
+	if err := s.admission.AdmitNode(nativeRelay.NodeAdmission{
+		StationPeerID: enrollment.StationPeerID,
+		NodePeerID:    nodePeerID,
+		Generation:    enrollment.Generation,
+		ExpiresAt:     enrollment.NodeAuthorizationUntil,
+	}); err != nil {
+		return nil, ErrCredentialInvalid
+	}
+	return s.authority.IssueNodeCredential(enrollment, nextJTI)
 }
 
-func (s *Service) AuthenticateMountCredential(
+func (s *Service) AuthenticateNodeCredential(
 	ctx context.Context,
 	token string,
 	requiredScope string,
-) (domain.MountIdentity, error) {
-	identity, _, err := s.authenticateMountCredential(ctx, token, requiredScope)
+) (domain.NodeIdentity, error) {
+	identity, _, err := s.authenticateNodeCredential(ctx, token, requiredScope)
 	return identity, err
 }
 
-func (s *Service) authenticateMountCredential(
+func (s *Service) authenticateNodeCredential(
 	ctx context.Context,
 	token string,
 	requiredScope string,
-) (domain.MountIdentity, *domain.Mount, error) {
+) (domain.NodeIdentity, *domain.Enrollment, error) {
 	identity, err := s.authority.ValidateCredential(
 		token,
-		domain.MountCredentialAudience,
+		domain.NodeCredentialAudience,
 		requiredScope,
 	)
 	if err != nil {
-		return domain.MountIdentity{}, nil, ErrCredentialInvalid
+		return domain.NodeIdentity{}, nil, ErrCredentialInvalid
 	}
-	mount, err := s.authenticateMountIdentity(ctx, identity)
+	enrollment, err := s.authenticateNodeIdentity(ctx, identity)
 	if err != nil {
-		return domain.MountIdentity{}, nil, err
+		return domain.NodeIdentity{}, nil, err
 	}
-	return identity, mount, nil
+	return identity, enrollment, nil
 }
 
-func (s *Service) authenticateMountIdentity(
+func (s *Service) authenticateNodeIdentity(
 	ctx context.Context,
-	identity domain.MountIdentity,
-) (*domain.Mount, error) {
-	mount, err := s.repo.GetMountByStationPeerID(ctx, identity.StationPeerID)
-	if err != nil || mount.Status == domain.MountStatusRevoked ||
-		mount.ID != identity.MountID ||
-		mount.Generation != identity.Generation ||
-		mount.CredentialJTI != identity.JTI {
+	identity domain.NodeIdentity,
+) (*domain.Enrollment, error) {
+	enrollment, err := s.repo.GetEnrollmentByStationPeerID(ctx, identity.StationPeerID)
+	if err != nil || enrollment.Status == domain.EnrollmentStatusRevoked ||
+		enrollment.ID != identity.EnrollmentID ||
+		enrollment.Generation != identity.Generation ||
+		enrollment.CredentialJTI != identity.JTI ||
+		!enrollment.NodeAuthorizationUntil.After(s.now()) {
 		return nil, ErrCredentialInvalid
 	}
-	return mount, nil
+	return enrollment, nil
 }
 
-// ---- Mount operations ----
+// ---- Enrollment operations ----
 
-func (s *Service) ListOnlineMounts(ctx context.Context) ([]domain.Mount, error) {
-	return s.repo.ListOnlineMounts(ctx)
+func (s *Service) ListOnlineEnrollments(ctx context.Context) ([]domain.Enrollment, error) {
+	return s.repo.ListOnlineEnrollments(ctx)
 }
 
-func (s *Service) CountOnlineMounts(ctx context.Context) (int64, error) {
-	return s.repo.CountOnlineMounts(ctx)
+func (s *Service) CountOnlineEnrollments(ctx context.Context) (int64, error) {
+	return s.repo.CountOnlineEnrollments(ctx)
 }
 
-func (s *Service) RevokeMount(
+func (s *Service) RevokeEnrollment(
 	ctx context.Context,
 	stationPeerID string,
-) (*domain.Mount, error) {
-	mount, err := s.repo.RevokeMount(ctx, stationPeerID)
-	if errors.Is(err, domain.ErrMountNotFound) {
-		return nil, ErrMountNotFound
+) (*domain.Enrollment, error) {
+	enrollment, err := s.repo.RevokeEnrollment(ctx, stationPeerID)
+	if errors.Is(err, domain.ErrEnrollmentNotFound) {
+		return nil, ErrEnrollmentNotFound
 	}
-	return mount, err
-}
-
-func (s *Service) UpdateHeartbeat(
-	ctx context.Context,
-	identity domain.MountIdentity,
-) error {
-	if err := s.repo.UpdateHeartbeat(
-		ctx,
-		identity.StationPeerID,
-		identity.Generation,
-		identity.JTI,
-	); err != nil {
-		return ErrCredentialInvalid
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	nodePeerID, decodeErr := peer.Decode(enrollment.NodePeerID)
+	if decodeErr != nil {
+		return enrollment, fmt.Errorf("decode revoked Node PeerID: %w", decodeErr)
+	}
+	s.InvalidateStationRoutes(stationPeerID)
+	if revokeErr := s.admission.RevokeNode(nodePeerID); revokeErr != nil {
+		return enrollment, fmt.Errorf("retire revoked Node circuits: %w", revokeErr)
+	}
+	return enrollment, nil
 }
 
-func (s *Service) MarkStaleOffline(
-	ctx context.Context,
-	timeout time.Duration,
-) (int64, error) {
-	return s.repo.MarkStaleOffline(ctx, timeout)
-}
-
-func (s *Service) UpdateMountStatus(
+func (s *Service) UpdateEnrollmentStatus(
 	ctx context.Context,
 	stationPeerID string,
 	generation uint64,
-	status domain.MountStatus,
+	status domain.EnrollmentStatus,
 ) error {
-	return s.repo.UpdateMountStatus(ctx, stationPeerID, generation, status)
+	return s.repo.UpdateEnrollmentStatus(ctx, stationPeerID, generation, status)
 }
 
-func (s *Service) ActivateMount(
-	ctx context.Context,
-	identity domain.MountIdentity,
-) error {
-	return s.repo.ActivateMount(ctx, identity)
-}
-
-func (s *Service) GetMountByStationPeerID(
+func (s *Service) GetEnrollmentByStationPeerID(
 	ctx context.Context,
 	stationPeerID string,
-) (*domain.Mount, error) {
-	return s.repo.GetMountByStationPeerID(ctx, stationPeerID)
+) (*domain.Enrollment, error) {
+	return s.repo.GetEnrollmentByStationPeerID(ctx, stationPeerID)
 }
 
 // ---- ICE servers (TURN) ----

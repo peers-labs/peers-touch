@@ -19,7 +19,22 @@ peers:
       name: native
       native:
         enable-relay: false
-        libp2p-identity-key-file: ./data/libp2p.key
+        libp2p-identity-key-file: station-node.key
+    relay-service:
+      reservation-ttl-seconds: 3600
+      max-reservations: 256
+      max-circuits-per-peer: 64
+      max-bytes-per-direction: 268435456
+      max-circuit-duration-seconds: 3600
+      max-reservations-per-ip: 8
+      max-reservations-per-asn: 32
+      buffer-size: 32768
+    relay-pool:
+      mode: off
+      renew-before-seconds: 1200
+      retry-min-seconds: 1
+      retry-max-seconds: 60
+      relays: []
     server:
       name: hertz
       address: :18080

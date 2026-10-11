@@ -2,169 +2,141 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-10-10 | **Updated**: 2026-10-10
+> **Created**: 2026-10-10 | **Updated**: 2026-10-11
 > **Owner**: Architecture Team
 
----
+## 1. Preserved Domain Boundaries
 
-## 1. Owner Mapping
+Station Access owns endpoint selection, root pinning, Access attempts, OAuth,
+Session class slots and scope teardown. It consumes verified node routes and
+does not inspect Circuit wire. `station_peer_id + actor_ptid + device_id +
+lifecycle_generation` stays the shared scope; active node/route is transport state.
 
-| Concern | Owner | Node Connectivity input/output |
+Federation owns membership, Ledger and peer capability authorization. It selects
+a logical destination and consumes node routes. Circuit authentication alone
+never establishes Federation membership.
+
+Conversation, device inbox, Social, Events, Agent and OSS retain their public
+capability owners. A Frame ingress invokes the same registered methods, paths,
+wrappers and protobuf handlers as direct HTTPS. No second Station command API.
+
+## 2. Current Source Impact
+
+| Surface | Source-backed change |
+|---|---|
+| `frame/peers.go`, native node/transport/registry/bootstrap/client | inject one owned Host; separate root and node keys |
+| `subserver/bootstrap` and peer identity Model | signed delegated identity/route proof |
+| native `relay/` + Relay control subserver | library Circuit, ACL, enrollment, permits and renewal |
+| Frame server/handler adapters | standard HTTP2 stream ingress with streaming Flush/cancel |
+| `frame/core/federation` and native Federation transport | authenticated logical peer routes, canonical HTTP |
+| Desktop station_client/station_access/event_stream | source-bound standard Rust transport and route continuity |
+| Mobile Rust transport | dial-only standard Host; shared contracts, separate platform proof |
+| `frame/touch/auth`, session DBStore, OAuth attempt owners | retain shared DB path, verify Station keyring and cross-node class activation |
+| `app/subserver/events` | transactional sequence, durable target and cross-node wakes/replay |
+| Agent lease/recovery | fence completion; exclude healthy foreign leases |
+| OSS scheduler/backend | extend lock port and require shared bytes in cluster |
+| deployment and Acceptance adapters | existing profiles, finite limits and attach-only source-bound proof |
+
+Implementation updates the corresponding domain/platform docs and matched
+knowledge in the same closure. This module states the cluster obligation;
+Events, Agent and OSS own its semantics and code.
+
+## 3. Atomic Transport Cut
+
+Before the cut is complete, every consumer must be enumerated by actual imports,
+route registration, protocol IDs, generated outputs, runtime scripts and tests.
+The cut migrates native clients, Federation callers, bootstrap/discovery,
+connection material, server ingress and Relay deployment together.
+
+Delete the custom Relay WSS listener, tunnel protobuf arms, mount framing,
+transport ping/reconnect loops, and obsolete custom-message transport consumers.
+Retain enrollment, grant, signed identity, operator policy and metrics only
+where the new control model actually consumes them. Preserve direct HTTPS
+ingress and canonical HTTP/protobuf/SSE.
+
+No runtime compatibility flag or parallel production data plane is permitted.
+Incompatible clients fail explicitly. Rollback reverts the self-contained cut
+and deploys the matching source; it does not select dormant old code.
+Do not copy the candidate worktree or touch unrelated StationPicker edits.
+
+## 4. One Node To Multiple Nodes
+
+The initial node keeps the logical Station identity. Adding a node creates a new
+node key/PeerID, root delegation and registry lease. It never creates another
+Actor namespace or Federation membership.
+
+Cluster readiness requires shared domain DB, Access keyring and object backend,
+transactional event ordering/targeting and domain fencing. A configured node
+stays unready on schema incompatibility, local-only enabled owner or missing
+shared backing. No request routing policy compensates for private local state.
+
+Moving from local storage is operator-controlled maintenance: stop admission,
+drain jobs, copy/verify bytes and metadata, select the shared owner, validate
+keys/schema, then publish readiness. It is not a transparent configuration flip.
+Adding capacity after shared owners are ready does not require client re-login.
+Storage migration/reset/production mutations need their specific authorization.
+
+## 5. Architecture Gates
+
+These are required contracts for new business injection, not claims that existing
+Gates already implement them. Reuse real Journey drivers; formal Gates attach to
+one prepared runtime and never build, deploy or create accounts.
+
+| ID | Runtime / action | Binary oracle |
 |---|---|---|
-| Station Access | Identity and Access | consumes verified endpoint, route and tunnel; owns Access/Session/scope |
-| Federation | Federation app owner | consumes authenticated peer transport; owns membership/Ledger/policy |
-| Station host identity | Station frame identity owner | signs endpoint and route statements |
-| Relay control plane | Node Connectivity | enrollment, mount, grant, route, revoke, metrics |
-| Relay data plane | Node Connectivity | bounded ciphertext tunnel only |
-| Station canonical router | Station frame/server | receives inner TLS plaintext after Station termination |
-| Business domains | Station app owners | remain transport-independent |
+| NCP-G01 | two node keys, one root; forged delegation/route/Relay/SPKI | distinct PeerIDs and one Station scope; all forgeries rejected before credentials |
+| NCP-G02 | one-node direct/circuit HTTP2 with real handlers | same Login/Access result, router inventory, protobuf errors, SSE Flush and upload/download digest |
+| NCP-G03 | two native Desktop actors exchange texts/receipt and 32 MiB attachment via Circuit | receiver renders once, receipt/readback exists, attachment decrypts to original digest |
+| NCP-G04 | two Station nodes, shared DB/object backend; send on A, subscribe on B; kill A | committed ordered events reach B, device-only events stay private, cursor resumes within 30 s |
+| NCP-G05 | Access attempt on A, acknowledge/use Session on B; concurrent same-class activation | one class winner, prior same-class revoked, other classes preserved, same logical Station |
+| NCP-G06 | healthy Agent lease on A; start B, pause A, expire/takeover and resume A; concurrent OSS GC | healthy work survives B boot, stale token cannot commit, one domain effect and valid object refcounts |
+| NCP-G07 | forced short test reservation renewal, route refresh, revoke, slow consumer and quota exhaustion | renewal preserves healthy SSE, revoke denies/retires node circuits, finite memory/admission and typed recovery |
+| NCP-G08 | constructor/consumer inventory and final source-bound native proof | one Host/process, no old production data plane, Mobile contract builds; Mobile runtime remains unproven until native check |
 
-## 2. Station Access Integration
+For native product operations, route selection/login/send/attachment use the
+existing native DOM event driver. Frame/server observation, controlled node
+termination, ACL mutation and authoritative database readback use Suite harness.
+Touch injection cannot substitute for native send/receiver rendering.
 
-Station Access accepts one input and ultimately pins one `station_peer_id`.
-Node Connectivity supplies:
+Evaluation records exact source, binary digest, profile, identities, selected
+multiaddrs, measured Circuit limits, sequence/lease outcomes and bounded timing.
+No raw credentials, messages or key material enter logs. Performance sampling
+uses identical data/runtime and reports distributions; “faster” is not a criterion.
 
-- signed endpoint role and identity;
-- direct or Relay route candidates;
-- Station-signed route attestation and optional connection grant;
-- typed tunnel availability/failure;
-- inner TLS connection that terminates at the same Station router.
+## 6. Architecture Review
 
-Station Access retains:
+Findings-first review of target relationships and current evidence:
 
-- user-visible selection/confirmation;
-- Access Gate and canonical Session;
-- Station/Actor/Device/lifecycle scope;
-- route-aware client binding and recovery UI;
-- rule that route changes do not replace Station identity.
+- **Identity collision** resolved by separate logical root and per-node keys;
+  even N=1 uses the same delegation model.
+- **Gateway duplication** resolved by one Frame ingress adapter and two roles.
+- **HTTP2/Hertz context** resolved by a standard server and streaming loopback
+  adapter to the existing Hertz router; no second handler registry.
+- **Private Circuit admission gap** resolved by source-bound control redemption
+  before standard CONNECT and bounded ACL projection.
+- **Default Relay limits** resolved by explicit finite connection budgets and
+  bulk/realtime separation; no measured-capacity claim.
+- **Renewal disconnect risk** resolved by renewal without epoch/connection reset;
+  actual revocation deliberately retires affected node connections.
+- **Cluster replay/privacy** resolved by transactional per-Actor sequence,
+  persisted device target, high-watermark replay and wake-loss repair.
+- **Cross-node auth** resolved by retaining the real DBStore/class locks and
+  requiring shared Access key material; no replacement memory Session service.
+- **Healthy task corruption** resolved by domain fencing and expired-owner
+  recovery; existing lease/lock ports are extended.
+- **Opaque external effects** retain interrupted/ambiguous outcomes; leases do
+  not claim provider exactly-once.
+- **Object delete fencing** requires an atomically claimed immutable generation;
+  a stale idempotent delete cannot remove replacement bytes.
 
-It does not define enrollment credentials, mount state, tunnel frames or Relay
-resource limits.
+Verdict: architecture relationships accepted. Design is implementation input;
+NCP-G01..NCP-G08 are **NOT RUN / UNPROVEN**. The generated Plan North Star still
+needs its own explicit approval before implementation.
 
-## 3. Federation Integration
+## 7. Evidence And Authorization Boundaries
 
-Federation selects a target `station_peer_id` and constructs a typed peer
-request. The transport adapter chooses direct delivery or a
-`FEDERATION_PEER` tunnel based on current route availability.
-
-The target Station validates:
-
-- authenticated caller Station identity;
-- typed peer capability;
-- Federation/domain scope, membership and authorization;
-- idempotency, replay and receiver semantics.
-
-Relay validates only caller mount scope, target route/generation and resource
-admission. Relay mount is never Federation membership.
-
-## 4. Runtime Composition
-
-```text
-PEERS_NODE_ROLE=station
-  -> Station application + Touch
-  -> explicit Station plugin allowlist
-  -> optional relay-client
-
-PEERS_NODE_ROLE=relay
-  -> Relay plugin only
-  -> no Touch
-  -> no Station application subservers
-```
-
-Production Relay requires TLS certificate/key, Relay signing key, operator
-trust policy and quotas. The same image/binary is retained; role is runtime
-configuration, not a separate build product.
-
-Relay service hosting uses the reviewed Linux/POSIX Compose contract only.
-NGINX terminates outer TLS and proxies to an explicit loopback listener in the
-Relay network namespace. Windows runtime dispatch rejects `relay`; Windows
-Desktop remains a client of the Linux Relay.
-
-## 5. Credential Separation
-
-| Credential | Accepted at | Rejected at |
-|---|---|---|
-| Relay operator credential | admin/metrics routes | mount, tunnel, Station APIs |
-| Relay mount credential | heartbeat/rotate/route/grant/peer tunnel scopes | operator routes, Station APIs |
-| Station connection grant | client tunnel open only | operator/mount routes, Station APIs |
-| Station Session | inside inner TLS at Station | Relay outer control/data plane |
-| Federation peer authorization | target Station peer capability | Relay business policy |
-
-Keys, issuer, audience and scope are distinct. Redaction treats all raw
-credential/grant values as sensitive.
-
-## 6. Architecture-V2 Compatibility Ledger
-
-The source architecture-v2 worktree is design input, not a merge base. Its
-disposition is:
-
-| Candidate concept | Disposition | Current truth |
-|---|---|---|
-| One Node Connectivity architecture owner | adopted | this module |
-| Station/Relay same binary with explicit capability profile | adopted with current roles | `station` and `relay`; no hybrid role |
-| Relay has no business authority | adopted | NCP-D04 |
-| Station identity is independent from route | adopted | NCP-D05 |
-| Federation and client policies are separate | adopted | NCP-D09 and caller matrix |
-| Bounded generated transport contracts | adopted for Relay tunnel | `relay_transport.proto`; canonical Station APIs remain inside TLS |
-| Circuit Relay v2 as only data plane | rejected | WSS + inner TLS opaque tunnel |
-| One new libp2p Kernel/Host/DHT cutover | deferred outside current scope | no claim or second target |
-| Native Desktop/Mobile libp2p swarms and Station command protocol | rejected for this merge | existing native direct/Relay adapters and canonical Station router |
-| DCUtR and multi-Relay circuit failover | deferred | require separate product/runtime design |
-| Global `node_name` hard rename | rejected for this merge | no unrelated naming/schema migration |
-| Bulk deletion/copy from the source worktree | rejected | semantic extraction only |
-
-No rejected or deferred item is represented by a compatibility shim, dormant
-implementation, feature flag or second active architecture document.
-
-## 7. Removed Legacy
-
-Current production source must contain no live:
-
-- `/relay/forward/*` route;
-- `relay-client-token` forwarding credential;
-- request/response Relay frame;
-- forwarded target Authorization/header map;
-- Relay-side HTTP/business payload parser;
-- unauthenticated Station PeerID claim;
-- Relay role business subserver;
-- active architecture copy of Relay wire/control internals outside this module.
-
-Historical Git commits may retain those symbols. Active code, docs, registry
-and knowledge cannot present them as current behavior.
-
-## 8. Acceptance Integration
-
-Formal proof is owned by the `station-access-relay-role` Suite environment:
-
-```text
-Provisioner
-  -> builds exact source
-  -> starts isolated Station and Relay roles on sixwin
-  -> supplies opaque run-scoped capability to Gate
-  -> owns tunnels, credentials and cleanup
-
-relay-opaque-tunnel-e2e Gate
-  -> attaches to prepared manifest
-  -> verifies source contract
-  -> invokes only verify-opaque-tunnel
-  -> asserts inner TLS/SPKI/protocol/bounds/opacity
-```
-
-The Gate is never run directly because it intentionally cannot provision its
-own raw runtime handles. A direct invocation without the provisioner capability
-is a lifecycle error, not product evidence.
-
-## 9. Evidence Boundaries
-
-Focused Go/unit checks prove source behavior only. A formal Acceptance result
-requires:
-
-- exact source/artifact digest;
-- real Station and Relay roles;
-- a live tunnel carrying a Station request through inner TLS;
-- Relay-side marker non-disclosure;
-- bounded negative cases;
-- cleanup receipt from the environment owner.
-
-A passing source validator cannot substitute for the real Journey. A real
-Journey on another source revision cannot prove the current revision.
+Design acceptance and Plan validation prove target coherence only. Final
+product claims require actual native Journeys and formal exact-source evidence;
+source/build checks remain source evidence. Candidate Plan authoring does not
+replace an existing PlanMount or create execution/evidence state. Runtime,
+storage migration and delivery use their separately authorized owning controls.

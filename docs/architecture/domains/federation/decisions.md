@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-05-31 | **Updated**: 2026-10-10
+> **Created**: 2026-05-31 | **Updated**: 2026-10-11
 > **Owner**: Architecture Team
 
 ---
@@ -27,6 +27,10 @@
 | D-14 | Relay directory 只发布 Station 签名 route attestation | superseded by NCP-D07 |
 | D-15 | Relay 数据面使用端到端 TLS 的 opaque tunnel | superseded by NCP-D03 |
 | D-16 | Relay 复用 Station binary 但使用最小 role allowlist | superseded by NCP-D02 |
+
+Superseded transport 条目只保留历史上下文。当前逻辑 Station / Node delegation、
+Circuit v2、Frame ingress 与 admission 目标统一引用 Node Connectivity。
+同一逻辑 Station 的多个 Node 不创建多个 Federation membership。
 
 ---
 
@@ -351,7 +355,7 @@ Ledger 能提供 Peers-Touch 所需的 permissioned governance、replay、audit 
 **Date**: 2026-10-06
 
 当前 authority 边界见
-[`NCP-D04`](../../platform/runtime/node-connectivity/decisions.md#ncp-d04-relay-has-no-station-federation-or-business-authority)。
+[`NCP-D04`](../../platform/runtime/node-connectivity/decisions.md#ncp-d04-relay-admission-only)。
 
 ### Context
 
@@ -386,7 +390,7 @@ Station 身份声明。
 **Date**: 2026-10-06
 
 当前 enrollment 真源见
-[`NCP-D06`](../../platform/runtime/node-connectivity/decisions.md#ncp-d06-enrollment-binds-host-key-proof-and-generation-revocation)。
+[`NCP-D06`](../../platform/runtime/node-connectivity/decisions.md#ncp-d06-delegated-enrollment-and-epoch)。
 
 ### Context
 
@@ -423,7 +427,7 @@ operator recovery Journey。
 **Date**: 2026-10-06
 
 当前 route 真源见
-[`NCP-D07`](../../platform/runtime/node-connectivity/decisions.md#ncp-d07-station-signs-every-relay-route-and-inner-tls-spki)。
+[`NCP-D07`](../../platform/runtime/node-connectivity/decisions.md#ncp-d07-signed-node-routes)。
 
 ### Context
 
@@ -459,7 +463,7 @@ Acceptance attack surface。
 **Date**: 2026-10-06
 
 当前数据面真源见
-[`NCP-D03`](../../platform/runtime/node-connectivity/decisions.md#ncp-d03-end-to-end-tls-opaque-tunnel-is-the-only-relay-data-plane)。
+[`NCP-D03`](../../platform/runtime/node-connectivity/decisions.md#ncp-d03-circuit-v2-and-station-tls)。
 
 ### Context
 
@@ -496,7 +500,7 @@ Station canonical HTTP/protobuf router。
 **Date**: 2026-10-06
 
 当前 role 真源见
-[`NCP-D02`](../../platform/runtime/node-connectivity/decisions.md#ncp-d02-station-and-relay-share-one-binary-with-explicit-roles)。
+[`NCP-D02`](../../platform/runtime/node-connectivity/decisions.md#ncp-d02-two-roles-and-existing-frame-ingress)。
 
 ### Context
 

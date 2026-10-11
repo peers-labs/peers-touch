@@ -26,7 +26,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
-	relayclient "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay-client"
+	nativeRelay "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/relay"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	gate "github.com/peers-labs/peers-touch/station/frame/touch/accessgate"
 	gatepb "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate"
@@ -748,8 +748,8 @@ func (h *dashboardHandler) handleRevokeInviteCode(ctx context.Context, _ *domain
 	return &gatepb.RevokeInviteCodeResponse{InviteCode: gate.ToProtoInviteCode(row)}, nil
 }
 
-// handleIssueRelayConnectionMaterial exposes the relay-client's narrow
-// Station-owned issuance capability to authenticated Dashboard operators.
+// handleIssueRelayConnectionMaterial exposes the Station Relay runtime's
+// narrow issuance capability to authenticated Dashboard operators.
 func (h *dashboardHandler) handleIssueRelayConnectionMaterial(
 	ctx context.Context,
 	req *peerpb.IssueStationConnectionMaterialRequest,
@@ -770,16 +770,8 @@ func (h *dashboardHandler) handleIssueRelayConnectionMaterial(
 
 	material, err := issuer.IssueConnectionMaterial(
 		ctx,
-		relayclient.ConnectionMaterialRequest{
+		nativeRelay.ConnectionMaterialRequest{
 			RouteID: routeID,
-			InnerTLSSPKISHA256: append(
-				[]byte(nil),
-				req.GetInnerTlsSpkiSha256()...,
-			),
-			CapabilitiesDigest: append(
-				[]byte(nil),
-				req.GetCapabilitiesDigest()...,
-			),
 			RouteLifetime: time.Duration(req.GetRouteLifetimeSeconds()) *
 				time.Second,
 			GrantLifetime: time.Duration(req.GetGrantLifetimeSeconds()) *
@@ -790,7 +782,7 @@ func (h *dashboardHandler) handleIssueRelayConnectionMaterial(
 	if err != nil {
 		if errors.Is(
 			err,
-			relayclient.ErrInvalidConnectionMaterialRequest,
+			nativeRelay.ErrInvalidConnectionMaterialRequest,
 		) {
 			return nil, server.BadRequest(
 				"Relay connection material request is invalid",

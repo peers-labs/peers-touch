@@ -13,6 +13,7 @@ import (
 
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
+	standardrelay "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/relay"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/application"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/infrastructure"
@@ -47,11 +48,14 @@ func TestEnrollmentHTTPDerivesIdentityAndNeverListsInviteSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create credential authority: %v", err)
 	}
-	service := application.NewService(repository, authority)
+	admission := standardrelay.NewAdmission()
+	service := application.NewService(repository, authority, admission)
 	subserver := &SubServer{
-		opts:    &Options{MaxStations: 10},
-		svc:     service,
-		streams: NewStreamManager(nil, 4),
+		opts: &Options{
+			MaxStations: 10,
+			Admission:   admission,
+		},
+		svc: service,
 	}
 	handler := newRelayHandler(subserver)
 
@@ -97,45 +101,52 @@ func TestEnrollmentHTTPDerivesIdentityAndNeverListsInviteSecret(t *testing.T) {
 		t.Fatalf("unexpected challenge: %+v", challenge)
 	}
 
-	privateKey, publicKey, err := libp2pcrypto.GenerateEd25519Key(rand.Reader)
+	rootPrivateKey, rootPublicKey, err := libp2pcrypto.GenerateEd25519Key(rand.Reader)
 	if err != nil {
-		t.Fatalf("generate Station key: %v", err)
+		t.Fatalf("generate Station root key: %v", err)
 	}
-	stationPeerID, err := peer.IDFromPublicKey(publicKey)
+	nodePrivateKey, nodePublicKey, err := libp2pcrypto.GenerateEd25519Key(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate Station node key: %v", err)
+	}
+	stationPeerID, err := peer.IDFromPublicKey(rootPublicKey)
 	if err != nil {
 		t.Fatalf("derive Station peer ID: %v", err)
 	}
 	now := time.Now().UTC()
-	statement := &peerpb.StationIdentityStatement{
-		Challenge:       challenge.Challenge,
-		StationPeerId:   stationPeerID.String(),
-		CanonicalOrigin: "https://station.example:443",
-		Capabilities:    []string{"station-identity"},
-		IssuedAtUnixMs:  now.UnixMilli(),
-		ExpiresAtUnixMs: now.Add(time.Minute).UnixMilli(),
-	}
-	statementBytes, err := proto.MarshalOptions{Deterministic: true}.
-		Marshal(statement)
-	if err != nil {
-		t.Fatalf("marshal Station statement: %v", err)
-	}
-	signature, err := privateKey.Sign(
-		append([]byte(domain.StationIdentityDomain), statementBytes...),
+	capabilities := []string{"station-identity", "station-route"}
+	authorization, err := peerpb.SignStationNodeAuthorization(
+		rootPrivateKey,
+		nodePublicKey,
+		1,
+		capabilities,
+		now,
+		now.Add(time.Hour),
 	)
 	if err != nil {
-		t.Fatalf("sign Station statement: %v", err)
+		t.Fatalf("authorize Station node: %v", err)
 	}
-	hostPublicKey, err := libp2pcrypto.MarshalPublicKey(publicKey)
+	identityResponse, err := peerpb.SignStationIdentityResponse(
+		nodePrivateKey,
+		authorization,
+		"https://station.example:443",
+		challenge.Challenge,
+		capabilities,
+		now,
+	)
 	if err != nil {
-		t.Fatalf("marshal Station public key: %v", err)
+		t.Fatalf("sign Station identity response: %v", err)
+	}
+	identityResponseBytes, err := proto.MarshalOptions{Deterministic: true}.
+		Marshal(identityResponse)
+	if err != nil {
+		t.Fatalf("marshal Station identity response: %v", err)
 	}
 	registerBody, err := json.Marshal(registerRequest{
 		InviteToken: secret,
 		Proof: domain.StationIdentityProof{
-			ChallengeID:   challenge.ChallengeID,
-			Statement:     statementBytes,
-			HostPublicKey: hostPublicKey,
-			Signature:     signature,
+			ChallengeID: challenge.ChallengeID,
+			Response:    identityResponseBytes,
 		},
 	})
 	if err != nil {

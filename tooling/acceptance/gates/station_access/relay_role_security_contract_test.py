@@ -55,7 +55,10 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
         evidence = _validate_runtime_evidence(manifest, attestation)
 
         self.assertEqual(evidence["sourceCommit"], "a" * 40)
-        self.assertEqual(evidence["streamEndpoint"], "tls://relay.example:4501")
+        self.assertEqual(
+            evidence["circuitEndpoint"],
+            "/dns4/relay.example/tcp/4001",
+        )
 
     def test_runtime_evidence_rejects_shared_runtime_owner(self) -> None:
         manifest, attestation = self._runtime_evidence()
@@ -147,7 +150,7 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
             ),
         ]
 
-        evidence = _probe_tls_with_openssl("relay.example", 4501)
+        evidence = _probe_tls_with_openssl("relay.example", 18443)
 
         self.assertEqual(evidence["protocol"], "TLSv1.3")
         self.assertEqual(evidence["tls12"], "rejected")
@@ -183,7 +186,7 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
         ]
 
         with self.assertRaisesRegex(GateError, "accepted forbidden TLS 1.2"):
-            _probe_tls_with_openssl("relay.example", 4501)
+            _probe_tls_with_openssl("relay.example", 18443)
 
     @patch(
         "tooling.acceptance.gates.station_access."
@@ -214,7 +217,7 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
         ]
 
         with self.assertRaisesRegex(GateError, "was inconclusive"):
-            _probe_tls_with_openssl("relay.example", 4501)
+            _probe_tls_with_openssl("relay.example", 18443)
 
     @patch(
         "tooling.acceptance.gates.station_access."
@@ -240,7 +243,7 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
         ]
 
         with self.assertRaisesRegex(GateError, "rejection probe failed"):
-            _probe_tls_with_openssl("relay.example", 4501)
+            _probe_tls_with_openssl("relay.example", 18443)
 
     @staticmethod
     def _runtime_evidence() -> tuple[dict[str, object], dict[str, object]]:
@@ -283,7 +286,7 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
             "commit": commit,
             "runtimeSecurity": {
                 "attachmentMode": "existing-owner-managed",
-                "streamEndpoint": "tls://relay.example:4501",
+                "circuitEndpoint": "/dns4/relay.example/tcp/4001",
                 "publicEndpoint": "https://relay.example:18081",
                 "tlsTrustAnchor": {
                     "sha256": "sha256:" + "4" * 64,
@@ -314,7 +317,6 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
                     "relayDataOwner": "pt-relay_peers_data",
                     "requiredProtectedFiles": [
                         _protected_file("relay-operator.key"),
-                        _protected_file("relay-signing.key"),
                         _protected_file("relay-ca.crt"),
                         _protected_file("relay-tls.key"),
                         _protected_file("relay.crt"),

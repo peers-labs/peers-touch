@@ -512,10 +512,13 @@ class NativeTwoClientGate(AcceptanceGate):
         runtime_binding: NativeDesktopRuntimeBinding,
         gate_id: str = GATE_ID,
         allow_existing_fixture: bool = False,
+        journey_id: str | None = None,
+        station_identity_url: str | None = None,
     ) -> None:
         self.gate_id = gate_id
         super().__init__()
         self.allow_existing_fixture = allow_existing_fixture
+        self.journey_id = journey_id or journey_for_gate(gate_id)
         self.manifest = manifest
         self.actor_manifest = actor_manifest
         self.runtime_binding = runtime_binding
@@ -523,6 +526,11 @@ class NativeTwoClientGate(AcceptanceGate):
         self.station_url = str(station.get("endpoint") or "").rstrip("/")
         if not self.station_url:
             raise GateError("runtime manifest Station URL is required")
+        self.station_identity_url = str(
+            station_identity_url or self.station_url
+        ).rstrip("/")
+        if not self.station_identity_url:
+            raise GateError("Station identity URL is required")
         self.client_specs = {
             str(client.get("id")): client
             for client in manifest.get("clients", [])
@@ -554,12 +562,12 @@ class NativeTwoClientGate(AcceptanceGate):
         self.device_ids: dict[str, str] = {}
         self.station_access: dict[str, dict[str, Any]] = {}
         self._reconciliation_target: dict[str, str] | None = None
-        self.report.station_url = self.station_url
+        self.report.station_url = self.station_identity_url
         self.report.manifest = self.manifest
         self.report.runtime.update(
             {
                 "runtimeCell": self.runtime_binding.cell_id,
-                "journey": journey_for_gate(self.gate_id),
+                "journey": self.journey_id,
                 "steps": self.steps,
                 "stationAccess": self.station_access,
                 "cleanup": {},
@@ -1188,7 +1196,9 @@ class NativeTwoClientGate(AcceptanceGate):
         return evidence
 
     def prove_demo_avatar_sources(self) -> dict[str, Any]:
-        allowed_station_urls = {self.station_url}
+        allowed_station_urls = {
+            getattr(self, "station_identity_url", self.station_url)
+        }
 
         def valid_evidence() -> dict[str, Any] | None:
             evidence = self.sample_demo_avatar_sources()
@@ -1586,7 +1596,7 @@ class NativeTwoClientGate(AcceptanceGate):
         try:
             version = self.step(
                 "station.identity",
-                lambda: read_station_version(self.station_url),
+                lambda: read_station_version(self.station_identity_url),
             )
             self.step(
                 (
@@ -1823,7 +1833,7 @@ class NativeTwoClientGate(AcceptanceGate):
         return {
             "runtimeCell": self.runtime_binding.cell_id,
             "runtimeCellRunId": source_identity["runtimeCell"]["runId"],
-            "journey": journey_for_gate(self.gate_id),
+            "journey": self.journey_id,
             "conversationId": conversation_id,
             "sourceIdentity": source_identity,
             "launchOrder": order,

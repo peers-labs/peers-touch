@@ -2,11 +2,14 @@
 package bootstrap
 
 import (
+	"crypto/sha256"
 	"time"
 
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/multiformats/go-multiaddr"
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	nativeRelay "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/relay"
 )
 
 type optionsKey struct{}
@@ -30,26 +33,45 @@ type Options struct {
 
 	Enabled            bool
 	EnableMDNS         bool
-	IdentityKey        crypto.PrivKey
-	ListenAddrs        []string
+	StationRootKey     crypto.PrivKey
+	StationDomain      string
+	InnerTLSSPKISHA256 [sha256.Size]byte
+	CircuitRoutes      func(time.Time) []nativeRelay.CircuitRoute
 	DHTRefreshInterval time.Duration
-	Libp2pInsecure     bool
-	// Private host configuration
-	PrivateKey       crypto.PrivKey
-	ListenMultiAddrs []multiaddr.Multiaddr
+	Host               host.Host
+	DHT                *dht.IpfsDHT
 }
 
-// WithIdentityKey sets the identity key used by the bootstrap server.
-func WithIdentityKey(keyFile crypto.PrivKey) option.Option {
+// WithKernel injects the process-wide P2P Kernel resources.
+func WithKernel(valueHost host.Host, valueDHT *dht.IpfsDHT) option.Option {
 	return wrapper.Wrap(func(o *Options) {
-		o.IdentityKey = keyFile
+		o.Host = valueHost
+		o.DHT = valueDHT
 	})
 }
 
-// WithListenAddrs appends listening addresses.
-func WithListenAddrs(addrs []string) option.Option {
+// WithStationRootKey sets the persistent logical Station identity key.
+func WithStationRootKey(key crypto.PrivKey) option.Option {
 	return wrapper.Wrap(func(o *Options) {
-		o.ListenAddrs = append(o.ListenAddrs, addrs...)
+		o.StationRootKey = key
+	})
+}
+
+// WithStationDomain sets the logical Station's signed domain projection.
+func WithStationDomain(domain string) option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		o.StationDomain = domain
+	})
+}
+
+// WithCircuitRoutes projects current standard Relay reservations.
+func WithCircuitRoutes(
+	innerTLSSPKISHA256 [sha256.Size]byte,
+	routes func(time.Time) []nativeRelay.CircuitRoute,
+) option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		o.InnerTLSSPKISHA256 = innerTLSSPKISHA256
+		o.CircuitRoutes = routes
 	})
 }
 
@@ -71,26 +93,5 @@ func WithEnabled(enabled bool) option.Option {
 func WithDHTRefreshInterval(dhtRefreshInterval time.Duration) option.Option {
 	return wrapper.Wrap(func(o *Options) {
 		o.DHTRefreshInterval = dhtRefreshInterval
-	})
-}
-
-// WithPrivateKey sets private key for the subserver.
-func WithPrivateKey(key crypto.PrivKey) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.PrivateKey = key
-	})
-}
-
-// WithLibp2pInsecure toggles insecure libp2p transport.
-func WithLibp2pInsecure(libp2pInsecure bool) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.Libp2pInsecure = libp2pInsecure
-	})
-}
-
-// WithListenMultiAddrs sets listening multiaddrs.
-func WithListenMultiAddrs(addrs []multiaddr.Multiaddr) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.ListenMultiAddrs = addrs
 	})
 }
