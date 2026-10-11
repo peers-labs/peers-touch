@@ -363,12 +363,14 @@ impl Driver {
                     return;
                 }
                 let control = self.stream_control.clone();
+                let error_reply = reply.clone();
                 tokio::spawn(async move {
                     if let Err(error) =
                         execute_request(control, peer, expected_spki, request, reply).await
                     {
-                        // The response channel may already own the body error path.
-                        let _ = error;
+                        // Sending after a response has already been projected is harmless:
+                        // the synchronous caller has dropped this side of the channel.
+                        let _ = error_reply.send(Err(error));
                     }
                 });
             }

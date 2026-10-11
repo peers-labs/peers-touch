@@ -21,6 +21,8 @@ import (
 const (
 	ProtocolID protocol.ID = "/peers-touch/station-http/1.0.0"
 
+	canonicalAttachmentMetadataHeader = "X-Peers-Attachment-Metadata-Bin"
+
 	DefaultHandshakeTimeout     = 10 * time.Second
 	DefaultIdleTimeout          = 5 * time.Minute
 	DefaultReadIdleTimeout      = 30 * time.Second
@@ -272,6 +274,9 @@ func newStreamingLoopbackProxy(
 func stripUntrustedPeerHeaders(headers http.Header) {
 	for name := range headers {
 		canonical := http.CanonicalHeaderKey(name)
+		if canonical == canonicalAttachmentMetadataHeader {
+			continue
+		}
 		if canonical == "Forwarded" ||
 			canonical == "Via" ||
 			canonical == "X-Real-Ip" ||
