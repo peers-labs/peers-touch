@@ -735,13 +735,20 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
       data-messaging-attachment-kind={attachmentKind}
       data-messaging-attachment-open-state={openState}
       data-messaging-attachment-state={availabilityState}
-      style={{ maxWidth: '100%' }}
+      role={canOpen ? 'button' : undefined}
+      tabIndex={canOpen ? 0 : undefined}
+      onClick={openAttachment}
+      onKeyDown={handleKeyDown}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        maxWidth: '100%',
+        cursor: canOpen ? 'pointer' : 'default',
+      }}
     >
       <Flexbox
         horizontal
         align="center"
-        role={canOpen ? 'button' : undefined}
-        tabIndex={canOpen ? 0 : undefined}
         style={{
           width: 'min(260px, 100%)',
           maxWidth: '100%',
@@ -754,10 +761,6 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
           opacity: src ? 1 : 0.72,
           transition: 'background 120ms ease, box-shadow 120ms ease',
         }}
-        onClick={openAttachment}
-        onKeyDown={handleKeyDown}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
       >
         <AttachmentDetails
           actionLabel={actionLabel}
