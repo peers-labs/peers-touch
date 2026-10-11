@@ -199,6 +199,7 @@ fn serve_proxy_connection(
     let request = read_http_request(&mut connection)?;
     let request_target = request_target(&request).unwrap_or("");
     let trace_attachment = request_target.starts_with("/conversation/attachments/objects/");
+    let request_range = request_header(&request, "range").unwrap_or("");
     let started = Instant::now();
     let route = standard_route(&state.snapshot)?;
     let mut response = state
@@ -208,11 +209,17 @@ fn serve_proxy_connection(
     if trace_attachment {
         tracing::info!(
             request_target,
+            request_range,
             status = response.status.as_u16(),
             response_headers_ms = started.elapsed().as_millis(),
             content_length = response
                 .headers
                 .get("content-length")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or(""),
+            content_range = response
+                .headers
+                .get("content-range")
                 .and_then(|value| value.to_str().ok())
                 .unwrap_or(""),
             "Station attachment proxy response started"
@@ -279,6 +286,16 @@ fn request_target(request: &[u8]) -> Option<&str> {
     let line_end = request.windows(2).position(|window| window == b"\r\n")?;
     let request_line = std::str::from_utf8(&request[..line_end]).ok()?;
     request_line.split_whitespace().nth(1)
+}
+
+fn request_header<'a>(request: &'a [u8], expected_name: &str) -> Option<&'a str> {
+    let header_end = find_header_end(request)?;
+    let headers = std::str::from_utf8(&request[..header_end]).ok()?;
+    headers.lines().skip(1).find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.eq_ignore_ascii_case(expected_name)
+            .then(|| value.trim())
+    })
 }
 
 fn read_http_request(stream: &mut TcpStream) -> Result<Vec<u8>, TransportError> {
@@ -390,5 +407,11 @@ mod tests {
             "POST /upload HTTP/1.1\r\nContent-Length: 4\r\nContent-Length: 4"
         )
         .is_err());
+    }
+
+    #[test]
+    fn proxy_reads_range_header_case_insensitively() {
+        let request = b"GET /object HTTP/1.1\r\nHost: station\r\nRange: bytes=0-31\r\n\r\n";
+        assert_eq!(request_header(request, "range"), Some("bytes=0-31"));
     }
 }
