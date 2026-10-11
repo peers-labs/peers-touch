@@ -164,7 +164,8 @@ class NativeFilePickerTest(unittest.TestCase):
             result,
             {"name": "attachment.bin", "size": 18},
         )
-        adapter.activate_process.assert_called_once_with(42)
+        self.assertEqual(adapter.activate_process.call_count, 2)
+        adapter.activate_process.assert_called_with(42)
         adapter.post_mouse_to_process.assert_called_once_with(
             42,
             (MouseAction.LEFT_DOWN, MouseAction.LEFT_UP),

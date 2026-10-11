@@ -104,6 +104,29 @@ def select_native_file(
         )
     )
 
+    def chooser_owner_ready(_: Any) -> NativeControlSnapshot | None:
+        if cooperative_activation:
+            runtime_binding.request_cooperative_activation(
+                client,
+                all_sessions,
+            )
+        else:
+            adapter.activate_process(process_id)
+        control = adapter.focused_control(process_id)
+        return (
+            control
+            if panel_open(control)
+            and control.frontmost
+            and control.actual_frontmost_pid == process_id
+            else None
+        )
+
+    WebDriverWait(
+        client.driver,
+        timeout_seconds,
+        poll_frequency=POLL_SECONDS,
+    ).until(chooser_owner_ready)
+
     def restore_native_window() -> NativeControlSnapshot:
         last_state: dict[str, Any] = {}
 
