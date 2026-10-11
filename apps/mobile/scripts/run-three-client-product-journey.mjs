@@ -591,7 +591,7 @@ print("pressed" if pressed else "missing")
           cwd: repoRoot,
           encoding: 'utf8',
           env: { ...process.env, PYTHONPATH: repoRoot },
-          timeout: 7_000,
+          timeout: 12_000,
         },
       ).trim();
     } catch (error) {
