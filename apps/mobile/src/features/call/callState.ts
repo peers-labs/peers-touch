@@ -1,5 +1,6 @@
 import type { MobileAuthSession } from '../auth/authSession';
 import type { RealtimeWireEvent } from '../social/socialWire';
+import { createCallId } from '@peers-touch/client-chat-core';
 import {
   messagingCallSignalOpen,
   messagingCallSignalSeal,
@@ -136,7 +137,7 @@ export class MobileCallManager {
     return this.enqueue(async () => {
       this.requireIdle();
       const session = this.requireSession();
-      const callId = newCallId();
+      const callId = createCallId();
       const signalingSessionId = deriveSignalingSessionId(
         session.actorRef.ptid,
         peerPtid,
@@ -864,28 +865,6 @@ function acquireMedia(kind: CallMediaKind): Promise<MediaStream> {
     audio: true,
     video: kind === 'video',
   });
-}
-
-function newCallId(): string {
-  const alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-  let timestamp = BigInt(Date.now());
-  let timePart = '';
-  for (let index = 0; index < 10; index += 1) {
-    timePart = alphabet[Number(timestamp & 31n)] + timePart;
-    timestamp >>= 5n;
-  }
-  const randomBytes = new Uint8Array(10);
-  crypto.getRandomValues(randomBytes);
-  let randomness = 0n;
-  randomBytes.forEach((byte) => {
-    randomness = (randomness << 8n) | BigInt(byte);
-  });
-  let randomPart = '';
-  for (let index = 0; index < 16; index += 1) {
-    randomPart = alphabet[Number(randomness & 31n)] + randomPart;
-    randomness >>= 5n;
-  }
-  return timePart + randomPart;
 }
 
 export const mobileCallManager = new MobileCallManager();

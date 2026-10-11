@@ -6,6 +6,7 @@ import type {
   RealtimeCallSignalPayload,
 } from '../../kernel/events/types';
 import { log } from '../../utils/logger';
+import { createCallId } from '@peers-touch/client-chat-core';
 
 // Historical context (kept verbose deliberately — this module used to
 // be the data-plane and the deletion is non-obvious from `git blame`):
@@ -551,37 +552,6 @@ class CallP2pManager {
       clearTimeout(conn.reconnectTimer);
       conn.reconnectTimer = null;
     }
-  }
-
-  /** Generate a 26-char Crockford-base32 ULID without pulling in an
-   *  external dep. Time-prefixed so it's roughly sortable and
-   *  collision-resistant for the 16-byte random tail. */
-  private newCallId(): string {
-    const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-    const time = Date.now();
-    const tBytes = new Uint8Array(6);
-    let t = time;
-    for (let i = 5; i >= 0; i--) {
-      tBytes[i] = t & 0xff;
-      t = Math.floor(t / 256);
-    }
-    const rand = new Uint8Array(10);
-    crypto.getRandomValues(rand);
-    const all = new Uint8Array(16);
-    all.set(tBytes, 0);
-    all.set(rand, 6);
-    // Encode 16 bytes (128 bits) as 26 chars of base32.
-    let out = '';
-    for (let i = 0; i < 26; i++) {
-      const bitOffset = i * 5;
-      const byteIdx = Math.floor(bitOffset / 8);
-      const bitInByte = bitOffset % 8;
-      const hi = all[byteIdx] ?? 0;
-      const lo = all[byteIdx + 1] ?? 0;
-      const val = ((hi << 8) | lo) >>> (16 - 5 - bitInByte);
-      out += ALPHABET[val & 0x1f];
-    }
-    return out;
   }
 
   /**
@@ -1237,7 +1207,7 @@ class CallP2pManager {
     if (status.state === 'failed') throw new Error(status.detail || 'call connection failed');
     const conn = this.conns.get(`${myDid}::${peerPtid}`);
     if (!conn) throw new Error('call connection is unavailable');
-    const callId = this.newCallId();
+    const callId = createCallId();
     conn.call = { callId, mediaKind, state: 'outgoing' };
     this.emitCall(conn);
     await this.sendSignal(
@@ -1328,7 +1298,7 @@ class CallP2pManager {
     if (conn.call.state === 'active' || conn.call.state === 'outgoing') {
       throw new Error('startCall: call already in progress');
     }
-    const callId = this.newCallId();
+    const callId = createCallId();
     const audioDeviceId = readPreferredDevice(PREFERRED_AUDIO_DEVICE_KEY);
     const videoDeviceId = readPreferredDevice(PREFERRED_VIDEO_DEVICE_KEY);
     conn.call = { callId, mediaKind, state: 'outgoing', audioDeviceId, videoDeviceId };

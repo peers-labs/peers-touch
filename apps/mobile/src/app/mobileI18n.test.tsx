@@ -37,6 +37,22 @@ describe('MobileI18nProvider', () => {
     expect(markup).toContain('删除');
     expect(markup).not.toContain('moments.');
   });
+
+  it.each([
+    ['en-US', ['Incoming call', 'Connected', 'Call ended', 'Mute microphone']],
+    ['zh-CN', ['来电', '通话中', '通话已结束', '麦克风静音']],
+  ])('loads call controls and lifecycle states for %s', (language, expected) => {
+    vi.stubGlobal('navigator', { language });
+
+    const markup = renderToStaticMarkup(
+      <MobileI18nProvider>
+        <CallTranslations />
+      </MobileI18nProvider>,
+    );
+
+    expected.forEach((translation) => expect(markup).toContain(translation));
+    expect(markup).not.toContain('mobile.call.');
+  });
 });
 
 function MomentsTranslations() {
@@ -47,6 +63,19 @@ function MomentsTranslations() {
       <span>{t('moments.private.revocation.RESOURCE_DELETED.title')}</span>
       <span>{t('moments.comment.reply')}</span>
       <span>{t('moments.comment.delete')}</span>
+    </div>
+  );
+}
+
+function CallTranslations() {
+  const { t } = useMobileI18n();
+
+  return (
+    <div>
+      <span>{t('mobile.call.state.ringing_all_devices')}</span>
+      <span>{t('mobile.call.state.active_here')}</span>
+      <span>{t('mobile.call.state.ended')}</span>
+      <span>{t('mobile.call.mute')}</span>
     </div>
   );
 }
