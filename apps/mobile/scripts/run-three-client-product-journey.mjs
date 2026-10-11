@@ -8062,13 +8062,23 @@ async function openSocialPost(clientId, client, content, authorName) {
           };
         `
       : `
-          const surface = document.querySelector(
+          const details = [...document.querySelectorAll(
             '[data-product-surface="moments.detail-comments"]'
-          );
+          )].map((surface) => ({
+            surface,
+            article: surface.closest(
+              'article[data-acceptance-id="social-moment-card"]'
+            ) ?? surface.querySelector(
+              'article[data-acceptance-id="social-moment-card"]'
+            )
+          })).find(({ surface, article }) => (
+            surface.getClientRects().length
+            && article?.getClientRects().length
+            && (article.innerText || '').includes(arguments[0])
+          ));
           return {
-            ready: Boolean(surface?.getClientRects().length)
-              && (surface?.innerText || '').includes(arguments[0]),
-            text: (surface?.innerText || '').replace(/\\s+/g, ' ').trim()
+            ready: Boolean(details),
+            text: (details?.article?.innerText || '').replace(/\\s+/g, ' ').trim()
           };
         `,
     [content],
@@ -8279,17 +8289,29 @@ async function waitForSocialLoveReaction(clientId, client, content) {
           };
         `
       : `
-          const surface = document.querySelector(
+          const details = [...document.querySelectorAll(
             '[data-product-surface="moments.detail-comments"]'
+          )].map((surface) => ({
+            surface,
+            article: surface.closest(
+              'article[data-acceptance-id="social-moment-card"]'
+            ) ?? surface.querySelector(
+              'article[data-acceptance-id="social-moment-card"]'
+            )
+          })).find(({ surface, article }) => (
+            surface.getClientRects().length
+            && article?.getClientRects().length
+            && (article.innerText || '').includes(arguments[0])
+          ));
+          const reaction = details?.article?.querySelector(
+            '.moments-reaction-tag'
           );
-          const reaction = surface?.querySelector('.moments-reaction-tag');
           return {
             ready: Boolean(reaction)
               && (reaction?.textContent || '').includes('❤️')
-              && /[1-9]/.test(reaction?.textContent || '')
-              && (surface?.innerText || '').includes(arguments[0]),
+              && /[1-9]/.test(reaction?.textContent || ''),
             reaction: (reaction?.textContent || '').replace(/\\s+/g, ' ').trim(),
-            text: (surface?.innerText || '').replace(/\\s+/g, ' ').trim()
+            text: (details?.article?.innerText || '').replace(/\\s+/g, ' ').trim()
           };
         `,
     [content],
