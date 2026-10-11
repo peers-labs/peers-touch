@@ -1730,11 +1730,11 @@ class MultiStationBindingTests(unittest.TestCase):
             "services": {
                 "station-four": {
                     "kind": "station",
-                    "endpoint": "http://10.37.245.247:18080",
+                    "endpoint": "http://192.0.2.40:18080",
                 },
                 "station-home": {
                     "kind": "station",
-                    "endpoint": "http://10.37.94.156:18132",
+                    "endpoint": "http://192.0.2.30:18132",
                 },
             },
             "clients": [
@@ -1773,9 +1773,9 @@ class MultiStationBindingTests(unittest.TestCase):
             manifest, "bob", "station"
         )
         self.assertEqual(alice_sid, "station-four")
-        self.assertEqual(alice_svc["endpoint"], "http://10.37.245.247:18080")
+        self.assertEqual(alice_svc["endpoint"], "http://192.0.2.40:18080")
         self.assertEqual(bob_sid, "station-home")
-        self.assertEqual(bob_svc["endpoint"], "http://10.37.94.156:18132")
+        self.assertEqual(bob_svc["endpoint"], "http://192.0.2.30:18132")
         self.assertNotEqual(alice_svc["endpoint"], bob_svc["endpoint"])
 
     def test_wrong_binding_role_raises(self):

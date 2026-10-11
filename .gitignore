@@ -76,7 +76,7 @@ __pycache__/
 .dev-workflow/
 
 # Worktree-local dev environment (profiles, pids, logs, data)
-.local/
+/.local
 /client/common/peers_touch_ai_proxy_client/lib/src/example/ai_provider_debug.yml
 /model/env.bat
 ./mastodon
@@ -108,6 +108,11 @@ apps/mobile/android/gradle/wrapper/gradle-wrapper.jar
 apps/mobile/flutter/
 packages/messaging-core/target/
 tooling/acceptance/reports/
+
+# Local build/review artifacts — never commit; reports history was purged.
+/reports/
+/deliverables/
+/.trae-html-share-packages/
 apps/desktop/test-results/
 tooling/scripts/__pycache__/
 *.pyc

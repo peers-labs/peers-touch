@@ -42,7 +42,7 @@ All other features (DM messaging, group creation, group messaging, group admin, 
 
 | Resource | Config |
 |----------|--------|
-| Station Three | 10.37.94.156:18080 (deployed from this worktree) |
+| Station Three | 192.0.2.30:18080 (deployed from this worktree) |
 | Desktop A | This worktree (`make desktop` profile=three, ports 3230/3410) |
 | Desktop B | peers-group-chat worktree (already running, ports 3231/3411 or 3288) |
 | User A | Account on Station Three |

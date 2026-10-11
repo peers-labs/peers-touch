@@ -138,7 +138,7 @@ Phase 0 采样器必须先执行并记录以下 preflight。任一步失败，�
 1. Station health：
 
    ```bash
-   curl -fsS -m 5 http://10.37.246.80:18080/sub-oss/healthz
+   curl -fsS -m 5 http://192.0.2.10:18080/sub-oss/healthz
    ```
 
 2. Gateway command round-trip：

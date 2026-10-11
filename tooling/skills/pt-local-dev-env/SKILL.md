@@ -244,17 +244,20 @@ make desktop   # Starts Desktop
 make mobile    # Starts Mobile
 ```
 
-### Recipe: Remote Station (e.g. 10.37.246.80) + Local Desktop + Mobile
+### Recipe: Remote Station + Local Desktop + Mobile
 
 Define the deployable profile in the sibling environment repository:
+
+The address below is a documentation-only TEST-NET example. Put the real host
+only in the sibling environment repository.
 
 ```env
 # env/peers-touch/remote-s1/profile.env.example
 PT_STATION_MODE=remote
-PT_STATION_URL=http://10.37.246.80:18080
+PT_STATION_URL=http://192.0.2.10:18080
 PT_STATION_PORT=18080
 PT_STATION_DEPLOY_ENV=station-1
-PT_MOBILE_DEFAULT_STATION_URL=http://10.37.246.80:18080
+PT_MOBILE_DEFAULT_STATION_URL=http://192.0.2.10:18080
 ```
 
 ```bash
@@ -264,8 +267,8 @@ make env-register \
   CAPABILITIES='station.connect,station.deploy' \
   PURPOSE='Remote Station development'
 make station   # Deploy/restart/check remote Station
-make desktop   # Connects to 10.37.246.80
-make mobile    # Connects to 10.37.246.80
+make desktop   # Connects to 192.0.2.10
+make mobile    # Connects to 192.0.2.10
 ```
 
 ### Recipe: Second worktree running simultaneously (Human Local Mode)
@@ -292,9 +295,9 @@ Edit the active profile:
 
 ```env
 PT_RELAY_MODE=remote
-PT_RELAY_URL=http://10.37.118.48:18081
+PT_RELAY_URL=http://192.0.2.20:18081
 PT_RELAY_DEPLOY_ENV=relay-1
-PT_BOOTSTRAP_NODES=/ip4/10.37.118.48/tcp/4001/p2p/<relay-peer-id>
+PT_BOOTSTRAP_NODES=/ip4/192.0.2.20/tcp/4001/p2p/<relay-peer-id>
 ```
 
 These variables are passed to Station at startup.
@@ -318,7 +321,7 @@ make env-register \
   PURPOSE='Multi-Station development'
 # Set in env/peers-touch/four/profile.env:
 #   PT_STATION_MODE=remote
-#   PT_STATION_URL=http://10.37.94.156:18132
+#   PT_STATION_URL=http://192.0.2.30:18132
 #   PT_STATION_DEPLOY_ENV=four
 make station          # Deploy/restart/check station-four
 
@@ -349,10 +352,10 @@ switch profile, `make station`), then run acceptance from either profile.
 
 | Name | URL | Notes |
 |------|-----|-------|
-| Station-1 | `http://10.37.246.80:18080` | direct=ON |
-| Station-2 | `http://10.37.195.98:18080` | direct=ON |
-| Relay | `http://10.37.118.48:18081` | bootstrap DHT seed |
-| Station-4 | `http://10.37.195.98:18082` | relay-only, direct=OFF |
+| Station-1 | `http://192.0.2.10:18080` | direct=ON |
+| Station-2 | `http://192.0.2.60:18080` | direct=ON |
+| Relay | `http://192.0.2.20:18081` | bootstrap DHT seed |
+| Station-4 | `http://192.0.2.60:18082` | relay-only, direct=OFF |
 
 ## Agent Workflow
 
@@ -420,8 +423,8 @@ make setup-git-server    # Creates bare repo + starts git daemon on central serv
 Configuration: `.local/deploy/git-server.env`:
 
 ```env
-PT_GIT_SERVER_HOST=10.37.246.80
-PT_GIT_SERVER_USER=shuxian
+PT_GIT_SERVER_HOST=192.0.2.10
+PT_GIT_SERVER_USER=operator
 PT_GIT_SERVER_BARE_PATH=peers-touch/bare.git
 PT_GIT_SERVER_DAEMON_PORT=9418
 ```
@@ -443,12 +446,12 @@ make setup-git-server                # One-time: init bare repo + daemon
 Create `.local/deploy/envs/<name>.env`:
 
 ```env
-PT_DEPLOY_HOST=10.37.246.80
-PT_DEPLOY_USER=shuxian
+PT_DEPLOY_HOST=192.0.2.10
+PT_DEPLOY_USER=operator
 PT_DEPLOY_PATH=peers-touch/repo
 PT_DEPLOY_ROLE=station
 PT_DEPLOY_SOURCE=central
-PT_DEPLOY_HEALTH_URL=http://10.37.246.80:18080/sub-oss/healthz
+PT_DEPLOY_HEALTH_URL=http://192.0.2.10:18080/sub-oss/healthz
 PT_DEPLOY_BUILD_CMD='docker compose -f tooling/docker/compose.yml build station'
 PT_DEPLOY_RESTART_CMD='docker compose -f tooling/docker/compose.yml up -d station'
 ```

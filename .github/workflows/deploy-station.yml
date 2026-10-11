@@ -17,10 +17,10 @@
 #      Remote builds set BUILDKIT_INLINE_CACHE=1 so successive deploys
 #      hit warm layers on each individual remote.
 #
-# Per-env secrets (PEERS_AUTH_SECRET, PEERS_DB_PASSWORD, DEPLOY_SSH_KEY)
-# live in GitHub Environments named after each env. The job synthesises
-# the .env.<name> file at runtime from these secrets — they never live
-# on disk in the repo.
+# Per-env secrets (PEERS_AUTH_SECRET, PEERS_DB_PASSWORD, DEPLOY_SSH_KEY,
+# PT_DEPLOY_HOST, PT_DEPLOY_USER) live in GitHub Environments
+# named after each env. The job synthesises the .env.<name> file at runtime;
+# deployment coordinates and credentials never live in the repository.
 #
 # Topology and rationale: see .localenv §1 / §7.
 name: Deploy Station
@@ -179,6 +179,9 @@ jobs:
       matrix:
         env: ${{ fromJSON(needs.plan.outputs.envs) }}
     environment: ${{ matrix.env }}
+    env:
+      PT_DEPLOY_HOST: ${{ secrets.PT_DEPLOY_HOST }}
+      PT_DEPLOY_USER: ${{ secrets.PT_DEPLOY_USER }}
     steps:
       - uses: actions/checkout@v4
 
@@ -186,46 +189,46 @@ jobs:
       - id: route
         name: Resolve host / port / profile
         run: |
+          : "${PT_DEPLOY_HOST:?Configure PT_DEPLOY_HOST in the selected GitHub Environment}"
+          : "${PT_DEPLOY_USER:?Configure PT_DEPLOY_USER in the selected GitHub Environment}"
+          echo "host=$PT_DEPLOY_HOST" >> "$GITHUB_OUTPUT"
+          echo "user=$PT_DEPLOY_USER" >> "$GITHUB_OUTPUT"
           case "${{ matrix.env }}" in
             pt-relay)
-              echo "host=10.37.118.48" >> "$GITHUB_OUTPUT"
               echo "station_port=18080" >> "$GITHUB_OUTPUT"
               echo "relay_port=18081"   >> "$GITHUB_OUTPUT"
               echo "profile=relay"      >> "$GITHUB_OUTPUT"
               echo "db_name=peers_relay" >> "$GITHUB_OUTPUT"
               echo "direct_out=true"    >> "$GITHUB_OUTPUT"
               echo "direct_in=true"     >> "$GITHUB_OUTPUT"
-              echo "health=http://10.37.118.48:18081/sub-oss/healthz" >> "$GITHUB_OUTPUT"
+              echo "health=http://${PT_DEPLOY_HOST}:18081/sub-oss/healthz" >> "$GITHUB_OUTPUT"
               ;;
             pt-station-1)
-              echo "host=10.37.246.80" >> "$GITHUB_OUTPUT"
               echo "station_port=18080" >> "$GITHUB_OUTPUT"
               echo "relay_port=18081"   >> "$GITHUB_OUTPUT"
               echo "profile=station"    >> "$GITHUB_OUTPUT"
               echo "db_name=peers_touch" >> "$GITHUB_OUTPUT"
               echo "direct_out=true"    >> "$GITHUB_OUTPUT"
               echo "direct_in=true"     >> "$GITHUB_OUTPUT"
-              echo "health=http://10.37.246.80:18080/sub-oss/healthz" >> "$GITHUB_OUTPUT"
+              echo "health=http://${PT_DEPLOY_HOST}:18080/sub-oss/healthz" >> "$GITHUB_OUTPUT"
               ;;
             pt-station-2)
-              echo "host=10.37.195.98" >> "$GITHUB_OUTPUT"
               echo "station_port=18080" >> "$GITHUB_OUTPUT"
               echo "relay_port=18081"   >> "$GITHUB_OUTPUT"
               echo "profile=station"    >> "$GITHUB_OUTPUT"
               echo "db_name=peers_touch" >> "$GITHUB_OUTPUT"
               echo "direct_out=true"    >> "$GITHUB_OUTPUT"
               echo "direct_in=true"     >> "$GITHUB_OUTPUT"
-              echo "health=http://10.37.195.98:18080/sub-oss/healthz" >> "$GITHUB_OUTPUT"
+              echo "health=http://${PT_DEPLOY_HOST}:18080/sub-oss/healthz" >> "$GITHUB_OUTPUT"
               ;;
             pt-station-relay-only)
-              echo "host=10.37.195.98" >> "$GITHUB_OUTPUT"
               echo "station_port=18082" >> "$GITHUB_OUTPUT"
               echo "relay_port=18081"   >> "$GITHUB_OUTPUT"
               echo "profile=station"    >> "$GITHUB_OUTPUT"
               echo "db_name=peers_touch" >> "$GITHUB_OUTPUT"
               echo "direct_out=false"   >> "$GITHUB_OUTPUT"
               echo "direct_in=false"    >> "$GITHUB_OUTPUT"
-              echo "health=http://10.37.195.98:18082/sub-oss/healthz" >> "$GITHUB_OUTPUT"
+              echo "health=http://${PT_DEPLOY_HOST}:18082/sub-oss/healthz" >> "$GITHUB_OUTPUT"
               ;;
           esac
 
@@ -243,9 +246,9 @@ jobs:
       - name: Register docker context
         run: |
           docker context create ${{ matrix.env }} \
-            --docker "host=ssh://shuxian@${{ steps.route.outputs.host }}" || \
+            --docker "host=ssh://${{ steps.route.outputs.user }}@${{ steps.route.outputs.host }}" || \
           docker context update ${{ matrix.env }} \
-            --docker "host=ssh://shuxian@${{ steps.route.outputs.host }}"
+            --docker "host=ssh://${{ steps.route.outputs.user }}@${{ steps.route.outputs.host }}"
 
       # ── synthesise gitignored .env.<name> from environment secrets ──
       - name: Materialise env file
