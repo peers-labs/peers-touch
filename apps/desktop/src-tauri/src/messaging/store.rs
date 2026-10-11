@@ -8633,6 +8633,85 @@ impl MessagingStore {
             .map_err(|error| error.to_string())
     }
 
+    #[cfg(feature = "acceptance-webdriver")]
+    pub fn mls_welcome_public_provenance(&self) -> Result<String, String> {
+        use messaging_core::mls::group::{public_key_package_ref, welcome_key_package_refs};
+        use messaging_core::proto::chat::{
+            DeviceEventDelivery, MlsQueuePayload, PreparedEndpointPayloadKind,
+        };
+
+        let connection = self.connection()?;
+        let mut packages = connection
+            .prepare(
+                "SELECT package_id, data, state, created_at_unix_ms
+                 FROM messaging_mls_key_packages ORDER BY created_at_unix_ms LIMIT 1024",
+            )
+            .map_err(|error| error.to_string())?;
+        let packages = packages
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Vec<u8>>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        let packages = packages
+            .into_iter()
+            .map(|(id, bytes, state, created)| {
+                public_key_package_ref(&bytes)
+                    .map(|reference| (reference, (id, state, created)))
+            })
+            .collect::<Result<BTreeMap<_, _>, _>>()?;
+        let mut inbox = connection
+            .prepare(
+                "SELECT event_id, lane_sequence, payload, state
+                 FROM messaging_inbox_items ORDER BY lane_sequence DESC LIMIT 512",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = inbox
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        let mut welcomes = Vec::new();
+        for (event_id, lane_sequence, bytes, state) in rows {
+            let Ok(delivery) = DeviceEventDelivery::decode(bytes.as_slice()) else {
+                continue;
+            };
+            if delivery.payload_kind != PreparedEndpointPayloadKind::MlsWelcome as i32 {
+                continue;
+            }
+            let payload = MlsQueuePayload::decode(delivery.endpoint_payload.as_slice())
+                .map_err(|error| error.to_string())?;
+            let references = welcome_key_package_refs(&payload.opaque_mls_bytes)?;
+            let known = references
+                .iter()
+                .filter_map(|reference| {
+                    packages.get(reference).map(|package| (reference, package))
+                })
+                .collect::<Vec<_>>();
+            welcomes.push(serde_json::json!({
+                "event_id": event_id,
+                "lane_sequence": lane_sequence,
+                "state": state,
+                "key_package_refs": references,
+                "published_matches": known,
+            }));
+        }
+        serde_json::to_string(&welcomes).map_err(|error| error.to_string())
+    }
+
     pub fn save_mls_join_provider_pool(
         &self,
         provider_pool_state: &[u8],
