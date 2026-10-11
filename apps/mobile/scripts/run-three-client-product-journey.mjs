@@ -2115,6 +2115,19 @@ async function ensureDesktopAuthenticated(clientId, client, stationUrl, account)
     );
     if (!stationLabel || stationLabel.toLowerCase() === 'station') {
       await clickElement(client, stationTrigger);
+      await waitForUi(
+        clientId,
+        client,
+        'Desktop Station picker input',
+        `
+          const input = document.querySelector(
+            'input[aria-label="Station or private connection"]'
+          );
+          return {
+            ready: Boolean(input?.getClientRects().length)
+          };
+        `,
+      );
       await setInputValue(
         client,
         'input[aria-label="Station or private connection"]',
