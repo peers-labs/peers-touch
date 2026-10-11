@@ -28,7 +28,9 @@
     "apps/mobile/scripts/run-three-client-product-journey.mjs",
     "apps/station/app/subserver/social",
     "packages/prototypes/mobile/chat",
-    "tooling/acceptance/gates/mobile"
+    "tooling/acceptance/gates/mobile",
+    "tooling/scripts/local-dev/dev-work-schema.mjs",
+    "tooling/scripts/local-dev/dev-work.test.mjs"
   ],
   "readSet": [
     "apps/mobile/src/runtimes/privateMomentsRuntime.ts",
@@ -44,7 +46,7 @@
   "checks": [
     {
       "id": "moments-source",
-      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/moments src/runtimes/momentsRuntime.test.ts src/services/socialRealtime.test.ts src/test/moments-store.test.ts && pnpm --dir apps/mobile exec vitest run src/pages/MomentsPage.test.ts src/pages/moments src/features/social/useMomentsDraft.test.ts && node apps/mobile/scripts/run-three-client-product-journey.mjs --self-test",
+      "command": "node --test tooling/scripts/local-dev/dev-work.test.mjs && pnpm --dir apps/desktop exec vitest run src/acceptance/moments src/runtimes/momentsRuntime.test.ts src/services/socialRealtime.test.ts src/test/moments-store.test.ts && pnpm --dir apps/mobile exec vitest run src/pages/MomentsPage.test.ts src/pages/moments src/features/social/useMomentsDraft.test.ts && node apps/mobile/scripts/run-three-client-product-journey.mjs --self-test",
       "verificationClass": "SOURCE_CHECK"
     },
     {
