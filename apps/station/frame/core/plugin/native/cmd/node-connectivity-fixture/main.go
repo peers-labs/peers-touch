@@ -90,6 +90,21 @@ func main() {
 				_, _ = fmt.Fprintf(writer, "data: %s\n\n", event)
 				flusher.Flush()
 			}
+		case "/events-blocking":
+			writer.Header().Set("Content-Type", "text/event-stream")
+			flusher, ok := writer.(http.Flusher)
+			if !ok {
+				http.Error(writer, "flush unavailable", http.StatusInternalServerError)
+				return
+			}
+			event := make([]byte, 4<<10)
+			for index := range event {
+				event[index] = 'x'
+			}
+			for range 256 {
+				_, _ = writer.Write(event)
+				flusher.Flush()
+			}
 		case "/upload":
 			digest := sha256.New()
 			count, readErr := io.Copy(digest, request.Body)
@@ -102,6 +117,13 @@ func main() {
 				hex.EncodeToString(digest.Sum(nil)),
 			)
 			_, _ = fmt.Fprintf(writer, "%d", count)
+		case "/download":
+			payload := make([]byte, (1<<20)+16)
+			for index := range payload {
+				payload[index] = byte(index % 251)
+			}
+			writer.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = writer.Write(payload)
 		default:
 			http.NotFound(writer, request)
 		}
