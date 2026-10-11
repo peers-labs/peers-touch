@@ -147,7 +147,8 @@ def select_native_file(
                 and not panel_open(control)
                 and control.main_window
                 and control.frontmost
-                and control.focused_window
+                and control.actual_frontmost_pid == process_id
+                and (control.focused_window or document_focused)
                 and document_focused
                 and control.kind != "application-dialog"
                 else None
