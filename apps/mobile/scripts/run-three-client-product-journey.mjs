@@ -9470,6 +9470,56 @@ async function openRecoveryConversation(
   };
 }
 
+function desktopSocialFeedRecoveryDecision(
+  detailVisible,
+  backControlVisible,
+) {
+  if (!detailVisible) return 'feed';
+  return backControlVisible ? 'return' : 'blocked';
+}
+
+async function returnDesktopSocialFeed(clientId, client) {
+  const state = await executeWebScript(
+    client,
+    `
+      const decide = ${desktopSocialFeedRecoveryDecision.toString()};
+      const main = document.querySelector('[data-page="moments"] main');
+      const detail = main?.querySelector('[data-moments-comments-region]');
+      const back = main
+        ? [...main.querySelectorAll('button')].find((button) => (
+            button.getClientRects().length
+            && /back/i.test((button.innerText || '').trim())
+          ))
+        : null;
+      const decision = decide(
+        Boolean(detail?.getClientRects().length),
+        Boolean(back)
+      );
+      if (decision === 'return') back.click();
+      return { decision };
+    `,
+  );
+  assertContract(
+    state?.decision !== 'blocked',
+    'RECOVERY_SOCIAL_FEED_RETURN_MISSING',
+    `${clientId} cannot return from Social detail to the feed`,
+  );
+  if (state?.decision === 'return') {
+    await waitForUi(
+      clientId,
+      client,
+      'Desktop Social feed after detail',
+      `
+        const main = document.querySelector('[data-page="moments"] main');
+        return {
+          ready: Boolean(main)
+            && !main.querySelector('[data-moments-comments-region]')
+        };
+      `,
+    );
+  }
+}
+
 async function readRecoverySocialSnapshot(clientId, client) {
   if (client.platform === 'desktop') {
     await navigateDesktopPrimary(
@@ -9479,6 +9529,7 @@ async function readRecoverySocialSnapshot(clientId, client) {
       '[data-pt-primary-nav="moments"] [role="button"]',
       'Social',
     );
+    await returnDesktopSocialFeed(clientId, client);
     const feed = await waitForUi(
       clientId,
       client,
@@ -10083,6 +10134,13 @@ function selfTest(matrix) {
     normalizeRecoveryText('  one\n two  ') === 'one two',
     'SELF_TEST_RECOVERY_TEXT',
     'recovery text normalization is invalid',
+  );
+  assertContract(
+    desktopSocialFeedRecoveryDecision(false, false) === 'feed'
+      && desktopSocialFeedRecoveryDecision(true, true) === 'return'
+      && desktopSocialFeedRecoveryDecision(true, false) === 'blocked',
+    'SELF_TEST_RECOVERY_SOCIAL_NAVIGATION',
+    'Desktop Social recovery navigation decision is invalid',
   );
   assertContract(
     permissionAlertMatches(
