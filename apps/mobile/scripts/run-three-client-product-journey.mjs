@@ -1307,15 +1307,31 @@ function activateDesktopProcess(pid) {
       'osascript',
       [
         '-e',
-        'tell application "System Events" to set visible of '
-          + `(first application process whose unix id is ${pid}) to true`,
+        'tell application "System Events"',
         '-e',
-        'tell application "System Events" to tell '
-          + `(first application process whose unix id is ${pid}) `
-          + 'to perform action "AXRaise" of window 1',
+        `set targetProcess to first application process whose unix id is ${pid}`,
         '-e',
-        'tell application "System Events" to set frontmost of '
-          + `(first application process whose unix id is ${pid}) to true`,
+        'set visible of targetProcess to true',
+        '-e',
+        'set frontmost of targetProcess to true',
+        '-e',
+        'repeat 50 times',
+        '-e',
+        'if (count of windows of targetProcess) > 0 then',
+        '-e',
+        'perform action "AXRaise" of window 1 of targetProcess',
+        '-e',
+        'set frontmost of targetProcess to true',
+        '-e',
+        'exit repeat',
+        '-e',
+        'end if',
+        '-e',
+        'delay 0.1',
+        '-e',
+        'end repeat',
+        '-e',
+        'end tell',
       ],
       { encoding: 'utf8' },
     );
