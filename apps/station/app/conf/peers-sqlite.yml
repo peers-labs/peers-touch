@@ -30,7 +30,7 @@ peers:
       max-reservations-per-asn: 32
       buffer-size: 32768
     relay-pool:
-      mode: off
+      mode: "off"
       renew-before-seconds: 1200
       retry-min-seconds: 1
       retry-max-seconds: 60
