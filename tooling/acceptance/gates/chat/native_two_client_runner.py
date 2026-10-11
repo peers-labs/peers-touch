@@ -779,7 +779,7 @@ class NativeTwoClientGate(AcceptanceGate):
         if (
             not isinstance(bound_station, dict)
             or bound_station.get("phase") != "bound"
-            or str(bound_station.get("bound_url") or "").rstrip("/")
+            or str(bound_station.get("activeUrl") or "").rstrip("/")
             != str(
                 runtime_station_service(
                     self.manifest,
@@ -881,7 +881,7 @@ class NativeTwoClientGate(AcceptanceGate):
         if (
             not isinstance(bound_station, dict)
             or bound_station.get("phase") != "bound"
-            or str(bound_station.get("bound_url") or "").rstrip("/")
+            or str(bound_station.get("activeUrl") or "").rstrip("/")
             != station_url
         ):
             raise GateError(

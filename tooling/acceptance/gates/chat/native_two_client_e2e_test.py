@@ -342,6 +342,8 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             source.index("transfer_preserved_session("),
         )
         self.assertIn('"bindingState"', source)
+        self.assertIn('bound_station.get("activeUrl")', source)
+        self.assertNotIn('bound_station.get("bound_url")', source)
         self.assertIn('"getRealtimeDevice"', source)
         self.assertIn("self.client_lifecycles.mark_authenticated(client)", source)
 
