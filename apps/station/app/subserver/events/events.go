@@ -58,6 +58,12 @@ func (s *eventsSubServer) Init(ctx context.Context, opts ...option.Option) error
 func (s *eventsSubServer) Start(ctx context.Context, opts ...option.Option) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.bus != nil {
+		if err := s.bus.Start(ctx); err != nil {
+			s.status = server.StatusError
+			return err
+		}
+	}
 	if s.callResolution != nil && s.callResolutionCancel == nil {
 		reaperContext, cancel := context.WithCancel(context.Background())
 		done := make(chan struct{})
