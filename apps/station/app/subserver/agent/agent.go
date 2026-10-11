@@ -23,6 +23,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/handler"
@@ -50,6 +51,7 @@ type ossFileServiceProvider interface {
 }
 
 type agentSubServer struct {
+	lifecycleMu            sync.RWMutex
 	opts                   *Options
 	addrs                  []string
 	status                 server.Status
@@ -134,7 +136,14 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 	if s.nodeID == "" {
 		return fmt.Errorf("initialize Agent executor fencing: Station Node identity is unavailable")
 	}
-	s.nodeIncarnation = service.NewChatTaskExecutorIdentity(s.nodeID).Incarnation
+	s.nodeIncarnation = strings.TrimSpace(
+		serverOptions.Metadata["node_incarnation"],
+	)
+	if s.nodeIncarnation == "" {
+		s.nodeIncarnation = service.NewChatTaskExecutorIdentity(
+			s.nodeID,
+		).Incarnation
+	}
 
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
@@ -145,6 +154,8 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 }
 
 func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
 	workerCtx := ctx
 	if s.turnService != nil {
 		workerCtx = s.turnService.SetExecutionLifecycle(ctx)
@@ -199,6 +210,8 @@ func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error
 }
 
 func (s *agentSubServer) Stop(ctx context.Context) error {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
 	s.status = server.StatusStopping
 	if s.turnService != nil {
 		if err := s.turnService.StopExecutionLifecycle(ctx); err != nil {
@@ -210,7 +223,36 @@ func (s *agentSubServer) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (s *agentSubServer) Status() server.Status { return s.status }
+func (s *agentSubServer) Status() server.Status {
+	s.lifecycleMu.RLock()
+	defer s.lifecycleMu.RUnlock()
+	return s.status
+}
+
+// ClusterReadiness verifies that Agent execution is using the shared
+// PostgreSQL authority and a process-scoped fencing identity.
+func (s *agentSubServer) ClusterReadiness(
+	ctx context.Context,
+) (string, error) {
+	s.lifecycleMu.RLock()
+	status := s.status
+	agentDB := s.agentDB
+	nodeID := s.nodeID
+	nodeIncarnation := s.nodeIncarnation
+	s.lifecycleMu.RUnlock()
+	if status != server.StatusRunning ||
+		agentDB == nil ||
+		strings.TrimSpace(nodeID) == "" ||
+		strings.TrimSpace(nodeIncarnation) == "" {
+		return "", fmt.Errorf("agent: cluster runtime is not running")
+	}
+	if !agentDB.Migrator().HasTable(
+		&persistence.ExecutorLease{},
+	) {
+		return "", fmt.Errorf("agent: executor lease schema is unavailable")
+	}
+	return store.PostgresClusterIdentity(ctx, agentDB)
+}
 
 func (s *agentSubServer) Name() string { return "agent" }
 

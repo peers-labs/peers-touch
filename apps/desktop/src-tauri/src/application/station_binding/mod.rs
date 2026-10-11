@@ -3,7 +3,7 @@ use std::sync::{Mutex, OnceLock, TryLockError};
 
 use crate::infrastructure::event_stream;
 use crate::infrastructure::station_client;
-use crate::infrastructure::station_registry::{StationEntry, StationRegistry};
+use crate::infrastructure::station_registry::{StationEntry, StationRegistry, StationRouteHealth};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -218,6 +218,45 @@ impl StationBindingService {
         state.phase = StationBindingPhase::Bound;
         state.error = None;
         Ok(state.clone())
+    }
+
+    pub(crate) fn reconcile_route_revision(&self, target: &StationEntry) -> StationBindingState {
+        let mut state = self
+            .state
+            .lock()
+            .expect("StationBindingService state lock poisoned");
+        if state.station_peer_id.as_deref() != Some(target.station_peer_id.as_str())
+            || state.lifecycle_generation != target.lifecycle_generation
+            || !matches!(
+                state.phase,
+                StationBindingPhase::AccessGate | StationBindingPhase::Bound
+            )
+        {
+            return state.clone();
+        }
+        let previous_route_failed = state.active_route_id.as_deref().is_some_and(|route_id| {
+            target.routes.iter().any(|route| {
+                route.route_id == route_id && route.health == StationRouteHealth::Unavailable
+            })
+        });
+        let replacement_route_ready = target.active_route().is_some_and(|route| {
+            matches!(
+                route.health,
+                StationRouteHealth::Available | StationRouteHealth::Degraded
+            )
+        });
+        let same_route_refresh =
+            state.active_route_id.as_deref() == Some(target.active_route_id.as_str());
+        if (!previous_route_failed && !same_route_refresh) || !replacement_route_ready {
+            return state.clone();
+        }
+        state.active_route_id = Some(target.active_route_id.clone());
+        state.target_station_peer_id = None;
+        state.target_route_id = None;
+        state.route_revision = target.route_revision;
+        state.lifecycle_generation = target.lifecycle_generation;
+        state.error = None;
+        state.clone()
     }
 
     pub fn remove_station(
@@ -616,6 +655,52 @@ mod tests {
         assert!(state.route_revision > before.route_revision);
         assert!(hooks.transport_teardown_called.load(Ordering::SeqCst));
         assert!(!hooks.scope_teardown_called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn automatic_route_failover_preserves_bound_session_scope() {
+        let registry = registry_with(&[
+            ("peer-a", "route-a", "https://a.example"),
+            ("peer-a", "route-b", "https://b.example"),
+        ]);
+        let service = bound_service(&registry, "peer-a", Some("route-a"));
+        let before = service.state();
+        let target = registry
+            .failover_route("peer-a", "route-a", before.route_revision)
+            .unwrap();
+
+        let after = service.reconcile_route_revision(&target);
+
+        assert_eq!(after.phase, StationBindingPhase::Bound);
+        assert_eq!(after.station_peer_id, before.station_peer_id);
+        assert_eq!(after.lifecycle_generation, before.lifecycle_generation);
+        assert_eq!(after.active_route_id.as_deref(), Some("route-b"));
+        assert!(after.route_revision > before.route_revision);
+    }
+
+    #[test]
+    fn automatic_failover_adoption_rejects_manual_or_lifecycle_changes() {
+        let registry = registry_with(&[
+            ("peer-a", "route-a", "https://a.example"),
+            ("peer-a", "route-b", "https://b.example"),
+        ]);
+        let service = bound_service(&registry, "peer-a", Some("route-a"));
+        let before = service.state();
+        let manual = registry.set_active_route("peer-a", "route-b").unwrap();
+
+        service.reconcile_route_revision(&manual);
+        assert_eq!(service.state(), before);
+
+        let mut replaced = manual;
+        replaced.lifecycle_generation = before.lifecycle_generation + 1;
+        replaced
+            .routes
+            .iter_mut()
+            .find(|route| route.route_id == "route-a")
+            .unwrap()
+            .health = StationRouteHealth::Unavailable;
+        service.reconcile_route_revision(&replaced);
+        assert_eq!(service.state(), before);
     }
 
     #[test]

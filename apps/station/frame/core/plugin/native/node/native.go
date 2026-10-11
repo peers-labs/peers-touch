@@ -4,6 +4,7 @@ package native
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -25,8 +26,10 @@ var (
 )
 
 type native struct {
-	opts   *node.Options
-	kernel *p2pKernel
+	opts            *node.Options
+	kernel          *p2pKernel
+	nodeIncarnation string
+	cluster         *stationClusterAdmission
 	node.AbstractService
 }
 
@@ -83,9 +86,22 @@ func (s *native) Start(ctx context.Context) error {
 		return ctx.Err()
 	}
 
+	if err := s.cluster.Admit(ctx); err != nil {
+		return errors.Join(
+			fmt.Errorf("Station cluster admission failed: %w", err),
+			s.opts.Server.Stop(ctx),
+			s.kernel.Close(),
+		)
+	}
+
 	// register node
 	if err := s.opts.Registry.Register(ctx, s.toPeer()); err != nil {
-		return err
+		return errors.Join(
+			err,
+			s.cluster.Stop(ctx),
+			s.opts.Server.Stop(ctx),
+			s.kernel.Close(),
+		)
 	}
 
 	// todo start achievement, but now it's blocked by Start
@@ -116,6 +132,9 @@ func (s *native) Stop(ctx context.Context) error {
 
 	logger.Infof(ctx, "stop native peers' node. begin to execute stop hooks")
 
+	if err := s.cluster.Stop(ctx); err != nil {
+		gerr = errors.Join(gerr, err)
+	}
 	if err := s.opts.Server.Stop(ctx); err != nil {
 		gerr = errors.Join(gerr, err)
 	}
@@ -155,6 +174,11 @@ func (s *native) Run() error {
 		signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
 	}
 
+	var clusterFailure <-chan error
+	if s.cluster != nil {
+		clusterFailure = s.cluster.Failure()
+	}
+	var runErr error
 	select {
 	// wait on kill signal
 	case <-ch:
@@ -162,9 +186,15 @@ func (s *native) Run() error {
 	case <-ctx.Done():
 		// todo, try to store canceled context data for logger
 		logger.Infof(context.Background(), "[%s] server stopped", s.Name())
+	case err := <-clusterFailure:
+		runErr = fmt.Errorf(
+			"Station cluster readiness withdrawn: %w",
+			err,
+		)
+		logger.Errorf(ctx, "%v", runErr)
 	}
 
-	return s.Stop(ctx)
+	return errors.Join(runErr, s.Stop(ctx))
 }
 
 // todo, update to one node supports multiple peers

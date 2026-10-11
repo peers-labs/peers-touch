@@ -33,6 +33,23 @@ const (
 	ossGCKey         = "ncp/gc/replacement.bin"
 )
 
+func ossFencingNodeIdentity(suffix string) (string, string) {
+	upper := strings.ToUpper(suffix)
+	nodeID := strings.TrimSpace(
+		os.Getenv("NCP_CLUSTER_NODE_" + upper + "_ID"),
+	)
+	incarnation := strings.TrimSpace(
+		os.Getenv("NCP_CLUSTER_NODE_" + upper + "_INCARNATION"),
+	)
+	if nodeID == "" {
+		nodeID = "oss-node-" + suffix
+	}
+	if incarnation == "" {
+		incarnation = "oss-incarnation-" + suffix
+	}
+	return nodeID, incarnation
+}
+
 type ossFencingStore struct {
 	db *gorm.DB
 }
@@ -101,8 +118,10 @@ func TestPostgresCrossProcessOSSFencing(t *testing.T) {
 		t.Fatalf("expire node A worker lease: rows=%d err=%v", result.RowsAffected, result.Error)
 	}
 	takeover := waitOSSFencingResult(t, filepath.Join(runtimeRoot, "node-b-takeover.json"))
+	nodeBID, incarnationB := ossFencingNodeIdentity("b")
 	if takeover.FencingToken != 2 ||
-		takeover.OwnerNodePeerID != "oss-node-b" ||
+		takeover.OwnerNodePeerID != nodeBID ||
+		takeover.OwnerIncarnation != incarnationB ||
 		takeover.Generation != 2 ||
 		takeover.StorageKey == "" ||
 		takeover.StorageKey == ossGCKey ||
@@ -174,6 +193,8 @@ func TestPostgresCrossProcessOSSFencing(t *testing.T) {
 				"NCP-G06-OSS-GC": map[string]any{
 					"healthyLeasePreserved": observed.HealthyLeasePreserved,
 					"tokenAdvanced":         takeover.FencingToken == 2,
+					"ownerNodePeerId":       takeover.OwnerNodePeerID,
+					"ownerIncarnation":      takeover.OwnerIncarnation,
 					"refCount":              blob.RefCount,
 					"bucketUsedBytes":       bucket.UsedBytes,
 					"bucketObjectCount":     bucket.ObjectCount,
@@ -267,7 +288,13 @@ func runOSSFencingNodeA(t *testing.T, database *gorm.DB, sharedRoot string) {
 		t.Fatal(err)
 	}
 
-	lock, err := NewDBLeaderLock(ossFencingDBName, "oss-node-a", "oss-incarnation-a", time.Minute)
+	nodeID, incarnation := ossFencingNodeIdentity("a")
+	lock, err := NewDBLeaderLock(
+		ossFencingDBName,
+		nodeID,
+		incarnation,
+		time.Minute,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +361,13 @@ func runOSSFencingNodeB(t *testing.T, database *gorm.DB, sharedRoot string) {
 		t.Fatal(err)
 	}
 	_, _, unauthorizedErr := reader.ReadOwnedFile(ctx, ossOtherPTID, upload.ObjectKey, 1<<20)
-	lock, err := NewDBLeaderLock(ossFencingDBName, "oss-node-b", "oss-incarnation-b", time.Minute)
+	nodeID, incarnation := ossFencingNodeIdentity("b")
+	lock, err := NewDBLeaderLock(
+		ossFencingDBName,
+		nodeID,
+		incarnation,
+		time.Minute,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

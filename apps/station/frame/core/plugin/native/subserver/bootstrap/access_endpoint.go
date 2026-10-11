@@ -62,8 +62,9 @@ func (s *SubServer) AccessEndpoint(
 		}
 		attestation, signErr := s.SignStationRouteAttestation(
 			&peerpb.StationRouteStatement{
-				RelayPeerId:        route.RelayPeerID.String(),
-				RouteId:            "circuit-" + route.RelayPeerID.String(),
+				RelayPeerId: route.RelayPeerID.String(),
+				RouteId: "circuit-" + route.RelayPeerID.String() +
+					"-" + s.host.ID().String(),
 				RouteGeneration:    route.RouteGeneration,
 				InnerTlsSpkiSha256: s.opts.InnerTLSSPKISHA256[:],
 				Visibility: peerpb.

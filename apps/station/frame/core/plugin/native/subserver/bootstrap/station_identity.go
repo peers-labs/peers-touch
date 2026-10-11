@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/url"
@@ -46,6 +47,37 @@ func (s *SubServer) SignStationIdentityResponse(
 		stationNodeCapabilities,
 		now,
 	)
+}
+
+// ClusterNodeAuthorization returns the verified, non-secret node delegation
+// facts consumed by Station cluster admission.
+func (s *SubServer) ClusterNodeAuthorization(
+	_ context.Context,
+) (
+	stationPeerID string,
+	nodePeerID string,
+	authorizationEpoch uint64,
+	authorizationDigest string,
+	err error,
+) {
+	now := time.Now().UTC()
+	authorization, err := s.currentNodeAuthorization(now)
+	if err != nil {
+		return "", "", 0, "", err
+	}
+	verified, err := peerpb.VerifyStationNodeAuthorization(
+		authorization,
+		now,
+	)
+	if err != nil {
+		return "", "", 0, "", err
+	}
+	statement := verified.Statement
+	return statement.GetStationPeerId(),
+		statement.GetNodePeerId(),
+		statement.GetAuthorizationEpoch(),
+		hex.EncodeToString(verified.Digest[:]),
+		nil
 }
 
 func (s *SubServer) currentNodeAuthorization(

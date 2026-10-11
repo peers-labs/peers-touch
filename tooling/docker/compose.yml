@@ -64,10 +64,14 @@ services:
       # DSN points at the project's bridge-internal postgres service. Never
       # at the host. POSTGRES_DB / PEERS_DB_PASSWORD come from .env.<project>.
       PEERS_DB_DSN: host=postgres user=${POSTGRES_USER:-peers} password=${PEERS_DB_PASSWORD} dbname=${POSTGRES_DB:-peers_touch} port=5432 sslmode=disable TimeZone=Asia/Shanghai
+      PEERS_STATION_CLUSTER_MODE: ${PEERS_STATION_CLUSTER_MODE:-single}
+      PEERS_STATION_CLUSTER_LEASE_SECONDS: ${PEERS_STATION_CLUSTER_LEASE_SECONDS:-15}
+      PEERS_STATION_CLUSTER_HEARTBEAT_SECONDS: ${PEERS_STATION_CLUSTER_HEARTBEAT_SECONDS:-5}
       # OSS local backend store path. Lives under /app/data so it is
       # carried by the same named volume as the libp2p identities;
       # entrypoint.sh ensures the directory exists at startup.
       PEERS_NODE_SERVER_SUBSERVER_OSS_STORE_PATH: /app/data/oss
+      PEERS_OSS_BACKEND: ${PEERS_OSS_BACKEND:-local}
       # Node-level libp2p federation policy. entrypoint.sh projects each of
       # these vars (when non-empty) into a single federation.docker.yml
       # overlay under peers.node.federation.*. Both libp2p hosts in the

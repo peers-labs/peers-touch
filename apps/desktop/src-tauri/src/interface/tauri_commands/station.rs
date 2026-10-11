@@ -32,11 +32,12 @@ pub struct StationIdentityInput {
 #[tauri::command]
 pub fn station_list() -> AppResult<StubPayload> {
     let registry = station_client::station_registry();
-    station_list_result(
-        registry.list(),
-        registry.active_station_peer_id(),
-        station_binding::service().state(),
-    )
+    let binding_service = station_binding::service();
+    let binding = registry
+        .active_entry()
+        .map(|entry| binding_service.reconcile_route_revision(&entry))
+        .unwrap_or_else(|| binding_service.state());
+    station_list_result(registry.list(), registry.active_station_peer_id(), binding)
 }
 
 fn station_list_result(

@@ -12,6 +12,7 @@
     "station-access-relay-enrollment",
     "station-access-endpoint-discovery",
     "node-connectivity-standard-stream",
+    "node-connectivity-cluster",
     "node-connectivity-shared-objects",
     "station-access-desktop-relay-binding",
     "station-access-interface-integrity"

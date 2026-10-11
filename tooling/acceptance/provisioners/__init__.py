@@ -42,6 +42,9 @@ from .native_tauri_current_profile import (
 from .node_connectivity_agent_fencing import (
     NodeConnectivityAgentFencingProvisioner,
 )
+from .node_connectivity_cluster import (
+    NodeConnectivityClusterProvisioner,
+)
 from .node_connectivity_durable_events import (
     NodeConnectivityDurableEventsProvisioner,
 )
@@ -107,6 +110,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     NativeTauriCurrentProfileProvisioner.environment_id: NativeTauriCurrentProfileProvisioner,
     NodeConnectivityAgentFencingProvisioner.environment_id: (
         NodeConnectivityAgentFencingProvisioner
+    ),
+    NodeConnectivityClusterProvisioner.environment_id: (
+        NodeConnectivityClusterProvisioner
     ),
     NodeConnectivityDurableEventsProvisioner.environment_id: (
         NodeConnectivityDurableEventsProvisioner

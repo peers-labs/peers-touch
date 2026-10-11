@@ -22,6 +22,23 @@ SPEC.loader.exec_module(JOURNEY)
 
 
 class NodeConnectivityJourneyTest(unittest.TestCase):
+    def test_cluster_runtime_contract_matches_ncp08(self) -> None:
+        self.assertEqual(
+            JOURNEY.CLUSTER_RUNTIME_REUSE.scenario_ids,
+            (
+                "NCP-G06-READINESS",
+                "NCP-G06-AGENT",
+                "NCP-G06-OSS",
+            ),
+        )
+        self.assertEqual(
+            JOURNEY.CLUSTER_RUNTIME_REUSE.max_client_launches,
+            2,
+        )
+        self.assertFalse(
+            JOURNEY.CLUSTER_RUNTIME_REUSE.require_receiver_visible_proof
+        )
+
     def test_isolated_environment_rejects_repository_output(self) -> None:
         with self.assertRaisesRegex(ValueError, "outside the repository"):
             JOURNEY.isolated_command_environment(REPO_ROOT)

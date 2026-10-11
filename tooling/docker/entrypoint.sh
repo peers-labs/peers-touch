@@ -71,6 +71,25 @@ if [ "$PEERS_NODE_ROLE" = "station" ] &&
   : "${STATION_RELAY_CONTROL_ORIGIN:?STATION_RELAY_CONTROL_ORIGIN is required}"
 fi
 
+case "${PEERS_STATION_CLUSTER_MODE:-single}" in
+  single)
+    ;;
+  cluster)
+    case "${PEERS_OSS_BACKEND:-local}" in
+      shared-fs|s3)
+        ;;
+      *)
+        echo "[entrypoint] cluster mode requires PEERS_OSS_BACKEND=shared-fs or s3" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  *)
+    echo "[entrypoint] invalid PEERS_STATION_CLUSTER_MODE=${PEERS_STATION_CLUSTER_MODE}" >&2
+    exit 1
+    ;;
+esac
+
 # /app/data is a named volume; subdirectories must be created at runtime
 # (mkdir from the Dockerfile would be shadowed by the empty volume mount).
 # Each subdirectory hosts a single concern so the volume layout is greppable:
@@ -135,6 +154,19 @@ peers:
           dsn: ${PEERS_DB_DSN}
 EOF
   OVERLAYS="${OVERLAYS}, store.docker.yml"
+fi
+
+# ── oss_backend.docker.yml (explicit object namespace ownership) ────────────
+if [ -n "${PEERS_OSS_BACKEND:-}" ]; then
+  cat > /app/conf/oss_backend.docker.yml <<EOF
+peers:
+  node:
+    server:
+      subserver:
+        oss:
+          backend: ${PEERS_OSS_BACKEND}
+EOF
+  OVERLAYS="${OVERLAYS}, oss_backend.docker.yml"
 fi
 
 # ── paths.docker.yml (libp2p key files persistent under /app/data) ──────────

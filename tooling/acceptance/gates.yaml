@@ -413,6 +413,14 @@
       "tier": "env-evidence",
       "description": "Prove two independent OSS processes over one source-attested PostgreSQL runtime and one shared-fs object backend provide cross-node authorized readback, fenced worker takeover, immutable generation deletion, stale completion rejection, and valid quota/refcount state."
     },
+    "NCP-G06": {
+      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-cluster-journey --gate NCP-G06",
+      "timeout_seconds": 420,
+      "environment": "node-connectivity-cluster",
+      "provisioner": "node-connectivity-cluster",
+      "tier": "env-evidence",
+      "description": "Prove two admitted Station node identities share one backing contract while Agent and OSS concurrently preserve healthy foreign ownership, advance domain fencing on expiry, reject stale effects, and retain one terminal effect with valid object refcounts."
+    },
     "NCP-G07": {
       "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-native-cut --gate NCP-G07",
       "timeout_seconds": 180,

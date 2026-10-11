@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -60,6 +61,33 @@ func TestFactorySharedFSIsExplicitlyClusterShared(t *testing.T) {
 	}
 	if NewLocalBackend(t.TempDir()).ClusterShared() {
 		t.Fatal("local backend must not declare cluster-shared scope")
+	}
+}
+
+func TestSharedFSClusterIdentityFollowsThePhysicalNamespace(t *testing.T) {
+	root := t.TempDir()
+	first := NewSharedFSBackend(root)
+	second := NewSharedFSBackend(root)
+	firstIdentity, err := first.EnsureClusterBackingIdentity(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondIdentity, err := second.EnsureClusterBackingIdentity(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstIdentity != secondIdentity {
+		t.Fatal("one shared namespace produced different cluster identities")
+	}
+
+	isolatedIdentity, err := NewSharedFSBackend(
+		t.TempDir(),
+	).EnsureClusterBackingIdentity(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if isolatedIdentity == firstIdentity {
+		t.Fatal("independent filesystem roots shared one cluster identity")
 	}
 }
 

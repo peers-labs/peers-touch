@@ -1,0 +1,64 @@
+{
+  "id": "node-connectivity-cluster",
+  "profile": {
+    "required": false,
+    "identity_match": false
+  },
+  "services": {
+    "cluster-postgres": {
+      "kind": "postgres",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "pg_isready",
+      "status_action": "postmaster.pid",
+      "attestation_producer": "node-connectivity-cluster-provisioner"
+    },
+    "cluster-object-backend": {
+      "kind": "object-storage",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "shared-root-stat",
+      "status_action": "device-inode",
+      "attestation_producer": "node-connectivity-cluster-provisioner"
+    }
+  },
+  "fixtures": [],
+  "credentials": [],
+  "clients": [
+    {
+      "id": "cluster-node-a",
+      "actor": "alice",
+      "runtime": "go-test-process",
+      "required_service_roles": ["database", "object-storage"],
+      "service_bindings": {
+        "database": {
+          "service_id": "cluster-postgres",
+          "required_kind": "postgres"
+        },
+        "object-storage": {
+          "service_id": "cluster-object-backend",
+          "required_kind": "object-storage"
+        }
+      }
+    },
+    {
+      "id": "cluster-node-b",
+      "actor": "alice",
+      "runtime": "go-test-process",
+      "required_service_roles": ["database", "object-storage"],
+      "service_bindings": {
+        "database": {
+          "service_id": "cluster-postgres",
+          "required_kind": "postgres"
+        },
+        "object-storage": {
+          "service_id": "cluster-object-backend",
+          "required_kind": "object-storage"
+        }
+      }
+    }
+  ],
+  "cleanup": {
+    "resources": ["processes", "ports", "storage"]
+  }
+}

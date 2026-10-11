@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -33,6 +34,7 @@ DURABLE_EVENTS_CLOSURE = "ncp-durable-events"
 SHARED_ACCESS_CLOSURE = "ncp-shared-access"
 AGENT_FENCING_CLOSURE = "ncp-agent-fencing"
 OSS_FENCING_CLOSURE = "ncp-shared-objects"
+CLUSTER_CLOSURE = "ncp-cluster-journey"
 GATE_TESTS = {
     "NCP-G01": (
         "TestSecureHTTPDirectAndCircuitUseCanonicalHertzRouter",
@@ -115,6 +117,9 @@ OSS_FENCING_FRAME_FUNCTIONAL_TESTS = (
 OSS_FENCING_GATE_TESTS = (
     "TestPostgresCrossProcessOSSFencing",
 )
+CLUSTER_FRAME_GATE_TESTS = (
+    "TestPostgresStationClusterAdmission",
+)
 DURABLE_EVENTS_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
     {
         "scope": "suite",
@@ -180,6 +185,23 @@ OSS_FENCING_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
         "minWarmReuseRate": 0.66,
         "requireAttachOnlyScenarios": True,
         "requireReceiverVisibleProof": True,
+        "allowClientReplacement": False,
+    }
+)
+CLUSTER_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
+    {
+        "scope": "suite",
+        "entryCheckId": "cluster-functional",
+        "scenarioIds": [
+            "NCP-G06-READINESS",
+            "NCP-G06-AGENT",
+            "NCP-G06-OSS",
+        ],
+        "maxProvisioningRuns": 1,
+        "maxClientLaunches": 2,
+        "minWarmReuseRate": 0.66,
+        "requireAttachOnlyScenarios": True,
+        "requireReceiverVisibleProof": False,
         "allowClientReplacement": False,
     }
 )
@@ -371,6 +393,28 @@ def run_oss_frame_go_tests(
     )
 
 
+def run_cluster_frame_go_tests(
+    test_names: tuple[str, ...],
+    *,
+    environment: Mapping[str, str] | None = None,
+    timeout: int = 300,
+) -> dict[str, object]:
+    pattern = "^(" + "|".join(test_names) + ")$"
+    return run_command(
+        [
+            "go",
+            "test",
+            "./core/plugin/native/node/...",
+            "-run",
+            pattern,
+            "-count=1",
+        ],
+        REPO_ROOT / "apps/station/frame",
+        timeout=timeout,
+        environment=environment,
+    )
+
+
 def load_runtime_manifest() -> dict[str, object]:
     raw = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "").strip()
     if not raw:
@@ -440,6 +484,21 @@ def load_oss_fencing_runtime_manifest() -> dict[str, object]:
         raise ValueError(
             "NCP-G06-OSS Runtime Manifest identity is invalid"
         )
+    return payload
+
+
+def load_cluster_runtime_manifest() -> dict[str, object]:
+    raw = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "").strip()
+    if not raw:
+        raise ValueError("NCP-G06 requires a provisioned Runtime Manifest")
+    payload = json.loads(Path(raw).read_text(encoding="utf-8"))
+    if (
+        not isinstance(payload, dict)
+        or payload.get("environmentId") != "node-connectivity-cluster"
+        or payload.get("gateId") != "NCP-G06"
+        or payload.get("state") != "FIXTURE_READY"
+    ):
+        raise ValueError("NCP-G06 Runtime Manifest identity is invalid")
     return payload
 
 
@@ -1290,6 +1349,331 @@ def run_oss_fencing_gate() -> dict[str, object]:
     }
 
 
+def run_cluster_gate() -> dict[str, object]:
+    manifest = load_cluster_runtime_manifest()
+    services = manifest.get("services")
+    if not isinstance(services, dict):
+        raise ValueError("NCP-G06 Runtime Manifest has no services")
+    postgres = services.get("cluster-postgres")
+    object_backend = services.get("cluster-object-backend")
+    if (
+        not isinstance(postgres, dict)
+        or postgres.get("kind") != "postgres"
+        or not postgres.get("runtimeIdentity")
+        or not postgres.get("attestationArtifact")
+    ):
+        raise ValueError("NCP-G06 PostgreSQL attestation is incomplete")
+    endpoint = str(postgres.get("endpoint") or "")
+    if not endpoint.startswith("postgresql://postgres@127.0.0.1:"):
+        raise ValueError("NCP-G06 PostgreSQL endpoint is not disposable local")
+    if (
+        not isinstance(object_backend, dict)
+        or object_backend.get("kind") != "object-storage"
+        or not object_backend.get("runtimeIdentity")
+        or not object_backend.get("attestationArtifact")
+    ):
+        raise ValueError("NCP-G06 object backend attestation is incomplete")
+    parsed_backend = urlparse(str(object_backend.get("endpoint") or ""))
+    if parsed_backend.scheme != "file" or parsed_backend.netloc:
+        raise ValueError("NCP-G06 object backend is not a shared-fs fixture")
+    shared_root = Path(unquote(parsed_backend.path)).resolve()
+    if (
+        not shared_root.is_dir()
+        or shared_root == REPO_ROOT
+        or REPO_ROOT in shared_root.parents
+    ):
+        raise ValueError("NCP-G06 shared object root identity is invalid")
+
+    clients = manifest.get("clients")
+    if not isinstance(clients, list) or len(clients) != 2:
+        raise ValueError("NCP-G06 requires exactly two process clients")
+    if {
+        str(client.get("id") or "") for client in clients
+    } != {"cluster-node-a", "cluster-node-b"} or {
+        str(client.get("storage_root") or "") for client in clients
+    } != {str(shared_root)}:
+        raise ValueError("NCP-G06 clients do not share one object backing")
+
+    source = manifest.get("source")
+    if not isinstance(source, dict):
+        raise ValueError("NCP-G06 Runtime Manifest source is missing")
+    source_commit = str(source.get("commit") or "")
+    run_id = str(manifest.get("runId") or "")
+    if not source_commit or not run_id:
+        raise ValueError("NCP-G06 source or runtime identity is missing")
+
+    node_a = "cluster-node-a"
+    node_b = "cluster-node-b"
+    incarnation_a = "cluster-incarnation-a"
+    incarnation_b = "cluster-incarnation-b"
+    with tempfile.TemporaryDirectory(
+        prefix="peers-touch-ncp-cluster-",
+    ) as raw:
+        result_root = Path(raw)
+        cluster_path = result_root / "cluster.json"
+        agent_path = result_root / "agent.json"
+        oss_path = result_root / "oss.json"
+        common = {
+            **os.environ,
+            "NCP_CLUSTER_NODE_A_ID": node_a,
+            "NCP_CLUSTER_NODE_B_ID": node_b,
+            "NCP_CLUSTER_NODE_A_INCARNATION": incarnation_a,
+            "NCP_CLUSTER_NODE_B_INCARNATION": incarnation_b,
+        }
+        commands = (
+            (
+                "cluster",
+                run_cluster_frame_go_tests,
+                CLUSTER_FRAME_GATE_TESTS,
+                {
+                    **common,
+                    "NCP_CLUSTER_POSTGRES_DSN": endpoint,
+                    "NCP_CLUSTER_RESULT_PATH": str(cluster_path),
+                },
+            ),
+            (
+                "agent",
+                run_agent_go_tests,
+                AGENT_FENCING_GATE_TESTS,
+                {
+                    **common,
+                    "NCP_AGENT_POSTGRES_DSN": endpoint,
+                    "NCP_AGENT_RESULT_PATH": str(agent_path),
+                },
+            ),
+            (
+                "oss",
+                run_oss_go_tests,
+                OSS_FENCING_GATE_TESTS,
+                {
+                    **common,
+                    "NCP_OSS_POSTGRES_DSN": endpoint,
+                    "NCP_OSS_SHARED_ROOT": str(shared_root),
+                    "NCP_OSS_RESULT_PATH": str(oss_path),
+                },
+            ),
+        )
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {
+                name: executor.submit(
+                    runner,
+                    tests,
+                    environment=environment,
+                    timeout=300,
+                )
+                for name, runner, tests, environment in commands
+            }
+            command_results = {
+                name: future.result()
+                for name, future in futures.items()
+            }
+        results = [
+            command_results[name]
+            for name in ("cluster", "agent", "oss")
+        ]
+        if any(result["status"] != "passed" for result in results):
+            return {"status": "failed", "results": results}
+        cluster_result = json.loads(cluster_path.read_text(encoding="utf-8"))
+        agent_result = json.loads(agent_path.read_text(encoding="utf-8"))
+        oss_result = json.loads(oss_path.read_text(encoding="utf-8"))
+
+    cluster_scenarios = cluster_result.get("scenarios")
+    readiness = (
+        cluster_scenarios.get("NCP-G06-READINESS")
+        if isinstance(cluster_scenarios, dict)
+        else None
+    )
+    agent_scenarios = agent_result.get("scenarios")
+    agent_healthy = (
+        agent_scenarios.get("NCP-G06-HEALTHY")
+        if isinstance(agent_scenarios, dict)
+        else None
+    )
+    agent_takeover = (
+        agent_scenarios.get("NCP-G06-TAKEOVER")
+        if isinstance(agent_scenarios, dict)
+        else None
+    )
+    agent_stale = (
+        agent_scenarios.get("NCP-G06-STALE")
+        if isinstance(agent_scenarios, dict)
+        else None
+    )
+    oss_scenarios = oss_result.get("scenarios")
+    oss_read = (
+        oss_scenarios.get("NCP-G06-OSS-READ")
+        if isinstance(oss_scenarios, dict)
+        else None
+    )
+    oss_gc = (
+        oss_scenarios.get("NCP-G06-OSS-GC")
+        if isinstance(oss_scenarios, dict)
+        else None
+    )
+    oss_stale = (
+        oss_scenarios.get("NCP-G06-OSS-STALE")
+        if isinstance(oss_scenarios, dict)
+        else None
+    )
+    if (
+        cluster_result.get("status") != "passed"
+        or not isinstance(readiness, dict)
+        or readiness.get("readyNodeCount") != 2
+        or readiness.get("sharedBackingMatch") is not True
+        or readiness.get("nodePeerIds") != [node_a, node_b]
+        or readiness.get("incarnations")
+        != [incarnation_a, incarnation_b]
+        or agent_result.get("status") != "passed"
+        or not isinstance(agent_healthy, dict)
+        or agent_healthy.get("healthyPreserved") is not True
+        or agent_healthy.get("ownerNodePeerId") != node_a
+        or agent_healthy.get("ownerIncarnation") != incarnation_a
+        or not isinstance(agent_takeover, dict)
+        or agent_takeover.get("tokenAdvanced") is not True
+        or agent_takeover.get("ownerNodePeerId") != node_b
+        or agent_takeover.get("ownerIncarnation") != incarnation_b
+        or not isinstance(agent_stale, dict)
+        or agent_stale.get("staleCompletionRejected") is not True
+        or agent_stale.get("terminalRecordCount") != 1
+        or agent_stale.get("externalRecoveryState") != "open"
+        or not isinstance(oss_read, dict)
+        or oss_read.get("digestMatch") is not True
+        or oss_read.get("unauthorizedReadDenied") is not True
+        or not isinstance(oss_gc, dict)
+        or oss_gc.get("healthyLeasePreserved") is not True
+        or oss_gc.get("tokenAdvanced") is not True
+        or oss_gc.get("ownerNodePeerId") != node_b
+        or oss_gc.get("ownerIncarnation") != incarnation_b
+        or oss_gc.get("refCount") != 1
+        or oss_gc.get("bucketObjectCount") != 1
+        or not isinstance(oss_stale, dict)
+        or oss_stale.get("staleCompletionRejected") is not True
+        or oss_stale.get("replacementDigestMatch") is not True
+        or oss_stale.get("staleDeleteBoundToOldKey") is not True
+    ):
+        raise ValueError("NCP-G06 integrated process evidence is incomplete")
+
+    process_result = {
+        "artifactKind": "ncp-cluster-process-result",
+        "status": "passed",
+        "nodeIdentities": {
+            "nodeA": {"peerId": node_a, "incarnation": incarnation_a},
+            "nodeB": {"peerId": node_b, "incarnation": incarnation_b},
+        },
+        "clusterAdmission": cluster_result,
+        "agentFencing": agent_result,
+        "ossFencing": oss_result,
+    }
+    ledger = SuiteRuntimeLedger(
+        CLUSTER_RUNTIME_REUSE,
+        suite_runtime_id=run_id,
+        source_digest=source_commit,
+        fixture_epoch=run_id,
+    )
+    ledger.record(
+        SuiteRuntimeAction.PROVISION,
+        resource_id=f"environment:{run_id}",
+    )
+    ledger.record(
+        SuiteRuntimeAction.CLIENT_LAUNCH,
+        resource_id="process:cluster-node-a",
+    )
+    ledger.record(
+        SuiteRuntimeAction.CLIENT_LAUNCH,
+        resource_id="process:cluster-node-b",
+    )
+    for scenario_id in CLUSTER_RUNTIME_REUSE.scenario_ids:
+        ledger.record(
+            SuiteRuntimeAction.SCENARIO_START,
+            scenario_id=scenario_id,
+        )
+        ledger.record(
+            SuiteRuntimeAction.SUPPORTING_OBSERVATION,
+            scenario_id=scenario_id,
+            resource_id=f"postgres-object-readback:{scenario_id}",
+        )
+        ledger.record(
+            SuiteRuntimeAction.SCENARIO_END,
+            scenario_id=scenario_id,
+        )
+    ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)
+    suite_report = ledger.require_valid()
+    validate_suite_runtime_report(
+        suite_report,
+        expected_contract=CLUSTER_RUNTIME_REUSE,
+    )
+
+    with ArtifactSession(repo_root=REPO_ROOT, gate_id="NCP-G06") as artifacts:
+        process_ref = artifacts.write_json(
+            "reports/NCP-G06-process-result.json",
+            process_result,
+            role="process-result",
+        )
+        suite_ref = artifacts.write_json(
+            "reports/NCP-G06-suite-runtime.json",
+            suite_report,
+            role="suite-runtime",
+        )
+        evidence = {
+            "artifactKind": "acceptance-gate-evidence-report",
+            "gateId": "NCP-G06",
+            "gate": "NCP-G06",
+            "environment": "node-connectivity-cluster",
+            "status": "PASS",
+            "completionStatus": "DONE",
+            "proofStatus": "PROVEN",
+            "phase": "NCP-08",
+            "bom": ["NCP-NS01", "NCP-NS03", "NCP-NS04"],
+            "spec": [
+                "NCP-G06",
+                "node-connectivity-cluster",
+                "ncp-cluster-journey",
+            ],
+            "sampleEmissionAllowed": False,
+            "source": source,
+            "runtime": {
+                "postgres": postgres,
+                "objectBackend": object_backend,
+                "logicalProcesses": [node_a, node_b],
+            },
+            "processResult": process_ref.to_dict(),
+            "suiteRuntime": suite_ref.to_dict(),
+            "suiteRuntimeReportDigest": suite_report["reportDigest"],
+            "observedScope": [
+                "two live Station node readiness rows share one backing digest",
+                "Agent and OSS fencing use the same Node and incarnation identities",
+                "healthy foreign Agent and OSS work survives peer boot",
+                "expired takeover advances independent domain fencing tokens",
+                "stale Agent completion and stale OSS generation completion are rejected",
+                "one Agent terminal effect and valid OSS refcount/quota readback remain",
+            ],
+            "unprovenScope": [
+                "NCP-G04 and NCP-G05 retain their own formal process evidence",
+                "the complete production Station owner composition remains unproven",
+                "real Native Desktop cross-node route failover requires the NCP-08 product Journey",
+                "Mobile runtime behavior remains unproven",
+            ],
+        }
+        evidence_ref = artifacts.write_json(
+            "reports/NCP-G06-evidence.json",
+            evidence,
+            role="evidence",
+        )
+        artifacts.complete(
+            status="passed",
+            completion_status="DONE",
+            proof_status="PROVEN",
+            runtime=evidence["runtime"],
+        )
+    return {
+        "status": "passed",
+        "results": results,
+        "processResult": process_ref.to_dict(),
+        "suiteRuntime": suite_ref.to_dict(),
+        "evidence": evidence_ref.to_dict(),
+    }
+
+
 def isolated_command_environment(work_root: Path) -> dict[str, str]:
     target_dir = (work_root / "cargo-target").resolve()
     if target_dir == REPO_ROOT or REPO_ROOT in target_dir.parents:
@@ -1297,6 +1681,7 @@ def isolated_command_environment(work_root: Path) -> dict[str, str]:
     return {
         **os.environ,
         "CARGO_TARGET_DIR": str(target_dir),
+        "CARGO_BUILD_JOBS": os.environ.get("CARGO_BUILD_JOBS", "2"),
     }
 
 
@@ -1341,6 +1726,7 @@ def main() -> int:
             SHARED_ACCESS_CLOSURE,
             AGENT_FENCING_CLOSURE,
             OSS_FENCING_CLOSURE,
+            CLUSTER_CLOSURE,
         ),
     )
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -1355,6 +1741,7 @@ def main() -> int:
                 "NCP-G05",
                 "NCP-G06-AGENT",
                 "NCP-G06-OSS",
+                "NCP-G06",
                 "NCP-G08",
             )
         ),
@@ -1467,7 +1854,7 @@ def main() -> int:
             results = list(gate_result.pop("results"))
         else:
             parser.error(f"{args.gate} does not belong to {args.closure}")
-    else:
+    elif args.closure == OSS_FENCING_CLOSURE:
         if args.functional:
             results = [
                 run_oss_go_tests(OSS_FENCING_FUNCTIONAL_TESTS),
@@ -1477,6 +1864,73 @@ def main() -> int:
             ]
         elif args.gate == "NCP-G06-OSS":
             gate_result = run_oss_fencing_gate()
+            results = list(gate_result.pop("results"))
+        else:
+            parser.error(f"{args.gate} does not belong to {args.closure}")
+    else:
+        if args.functional:
+            target_dir = Path(
+                os.environ.get(
+                    "PT_NCP_CLUSTER_BUILD_ROOT",
+                    "/tmp/peers-relay-ncp08-cargo",
+                )
+            ).resolve()
+            if target_dir == REPO_ROOT or REPO_ROOT in target_dir.parents:
+                raise ValueError(
+                    "NCP cluster build output must stay outside the repository"
+                )
+            target_dir.mkdir(parents=True, exist_ok=True)
+            environment = {
+                **os.environ,
+                "CARGO_TARGET_DIR": str(target_dir),
+                "CARGO_BUILD_JOBS": os.environ.get(
+                    "CARGO_BUILD_JOBS",
+                    "2",
+                ),
+            }
+            results = [
+                run_command(
+                    [
+                        "go",
+                        "test",
+                        "./core/plugin/native/node/...",
+                        "./core/runtime/role/...",
+                        "-count=1",
+                    ],
+                    REPO_ROOT / "apps/station/frame",
+                    timeout=180,
+                ),
+                run_command(
+                    [
+                        "cargo",
+                        "test",
+                        "--manifest-path",
+                        "apps/desktop/src-tauri/Cargo.toml",
+                        "failover",
+                        "--no-default-features",
+                    ],
+                    REPO_ROOT,
+                    timeout=300,
+                    environment=environment,
+                ),
+                run_events_go_tests(
+                    DURABLE_EVENTS_FUNCTIONAL_TESTS
+                ),
+                run_frame_access_go_tests(
+                    SHARED_ACCESS_FRAME_FUNCTIONAL_TESTS
+                ),
+                run_oauth_go_tests(
+                    SHARED_ACCESS_OAUTH_FUNCTIONAL_TESTS
+                ),
+                run_agent_go_tests(
+                    AGENT_FENCING_FUNCTIONAL_TESTS
+                ),
+                run_oss_go_tests(
+                    OSS_FENCING_FUNCTIONAL_TESTS
+                ),
+            ]
+        elif args.gate == "NCP-G06":
+            gate_result = run_cluster_gate()
             results = list(gate_result.pop("results"))
         else:
             parser.error(f"{args.gate} does not belong to {args.closure}")

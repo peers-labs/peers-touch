@@ -233,7 +233,12 @@ impl StationRegistry {
                 .iter_mut()
                 .find(|existing| existing.route_id == candidate.route_id)
             {
+                let active_contract_changed = entry.active_route_id == candidate.route_id
+                    && !same_route_contract(existing, &candidate);
                 *existing = candidate;
+                if active_contract_changed {
+                    entry.route_revision = entry.route_revision.saturating_add(1);
+                }
             } else {
                 entry.routes.push(candidate);
             }
@@ -280,10 +285,13 @@ impl StationRegistry {
             .iter_mut()
             .find(|entry| entry.station_peer_id == station_peer_id)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Station is not registered"))?;
-        if entry.active_route().is_none() {
+        if !entry
+            .active_route()
+            .is_some_and(|route| route_attestation_is_current(route, unix_ms()))
+        {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Station has no active verified route",
+                "Station has no current active verified route",
             ));
         }
         if changing_station && next.active_station_peer_id.is_some() {
@@ -320,10 +328,11 @@ impl StationRegistry {
         if matches!(
             route.health,
             StationRouteHealth::Unavailable | StationRouteHealth::Revoked
-        ) {
+        ) || !route_attestation_is_current(route, unix_ms())
+        {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "Station route is unavailable",
+                "Station route is unavailable or expired",
             ));
         }
         if entry.active_route_id != route_id {
@@ -381,6 +390,75 @@ impl StationRegistry {
             route.last_success_at = Some(route.last_verified_at.clone());
         }
         entry.updated_at = route.last_verified_at.clone();
+        let updated = entry.clone();
+        self.persist(&next)?;
+        *state = next;
+        Ok(updated)
+    }
+
+    pub fn failover_route(
+        &self,
+        station_peer_id: &str,
+        failed_route_id: &str,
+        expected_route_revision: u64,
+    ) -> io::Result<StationEntry> {
+        let mut state = self
+            .state
+            .write()
+            .expect("StationRegistry write lock poisoned");
+        let mut next = state.clone();
+        let entry = next
+            .entries
+            .iter_mut()
+            .find(|entry| entry.station_peer_id == station_peer_id)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Station is not registered"))?;
+        if entry.route_revision != expected_route_revision
+            || entry.active_route_id != failed_route_id
+        {
+            return Ok(entry.clone());
+        }
+        let failed_index = entry
+            .routes
+            .iter()
+            .position(|route| route.route_id == failed_route_id)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Station route is unknown"))?;
+        let failed_type = entry.routes[failed_index].route_type;
+        entry.routes[failed_index].health = StationRouteHealth::Unavailable;
+        entry.routes[failed_index].last_verified_at = now_rfc3339();
+
+        let now_unix_ms = unix_ms();
+        let mut candidates = entry
+            .routes
+            .iter()
+            .filter(|route| {
+                route.route_id != failed_route_id
+                    && route.route_type == failed_type
+                    && matches!(
+                        route.health,
+                        StationRouteHealth::Available | StationRouteHealth::Degraded
+                    )
+                    && route_attestation_is_current(route, now_unix_ms)
+            })
+            .map(|route| {
+                (
+                    u8::from(route.health != StationRouteHealth::Available),
+                    route.route_id.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        candidates.sort();
+        entry.route_revision = entry.route_revision.saturating_add(1);
+        let Some((_, next_route_id)) = candidates.into_iter().next() else {
+            entry.updated_at = now_rfc3339();
+            self.persist(&next)?;
+            *state = next;
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "Station has no verified failover route",
+            ));
+        };
+        entry.active_route_id = next_route_id;
+        entry.updated_at = now_rfc3339();
         let updated = entry.clone();
         self.persist(&next)?;
         *state = next;
@@ -567,6 +645,38 @@ fn route_candidate(route: &VerifiedStationRoute, now: &str) -> StationRouteCandi
     }
 }
 
+fn same_route_contract(left: &StationRouteCandidate, right: &StationRouteCandidate) -> bool {
+    left.node_peer_id == right.node_peer_id
+        && left.node_authorization_digest == right.node_authorization_digest
+        && left.authorization_epoch == right.authorization_epoch
+        && left.route_id == right.route_id
+        && left.route_type == right.route_type
+        && left.transport == right.transport
+        && left.endpoint_origin == right.endpoint_origin
+        && left.relay_peer_id == right.relay_peer_id
+        && left.route_generation == right.route_generation
+        && left.inner_tls_spki_sha256 == right.inner_tls_spki_sha256
+        && left.addresses == right.addresses
+        && left.attestation_bytes == right.attestation_bytes
+        && left.connection_grant == right.connection_grant
+        && left.attestation_expires_at_unix_ms == right.attestation_expires_at_unix_ms
+        && left.health == right.health
+}
+
+pub(crate) fn route_attestation_is_current(
+    route: &StationRouteCandidate,
+    now_unix_ms: i64,
+) -> bool {
+    route
+        .attestation_expires_at_unix_ms
+        .is_none_or(|expires_at| expires_at > now_unix_ms)
+}
+
+fn unix_ms() -> i64 {
+    i64::try_from(time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000)
+        .unwrap_or(i64::MAX)
+}
+
 fn now_rfc3339() -> String {
     time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
@@ -690,6 +800,106 @@ mod tests {
             assert_eq!(
                 registry.active_endpoint_origin().as_deref(),
                 Some("https://relay.example")
+            );
+        });
+    }
+
+    #[test]
+    fn route_failover_preserves_station_scope_and_fences_failed_route() {
+        with_seed(None, || {
+            let registry = StationRegistry::new(&temp_dir("route-failover"));
+            registry
+                .upsert_verified_route(
+                    &route("station-one", "relay-a", "https://relay.example", true),
+                    None,
+                )
+                .unwrap();
+            let mut second = route("station-one", "relay-b", "https://relay.example", true);
+            second.node_peer_id = "station-one-node-b".to_string();
+            registry.upsert_verified_route(&second, None).unwrap();
+            let before = registry.set_active_station("station-one").unwrap();
+
+            let after = registry
+                .failover_route("station-one", "relay-a", before.route_revision)
+                .unwrap();
+
+            assert_eq!(after.station_peer_id, before.station_peer_id);
+            assert_eq!(after.lifecycle_generation, before.lifecycle_generation);
+            assert_eq!(after.active_route_id, "relay-b");
+            assert_eq!(after.route_revision, before.route_revision + 1);
+            assert_eq!(
+                after
+                    .routes
+                    .iter()
+                    .find(|route| route.route_id == "relay-a")
+                    .unwrap()
+                    .health,
+                StationRouteHealth::Unavailable
+            );
+        });
+    }
+
+    #[test]
+    fn route_failover_persists_unavailable_without_a_replacement() {
+        with_seed(None, || {
+            let registry = StationRegistry::new(&temp_dir("route-exhausted"));
+            registry
+                .upsert_verified_route(
+                    &route("station-one", "relay-a", "https://relay.example", true),
+                    None,
+                )
+                .unwrap();
+            let before = registry.set_active_station("station-one").unwrap();
+
+            assert!(registry
+                .failover_route("station-one", "relay-a", before.route_revision)
+                .is_err());
+            let after = registry.active_entry().unwrap();
+            assert_eq!(after.routes[0].health, StationRouteHealth::Unavailable);
+            assert_eq!(after.route_revision, before.route_revision + 1);
+        });
+    }
+
+    #[test]
+    fn route_failover_rejects_expired_or_stale_candidates() {
+        with_seed(None, || {
+            let registry = StationRegistry::new(&temp_dir("route-failover-cas"));
+            registry
+                .upsert_verified_route(
+                    &route("station-one", "relay-a", "https://relay.example", true),
+                    None,
+                )
+                .unwrap();
+            let mut expired = route(
+                "station-one",
+                "relay-expired",
+                "https://relay.example",
+                true,
+            );
+            expired.node_peer_id = "station-one-node-expired".to_string();
+            expired.expires_at_unix_ms = Some(unix_ms() - 1);
+            registry.upsert_verified_route(&expired, None).unwrap();
+            let before = registry.set_active_station("station-one").unwrap();
+
+            assert!(registry
+                .failover_route("station-one", "relay-a", before.route_revision)
+                .is_err());
+
+            let mut refreshed = route("station-one", "relay-a", "https://relay.example", true);
+            refreshed.authorization_epoch = 2;
+            let refreshed_entry = registry.upsert_verified_route(&refreshed, None).unwrap();
+            let stale_result = registry
+                .failover_route("station-one", "relay-a", before.route_revision)
+                .unwrap();
+            assert_eq!(stale_result.route_revision, refreshed_entry.route_revision);
+            assert_eq!(
+                stale_result
+                    .routes
+                    .iter()
+                    .find(|route| route.route_id == "relay-a")
+                    .unwrap()
+                    .health,
+                StationRouteHealth::Available
             );
         });
     }
