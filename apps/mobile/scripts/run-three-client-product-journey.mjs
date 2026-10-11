@@ -8992,11 +8992,19 @@ async function runSocialPhase(manifest, evidenceDir, preflight) {
     await step(
       clientId,
       'social-coral-reply-converged',
-      () => waitForSocialComment(
-        clientId,
-        manifest.clients[clientId],
-        coralReply,
-      ),
+      async () => {
+        await receiveOpenSocialPost(
+          clientId,
+          manifest.clients[clientId],
+          alicePost,
+          'Alice',
+        );
+        return waitForSocialComment(
+          clientId,
+          manifest.clients[clientId],
+          coralReply,
+        );
+      },
     );
   }
   await step(
