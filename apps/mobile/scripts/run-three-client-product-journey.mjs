@@ -8009,6 +8009,15 @@ async function openSocialPost(clientId, client, content, authorName) {
     client.platform === 'desktop'
       ? `
           const main = document.querySelector('[data-page="moments"] main');
+          const openRegion = document.querySelector(
+            '[data-moments-comments-region]'
+          );
+          if (
+            openRegion?.getClientRects().length
+            && (main?.innerText || '').includes(arguments[0])
+          ) {
+            return true;
+          }
           const cards = main
             ? [...main.querySelectorAll('div')].filter((element) => (
                 element instanceof HTMLElement
@@ -8033,6 +8042,10 @@ async function openSocialPost(clientId, client, content, authorName) {
             element.getClientRects().length
             && (element.innerText || '').includes(arguments[0])
           ));
+          const openThread = card?.querySelector(
+            '[data-product-surface="moments.detail-comments"]'
+          );
+          if (openThread?.getClientRects().length) return true;
           const button = card?.querySelector(
             '[data-acceptance-id="social-thread-open"]'
           );
