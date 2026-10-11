@@ -8166,7 +8166,7 @@ async function publishSocialPost(clientId, client, content) {
       `,
     );
   } else {
-    await clickSelector(
+    await clickVisibleSelector(
       client,
       '[data-acceptance-id="social-composer-open"]',
       'mobile-social-composer-open',
@@ -8189,7 +8189,7 @@ async function publishSocialPost(clientId, client, content) {
       content,
       'mobile-social-content',
     );
-    await clickSelector(
+    await clickVisibleSelector(
       client,
       '[data-acceptance-id="social-composer-publish"]',
       'mobile-social-publish',
