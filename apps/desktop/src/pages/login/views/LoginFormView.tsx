@@ -14,6 +14,7 @@ import {
   Lock,
   Mail,
   RotateCcw,
+  Server,
   ShieldCheck,
   X,
 } from 'lucide-react';
@@ -24,6 +25,7 @@ import {
   parseGateFields,
   type AccessDecision,
 } from '../../../services/accessGate';
+import { useStationGate } from '../../../store/stationGate';
 import { LOGIN_FORM_LAYOUT } from '../constants';
 import type {
   AuthState,
@@ -95,6 +97,17 @@ export const LoginFormView = memo(function LoginFormView({
   const { token } = theme.useToken();
   const { t } = useTranslation('auth');
 
+  const gateStatus = useStationGate(s => s.status);
+  const activeStationLabel = useStationGate(s => s.activeLabel);
+  const refreshGate = useStationGate(s => s.refresh);
+
+  React.useEffect(() => {
+    void refreshGate();
+  }, [refreshGate]);
+
+  // Login is only meaningful once an active Station probes online.
+  const stationReady = gateStatus === 'ready';
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -140,6 +153,7 @@ export const LoginFormView = memo(function LoginFormView({
 
   const handleEmailSubmit = useCallback(async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (!stationReady) return;
     if (!email.trim() || !password.trim()) return;
     setLoading(true);
     try {
@@ -147,7 +161,7 @@ export const LoginFormView = memo(function LoginFormView({
     } finally {
       setLoading(false);
     }
-  }, [email, password, onEmailLogin]);
+  }, [email, password, onEmailLogin, stationReady]);
 
   const handleInviteSubmit = useCallback(async () => {
     if (!gateState || !inviteCode.trim()) return;
@@ -313,6 +327,20 @@ export const LoginFormView = memo(function LoginFormView({
         );
       })()}
 
+      {!stationReady && (
+        <StationGateNotice
+          token={token}
+          status={gateStatus}
+          activeLabel={activeStationLabel}
+          text={{
+            unbound: t('auth.stationGate.unbound'),
+            offline: t('auth.stationGate.offline'),
+            loading: t('auth.stationGate.checking'),
+            action: t('auth.stationGate.action'),
+          }}
+        />
+      )}
+
       <div
         style={{
           width: '100%',
@@ -393,7 +421,7 @@ export const LoginFormView = memo(function LoginFormView({
                     className="login-oauth-action__button"
                     data-pt-login-oauth-provider={provider.id}
                     data-pt-login-oauth-state={actionState}
-                    disabled={anotherProviderActive || actionPending}
+                    disabled={!stationReady || anotherProviderActive || actionPending}
                     onClick={() => onOAuthLogin(provider)}
                     style={{
                       ...oauthButtonStyle,
@@ -558,7 +586,7 @@ export const LoginFormView = memo(function LoginFormView({
                   data-login-submit
                   type="primary"
                   htmlType="submit"
-                  disabled={loading}
+                  disabled={!stationReady || loading}
                   style={{
                     height: 44,
                     width: 44,
@@ -580,3 +608,64 @@ export const LoginFormView = memo(function LoginFormView({
     </>
   );
 });
+
+type DesignToken = ReturnType<typeof theme.useToken>['token'];
+
+// Explains the prerequisite and points the user to the Station control in
+// the corner. It is non-dismissable because, without a reachable Station,
+// the login controls beneath it genuinely cannot work.
+function StationGateNotice({
+  token,
+  status,
+  activeLabel,
+  text,
+}: {
+  token: DesignToken;
+  status: 'loading' | 'unbound' | 'offline';
+  activeLabel: string;
+  text: { unbound: string; offline: string; loading: string; action: string };
+}) {
+  const isChecking = status === 'loading';
+  const message =
+    status === 'unbound'
+      ? text.unbound
+      : status === 'offline'
+        ? text.offline
+        : text.loading;
+
+  return (
+    <div
+      role="status"
+      style={{
+        width: '100%',
+        display: 'flex',
+        gap: 10,
+        alignItems: 'flex-start',
+        padding: '10px 12px',
+        marginBottom: 12,
+        borderRadius: 12,
+        background: token.colorPrimaryBg,
+        border: `1px solid ${token.colorPrimaryBorder}`,
+      }}
+    >
+      {isChecking ? (
+        <Loader2 size={16} style={{ color: token.colorPrimary, flexShrink: 0, marginTop: 1, animation: 'spin 1s linear infinite' }} />
+      ) : (
+        <Server size={16} style={{ color: token.colorPrimary, flexShrink: 0, marginTop: 1 }} />
+      )}
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: token.colorText, lineHeight: 1.35 }}>
+          {message}
+        </div>
+        {status === 'offline' && activeLabel && (
+          <div style={{ fontSize: 11, color: token.colorTextSecondary, marginTop: 2 }}>
+            {activeLabel}
+          </div>
+        )}
+        <div style={{ fontSize: 11, color: token.colorTextTertiary, marginTop: 3 }}>
+          {text.action}
+        </div>
+      </div>
+    </div>
+  );
+}
