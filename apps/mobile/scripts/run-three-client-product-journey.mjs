@@ -6670,6 +6670,26 @@ async function clearTerminalCallSurface(clientId, client) {
   );
 }
 
+function retryCallSurfaceIsTerminal(platform, state) {
+  return platform === 'desktop'
+    ? !['incoming', 'outgoing', 'active', 'reconnecting'].includes(state.state)
+    : state.terminal === true;
+}
+
+async function clearRetryTerminalCallSurface(clientId, client) {
+  const state = await readCallSurface(client);
+  if (!state.active) return { cleared: false, state };
+  assertContract(
+    retryCallSurfaceIsTerminal(client.platform, state),
+    'CHAT_CALL_PRECONDITION_ACTIVE',
+    `${clientId} retained a non-terminal call before the Chat Journey`,
+  );
+  return {
+    cleared: true,
+    state: await clearTerminalCallSurface(clientId, client),
+  };
+}
+
 async function toggleCallControl(clientId, client, action) {
   const before = await readCallSurface(client);
   await clickCallSurfaceControl(clientId, client, action);
@@ -6748,6 +6768,16 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
         manifest.stationUrl,
       )
     ));
+  }
+  for (const clientId of requiredClientIds) {
+    await step(
+      clientId,
+      'chat-terminal-call-cleanup-precondition',
+      () => clearRetryTerminalCallSurface(
+        clientId,
+        manifest.clients[clientId],
+      ),
+    );
   }
   await step(
     'ios-coral',
@@ -8685,6 +8715,13 @@ function selfTest(matrix) {
       ),
     'SELF_TEST_DESKTOP_ACTIVATION_RESTORE',
     'Desktop activation restore must survive a restarted owner process',
+  );
+  assertContract(
+    retryCallSurfaceIsTerminal('desktop', { state: 'no-answer' })
+      && retryCallSurfaceIsTerminal('android', { terminal: true })
+      && !retryCallSurfaceIsTerminal('desktop', { state: 'active' }),
+    'SELF_TEST_CHAT_TERMINAL_CALL_RETRY',
+    'Chat retries must clear only terminal call surfaces',
   );
   const readyImageDraft = selectNewReadyAttachmentDraft({
     drafts: [
