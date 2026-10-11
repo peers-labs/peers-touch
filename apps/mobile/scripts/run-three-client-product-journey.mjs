@@ -1301,38 +1301,50 @@ function desktopActivationTargetMatches(target, application) {
   return Boolean(target.name && application.name === target.name);
 }
 
+function desktopActivationScript(pid) {
+  return [
+    '-e',
+    'tell application "System Events"',
+    '-e',
+    `set targetProcess to first application process whose unix id is ${pid}`,
+    '-e',
+    'set visible of targetProcess to true',
+    '-e',
+    'set frontmost of targetProcess to true',
+    '-e',
+    'repeat 50 times',
+    '-e',
+    'if (count of windows of targetProcess) > 0 then',
+    '-e',
+    'try',
+    '-e',
+    'perform action "AXRaise" of window 1 of targetProcess',
+    '-e',
+    'set frontmost of targetProcess to true',
+    '-e',
+    'exit repeat',
+    '-e',
+    'on error',
+    '-e',
+    'delay 0.1',
+    '-e',
+    'end try',
+    '-e',
+    'end if',
+    '-e',
+    'delay 0.1',
+    '-e',
+    'end repeat',
+    '-e',
+    'end tell',
+  ];
+}
+
 function activateDesktopProcess(pid) {
   try {
     execFileSync(
       'osascript',
-      [
-        '-e',
-        'tell application "System Events"',
-        '-e',
-        `set targetProcess to first application process whose unix id is ${pid}`,
-        '-e',
-        'set visible of targetProcess to true',
-        '-e',
-        'set frontmost of targetProcess to true',
-        '-e',
-        'repeat 50 times',
-        '-e',
-        'if (count of windows of targetProcess) > 0 then',
-        '-e',
-        'perform action "AXRaise" of window 1 of targetProcess',
-        '-e',
-        'set frontmost of targetProcess to true',
-        '-e',
-        'exit repeat',
-        '-e',
-        'end if',
-        '-e',
-        'delay 0.1',
-        '-e',
-        'end repeat',
-        '-e',
-        'end tell',
-      ],
+      desktopActivationScript(pid),
       { encoding: 'utf8' },
     );
   } catch (error) {
@@ -10276,6 +10288,19 @@ function selfTest(matrix) {
       ),
     'SELF_TEST_DESKTOP_ACTIVATION_RESTORE',
     'Desktop activation restore must survive a restarted owner process',
+  );
+  const activationScript = desktopActivationScript(42);
+  assertContract(
+    activationScript.includes(
+      'set targetProcess to first application process whose unix id is 42',
+    )
+      && activationScript.includes('try')
+      && activationScript.includes('on error')
+      && activationScript.includes(
+        'perform action "AXRaise" of window 1 of targetProcess',
+      ),
+    'SELF_TEST_DESKTOP_ACTIVATION_WINDOW_RACE',
+    'Desktop activation must retry transient window replacement',
   );
   assertContract(
     desktopExecutableCandidates(
