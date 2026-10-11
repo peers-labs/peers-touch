@@ -6755,13 +6755,10 @@ async function toggleCallControl(clientId, client, action) {
           ? '[data-chat-call-surface]'
           : '.mobile-call-surface'
       );
-      const buttons = [...(surface?.querySelectorAll('button') || [])];
       const action = arguments[1];
-      const button = buttons.find((candidate) => (
-        action === 'microphone'
-          ? candidate.querySelector('svg.lucide-mic, svg.lucide-mic-off')
-          : candidate.querySelector('svg.lucide-camera, svg.lucide-camera-off')
-      ));
+      const button = surface?.querySelector(
+        '[data-chat-call-action="' + CSS.escape(action) + '"]'
+      );
       const label = button?.getAttribute('aria-label')
         || button?.getAttribute('title')
         || '';
