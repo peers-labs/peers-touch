@@ -209,6 +209,10 @@ func (s *native) initComponents(ctx context.Context) (err error) {
 		)
 	}
 	s.opts.Id = stationPeerID.String()
+	s.opts.ServerOptions = append(
+		s.opts.ServerOptions,
+		server.WithMetadataEntry("node_peer_id", kernel.Host().ID().String()),
+	)
 
 	// init server
 	if s.opts.Server == nil {

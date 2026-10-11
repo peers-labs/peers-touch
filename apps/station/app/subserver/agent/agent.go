@@ -61,6 +61,8 @@ type agentSubServer struct {
 	externalRuntimeService *service.ExternalRuntimeService
 	deviceKeys             *touchactor.DeviceStore
 	agentDB                *gorm.DB
+	nodeID                 string
+	nodeIncarnation        string
 }
 
 func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error {
@@ -92,7 +94,13 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 	if err = persistence.MigrateEvaluationAggregate(rds); err != nil {
 		return err
 	}
+	if err = persistence.MigrateExecutorLeaseFencing(rds); err != nil {
+		return err
+	}
 	if err = rds.AutoMigrate(persistence.AllModels()...); err != nil {
+		return err
+	}
+	if err = persistence.MigrateExecutorLeaseFencing(rds); err != nil {
 		return err
 	}
 	if err = service.MigrateRuntimeSnapshotThinkingModes(rds); err != nil {
@@ -121,6 +129,12 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 		return err
 	}
 	s.deviceKeys = touchactor.NewDeviceStore(identityRDS)
+	serverOptions := server.GetOptions()
+	s.nodeID = strings.TrimSpace(serverOptions.Metadata["node_peer_id"])
+	if s.nodeID == "" {
+		return fmt.Errorf("initialize Agent executor fencing: Station Node identity is unavailable")
+	}
+	s.nodeIncarnation = service.NewChatTaskExecutorIdentity(s.nodeID).Incarnation
 
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
@@ -170,6 +184,8 @@ func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error
 		}
 		if !s.turnService.RunExecutionWorker(s.turnService.RunToolContinuationWorker) ||
 			!s.turnService.RunExecutionWorker(s.turnService.RunTurnQueueWorker) ||
+			(s.chatTaskService != nil &&
+				!s.turnService.RunExecutionWorker(s.chatTaskService.RunRecoveryWorker)) ||
 			(s.operationService != nil &&
 				!s.turnService.RunExecutionWorker(s.operationService.RunDeadlineSweeper)) ||
 			(s.evaluationService != nil &&
@@ -307,13 +323,17 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	// Scheduler — autonomous learning: periodic SILENT reviews + dogfood runs.
 	schedulerSvc := service.NewSchedulerService(reviewSvc, dogfoodSvc, memorySvc, growthMetricsSvc)
 	orchestrationSvc := service.NewOrchestrationService(agentSvc, turnSvc, toolRegistrySvc)
+	orchestrationSvc.SetExecutorNodeIdentity(s.nodeID, s.nodeIncarnation)
 	schedulerSvc.SetOrchestrationService(orchestrationSvc)
 	orchestrationSvc.SetEventBus(eventBus)
 	orchestrationSvc.StartTaskRecovery(context.Background())
 
 	// Chat root task: Station owns the Chat surface as a long-lived task so a
 	// turn outlives the client connection. Reclaim interrupted steps on boot.
-	chatTaskSvc := service.NewChatTaskService(eventBus)
+	chatTaskSvc := service.NewChatTaskService(eventBus, service.ChatTaskExecutorIdentity{
+		NodeID:      s.nodeID,
+		Incarnation: s.nodeIncarnation,
+	})
 
 	agentHandlers := handler.NewAgentHandlers(agentSvc, eventBus)
 	turnHandlers := handler.NewTurnHandlers(turnSvc, toolRegistrySvc, chatTaskSvc, convSvc)

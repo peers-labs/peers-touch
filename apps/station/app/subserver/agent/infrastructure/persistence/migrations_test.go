@@ -1067,6 +1067,93 @@ func TestMigrateTurnEvidenceBackfillsActorAndAssistantLineage(t *testing.T) {
 	}
 }
 
+func TestMigrateExecutorLeaseFencingExpiresLegacyAuthorityAndCreatesActiveFence(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open("file:executor-lease-fencing-migration?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := db.Exec(`
+		CREATE TABLE agent_executor_leases (
+			lease_id text PRIMARY KEY,
+			task_id text NOT NULL,
+			step_id text,
+			executor_id text NOT NULL,
+			executor_kind integer NOT NULL,
+			status text NOT NULL,
+			acquired_at datetime NOT NULL,
+			heartbeat_at datetime NOT NULL,
+			expires_at datetime NOT NULL
+		)
+	`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`
+		INSERT INTO agent_executor_leases (
+			lease_id, task_id, step_id, executor_id, executor_kind,
+			status, acquired_at, heartbeat_at, expires_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		"legacy-lease",
+		"legacy-task",
+		"legacy-step",
+		"legacy-executor",
+		1,
+		"active",
+		now,
+		now,
+		now.Add(time.Hour),
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateExecutorLeaseFencing(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateExecutorLeaseFencing(db); err != nil {
+		t.Fatal(err)
+	}
+	var legacy ExecutorLease
+	if err := db.First(&legacy, "lease_id = ?", "legacy-lease").Error; err != nil {
+		t.Fatal(err)
+	}
+	if legacy.Status != "expired" ||
+		legacy.OwnerNodePeerID != "" ||
+		legacy.OwnerIncarnation != "" ||
+		legacy.FencingToken != 0 {
+		t.Fatalf("legacy lease received authority: %+v", legacy)
+	}
+
+	first := &ExecutorLease{
+		LeaseID:          "fenced-lease-a",
+		TaskID:           "fenced-task",
+		StepID:           "fenced-step",
+		ExecutorID:       "node-a/incarnation-a",
+		ExecutorKind:     1,
+		OwnerNodePeerID:  "node-a",
+		OwnerIncarnation: "incarnation-a",
+		FencingToken:     1,
+		Status:           "active",
+		AcquiredAt:       now,
+		HeartbeatAt:      now,
+		ExpiresAt:        now.Add(time.Hour),
+	}
+	if err := db.Create(first).Error; err != nil {
+		t.Fatal(err)
+	}
+	second := *first
+	second.LeaseID = "fenced-lease-b"
+	second.ExecutorID = "node-b/incarnation-b"
+	second.OwnerNodePeerID = "node-b"
+	second.OwnerIncarnation = "incarnation-b"
+	second.FencingToken = 2
+	if err := db.Create(&second).Error; err == nil {
+		t.Fatal("active lease uniqueness fence accepted a second owner")
+	}
+}
+
 func timePointer(value time.Time) *time.Time {
 	return &value
 }

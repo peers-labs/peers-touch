@@ -33,7 +33,7 @@ source; neither an accepted design nor a source check proves runtime delivery.
 | Live event subscribers and fanout are process-local | verified_fact | `apps/station/app/subserver/events/bus.go` | cross-node live delivery |
 | Durable replay sorts process-generated ULIDs and omits target device | verified_fact | `events/bus.go:defaultIDGen`; `events/store.go` | transactional order and durable targeting |
 | Live Touch auth uses DBStore; class activation locks rows | verified_fact | `frame/touch/auth/auth.go:InitSessionManager`; `facility/session/db_store.go` | concurrent cross-node Session proof |
-| Agent boot recovery selects all running Chat steps | verified_fact | `agent/service/chat_task_service.go:RecoverRunningChatTasks` | healthy foreign-owner exclusion |
+| Agent recovery uses database-time expiry, node incarnation and monotonic ExecutorLease fencing | verified_fact | `agent/service/chat_task_service.go`; `agent/infrastructure/persistence/executor_lease.go` | integrated Agent plus OSS cluster Gate |
 | OSS scheduler explicitly receives MemLock | verified_fact | `oss/oss.go`; `oss/worker/lock.go` | fenced cross-process execution |
 | Some handlers require Hertz RequestContext | verified_fact | `frame/core/server/handler.go:HertzHandlerFunc`; `touch/actor_router.go`; `oauth/oauth.go` | streaming ingress parity |
 | Circuit library defaults reset at 2 min / 128 KiB per direction | verified_fact | pinned `go-libp2p v0.45.0`, `circuitv2/relay/resources.go` | reviewed workload limits |

@@ -387,6 +387,31 @@
       ]
     },
     {
+      "id": "node-connectivity-agent-fencing",
+      "features": [
+        "node-connectivity-agent-fencing"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/agent/orchestration.proto",
+          "apps/station/frame/core/server/options.go",
+          "apps/station/frame/core/plugin/native/node/native_init_top_comp.go",
+          "apps/station/app/subserver/agent/infrastructure/persistence/executor_lease.go",
+          "apps/station/app/subserver/agent/infrastructure/persistence/migrations.go",
+          "apps/station/app/subserver/agent/service/chat_task_service.go",
+          "apps/station/app/subserver/agent/service/chat_task_fencing_postgres_test.go",
+          "apps/station/app/subserver/agent/service/turn_service.go",
+          "tooling/acceptance/environments/node-connectivity-agent-fencing.yaml",
+          "tooling/acceptance/provisioners/node_connectivity_agent_fencing.py",
+          "tooling/acceptance/features/node-connectivity-agent-fencing.yaml",
+          "tooling/scripts/node-connectivity-journey.py"
+        ]
+      },
+      "require": [
+        "NCP-G06-AGENT"
+      ]
+    },
+    {
       "id": "node-connectivity-architecture",
       "features": [
         "node-connectivity-standard-stream"
@@ -403,6 +428,7 @@
         "NCP-G03",
         "NCP-G04",
         "NCP-G05",
+        "NCP-G06-AGENT",
         "NCP-G07",
         "NCP-G08"
       ]

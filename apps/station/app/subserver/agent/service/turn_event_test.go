@@ -1366,9 +1366,10 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 				}},
 				{name: "lease", value: &persistence.ExecutorLease{
 					LeaseID: "lease_" + test.name, TaskID: taskID, StepID: stepID,
-					ExecutorID: "station", ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
-					Status: chatLeaseStatusActive, AcquiredAt: now,
-					HeartbeatAt: now, ExpiresAt: now.Add(time.Minute),
+					ExecutorID: "node-test/incarnation-test", ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
+					OwnerNodePeerID: "node-test", OwnerIncarnation: "incarnation-test",
+					FencingToken: 1, Status: executorLeaseStatusActive, AcquiredAt: now,
+					HeartbeatAt: now, ExpiresAt: time.Now().UTC().Add(time.Minute),
 				}},
 			}
 			for _, record := range records {
@@ -1380,8 +1381,16 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 			config := &TurnConfig{
 				AgentID: "agent_1", ConversationID: "conv_" + test.name,
 				TaskID: taskID, StepID: stepID, AttemptID: attemptID,
+				ExecutorLeaseID:   "lease_" + test.name,
+				LeaseFencingToken: 1,
 			}
-			err := (&TurnService{convService: NewConversationService()}).
+			err := (&TurnService{
+				convService: NewConversationService(),
+				chatTaskService: NewChatTaskService(nil, ChatTaskExecutorIdentity{
+					NodeID:      "node-test",
+					Incarnation: "incarnation-test",
+				}),
+			}).
 				settleAdmittedTurnAfterError(
 					test.context(),
 					config,
@@ -1455,7 +1464,7 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 			}
 			var releasedLeases int64
 			if err := db.Model(&persistence.ExecutorLease{}).
-				Where("lease_id = ? AND status = ?", "lease_"+test.name, chatLeaseStatusReleased).
+				Where("lease_id = ? AND status = ?", "lease_"+test.name, executorLeaseStatusReleased).
 				Count(&releasedLeases).Error; err != nil {
 				t.Fatal(err)
 			}

@@ -190,6 +190,72 @@ class NodeConnectivityJourneyTest(unittest.TestCase):
         self.assertEqual(report["closureId"], "ncp-shared-access")
         self.assertEqual(report["executionClass"], "functional")
 
+    def test_agent_fencing_functional_uses_closed_test_set(self) -> None:
+        observed: list[tuple[str, ...]] = []
+        observed_frame: list[tuple[str, ...]] = []
+
+        def run_agent(
+            tests: tuple[str, ...],
+            **_: object,
+        ) -> dict[str, object]:
+            observed.append(tests)
+            return {
+                "command": ["go", "test"],
+                "durationMs": 1,
+                "status": "passed",
+                "returnCode": 0,
+            }
+
+        def run_frame(
+            tests: tuple[str, ...],
+            **_: object,
+        ) -> dict[str, object]:
+            observed_frame.append(tests)
+            return {
+                "command": ["go", "test"],
+                "durationMs": 1,
+                "status": "passed",
+                "returnCode": 0,
+            }
+
+        output = io.StringIO()
+        with (
+            mock.patch.object(
+                JOURNEY,
+                "run_agent_go_tests",
+                side_effect=run_agent,
+            ),
+            mock.patch.object(
+                JOURNEY,
+                "run_agent_frame_go_tests",
+                side_effect=run_frame,
+            ),
+            mock.patch.object(
+                JOURNEY.sys,
+                "argv",
+                [
+                    str(SCRIPT),
+                    "--closure",
+                    "ncp-agent-fencing",
+                    "--functional",
+                ],
+            ),
+            contextlib.redirect_stdout(output),
+        ):
+            self.assertEqual(JOURNEY.main(), 0)
+
+        self.assertEqual(
+            observed,
+            [JOURNEY.AGENT_FENCING_FUNCTIONAL_TESTS],
+        )
+        self.assertEqual(
+            observed_frame,
+            [JOURNEY.AGENT_FENCING_FRAME_FUNCTIONAL_TESTS],
+        )
+        report = json.loads(output.getvalue())
+        self.assertEqual(report["closureId"], "ncp-agent-fencing")
+        self.assertEqual(report["executionClass"], "functional")
+
 
 if __name__ == "__main__":
     unittest.main()
