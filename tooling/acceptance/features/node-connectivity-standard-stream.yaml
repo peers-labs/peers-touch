@@ -11,6 +11,8 @@
     "apps/mobile/src-tauri/src/runtime/station_route.rs",
     "apps/station/frame/core/plugin/server/hertz/**",
     "apps/station/frame/core/server/**",
+    "apps/station/app/subserver/events/**",
+    "apps/station/app/subserver/presence/publisher.go",
     "apps/station/frame/touch/model/peer/station_trust.go",
     "apps/station/frame/touch/model/peer/station_route_trust.go",
     "tooling/acceptance/gates/station_access/node_connectivity_native_e2e.py",
@@ -20,7 +22,8 @@
     "logical Station root authorization",
     "delegated node PeerID and Ed25519 key",
     "Station-signed route kind, destination PeerID, Relay PeerID, and TLS SPKI",
-    "existing Hertz router and canonical handler wrappers"
+    "existing Hertz router and canonical handler wrappers",
+    "shared PostgreSQL realtime_events and realtime_actor_event_sequences"
   ],
   "visible_surfaces": [
     {
@@ -36,6 +39,7 @@
     "NCP-G01",
     "NCP-G02",
     "NCP-G03",
+    "NCP-G04",
     "NCP-G07",
     "NCP-G08"
   ],
@@ -49,6 +53,8 @@
       "Rust native transport reaches the Go Station through standard Circuit with SSE and a 32 MiB body",
       "two Native Desktop actors exchange receiver-visible plaintext with DELIVERED and READ receipts through Circuit",
       "the receiver opens a 32 MiB Native attachment whose local readback digest equals the sender source",
+      "two Events processes allocate one gap-free per-Actor sequence and deliver committed rows through PostgreSQL wake hints plus bounded reconciliation",
+      "subscriber restart replays through a captured high-watermark without leaking another device's targeted payload",
       "Relay ACL admits only enrolled nodes, current public routes, or source-bound private permits",
       "custom Relay WSS and mount-framing production paths are absent"
     ],
@@ -58,6 +64,8 @@
     "wrong root, node PeerID, Relay binding, or TLS SPKI fails before request credentials",
     "untrusted forwarding and peer identity headers do not enter the canonical router",
     "the library unit registers no alternate production listener or business handler registry",
+    "ephemeral typing and presence never advance the durable cursor",
+    "transaction rollback creates no durable event or Actor sequence gap",
     "renewal preserves the route generation while revoke removes admission"
   ]
 }

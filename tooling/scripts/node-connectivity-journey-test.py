@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -78,6 +79,50 @@ class NodeConnectivityJourneyTest(unittest.TestCase):
         )
         self.assertNotEqual(REPO_ROOT, Path(expected_target))
         self.assertNotIn(REPO_ROOT, Path(expected_target).parents)
+
+    def test_durable_events_functional_uses_closed_test_set(self) -> None:
+        observed: list[tuple[str, ...]] = []
+
+        def run_events(
+            tests: tuple[str, ...],
+            **_: object,
+        ) -> dict[str, object]:
+            observed.append(tests)
+            return {
+                "command": ["go", "test"],
+                "durationMs": 1,
+                "status": "passed",
+                "returnCode": 0,
+            }
+
+        output = io.StringIO()
+        with (
+            mock.patch.object(
+                JOURNEY,
+                "run_events_go_tests",
+                side_effect=run_events,
+            ),
+            mock.patch.object(
+                JOURNEY.sys,
+                "argv",
+                [
+                    str(SCRIPT),
+                    "--closure",
+                    "ncp-durable-events",
+                    "--functional",
+                ],
+            ),
+            contextlib.redirect_stdout(output),
+        ):
+            self.assertEqual(JOURNEY.main(), 0)
+
+        self.assertEqual(
+            observed,
+            [JOURNEY.DURABLE_EVENTS_FUNCTIONAL_TESTS],
+        )
+        report = json.loads(output.getvalue())
+        self.assertEqual(report["closureId"], "ncp-durable-events")
+        self.assertEqual(report["executionClass"], "functional")
 
 
 if __name__ == "__main__":

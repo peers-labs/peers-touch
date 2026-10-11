@@ -342,9 +342,13 @@
           "packages/station-libp2p-http/**",
           "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
           "apps/mobile/src-tauri/src/runtime/station_route.rs",
+          "apps/station/app/subserver/events/**",
+          "apps/station/app/subserver/presence/publisher.go",
           "apps/station/frame/touch/model/peer/station_trust.go",
           "apps/station/frame/touch/model/peer/station_route_trust.go",
+          "tooling/acceptance/environments/node-connectivity-durable-events.yaml",
           "tooling/acceptance/gates/station_access/node_connectivity_native_e2e.py",
+          "tooling/acceptance/provisioners/node_connectivity_durable_events.py",
           "tooling/acceptance/features/node-connectivity-standard-stream.yaml",
           "tooling/scripts/node-connectivity-journey.py"
         ]
@@ -353,6 +357,7 @@
         "NCP-G01",
         "NCP-G02",
         "NCP-G03",
+        "NCP-G04",
         "NCP-G07",
         "NCP-G08"
       ]
@@ -372,6 +377,7 @@
         "NCP-G01",
         "NCP-G02",
         "NCP-G03",
+        "NCP-G04",
         "NCP-G07",
         "NCP-G08"
       ]
@@ -477,6 +483,7 @@
         "NCP-G01",
         "NCP-G02",
         "NCP-G03",
+        "NCP-G04",
         "NCP-G07",
         "NCP-G08",
         "station-access-mobile-relay-native-e2e",

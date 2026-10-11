@@ -326,6 +326,7 @@
         "NCP-G01",
         "NCP-G02",
         "NCP-G03",
+        "NCP-G04",
         "NCP-G07",
         "NCP-G08"
       ],
@@ -356,6 +357,7 @@
           "NCP-G01",
           "NCP-G02",
           "NCP-G03",
+          "NCP-G04",
           "NCP-G07",
           "NCP-G08"
         ],
@@ -367,11 +369,13 @@
           "closing ingress does not close the borrowed process Host",
           "Rust native transport interoperates with Go Circuit ingress for SSE and 32 MiB upload",
           "two real Native Desktop actors bind the Relay route, exchange receiver-visible plaintext with DELIVERED and READ receipts, and open a byte-exact 32 MiB attachment",
+          "two Events processes sharing PostgreSQL preserve committed per-Actor order, device-target privacy, high-water replay, and missed-wake repair",
           "Relay admission renewal, private permit consumption, expiry, and revoke fail closed",
           "the custom Relay WSS, mount framing, and tunnel proto source paths are removed"
         ],
         "unproven_scope": [
-          "Mobile runtime behavior remains UNPROVEN; only its Rust and TypeScript contracts build"
+          "Mobile runtime behavior remains UNPROVEN; only its Rust and TypeScript contracts build",
+          "integrated two-Station Native rendering and full cluster failover remain owned by NCP-08"
         ]
       }
     },

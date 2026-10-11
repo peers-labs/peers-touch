@@ -39,6 +39,9 @@ from .native_tauri_embedded_webdriver import (
 from .native_tauri_current_profile import (
     NativeTauriCurrentProfileProvisioner,
 )
+from .node_connectivity_durable_events import (
+    NodeConnectivityDurableEventsProvisioner,
+)
 from .oauth2_client_local import (
     OAuth2ClientLocalBrowserProvisioner,
     OAuth2ClientLocalServiceProvisioner,
@@ -93,6 +96,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ),
     NativeTauriEmbeddedWebDriverProvisioner.environment_id: NativeTauriEmbeddedWebDriverProvisioner,
     NativeTauriCurrentProfileProvisioner.environment_id: NativeTauriCurrentProfileProvisioner,
+    NodeConnectivityDurableEventsProvisioner.environment_id: (
+        NodeConnectivityDurableEventsProvisioner
+    ),
     OAuth2ClientLocalBrowserProvisioner.environment_id: (
         OAuth2ClientLocalBrowserProvisioner
     ),
@@ -209,6 +215,7 @@ __all__ = [
     "NativeDesktopWindowsProvisioner",
     "NativeTauriEmbeddedWebDriverProvisioner",
     "NativeTauriCurrentProfileProvisioner",
+    "NodeConnectivityDurableEventsProvisioner",
     "OAuth2ClientLocalBrowserProvisioner",
     "OAuth2ClientLocalServiceProvisioner",
     "get_provisioner",

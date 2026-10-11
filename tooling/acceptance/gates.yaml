@@ -381,6 +381,14 @@
       "tier": "env-evidence",
       "description": "Run two exact-source Native Desktop actors through the standard Circuit route and prove receiver-visible text, DELIVERED and READ receipts, plus receiver-opened 32 MiB attachment byte identity."
     },
+    "NCP-G04": {
+      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-durable-events --gate NCP-G04",
+      "timeout_seconds": 420,
+      "environment": "node-connectivity-durable-events",
+      "provisioner": "node-connectivity-durable-events",
+      "tier": "env-evidence",
+      "description": "Prove two independent Events processes over one source-attested PostgreSQL runtime preserve per-Actor order, committed-only delivery, durable device isolation, high-water replay after process exit, and bounded missed-wake repair."
+    },
     "NCP-G07": {
       "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-native-cut --gate NCP-G07",
       "timeout_seconds": 180,

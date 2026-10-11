@@ -155,7 +155,7 @@ func (s *eventsSubServer) handleStream(ctx context.Context, c *app.RequestContex
 
 	// Track the newest event_id we've sent on this connection so
 	// Heartbeat carries an accurate floor_event_id (contract §2.4).
-	var floorID string
+	floorID := sub.DurableFloorEventID()
 
 	for {
 		select {
@@ -174,7 +174,9 @@ func (s *eventsSubServer) handleStream(ctx context.Context, c *app.RequestContex
 				logger.DefaultHelper.Warnf("events: write failed actor_ptid=%s err=%v", actorPTID, err)
 				return
 			}
-			floorID = ev.GetEventId()
+			if eventID := ev.GetEventId(); eventID != "" {
+				floorID = eventID
+			}
 
 		case <-heartbeat.C:
 			if valid, reason := coreauth.CheckSubjectSessionValid(ctx, subject); !valid {
@@ -182,6 +184,9 @@ func (s *eventsSubServer) handleStream(ctx context.Context, c *app.RequestContex
 				return
 			}
 
+			if durableFloor := sub.DurableFloorEventID(); durableFloor != "" {
+				floorID = durableFloor
+			}
 			hb := &realtime.StreamEvent{
 				// Heartbeat doesn't go through the bus and so doesn't
 				// participate in resume — by design (contract §2.4
