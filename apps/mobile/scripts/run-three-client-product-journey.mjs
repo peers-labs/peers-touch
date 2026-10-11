@@ -9802,6 +9802,8 @@ function recoveryAudioCallControlMatches(label) {
   );
 }
 
+const recoveryAudioPermissionKinds = Object.freeze(['microphone']);
+
 function desktopCallActionSelector(action) {
   return `[data-chat-call-action="${action}"]`;
 }
@@ -9837,6 +9839,11 @@ async function startRecoveryAudioCall(clientId, client, friendlyName) {
     started === true,
     'RECOVERY_CALL_CONTROL_MISSING',
     `${clientId} cannot start an audio call`,
+  );
+  await acceptPendingPermissionAlerts(
+    clientId,
+    client,
+    recoveryAudioPermissionKinds,
   );
   return waitForUi(
     clientId,
@@ -9917,6 +9924,11 @@ async function answerRecoveryCall(clientId, client) {
     answered === true,
     'RECOVERY_CALL_ACCEPT_FAILED',
     `${clientId} could not answer the recovery call`,
+  );
+  await acceptPendingPermissionAlerts(
+    clientId,
+    client,
+    recoveryAudioPermissionKinds,
   );
   return waitForUi(
     clientId,
@@ -10175,6 +10187,12 @@ function selfTest(matrix) {
       && !recoveryAudioCallControlMatches('Video call'),
     'SELF_TEST_RECOVERY_AUDIO_CALL_CONTROL',
     'recovery audio call control matching is invalid',
+  );
+  assertContract(
+    recoveryAudioPermissionKinds.length === 1
+      && recoveryAudioPermissionKinds[0] === 'microphone',
+    'SELF_TEST_RECOVERY_AUDIO_PERMISSION',
+    'recovery audio call permission contract is invalid',
   );
   assertContract(
     desktopCallActionSelector('accept')
