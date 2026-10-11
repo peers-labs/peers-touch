@@ -43,7 +43,7 @@
   "checks": [
     {
       "id": "recovery-source",
-      "command": "pnpm --dir apps/mobile run check:lifecycle-runtime && pnpm --dir apps/mobile run check:recovery-ui",
+      "command": "pnpm --dir apps/mobile run check:lifecycle-runtime && pnpm --dir apps/mobile run check:recovery-ui && node apps/mobile/scripts/run-three-client-product-journey.mjs --self-test",
       "verificationClass": "SOURCE_CHECK"
     },
     {
