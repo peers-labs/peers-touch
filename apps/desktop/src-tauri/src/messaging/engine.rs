@@ -1631,16 +1631,7 @@ impl MessagingEngine {
                 });
             }));
         }
-        let progress = drain.drain_once(cursor, consumer_epoch).map_err(|error| {
-            #[cfg(feature = "acceptance-webdriver")]
-            if error.contains("NoMatchingKeyPackage") {
-                return match self.store.mls_welcome_public_provenance() {
-                    Ok(provenance) => format!("{error}; welcome_provenance={provenance}"),
-                    Err(diagnostic) => format!("{error}; provenance_error={diagnostic}"),
-                };
-            }
-            error
-        })?;
+        let progress = drain.drain_once(cursor, consumer_epoch)?;
         if let Err(error) = self.resume_redaction_file_cleanup() {
             tracing::warn!(error = %error, "messaging redaction file cleanup remains pending");
         }

@@ -111,7 +111,7 @@ struct PersistedMlsJoinProviderPool {
     provider_states: Vec<Vec<u8>>,
 }
 
-pub fn welcome_key_package_refs(welcome_bytes: &[u8]) -> Result<Vec<String>, String> {
+fn welcome_key_package_refs(welcome_bytes: &[u8]) -> Result<Vec<String>, String> {
     let welcome = MlsMessageIn::tls_deserialize(&mut Cursor::new(welcome_bytes))
         .map_err(|error| format!("deserialize welcome: {error:?}"))?
         .into_welcome()
@@ -121,18 +121,6 @@ pub fn welcome_key_package_refs(welcome_bytes: &[u8]) -> Result<Vec<String>, Str
         .iter()
         .map(|secret| hex::encode(secret.new_member().as_slice()))
         .collect())
-}
-
-pub fn public_key_package_ref(key_package: &[u8]) -> Result<String, String> {
-    let provider = PeersMLSProvider::new();
-    let package = KeyPackageIn::tls_deserialize(&mut Cursor::new(key_package))
-        .map_err(|error| format!("deserialize kp: {error:?}"))?
-        .validate(provider.crypto(), ProtocolVersion::Mls10)
-        .map_err(|error| format!("validate kp: {error:?}"))?;
-    package
-        .hash_ref(provider.crypto())
-        .map(|reference| hex::encode(reference.as_slice()))
-        .map_err(|error| format!("key package reference: {error:?}"))
 }
 
 pub struct MlsGroupManager {
