@@ -7869,19 +7869,22 @@ async function navigateSocialFeed(
         `,
       );
     }
-    const value = scope === 'explore' ? 'explore' : 'feed';
+    const tabIndex = scope === 'explore' ? 1 : 0;
     const selected = await executeWebScript(
       client,
       `
-        const input = document.querySelector(
-          'input[type="radio"][value="' + arguments[0] + '"]'
-        );
-        const target = input?.closest('label') || input?.parentElement;
-        if (!(target instanceof HTMLElement)) return false;
-        target.click();
+        const page = document.querySelector('[data-page="moments"]');
+        const tabs = page
+          ? [...page.querySelectorAll(
+              '.ant-segmented-group > .ant-segmented-item'
+            )]
+          : [];
+        const tab = tabs[arguments[0]];
+        if (!(tab instanceof HTMLElement)) return false;
+        tab.click();
         return true;
       `,
-      [value],
+      [tabIndex],
     );
     assertContract(
       selected === true,
@@ -7893,17 +7896,18 @@ async function navigateSocialFeed(
       client,
       `Desktop Social ${scope} feed`,
       `
-        const input = document.querySelector(
-          'input[type="radio"][value="' + arguments[0] + '"]'
-        );
+        const page = document.querySelector('[data-page="moments"]');
+        const tabs = page
+          ? [...page.querySelectorAll(
+              '.ant-segmented-group > .ant-segmented-item'
+            )]
+          : [];
         return {
-          ready: Boolean(
-            input?.checked
-            || input?.closest('.ant-segmented-item-selected')
-          )
+          ready: tabs[arguments[0]]
+            ?.classList.contains('ant-segmented-item-selected') === true
         };
       `,
-      [value],
+      [tabIndex],
     );
     return { scope, surface: 'desktop-moments' };
   }
