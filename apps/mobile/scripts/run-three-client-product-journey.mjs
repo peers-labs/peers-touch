@@ -8603,7 +8603,6 @@ async function submitSocialComment(
   const sendSelector = client.platform === 'desktop'
     ? (
         '[data-moments-comment-thread] '
-        + '[data-moments-comment-composer-state] '
         + 'button.ant-btn-primary:not([disabled])'
       )
     : '[data-acceptance-id="social-comment-send"]';
@@ -8620,14 +8619,16 @@ async function submitSocialComment(
     `
       const button = [...document.querySelectorAll(arguments[0])]
         .find((candidate) => candidate instanceof HTMLButtonElement);
-      const composer = button?.closest(
+      const thread = button?.closest('[data-moments-comment-thread]');
+      const composer = thread?.querySelector(
         '[data-moments-comment-composer-state]'
-      );
+      ) ?? null;
       return {
         ready: Boolean(button)
           && button.getClientRects().length > 0
           && !button.disabled,
         disabled: button?.disabled ?? null,
+        threadId: thread?.getAttribute('data-moments-comment-thread') ?? null,
         composerState: composer?.getAttribute(
           'data-moments-comment-composer-state'
         ) ?? null
