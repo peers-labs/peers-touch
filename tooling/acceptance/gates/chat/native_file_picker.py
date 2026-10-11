@@ -9,6 +9,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.drivers.native import (
+    MouseAction,
     NativeControlSnapshot,
     NativeDesktopRuntimeBinding,
     NativeKey,
@@ -104,10 +105,18 @@ def select_native_file(
     )
 
     def restore_native_window() -> NativeControlSnapshot:
+        last_state: dict[str, Any] = {}
+
         def restored(_: Any) -> NativeControlSnapshot | None:
             control = activate_and_observe()
             document_focused = bool(
                 client.driver.execute_script("return document.hasFocus()")
+            )
+            last_state.update(
+                {
+                    "control": control.to_dict(),
+                    "documentFocused": document_focused,
+                }
             )
             return (
                 control
@@ -121,11 +130,76 @@ def select_native_file(
                 else None
             )
 
-        return WebDriverWait(
-            client.driver,
-            timeout_seconds,
-            poll_frequency=POLL_SECONDS,
-        ).until(restored)
+        initial_timeout = min(timeout_seconds, 5.0)
+        try:
+            return WebDriverWait(
+                client.driver,
+                initial_timeout,
+                poll_frequency=POLL_SECONDS,
+            ).until(restored)
+        except TimeoutException:
+            adapter.activate_process(process_id)
+            client.driver.execute_script("window.focus()")
+            viewport = client.driver.execute_script(
+                """
+                return {
+                  width: window.innerWidth,
+                  height: window.innerHeight,
+                  devicePixelRatio: window.devicePixelRatio || 1,
+                };
+                """
+            )
+            window = client.driver.get_window_rect()
+            ratio = float(viewport["devicePixelRatio"])
+            if ratio <= 0:
+                raise GateError(
+                    "Native file chooser returned an invalid window scale"
+                ) from None
+            native_window = {
+                "left": float(window["x"]) / ratio,
+                "top": float(window["y"]) / ratio,
+                "width": float(window["width"]) / ratio,
+                "height": float(window["height"]) / ratio,
+            }
+            origin = adapter.content_origin(process_id)
+            if origin is None:
+                origin = (
+                    native_window["left"]
+                    + max(
+                        0.0,
+                        (
+                            native_window["width"]
+                            - float(viewport["width"])
+                        )
+                        / 2,
+                    ),
+                    native_window["top"]
+                    + max(
+                        0.0,
+                        native_window["height"]
+                        - float(viewport["height"]),
+                    ),
+                )
+            focus_point = (
+                origin[0] + float(viewport["width"]) / 2,
+                origin[1] + float(viewport["height"]) / 2,
+            )
+            adapter.post_mouse_to_process(
+                process_id,
+                (MouseAction.LEFT_DOWN, MouseAction.LEFT_UP),
+                focus_point,
+            )
+        try:
+            return WebDriverWait(
+                client.driver,
+                max(1.0, timeout_seconds - initial_timeout),
+                poll_frequency=POLL_SECONDS,
+            ).until(restored)
+        except TimeoutException:
+            raise GateError(
+                "Native file chooser did not restore its owning document: "
+                f"{last_state}"
+            ) from None
 
     selected_control = adapter.select_file_chooser_path_to_process(
         process_id,
