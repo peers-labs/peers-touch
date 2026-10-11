@@ -87,7 +87,7 @@ const invalidPassport = 'invalid-entry-proof';
 const uiWaitTimeoutMs = 45_000;
 const uiPollIntervalMs = 250;
 const nativeRelaunchTimeoutMs = 60_000;
-const desktopActivationRestoreTimeoutMs = 5_000;
+const desktopActivationTimeoutMs = 5_000;
 
 class JourneyContractError extends Error {
   constructor(code, message) {
@@ -1214,11 +1214,7 @@ async function activateForegroundClient(clientId, client) {
         };
       `,
     );
-    assertContract(
-      frontmostDesktopPid() === desktopPid,
-      'DESKTOP_NATIVE_ACTIVATION_FAILED',
-      `${clientId} process ${desktopPid} is not the OS foreground application`,
-    );
+    await waitForDesktopProcessActivation(clientId, desktopPid);
     return null;
   }
   await webdriverRequest(
@@ -1309,6 +1305,20 @@ function activateDesktopProcess(pid) {
   }
 }
 
+async function waitForDesktopProcessActivation(clientId, desktopPid) {
+  const deadline = Date.now() + desktopActivationTimeoutMs;
+  let foregroundPid = null;
+  while (Date.now() < deadline) {
+    foregroundPid = frontmostDesktopPid();
+    if (foregroundPid === desktopPid) return;
+    await sleep(100);
+  }
+  throw new JourneyContractError(
+    'DESKTOP_NATIVE_ACTIVATION_FAILED',
+    `${clientId} process ${desktopPid} is not the OS foreground application; observed ${foregroundPid}`,
+  );
+}
+
 function restoreDesktopApplication(target) {
   if (processIsAlive(target.pid)) {
     activateDesktopProcess(target.pid);
@@ -1327,7 +1337,7 @@ function restoreDesktopApplication(target) {
 }
 
 async function waitForDesktopActivationRestore(target) {
-  const deadline = Date.now() + desktopActivationRestoreTimeoutMs;
+  const deadline = Date.now() + desktopActivationTimeoutMs;
   let application = null;
   while (Date.now() < deadline) {
     application = frontmostDesktopApplication();
