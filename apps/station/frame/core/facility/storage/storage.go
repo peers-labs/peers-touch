@@ -60,6 +60,14 @@ type Backend interface {
 	Healthz(ctx context.Context) error
 }
 
+// ClusterSharedBackend explicitly declares whether independently
+// routed Station nodes address the same object namespace. Local
+// filesystem storage is false even when two test processes happen
+// to share a path; S3-protocol storage is true.
+type ClusterSharedBackend interface {
+	ClusterShared() bool
+}
+
 // Range describes an inclusive byte range request against a Backend.
 //
 // `Start` is the first byte to return (0-indexed). `End` is the last
@@ -155,18 +163,46 @@ type LocalBackend struct{ root string }
 // NewLocalBackend creates a LocalBackend with the given root.
 func NewLocalBackend(root string) *LocalBackend { return &LocalBackend{root: root} }
 
+func (b *LocalBackend) ClusterShared() bool { return false }
+
+// SharedFSBackend uses the same atomic file operations as LocalBackend
+// but carries an explicit operator contract that the root is one
+// shared mount visible to every admitted Station node.
+type SharedFSBackend struct {
+	*LocalBackend
+}
+
+func NewSharedFSBackend(root string) *SharedFSBackend {
+	return &SharedFSBackend{LocalBackend: NewLocalBackend(root)}
+}
+
+func (b *SharedFSBackend) ClusterShared() bool { return true }
+
 // Save writes a reader to the given key and returns the full path.
 func (b *LocalBackend) Save(ctx context.Context, key string, r io.Reader) (string, error) {
 	full := filepath.Join(b.root, key)
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return "", err
 	}
-	f, err := os.Create(full)
+	f, err := os.CreateTemp(filepath.Dir(full), ".pt-object-*")
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	tempPath := f.Name()
+	defer func() {
+		_ = f.Close()
+		_ = os.Remove(tempPath)
+	}()
 	if _, err = io.Copy(f, r); err != nil {
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(tempPath, 0o644); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tempPath, full); err != nil {
 		return "", err
 	}
 	return full, nil

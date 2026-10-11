@@ -72,10 +72,15 @@ func Bootstrap(ctx context.Context, deps BootstrapDeps) (*BootstrapResult, error
 	if err := db.AutoMigrate(
 		&ossmodel.Audit{},
 		&ossmodel.Blob{},
+		&ossmodel.BlobGCGeneration{},
 		&ossmodel.Bucket{},
 		&ossmodel.FileMeta{},
 		&ossmodel.Meta{},
+		&ossmodel.WorkerLease{},
 	); err != nil {
+		return nil, err
+	}
+	if err := MigrateBlobGenerations(db); err != nil {
 		return nil, err
 	}
 	// Drop legacy OSS-owned federation table if it lingers from
@@ -125,6 +130,27 @@ func Bootstrap(ctx context.Context, deps BootstrapDeps) (*BootstrapResult, error
 		return nil, err
 	}
 	return &BootstrapResult{ElapsedMs: time.Since(start).Milliseconds()}, nil
+}
+
+// MigrateBlobGenerations gives pre-NCP rows an explicit immutable
+// generation without moving or deleting bytes.
+func MigrateBlobGenerations(db *gorm.DB) error {
+	if db == nil || !db.Migrator().HasTable((&ossmodel.Blob{}).TableName()) {
+		return nil
+	}
+	if err := db.Model(&ossmodel.Blob{}).
+		Where("generation = 0").
+		Update("generation", 1).Error; err != nil {
+		return err
+	}
+	if err := db.Model(&ossmodel.Blob{}).
+		Where("storage_key = '' OR storage_key IS NULL").
+		Update("storage_key", gorm.Expr("key")).Error; err != nil {
+		return err
+	}
+	return db.Model(&ossmodel.Blob{}).
+		Where("lifecycle_state = '' OR lifecycle_state IS NULL").
+		Update("lifecycle_state", ossmodel.BlobLifecycleLive).Error
 }
 
 // MigratePTIDColumns performs the one-way W1 identity schema cut before

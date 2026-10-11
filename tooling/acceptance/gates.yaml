@@ -405,6 +405,14 @@
       "tier": "env-evidence",
       "description": "Prove two independent Agent worker processes over one source-attested PostgreSQL runtime preserve healthy foreign work, advance the fencing token on expired takeover, reject stale completion, and retain external-effect recovery state."
     },
+    "NCP-G06-OSS": {
+      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-shared-objects --gate NCP-G06-OSS",
+      "timeout_seconds": 420,
+      "environment": "node-connectivity-oss-fencing",
+      "provisioner": "node-connectivity-oss-fencing",
+      "tier": "env-evidence",
+      "description": "Prove two independent OSS processes over one source-attested PostgreSQL runtime and one shared-fs object backend provide cross-node authorized readback, fenced worker takeover, immutable generation deletion, stale completion rejection, and valid quota/refcount state."
+    },
     "NCP-G07": {
       "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-native-cut --gate NCP-G07",
       "timeout_seconds": 180,

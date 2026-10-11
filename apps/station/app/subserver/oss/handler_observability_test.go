@@ -91,6 +91,29 @@ func TestHealthz_OkWhenAllChecksPass(t *testing.T) {
 	}
 }
 
+func TestClusterObjectBackingReadyRejectsLocalAndAcceptsSharedFS(t *testing.T) {
+	local := &ossSubServer{backend: storage.NewLocalBackend(t.TempDir())}
+	if err := local.ClusterObjectBackingReady(context.Background()); !errors.Is(err, ErrClusterObjectBackingNotShared) {
+		t.Fatalf("local cluster readiness error=%v want=%v", err, ErrClusterObjectBackingNotShared)
+	}
+	shared := &ossSubServer{backend: storage.NewSharedFSBackend(t.TempDir())}
+	if err := shared.ClusterObjectBackingReady(context.Background()); err != nil {
+		t.Fatalf("shared-fs cluster readiness: %v", err)
+	}
+}
+
+func TestBackendInitializationFailureIsExplicit(t *testing.T) {
+	server := &ossSubServer{backendInitErr: errors.New("invalid shared backend")}
+	if err := server.Init(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "invalid shared backend") {
+		t.Fatalf("Init error=%v", err)
+	}
+	if err := server.Start(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "invalid shared backend") {
+		t.Fatalf("Start error=%v", err)
+	}
+}
+
 func TestHealthz_DegradedWhenBackendFails(t *testing.T) {
 	s := makeObsServer(t)
 	s.backend = stubObsBackend{healthErr: errors.New("disk full")}

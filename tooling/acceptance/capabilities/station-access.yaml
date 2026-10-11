@@ -424,6 +424,49 @@
       }
     },
     {
+      "id": "node-connectivity-shared-objects",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["node-connectivity-shared-objects"],
+      "required_gates": [
+        "NCP-G06-OSS"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/oss/db/repo/blob_repo.go",
+        "apps/station/app/subserver/oss/service/file_service.go",
+        "apps/station/app/subserver/oss/worker/db_lock.go",
+        "apps/station/app/subserver/oss/worker/blob_gc.go",
+        "apps/station/frame/core/facility/storage/factory.go",
+        "tooling/scripts/node-connectivity-journey.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "shared PostgreSQL OSS metadata, quota, audit, and worker lease rows",
+          "generation-bound bytes in a cluster-shared object backend"
+        ],
+        "surfaces": [
+          "owner-authorized Station OSS read and lifecycle services"
+        ],
+        "proven_by": [
+          "NCP-G06-OSS"
+        ],
+        "proven_scope": [
+          "node A upload is owner-authorized and byte-identical on node B",
+          "healthy foreign OSS worker ownership survives peer boot",
+          "expired takeover advances the database fencing token",
+          "GC deletes only the claimed immutable generation",
+          "replacement bytes survive stale deletion and stale completion is rejected",
+          "refcount and bucket quota readback remain valid",
+          "node-local backing cannot satisfy cluster readiness"
+        ],
+        "unproven_scope": [
+          "S3 vendor-specific behavior is not exercised",
+          "automatic local object migration is intentionally absent",
+          "integrated Agent plus OSS cluster failover remains owned by NCP-08"
+        ]
+      }
+    },
+    {
       "id": "station-access-desktop-relay-binding",
       "domain": "station-access",
       "direction": "acceptance_validates_product",
