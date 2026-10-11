@@ -203,6 +203,83 @@ test('coordinates with a foreign legacy declaration without mutating it', () => 
   }
 });
 
+test('coordinates tracked work with a foreign minimal standalone declaration', () => {
+  const scope = fixture();
+  try {
+    const foreign = startOrUpdateDeclaration(
+      options(scope, {
+        workspaceRoot: scope.workspaceB,
+        workItemId: 'foreign-standalone',
+        sessionId: 'foreign-session',
+        branch: 'foreign-branch',
+        sourceClaims: 'exclusive-write:apps/mobile',
+        runtimeClaims: 'exclusive:profile:foreign-profile',
+      }),
+    );
+    const ledgerFile = path.join(scope.home, '.peers-touch', 'dev', 'work.json');
+    const seeded = JSON.parse(readFileSync(ledgerFile, 'utf8'));
+    const minimal = seeded.declarations[foreign.declarationId];
+    for (const field of [
+      'planPath',
+      'planId',
+      'planDigest',
+      'mountId',
+      'runId',
+      'taskId',
+      'workflowOwner',
+    ]) {
+      delete minimal[field];
+    }
+    minimal.declarationDigest = digestDeclaration(minimal);
+    writeFileSync(ledgerFile, `${JSON.stringify(seeded, null, 2)}\n`);
+
+    const current = startOrUpdateDeclaration(options(scope));
+    const planStatus = {
+      planId: 'DWF-PLAN',
+      currentTaskId: 'DWF-T1',
+      workspaceId: current.workspaceId,
+      branch: 'merge-desktop-prototype',
+      planDigest: 'a'.repeat(64),
+      mountId: 'mount-test',
+      runId: 'run-test',
+      status: 'active',
+      taskStatuses: { 'DWF-T1': 'in_progress' },
+    };
+    const tracked = startOrUpdateDeclaration(
+      options(scope, {
+        planPath: 'docs/architecture/example/execution-plans/test/plan.md',
+        taskId: 'DWF-T1',
+        planStatus,
+        planExecution: {
+          mount: {
+            planId: planStatus.planId,
+            planPath:
+              'docs/architecture/example/execution-plans/test/plan.md',
+            mountId: planStatus.mountId,
+          },
+          run: { runId: planStatus.runId },
+          snapshot: { planDigest: planStatus.planDigest },
+        },
+      }),
+      { requireExisting: true },
+    );
+    const persisted = JSON.parse(readFileSync(ledgerFile, 'utf8'));
+
+    assert.deepEqual(persisted.declarations[foreign.declarationId], minimal);
+    assert.equal(tracked.planDigest, planStatus.planDigest);
+    assert.equal(tracked.taskId, planStatus.currentTaskId);
+    assert.deepEqual(
+      statusAll({ home: scope.home, clock: clock() })
+        .declarations
+        .map((declaration) => declaration.workItemId)
+        .sort(),
+      ['dwf-b1', 'foreign-standalone'],
+    );
+  } finally {
+    scope.close();
+  }
+});
+
 test('persists the verified main-session owner on a declaration', () => {
   const scope = fixture();
   try {
