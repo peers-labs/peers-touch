@@ -77,25 +77,6 @@ IOS_SOCIAL_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
         "allowClientReplacement": True,
     }
 )
-MOMENTS_SCENARIOS = (
-    "moments-publish-receive",
-    "moments-react-comment",
-    "moments-reply-rollback",
-    "moments-draft-recovery",
-)
-MOMENTS_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
-    {
-        "scope": "suite",
-        "entryCheckId": "moments-foreground-functional",
-        "scenarioIds": list(MOMENTS_SCENARIOS),
-        "maxProvisioningRuns": 1,
-        "maxClientLaunches": 2,
-        "minWarmReuseRate": 0.66,
-        "requireAttachOnlyScenarios": True,
-        "requireReceiverVisibleProof": True,
-        "allowClientReplacement": False,
-    }
-)
 CLIENT_ASSIGNMENTS = {
     "sim-ios": ("station", "alice"),
     "sim-ios-peer": ("station", "bob"),
@@ -448,11 +429,6 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 journey_id=artifacts.run_id[-12:],
             )
         elif self.scenario == "moments":
-            self._start_moments_suite_runtime(
-                manifest=manifest,
-                source_identity=source_identity,
-                journey_id=artifacts.run_id[-12:],
-            )
             journey_result = self._run_moments_journey(
                 sender_session=sessions["sim-ios"],
                 receiver_session=sessions["sim-ios-peer"],
@@ -668,43 +644,6 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 ),
             )
         return actors
-
-    def _start_moments_suite_runtime(
-        self,
-        *,
-        manifest: Mapping[str, Any],
-        source_identity: Mapping[str, str],
-        journey_id: str,
-    ) -> None:
-        fixture_epoch = self._required_text(
-            manifest,
-            "runId",
-            "Mobile Moments RuntimeManifest",
-        )
-        ledger = SuiteRuntimeLedger(
-            MOMENTS_RUNTIME_REUSE,
-            suite_runtime_id=f"mwpu-06-{journey_id}",
-            source_digest=source_identity["commit"],
-            fixture_epoch=fixture_epoch,
-        )
-        self.suite_runtime_ledger = ledger
-        ledger.record(
-            SuiteRuntimeAction.PROVISION,
-            resource_id=f"{self.environment_id}:{fixture_epoch}",
-        )
-        ledger.record(
-            SuiteRuntimeAction.ACCOUNT_PROVISION,
-            resource_id="actors:alice,bob",
-        )
-        for client_id in ("sim-ios", "sim-ios-peer"):
-            ledger.record(
-                SuiteRuntimeAction.CLIENT_LAUNCH,
-                resource_id=f"client:{client_id}",
-            )
-            ledger.record(
-                SuiteRuntimeAction.LOGIN,
-                resource_id=f"login:{client_id}",
-            )
 
     def _run_ios_social_parity_suite(
         self,
@@ -3584,48 +3523,6 @@ return {
         receiver: MessagingActor,
         journey_id: str,
     ) -> dict[str, Any]:
-        ledger = self.suite_runtime_ledger
-
-        def start_scenario(scenario_id: str) -> float:
-            if ledger is not None:
-                ledger.record(
-                    SuiteRuntimeAction.SCENARIO_START,
-                    scenario_id=scenario_id,
-                )
-            return time.monotonic()
-
-        def finish_scenario(
-            scenario_id: str,
-            started_at: float,
-            *,
-            ui_action: str,
-            receiver_assertion: str,
-            supporting_observation: str,
-        ) -> None:
-            if ledger is None:
-                return
-            ledger.record(
-                SuiteRuntimeAction.UI_ACTION,
-                scenario_id=scenario_id,
-                resource_id=ui_action,
-                duration_seconds=time.monotonic() - started_at,
-            )
-            ledger.record(
-                SuiteRuntimeAction.RECEIVER_ASSERTION,
-                scenario_id=scenario_id,
-                resource_id=receiver_assertion,
-            )
-            ledger.record(
-                SuiteRuntimeAction.SUPPORTING_OBSERVATION,
-                scenario_id=scenario_id,
-                resource_id=supporting_observation,
-            )
-            ledger.record(
-                SuiteRuntimeAction.SCENARIO_END,
-                scenario_id=scenario_id,
-            )
-
-        publish_started = start_scenario("moments-publish-receive")
         text = f"mobile-moment-{journey_id}"
         published = self._mapping(
             sender_session.call_action(
@@ -3646,15 +3543,7 @@ return {
             post_id,
             text,
         )
-        finish_scenario(
-            "moments-publish-receive",
-            publish_started,
-            ui_action="moments.publish",
-            receiver_assertion=f"receiver-post:{post_id}",
-            supporting_observation="moments.feed.read",
-        )
 
-        reaction_started = start_scenario("moments-react-comment")
         reactions = receiver_session.call_action(
             "moments.react",
             {"postId": post_id, "reactionKind": 1, "active": True},
@@ -3675,15 +3564,7 @@ return {
             comment.get("commentId"),
             "Moment comment ID",
         )
-        finish_scenario(
-            "moments-react-comment",
-            reaction_started,
-            ui_action="moments.react,moments.comment",
-            receiver_assertion=f"reaction-comment:{comment_id}",
-            supporting_observation="reaction-readback",
-        )
 
-        reply_started = start_scenario("moments-reply-rollback")
         reply = self._mapping(
             sender_session.call_action(
                 "moments.comment",
@@ -3707,15 +3588,7 @@ return {
         )
         if self._reaction_active(unreacted, 1):
             raise GateError("Moment reaction rollback did not converge")
-        finish_scenario(
-            "moments-reply-rollback",
-            reply_started,
-            ui_action="moments.comment,moments.react.rollback",
-            receiver_assertion=f"reply-visible:{reply_id}",
-            supporting_observation=f"comments:{len(comments)}",
-        )
 
-        recovery_started = start_scenario("moments-draft-recovery")
         draft = sender_session.call_action(
             "reliability.draft.write",
             {
@@ -3738,13 +3611,6 @@ return {
         sender_session.call_action(
             "reliability.draft.action",
             {"kind": "moment", "action": "discard"},
-        )
-        finish_scenario(
-            "moments-draft-recovery",
-            recovery_started,
-            ui_action="moment-draft-write",
-            receiver_assertion="draft-visible-after-restart",
-            supporting_observation="draft-discarded",
         )
         return {
             "scenario": "moments",

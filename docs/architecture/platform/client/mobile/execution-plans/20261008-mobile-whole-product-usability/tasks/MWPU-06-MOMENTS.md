@@ -46,7 +46,7 @@
   "checks": [
     {
       "id": "moments-source",
-      "command": "node --test tooling/scripts/local-dev/dev-work.test.mjs && pnpm --dir apps/desktop exec vitest run src/acceptance/moments src/runtimes/momentsRuntime.test.ts src/services/socialRealtime.test.ts src/test/moments-store.test.ts && pnpm --dir apps/mobile exec vitest run src/pages/MomentsPage.test.ts src/pages/moments src/features/social/useMomentsDraft.test.ts && node apps/mobile/scripts/run-three-client-product-journey.mjs --self-test",
+      "command": "node --test tooling/scripts/local-dev/dev-work.test.mjs && pnpm --dir apps/desktop exec vitest run src/acceptance/moments src/runtimes/momentsRuntime.test.ts src/services/socialRealtime.test.ts src/test/moments-store.test.ts && pnpm --dir apps/mobile exec vitest run src/pages/MomentsPage.test.ts src/pages/moments src/features/social/useMomentsDraft.test.ts && node apps/mobile/scripts/run-three-client-product-journey.mjs --self-test && python3 -m unittest tooling.acceptance.gates.mobile.simulator_social_e2e_test tooling.acceptance.gates.mobile.three_client_suite_runtime_test",
       "verificationClass": "SOURCE_CHECK"
     },
     {
@@ -55,7 +55,7 @@
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
-      "id": "moments-foreground-proof",
+      "id": "moments-harness-contract-proof",
       "command": "python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-moments-e2e",
       "verificationClass": "ACCEPTANCE_PROOF"
     },
@@ -70,7 +70,7 @@
     "entryCheckId": "moments-foreground-functional",
     "scenarioIds": ["moments-publish-receive", "moments-react-comment", "moments-reply-rollback", "moments-draft-recovery"],
     "maxProvisioningRuns": 1,
-    "maxClientLaunches": 2,
+    "maxClientLaunches": 3,
     "minWarmReuseRate": 0.66,
     "requireAttachOnlyScenarios": true,
     "requireReceiverVisibleProof": true,
@@ -83,7 +83,8 @@
     "feed, composer, detail, media, empty, unavailable, pending, retry, rollback, and relaunch states remain usable and visually aligned across clients",
     "human content dominates protocol metadata and feed/detail/comments remain one continuous reading surface",
     "composer state and recovery stay inside the composer without blocking unrelated navigation",
-    "foreground screenshots and interaction traces cover every declared Social workflow on all three clients"
+    "foreground screenshots and interaction traces cover every declared Social workflow on all three clients",
+    "the two-iOS Harness Gate remains supporting domain proof and never substitutes Harness actions for the required three-client foreground UI Journey"
   ],
   "failureBehavior": [
     "do not fabricate an empty feed when projection is unavailable",
