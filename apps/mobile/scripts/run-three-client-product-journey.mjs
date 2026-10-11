@@ -9280,6 +9280,11 @@ function normalizeRecoveryText(value) {
     .slice(0, 1200);
 }
 
+function recoveryDetailSignature(text, postId) {
+  const normalized = normalizeRecoveryText(text);
+  return normalized || (postId ? `post:${postId}` : '');
+}
+
 function assertRecoveryIntersection(
   clientId,
   label,
@@ -9652,7 +9657,7 @@ async function readRecoverySocialSnapshot(clientId, client) {
     `,
   );
   return {
-    detail: normalizeRecoveryText(detail.text),
+    detail: recoveryDetailSignature(detail.text, firstPostId),
     postIds: feed.postIds.filter(Boolean),
     signatures: feed.signatures.map(normalizeRecoveryText).filter(Boolean),
   };
@@ -10146,6 +10151,13 @@ function selfTest(matrix) {
     normalizeRecoveryText('  one\n two  ') === 'one two',
     'SELF_TEST_RECOVERY_TEXT',
     'recovery text normalization is invalid',
+  );
+  assertContract(
+    recoveryDetailSignature(' Detail ', 'post-1') === 'Detail'
+      && recoveryDetailSignature(' \n ', 'post-1') === 'post:post-1'
+      && recoveryDetailSignature('', '') === '',
+    'SELF_TEST_RECOVERY_DETAIL_SIGNATURE',
+    'recovery detail signature fallback is invalid',
   );
   assertContract(
     desktopSocialFeedRecoveryDecision(false, false) === 'feed'
