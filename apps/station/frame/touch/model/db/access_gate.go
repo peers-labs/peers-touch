@@ -63,6 +63,7 @@ type AccessGateSubmission struct {
 	SubmissionID     string    `gorm:"column:submission_id;primaryKey;size:64"`
 	GateID           string    `gorm:"column:gate_id;size:64;not null"`
 	ActionID         string    `gorm:"column:action_id;size:64;not null"`
+	FingerprintKeyID string    `gorm:"column:fingerprint_key_id;size:80;not null;default:''"`
 	PayloadHash      string    `gorm:"column:payload_hash;size:64;not null"`
 	State            string    `gorm:"size:24;not null;index"`
 	DecisionRevision uint64    `gorm:"column:decision_revision;not null;default:0"`
