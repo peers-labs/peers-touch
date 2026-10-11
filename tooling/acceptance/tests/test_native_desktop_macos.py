@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import subprocess
 import tempfile
 import unittest
@@ -152,6 +153,16 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             },
         )
         session.stop.assert_called_once_with()
+
+    def test_probe_repositions_window_before_native_point_checks(self) -> None:
+        source = inspect.getsource(
+            NativeDesktopMacOSProvisioner._probe_native_adapter
+        )
+
+        self.assertLess(
+            source.index("session.driver.set_window_rect(x=100, y=100)"),
+            source.index("bounds = self._await_window_bounds(process_id)"),
+        )
 
     def test_window_bounds_wait_retries_transient_visibility(self) -> None:
         transient = BlockedError(
