@@ -14,6 +14,8 @@ import {
   mobileCallManager,
   type CallSnapshot,
 } from '../../features/call/callState';
+import { useSocialActorIdentity } from '../../features/social/useSocialActorIdentity';
+import { MobileAvatar } from '../MobileAvatar';
 
 export function MobileCallSurface() {
   const { t } = useMobileI18n();
@@ -24,6 +26,10 @@ export function MobileCallSurface() {
   const localVideo = useRef<HTMLVideoElement>(null);
   const remoteVideo = useRef<HTMLVideoElement>(null);
   const remoteAudio = useRef<HTMLAudioElement>(null);
+  const peerIdentity = useSocialActorIdentity({
+    actorPtid: snapshot?.peerPtid ?? '',
+    displayName: t('mobile.contacts.unknownUser'),
+  });
 
   useEffect(() => mobileCallManager.subscribe(setSnapshot), []);
   useEffect(() => {
@@ -52,6 +58,10 @@ export function MobileCallSurface() {
   return (
     <div
       className={`mobile-call-surface ${active ? 'active' : ''}`}
+      data-chat-call-peer-ptid={peerIdentity.actorPtid}
+      data-chat-call-peer-name={peerIdentity.displayName}
+      data-chat-call-media-kind={snapshot.mediaKind}
+      data-chat-call-state={snapshot.state}
       role="dialog"
       aria-modal="true"
       aria-label={t('mobile.call.surfaceLabel')}
@@ -63,13 +73,18 @@ export function MobileCallSurface() {
         </div>
       ) : (
         <div className="mobile-call-avatar" aria-hidden="true">
-          <Phone size={34} />
+          <MobileAvatar
+            src={peerIdentity.avatar}
+            name={peerIdentity.displayName}
+            identityKey={peerIdentity.actorPtid}
+            size={72}
+          />
         </div>
       )}
       <audio ref={remoteAudio} autoPlay />
 
       <div className="mobile-call-copy">
-        <strong>{snapshot.peerPtid}</strong>
+        <strong>{peerIdentity.displayName}</strong>
         <span>
           {t(`mobile.call.state.${snapshot.state}`)}
         </span>

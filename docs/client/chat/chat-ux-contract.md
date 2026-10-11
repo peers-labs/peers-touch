@@ -44,6 +44,10 @@ The product must never rely on visual luck:
   remain available on explicit profile inspection.
 - Conversation list subtitles show message previews. Routine Station and
   federation metadata remain available in conversation or contact details.
+- Call surfaces use the same canonical peer name and avatar as Chat and
+  Contacts. Raw actor identifiers never appear as the caller name.
+- Routine conversation headers prioritize the peer or group name, presence,
+  encryption and member count; Station context belongs to explicit details.
 
 ## 3. Shared Message Anatomy
 
