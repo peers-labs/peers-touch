@@ -23,7 +23,7 @@ createRoot(document.getElementById('root')!).render(
       theme={antdTheme}
       style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column' }}
     >
-      <DesktopShell initialPage="agent" />
+      <DesktopShell />
     </ThemeProvider>
   </StrictMode>,
 );

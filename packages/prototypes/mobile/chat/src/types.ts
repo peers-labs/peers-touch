@@ -5,7 +5,7 @@
 // ── Types ──────────────────────────────────────────────────────
 export type LaunchState = 'station-selection' | 'access-gate-chain' | 'shell';
 export type TabId = 'chat' | 'moments' | 'contacts' | 'profile';
-export type MessageStatus = 'sent' | 'delivered' | 'read';
+export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface StationEntry {
   url: string;

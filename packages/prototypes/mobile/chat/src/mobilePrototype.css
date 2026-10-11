@@ -837,6 +837,35 @@
     &:disabled { pointer-events: none; }
   }
 
+  .mp-delivery-recovery {
+    display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center;
+    gap: 9px; min-height: 58px; padding: 7px 10px 7px 12px;
+    border-bottom: 1px solid rgba(239,68,68,0.16); background: #fff7f6;
+  }
+  .mp-delivery-recovery.recovering {
+    border-bottom-color: var(--mp-gray-200); background: #f8f8f6;
+  }
+  .mp-delivery-recovery-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border: 1px solid rgba(239,68,68,0.18);
+    border-radius: var(--mp-r-pill); background: #fff; color: var(--mp-error);
+  }
+  .mp-delivery-recovery.recovering .mp-delivery-recovery-icon {
+    border-color: var(--mp-gray-200); color: var(--mp-primary);
+  }
+  .mp-delivery-recovery-copy {
+    display: flex; flex-direction: column; min-width: 0; gap: 1px;
+    strong { color: var(--mp-gray-800); font-size: 12px; line-height: 1.35; }
+    span { color: var(--mp-gray-500); font-size: 10px; line-height: 1.35; }
+  }
+  .mp-delivery-recovery button {
+    min-width: 58px; min-height: 44px; padding: 0 9px;
+    border: 1px solid var(--mp-error); border-radius: var(--mp-r-md);
+    background: #fff; color: var(--mp-error); font: inherit; font-size: 11px; font-weight: 700;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+    &:disabled { border-color: var(--mp-gray-200); color: var(--mp-gray-400); cursor: wait; }
+  }
+
   /* ── Pinned message banner ── */
   .mp-pinned-banner {
     display: flex; align-items: center; gap: 8px; padding: 7px 14px;
@@ -977,6 +1006,14 @@
   .mp-receipt { color: var(--mp-gray-400); flex: 0 0 auto; }
   .mp-receipt--read { color: var(--mp-primary); }
   .mp-receipt--pending { opacity: 0.6; }
+  .mp-receipt--failed { color: var(--mp-error); }
+  .mp-message-retry {
+    display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+    min-height: 44px; margin-top: 2px; padding: 0 10px;
+    border: 0; border-radius: var(--mp-r-md); background: transparent;
+    color: var(--mp-error); font: inherit; font-size: 11px; font-weight: 700;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
 
   /* ── Typing indicator ── */
   .mp-typing-bubble {
@@ -1091,7 +1128,12 @@
   .mp-people-handle { overflow-wrap: anywhere; }
 
   @media (prefers-reduced-motion: reduce) {
-    .mp-find-people-sheet { animation: none; }
+    *, *::before, *::after {
+      scroll-behavior: auto !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 
   /* ── Reaction bar in action sheet (Feishu-style) ── */

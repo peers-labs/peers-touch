@@ -14,17 +14,23 @@ The goal is to catch "functionally correct but visually assembled" UI before it 
 
 - Screenshot or preview of the changed surface.
 - User task the surface supports.
+- Product thesis, surface type, main subject, and module signature from
+  [craft-quality.md](./craft-quality.md).
 - Module contract under `modules/` when one exists.
 - Relevant shared pattern under `patterns/`.
 - State matrix for normal, loading, empty, error, disabled, overflow, and narrow-window states.
+- Dynamic evidence for the success and recovery paths.
 
 ## 3. Product Identity
 
-- [ ] The surface follows Quiet Protocol Minimalism.
+- [ ] The surface follows Structured Expressive Minimalism; recurring workflow
+  surfaces use Quiet Protocol Minimalism as the default expression.
 - [ ] The screen does not feel like mixed LobeUI, antd, and one-off CSS defaults.
 - [ ] Primary content reads before metadata and chrome.
 - [ ] Federation/trust state is visible where it affects interpretation or action.
 - [ ] The UI does not look like an admin dashboard unless the module is an admin module.
+- [ ] The module signature reinforces the product thesis and is not decorative
+  benchmark imitation.
 
 ## 4. Layout And Boundaries
 
@@ -64,8 +70,30 @@ The goal is to catch "functionally correct but visually assembled" UI before it 
 - [ ] Popovers/menus restore focus to the source.
 - [ ] Contrast is sufficient for text, metadata, and states.
 - [ ] Icon-only actions have accessible labels.
+- [ ] The complete task works with keyboard only.
+- [ ] Mobile primary targets have robust touch hit areas.
+- [ ] Status changes are exposed semantically to assistive technology.
+- [ ] Reduced motion preserves state meaning and spatial continuity.
 
-## 9. Frontend Tree And Alive
+## 9. Craft Calibration And Runtime Quality
+
+- [ ] Positive calibration names what is intentionally strong and ties it to
+  the product thesis.
+- [ ] Negative calibration checks the rejection patterns in
+  `craft-quality.md`.
+- [ ] L2 evidence covers real wide/narrow renders, critical states, long
+  content, and localization expansion.
+- [ ] L3 evidence covers success, failure/recovery, keyboard, Mobile touch,
+  and reduced motion where material.
+- [ ] L4 evidence records semantic/accessibility inspection, long-list or
+  high-frequency behavior, and available performance measurements.
+- [ ] Accidental overlap and layout movement are absent.
+- [ ] Missing runtime, platform, accessibility, or performance evidence is
+  marked `UNPROVEN`.
+- [ ] The verdict does not use award language, averaged scores, or checklist
+  counts as proof.
+
+## 10. Frontend Tree And Alive
 
 - [ ] The changed surface has a defined component tree layer in `frontend-component-tree.md`.
 - [ ] The surface has an Alive / lazy / LRU / non-alive decision in `frontend-component-tree-registry.md` when it is a page, primary tab, provider section, applet runtime, overlay, or large list.
@@ -75,7 +103,7 @@ The goal is to catch "functionally correct but visually assembled" UI before it 
 - [ ] Large feeds, messages, rosters, logs, and grids are virtualized or incrementally rendered.
 - [ ] Long-task, remount, or route-to-visible risk is measured or explicitly marked as unproven.
 
-## 10. Social Methodology Gate
+## 11. Social Methodology Gate
 
 When validating Social UI, include at least one incomplete or partially implemented capability.
 
@@ -87,7 +115,7 @@ Required checks:
 - [ ] Comment/reaction/follow states expose loading and rollback.
 - [ ] Feed/detail/thread surfaces stay visually continuous.
 
-## 11. AI Agent Output Contract
+## 12. AI Agent Output Contract
 
 When reporting UI work, include:
 
@@ -96,6 +124,8 @@ When reporting UI work, include:
 - Frontend tree layer and Alive category when UI lifetime is affected.
 - Registry row updated or reason it was not required.
 - UI states verified.
+- L1/L2/L3/L4 craft evidence collected.
+- Positive and negative calibration findings.
 - Performance evidence checked or explicitly unproven.
 - Known gaps.
 - Whether the change follows common UI Identity, module UI Identity, or both.

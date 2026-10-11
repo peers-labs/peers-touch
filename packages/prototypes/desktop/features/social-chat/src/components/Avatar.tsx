@@ -7,6 +7,7 @@ interface AvatarProps {
   online?: boolean;
   groupIcon?: boolean;
   identityKey?: string;
+  initials?: string;
 }
 
 function getInitials(name: string): string {
@@ -29,8 +30,9 @@ export function Avatar({
   online,
   groupIcon,
   identityKey,
+  initials: initialsProp,
 }: AvatarProps) {
-  const initials = getInitials(name);
+  const initials = initialsProp ?? getInitials(name);
   const bgColor = hashColor(identityKey || src || name);
   const fontSize = size * 0.38;
   const radius = groupIcon ? T.radiusLg : T.radiusMd;

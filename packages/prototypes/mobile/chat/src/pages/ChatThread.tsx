@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Avatar, Input, Typography } from 'antd';
 import {
-  ArrowLeft, Check, CheckCheck, ChevronRight, Clock,
+  AlertCircle, ArrowLeft, Check, CheckCheck, ChevronRight, Clock,
   Copy, CornerUpLeft, EyeOff, File, Flag as FlagIcon, Forward,
   Image as ImageIcon, Laugh, ListChecks, LockKeyhole,
   MessageSquare, MoreVertical, Pencil, Phone, Pin, Plus,
-  RotateCcw, Send, ShieldX, X,
+  RefreshCw, RotateCcw, Send, ShieldX, X,
 } from 'lucide-react';
 import type { Conversation, Message, MessageStatus, ReactionKind } from '../types';
 import { REACTION_EMOJI, REACTION_EMOJI_EXTENDED, FULL_EMOJI_GRID } from '../types';
@@ -17,6 +17,12 @@ import { PrototypeListWindow, type PrototypeListHandle } from '../components/Pro
 import type { PrototypeListMemory } from '../listPresentation';
 import type { SearchDemoControl } from '../searchDemo';
 import copy from '../../../../../locales/en/common.json';
+import {
+  CHAT_JOURNEY,
+  CHAT_JOURNEY_COPY,
+  CHAT_JOURNEY_MESSAGE_ID,
+  resolveChatJourneyLocale,
+} from '../../../../shared/chat-journey';
 
 const { Text } = Typography;
 const messageKey = (message: Message) => message.id;
@@ -32,7 +38,9 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
   const [inputValue, setInputValue] = useState('');
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [actionSheetMessage, setActionSheetMessage] = useState<Message | null>(null);
-  const [isTyping] = useState(initialMessages.length > 0);
+  const [isTyping] = useState(
+    initialMessages.length > 0 && !initialMessages.some((message) => message.status === 'failed'),
+  );
   const [threadMessage, setThreadMessage] = useState<Message | null>(null);
   const [chatTab, setChatTab] = useState<'chat' | 'pinned'>('chat');
   const [showEmojiGrid, setShowEmojiGrid] = useState(false);
@@ -43,12 +51,24 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
   const [targetMessageId, setTargetMessageId] = useState<string | null>(null);
   const [targetUnavailable, setTargetUnavailable] = useState(false);
   const messageWindow = useRef<PrototypeListHandle>(null);
+  const retryTimers = useRef<Set<number>>(new Set());
   const [isMuted, setIsMuted] = useState(conversation.muted ?? false);
   const [isStickyTop, setIsStickyTop] = useState(conversation.pinned ?? false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [confirmAction, setConfirmAction] = useState<'clear' | 'block' | 'report' | null>(null);
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+  const locale = typeof window === 'undefined'
+    ? 'en'
+    : resolveChatJourneyLocale(window.location.search, window.navigator.language);
+  const journeyCopy = CHAT_JOURNEY_COPY[locale];
+  const failedMessage = messages.find((message) => message.status === 'failed');
+  const recoveringMessage = messages.find((message) => message.status === 'sending');
+
+  useEffect(() => () => {
+    retryTimers.current.forEach((timer) => window.clearTimeout(timer));
+    retryTimers.current.clear();
+  }, []);
 
   useLayoutEffect(() => {
     if (!targetMessageId || showChatDetails || threadMessage || chatTab !== 'chat') return;
@@ -80,6 +100,45 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
     setMessages((prev) => [...prev, newMsg]);
     setInputValue('');
     setReplyTo(null);
+  }
+
+  function handleRetry(messageId: string) {
+    // A recalled/moderated/failed row keeps status 'failed', but retry must
+    // neither resurrect its content nor flip it to delivered.
+    const targetLive = (list: Message[]) => {
+      const target = list.find((message) => message.id === messageId);
+      return Boolean(target && !target.recalled && !target.moderated);
+    };
+    setMessages((prev) => {
+      if (!targetLive(prev)) return prev;
+      return prev.map((message) => (
+        message.id === messageId ? { ...message, status: 'sending' } : message
+      ));
+    });
+    const timer = window.setTimeout(() => {
+      retryTimers.current.delete(timer);
+      setMessages((prev) => {
+        // Hide-for-me (or Clear) during the retry window removes the row.
+        if (!targetLive(prev)) return prev;
+        const next = prev.map((message) => (
+          message.id === messageId ? { ...message, status: 'delivered' as const } : message
+        ));
+        if (messageId !== CHAT_JOURNEY_MESSAGE_ID || next.some((message) => message.id === 'release-hold-mobile-ack')) {
+          return next;
+        }
+        return [
+          ...next,
+          {
+            id: 'release-hold-mobile-ack',
+            mine: false,
+            text: CHAT_JOURNEY.messages.followup[locale],
+            time: CHAT_JOURNEY.timestamps.recovered,
+            status: 'read' as const,
+          },
+        ];
+      });
+    }, 900);
+    retryTimers.current.add(timer);
   }
 
   function handleAction(action: string) {
@@ -167,6 +226,8 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
   }
 
   function renderReceipt(status?: MessageStatus) {
+    if (status === 'failed') return <AlertCircle size={14} className="mp-receipt mp-receipt--failed" aria-label={journeyCopy.deliveryFailed} />;
+    if (status === 'sending') return <RefreshCw size={13} className="mp-receipt mp-receipt--pending" aria-label={journeyCopy.retrying} />;
     if (status === 'read') return <CheckCheck size={14} className="mp-receipt mp-receipt--read" />;
     if (status === 'delivered') return <CheckCheck size={14} className="mp-receipt" />;
     if (status === 'sent') return <Check size={14} className="mp-receipt" />;
@@ -203,6 +264,25 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
           <MoreVertical size={19} />
         </button>
       </header>
+
+      {(failedMessage || recoveringMessage) && (
+        <div className={`mp-delivery-recovery ${recoveringMessage ? 'recovering' : 'failed'}`} role="status" aria-live="polite">
+          <span className="mp-delivery-recovery-icon">
+            {recoveringMessage ? <RefreshCw size={15} /> : <AlertCircle size={15} />}
+          </span>
+          <span className="mp-delivery-recovery-copy">
+            <strong>{recoveringMessage ? journeyCopy.deliveryRecovering : journeyCopy.deliveryFailed}</strong>
+            <span>{journeyCopy.deliveryFailedDetail}</span>
+          </span>
+          <button
+            type="button"
+            disabled={Boolean(recoveringMessage)}
+            onClick={() => handleRetry((failedMessage ?? recoveringMessage)!.id)}
+          >
+            {recoveringMessage ? journeyCopy.retrying : journeyCopy.retry}
+          </button>
+        </div>
+      )}
 
       {/* Chat / Pinned tab bar */}
       <div className="mp-chat-tabs">
@@ -345,6 +425,16 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
                       <span className="mp-message-time">{msg.time}</span>
                       {msg.mine && renderReceipt(msg.status)}
                     </div>
+                    {msg.status === 'failed' && (
+                      <button
+                        type="button"
+                        className="mp-message-retry"
+                        onClick={() => handleRetry(msg.id)}
+                      >
+                        <RotateCcw size={12} />
+                        {journeyCopy.retry}
+                      </button>
+                    )}
                   </div>
                 </div>
               );

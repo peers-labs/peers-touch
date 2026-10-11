@@ -3,6 +3,15 @@
  */
 import type { StationEntry, Conversation, Message, Moment, Contact, GroupItem } from './types';
 import { GRADIENTS } from './types';
+import {
+  CHAT_JOURNEY,
+  CHAT_JOURNEY_MESSAGE_ID,
+  resolveChatJourneyLocale,
+} from '../../../shared/chat-journey';
+
+const chatJourneyLocale = typeof window === 'undefined'
+  ? 'en'
+  : resolveChatJourneyLocale(window.location.search, window.navigator.language);
 
 export const demoStations: StationEntry[] = [
   { url: 'http://localhost:9000', label: 'Local Station', online: true },
@@ -11,7 +20,7 @@ export const demoStations: StationEntry[] = [
 
 export const demoConversations: Conversation[] = [
   { key: 'alice', name: 'Alice Chen', avatar: 'AC', avatarGradient: GRADIENTS[0], lastMessage: 'See you tomorrow at the meetup!', time: '2m', unread: 2, online: true, pinned: true },
-  { key: 'dev-team', name: 'Dev Team', avatar: 'DT', avatarGradient: GRADIENTS[1], lastMessage: 'PR looks good, merging now', time: '18m', unread: 5, isGroup: true, canModerate: true, muted: true, lastSender: 'Bob', memberCount: 12 },
+  { key: 'dev-team', name: CHAT_JOURNEY.conversationName[chatJourneyLocale], avatar: 'RR', avatarGradient: GRADIENTS[1], lastMessage: CHAT_JOURNEY.messages.outbound[chatJourneyLocale], time: '2m', unread: 1, isGroup: true, canModerate: true, muted: false, pinned: true, lastSender: chatJourneyLocale === 'zh' ? '你' : 'You', memberCount: CHAT_JOURNEY.participants },
   { key: 'carol', name: 'Carol Li', avatar: 'CL', avatarGradient: GRADIENTS[3], lastMessage: '[Photo]', time: '3h', unread: 0, online: true },
   { key: 'product', name: 'Product Design', avatar: 'PD', avatarGradient: GRADIENTS[4], lastMessage: 'design-spec-v3.pdf', time: '1d', unread: 0, isGroup: true, pinned: true, lastSender: 'Emma', memberCount: 8 },
   { key: 'bob', name: 'Bob Zhang', avatar: 'BZ', avatarGradient: GRADIENTS[2], lastMessage: 'Thanks for the feedback on the design', time: '1d', unread: 0, online: false },
@@ -38,6 +47,9 @@ export const demoMessages: Message[] = [
   { id: 'm9', mine: true, file: { name: 'design-spec-v3.pdf', size: '2.4 MB' }, time: '6:48 PM', status: 'sent' },
   { id: 'm10', mine: false, text: "Thanks, I'll review it tonight", time: '6:50 PM', status: 'read' },
   { id: 'm11', mine: true, text: 'No rush, we can discuss tomorrow', time: '6:52 PM', status: 'read' },
+  { id: 'release-context', mine: false, text: chatJourneyLocale === 'zh' ? 'Frankfurt Station 的重连验证仍在运行。' : 'Reconnect verification is still running against the Frankfurt Station.', time: '10:26 AM', status: 'read' },
+  { id: 'release-question', mine: false, text: CHAT_JOURNEY.messages.inbound[chatJourneyLocale], time: '10:28 AM', status: 'read' },
+  { id: CHAT_JOURNEY_MESSAGE_ID, mine: true, text: CHAT_JOURNEY.messages.outbound[chatJourneyLocale], time: '10:29 AM', status: 'failed' },
 ];
 
 export const demoMoments: Moment[] = [
