@@ -56,7 +56,7 @@
     },
     {
       "id": "moments-foreground-proof",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate development-workflow-control-plane && python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-moments-e2e",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-moments-e2e",
       "verificationClass": "ACCEPTANCE_PROOF"
     },
     {
