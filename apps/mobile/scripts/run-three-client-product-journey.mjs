@@ -2451,13 +2451,18 @@ async function ensureMobileAuthenticated(
           .map((runtimeId) => runtimeId.trim())
           .filter(Boolean)
       ));
+      const requiredUnavailableRuntimeIds = unavailableRuntimeIds.filter(
+        (runtimeId) => arguments[0].includes(runtimeId)
+      );
       return {
         ready: Boolean(shell)
-          && !text.includes('Features Loading'),
+          && !text.includes('Features Loading')
+          && requiredUnavailableRuntimeIds.length === 0,
         text: text.slice(0, 1200),
         unavailableRuntimeIds
       };
     `,
+    [[...requiredMobileRuntimeIds]],
   );
   assertMobileRuntimeAvailable(clientId, runtimeState);
   return readClientUiState(client);
@@ -10874,12 +10879,16 @@ function selfTest(matrix) {
     'SELF_TEST_MOBILE_RUNTIME_ADMISSION',
     'Mobile Shell admission did not reject an unavailable runtime graph',
   );
+  const journeySource = readFileSync(fileURLToPath(import.meta.url), 'utf8');
   assertContract(
-    !/\bstatus:\s*status\?\.innerText/.test(
-      readFileSync(fileURLToPath(import.meta.url), 'utf8'),
-    ),
+    !/\bstatus:\s*status\?\.innerText/.test(journeySource),
     'SELF_TEST_WEBDRIVER_RESERVED_STATUS',
     'WebDriver script results must not expose a top-level status field',
+  );
+  assertContract(
+    journeySource.includes('requiredUnavailableRuntimeIds.length === 0'),
+    'SELF_TEST_MOBILE_RUNTIME_CONVERGENCE',
+    'Mobile Shell admission must wait for required runtimes to converge',
   );
   assertContract(
     desktopActivationTargetMatches(
