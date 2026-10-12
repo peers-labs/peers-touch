@@ -59,7 +59,7 @@ RUNTIME_REUSE = RuntimeReuseContract.from_dict(
         "maxClientLaunches": 2,
         "minWarmReuseRate": 0.66,
         "requireAttachOnlyScenarios": True,
-        "requireReceiverVisibleProof": False,
+        "requireReceiverVisibleProof": True,
         "allowClientReplacement": False,
     }
 )
@@ -541,8 +541,6 @@ class NodeConnectivityClusterNativeGate(
         failover: Mapping[str, Any],
     ) -> dict[str, Any]:
         scenario = SCENARIOS[2]
-        message_id = str(failover.get("messageId") or "")
-        text = str(failover.get("text") or "")
         expected_endpoint_count = len(set(self.device_ids.values()))
         expected_node_peer_id = str(
             failover["after"]["activeRoute"].get("node_peer_id") or ""
@@ -551,6 +549,38 @@ class NodeConnectivityClusterNativeGate(
             SuiteRuntimeAction.SCENARIO_START,
             scenario_id=scenario,
         )
+        alice = self.clients["alice"]
+        bob = self.clients["bob"]
+        for client in (alice, bob):
+            enter_chat_page(client)
+        text = f"ncp-durable-{time.time_ns()}"
+        sent = self.step(
+            "cluster.durable.send",
+            lambda: send_text(alice, text),
+            "alice",
+        )
+        received = self.step(
+            "cluster.durable.received",
+            lambda: wait_until(
+                lambda: message_snapshot(bob, text),
+                "Bob durable mutation plaintext",
+                timeout=60,
+            ),
+            "bob",
+        )
+        delivered = wait_until(
+            lambda: (
+                snapshot
+                if (
+                    snapshot := message_snapshot(alice, text)
+                )
+                and snapshot.get("receipt") in {"delivered", "read"}
+                else None
+            ),
+            "Alice durable mutation receipt",
+            timeout=60,
+        )
+        message_id = str(sent.get("messageUlid") or "")
 
         def durable() -> dict[str, Any] | None:
             value = cluster_message_readback(self.manifest, message_id)
@@ -578,9 +608,14 @@ class NodeConnectivityClusterNativeGate(
             for actor, client in self.clients.items()
         }
         self.suite.record(
-            SuiteRuntimeAction.SUPPORTING_OBSERVATION,
+            SuiteRuntimeAction.UI_ACTION,
             scenario_id=scenario,
-            resource_id="native:rendered-message-count",
+            resource_id="native:alice-durable-mutation-send",
+        )
+        self.suite.record(
+            SuiteRuntimeAction.RECEIVER_ASSERTION,
+            scenario_id=scenario,
+            resource_id="native:bob-single-durable-mutation",
         )
         self.suite.record(
             SuiteRuntimeAction.SUPPORTING_OBSERVATION,
@@ -598,7 +633,10 @@ class NodeConnectivityClusterNativeGate(
         )
         self.assert_condition(
             "cluster_failover_no_duplicate_mutation",
-            counts == {"alice": 1, "bob": 1}
+            bool(message_id)
+            and received.get("messageUlid") == message_id
+            and delivered.get("messageUlid") == message_id
+            and counts == {"alice": 1, "bob": 1}
             and int(readback.get("eventCount") or 0) == 1
             and int(readback.get("commitmentCount") or 0)
             == expected_endpoint_count
@@ -607,8 +645,11 @@ class NodeConnectivityClusterNativeGate(
             json.dumps(
                 {
                     "counts": counts,
+                    "delivered": delivered,
                     "expectedEndpointCount": expected_endpoint_count,
                     "readback": readback,
+                    "received": received,
+                    "sent": sent,
                 },
                 sort_keys=True,
             ),
@@ -618,7 +659,13 @@ class NodeConnectivityClusterNativeGate(
             len(readback.get("liveNodes") or []) == 1,
             json.dumps(readback, sort_keys=True),
         )
-        return {"counts": counts, "readback": readback}
+        return {
+            "counts": counts,
+            "delivered": delivered,
+            "readback": readback,
+            "received": received,
+            "sent": sent,
+        }
 
     def prove_additional_journey_assertions(self) -> None:
         cross_node = self._cross_node_scenario()

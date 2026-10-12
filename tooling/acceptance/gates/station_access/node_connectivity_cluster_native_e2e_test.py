@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import inspect
 import json
 import unittest
 
 from tooling.acceptance.gates.station_access.node_connectivity_cluster_native_e2e import (
     RUNTIME_REUSE,
+    NodeConnectivityClusterNativeGate,
     _window_session_identity,
 )
 
@@ -29,8 +31,13 @@ class _Session:
 
 
 class NodeConnectivityClusterNativeGateTest(unittest.TestCase):
-    def test_process_readback_scenario_does_not_claim_ui_proof(self) -> None:
-        self.assertFalse(RUNTIME_REUSE.require_receiver_visible_proof)
+    def test_durable_scenario_provides_receiver_visible_proof(self) -> None:
+        self.assertTrue(RUNTIME_REUSE.require_receiver_visible_proof)
+        source = inspect.getsource(
+            NodeConnectivityClusterNativeGate._durable_scenario
+        )
+        self.assertIn("SuiteRuntimeAction.UI_ACTION", source)
+        self.assertIn("SuiteRuntimeAction.RECEIVER_ASSERTION", source)
 
     def test_window_session_identity_uses_redacted_stable_identifiers(
         self,
