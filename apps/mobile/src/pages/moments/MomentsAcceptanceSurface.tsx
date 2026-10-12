@@ -21,6 +21,7 @@ import type {
   MomentsSurfaceFixtureId,
 } from '../../acceptance/momentsSurfaceFixture';
 import { useMobileI18n } from '../../app/mobileI18n';
+import { MobileAvatar } from '../../components/MobileAvatar';
 import { MobileNotice } from '../../components/MobileNotice';
 
 const { Text } = Typography;
@@ -242,7 +243,13 @@ function FixtureMomentCard({
   return (
     <article className="moments-fixture-card">
       <header className="moments-fixture-author">
-        <span className="moments-fixture-avatar">{author.slice(0, 1)}</span>
+        <MobileAvatar
+          className="moments-fixture-avatar"
+          identityKey={`fixture:${author}`}
+          identityRole="person"
+          name={author}
+          size={44}
+        />
         <span className="moments-fixture-author-copy">
           <Text strong>{author}</Text>
           <Text type="secondary">{t('mobile.moments.time.minutesAgo', { count: 12 })}</Text>
@@ -582,7 +589,13 @@ function FixtureComment({
 }) {
   return (
     <article className="moments-fixture-comment">
-      <span className="moments-fixture-comment-avatar">{author.slice(0, 1)}</span>
+      <MobileAvatar
+        className="moments-fixture-comment-avatar"
+        identityKey={`fixture:${author}`}
+        identityRole="person"
+        name={author}
+        size={36}
+      />
       <span className="moments-fixture-comment-copy">
         <Text strong>{author}</Text>
         <Text>{body}</Text>

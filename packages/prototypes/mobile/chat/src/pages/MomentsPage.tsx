@@ -49,7 +49,7 @@ import {
   MOMENT_REACTION_EMOJI,
 } from '../types';
 import { demoMoments } from '../data';
-import { UserSquareAvatar } from '../components/UserSquareAvatar';
+import { PersonAvatar } from '../components/PersonAvatar';
 
 const { Text } = Typography;
 
@@ -703,7 +703,7 @@ function MomentArticle({
     <article className="mp-social-moment">
       <div className="mp-social-author-row">
         <button type="button" className="mp-social-author" onClick={onOpenProfile}>
-          <UserSquareAvatar background={moment.avatarGradient} name={moment.name} size={42} />
+          <PersonAvatar background={moment.avatarGradient} name={moment.name} size={42} />
           <span>
             <strong>{moment.name}</strong>
             <small>{moment.source} · {moment.time}</small>
@@ -798,7 +798,7 @@ function MomentArticle({
         <section className="mp-social-comments mp-social-comments-inline" aria-label={`Comments on ${moment.name}'s Moment`}>
           {visibleComments.map((comment) => (
             <div key={comment.id} className="mp-moment-comment">
-              <UserSquareAvatar background={comment.avatarGradient} name={comment.name} size={28} />
+              <PersonAvatar background={comment.avatarGradient} name={comment.name} size={28} />
               <div className="mp-moment-comment-body">
                 <Text strong className="mp-moment-comment-name">{comment.name}</Text>
                 <span className="mp-moment-comment-text">{comment.text}</span>
@@ -1011,7 +1011,7 @@ function SocialSearchPage({ onBack, onOpenProfile }: { onBack: () => void; onOpe
         <label><Search size={17} /><input aria-label="Search people" defaultValue="@bob@bob.remote" /></label>
         <p>People in your active Federation</p>
         <button type="button" className="mp-social-person-row" onClick={onOpenProfile}>
-          <UserSquareAvatar background={GRADIENTS[2]} name="Bob Lee" size={44} />
+          <PersonAvatar background={GRADIENTS[2]} name="Bob Lee" size={44} />
           <span><strong>Bob Lee</strong><small>@bob@bob.remote · Friend</small></span>
           <ChevronRight size={18} />
         </button>
@@ -1033,7 +1033,7 @@ function SocialProfilePage({ moments, onBack, onOpenMoment }: { moments: Moment[
         <IconButton label="Profile actions" onClick={() => setShowActions(true)}><MoreHorizontal size={20} /></IconButton>
       </header>
       <section className="mp-social-profile">
-        <UserSquareAvatar background={GRADIENTS[2]} name="Bob Lee" size={72} />
+        <PersonAvatar background={GRADIENTS[2]} name="Bob Lee" size={72} />
         <h2>Bob Lee</h2>
         <p>@bob@bob.remote</p>
         <div className="mp-social-profile-meta"><Globe2 size={14} /> Remote Station · Verified friend</div>
@@ -1157,7 +1157,7 @@ function CirclePage({ onBack }: { onBack: () => void }) {
           </div>
           {selectedCircle.members.map((member) => (
             <div key={member} className="mp-social-member-row">
-              <UserSquareAvatar background={GRADIENTS[2]} name={member} size={36} />
+              <PersonAvatar background={GRADIENTS[2]} name={member} size={36} />
               <span><strong>{member}</strong><small>Canonical actor identity</small></span>
               <button type="button" aria-label={`Remove ${member}`} onClick={() => setCircles((current) => current.map((circle) => (
                 circle.id === selectedCircle.id
@@ -1274,7 +1274,7 @@ function CircleMemberPickerPage({
           const added = circle.members.includes(person.name);
           return (
             <div key={person.id} className="mp-social-member-row">
-              <UserSquareAvatar background={GRADIENTS[2]} name={person.name} size={40} />
+              <PersonAvatar background={GRADIENTS[2]} name={person.name} size={40} />
               <span><strong>{person.name}</strong><small>{person.handle}</small></span>
               <button type="button" disabled={added} onClick={() => onAdd(person.name)}>{added ? <Check size={17} /> : <UserPlus size={17} />}</button>
             </div>

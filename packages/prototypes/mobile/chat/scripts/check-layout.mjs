@@ -102,7 +102,7 @@ try {
         );
         const tabbarRect = rect(element.querySelector('.mp-tabbar'));
         const socialAvatars = [
-          ...element.querySelectorAll('.mp-user-square-avatar'),
+          ...element.querySelectorAll('.mp-social-person-avatar'),
         ].map((avatar) => {
           const avatarRect = rect(avatar);
           const avatarStyle = getComputedStyle(avatar);
@@ -603,7 +603,7 @@ try {
         .geometry.socialAvatars.every(
           (avatar) =>
             avatar.borderRadius ===
-              Math.max(8, Math.floor(avatar.width * 0.25)) &&
+              Math.ceil(avatar.width / 2) &&
             (avatar.fallbackLength === 0 || avatar.fallbackLength === 1),
         ),
       JSON.stringify(captures.at(-1).geometry.socialAvatars),
@@ -655,7 +655,7 @@ try {
         .geometry.socialAvatars.every(
           (avatar) =>
             avatar.borderRadius ===
-              Math.max(8, Math.floor(avatar.width * 0.25)) &&
+              Math.ceil(avatar.width / 2) &&
             (avatar.fallbackLength === 0 || avatar.fallbackLength === 1),
         ),
       JSON.stringify(captures.at(-1).geometry.socialAvatars),
@@ -712,7 +712,7 @@ try {
       geometry.socialAvatars.some(
         (avatar) =>
           avatar.borderRadius !==
-            Math.max(8, Math.floor(avatar.width * 0.25)) ||
+            Math.ceil(avatar.width / 2) ||
           (avatar.fallbackLength !== 0 && avatar.fallbackLength !== 1),
       ) ||
       (geometry.inlineCommentComposer &&

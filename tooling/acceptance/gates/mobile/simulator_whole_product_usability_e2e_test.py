@@ -161,6 +161,7 @@ class _ShellDriverSession:
         self.navigation_actions: list[str] = []
         self.orientation_actions: list[str] = []
         self.fixture_history: list[tuple[str, str | None]] = []
+        self.text_size_applications: list[str] = []
 
     def switch_to_native(self) -> None:
         self.current_context = "NATIVE_APP"
@@ -173,7 +174,14 @@ class _ShellDriverSession:
         self.orientation = orientation
 
     def execute_script(self, script: str, *args: Any) -> Any:
+        if script == "mobile: activateApp":
+            self.activated_apps.append(args[0]["bundleId"])
+            return None
+        return True
+
+    def execute_async_script(self, script: str, *args: Any) -> Any:
         if script == TEXT_SIZE_SCRIPT:
+            self.text_size_applications.append(args[0])
             width, height = (
                 (852, 393)
                 if self.orientation == "LANDSCAPE"
@@ -185,10 +193,7 @@ class _ShellDriverSession:
                 "height": height,
                 "scaledElementCount": 1 if args[0] == "maximum" else 0,
             }
-        if script == "mobile: activateApp":
-            self.activated_apps.append(args[0]["bundleId"])
-            return None
-        return True
+        raise AssertionError(script)
 
     def find_element(self, using: str, value: str) -> str:
         if using not in {"css selector", "class name"}:
@@ -647,6 +652,102 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             session.activated_apps,
             ["com.peers.touch.mobile"] * 3,
         )
+        self.assertEqual(
+            session.text_size_applications,
+            ["normal", "maximum", "normal"],
+        )
+
+    def test_surface_capture_reapplies_maximum_text_after_surface_entry(
+        self,
+    ) -> None:
+        class CaptureSession(_ShellDriverSession):
+            def execute_script(self, script: str, *args: Any) -> Any:
+                if script == SURFACE_AUDIT_SCRIPT:
+                    return {
+                        "found": True,
+                        "unlabeledControls": [],
+                        "undersizedControls": [],
+                        "clippedText": [],
+                        "viewport": {"width": 393, "height": 852},
+                        "surfaceElement": {
+                            "selector": args[0],
+                            "width": 393,
+                            "height": 852,
+                            "visible": True,
+                            "inViewport": True,
+                        },
+                        "controls": [],
+                        "occlusions": [],
+                        "blockingSurfaces": [],
+                        "stationLayout": {},
+                    }
+                return super().execute_script(script, *args)
+
+            def get_webview_source(self) -> str:
+                return (
+                    '<main data-product-surface="moments.feed">'
+                    "<h1>Moments</h1></main>"
+                )
+
+            def get_page_source(self) -> str:
+                return (
+                    '<AppiumAUT><XCUIElementTypeApplication '
+                    'x="0" y="0" width="393" height="852">'
+                    '<XCUIElementTypeButton label="Refresh" '
+                    'x="20" y="20" width="44" height="44" visible="true" />'
+                    "</XCUIElementTypeApplication></AppiumAUT>"
+                )
+
+            def screenshot_bytes(self) -> bytes:
+                return png_bytes(393, 852)
+
+        inventory = load_surface_inventory()
+        entry = next(
+            value
+            for value in selected_surface_entries(inventory, "moments")
+            if value["id"] == "moments.feed"
+        )
+        viewport = {
+            "width": 393,
+            "height": 852,
+            "orientation": "portrait",
+            "textSize": "maximum",
+        }
+        session = CaptureSession()
+        gate = SimulatorWholeProductUsabilityGate(
+            foreground_probe=lambda: {},
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = EvidenceStore(Path(temp_dir), worktree=REPO_ROOT)
+            with store.begin_run(
+                GATE_ID,
+                source=source_identity(REPO_ROOT),
+            ) as run:
+                result = gate._capture_surface(
+                    run,
+                    session,
+                    inventory,
+                    entry,
+                    "portrait-maximum-text",
+                    viewport,
+                    {
+                        "kind": "native-touch",
+                        "target": "tap-moments-tab",
+                        "performed": True,
+                    },
+                )
+                run.finalize(
+                    result={
+                        "status": "PASS",
+                        "completionStatus": "DONE",
+                        "proofStatus": "PROVEN",
+                    }
+                )
+
+        self.assertEqual(session.text_size_applications, ["maximum"])
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["viewport"]["textSize"], "maximum")
 
     def test_shell_driver_falls_back_to_native_ios_scene_rotation(self) -> None:
         class TransientRotationSession(_ShellDriverSession):
