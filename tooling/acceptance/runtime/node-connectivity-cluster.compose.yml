@@ -1,7 +1,7 @@
 x-station-common: &station-common
   image: ${PT_NCP_STATION_IMAGE:?PT_NCP_STATION_IMAGE is required}
   build:
-    context: ../../..
+    context: .
     dockerfile: tooling/docker/station.Dockerfile
     args:
       BUILD_COMMIT: ${PT_NCP_SOURCE_COMMIT:?PT_NCP_SOURCE_COMMIT is required}
