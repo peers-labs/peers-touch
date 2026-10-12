@@ -8,6 +8,13 @@ interface AvatarProps {
   groupIcon?: boolean;
   identityKey?: string;
   initials?: string;
+  /**
+   * Peer belongs to another station (federation). Carried as semantic metadata
+   * (data attribute + hover title); the list avatar itself stays visually clean.
+   * The human-facing cue lives on the contact/conversation detail surface, never
+   * as a border around the avatar (which reads as selection/focus).
+   */
+  federated?: boolean;
 }
 
 function getInitials(name: string): string {
@@ -31,6 +38,7 @@ export function Avatar({
   groupIcon,
   identityKey,
   initials: initialsProp,
+  federated = false,
 }: AvatarProps) {
   const initials = initialsProp ?? getInitials(name);
   const bgColor = hashColor(identityKey || src || name);
@@ -38,7 +46,17 @@ export function Avatar({
   const radius = groupIcon ? T.radiusLg : T.radiusMd;
 
   return (
-    <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
+    <div
+      data-federated={federated ? 'true' : undefined}
+      title={federated ? `${name} · from another network` : undefined}
+      style={{
+        position: 'relative',
+        width: size,
+        height: size,
+        flexShrink: 0,
+        borderRadius: radius,
+      }}
+    >
       {src ? (
         <img
           src={src}

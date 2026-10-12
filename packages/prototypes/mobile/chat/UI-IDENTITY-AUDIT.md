@@ -1,5 +1,12 @@
 # Mobile Prototype — UI Identity Compliance Audit
 
+> **Status**: superseded on 2026-10-12.
+>
+> This file preserves the earlier audit and resolution history. Current
+> rendered review found that its closure claims no longer describe the actual
+> experience. Do not use it as approval evidence. The active review source is
+> `docs/architecture/platform/client/mobile/prototype/interaction-gap-register.md`.
+
 > Status: core journey and recovery-state amendment confirmed by the Owner on 2026-08-27;
 > real `apps/mobile` runtime acceptance remains unproven.
 > Goal: 6a4df61d05af3c5c0b257608. This is the audit-before-change gate (Task 3). No code changed while producing it.

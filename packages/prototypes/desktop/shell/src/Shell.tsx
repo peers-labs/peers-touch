@@ -26,7 +26,6 @@ import {
   MessageCircle,
   Bot,
   Blocks,
-  Bell,
   Settings,
   Plus,
   PanelRightOpen,
@@ -236,7 +235,6 @@ function SideNav({
 
       {/* bottomActions */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <RailIcon icon={Bell} title="通知" onClick={() => {}} />
         <RailIcon icon={Settings} title="设置" active={page === 'settings'} onClick={() => onNavigate('settings')} />
       </div>
     </div>

@@ -1,0 +1,914 @@
+{
+  "chat-default": {
+    "theme": "light",
+    "page": "chats",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 0,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 3,
+    "smallTargets": [
+      {
+        "text": "",
+        "width": 12,
+        "height": 12,
+        "className": "ant-input-clear-icon ant-input-clear-icon-hidden"
+      }
+    ],
+    "horizontalOverflow": [
+      {
+        "className": "mp-identity-avatar person tone-2",
+        "text": "AC",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "mp-conv-preview",
+        "text": "You: Hold the release until reconnect recovery is verified.",
+        "clientWidth": 232,
+        "scrollWidth": 345
+      },
+      {
+        "className": "mp-identity-avatar person tone-0",
+        "text": "CL",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "ant-typography ant-typography-ellipsis ant-typography-ellipsis-single-line css-149w44n css-var-_r_0_",
+        "text": "Design Systems",
+        "clientWidth": 105,
+        "scrollWidth": 108
+      },
+      {
+        "className": "mp-conv-relationship",
+        "text": "15 member group \u00b7 Muted",
+        "clientWidth": 121,
+        "scrollWidth": 124
+      },
+      {
+        "className": "mp-identity-avatar person tone-0",
+        "text": "EL",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "ant-badge css-149w44n css-var-_r_0_",
+        "text": "4",
+        "clientWidth": 24,
+        "scrollWidth": 35
+      }
+    ]
+  },
+  "chat-list-refreshing": {
+    "theme": "light",
+    "page": "chats",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 0,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 3,
+    "smallTargets": [
+      {
+        "text": "",
+        "width": 12,
+        "height": 12,
+        "className": "ant-input-clear-icon ant-input-clear-icon-hidden"
+      }
+    ],
+    "horizontalOverflow": [
+      {
+        "className": "mp-identity-avatar person tone-2",
+        "text": "AC",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "mp-conv-preview",
+        "text": "You: Hold the release until reconnect recovery is verified.",
+        "clientWidth": 232,
+        "scrollWidth": 345
+      },
+      {
+        "className": "mp-identity-avatar person tone-0",
+        "text": "CL",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "ant-typography ant-typography-ellipsis ant-typography-ellipsis-single-line css-149w44n css-var-_r_0_",
+        "text": "Design Systems",
+        "clientWidth": 105,
+        "scrollWidth": 108
+      },
+      {
+        "className": "mp-conv-relationship",
+        "text": "15 member group \u00b7 Muted",
+        "clientWidth": 121,
+        "scrollWidth": 124
+      },
+      {
+        "className": "mp-identity-avatar person tone-0",
+        "text": "EL",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "ant-badge css-149w44n css-var-_r_0_",
+        "text": "4",
+        "clientWidth": 24,
+        "scrollWidth": 35
+      }
+    ]
+  },
+  "chat-list-loading": {
+    "theme": "light",
+    "page": "chats",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 7,
+    "messageRows": 0,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 0,
+    "smallTargets": [
+      {
+        "text": "",
+        "width": 12,
+        "height": 12,
+        "className": "ant-input-clear-icon ant-input-clear-icon-hidden"
+      }
+    ],
+    "horizontalOverflow": [
+      {
+        "className": "ant-badge css-149w44n css-var-_r_0_",
+        "text": "4",
+        "clientWidth": 24,
+        "scrollWidth": 35
+      }
+    ]
+  },
+  "chat-list-empty": {
+    "theme": "light",
+    "page": "chats",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 0,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 0,
+    "smallTargets": [
+      {
+        "text": "",
+        "width": 12,
+        "height": 12,
+        "className": "ant-input-clear-icon ant-input-clear-icon-hidden"
+      }
+    ],
+    "horizontalOverflow": [
+      {
+        "className": "ant-badge css-149w44n css-var-_r_0_",
+        "text": "4",
+        "clientWidth": 24,
+        "scrollWidth": 35
+      }
+    ]
+  },
+  "chat-list-error": {
+    "theme": "light",
+    "page": "chats",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 0,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 3,
+    "smallTargets": [
+      {
+        "text": "",
+        "width": 12,
+        "height": 12,
+        "className": "ant-input-clear-icon ant-input-clear-icon-hidden"
+      }
+    ],
+    "horizontalOverflow": [
+      {
+        "className": "mp-identity-avatar person tone-2",
+        "text": "AC",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "mp-conv-preview",
+        "text": "You: Hold the release until reconnect recovery is verified.",
+        "clientWidth": 232,
+        "scrollWidth": 345
+      },
+      {
+        "className": "mp-identity-avatar person tone-0",
+        "text": "CL",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "ant-typography ant-typography-ellipsis ant-typography-ellipsis-single-line css-149w44n css-var-_r_0_",
+        "text": "Design Systems",
+        "clientWidth": 105,
+        "scrollWidth": 108
+      },
+      {
+        "className": "mp-conv-relationship",
+        "text": "15 member group \u00b7 Muted",
+        "clientWidth": 121,
+        "scrollWidth": 124
+      },
+      {
+        "className": "mp-identity-avatar person tone-0",
+        "text": "EL",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "ant-badge css-149w44n css-var-_r_0_",
+        "text": "4",
+        "clientWidth": 24,
+        "scrollWidth": 35
+      }
+    ]
+  },
+  "chat-thread-loading": {
+    "theme": "light",
+    "page": "messages",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 0,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 1,
+    "smallTargets": [],
+    "horizontalOverflow": []
+  },
+  "chat-history-loading": {
+    "theme": "light",
+    "page": "messages",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 16,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 9,
+    "smallTargets": [],
+    "horizontalOverflow": []
+  },
+  "chat-thread-error": {
+    "theme": "light",
+    "page": null,
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 0,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 1,
+    "smallTargets": [],
+    "horizontalOverflow": []
+  },
+  "chat-unknown-outcome": {
+    "theme": "light",
+    "page": "messages",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 14,
+    "failedRetryOwners": 0,
+    "unknownOwners": 1,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 7,
+    "smallTargets": [],
+    "horizontalOverflow": []
+  },
+  "avatar-loading": {
+    "theme": "light",
+    "page": "chats",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 0,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 8,
+    "avatarFallback": 0,
+    "smallTargets": [
+      {
+        "text": "",
+        "width": 12,
+        "height": 12,
+        "className": "ant-input-clear-icon ant-input-clear-icon-hidden"
+      }
+    ],
+    "horizontalOverflow": [
+      {
+        "className": "mp-conv-preview",
+        "text": "You: Hold the release until reconnect recovery is verified.",
+        "clientWidth": 232,
+        "scrollWidth": 345
+      },
+      {
+        "className": "ant-typography ant-typography-ellipsis ant-typography-ellipsis-single-line css-149w44n css-var-_r_0_",
+        "text": "Design Systems",
+        "clientWidth": 105,
+        "scrollWidth": 108
+      },
+      {
+        "className": "mp-conv-relationship",
+        "text": "15 member group \u00b7 Muted",
+        "clientWidth": 121,
+        "scrollWidth": 124
+      },
+      {
+        "className": "ant-badge css-149w44n css-var-_r_0_",
+        "text": "4",
+        "clientWidth": 24,
+        "scrollWidth": 35
+      }
+    ]
+  },
+  "avatar-fallback": {
+    "theme": "light",
+    "page": "chats",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 0,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 8,
+    "smallTargets": [
+      {
+        "text": "",
+        "width": 12,
+        "height": 12,
+        "className": "ant-input-clear-icon ant-input-clear-icon-hidden"
+      }
+    ],
+    "horizontalOverflow": [
+      {
+        "className": "mp-identity-avatar person tone-2",
+        "text": "AC",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "mp-conv-preview",
+        "text": "You: Hold the release until reconnect recovery is verified.",
+        "clientWidth": 232,
+        "scrollWidth": 345
+      },
+      {
+        "className": "mp-identity-avatar person tone-0",
+        "text": "CL",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "ant-typography ant-typography-ellipsis ant-typography-ellipsis-single-line css-149w44n css-var-_r_0_",
+        "text": "Design Systems",
+        "clientWidth": 105,
+        "scrollWidth": 108
+      },
+      {
+        "className": "mp-conv-relationship",
+        "text": "15 member group \u00b7 Muted",
+        "clientWidth": 121,
+        "scrollWidth": 124
+      },
+      {
+        "className": "mp-identity-avatar person tone-0",
+        "text": "EL",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "ant-badge css-149w44n css-var-_r_0_",
+        "text": "4",
+        "clientWidth": 24,
+        "scrollWidth": 35
+      }
+    ]
+  },
+  "long-content": {
+    "theme": "light",
+    "page": "chats",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 0,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 3,
+    "smallTargets": [
+      {
+        "text": "",
+        "width": 12,
+        "height": 12,
+        "className": "ant-input-clear-icon ant-input-clear-icon-hidden"
+      }
+    ],
+    "horizontalOverflow": [
+      {
+        "className": "mp-identity-avatar person tone-2",
+        "text": "AC",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "ant-typography ant-typography-ellipsis ant-typography-ellipsis-single-line css-149w44n css-var-_r_0_",
+        "text": "International Product Architecture Working Group",
+        "clientWidth": 135,
+        "scrollWidth": 335
+      },
+      {
+        "className": "mp-conv-preview",
+        "text": "Morgen besprechen wir die gerateubergreifende Wiederherstellung nach einem unter",
+        "clientWidth": 232,
+        "scrollWidth": 686
+      },
+      {
+        "className": "mp-conv-preview",
+        "text": "You: Hold the release until reconnect recovery is verified.",
+        "clientWidth": 232,
+        "scrollWidth": 345
+      },
+      {
+        "className": "mp-identity-avatar person tone-0",
+        "text": "CL",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "ant-typography ant-typography-ellipsis ant-typography-ellipsis-single-line css-149w44n css-var-_r_0_",
+        "text": "Design Systems",
+        "clientWidth": 105,
+        "scrollWidth": 108
+      },
+      {
+        "className": "mp-conv-relationship",
+        "text": "15 member group \u00b7 Muted",
+        "clientWidth": 121,
+        "scrollWidth": 124
+      },
+      {
+        "className": "mp-identity-avatar person tone-0",
+        "text": "EL",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "ant-badge css-149w44n css-var-_r_0_",
+        "text": "4",
+        "clientWidth": 24,
+        "scrollWidth": 35
+      }
+    ]
+  },
+  "chat-delivery-recovery": {
+    "theme": "light",
+    "page": "messages",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 14,
+    "failedRetryOwners": 1,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 7,
+    "smallTargets": [],
+    "horizontalOverflow": []
+  },
+  "chat-default-dark": {
+    "theme": "dark",
+    "page": "chats",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#7d8cf2",
+    "canvas": "#111318",
+    "skeletonRows": 0,
+    "messageRows": 0,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 3,
+    "smallTargets": [
+      {
+        "text": "",
+        "width": 12,
+        "height": 12,
+        "className": "ant-input-clear-icon ant-input-clear-icon-hidden"
+      }
+    ],
+    "horizontalOverflow": [
+      {
+        "className": "mp-identity-avatar person tone-2",
+        "text": "AC",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "mp-conv-preview",
+        "text": "You: Hold the release until reconnect recovery is verified.",
+        "clientWidth": 232,
+        "scrollWidth": 345
+      },
+      {
+        "className": "mp-identity-avatar person tone-0",
+        "text": "CL",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "ant-typography ant-typography-ellipsis ant-typography-ellipsis-single-line css-149w44n css-var-_r_0_",
+        "text": "Design Systems",
+        "clientWidth": 105,
+        "scrollWidth": 108
+      },
+      {
+        "className": "mp-conv-relationship",
+        "text": "15 member group \u00b7 Muted",
+        "clientWidth": 121,
+        "scrollWidth": 124
+      },
+      {
+        "className": "mp-identity-avatar person tone-0",
+        "text": "EL",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "ant-badge css-149w44n css-var-_r_0_",
+        "text": "4",
+        "clientWidth": 24,
+        "scrollWidth": 35
+      }
+    ]
+  },
+  "thread-default": {
+    "theme": "light",
+    "page": "messages",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 11,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 0,
+    "smallTargets": [],
+    "horizontalOverflow": []
+  },
+  "pinned-page": {
+    "theme": "light",
+    "page": null,
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 0,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 0,
+    "smallTargets": [],
+    "horizontalOverflow": []
+  },
+  "conversation-details": {
+    "theme": "light",
+    "page": null,
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 0,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 1,
+    "smallTargets": [],
+    "horizontalOverflow": []
+  },
+  "chat-default-zh": {
+    "theme": "light",
+    "page": "chats",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 0,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 3,
+    "smallTargets": [
+      {
+        "text": "",
+        "width": 12,
+        "height": 12,
+        "className": "ant-input-clear-icon ant-input-clear-icon-hidden"
+      }
+    ],
+    "horizontalOverflow": [
+      {
+        "className": "mp-identity-avatar person tone-2",
+        "text": "AC",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "mp-conv-preview",
+        "text": "\u4f60: \u5148\u6682\u505c\u53d1\u5e03\uff0c\u76f4\u5230\u91cd\u8fde\u6062\u590d\u9a8c\u8bc1\u901a\u8fc7\u3002",
+        "clientWidth": 232,
+        "scrollWidth": 241
+      },
+      {
+        "className": "mp-identity-avatar person tone-0",
+        "text": "CL",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "ant-typography ant-typography-ellipsis ant-typography-ellipsis-single-line css-149w44n css-var-_r_0_",
+        "text": "Design Systems",
+        "clientWidth": 105,
+        "scrollWidth": 108
+      },
+      {
+        "className": "mp-conv-relationship",
+        "text": "15 member group \u00b7 Muted",
+        "clientWidth": 121,
+        "scrollWidth": 124
+      },
+      {
+        "className": "mp-identity-avatar person tone-0",
+        "text": "EL",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "ant-badge css-149w44n css-var-_r_0_",
+        "text": "4",
+        "clientWidth": 24,
+        "scrollWidth": 35
+      }
+    ]
+  },
+  "tab-moments": {
+    "theme": "light",
+    "page": null,
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 0,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 1,
+    "smallTargets": [],
+    "horizontalOverflow": [
+      {
+        "className": "ant-badge css-149w44n css-var-_r_0_",
+        "text": "4",
+        "clientWidth": 24,
+        "scrollWidth": 35
+      }
+    ]
+  },
+  "tab-contacts": {
+    "theme": "light",
+    "page": "contacts",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 0,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 3,
+    "smallTargets": [
+      {
+        "text": "",
+        "width": 12,
+        "height": 12,
+        "className": "ant-input-clear-icon ant-input-clear-icon-hidden"
+      }
+    ],
+    "horizontalOverflow": [
+      {
+        "className": "mp-identity-avatar person tone-2",
+        "text": "AC",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "mp-identity-avatar person tone-0",
+        "text": "CL",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "mp-identity-avatar person tone-0",
+        "text": "EL",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "mp-identity-avatar person tone-3",
+        "text": "GK",
+        "clientWidth": 44,
+        "scrollWidth": 46
+      },
+      {
+        "className": "ant-badge css-149w44n css-var-_r_0_",
+        "text": "4",
+        "clientWidth": 24,
+        "scrollWidth": 35
+      }
+    ]
+  },
+  "tab-me": {
+    "theme": "light",
+    "page": null,
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 0,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 0,
+    "smallTargets": [],
+    "horizontalOverflow": [
+      {
+        "className": "ant-badge css-149w44n css-var-_r_0_",
+        "text": "4",
+        "clientWidth": 24,
+        "scrollWidth": 35
+      }
+    ]
+  },
+  "unknown-resolved": {
+    "theme": "light",
+    "page": "messages",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 15,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 8,
+    "smallTargets": [],
+    "horizontalOverflow": []
+  },
+  "delivery-recovered": {
+    "theme": "light",
+    "page": "messages",
+    "device": {
+      "width": 390,
+      "height": 844
+    },
+    "primary": "#667eea",
+    "canvas": "#f3f5f8",
+    "skeletonRows": 0,
+    "messageRows": 15,
+    "failedRetryOwners": 0,
+    "unknownOwners": 0,
+    "legacyRecoveryBanners": 0,
+    "avatarLoading": 0,
+    "avatarFallback": 8,
+    "smallTargets": [],
+    "horizontalOverflow": []
+  },
+  "consoleErrors": []
+}

@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Avatar, Input, Typography } from 'antd';
+import { Input, Typography } from 'antd';
 import { ChevronRight, Search, UserPlus, Users } from 'lucide-react';
-import type { Contact, GroupItem } from '../types';
+import type { AvatarRenderState, Contact, GroupItem } from '../types';
 import { demoContacts, demoGroups } from '../data';
 import copy from '../../../../../locales/en/common.json';
 import { demoRequestContact, type DemoFriendRequest } from '../socialDemo';
 import { PrototypeListWindow } from '../components/PrototypeListWindow';
 import type { PrototypeListMemory } from '../listPresentation';
 import type { RequestRowSample } from '../longListDemo';
+import { IdentityAvatar } from '../components/IdentityAvatar';
 
 const { Text } = Typography;
 const contactKey = (contact: Contact) => contact.key;
@@ -16,13 +17,14 @@ const noRequestSamples: RequestRowSample[] = [];
 
 export function ContactsPage({
   contacts = demoContacts, groups = demoGroups, requests = noRequestSamples,
-  listMemory, request, onContactClick, onGroupClick, onAddContact,
+  listMemory, request, avatarState, onContactClick, onGroupClick, onAddContact,
 }: {
   contacts?: Contact[];
   groups?: GroupItem[];
   requests?: RequestRowSample[];
   listMemory: PrototypeListMemory;
   request?: DemoFriendRequest | null;
+  avatarState: AvatarRenderState;
   onContactClick: (c: Contact) => void;
   onGroupClick: (g: GroupItem) => void;
   onAddContact?: () => void;
@@ -57,7 +59,7 @@ export function ContactsPage({
 
       <div className="mp-search-bar">
         <Input
-          prefix={<Search size={16} color="#9ca0ab" />}
+          prefix={<Search size={16} className="mp-search-icon" />}
           placeholder={copy['mobile.contacts.searchPlaceholder']}
           allowClear
           value={searchQuery}
@@ -74,14 +76,15 @@ export function ContactsPage({
             <div className="mp-section-header"><span>Groups</span></div>
             <div className="mp-group-list">
               {filteredGroups.map((group) => (
-                <div key={group.key} className="mp-group-item" onClick={() => onGroupClick(group)}>
-                  <Avatar size={44} style={{ background: group.avatarGradient, borderRadius: 14 }}>{group.avatar}</Avatar>
+                <button key={group.key} type="button" className="mp-group-item" onClick={() => onGroupClick(group)}>
+                  <IdentityAvatar name={group.name} initials={group.avatar} kind="group"
+                    size={44} renderState={avatarState} />
                   <div className="mp-group-info">
                     <Text strong>{group.name}</Text>
                     <Text type="secondary">{group.memberCount} members</Text>
                   </div>
-                  <ChevronRight size={18} color="#9ca0ab" />
-                </div>
+                  <ChevronRight size={18} className="mp-row-chevron" />
+                </button>
               ))}
             </div>
           </section>
@@ -106,10 +109,9 @@ export function ContactsPage({
                         onContactClick(contact);
                       }
                     }}>
-                    <span className="mp-avatar-frame">
-                      <Avatar size={44} style={{ background: contact.avatarGradient, borderRadius: 14 }}>{contact.avatar}</Avatar>
-                      {contact.online && <span className="mp-online-dot" />}
-                    </span>
+                    <IdentityAvatar name={contact.name} initials={contact.avatar}
+                      src={contact.avatarUrl} size={44} online={contact.online}
+                      showPresence renderState={avatarState} />
                     <div className="mp-contact-info">
                       <Text strong>{contact.name}</Text>
                       <Text type="secondary">{contact.note}</Text>
@@ -134,9 +136,8 @@ export function ContactsPage({
                 {(window) => window.map((entry) => (
                   <div key={entry.key} className="mp-request-item" data-scroll-anchor-id={entry.key}
                     data-demo-request-direction={entry.direction} data-demo-request-status={entry.status}>
-                    <Avatar size={44} style={{ background: entry.contact.avatarGradient }}>
-                      {entry.contact.avatar}
-                    </Avatar>
+                    <IdentityAvatar name={entry.contact.name} initials={entry.contact.avatar}
+                      src={entry.contact.avatarUrl} size={44} renderState={avatarState} />
                     <div className="mp-request-info">
                       <Text strong>{entry.contact.name}</Text>
                       <Text type="secondary">
@@ -162,9 +163,8 @@ export function ContactsPage({
             <div className="mp-section-header"><span>{copy['mobile.contacts.sentRequests']}</span></div>
             <div className="mp-request-list">
               <div className="mp-request-item">
-                <Avatar size={44} style={{ background: demoRequestContact.avatarGradient }}>
-                  {demoRequestContact.avatar}
-                </Avatar>
+                <IdentityAvatar name={demoRequestContact.name} initials={demoRequestContact.avatar}
+                  src={demoRequestContact.avatarUrl} size={44} renderState={avatarState} />
                 <div className="mp-request-info">
                   <Text strong>{demoRequestContact.name}</Text>
                   <Text type="secondary">{copy['mobile.contacts.waitingForAccept']}</Text>

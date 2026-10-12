@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type Dispatch, type KeyboardEvent } from 'react';
-import { Avatar, Button, Input, Radio, Typography } from 'antd';
+import { Button, Input, Radio, Typography } from 'antd';
 import { X } from 'lucide-react';
 import copy from '../../../../../locales/en/common.json';
 import { demoContacts } from '../data';
 import { demoPeopleHandle, type SocialDemoAction, type SocialDemoState } from '../socialDemo';
 import { RequestRecoveryNotice } from './ExperienceRecovery';
+import { IdentityAvatar } from './IdentityAvatar';
 
 export function FindPeopleSheet({
   state,
@@ -114,9 +115,8 @@ export function FindPeopleSheet({
               return (
                 <div className="mp-people-result" key={contact.key}>
                   <div className="mp-request-item">
-                    <Avatar size={44} style={{ background: contact.avatarGradient }}>
-                      {contact.avatar}
-                    </Avatar>
+                    <IdentityAvatar name={contact.name} initials={contact.avatar}
+                      src={contact.avatarUrl} size={44} />
                     <div className="mp-request-info">
                       <Typography.Text strong>{contact.name}</Typography.Text>
                       <Typography.Text type="secondary" className="mp-people-handle">
