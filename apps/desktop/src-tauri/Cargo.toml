@@ -57,7 +57,8 @@ secure-content-core = { path = "../../../packages/secure-content-core" }
 dispatch2 = "0.3.1"
 keyring = { version = "3", features = ["apple-native"] }
 objc2 = "0.6.4"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["libc", "NSApplication", "NSResponder", "NSRunningApplication", "NSWindow"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["libc", "NSApplication", "NSResponder", "NSRunningApplication", "NSWindow", "NSDockTile"] }
+objc2-foundation = { version = "0.3.2", features = ["NSString"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }

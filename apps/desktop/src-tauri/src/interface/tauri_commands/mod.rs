@@ -31,6 +31,7 @@ pub mod messaging;
 pub mod messaging_recovery;
 pub mod model_config;
 
+pub mod native_surface;
 pub mod notebook;
 pub mod notification;
 pub mod oauth2;

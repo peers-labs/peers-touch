@@ -4357,6 +4357,7 @@ dependencies = [
  "messaging-core",
  "objc2",
  "objc2-app-kit",
+ "objc2-foundation",
  "prost",
  "prost-build",
  "prost-types",

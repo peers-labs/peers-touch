@@ -42,7 +42,7 @@ use interface::tauri_commands::{
     agent_turn, agents, applets, auth, bot, capability_authority, channels, conversation, cron, crypto,
     desktop_capture, evaluation, federation, frontend_log, frontend_telemetry, home, host_events,
     i18n, ice, key_exchange, mcp, memory, messaging as messaging_commands, messaging_recovery,
-    model_config, notebook, notification, oauth2, oss, presence, profile, provider, realtime,
+    model_config, native_surface, notebook, notification, oauth2, oss, presence, profile, provider, realtime,
     runtime_evidence, search, settings, skills, skills_market, social as social_commands, station,
     system, tools, tts,
 };
@@ -1052,6 +1052,7 @@ fn main() {
             notification::notification_preferences,
             notification::notification_preferences_update,
             host_events::desktop_native_event_emit,
+            native_surface::native_dock_set_badge,
             station::station_list,
             station::station_set_active,
             station::station_binding_complete,

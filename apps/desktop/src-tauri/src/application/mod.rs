@@ -25,6 +25,7 @@ pub mod mcp;
 pub mod memory;
 pub mod model_config;
 pub mod models;
+pub mod native_surface;
 pub mod notebook;
 pub mod oauth2;
 pub mod oss;
