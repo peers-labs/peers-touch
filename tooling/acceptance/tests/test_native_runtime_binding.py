@@ -300,6 +300,83 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             ],
         )
 
+    def test_station_configuration_prefers_fresh_available_route(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle(
+            "/workspace/run/actors/alice/fixture.png"
+        )
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+        session = Mock(spec=TauriSession)
+        session.invoke_app_result.return_value = {
+            "data": {
+                "status": json.dumps(
+                    {
+                        "entries": [
+                            {
+                                "station_peer_id": "station-peer-four",
+                                "routes": [
+                                    {
+                                        "route_id": "relay-expired",
+                                        "endpoint_origin": (
+                                            "https://relay.example:18443"
+                                        ),
+                                        "health": "available",
+                                        "attestation_expires_at_unix_ms": 10,
+                                        "last_verified_at": (
+                                            "2026-10-11T10:00:00Z"
+                                        ),
+                                    },
+                                    {
+                                        "route_id": "relay-unavailable",
+                                        "endpoint_origin": (
+                                            "https://relay.example:18443"
+                                        ),
+                                        "health": "unavailable",
+                                        "attestation_expires_at_unix_ms": 30,
+                                        "last_verified_at": (
+                                            "2026-10-13T10:00:00Z"
+                                        ),
+                                    },
+                                    {
+                                        "route_id": "relay-current",
+                                        "endpoint_origin": (
+                                            "https://relay.example:18443"
+                                        ),
+                                        "health": "available",
+                                        "attestation_expires_at_unix_ms": 20,
+                                        "last_verified_at": (
+                                            "2026-10-12T10:00:00Z"
+                                        ),
+                                    },
+                                ],
+                            }
+                        ]
+                    }
+                )
+            }
+        }
+
+        binding._configure_session_station(
+            session,
+            "https://relay.example:18443",
+        )
+
+        self.assertEqual(
+            session.invoke_app_result.call_args_list[-1],
+            call(
+                "station_set_active",
+                {
+                    "input": {
+                        "station_peer_id": "station-peer-four",
+                        "route_id": "relay-current",
+                    }
+                },
+            ),
+        )
+
     def test_station_configuration_selects_single_relay_transport_route(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle(
             "/workspace/run/actors/alice/fixture.png"
