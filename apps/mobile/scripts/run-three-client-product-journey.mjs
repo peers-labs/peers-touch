@@ -5934,14 +5934,20 @@ async function openMobileMessageActions(clientId, client, messageText) {
         '[data-message-ulid="' + CSS.escape(arguments[0]) + '"]'
       );
       const avatar = row?.querySelector('.message-avatar');
+      const avatarSpacer = row?.querySelector('.message-avatar-spacer');
       const bubble = row?.querySelector('.message-bubble');
       const overflow = row?.querySelector('.message-overflow-button');
       const sheet = document.querySelector('[data-product-surface="chat.message-actions"]');
       const reactions = [...(sheet?.querySelectorAll('.message-reaction-choice') || [])];
       const actions = [...(sheet?.querySelectorAll('.chat-action-button') || [])];
       const mine = row?.classList.contains('mine');
+      const clusterPosition = row?.getAttribute(
+        'data-message-cluster-position'
+      ) || '';
       const style = overflow ? getComputedStyle(overflow) : null;
       const target = (element) => element.getBoundingClientRect();
+      const expectsAvatar = ['single', 'end'].includes(clusterPosition);
+      const avatarSlot = expectsAvatar ? avatar : avatarSpacer;
       const compactActions = actions.every((button) => {
         const rect = target(button);
         return rect.width >= 44 && rect.width <= 48 && rect.height >= 44
@@ -5949,8 +5955,10 @@ async function openMobileMessageActions(clientId, client, messageText) {
           && getComputedStyle(button.lastElementChild).display === 'none';
       });
       return {
-        topAligned: Boolean(avatar && bubble)
-          && Math.abs(target(avatar).top - target(bubble).top) <= 1,
+        clusterPosition,
+        avatarPolicy: expectsAvatar ? Boolean(avatar) : Boolean(avatarSpacer),
+        topAligned: Boolean(avatarSlot && bubble)
+          && Math.abs(target(avatarSlot).top - target(bubble).top) <= 1,
         ownerSide: Boolean(overflow && bubble)
           && (mine
             ? target(overflow).right >= target(bubble).right - 12
