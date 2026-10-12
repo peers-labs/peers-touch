@@ -11,6 +11,7 @@ from tooling.acceptance.core.errors import ProvisioningError
 from tooling.acceptance.gates.station_access.node_connectivity_cluster_native_e2e import (
     RUNTIME_REUSE,
     SCENARIOS,
+    _durable_readback_matches,
 )
 from tooling.acceptance.provisioners.node_connectivity_cluster import (
     NodeConnectivityClusterProvisioner,
@@ -131,6 +132,47 @@ class NodeConnectivityClusterProvisionerTest(unittest.TestCase):
         self.assertNotIn(":'message_id'", sql)
         self.assertEqual(readback["eventCount"], 1)
         self.assertEqual(readback["liveNodes"], [])
+
+    def test_durable_readback_counts_exact_direct_endpoints(self) -> None:
+        live_node = {
+            "node_peer_id": "node-b",
+            "lifecycle_state": "READY",
+        }
+        observed = {
+            "eventCount": 1,
+            "commitmentCount": 2,
+            "receiptCount": 2,
+            "liveNodes": [live_node],
+        }
+
+        self.assertTrue(
+            _durable_readback_matches(
+                observed,
+                expected_endpoint_count=2,
+                expected_node_peer_id="node-b",
+            )
+        )
+        self.assertFalse(
+            _durable_readback_matches(
+                {
+                    **observed,
+                    "commitmentCount": 1,
+                    "receiptCount": 1,
+                },
+                expected_endpoint_count=2,
+                expected_node_peer_id="node-b",
+            )
+        )
+        self.assertFalse(
+            _durable_readback_matches(
+                {
+                    **observed,
+                    "eventCount": 2,
+                },
+                expected_endpoint_count=2,
+                expected_node_peer_id="node-b",
+            )
+        )
 
     def test_cleanup_removes_run_scoped_station_image(self) -> None:
         provisioner = object.__new__(
