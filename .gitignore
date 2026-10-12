@@ -47,9 +47,11 @@ dist/
 *.so
 *.dylib
 
-# Protobuf outputs are generated locally from model/domain.
-apps/desktop/src/gen/proto/**/*_pb.ts
-apps/station/**/model/*.pb.go
+# Protobuf outputs (model/domain -> *_pb.ts / *.pb.go) are checked in on
+# purpose: the Station Docker image only COPYs source and runs `go build`
+# without protoc, so generated bindings are authoritative build inputs.
+# Drift is guarded by a `model/build.sh` + `git diff --exit-code` CI check,
+# not by .gitignore.
 
 # Station dashboard SPA is embedded via go:embed; keep dist tracked.
 !apps/station/app/subserver/dashboard/web/dist/
