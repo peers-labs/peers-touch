@@ -1,6 +1,14 @@
 import { useMemo, useState } from 'react';
 import { Avatar, Badge, Input, List, Typography } from 'antd';
-import { BellOff, Pencil, Pin, Search, Users } from 'lucide-react';
+import {
+  AlertCircle,
+  BellOff,
+  Pencil,
+  Pin,
+  RefreshCw,
+  Search,
+  Users,
+} from 'lucide-react';
 import type { Conversation } from '../types';
 import { demoConversations } from '../data';
 import copy from '../../../../../locales/en/common.json';
@@ -16,6 +24,9 @@ export function ChatPage({ conversations = demoConversations, listMemory, onConv
   onConversationClick: (conv: Conversation) => void;
 }) {
   const [searchQuery, setSearchQuery] = useState(() => listMemory.read('chat-query')?.query ?? '');
+  const listState = typeof window === 'undefined'
+    ? 'ready'
+    : new URLSearchParams(window.location.search).get('chatState') ?? 'ready';
 
   const filteredConversations = useMemo(() => {
     if (!searchQuery.trim()) return conversations;
@@ -53,6 +64,33 @@ export function ChatPage({ conversations = demoConversations, listMemory, onConv
       </div>
 
       <div className="mp-list-panel">
+        {listState === 'refreshing' ? (
+          <div className="mp-chat-list-status" role="status">
+            <RefreshCw size={13} />
+            <span>{copy['mobile.chat.refreshing']}</span>
+          </div>
+        ) : null}
+        {listState === 'error' ? (
+          <div className="mp-chat-list-status error" role="alert">
+            <AlertCircle size={13} />
+            <span>{copy['mobile.chat.renderFailed']}</span>
+          </div>
+        ) : null}
+        {listState === 'loading' ? (
+          <div className="mp-conversation-skeleton" role="status">
+            <span className="mp-visually-hidden">{copy['common.state.loading']}</span>
+            {Array.from({ length: 4 }, (_, index) => (
+              <div key={index} className="mp-conversation-skeleton-row" aria-hidden="true">
+                <span className="mp-conversation-skeleton-avatar" />
+                <span className="mp-conversation-skeleton-copy">
+                  <span />
+                  <span />
+                </span>
+                <span className="mp-conversation-skeleton-time" />
+              </div>
+            ))}
+          </div>
+        ) : (
         <PrototypeListWindow items={filteredConversations} itemKey={conversationKey}
           surfaceKey={`conversations:${searchQuery.trim().toLowerCase()}`} memory={listMemory}>
           {(window) => (
@@ -72,7 +110,15 @@ export function ChatPage({ conversations = demoConversations, listMemory, onConv
               <List.Item.Meta
                 avatar={
                   <span className="mp-avatar-frame">
-                    <Avatar style={{ background: conv.avatarGradient, borderRadius: 14 }}>{conv.avatar}</Avatar>
+                    <Avatar
+                      className={conv.isGroup ? 'mp-group-avatar' : 'mp-person-avatar'}
+                      style={{
+                        background: conv.avatarGradient,
+                        borderRadius: conv.isGroup ? 14 : 999,
+                      }}
+                    >
+                      {conv.avatar}
+                    </Avatar>
                     {conv.online && <span className="mp-online-dot" />}
                   </span>
                 }
@@ -95,6 +141,7 @@ export function ChatPage({ conversations = demoConversations, listMemory, onConv
         />
           )}
         </PrototypeListWindow>
+        )}
       </div>
     </div>
   );

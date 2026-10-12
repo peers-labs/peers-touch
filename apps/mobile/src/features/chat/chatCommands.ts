@@ -27,6 +27,10 @@ export interface ChatSearchCursor {
   readonly beforeMessageId: string;
 }
 
+export async function dispatchRefreshConversationList(): Promise<void> {
+  await wakeActiveMessagingSession();
+}
+
 export async function dispatchSearchMessages(
   session: MobileAuthSession,
   _kind: ChatConversationKind,

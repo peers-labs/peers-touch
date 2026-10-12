@@ -15,8 +15,10 @@ describe('Chat surface fixture', () => {
   });
 
   it('accepts exactly the whole-product Chat inventory IDs', () => {
-    expect(CHAT_SURFACE_FIXTURE_IDS).toHaveLength(35);
+    expect(CHAT_SURFACE_FIXTURE_IDS).toHaveLength(37);
     expect(isChatSurfaceFixtureId('chat.message-actions')).toBe(true);
+    expect(isChatSurfaceFixtureId('chat.list-refreshing')).toBe(true);
+    expect(isChatSurfaceFixtureId('chat.pinned-messages')).toBe(true);
     expect(isChatSurfaceFixtureId('chat.not-real')).toBe(false);
   });
 

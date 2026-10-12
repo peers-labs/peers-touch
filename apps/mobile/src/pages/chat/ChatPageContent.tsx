@@ -1,6 +1,14 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { Badge, Button, Empty, Input, List, Spin, Typography } from 'antd';
-import { BellOff, Pencil, Pin, Search, Users } from 'lucide-react';
+import { Badge, Button, Empty, Input, List, Typography } from 'antd';
+import {
+  BellOff,
+  Pencil,
+  Pin,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Users,
+} from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { BoundedList } from '../../components/BoundedList';
@@ -57,6 +65,7 @@ interface ChatConversationListPageContentProps {
   readonly items: ConversationListProjection['surfaceItems'];
   readonly conversationCount: number;
   readonly loading: boolean;
+  readonly refreshing: boolean;
   readonly localError: string;
   readonly socialError: string;
   readonly groupError: string;
@@ -64,6 +73,7 @@ interface ChatConversationListPageContentProps {
   readonly onDismissLocalError: () => void;
   readonly onDismissSocialError: () => void;
   readonly onDismissGroupError: () => void;
+  readonly onRetryConversationList: () => void;
   readonly onStartConversation: () => void;
   readonly onOpenConversation: (conversation: MobileConversation) => void;
 }
@@ -73,6 +83,7 @@ export function ChatConversationListPageContent({
   items,
   conversationCount,
   loading,
+  refreshing,
   localError,
   socialError,
   groupError,
@@ -80,12 +91,15 @@ export function ChatConversationListPageContent({
   onDismissLocalError,
   onDismissSocialError,
   onDismissGroupError,
+  onRetryConversationList,
   onStartConversation,
   onOpenConversation,
 }: ChatConversationListPageContentProps) {
   const { t } = useMobileI18n();
   const productSurface = loading && items.length === 0
     ? 'chat.list-loading'
+    : refreshing
+      ? 'chat.list-refreshing'
     : localError || socialError || groupError
       ? 'chat.list-error'
       : query.trim() && items.length === 0
@@ -121,12 +135,31 @@ export function ChatConversationListPageContent({
       </div>
 
       {localError ? <MobileNotice onClose={onDismissLocalError}>{localError}</MobileNotice> : null}
-      {socialError ? <MobileNotice onClose={onDismissSocialError}>{socialError}</MobileNotice> : null}
+      {socialError ? (
+        <MobileNotice onClose={onDismissSocialError}>
+          <span>{socialError}</span>
+          <Button
+            size="small"
+            icon={<RotateCcw size={13} />}
+            onClick={onRetryConversationList}
+          >
+            {t('common.action.retry')}
+          </Button>
+        </MobileNotice>
+      ) : null}
       {groupError ? <MobileNotice onClose={onDismissGroupError}>{groupError}</MobileNotice> : null}
 
+      {refreshing && items.length > 0 ? (
+        <div className="chat-list-refresh-status" role="status">
+          <RefreshCw size={13} className="chat-list-refresh-icon" />
+          <span>{t('mobile.chat.refreshing')}</span>
+        </div>
+      ) : null}
+
       <section className="social-list-panel">
-        <Spin spinning={loading && items.length === 0}>
-          {items.length === 0 ? (
+        {loading && items.length === 0 ? (
+          <ConversationListSkeleton />
+        ) : items.length === 0 ? (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               description={conversationCount > 0 ? t('mobile.chat.noSearchResults') : (
@@ -143,7 +176,7 @@ export function ChatConversationListPageContent({
                 </div>
               )}
             />
-          ) : (
+        ) : (
             <BoundedList
               surfaceKey={`conversations:${query}`}
               items={items}
@@ -186,7 +219,15 @@ export function ChatConversationListPageContent({
                         <List.Item.Meta
                           avatar={(
                             <span className="conversation-avatar-frame">
-                              <MobileAvatar src={conversationAvatar(conversation)}>
+                              <MobileAvatar
+                                identityKey={conversation.key}
+                                identityRole={conversation.kind === 'group'
+                                  ? 'group'
+                                  : 'person'}
+                                name={conversationTitle(conversation)}
+                                src={conversationAvatar(conversation)}
+                                size={48}
+                              >
                                 {conversationTitle(conversation).slice(0, 1)}
                               </MobileAvatar>
                               {conversation.kind === 'friend' && conversation.conversation.peerOnline
@@ -214,9 +255,31 @@ export function ChatConversationListPageContent({
                 />
               )}
             </BoundedList>
-          )}
-        </Spin>
+        )}
       </section>
+    </div>
+  );
+}
+
+function ConversationListSkeleton() {
+  const { t } = useMobileI18n();
+  return (
+    <div className="conversation-list-skeleton" role="status">
+      <span className="visually-hidden">{t('common.state.loading')}</span>
+      {Array.from({ length: 4 }, (_, index) => (
+        <div
+          key={index}
+          className="conversation-item conversation-skeleton-row"
+          aria-hidden="true"
+        >
+          <span className="conversation-skeleton-avatar" />
+          <span className="conversation-skeleton-copy">
+            <span className="conversation-skeleton-line title" />
+            <span className="conversation-skeleton-line preview" />
+          </span>
+          <span className="conversation-skeleton-line time" />
+        </div>
+      ))}
     </div>
   );
 }

@@ -5988,6 +5988,12 @@ fn rebase_station_lane_generation_if_required(
     let occupied_by_another_item = existing_lane
         .as_ref()
         .is_some_and(|(item_id, _)| item_id != incoming_item_id);
+    if existing_lane
+        .as_ref()
+        .is_some_and(|(item_id, _)| item_id == incoming_item_id)
+    {
+        return Ok(false);
+    }
     let cursor_is_ahead = cursor.0 >= incoming_lane_sequence;
     if !occupied_by_another_item && !cursor_is_ahead {
         return Ok(false);

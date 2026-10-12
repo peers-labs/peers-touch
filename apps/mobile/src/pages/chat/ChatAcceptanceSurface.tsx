@@ -6,6 +6,7 @@ import {
   MoreHorizontal,
   Paperclip,
   Pencil,
+  Pin,
   Plus,
   RotateCcw,
   Search,
@@ -37,11 +38,13 @@ import {
   ForwardMessageSheet,
   GroupManagementModal,
   MessageActionSheet,
+  PinnedMessagesSheet,
   type MessageForwardDestination,
 } from './ChatOverlayHost';
 import {
   MessageCommandStatus,
   MessageDeliveryStatus,
+  PinnedMessageBanner,
 } from './ChatMessagePresentation';
 import { ChatThreadPageContent } from './ChatPageContent';
 import {
@@ -55,6 +58,7 @@ const { Text } = Typography;
 const LIST_SURFACES = new Set<ChatSurfaceFixtureId>([
   'chat.list',
   'chat.list-loading',
+  'chat.list-refreshing',
   'chat.list-empty',
   'chat.list-error',
   'chat.list-unavailable',
@@ -74,6 +78,7 @@ const OVERLAY_SURFACES = new Set<ChatSurfaceFixtureId>([
   'chat.forward-failed',
   'chat.group-management',
   'chat.group-role-denied',
+  'chat.pinned-messages',
 ]);
 
 const FIXTURE_MESSAGE: SocialMessage = {
@@ -85,6 +90,8 @@ const FIXTURE_MESSAGE: SocialMessage = {
   content: 'The revised launch checklist is ready for review.',
   status: 3,
   messagingState: 'read',
+  pinnedByPtid: 'member-self',
+  pinnedAtUnixMs: Date.now() - 30_000,
   createdAt: { seconds: Math.floor(Date.now() / 1000) - 90 },
 };
 
@@ -219,6 +226,12 @@ function ChatFixtureList({
             {t('common.action.retry')}
           </Button>
         </MobileNotice>
+      ) : null}
+      {surfaceId === 'chat.list-refreshing' ? (
+        <div className="chat-list-refresh-status" role="status">
+          <RotateCcw size={13} className="chat-list-refresh-icon" />
+          <span>{t('mobile.chat.refreshing')}</span>
+        </div>
       ) : null}
       <section className="social-list-panel chat-fixture-list-panel">
         {surfaceId === 'chat.list-loading' ? (
@@ -420,6 +433,14 @@ function ChatFixtureThread({
         </section>
       ) : null}
 
+      {!isEmpty ? (
+        <PinnedMessageBanner
+          count={1}
+          preview="The revised launch checklist is ready for review."
+          onOpen={() => undefined}
+        />
+      ) : null}
+
       <section className="message-list chat-background-default" data-message-viewport>
         {isEmpty ? (
           <Empty
@@ -428,13 +449,46 @@ function ChatFixtureThread({
           />
         ) : (
           <>
-            <FixtureMessage mine={false} text="I added the final review notes." />
-            <FixtureMessage
-              mine
-              text="The revised launch checklist is ready for review."
-              deliveryState={messageState}
-              uncertain={surfaceId === 'chat.message-uncertain'}
-            />
+            {messageState || surfaceId === 'chat.message-uncertain' ? (
+              <>
+                <FixtureMessage mine={false} text="I added the final review notes." />
+                <FixtureMessage
+                  mine
+                  text="The revised launch checklist is ready for review."
+                  deliveryState={messageState}
+                  uncertain={surfaceId === 'chat.message-uncertain'}
+                  pinned
+                />
+              </>
+            ) : (
+              <>
+                <FixtureMessage
+                  mine={false}
+                  text="I added the final review notes."
+                  clusterPosition="start"
+                  showAvatar={false}
+                  showMetadata={false}
+                />
+                <FixtureMessage
+                  mine={false}
+                  text="The release sequence is clear now."
+                  clusterPosition="end"
+                  pinned
+                />
+                <FixtureMessage
+                  mine
+                  text="I will run the final checks."
+                  clusterPosition="start"
+                  showAvatar={false}
+                  showMetadata={false}
+                />
+                <FixtureMessage
+                  mine
+                  text="The revised launch checklist is ready for review."
+                  clusterPosition="end"
+                />
+              </>
+            )}
           </>
         )}
       </section>
@@ -541,11 +595,19 @@ function FixtureMessage({
   text,
   deliveryState = null,
   uncertain = false,
+  clusterPosition = 'single',
+  showAvatar = true,
+  showMetadata = true,
+  pinned = false,
 }: {
   readonly mine: boolean;
   readonly text: string;
   readonly deliveryState?: 'sending' | 'failed' | null;
   readonly uncertain?: boolean;
+  readonly clusterPosition?: 'single' | 'start' | 'middle' | 'end';
+  readonly showAvatar?: boolean;
+  readonly showMetadata?: boolean;
+  readonly pinned?: boolean;
 }) {
   const commandOutcome: ChatMessageCommandOutcome = {
     commandId: 'command-fixture',
@@ -555,23 +617,48 @@ function FixtureMessage({
     state: 'uncertain',
   };
   return (
-    <div className={`message-bubble-row ${mine ? 'mine' : 'peer'}`}>
-      {!mine ? <span className="message-avatar ant-avatar">A</span> : null}
+    <div
+      className={`message-bubble-row ${mine ? 'mine' : 'peer'}`}
+      data-message-cluster-position={clusterPosition}
+    >
+      {!mine
+        ? showAvatar
+          ? <span className="message-avatar ant-avatar">A</span>
+          : <span className="message-avatar-spacer" aria-hidden="true" />
+        : null}
       <div className="message-bubble">
+        {pinned ? (
+          <span className="message-pin-indicator">
+            <Pin size={11} />
+            <span>Pinned</span>
+          </span>
+        ) : null}
         <Text className="message-text">{text}</Text>
-        <span className="message-meta attachment-only-meta message-meta-row">
-          <span>10:42</span>
-          {deliveryState ? (
+        <span className={showMetadata
+          ? 'message-meta attachment-only-meta message-meta-row'
+          : 'message-action-anchor-row'}
+        >
+          {showMetadata ? <span>10:42</span> : null}
+          {showMetadata && deliveryState ? (
             <MessageDeliveryStatus
               state={deliveryState}
               canRetry={deliveryState === 'failed'}
               onRetry={() => undefined}
             />
           ) : null}
-          {uncertain ? <MessageCommandStatus outcome={commandOutcome} /> : null}
+          {showMetadata && uncertain ? (
+            <MessageCommandStatus
+              outcome={commandOutcome}
+              onCheck={() => undefined}
+            />
+          ) : null}
         </span>
       </div>
-      {mine ? <span className="message-avatar ant-avatar">Y</span> : null}
+      {mine
+        ? showAvatar
+          ? <span className="message-avatar ant-avatar">Y</span>
+          : <span className="message-avatar-spacer" aria-hidden="true" />
+        : null}
     </div>
   );
 }
@@ -644,6 +731,13 @@ function ChatFixtureOverlay({
         error={surfaceId === 'chat.forward-failed'
           ? t('mobile.chat.operationForwardFailed')
           : ''}
+        onClose={() => undefined}
+        onSelect={() => undefined}
+      />
+      <PinnedMessagesSheet
+        open={surfaceId === 'chat.pinned-messages'}
+        messages={[FIXTURE_MESSAGE]}
+        resolveSenderName={() => 'You'}
         onClose={() => undefined}
         onSelect={() => undefined}
       />

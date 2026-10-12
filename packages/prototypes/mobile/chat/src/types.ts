@@ -58,6 +58,7 @@ export interface Message {
   reactions?: MessageReaction[];
   recalled?: boolean;
   moderated?: boolean;
+  unknownOutcome?: boolean;
   pinned?: boolean;
   threadReplies?: Message[];
   threadCount?: number;

@@ -35,9 +35,9 @@ export const demoMessages: Message[] = [
   { id: 'm6', mine: true, image: GRADIENTS[2], time: '6:42 PM', status: 'delivered' },
   { id: 'm7', mine: false, text: 'Love this view! Where was this taken?', time: '6:45 PM', status: 'read', reactions: [{ kind: 'love', byMe: true, count: 2 }, { kind: 'wow', byMe: false, count: 1 }] },
   { id: 'm8', mine: true, text: 'Took it at the waterfront park near the office', time: '6:46 PM', status: 'delivered' },
-  { id: 'm9', mine: true, file: { name: 'design-spec-v3.pdf', size: '2.4 MB' }, time: '6:48 PM', status: 'sent' },
+  { id: 'm9', mine: true, file: { name: 'design-spec-v3.pdf', size: '2.4 MB' }, time: '6:48 PM', status: 'sent', unknownOutcome: true },
   { id: 'm10', mine: false, text: "Thanks, I'll review it tonight", time: '6:50 PM', status: 'read' },
-  { id: 'm11', mine: true, text: 'No rush, we can discuss tomorrow', time: '6:52 PM', status: 'read' },
+  { id: 'm11', mine: true, text: 'No rush, we can discuss tomorrow', time: '6:52 PM', status: 'failed' },
 ];
 
 export const demoMoments: Moment[] = [
