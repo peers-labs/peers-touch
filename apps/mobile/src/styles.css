@@ -2068,6 +2068,21 @@ select,
   gap: 12px;
 }
 
+.ant-modal-content:has(
+  .group-create-form[data-product-surface='contacts.create-group']
+) {
+  display: flex;
+  max-height: calc(100dvh - var(--safe-area-top) - var(--safe-area-bottom) - 24px);
+  flex-direction: column;
+}
+
+.ant-modal-body:has(
+  > .group-create-form[data-product-surface='contacts.create-group']
+) {
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .group-setting-row {
   display: flex;
   align-items: center;
@@ -3565,6 +3580,10 @@ select,
   overflow-y: auto;
 }
 
+.contacts-fixture-profile > .ant-empty {
+  width: min(100%, 360px);
+}
+
 .contacts-fixture-profile-avatar {
   width: 76px;
   height: 76px;
@@ -3683,8 +3702,23 @@ select,
     align-content: center;
   }
 
+  .contacts-fixture-profile:has(> .ant-empty) {
+    display: flex;
+    width: 100%;
+  }
+
   .contacts-fixture-profile-actions {
     grid-template-columns: 1fr;
+  }
+
+  .contacts-fixture-group .contacts-fixture-sheet-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin-top: auto;
+    padding-top: 10px;
+    background: #fff;
+    box-shadow: 0 -8px 16px rgba(12, 18, 32, 0.06);
   }
 }
 
