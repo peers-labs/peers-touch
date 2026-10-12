@@ -1139,9 +1139,10 @@ async function captureJourneyStep(
   const screenshotPath = path.join(evidenceDir, `${fileStem}.png`);
   const sourcePath = path.join(evidenceDir, `${fileStem}.source.txt`);
   const statePath = path.join(evidenceDir, `${fileStem}.state.json`);
+  const stateBytes = `${JSON.stringify(state, null, 2)}\n`;
   writeFileSync(screenshotPath, Buffer.from(screenshot, 'base64'));
   writeFileSync(sourcePath, source);
-  writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+  writeFileSync(statePath, stateBytes);
   return {
     screenshot: {
       path: screenshotPath,
@@ -1156,7 +1157,7 @@ async function captureJourneyStep(
     state: {
       path: statePath,
       sha256: createHash('sha256')
-        .update(JSON.stringify(state))
+        .update(stateBytes)
         .digest('hex'),
       value: state,
     },
