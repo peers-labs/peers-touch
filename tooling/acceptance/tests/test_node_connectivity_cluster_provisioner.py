@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -76,6 +77,104 @@ class NodeConnectivityClusterProvisionerTest(unittest.TestCase):
                 {**invalid, "runId": "0123456789abcdef"},
                 "message with spaces",
             )
+
+    def test_durable_readback_uses_validated_message_literal(self) -> None:
+        transport = Mock()
+        transport.run_argv.side_effect = [
+            subprocess.CompletedProcess(
+                args=(),
+                returncode=0,
+                stdout=(
+                    '{"eventCount":1,"eventId":"event-1",'
+                    '"commitmentCount":1,"receiptCount":1}\n'
+                ),
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=(),
+                returncode=0,
+                stdout="[]\n",
+                stderr="",
+            ),
+        ]
+        manifest = {
+            "artifactKind": "acceptance-runtime-manifest",
+            "environmentId": "node-connectivity-cluster",
+            "gateId": "NCP-G06",
+            "runId": "0123456789abcdef",
+        }
+        module = (
+            "tooling.acceptance.provisioners.node_connectivity_cluster"
+        )
+        with patch(
+            f"{module}.resolve_deployment_environment_path",
+            return_value=Path("/tmp/station-1.env"),
+        ), patch(
+            f"{module}.load_env_file",
+            return_value={
+                "PT_DEPLOY_HOST": "station.example",
+                "PT_DEPLOY_USER": "acceptance",
+            },
+        ), patch(
+            f"{module}.SshTransport",
+            return_value=transport,
+        ):
+            readback = cluster_message_readback(
+                manifest,
+                "message-1",
+            )
+
+        command = transport.run_argv.call_args_list[0].args[0]
+        sql = command[-1]
+        self.assertIn("WHERE message_id = 'message-1'", sql)
+        self.assertNotIn("-v message_id", sql)
+        self.assertNotIn(":'message_id'", sql)
+        self.assertEqual(readback["eventCount"], 1)
+        self.assertEqual(readback["liveNodes"], [])
+
+    def test_cleanup_removes_run_scoped_station_image(self) -> None:
+        provisioner = object.__new__(
+            NodeConnectivityClusterProvisioner
+        )
+        provisioner._project = "pt-ncp-0123456789abcdef"
+        provisioner._remote_root = (
+            "/home/acceptance/peers-touch/acceptance/"
+            "ncp-0123456789abcdef"
+        )
+        provisioner._transport = Mock()
+        provisioner._transport.run_argv.side_effect = [
+            Mock(),
+            subprocess.CompletedProcess(
+                args=(),
+                returncode=0,
+                stdout="",
+                stderr="",
+            ),
+            Mock(),
+        ]
+
+        provisioner._cleanup_remote(
+            {
+                "PT_NCP_STATION_IMAGE": (
+                    "pt-ncp-0123456789abcdef-station"
+                ),
+            },
+            "/home/acceptance/peers-touch/station.env",
+        )
+
+        commands = [
+            call.args[0]
+            for call in provisioner._transport.run_argv.call_args_list
+        ]
+        self.assertIn(
+            (
+                "docker",
+                "image",
+                "rm",
+                "pt-ncp-0123456789abcdef-station",
+            ),
+            commands,
+        )
 
     def test_native_suite_reuses_one_runtime(self) -> None:
         self.assertEqual(RUNTIME_REUSE.scope, "suite")
