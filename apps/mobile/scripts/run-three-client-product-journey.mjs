@@ -1322,7 +1322,6 @@ async function activateForegroundClient(clientId, client) {
       `${clientId} could not focus process ${desktopPid}: `
         + `${result?.error || JSON.stringify(result)}`,
     );
-    activateDesktopProcess(desktopPid);
     await waitForUi(
       clientId,
       client,
@@ -10953,6 +10952,14 @@ function selfTest(matrix) {
     ),
     'SELF_TEST_DESKTOP_ACTIVATION_VISIBILITY',
     'Desktop activation must target its exact native process before focusing it',
+  );
+  const activationFunctionSource = journeySource.match(
+    /async function activateForegroundClient[\s\S]*?\n}\n\nfunction desktopProcessAttribute/,
+  )?.[0] || '';
+  assertContract(
+    !activationFunctionSource.includes('activateDesktopProcess(desktopPid);'),
+    'SELF_TEST_DESKTOP_ACTIVATION_SINGLE_OWNER',
+    'Desktop activation must not follow exact native activation with an ambiguous app-identity request',
   );
   assertContract(
     desktopActivationTargetMatches(
