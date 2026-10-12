@@ -19,11 +19,22 @@
     "apps/desktop/src",
     "apps/desktop/src-tauri/src/messaging",
     "apps/mobile/scripts/run-three-client-product-journey.mjs",
+    "apps/mobile/scripts/review-mobile-surfaces.mjs",
+    "apps/mobile/src/components/MobileAvatar.tsx",
+    "apps/mobile/src/components/MobileAvatar.test.tsx",
     "apps/mobile/src/pages/ContactsPage.tsx",
+    "apps/mobile/src/pages/ContactsPage.window.test.tsx",
     "apps/mobile/src/features/social",
     "apps/mobile/src/styles.css",
     "apps/mobile/src-tauri/src/messaging",
     "apps/station/app/subserver/federation",
+    "docs/architecture/platform/client/mobile/social-parity/prototype/README.md",
+    "docs/client/common/ui-identity/components.md",
+    "docs/client/common/ui-identity/modules/social/README.md",
+    "docs/client/common/ui-identity/review-checklist.md",
+    "docs/client/common/ui-identity/tokens.md",
+    "docs/knowledge/README.md",
+    "docs/knowledge/invariants/mobile-user-identity-visual-consistency.md",
     "packages/messaging-core/src/mls/key_packages.rs",
     "packages/messaging-core/src/store/repository.rs",
     "packages/prototypes/mobile/chat",
@@ -43,7 +54,7 @@
   "checks": [
     {
       "id": "contacts-source",
-      "command": "pnpm --dir apps/desktop run check && pnpm --dir apps/mobile exec vitest run src/pages/ContactsPage.window.test.tsx src/features/social && cargo test --manifest-path packages/messaging-core/Cargo.toml mls::key_packages && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml messaging::store::tests::mls_key_package_repository && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml messaging::adapter::tests::mls_outbound_key_packages_and_startup_state_are_durable",
+      "command": "pnpm --dir apps/desktop run check && pnpm --dir apps/mobile run check:web && pnpm --dir apps/mobile exec vitest run src/components/MobileAvatar.test.tsx src/pages/ContactsPage.window.test.tsx src/features/social && cargo test --manifest-path packages/messaging-core/Cargo.toml mls::key_packages && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml messaging::store::tests::mls_key_package_repository && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml messaging::adapter::tests::mls_outbound_key_packages_and_startup_state_are_durable",
       "verificationClass": "SOURCE_CHECK"
     },
     {
@@ -75,6 +86,8 @@
   },
   "doneWhen": [
     "Alice, Bob, and Coral discover one another, complete friend requests, open profiles, and create the shared Group through foreground Mobile and Desktop controls",
+    "people use circular avatars and groups use rounded-square avatars with stable image-loading and deterministic fallback geometry",
+    "group, request, and contact rows share one Mobile row hierarchy, spacing system, and 44px interaction target",
     "no-result, duplicate, pending, unavailable, permission, and destructive actions have distinct human-readable recovery",
     "long names and technical identifiers do not break row or modal layout",
     "foreground screenshots and interaction traces cover every declared Contacts row"
@@ -94,3 +107,6 @@
   in one route-scoped page.
 - Existing proof emphasizes command/readback behavior; it does not certify all
   list, detail, overlay, long-copy, unavailable, or role-denied presentation.
+- The Owner-confirmed 2026-10-12 prototype makes avatar geometry, shared row
+  anatomy, quiet relationship metadata, and stable loading/fallback behavior
+  part of this reopened closure.

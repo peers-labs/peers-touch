@@ -436,9 +436,12 @@ function ContactsPageInner({
           {selectedContact ? (
             <div className="contact-profile-card">
               <Spin spinning={selectedProfileLoading}>
-                <MobileAvatar src={selectedProfile?.avatar || selectedContact.peerAvatar} size={64}>
-                  {(selectedProfile?.displayName || selectedContact.peerName).slice(0, 1)}
-                </MobileAvatar>
+                <MobileAvatar
+                  identityKey={selectedContact.peerPtid}
+                  name={selectedProfile?.displayName || selectedContact.peerName}
+                  src={selectedProfile?.avatar || selectedContact.peerAvatar}
+                  size={64}
+                />
               </Spin>
               <div className="contact-profile-copy">
                 <Text strong className="contact-profile-name">{selectedProfile?.displayName || selectedContact.peerName}</Text>
@@ -523,7 +526,7 @@ function ContactsPageInner({
       </header>
 
       <div className="chat-search-bar">
-        <Input value={contactQuery} onChange={(e) => { setContactQuery(e.target.value); saveRouteQuery('tab:contacts', e.target.value); }} prefix={<Search size={16} color="#9ca0ab" />} placeholder={t('mobile.contacts.searchPlaceholder')} allowClear />
+        <Input value={contactQuery} onChange={(e) => { setContactQuery(e.target.value); saveRouteQuery('tab:contacts', e.target.value); }} prefix={<Search size={16} className="contacts-search-icon" />} placeholder={t('mobile.contacts.searchPlaceholder')} allowClear />
       </div>
 
       {localActionError ? <MobileNotice onClose={() => setLocalActionError('')}>{localActionError}</MobileNotice> : null}
@@ -568,7 +571,13 @@ function ContactsPageInner({
                     ]}
                   >
                     <List.Item.Meta
-                      avatar={<MobileAvatar src={request.senderAvatar}>{displayPeerName(request.senderDisplayName, request.senderPtid, t).slice(0, 1)}</MobileAvatar>}
+                      avatar={(
+                        <MobileAvatar
+                          identityKey={request.senderPtid}
+                          name={displayPeerName(request.senderDisplayName, request.senderPtid, t)}
+                          src={request.senderAvatar}
+                        />
+                      )}
                       title={<Text strong>{displayPeerName(request.senderDisplayName, request.senderPtid, t)}</Text>}
                       description={request.message || t('mobile.contacts.defaultRequestMessage')}
                     />
@@ -600,16 +609,24 @@ function ContactsPageInner({
                     {index === 0 || contact.peerName[0]?.toUpperCase() !== rows[index - 1].peerName[0]?.toUpperCase()
                       ? <div className="contact-letter">{contact.peerName[0]?.toUpperCase() || '?'}</div>
                       : null}
-                      <div className="contact-item-row" data-focus-id={contact.peerPtid} tabIndex={0} role="button" onClick={() => onOpenContact(contact.peerPtid)} onKeyDown={(event) => { if (event.key === 'Enter') onOpenContact(contact.peerPtid); }}>
+                      <button className="contact-item-row" data-focus-id={contact.peerPtid} type="button" onClick={() => onOpenContact(contact.peerPtid)}>
                         <span className="conversation-avatar-frame">
-                          <MobileAvatar src={contact.peerAvatar} size={44}>{contact.peerName.slice(0, 1)}</MobileAvatar>
+                          <MobileAvatar
+                            identityKey={contact.peerPtid}
+                            name={contact.peerName}
+                            src={contact.peerAvatar}
+                            size={44}
+                          />
                           {contact.peerOnline ? <span className="conversation-online-dot" aria-hidden="true" /> : null}
                         </span>
                         <div className="contact-info">
                           <Text strong>{contact.peerName}</Text>
-                          <Text type="secondary">{contact.peerOnline ? t('mobile.social.online') : t('mobile.social.offline')}</Text>
+                          <Text type="secondary" className="contact-relationship-state">
+                            {contact.peerOnline ? t('mobile.social.online') : t('mobile.social.offline')}
+                          </Text>
                         </div>
-                      </div>
+                        <ChevronRight size={17} className="contact-row-chevron" aria-hidden="true" />
+                      </button>
                   </div>
                 ))}</BoundedList>
               </div>
@@ -640,7 +657,13 @@ function ContactsPageInner({
               {(rows) => <List dataSource={rows} rowKey="requestId" renderItem={(request) => (
                 <List.Item data-scroll-anchor-id={request.requestId} className="contact-item">
                   <List.Item.Meta
-                    avatar={<MobileAvatar src={request.receiverAvatar}>{displayPeerName(request.receiverDisplayName, request.receiverPtid, t).slice(0, 1)}</MobileAvatar>}
+                    avatar={(
+                      <MobileAvatar
+                        identityKey={request.receiverPtid}
+                        name={displayPeerName(request.receiverDisplayName, request.receiverPtid, t)}
+                        src={request.receiverAvatar}
+                      />
+                    )}
                     title={<Text strong>{displayPeerName(request.receiverDisplayName, request.receiverPtid, t)}</Text>}
                     description={t('mobile.contacts.waitingForAccept')}
                   />
@@ -747,7 +770,12 @@ function ContactsPageInner({
                       data-people-result-state={resultState}
                       key={receiverPtid || result.username}
                     >
-                      <MobileAvatar src={result.avatar} size={44}>{(result.displayName || result.username || receiverPtid).slice(0, 1)}</MobileAvatar>
+                      <MobileAvatar
+                        identityKey={receiverPtid}
+                        name={result.displayName || result.username || receiverPtid}
+                        src={result.avatar}
+                        size={44}
+                      />
                       <div className="people-result-copy">
                         <div className="people-result-title">
                           <Text strong ellipsis>{result.displayName || result.username || receiverPtid}</Text>
@@ -880,9 +908,11 @@ function ContactsPageInner({
                     <List.Item data-scroll-anchor-id={contact.peerPtid}>
                       <List.Item.Meta
                         avatar={(
-                          <MobileAvatar src={contact.peerAvatar}>
-                            {contact.peerName.slice(0, 1)}
-                          </MobileAvatar>
+                          <MobileAvatar
+                            identityKey={contact.peerPtid}
+                            name={contact.peerName}
+                            src={contact.peerAvatar}
+                          />
                         )}
                         title={<Text strong>{contact.peerName}</Text>}
                         description={(

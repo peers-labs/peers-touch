@@ -41,7 +41,9 @@ The goal is to catch "functionally correct but visually assembled" UI before it 
 - [ ] Cards/surfaces are not nested without distinct user intent.
 - [ ] Inputs and composite controls have one parent boundary.
 - [ ] Danger actions are scoped, explicit, and recoverable.
-- [ ] User avatars use the shared rounded-square primitive; interactive inputs and buttons do not introduce circular or pill visual language.
+- [ ] Person avatars use the shared circular primitive; groups use the shared
+  rounded-square primitive; interactive inputs and buttons do not inherit
+  avatar geometry.
 - [ ] The same actor identity renders the same display name, avatar asset, and fallback across parent and child surfaces.
 
 ## 6. State And Feedback

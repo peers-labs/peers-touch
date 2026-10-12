@@ -21,11 +21,13 @@ detected: 2026-10-09
 
 ## What must hold
 
-Every Mobile user identity MUST render through `MobileAvatar` with rounded-square
-geometry. Social surfaces MUST resolve display name, avatar asset, and fallback
-color from the same canonical actor PTID before rendering; a less-complete post,
-comment, notification, or search DTO MUST NOT create a second visual identity.
-Interactive inputs and buttons MUST NOT use circular or full-pill geometry.
+Every Mobile identity MUST render through `MobileAvatar` with an explicit
+identity role. People use circular geometry; groups and other collective
+identities use rounded-square geometry. Social surfaces MUST resolve display
+name, avatar asset, and fallback color from the same canonical actor PTID
+before rendering; a less-complete post, comment, notification, or search DTO
+MUST NOT create a second visual identity. Interactive inputs and buttons MUST
+NOT inherit avatar geometry.
 
 ## Why this is non-negotiable
 
@@ -34,15 +36,19 @@ only `ActorRef.acct` while its parent post contains a complete author, rendering
 those records independently makes one person appear to be two people. That
 breaks trust in authorship and violates the Social product promise.
 
-Rounded-square identity geometry is also a shared product primitive. Allowing an
-antd default circle or a feature-local avatar wrapper fragments Mobile into
-unrelated visual systems even when the underlying PTID is identical.
+Role-specific identity geometry is also a shared product primitive. Allowing
+feature-local avatar wrappers or unclassified antd defaults fragments Mobile
+into unrelated visual systems even when the underlying identity is identical.
 
 ## How to verify
 
 - `pnpm --dir apps/mobile exec vitest run src/components/MobileAvatar.test.tsx src/features/social/useSocialActorIdentity.test.ts src/pages/moments/MomentCommentsSection.test.tsx` must pass.
-- `rg "SocialAvatar|ant-avatar-circle" apps/mobile/src/pages/moments apps/mobile/src/features/social` must return zero hits.
-- `packages/prototypes/mobile/chat/scripts/check-layout.mjs` must report zero defects for Social avatar radius, fallback length, comment input radius, and send-button radius.
+- `rg "SocialAvatar" apps/mobile/src/pages/moments apps/mobile/src/features/social` must return zero hits.
+- `MobileAvatar.test.tsx` must prove circular person geometry and
+  rounded-square group geometry.
+- `packages/prototypes/mobile/chat/scripts/check-layout.mjs` must report zero
+  defects for role-specific avatar geometry, fallback length, comment input
+  radius, and send-button radius.
 - Native evidence must show equal name/avatar presentation for one PTID in a post and its comment.
 
 ## Crosswalks

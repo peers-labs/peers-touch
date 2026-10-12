@@ -13,9 +13,12 @@ type MobileAvatarProps = Omit<
 > & {
   children?: ReactNode;
   identityKey?: string;
+  identityRole?: MobileAvatarRole;
   name?: string;
   src?: string | null;
 };
+
+export type MobileAvatarRole = 'person' | 'group';
 
 const MOBILE_AVATAR_COLORS = [
   '#4ecdc4',
@@ -26,7 +29,13 @@ const MOBILE_AVATAR_COLORS = [
   '#47c98b',
 ] as const;
 
-export function mobileUserAvatarRadius(size: AvatarProps['size']): number {
+export function mobileUserAvatarRadius(
+  size: AvatarProps['size'],
+  identityRole: MobileAvatarRole = 'person',
+): number {
+  if (identityRole === 'person') {
+    return typeof size === 'number' ? Math.ceil(size / 2) : 999;
+  }
   return typeof size === 'number' ? Math.max(8, Math.floor(size * 0.25)) : 8;
 }
 
@@ -46,6 +55,7 @@ export function MobileAvatar({
   children,
   className,
   identityKey = '',
+  identityRole = 'person',
   name = '',
   size = 32,
   src,
@@ -63,7 +73,7 @@ export function MobileAvatar({
     avatar.src && failedUrl !== avatar.source ? avatar.src : undefined;
   const fallbackKey = identityKey.trim() || name.trim();
   const avatarStyle: MobileAvatarStyle = {
-    '--mobile-user-avatar-radius': `${mobileUserAvatarRadius(size)}px`,
+    '--mobile-user-avatar-radius': `${mobileUserAvatarRadius(size, identityRole)}px`,
     ...(fallbackKey && !style?.background
       ? { background: mobileUserAvatarFallbackColor(fallbackKey) }
       : {}),
@@ -73,8 +83,15 @@ export function MobileAvatar({
   return (
     <Avatar
       {...props}
-      className={['mobile-user-avatar', className].filter(Boolean).join(' ')}
-      shape="square"
+      aria-busy={avatar.status === 'loading'}
+      className={[
+        'mobile-user-avatar',
+        `mobile-user-avatar-${identityRole}`,
+        className,
+      ].filter(Boolean).join(' ')}
+      data-avatar-state={avatar.status}
+      data-identity-role={identityRole}
+      shape={identityRole === 'person' ? 'circle' : 'square'}
       size={size}
       src={avatarSrc}
       style={avatarStyle}
@@ -83,7 +100,9 @@ export function MobileAvatar({
         return false;
       }}
     >
-      {children ?? avatarInitial(name)}
+      {avatar.status === 'loading' && avatar.source
+        ? <span className="mobile-user-avatar-loading" aria-hidden="true" />
+        : children ?? avatarInitial(name)}
     </Avatar>
   );
 }
