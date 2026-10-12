@@ -186,13 +186,15 @@ func nodeIdentityFromSubject(
 		return domain.NodeIdentity{}, false
 	}
 	stationPeerID := attributes["station_peer_id"]
+	nodePeerID := attributes["node_peer_id"]
 	jti := attributes["jti"]
-	if stationPeerID == "" || jti == "" {
+	if stationPeerID == "" || nodePeerID == "" || jti == "" {
 		return domain.NodeIdentity{}, false
 	}
 	return domain.NodeIdentity{
 		RelayPeerID:   attributes["relay_peer_id"],
 		StationPeerID: stationPeerID,
+		NodePeerID:    nodePeerID,
 		EnrollmentID:  enrollmentID,
 		Generation:    generation,
 		JTI:           jti,
