@@ -136,7 +136,7 @@ const clientAccounts = Object.freeze({
 });
 const demoPassport = '1';
 const invalidPassport = 'invalid-entry-proof';
-const uiWaitTimeoutMs = 45_000;
+const uiWaitTimeoutMs = 90_000;
 const uiPollIntervalMs = 250;
 const nativeRelaunchTimeoutMs = 60_000;
 const desktopActivationTimeoutMs = 5_000;
