@@ -7,11 +7,17 @@ from tooling.acceptance.gates.mobile.three_client_suite_runtime import (
     build_report,
 )
 
-SCENARIO_IDS = (
+SOCIAL_SCENARIO_IDS = (
     "moments-publish-receive",
     "moments-react-comment",
     "moments-reply-rollback",
     "moments-draft-recovery",
+)
+CONTACTS_SCENARIO_IDS = (
+    "alice-bob-coral-discovery",
+    "friend-request",
+    "group-create",
+    "membership-readback",
 )
 
 def event(
@@ -28,7 +34,11 @@ def event(
     }
 
 
-def valid_input() -> dict[str, object]:
+def valid_input(
+    scenario_ids: tuple[str, ...] = SOCIAL_SCENARIO_IDS,
+    *,
+    entry_check_id: str = "moments-foreground-functional",
+) -> dict[str, object]:
     events = [
         event("provision", resource_id="three-client-runtime"),
         event("account-provision", resource_id="actors:alice,bob,coral"),
@@ -36,7 +46,7 @@ def valid_input() -> dict[str, object]:
     for client_id in ("android-alice", "desktop-bob", "ios-coral"):
         events.append(event("client-launch", resource_id=f"client:{client_id}"))
         events.append(event("login", resource_id=f"login:{client_id}"))
-    for scenario_id in SCENARIO_IDS:
+    for scenario_id in scenario_ids:
         events.extend(
             [
                 event("scenario-start", scenario_id=scenario_id),
@@ -67,8 +77,8 @@ def valid_input() -> dict[str, object]:
         "fixtureEpoch": "fixture-test",
         "runtimeReuse": {
             "scope": "suite",
-            "entryCheckId": "moments-foreground-functional",
-            "scenarioIds": list(SCENARIO_IDS),
+            "entryCheckId": entry_check_id,
+            "scenarioIds": list(scenario_ids),
             "maxProvisioningRuns": 1,
             "maxClientLaunches": 3,
             "minWarmReuseRate": 0.66,
@@ -93,6 +103,23 @@ class ThreeClientSuiteRuntimeTests(unittest.TestCase):
         self.assertEqual(report["metrics"]["completedScenarios"], 4)
         self.assertEqual(report["metrics"]["warmReuseRate"], 0.75)
 
+    def test_contacts_foreground_suite_covers_declared_runtime_reuse(
+        self,
+    ) -> None:
+        report = build_report(
+            valid_input(
+                CONTACTS_SCENARIO_IDS,
+                entry_check_id="contacts-foreground-functional",
+            )
+        )
+
+        self.assertEqual(report["result"], "PASS")
+        self.assertEqual(report["proofState"], "SUPPORTING")
+        self.assertEqual(report["metrics"]["provisioningRuns"], 1)
+        self.assertEqual(report["metrics"]["clientLaunches"], 3)
+        self.assertEqual(report["metrics"]["completedScenarios"], 4)
+        self.assertEqual(report["metrics"]["warmReuseRate"], 0.75)
+
     def test_harness_observations_cannot_replace_foreground_ui_actions(
         self,
     ) -> None:
@@ -102,7 +129,7 @@ class ThreeClientSuiteRuntimeTests(unittest.TestCase):
             for row in value["events"]
             if not (
                 row["action"] == "ui-action"
-                and row["scenarioId"] == SCENARIO_IDS[0]
+                and row["scenarioId"] == SOCIAL_SCENARIO_IDS[0]
             )
         ]
 

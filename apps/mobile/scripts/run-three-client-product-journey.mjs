@@ -78,7 +78,23 @@ const socialRuntimeReuse = Object.freeze({
   requireReceiverVisibleProof: true,
   allowClientReplacement: false,
 });
-const socialSuiteRuntimeModule = (
+const contactsRuntimeReuse = Object.freeze({
+  scope: 'suite',
+  entryCheckId: 'contacts-foreground-functional',
+  scenarioIds: Object.freeze([
+    'alice-bob-coral-discovery',
+    'friend-request',
+    'group-create',
+    'membership-readback',
+  ]),
+  maxProvisioningRuns: 1,
+  maxClientLaunches: 3,
+  minWarmReuseRate: 0.66,
+  requireAttachOnlyScenarios: true,
+  requireReceiverVisibleProof: true,
+  allowClientReplacement: false,
+});
+const suiteRuntimeModule = (
   'tooling.acceptance.gates.mobile.three_client_suite_runtime'
 );
 const externalPreconditions = Object.freeze(new Set([
@@ -1920,7 +1936,15 @@ function suiteRuntimeEvent(
   };
 }
 
-function createSocialSuiteRuntimeInput(manifest, preflight, evidenceDir) {
+function createSuiteRuntimeInput(
+  manifest,
+  preflight,
+  evidenceDir,
+  {
+    phase,
+    runtimeReuse,
+  },
+) {
   const runtimeIdentity = requiredClientIds.map((clientId) => {
     const client = manifest.clients[clientId];
     return {
@@ -1955,17 +1979,17 @@ function createSocialSuiteRuntimeInput(manifest, preflight, evidenceDir) {
     input: {
       schemaVersion: 1,
       kind: 'peers-touch-three-client-suite-runtime-input',
-      suiteRuntimeId: `mwpu-06-${path.basename(evidenceDir)}`,
+      suiteRuntimeId: `mwpu-${phase}-${path.basename(evidenceDir)}`,
       sourceDigest: preflight.source.head,
       fixtureEpoch,
-      runtimeReuse: socialRuntimeReuse,
+      runtimeReuse,
       events,
     },
     startScenario(scenarioId) {
       assertContract(
-        socialRuntimeReuse.scenarioIds.includes(scenarioId),
+        runtimeReuse.scenarioIds.includes(scenarioId),
         'SUITE_SCENARIO_UNDECLARED',
-        `Social Suite scenario ${scenarioId} is not declared`,
+        `${phase} Suite scenario ${scenarioId} is not declared`,
       );
       events.push(suiteRuntimeEvent('scenario-start', { scenarioId }));
       return Date.now();
@@ -2005,7 +2029,7 @@ function createSocialSuiteRuntimeInput(manifest, preflight, evidenceDir) {
   };
 }
 
-function emitSocialSuiteRuntimeReport(suiteRuntime, evidenceDir) {
+function emitSuiteRuntimeReport(suiteRuntime, evidenceDir, phase) {
   const inputPath = path.join(evidenceDir, 'suite-runtime-input.json');
   const reportPath = path.join(evidenceDir, 'suite-runtime.json');
   writeFileSync(
@@ -2017,7 +2041,7 @@ function emitSocialSuiteRuntimeReport(suiteRuntime, evidenceDir) {
       'python3',
       [
         '-m',
-        socialSuiteRuntimeModule,
+        suiteRuntimeModule,
         '--input',
         inputPath,
         '--output',
@@ -2035,12 +2059,15 @@ function emitSocialSuiteRuntimeReport(suiteRuntime, evidenceDir) {
       || String(error);
     throw new JourneyContractError(
       'SUITE_RUNTIME_REPORT_FAILED',
-      `three-client Social Suite Runtime report failed: ${detail}`,
+      `three-client ${phase} Suite Runtime report failed: ${detail}`,
     );
   }
   return {
     inputPath,
-    report: readJson(reportPath, 'three-client Social Suite Runtime report'),
+    report: readJson(
+      reportPath,
+      `three-client ${phase} Suite Runtime report`,
+    ),
     reportPath,
   };
 }
@@ -4953,6 +4980,15 @@ async function openSharedGroup(
 async function runContactsPhase(manifest, evidenceDir, preflight) {
   const interactionTrace = [];
   const sequenceRef = { value: 0 };
+  const suiteRuntime = createSuiteRuntimeInput(
+    manifest,
+    preflight,
+    evidenceDir,
+    {
+      phase: 'contacts',
+      runtimeReuse: contactsRuntimeReuse,
+    },
+  );
   const step = async (clientId, stepId, action) => {
     const client = manifest.clients[clientId];
     await activateForegroundClient(clientId, client);
@@ -4980,6 +5016,9 @@ async function runContactsPhase(manifest, evidenceDir, preflight) {
     ));
   }
 
+  const discoveryStarted = suiteRuntime.startScenario(
+    'alice-bob-coral-discovery',
+  );
   await step(
     'android-alice',
     'contacts-distinct-no-result',
@@ -4989,6 +5028,17 @@ async function runContactsPhase(manifest, evidenceDir, preflight) {
       `mwpu-no-result-${Date.now()}`,
     ),
   );
+  suiteRuntime.finishScenario(
+    'alice-bob-coral-discovery',
+    discoveryStarted,
+    {
+      uiAction: 'android-alice:find-people-no-result',
+      receiverAssertion: 'android-alice:distinct-no-result-visible',
+      supportingObservation: 'trace:contacts-distinct-no-result',
+    },
+  );
+
+  const friendRequestStarted = suiteRuntime.startScenario('friend-request');
   const aliceToBob = (await step(
     'android-alice',
     'contacts-alice-request-bob',
@@ -5083,11 +5133,23 @@ async function runContactsPhase(manifest, evidenceDir, preflight) {
       return { duplicate, profile };
     },
   );
+  suiteRuntime.finishScenario(
+    'friend-request',
+    friendRequestStarted,
+    {
+      uiAction: 'android-alice+ios-coral:send-request',
+      receiverAssertion: (
+        'desktop-bob+android-alice:accept+three-client-profile-visible'
+      ),
+      supportingObservation: 'trace:contacts-alice-duplicate-and-profile',
+    },
+  );
 
   const stamp = new Date().toISOString()
     .replace(/\D/g, '')
     .slice(0, 14);
   const groupName = `MWPU Three Client ${stamp}`;
+  const groupCreateStarted = suiteRuntime.startScenario('group-create');
   await step(
     'android-alice',
     'contacts-alice-create-shared-group',
@@ -5100,6 +5162,19 @@ async function runContactsPhase(manifest, evidenceDir, preflight) {
       ],
       groupName,
     ),
+  );
+  suiteRuntime.finishScenario(
+    'group-create',
+    groupCreateStarted,
+    {
+      uiAction: 'android-alice:create-three-client-group',
+      receiverAssertion: 'android-alice:three-member-group-thread-visible',
+      supportingObservation: 'trace:contacts-alice-create-shared-group',
+    },
+  );
+
+  const membershipReadbackStarted = suiteRuntime.startScenario(
+    'membership-readback',
   );
   const bobGroup = (await step(
     'desktop-bob',
@@ -5119,6 +5194,21 @@ async function runContactsPhase(manifest, evidenceDir, preflight) {
       groupName,
     ),
   )).result;
+  suiteRuntime.finishScenario(
+    'membership-readback',
+    membershipReadbackStarted,
+    {
+      uiAction: 'desktop-bob+ios-coral:open-shared-group',
+      receiverAssertion: 'desktop-bob+ios-coral:three-members-visible',
+      supportingObservation: 'trace:contacts-coral-open-shared-group',
+    },
+  );
+  suiteRuntime.complete();
+  const suiteRuntimeResult = emitSuiteRuntimeReport(
+    suiteRuntime,
+    evidenceDir,
+    'Contacts',
+  );
 
   const report = {
     kind: 'peers-touch-three-client-product-journey-result',
@@ -5143,6 +5233,13 @@ async function runContactsPhase(manifest, evidenceDir, preflight) {
       },
     },
     interactionTrace,
+    suiteRuntime: {
+      inputPath: suiteRuntimeResult.inputPath,
+      reportPath: suiteRuntimeResult.reportPath,
+      reportDigest: suiteRuntimeResult.report.reportDigest,
+      result: suiteRuntimeResult.report.result,
+      proofState: suiteRuntimeResult.report.proofState,
+    },
     observedAt: new Date().toISOString(),
   };
   const reportPath = path.join(evidenceDir, 'result.json');
@@ -8912,10 +9009,14 @@ async function clearMobileSocialDraft(clientId, client) {
 async function runSocialPhase(manifest, evidenceDir, preflight) {
   const interactionTrace = [];
   const sequenceRef = { value: 0 };
-  const suiteRuntime = createSocialSuiteRuntimeInput(
+  const suiteRuntime = createSuiteRuntimeInput(
     manifest,
     preflight,
     evidenceDir,
+    {
+      phase: 'social',
+      runtimeReuse: socialRuntimeReuse,
+    },
   );
   const step = async (clientId, stepId, action) => {
     const client = manifest.clients[clientId];
@@ -9231,9 +9332,10 @@ async function runSocialPhase(manifest, evidenceDir, preflight) {
     },
   );
   suiteRuntime.complete();
-  const suiteRuntimeResult = emitSocialSuiteRuntimeReport(
+  const suiteRuntimeResult = emitSuiteRuntimeReport(
     suiteRuntime,
     evidenceDir,
+    'Social',
   );
 
   const report = {
