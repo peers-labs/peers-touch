@@ -28,6 +28,9 @@ func TestFilesystemBackendRequiresExplicitClusterMode(t *testing.T) {
 	if identity == "" {
 		t.Fatal("cluster filesystem identity is empty")
 	}
+	if err := cluster.Healthz(t.Context()); err != nil {
+		t.Fatalf("cluster filesystem remained unhealthy: %v", err)
+	}
 }
 
 func TestStatelessProbeHasStableOwnerIdentity(t *testing.T) {

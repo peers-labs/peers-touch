@@ -77,9 +77,6 @@ func SharedPostgresAndFilesystem(
 	if !ok || !shared.ClusterShared() {
 		return "", fmt.Errorf("%s: filesystem backend is not cluster shared", owner)
 	}
-	if err := backend.Healthz(ctx); err != nil {
-		return "", fmt.Errorf("%s: shared filesystem health: %w", owner, err)
-	}
 	identityProvider, ok := backend.(storage.ClusterBackingIdentityProvider)
 	if !ok {
 		return "", fmt.Errorf("%s: shared filesystem identity is unavailable", owner)
@@ -90,6 +87,9 @@ func SharedPostgresAndFilesystem(
 	}
 	if strings.TrimSpace(filesystemIdentity) == "" {
 		return "", fmt.Errorf("%s: shared filesystem identity is empty", owner)
+	}
+	if err := backend.Healthz(ctx); err != nil {
+		return "", fmt.Errorf("%s: shared filesystem health: %w", owner, err)
 	}
 	return "postgres=" + databaseIdentity + ";filesystem=" + filesystemIdentity, nil
 }
