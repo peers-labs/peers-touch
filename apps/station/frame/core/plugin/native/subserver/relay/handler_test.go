@@ -4,11 +4,33 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/libp2p/go-libp2p"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
+
+func TestNodeIdentitySubjectRoundTripPreservesNodePeerID(t *testing.T) {
+	expected := domain.NodeIdentity{
+		RelayPeerID:   "relay-peer",
+		StationPeerID: "station-peer",
+		NodePeerID:    "node-peer",
+		EnrollmentID:  7,
+		Generation:    3,
+		JTI:           "credential-jti",
+	}
+	subject := nodeIdentitySubject(expected, domain.ScopeRoutePublish)
+
+	actual, ok := nodeIdentityFromSubject(subject.ID, subject.Attributes)
+	if !ok {
+		t.Fatal("Relay node identity subject did not decode")
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatalf("Relay node identity = %+v, want %+v", actual, expected)
+	}
+}
 
 func TestRelayHealthBindsRuntimePeerIdentity(t *testing.T) {
 	node, err := libp2p.New(libp2p.NoListenAddrs)

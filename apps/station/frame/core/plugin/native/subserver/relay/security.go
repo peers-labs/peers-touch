@@ -191,18 +191,7 @@ func nodeAuthenticationWrapper(
 					)
 					return
 				}
-				subject := &coreauth.Subject{
-					ID: domain.SubjectRelayAccess + identity.StationPeerID,
-					Attributes: map[string]string{
-						"audience":        domain.NodeCredentialAudience,
-						"scope":           requiredScope,
-						"relay_peer_id":   identity.RelayPeerID,
-						"station_peer_id": identity.StationPeerID,
-						"enrollment_id":   strconv.FormatUint(identity.EnrollmentID, 10),
-						"generation":      strconv.FormatUint(identity.Generation, 10),
-						"jti":             identity.JTI,
-					},
-				}
+				subject := nodeIdentitySubject(identity, requiredScope)
 				next.ServeHTTP(
 					w,
 					request.WithContext(coreauth.WithSubject(request.Context(), subject)),
@@ -210,6 +199,25 @@ func nodeAuthenticationWrapper(
 			})
 		},
 	)
+}
+
+func nodeIdentitySubject(
+	identity domain.NodeIdentity,
+	requiredScope string,
+) *coreauth.Subject {
+	return &coreauth.Subject{
+		ID: domain.SubjectRelayAccess + identity.StationPeerID,
+		Attributes: map[string]string{
+			"audience":        domain.NodeCredentialAudience,
+			"scope":           requiredScope,
+			"relay_peer_id":   identity.RelayPeerID,
+			"station_peer_id": identity.StationPeerID,
+			"node_peer_id":    identity.NodePeerID,
+			"enrollment_id":   strconv.FormatUint(identity.EnrollmentID, 10),
+			"generation":      strconv.FormatUint(identity.Generation, 10),
+			"jti":             identity.JTI,
+		},
+	}
 }
 
 func bearerToken(authorization string) (string, bool) {
