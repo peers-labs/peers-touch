@@ -137,6 +137,25 @@ def _message_count(client: TauriSession, text: str) -> int:
     return int(value or 0)
 
 
+def _durable_readback_matches(
+    value: Mapping[str, Any],
+    *,
+    expected_endpoint_count: int,
+    expected_node_peer_id: str,
+) -> bool:
+    live_nodes = value.get("liveNodes") or []
+    return (
+        expected_endpoint_count > 0
+        and int(value.get("eventCount") or 0) == 1
+        and int(value.get("commitmentCount") or 0)
+        == expected_endpoint_count
+        and int(value.get("receiptCount") or 0)
+        == expected_endpoint_count
+        and len(live_nodes) == 1
+        and live_nodes[0].get("node_peer_id") == expected_node_peer_id
+    )
+
+
 class NodeConnectivityClusterNativeGate(
     NodeConnectivityNativeJourneyMixin,
     NativeTwoClientGate,
@@ -478,6 +497,10 @@ class NodeConnectivityClusterNativeGate(
         scenario = SCENARIOS[2]
         message_id = str(failover.get("messageId") or "")
         text = str(failover.get("text") or "")
+        expected_endpoint_count = len(set(self.device_ids.values()))
+        expected_node_peer_id = str(
+            failover["after"]["activeRoute"].get("node_peer_id") or ""
+        )
         self.suite.record(
             SuiteRuntimeAction.SCENARIO_START,
             scenario_id=scenario,
@@ -487,25 +510,20 @@ class NodeConnectivityClusterNativeGate(
             value = cluster_message_readback(self.manifest, message_id)
             return (
                 value
-                if int(value.get("eventCount") or 0) == 1
-                and int(value.get("commitmentCount") or 0) == 1
-                and int(value.get("receiptCount") or 0) == 1
-                and len(value.get("liveNodes") or []) == 1
-                and (value.get("liveNodes") or [{}])[0].get(
-                    "node_peer_id"
-                )
-                == str(
-                    failover["after"]["activeRoute"].get(
-                        "node_peer_id"
-                    )
-                    or ""
+                if _durable_readback_matches(
+                    value,
+                    expected_endpoint_count=expected_endpoint_count,
+                    expected_node_peer_id=expected_node_peer_id,
                 )
                 else None
             )
 
         readback = wait_until(
             durable,
-            "single durable mutation and failed-node lease withdrawal",
+            (
+                "single durable event, exact endpoint receipts, "
+                "and failed-node lease withdrawal"
+            ),
             timeout=FAILOVER_SECONDS,
             interval=0.5,
         )
@@ -536,10 +554,16 @@ class NodeConnectivityClusterNativeGate(
             "cluster_failover_no_duplicate_mutation",
             counts == {"alice": 1, "bob": 1}
             and int(readback.get("eventCount") or 0) == 1
-            and int(readback.get("commitmentCount") or 0) == 1
-            and int(readback.get("receiptCount") or 0) == 1,
+            and int(readback.get("commitmentCount") or 0)
+            == expected_endpoint_count
+            and int(readback.get("receiptCount") or 0)
+            == expected_endpoint_count,
             json.dumps(
-                {"counts": counts, "readback": readback},
+                {
+                    "counts": counts,
+                    "expectedEndpointCount": expected_endpoint_count,
+                    "readback": readback,
+                },
                 sort_keys=True,
             ),
         )
