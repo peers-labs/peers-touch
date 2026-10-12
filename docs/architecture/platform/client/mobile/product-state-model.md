@@ -110,7 +110,8 @@ all Station mutations stay disabled with an explicit recovery state.
 | Contacts/groups | loading, empty, no-results, request-pending, duplicate, remote-unavailable, role-denied | retry, refine search, inspect profile, back |
 | Moments | loading, empty, filtered-empty, ready, policy-hidden, unavailable, publish-pending, rollback | refresh, retry, edit/discard draft |
 | Me/settings | per-owner loading, ready, dirty, saving, saved, conflict, unavailable, permission-required, failed | save selected owner, discard selected draft, stay, reload canonical owner, open system settings, retry |
-| Runtime capacity | command-ledger-full, event-overflow-reconciling | continue read-only, resolve pending work, retry later |
+| Runtime capacity | command-ledger-full | continue read-only, resolve pending work, retry later |
+| Background reconciliation | event-overflow-reconciling | preserve the current route and reconcile in place; show route-local recovery only if its owner becomes unavailable |
 
 Chat and Moments drafts are device-local durable state. Tab/detail unmount and
 background do not discard them; process restart restores the last complete

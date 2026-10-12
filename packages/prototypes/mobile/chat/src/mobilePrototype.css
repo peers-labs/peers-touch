@@ -503,10 +503,27 @@
   }
 
   .mp-route-state {
-    display: flex; flex: 1; min-height: 0; align-items: center; justify-content: center;
-    padding: 24px 18px;
+    display: flex; flex: 1; min-height: 0; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px;
+    padding: 24px 28px 32px; text-align: center;
   }
-  .mp-runtime-notice, .mp-request-recovery, .mp-direct-state {
+  .mp-route-state-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; border-radius: var(--mp-r-md);
+    background: rgba(102,126,234,0.10); color: var(--mp-primary);
+  }
+  .mp-route-state-title {
+    color: var(--mp-gray-900) !important; font-size: 16px !important;
+    line-height: 1.4;
+  }
+  .mp-route-state-copy {
+    max-width: 300px; color: var(--mp-gray-600) !important;
+    font-size: 13px !important; line-height: 1.55;
+  }
+  .mp-route-state .ant-btn {
+    min-height: 44px; margin-top: 4px; border-radius: var(--mp-r-md);
+  }
+  .mp-request-recovery, .mp-direct-state {
     display: flex; flex-direction: column; gap: 8px; flex: 0 0 auto;
     padding: 12px 16px; border-top: 1px solid var(--mp-gray-200);
     background: var(--mp-gray-50);
@@ -683,6 +700,7 @@
     display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--mp-gray-50);
     overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: var(--mp-tabbar-h);
   }
+  .mp-page--detail { padding-bottom: 0; }
 
   /* ── Page header (52px) ── */
   .mp-header {

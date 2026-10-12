@@ -162,6 +162,7 @@ not newly confirmed or landed by this source update.
 | Scenario ID | Sample |
 |---|---|
 | `social-unavailable` | Unavailable Chat/Contacts, lifecycle Retry with explicit pending and failure outcomes, and independently accessible Me |
+| `social-detail-unavailable` | Conversation route keeps Back and one centered lifecycle Retry without stacked global notices |
 | `find-people-no-membership` | Separate handle and Federation fields; no active membership disables Send Request |
 | `find-people-member` | Request admission, pending/unknown outcome, and accepted contact without implicit conversation creation |
 | `contact-direct` | Contact-to-Message preparation, failure/Retry, and explicit Direct readiness opening an empty thread |
@@ -181,6 +182,9 @@ Integrator verification:
   failure and Me navigation, no-membership Send suppression, a single request
   progressing through unknown/Check Status/pending/accepted, Friends rather than
   Sent after acceptance, and Message/preparing/failure/Retry/ready/empty thread.
+- Unavailable Chat/Contacts now own one centered route recovery surface. The
+  lifecycle Retry moved into that surface; unrelated tabs and background
+  reconciliation no longer receive a second stacked global notice.
 - The IDE screenshot tool remained unavailable. Local Playwright subsequently
   captured the actual Portal and removed that tooling blocker.
 - Inspected screenshots exposed compressed preview width, clipped Contact Info

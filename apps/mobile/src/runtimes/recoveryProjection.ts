@@ -7,7 +7,8 @@
  * Design principles:
  * - No recovery surface creates a second retry, persistence, or lifecycle owner.
  * - The projection is read-only; actions are dispatched to the owning runtime.
- * - Each failure state maps to exactly one overlay descriptor.
+ * - Each failure state maps to one presentation owner; passive sync and
+ *   route-specific availability do not become global overlays.
  */
 
 import type {
