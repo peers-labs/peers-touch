@@ -282,7 +282,7 @@ POST → 解析 :webhook_id
 | request_id 幂等窗口 | 24 h |
 | per-Bot | 默认 120/min（令牌桶，Bot 记录带 `rate_limit_per_minute`），超限 429 |
 | per-IP 溢出 | 600/min（`ipOverflowPerMinute`），超限 429 |
-| 调用方超时（非服务端常量） | v1 无官方 CLI/spool；建议调用方固定约 5s 墙上时间、失败不致命，并用同一 request_id 幂等重试（见 webhook-api.md §8） |
+| 调用方超时（非服务端常量） | v1 无官方 CLI/spool；建议调用方固定约 5s 墙上时间、失败不致命，并用同一 request_id 幂等重试（见 webhook 合同 §8） |
 
 ## 6. 错误码
 

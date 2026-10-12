@@ -30,7 +30,7 @@ S0 契约（proto 全集 + 生成）
                  └─> S5 Desktop tray/OS 通知/渲染/Bots 设置（G-BOT-06/10 打包 Journey）
 
 S4 peersbot CLI —— 已从 v1 移除（BOT-D10 superseded，2026-10-12）：
-   对外只交付 HTTP webhook 合同与 curl/hook 示例（../webhook-api.md），
+   对外只交付 HTTP webhook 合同与 curl/hook 示例（docs/api/bot/webhook.md），
    不建 tooling/cli/peersbot；未来受维护发送端作为 apps/ 一等公民另立决策。
 ```
 
@@ -123,12 +123,12 @@ S0→S1→S2→S3→S5 为严格链（后片的主体身份与线协议由前片
 
 **v1 不实现。** 不创建 `tooling/cli/peersbot`，不发布二进制，不承担 BOT-A40…A44 验收门。
 
-- 对外交付物改为 [../webhook-api.md](../webhook-api.md)：端点、Bearer 鉴权、canonical JSON、
+- 对外交付物改为 [对外 Webhook 合同](../../../../api/bot/webhook.md)：端点、Bearer 鉴权、canonical JSON、
   状态码、24h `request_id` 幂等、curl / CI / Claude Code hook 可直接抄的接入片段。
 - “hook 不阻塞 agent”由调用方按合同用 `curl --max-time 5 … || true` 满足；断网补偿以同
   `request_id` 重试覆盖，不做官方 spool。
 - hook JSON→canonical event 的映射（Stop→task_completed、Notification→waiting_input/
-  task_failed）作为调用方约定写进 webhook-api.md §9，不属于 Station 代码。
+  task_failed）作为调用方约定写进 webhook 合同 §9，不属于 Station 代码。
 - 重启条件：若未来要官方受维护发送端，必须作为 `apps/` 一等公民立项（独立生命周期/发布），
   重开 ADR 并恢复相应验收矩阵，而不是放回 `tooling/`。
 
@@ -154,13 +154,13 @@ S0→S1→S2→S3→S5 为严格链（后片的主体身份与线协议由前片
 
 ## 3. 失败语义与横切验证
 
-- 入站任何失败都不阻塞 coding agent（调用方负责短超时与 exit 0，见 [webhook-api.md](../webhook-api.md) §8）；服务端不允许"静默成功"——准入后失败必须 quarantine 可补偿。
+- 入站任何失败都不阻塞 coding agent（调用方负责短超时与 exit 0，见 [webhook 合同](../../../../api/bot/webhook.md) §8）；服务端不允许"静默成功"——准入后失败必须 quarantine 可补偿。
 - 每个切片收尾运行平台校验：Station `gofmt -l . && go test ./...`（受影响子服务器聚焦测试）；proto 两脚本；Desktop 收尾 `pnpm run check && pnpm run test && pnpm run build` + Tauri 打包 Journey。
 - 未演示的 Journey 一律标 `UNPROVEN`；BOT-A30/A31、G-BOT-10 不得以集成测试替代。
 
 ## 4. 切片外（v1 不做）
 
-Bot 双向指令/审批/回复、Bot 向非 owner 或联邦发信、A2A Agent Card、Mobile push 分发器、多账号 Bot 管理、官方 sender CLI（S4 deferred；对外只交付 [webhook-api.md](../webhook-api.md)）。
+Bot 双向指令/审批/回复、Bot 向非 owner 或联邦发信、A2A Agent Card、Mobile push 分发器、多账号 Bot 管理、官方 sender CLI（S4 deferred；对外只交付 [webhook 合同](../../../../api/bot/webhook.md)）。
 
 ## 5. 开工前置（EXECUTE 首个动作）
 

@@ -66,7 +66,7 @@
 随 BOT-D10 superseded / S4 deferred，这些门在 v1 **取消**——没有受维护的客户端代码可测。
 
 v1 改为以**真实 HTTP Journey**验证调用方合同（已在 S3 完成，见
-[webhook-api.md](./webhook-api.md)）：
+[对外 Webhook 合同](../../../api/bot/webhook.md)）：
 
 - 正确 secret + canonical JSON → 200 `ACCEPTED`；同 `request_id` 重试 → 200 `DEDUPLICATED` 且产物不重复。
 - 未知 id / 错 secret 不可区分 → 401 `unauthorized`；坏 schema/未知字段 → 400；体 >32 KiB → 413。

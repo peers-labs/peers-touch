@@ -352,7 +352,7 @@ event，本地截断/脱敏，固定 5 秒预算 POST，失败写入有界 spool
 ### 取代决策
 
 v1 **不新增、不发布** sender CLI，也不在 `tooling/` 下建该 module。对外只交付一个稳定的
-HTTP webhook 端点与一份调用方合同：[webhook-api.md](./webhook-api.md)。调用方用任意 HTTP
+HTTP webhook 端点与一份调用方合同：[对外 Webhook 合同](../../../api/bot/webhook.md)。调用方用任意 HTTP
 工具（`curl`、CI、SaaS、agent hook 脚本）直接接入；“不阻塞 agent”由调用方按文档用短超时 +
 失败不致命（`curl --max-time 5 … || true`）保证，断网补偿由调用方按需处理，因为
 `request_id` 已在服务端提供 24h 幂等。
@@ -369,7 +369,7 @@ HTTP webhook 端点与一份调用方合同：[webhook-api.md](./webhook-api.md)
 ### Consequences
 
 - 取消原执行计划 S4（标记 deferred / not-for-v1）；其 hook 映射与失败语义作为**调用方约定**
-  写进 webhook-api.md 第 8、9 节，不再有对应代码与 BOT-A40…A44 验收门。
+  写进 webhook 合同 第 8、9 节，不再有对应代码与 BOT-A40…A44 验收门。
 - 不改变 BOT-D02：webhook 仍是唯一摄入原语，本机调用方与外部 SaaS 共用同一端点。
 - 将来在 `apps/` 启动受维护客户端时，重开一条决策并恢复相应验收矩阵。
 

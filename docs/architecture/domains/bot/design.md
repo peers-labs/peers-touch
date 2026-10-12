@@ -12,7 +12,7 @@
 1. **Bot 是 actor 的一类**：身份走 actor/PTID 体系，消息走统一会话图；不建设平行 bot 通道、平行存储或平行身份。
 2. **信任边界诚实**：Station 驻留 Bot 不持有客户端侧 E2EE 语义；Bot 会话使用显式的服务明文投递类型，客户端不得显示端到端加密保证（BOT-D05）。
 3. **一个摄入原语**：本机调用方（curl / agent hook）与外部 SaaS 共用同一 webhook 端点与同一条准入管道；凭证只管摄入，不触碰人类会话。
-4. **hook 绝不阻塞 agent**：调用方失败语义由调用端按 [webhook-api.md](./webhook-api.md) 兜底（固定超时、失败不致命），Station 不向 hook 同步路径施加重试压力，也不提供官方 sender CLI（BOT-D10 superseded）。
+4. **hook 绝不阻塞 agent**：调用方失败语义由调用端按 [对外 Webhook 合同](../../../api/bot/webhook.md) 兜底（固定超时、失败不致命），Station 不向 hook 同步路径施加重试压力，也不提供官方 sender CLI（BOT-D10 superseded）。
 5. **通用修补优先**：通知实时化是对所有通知生产方的通用修补，Bot 只是锚定租户。
 
 ## 2. 架构适用性评审（AAR）
@@ -122,7 +122,7 @@
 
 ## 6. 失败语义
 
-- 调用方（agent hook / CI）：固定约 5s 超时、失败不致命（`curl --max-time 5 … || true`）；401/400/413 视为终态丢弃；需补偿时用同一 `request_id` 重试（24h 幂等）。v1 不提供官方 CLI / spool，详见 webhook-api.md §8。
+- 调用方（agent hook / CI）：固定约 5s 超时、失败不致命（`curl --max-time 5 … || true`）；401/400/413 视为终态丢弃；需补偿时用同一 `request_id` 重试（24h 幂等）。v1 不提供官方 CLI / spool，详见 webhook 合同 §8。
 - Station 准入后失败：inbound 行补偿为 quarantined 并返回 500；同 request_id 重试幂等驱动消息+通知两件产物，无部分成功稳态。
 - 扇出失败：持久化不回滚，SSE resume/轮询收敛。
 - 过载：先于 body 解析限流；大 payload fail-closed；无界队列禁止。
@@ -137,7 +137,7 @@
 | G-BOT-02 | AGENT 无法完成一台 Station 托管设备登记与 endpoint manifest 放行（含白名单/迁移映射传播集）。注意：服务明文投递不消费 content prekey/X3DH，prekey 发布不是 Bot 的必验路径 |
 | G-BOT-03 | 不经会话 repository 耦合完成服务明文投递不可行，或其线协议面未闭合：PreparedEndpointPayloadKind=8、成员 actor_kind/消息安全标记、messaging-core 明文 processor 与 skip+ack、FederationID 内部来源 |
 | G-BOT-04 | 同 request_id 重试产生重复消息，或在通知偏好允许时产生重复通知行 |
-| G-BOT-05 | 调用方（agent hook）可能因非零退出或超预算拖慢 agent。v1 无官方 CLI，证伪条件为 webhook-api.md §8 的调用约定无法满足“固定墙上时间 + 失败不致命 + 幂等重试”（以 curl 实测，非推断） |
+| G-BOT-05 | 调用方（agent hook）可能因非零退出或超预算拖慢 agent。v1 无官方 CLI，证伪条件为 webhook 合同 §8 的调用约定无法满足“固定墙上时间 + 失败不致命 + 幂等重试”（以 curl 实测，非推断） |
 | G-BOT-06 | 打包 Desktop：隐藏→事件→OS 通知→点击→Bot 会话深链全链路失败 |
 | G-BOT-07 | 单 webhook 可突破速率/体积限制填满存储或扇出队列 |
 | G-BOT-08 | disable/revoke 对紧随其后的请求不即时生效 |

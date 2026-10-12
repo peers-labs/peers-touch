@@ -102,7 +102,7 @@ app/cmd/.../main.go                                            # server.WithSubS
 
 v1 **不创建** `tooling/cli/peersbot`（BOT-D10 superseded、S4 deferred）。外部 agent / CI /
 SaaS 直接对 HTTP 端点负责，接入合同与 curl/jq hook 片段见
-[webhook-api.md](./webhook-api.md)，不占本仓库目录。
+[对外 Webhook 合同](../../../api/bot/webhook.md)，不占本仓库目录。
 
 未来若提供官方受维护的发送端，它作为 `apps/` 一等公民立项（独立 module、独立生命周期与
 发布），不放在 `tooling/` 开发工具层；届时再在本节登记目录树。

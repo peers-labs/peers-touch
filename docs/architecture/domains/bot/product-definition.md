@@ -27,7 +27,7 @@ bot），能接收 webhook 入站事件、向 owner 发消息。联邦与更丰�
 
 ### C2 入站事件摄入
 
-- 任何 HTTP 客户端（CI、SaaS、agent hook、curl）可向可达 URL POST canonical JSON；接入合同见 [webhook-api.md](./webhook-api.md)。
+- 任何 HTTP 客户端（CI、SaaS、agent hook、curl）可向可达 URL POST canonical JSON；接入合同见 [对外 Webhook 合同](../../../api/bot/webhook.md)。
 - v1 不提供官方 sender CLI：Claude Code 等用文档中的 curl/jq hook 片段接入（Stop / Notification）。
 - 归一化、体积上限、限流、`request_id` 幂等、`dedupe_key` 折叠。
 - 摄入失败绝不阻塞 agent：由调用方按接入合同做固定超时 + 失败不致命（`curl --max-time 5 … || true`），并用同一 `request_id` 幂等重试。
@@ -103,7 +103,7 @@ OS 通知由窗口焦点/可见性、会话可见性与分类偏好共同决定�
 - ACP-1：同一 `request_id` 重试恰好产生一条会话消息；通知在 TASK 偏好允许时恰好一行，偏好关闭时不产生通知行（既有静音语义），两种情况下会话未读都存在。
 - ACP-2：无正确 secret 的请求不能产生任何归属该 Bot 的消息或通知。
 - ACP-3：打包 Desktop 上 hook→Station→OS 通知→点击→Bot 会话全链路可跑通。
-- ACP-4：按 webhook-api.md 接入的调用方（hook 脚本）任意失败路径都不致命（exit 0）且有固定墙上时间预算；以 curl 实测。
+- ACP-4：按 webhook 合同 接入的调用方（hook 脚本）任意失败路径都不致命（exit 0）且有固定墙上时间预算；以 curl 实测。
 - ACP-5：停用/吊销对后续请求即时生效，错误类型化，无半截消息。
 - ACP-6：Bot 会话在任何端都不出现 E2EE 保证标记；移动端遇服务明文类型不崩溃。
 

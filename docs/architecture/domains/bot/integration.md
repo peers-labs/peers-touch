@@ -124,12 +124,12 @@ TypeScript（`apps/desktop/src`）：
 ## 7. 调用方集成（v1 无官方 CLI）
 
 v1 不提供、不维护 sender CLI（BOT-D10 superseded）。对外只交付
-[webhook-api.md](./webhook-api.md)：任意 HTTP 客户端（curl、CI、SaaS、agent hook 脚本）
+[对外 Webhook 合同](../../../api/bot/webhook.md)：任意 HTTP 客户端（curl、CI、SaaS、agent hook 脚本）
 直接调用同一端点。要点：
 
 - 调用方发送 canonical proto-JSON（严格拒绝未知字段，枚举用完整名）；hook 原生 JSON
   →canonical event 的映射（Claude Code `Stop`→task_completed、`Notification`→
-  waiting_input/task_failed）是调用方职责，webhook-api.md §9 给了 curl/jq 片段。
+  waiting_input/task_failed）是调用方职责，webhook 合同 §9 给了 curl/jq 片段。
 - 凭证来自环境变量 / 本地 0600 配置（如 `PEERS_BOT_URL`、`PEERS_BOT_SECRET`），Station
   不规定其装载方式。
 - 不阻塞 agent 由调用方保证：固定约 5s 超时、失败不致命（`|| true`）；401/400/413 终态
@@ -156,7 +156,7 @@ v1 不提供、不维护 sender CLI（BOT-D10 superseded）。对外只交付
 | Station 新 bot 子服务器 | 全新 DDD 模块 |
 | Desktop Rust | tray-icon feature、官方通知插件、两个运行时模块 |
 | Desktop TS | 设置页、卡片、SSE 通知摄入、i18n |
-| 调用方集成（无官方 CLI） | 仅文档化 HTTP 合同 webhook-api.md；不在本仓库新增发送端代码（S4 deferred） |
+| 调用方集成（无官方 CLI） | 仅维护 `docs/api/bot/webhook.md` 对外合同；不在本仓库新增发送端代码（S4 deferred） |
 | Mobile | 仅共享 crate 的 skip+ack 行为；无功能 UI 开发 |
 
 ## 10. 观测与文档触点

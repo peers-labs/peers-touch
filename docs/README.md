@@ -11,6 +11,8 @@
 
 - **系统为什么这么设计**
   - 去看 `architecture/`
+- **外部系统怎么调用我们（公开 HTTP/集成合同）**
+  - 去看 `api/`
 - **某个平台内部怎么落地**
   - 去看 `client/desktop/`、`client/mobile/`、`station/`
 - **跨端客户端体验怎么保持一致**
@@ -92,6 +94,18 @@
 ---
 
 ## 3. 文档目录职责
+
+### `api/`
+
+放**面向外部调用方的公开 HTTP/集成合同**（端点、鉴权、wire schema、状态码、幂等、限流、示例）。
+
+分类入口与写作规范：[`api/README.md`](./api/README.md)。按能力域组织（如 `api/bot/webhook.md`）。
+
+边界：
+
+- 一份对外合同只在 `api/` 定义一次；架构/平台文档只放链接，不复制合同正文。
+- 不写内部实现名词（子服务器、表名、内部事件编号、DDD 结构）；内部设计归 `architecture/`、`station/`。
+- 合同必须与已上线行为一致，数值以 `model/domain/**/*.proto` 与线上实现为准。
 
 ### `architecture/`
 
@@ -317,6 +331,11 @@
 ---
 
 ## 5. 按问题找文档
+
+### 我想从外部系统接入 / 调用公开 API
+
+- 先看 `api/README.md`（对外合同归属与写作规范、合同索引）
+- Bot webhook：`api/bot/webhook.md`
 
 ### 我想看项目整体
 
