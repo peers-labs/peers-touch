@@ -25,6 +25,8 @@
     "apps/desktop/src-tauri/src/main.rs",
     "apps/mobile/scripts/run-three-client-product-journey.mjs",
     "apps/mobile/scripts/review-mobile-surfaces.mjs",
+    "apps/mobile/src/acceptance/chatSurfaceFixture.ts",
+    "apps/mobile/src/acceptance/chatSurfaceFixture.test.ts",
     "apps/mobile/src/components/MobileAvatar.tsx",
     "apps/mobile/src/components/MobileAvatar.test.tsx",
     "apps/mobile/src/app/lifecycle",
@@ -78,16 +80,16 @@
   "checks": [
     {
       "id": "chat-source",
-      "command": "cargo test --manifest-path packages/messaging-core/Cargo.toml inbox::drain && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml messaging:: && pnpm --dir apps/desktop exec vitest run src/components/chat src/pages/SocialChatPage.test.tsx src/modules/p2p && pnpm --dir apps/mobile run check:web && pnpm --dir apps/mobile exec vitest run src/components/MobileAvatar.test.tsx src/app/lifecycle/runtimeReadiness.test.ts src/pages/ChatPage.history.test.tsx src/pages/ChatPage.localFlag.test.ts src/pages/chat src/features/chat",
+      "command": "cargo test --manifest-path packages/messaging-core/Cargo.toml inbox::drain && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml messaging:: && pnpm --dir apps/desktop exec vitest run src/components/chat src/pages/SocialChatPage.test.tsx src/modules/p2p && pnpm --dir apps/mobile run check:web && pnpm --dir apps/mobile exec vitest run src/components/MobileAvatar.test.tsx src/app/lifecycle/runtimeReadiness.test.ts src/pages/ChatPage.history.test.tsx src/pages/ChatPage.localFlag.test.ts src/pages/chat src/features/chat && python3 -m unittest tooling.acceptance.gates.mobile.three_client_product_journey_evidence_test",
       "verificationClass": "SOURCE_CHECK"
     },
     {
       "id": "chat-foreground-functional",
-      "command": "node apps/mobile/scripts/run-three-client-product-journey.mjs --phase chat",
+      "command": "node apps/mobile/scripts/run-three-client-product-journey.mjs --phase chat --publish-evidence",
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
-      "id": "chat-foreground-proof",
+      "id": "chat-supporting-harness-contract-proof",
       "command": "python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-chat-contacts-e2e",
       "verificationClass": "ACCEPTANCE_PROOF"
     },
@@ -120,15 +122,18 @@
     "pinned content uses a compact banner plus dedicated list instead of a permanent thread switch",
     "messages remain readable and all bottom/floating layers are non-occluding",
     "degraded runtime state is local and the composer remains usable whenever writes are admitted",
-    "foreground screenshots and interaction traces cover every declared Chat workflow on all three clients"
+    "durable foreground screenshots and interaction traces cover Direct, Group, voice, call, history, and recovery workflows on Android Alice, Desktop Bob, and iOS Coral",
+    "current-source Mobile surface evidence and agent visual review cover every declared Chat inventory row in portrait, landscape, and maximum-text cells"
   ],
   "failureBehavior": [
     "do not accept message delivery alone as Chat usability proof",
+    "do not claim the two-iOS Harness Gate proves the separate three-client foreground Journey",
+    "do not leave the three-client foreground result or screenshots only in temporary storage",
     "do not overlay message content with action controls",
     "do not add a second avatar, delivery-status, or runtime owner",
     "do not advance while any Chat inventory row is unvisited or visually blocked"
   ],
-  "updatedAt": "2026-10-08T00:00:00.000Z"
+  "updatedAt": "2026-10-12T13:46:00.000Z"
 }
 ```
 
