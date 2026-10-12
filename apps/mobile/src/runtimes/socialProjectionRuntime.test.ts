@@ -593,4 +593,40 @@ describe('social projection runtime', () => {
       await runtime.teardown();
     }
   });
+
+  it('releases projection ownership when teardown cleanup fails', async () => {
+    const socialStore = {
+      error: null,
+      currentUserPtid: 'ptid:alice',
+      reconcile: vi.fn(async () => undefined),
+      refreshNotifications: vi.fn(async () => undefined),
+      loadCurrentUserProfile: vi.fn(async () => undefined),
+      drainProfileCacheWrites: vi.fn()
+        .mockRejectedValueOnce(new Error('cache drain failed'))
+        .mockResolvedValue(undefined),
+    };
+    const dependencies = {
+      wakeMessaging: vi.fn(async () => undefined),
+      revalidateSession: vi.fn(async () => undefined),
+      ingestCallSignal: vi.fn(),
+      reportError: vi.fn(),
+    };
+    const failedRuntime = createSocialProjectionRuntime(
+      session,
+      () => socialStore,
+      dependencies,
+    );
+    await failedRuntime.bootstrap();
+
+    await expect(failedRuntime.teardown()).rejects.toThrow('cache drain failed');
+    expect(readActiveSocialIngressState()).toBeNull();
+
+    const replacement = createSocialProjectionRuntime(
+      session,
+      () => socialStore,
+      dependencies,
+    );
+    await expect(replacement.bootstrap()).resolves.toBeUndefined();
+    await replacement.teardown();
+  });
 });

@@ -528,16 +528,27 @@ export function createSocialProjectionRuntime(
     async teardown(): Promise<void> {
       if (torn) return;
       torn = true;
-      ingress.teardown();
-      await ingress.drain();
-      await reconcileTail;
-      await getSocialStore().drainProfileCacheWrites();
-      moments.teardown();
-      notificationPreferenceProjection.teardown();
-      profileProjection.teardown();
+      let cleanupError: unknown = null;
+      const cleanup = async (
+        operation: () => void | Promise<void>,
+      ): Promise<void> => {
+        try {
+          await operation();
+        } catch (error) {
+          cleanupError ??= error;
+        }
+      };
+      await cleanup(() => ingress.teardown());
+      await cleanup(() => ingress.drain());
+      await cleanup(() => reconcileTail);
+      await cleanup(() => getSocialStore().drainProfileCacheWrites());
+      await cleanup(() => moments.teardown());
+      await cleanup(() => notificationPreferenceProjection.teardown());
+      await cleanup(() => profileProjection.teardown());
       if (activeRuntime === publicRuntime) activeRuntime = null;
-      releaseMutationAdmission?.();
+      await cleanup(() => releaseMutationAdmission?.());
       releaseMutationAdmission = null;
+      if (cleanupError) throw cleanupError;
     },
   };
 }
