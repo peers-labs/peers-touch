@@ -1244,6 +1244,8 @@ func deliveryKind(kind chat.PreparedEndpointPayloadKind) valueobject.DeliveryKin
 		return valueobject.DeliveryKindConversation
 	case chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_RETIREMENT:
 		return valueobject.DeliveryKindMLSRetirement
+	case chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_DIRECT_SERVICE_PLAINTEXT:
+		return valueobject.DeliveryKindDirectServicePlaintext
 	default:
 		return ""
 	}

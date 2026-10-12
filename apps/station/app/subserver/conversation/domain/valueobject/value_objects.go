@@ -312,6 +312,11 @@ const (
 	DeliveryKindPublicEvent      DeliveryKind = "public_event"
 	DeliveryKindConversation     DeliveryKind = "conversation_state"
 	DeliveryKindMLSRetirement    DeliveryKind = "mls_retirement"
+	// DeliveryKindDirectServicePlaintext is non-E2EE, Station-resident
+	// plaintext produced only by the internal system sender port (BOT-D05).
+	// Human device commands can never construct it; v1 is direct, owner-only,
+	// and never federated. CommitmentCode follows PreparedEndpointPayloadKind=8.
+	DeliveryKindDirectServicePlaintext DeliveryKind = "direct_service_plaintext"
 )
 
 func (k DeliveryKind) CommitmentCode() (uint32, error) {
@@ -330,6 +335,8 @@ func (k DeliveryKind) CommitmentCode() (uint32, error) {
 		return 6, nil
 	case DeliveryKindMLSRetirement:
 		return 7, nil
+	case DeliveryKindDirectServicePlaintext:
+		return 8, nil
 	default:
 		return 0, conversationdomain.NewError(
 			conversationdomain.ErrorCodeInvalidArgument,

@@ -722,6 +722,8 @@ func deliveryKindFromProto(
 		return valueobject.DeliveryKindConversation, nil
 	case chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_RETIREMENT:
 		return valueobject.DeliveryKindMLSRetirement, nil
+	case chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_DIRECT_SERVICE_PLAINTEXT:
+		return valueobject.DeliveryKindDirectServicePlaintext, nil
 	default:
 		return "", receiptIntegrityError(
 			"payload_kind",

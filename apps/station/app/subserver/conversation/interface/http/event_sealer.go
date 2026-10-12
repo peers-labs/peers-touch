@@ -213,6 +213,8 @@ func deliveryKindToProto(kind valueobject.DeliveryKind) chat.PreparedEndpointPay
 		return chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_CONVERSATION_STATE
 	case valueobject.DeliveryKindMLSRetirement:
 		return chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_RETIREMENT
+	case valueobject.DeliveryKindDirectServicePlaintext:
+		return chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_DIRECT_SERVICE_PLAINTEXT
 	default:
 		return chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_UNSPECIFIED
 	}
