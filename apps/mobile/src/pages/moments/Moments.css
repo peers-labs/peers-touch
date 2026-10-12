@@ -1097,13 +1097,14 @@
   flex-direction: column;
   gap: 10px;
   padding: 14px;
-  border: 1px solid var(--moments-gray-200);
-  border-radius: 8px;
+  border: 0;
+  border-bottom: 1px solid var(--moments-gray-100);
+  border-radius: 0;
   background: #fff;
 }
 
 .moments-fixture-card + .moments-fixture-card {
-  margin-top: 10px;
+  margin-top: 0;
 }
 
 .moments-fixture-card--policy {
@@ -1122,15 +1123,7 @@
 
 .moments-fixture-avatar,
 .moments-fixture-comment-avatar {
-  display: grid;
-  width: 44px;
-  height: 44px;
   flex: 0 0 auto;
-  place-items: center;
-  border-radius: 8px;
-  background: #e9eef9;
-  color: #3156a3;
-  font-weight: 700;
 }
 
 .moments-fixture-author-copy,
@@ -1325,11 +1318,6 @@
 .moments-fixture-comment {
   padding: 10px 0;
   border-bottom: 0.5px solid var(--moments-gray-200);
-}
-
-.moments-fixture-comment-avatar {
-  width: 36px;
-  height: 36px;
 }
 
 .moments-fixture-comment-composer {

@@ -26,4 +26,17 @@ describe('MomentsAcceptanceSurface', () => {
       expect(html).not.toContain('mobile.common.');
     },
   );
+
+  it('uses the shared circular person identity in feed and comments', () => {
+    const feed = renderToStaticMarkup(
+      <MomentsAcceptanceSurface surfaceId="moments.feed" />,
+    );
+    const detail = renderToStaticMarkup(
+      <MomentsAcceptanceSurface surfaceId="moments.detail-comments" />,
+    );
+
+    expect(feed.match(/data-identity-role="person"/g)).toHaveLength(2);
+    expect(detail.match(/data-identity-role="person"/g)).toHaveLength(3);
+    expect(`${feed}${detail}`).toContain('mobile-user-avatar-person');
+  });
 });

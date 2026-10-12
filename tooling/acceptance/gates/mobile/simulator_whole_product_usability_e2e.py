@@ -137,6 +137,7 @@ DEGRADED_NOTICE_SURFACES = {
     "recovery.deferred-capability",
 }
 TEXT_SIZE_SCRIPT = """
+const done = arguments[arguments.length - 1];
 const size = arguments[0];
 if (size !== 'normal' && size !== 'maximum') {
   throw new Error(`unsupported text size ${size}`);
@@ -151,29 +152,36 @@ const nodes = Array.from(document.body.querySelectorAll('*')).filter(
       )
     ),
 );
+let scaledElementCount = 0;
 for (const element of nodes) {
-  const attribute = 'data-acceptance-original-font-size';
+  const originalAttribute = 'data-acceptance-original-font-size';
+  const baseAttribute = 'data-acceptance-base-font-size';
   if (size === 'normal') {
-    if (element.hasAttribute(attribute)) {
-      element.style.fontSize = element.getAttribute(attribute);
-      element.removeAttribute(attribute);
+    if (element.hasAttribute(originalAttribute)) {
+      element.style.fontSize = element.getAttribute(originalAttribute);
+      element.removeAttribute(originalAttribute);
+      element.removeAttribute(baseAttribute);
     }
     continue;
   }
-  if (!element.hasAttribute(attribute)) {
-    element.setAttribute(attribute, element.style.fontSize || '');
-  }
   const computed = Number.parseFloat(getComputedStyle(element).fontSize);
-  if (Number.isFinite(computed) && computed > 0) {
-    element.style.fontSize = `${Math.min(32, computed * 1.35)}px`;
+  if (!element.hasAttribute(originalAttribute)) {
+    element.setAttribute(originalAttribute, element.style.fontSize || '');
+    element.setAttribute(baseAttribute, String(computed));
+  }
+  const base = Number.parseFloat(element.getAttribute(baseAttribute));
+  if (Number.isFinite(base) && base > 0) {
+    element.style.fontSize = `${Math.min(32, base * 1.35)}px`;
+    scaledElementCount += 1;
   }
 }
-return {
+const result = {
   textSize: size,
   width: Math.round(window.innerWidth),
   height: Math.round(window.innerHeight),
-  scaledElementCount: size === 'maximum' ? nodes.length : 0,
+  scaledElementCount: size === 'maximum' ? scaledElementCount : 0,
 };
+requestAnimationFrame(() => requestAnimationFrame(() => done(result)));
 """
 SURFACE_AUDIT_SCRIPT = """
 const selector = arguments[0];
@@ -2426,26 +2434,14 @@ class SimulatorWholeProductUsabilityGate(
                 time.sleep(0.75 * attempt)
         time.sleep(0.5)
         session.switch_to_app_webview()
-        value = session.execute_script(TEXT_SIZE_SCRIPT, text_size)
+        value = self._apply_text_size(session, text_size)
         if (
-            not isinstance(value, dict)
-            or value.get("textSize") != text_size
-            or not isinstance(value.get("width"), int)
+            not isinstance(value.get("width"), int)
             or not isinstance(value.get("height"), int)
             or value["width"] <= 0
             or value["height"] <= 0
         ):
             raise GateError(f"Mobile viewport setup failed for {cell_id}")
-        if (
-            text_size == "maximum"
-            and (
-                not isinstance(value.get("scaledElementCount"), int)
-                or value["scaledElementCount"] <= 0
-            )
-        ):
-            raise GateError(
-                f"Mobile maximum text stress did not scale content for {cell_id}"
-            )
         if (
             orientation == "portrait"
             and value["width"] >= value["height"]
@@ -2465,6 +2461,31 @@ class SimulatorWholeProductUsabilityGate(
             "orientation": orientation,
             "textSize": text_size,
         }
+
+    @staticmethod
+    def _apply_text_size(
+        session: Any,
+        text_size: str,
+    ) -> dict[str, Any]:
+        if text_size not in {"normal", "maximum"}:
+            raise GateError("Mobile text size is invalid")
+        value = session.execute_async_script(TEXT_SIZE_SCRIPT, text_size)
+        if (
+            not isinstance(value, dict)
+            or value.get("textSize") != text_size
+        ):
+            raise GateError("Mobile text size setup failed")
+        if (
+            text_size == "maximum"
+            and (
+                not isinstance(value.get("scaledElementCount"), int)
+                or value["scaledElementCount"] <= 0
+            )
+        ):
+            raise GateError(
+                "Mobile maximum text stress did not scale visible content"
+            )
+        return value
 
     def _enter_surface(
         self,
@@ -3036,6 +3057,7 @@ class SimulatorWholeProductUsabilityGate(
         action: Mapping[str, Any],
     ) -> dict[str, Any]:
         session.switch_to_app_webview()
+        self._apply_text_size(session, str(viewport.get("textSize", "")))
         observation = session.execute_script(
             SURFACE_AUDIT_SCRIPT,
             entry["surfaceSelector"],

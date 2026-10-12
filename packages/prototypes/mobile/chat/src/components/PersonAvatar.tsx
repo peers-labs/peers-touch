@@ -1,11 +1,11 @@
 import { Avatar } from 'antd';
 import type { CSSProperties } from 'react';
 
-interface UserSquareAvatarStyle extends CSSProperties {
-  '--mp-user-avatar-radius': string;
+interface PersonAvatarStyle extends CSSProperties {
+  '--mp-person-avatar-radius': string;
 }
 
-interface UserSquareAvatarProps {
+interface PersonAvatarProps {
   readonly background?: string;
   readonly name: string;
   readonly size?: number;
@@ -16,21 +16,21 @@ function avatarInitial(name: string): string {
   return name.trim().slice(0, 1).toUpperCase();
 }
 
-export function UserSquareAvatar({
+export function PersonAvatar({
   background,
   name,
   size = 36,
   src,
-}: UserSquareAvatarProps) {
-  const style: UserSquareAvatarStyle = {
-    '--mp-user-avatar-radius': `${Math.max(8, Math.floor(size * 0.25))}px`,
+}: PersonAvatarProps) {
+  const style: PersonAvatarStyle = {
+    '--mp-person-avatar-radius': `${Math.ceil(size / 2)}px`,
     background,
   };
 
   return (
     <Avatar
-      className="mp-user-square-avatar"
-      shape="square"
+      className="mp-person-avatar mp-social-person-avatar"
+      shape="circle"
       size={size}
       src={src}
       style={style}

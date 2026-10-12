@@ -906,7 +906,9 @@
   }
 
   .mp-avatar-frame { position: relative; display: inline-flex; }
-  .mp-person-avatar.ant-avatar { border-radius: 999px !important; }
+  .mp-person-avatar.ant-avatar {
+    border-radius: var(--mp-person-avatar-radius, 999px) !important;
+  }
   .mp-group-avatar.ant-avatar { border-radius: 14px !important; }
 
   .mp-online-dot {
@@ -2174,10 +2176,6 @@
 
   /* ── antd scoped overrides ── */
   .ant-avatar { border-radius: var(--mp-r-lg) !important; font-weight: 600; }
-  .mp-user-square-avatar.ant-avatar {
-    overflow: hidden;
-    border-radius: var(--mp-user-avatar-radius) !important;
-  }
   .mp-message-avatar.ant-avatar,
   .mp-thread-contact .mp-person-avatar.ant-avatar { border-radius: 999px !important; }
   .mp-thread-contact .mp-group-avatar.ant-avatar { border-radius: 10px !important; }
