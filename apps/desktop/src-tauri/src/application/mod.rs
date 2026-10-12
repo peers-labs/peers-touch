@@ -21,6 +21,8 @@ pub mod federation;
 pub mod home;
 pub mod host_events;
 pub mod key_exchange;
+#[cfg(target_os = "macos")]
+pub mod macos_user_notifications;
 pub mod mcp;
 pub mod memory;
 pub mod model_config;

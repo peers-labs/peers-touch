@@ -590,6 +590,9 @@ fn main() {
                     "tray unavailable; closing the main window will quit the app"
                 ),
             }
+            if let Err(error) = application::native_surface::init_notifications(app.handle()) {
+                tracing::warn!(error = %error, "native notifications unavailable");
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1053,6 +1056,7 @@ fn main() {
             notification::notification_preferences_update,
             host_events::desktop_native_event_emit,
             native_surface::native_dock_set_badge,
+            native_surface::native_notification_show,
             station::station_list,
             station::station_set_active,
             station::station_binding_complete,

@@ -1,9 +1,57 @@
-//! Native desktop surface integration: dock / taskbar unread badge (BOT-D13).
+//! Native desktop surface integration: user notifications and dock / taskbar
+//! unread badge (BOT-A31/A33/A35, BOT-D13).
 //!
-//! These are side-effect-only wrappers over platform frameworks. The badge
-//! value is the number of unread *conversations* (not unread messages); its
-//! source of truth and all focus / mute gating live in the UI projection.
-//! Platforms without a dock badge degrade to a no-op.
+//! These are side-effect-only wrappers over platform frameworks. Routing and
+//! focus / mute gating live in the UI projection; this layer turns an already
+//! decided intent into OS effects. Platforms without an implementation return
+//! an error the UI can ignore.
+
+/// Routing payload for one native user notification.
+#[derive(Debug, Clone)]
+pub(crate) struct NativeNotificationRoute {
+    /// Stable id; reusing it replaces the previous notification (one per event
+    /// per device, BOT-A35).
+    pub notification_id: String,
+    pub title: String,
+    pub body: String,
+    /// Conversation ULID to open when the notification is tapped.
+    pub session_ulid: Option<String>,
+    /// Whitelisted in-app navigation target (defense in depth; final routing
+    /// is owned by the UI).
+    pub target: Option<String>,
+    /// Notification center thread identifier for grouping / collapse.
+    pub group_key: Option<String>,
+    /// Whether to play the default sound (false for muted conversations).
+    pub play_sound: bool,
+}
+
+/// Install native notification delivery and tap handling. Best effort: on
+/// platforms without an implementation this is a successful no-op.
+pub fn init_notifications(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::application::macos_user_notifications::init(app.clone())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Ok(())
+    }
+}
+
+/// Show one native user notification. Returns an error on platforms without a
+/// backend so callers can degrade silently.
+pub fn post_notification(route: NativeNotificationRoute) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::application::macos_user_notifications::post(route)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = route;
+        Err("native user notifications are only implemented on macOS".to_string())
+    }
+}
 
 /// Map an unread-conversation count to a dock badge label. A zero count
 /// clears the badge; any positive count renders as its decimal form.
