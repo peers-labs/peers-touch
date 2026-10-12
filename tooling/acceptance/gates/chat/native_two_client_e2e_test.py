@@ -27,6 +27,7 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
     CURRENT_PROFILE_REQUIRED_ASSERTIONS,
     CURRENT_PROFILE_GATE_ID,
     NativeTwoClientGate,
+    STATION_BINDING_PROJECTION_TIMEOUT,
     SUBMITTED_COMMAND_RECOVERY_GATE_ID,
     SUBMITTED_COMMAND_RECOVERY_REQUIRED_ASSERTIONS,
     avatar_evidence_is_valid,
@@ -346,6 +347,20 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertNotIn('bound_station.get("bound_url")', source)
         self.assertIn('"getRealtimeDevice"', source)
         self.assertIn("self.client_lifecycles.mark_authenticated(client)", source)
+
+    def test_station_binding_projection_uses_runtime_boot_timeout(self) -> None:
+        self.assertEqual(STATION_BINDING_PROJECTION_TIMEOUT, 30)
+        for method in (
+            NativeTwoClientGate.start_client,
+            NativeTwoClientGate.restart_client,
+        ):
+            source = inspect.getsource(method)
+            binding_state = source.index('"bindingState"')
+            timeout = source.index(
+                "script_timeout=STATION_BINDING_PROJECTION_TIMEOUT",
+                binding_state,
+            )
+            self.assertGreater(timeout, binding_state)
 
     def test_avatar_evidence_requires_each_actor_on_a_remote_client(self) -> None:
         alice = "data:image/svg+xml;base64,alice"
