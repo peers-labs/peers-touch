@@ -1351,14 +1351,16 @@ select,
 
 .entry-confirmation-button {
   min-width: 0;
-  height: 44px;
-  padding: 0 14px;
+  min-height: 44px;
+  padding: 10px 14px;
   border: 1px solid rgba(15, 23, 42, 0.14);
   border-radius: 10px;
   background: #fff;
   color: rgba(15, 23, 42, 0.9);
   font: inherit;
   font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .entry-confirmation-button.danger {
