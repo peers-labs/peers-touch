@@ -94,6 +94,23 @@ const contactsRuntimeReuse = Object.freeze({
   requireReceiverVisibleProof: true,
   allowClientReplacement: false,
 });
+const chatRuntimeReuse = Object.freeze({
+  scope: 'suite',
+  entryCheckId: 'chat-foreground-functional',
+  scenarioIds: Object.freeze([
+    'three-client-direct',
+    'three-client-group',
+    'voice-message',
+    'voice-video-call',
+    'chat-recovery',
+  ]),
+  maxProvisioningRuns: 1,
+  maxClientLaunches: 3,
+  minWarmReuseRate: 0.75,
+  requireAttachOnlyScenarios: true,
+  requireReceiverVisibleProof: true,
+  allowClientReplacement: false,
+});
 const suiteRuntimeModule = (
   'tooling.acceptance.gates.mobile.three_client_suite_runtime'
 );
@@ -7131,6 +7148,15 @@ async function toggleCallControl(clientId, client, action) {
 async function runChatPhase(manifest, evidenceDir, preflight) {
   const interactionTrace = [];
   const sequenceRef = { value: 0 };
+  const suiteRuntime = createSuiteRuntimeInput(
+    manifest,
+    preflight,
+    evidenceDir,
+    {
+      phase: 'chat',
+      runtimeReuse: chatRuntimeReuse,
+    },
+  );
   const step = async (clientId, stepId, action) => {
     const client = manifest.clients[clientId];
     await activateForegroundClient(clientId, client);
@@ -7159,6 +7185,7 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
       )
     ));
   }
+  const recoveryStarted = suiteRuntime.startScenario('chat-recovery');
   for (const clientId of requiredClientIds) {
     await step(
       clientId,
@@ -7169,7 +7196,56 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
       ),
     );
   }
-  await step(
+  suiteRuntime.finishScenario(
+    'chat-recovery',
+    recoveryStarted,
+    {
+      uiAction: 'three-client:clear-terminal-call-state',
+      receiverAssertion: 'three-client:chat-write-admission-stable',
+      supportingObservation: 'trace:chat-terminal-call-cleanup-precondition',
+    },
+  );
+
+  const directStarted = suiteRuntime.startScenario('three-client-direct');
+  const aliceToBob = (await step(
+    'android-alice',
+    'chat-alice-request-bob',
+    () => requestMobileFriendship(
+      'android-alice',
+      manifest.clients['android-alice'],
+      'bob',
+      'Bob',
+    ),
+  )).result;
+  const bobAcceptedAlice = (await step(
+    'desktop-bob',
+    'chat-bob-accept-alice',
+    () => acceptIncomingFriendship(
+      'desktop-bob',
+      manifest.clients['desktop-bob'],
+      'Alice',
+    ),
+  )).result;
+  const coralToAlice = (await step(
+    'ios-coral',
+    'chat-coral-request-alice',
+    () => requestMobileFriendship(
+      'ios-coral',
+      manifest.clients['ios-coral'],
+      'alice',
+      'Alice',
+    ),
+  )).result;
+  const aliceAcceptedCoral = (await step(
+    'android-alice',
+    'chat-alice-accept-coral',
+    () => acceptIncomingFriendship(
+      'android-alice',
+      manifest.clients['android-alice'],
+      'Carol',
+    ),
+  )).result;
+  const coralToBob = (await step(
     'ios-coral',
     'chat-coral-request-bob',
     () => requestMobileFriendship(
@@ -7178,8 +7254,8 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
       'bob',
       'Bob',
     ),
-  );
-  await step(
+  )).result;
+  const bobAcceptedCoral = (await step(
     'desktop-bob',
     'chat-bob-accept-coral',
     () => acceptIncomingFriendship(
@@ -7187,6 +7263,13 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
       manifest.clients['desktop-bob'],
       'Carol',
     ),
+  )).result;
+  assertContract(
+    coralToAlice.peerPtid === bobAcceptedAlice.peerPtid
+      && coralToBob.peerPtid === aliceToBob.peerPtid
+      && bobAcceptedCoral.peerPtid === aliceAcceptedCoral.peerPtid,
+    'CHAT_ACTOR_IDENTITY_DIVERGED',
+    'Chat friendship prerequisites resolved inconsistent Actor PTIDs',
   );
 
   const stamp = Date.now();
@@ -7490,23 +7573,30 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
       );
     },
   );
+  suiteRuntime.finishScenario(
+    'three-client-direct',
+    directStarted,
+    {
+      uiAction: 'three-client:direct-rich-message-actions',
+      receiverAssertion: 'three-client:direct-history-converged',
+      supportingObservation: 'trace:chat-alice-search-original-message',
+    },
+  );
 
-  const aliceGroup = (await step(
+  const groupStarted = suiteRuntime.startScenario('three-client-group');
+  const groupName = `MWPU Three Client ${String(stamp).slice(-10)}`;
+  await step(
     'android-alice',
-    'chat-alice-open-shared-group',
-    () => openChatConversation(
+    'chat-alice-create-shared-group',
+    () => createMobileSharedGroup(
       'android-alice',
       manifest.clients['android-alice'],
-      'group',
+      [
+        aliceToBob.peerPtid,
+        aliceAcceptedCoral.peerPtid,
+      ],
+      groupName,
     ),
-  )).result;
-  const groupName = aliceGroup.title || aliceGroup.label
-    .match(/MWPU Three Client \d+/)?.[0]
-    || '';
-  assertContract(
-    groupName.startsWith('MWPU Three Client'),
-    'CHAT_SHARED_GROUP_MISSING',
-    'Alice cannot resolve the shared three-client Group',
   );
   const aliceGroupText = `MWPU Alice group ${stamp}`;
   const bobGroupText = `MWPU Bob group ${stamp}`;
@@ -7668,7 +7758,17 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
       ),
     );
   }
+  suiteRuntime.finishScenario(
+    'three-client-group',
+    groupStarted,
+    {
+      uiAction: 'three-client:group-message-and-administration',
+      receiverAssertion: 'three-client:group-history-converged',
+      supportingObservation: 'trace:chat-group-history-converged',
+    },
+  );
 
+  const voiceStarted = suiteRuntime.startScenario('voice-message');
   await step(
     'android-alice',
     'chat-alice-record-and-send-voice',
@@ -7705,7 +7805,17 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
       'Carol',
     ),
   );
+  suiteRuntime.finishScenario(
+    'voice-message',
+    voiceStarted,
+    {
+      uiAction: 'android-alice+ios-coral:record-and-send-voice',
+      receiverAssertion: 'desktop-bob+android-alice:voice-playback-visible',
+      supportingObservation: 'trace:chat-alice-play-coral-voice',
+    },
+  );
 
+  const callsStarted = suiteRuntime.startScenario('voice-video-call');
   await holdDesktopForeground(
     'desktop-bob',
     manifest.clients['desktop-bob'],
@@ -8135,6 +8245,21 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
       },
     );
   }
+  suiteRuntime.finishScenario(
+    'voice-video-call',
+    callsStarted,
+    {
+      uiAction: 'three-client:audio-video-call-lifecycle',
+      receiverAssertion: 'three-client:ring-answer-reject-hangup-converged',
+      supportingObservation: 'trace:chat-video-retry-terminal',
+    },
+  );
+  suiteRuntime.complete();
+  const suiteRuntimeResult = emitSuiteRuntimeReport(
+    suiteRuntime,
+    evidenceDir,
+    'Chat',
+  );
 
   const report = {
     kind: 'peers-touch-three-client-product-journey-result',
@@ -8146,6 +8271,13 @@ async function runChatPhase(manifest, evidenceDir, preflight) {
     scenarioIds: preflight.scenarioIds,
     preflight: path.join(evidenceDir, 'preflight.json'),
     interactionTrace,
+    suiteRuntime: {
+      inputPath: suiteRuntimeResult.inputPath,
+      reportPath: suiteRuntimeResult.reportPath,
+      reportDigest: suiteRuntimeResult.report.reportDigest,
+      result: suiteRuntimeResult.report.result,
+      proofState: suiteRuntimeResult.report.proofState,
+    },
     observedAt: new Date().toISOString(),
   };
   const reportPath = path.join(evidenceDir, 'result.json');
@@ -10250,6 +10382,24 @@ function selfTest(matrix) {
     scenariosForPhase(matrix, 'chat').length === 6,
     'SELF_TEST_CHAT_COUNT',
     'chat phase scenario count changed unexpectedly',
+  );
+  assertContract(
+    chatRuntimeReuse.entryCheckId === 'chat-foreground-functional'
+      && chatRuntimeReuse.scenarioIds.join(',') === [
+        'three-client-direct',
+        'three-client-group',
+        'voice-message',
+        'voice-video-call',
+        'chat-recovery',
+      ].join(',')
+      && chatRuntimeReuse.maxProvisioningRuns === 1
+      && chatRuntimeReuse.maxClientLaunches === 3
+      && chatRuntimeReuse.minWarmReuseRate === 0.75
+      && chatRuntimeReuse.requireAttachOnlyScenarios === true
+      && chatRuntimeReuse.requireReceiverVisibleProof === true
+      && chatRuntimeReuse.allowClientReplacement === false,
+    'SELF_TEST_CHAT_SUITE_RUNTIME',
+    'chat Suite Runtime contract diverged from the mounted Task',
   );
   assertContract(
     scenariosForPhase(matrix, 'contacts').length === 2,
