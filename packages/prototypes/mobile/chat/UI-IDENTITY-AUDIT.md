@@ -294,7 +294,32 @@ New Prototype Portal evidence scenarios:
 | Command ledger full | MS-C10 / MS-PA26 | Read-only continuation and pending-action recovery |
 | Draft restored | MS-C05, MS-C08 / MS-PA23 | Restored local scope and explicit continue/discard actions |
 | Station removal | MS-C01 / MS-PA16 | Separate remove control and confirmation that Station data is preserved |
-| Deferred/local-only actions | MS-C11..MS-C14 / MS-PA22, MS-PA27 | Docs/add-tab absent; call and WeChat disabled; flag names device-only scope |
+| Deferred/local-only actions | MS-C11, MS-C13, MS-C14 / MS-PA22, MS-PA27 | Docs/add-tab absent; WeChat disabled; flag names device-only scope. MS-C12 call is now required and covered separately. |
+
+## 2026-10-12 Mobile Call Amendment
+
+The call surface uses the shell `OverlayHost` lifetime (`on-visit + none`) and
+keeps its snapshot in the shell owner, matching the component-tree registry.
+It is a full-screen Mobile action surface rather than a Desktop drawer or a
+Chat-page child that disappears on navigation.
+
+- L1: Direct-only audio/video header actions; outgoing, incoming,
+  active-audio, active-video, reconnecting, handled-elsewhere, and ended state
+  branches; labeled icon controls; focus-visible treatment; reduced-motion
+  fallback.
+- L2: ten screenshots at 430px and 1440px under
+  `apps/mobile/src-tauri/target/prototype-call-states/`; inspected states have no overlap, clipping, or
+  horizontal overflow.
+- L3: outgoing cancel, incoming accept/mute/camera/end,
+  handled-elsewhere dismissal, and Default journey -> Direct -> audio action
+  pass through `scripts/check-call-states.py`.
+- L4: 44px control targets, dialog semantics, containment, and clean page-error
+  checks pass. The existing antd `List` deprecation warning is recorded, not
+  hidden.
+
+Verdict: `pending-review`. Native media, production locale/style completeness,
+permission/device selection, direct/TURN, reconnect/cleanup, and mixed-client
+runtime proof remain `UNPROVEN`.
 
 L1 static evidence is present in
 `src/components/ExperienceRecovery.tsx`, `src/MobilePrototype.tsx`, and

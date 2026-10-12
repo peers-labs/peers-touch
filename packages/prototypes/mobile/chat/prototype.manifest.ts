@@ -10,7 +10,7 @@ const manifest = {
   module: 'mobile-shell',
   path: 'packages/prototypes/mobile/chat/',
   docs: 'docs/architecture/platform/client/mobile/prototype/README.md',
-  description: 'Mobile Shell with the current cross-platform Chat delivery-recovery review journey and existing product flows.',
+  description: 'Mobile Shell with current Chat delivery recovery, one-to-one call states, and existing product flows.',
   order: 10,
   previewExport: 'MobilePrototype',
   entry: () => import('./src/MobilePrototype'),

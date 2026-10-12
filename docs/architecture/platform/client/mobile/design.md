@@ -1,8 +1,8 @@
 # Mobile Shell — 架构设计
 
 > **Status**: active; iOS simulator-canonical Acceptance amendment accepted
-> **Version**: v1.4
-> **Created**: 2026-08-27 | **Updated**: 2026-10-07
+> **Version**: v1.5
+> **Created**: 2026-08-27 | **Updated**: 2026-10-12
 > **Owner**: Mobile Architecture Team
 > **Module**: `apps/mobile/`
 
@@ -540,10 +540,16 @@ If MS-D15 is accepted, MS-AG04/MS-AG09/MS-AG10 must additionally prove:
 
 ### 12.1 Scope Boundary
 
-This amendment preserves required `MS-C01..MS-C10` and degraded `MS-C14`.
-WeChat OAuth (`MS-C11`), voice/video calls (`MS-C12`), and Chat Docs
-(`MS-C13`) remain excluded. A broader Chat architecture cannot activate those
-Mobile capabilities without a separate PRODUCT amendment.
+This amendment originally preserved required `MS-C01..MS-C10`, degraded
+`MS-C14`, and excluded `MS-C11..MS-C13`. The later `MS-D28` product/architecture
+amendment activates one-to-one voice/video calls (`MS-C12`) under the accepted
+Chat lifecycle and Realtime resolution contracts. WeChat OAuth (`MS-C11`) and
+Chat Docs (`MS-C13`) remain excluded.
+
+`MS-C12` uses a shell-owned call overlay and a Mobile call runtime that survives
+Chat page navigation. Source presence is not readiness: native media,
+direct/TURN, reconnect, teardown, cross-Station behavior, and mixed-client
+resolution remain `UNPROVEN` until `MS-PA28` and `MS-PA29` pass.
 
 The target state has one owner for each business fact and one authenticated
 native transport boundary. Mobile may cache, render, schedule, and recover, but

@@ -5,7 +5,7 @@ import {
   Copy, CornerUpLeft, EyeOff, File, Flag as FlagIcon, Forward,
   Image as ImageIcon, Laugh, ListChecks, LockKeyhole,
   MessageSquare, MoreVertical, Pencil, Phone, Pin, Plus,
-  RefreshCw, RotateCcw, Send, ShieldX, X,
+  RefreshCw, RotateCcw, Send, ShieldX, Video, X,
 } from 'lucide-react';
 import type { Conversation, Message, MessageStatus, ReactionKind } from '../types';
 import { REACTION_EMOJI, REACTION_EMOJI_EXTENDED, FULL_EMOJI_GRID } from '../types';
@@ -23,13 +23,15 @@ import {
   CHAT_JOURNEY_MESSAGE_ID,
   resolveChatJourneyLocale,
 } from '../../../../shared/chat-journey';
+import type { PrototypeCallMediaKind } from '../components/MobileCallSurface';
 
 const { Text } = Typography;
 const messageKey = (message: Message) => message.id;
 
-export function ChatThread({ conversation, onBack, initialMessages = demoMessages, listMemory, searchDemo }: {
+export function ChatThread({ conversation, onBack, onStartCall, initialMessages = demoMessages, listMemory, searchDemo }: {
   conversation: Conversation;
   onBack: () => void;
+  onStartCall?: (mediaKind: PrototypeCallMediaKind) => void;
   initialMessages?: Message[];
   listMemory: PrototypeListMemory;
   searchDemo?: SearchDemoControl;
@@ -257,9 +259,28 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
             </span>
           </div>
         </div>
-        <button type="button" className="mp-thread-action mp-thread-action--muted" aria-label="Call unavailable" disabled>
-          <Phone size={19} />
-        </button>
+        {!conversation.isGroup && onStartCall ? (
+          <>
+            <button
+              type="button"
+              className="mp-thread-action"
+              aria-label="Start audio call"
+              title="Start audio call"
+              onClick={() => onStartCall('audio')}
+            >
+              <Phone size={19} />
+            </button>
+            <button
+              type="button"
+              className="mp-thread-action"
+              aria-label="Start video call"
+              title="Start video call"
+              onClick={() => onStartCall('video')}
+            >
+              <Video size={19} />
+            </button>
+          </>
+        ) : null}
         <button type="button" className="mp-thread-action" aria-label="More" onClick={() => setShowChatDetails(true)}>
           <MoreVertical size={19} />
         </button>
