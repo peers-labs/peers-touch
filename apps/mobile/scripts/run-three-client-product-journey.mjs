@@ -680,7 +680,12 @@ try:
         int(sys.argv[1])
     )
 except DriverError as error:
-    if "permission inspection timed out" not in str(error):
+    message = str(error)
+    if not any(marker in message for marker in (
+        "permission inspection timed out",
+        "Invalid index",
+        "(-1719)",
+    )):
         raise
     pressed = False
 sys.stdout.write("pressed" if pressed else "missing")
@@ -10889,6 +10894,13 @@ function selfTest(matrix) {
     journeySource.includes('requiredUnavailableRuntimeIds.length === 0'),
     'SELF_TEST_MOBILE_RUNTIME_CONVERGENCE',
     'Mobile Shell admission must wait for required runtimes to converge',
+  );
+  assertContract(
+    /permission inspection timed out[\s\S]*Invalid index[\s\S]*\(-1719\)/.test(
+      journeySource,
+    ),
+    'SELF_TEST_DESKTOP_PERMISSION_SHEET_ABSENCE',
+    'Desktop permission probing must distinguish an absent native sheet from a driver failure',
   );
   const desktopMainSource = readFileSync(
     path.join(repoRoot, 'apps/desktop/src-tauri/src/main.rs'),
