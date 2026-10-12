@@ -84,4 +84,18 @@ describe('Contacts short landscape layout', () => {
     expect(contract).toContain(".page-container[data-product-surface='contacts.list'] .empty-copy .ant-btn");
     expect(contract).toContain('margin-top: 2px');
   });
+
+  it('keeps profile recovery and group actions inside the landscape viewport', () => {
+    expect(styles).toContain(
+      '.contacts-fixture-profile:has(> .ant-empty)',
+    );
+    expect(styles).toContain(
+      '.contacts-fixture-group .contacts-fixture-sheet-actions',
+    );
+    expect(styles).toContain('position: sticky');
+    expect(styles).toContain(
+      ".group-create-form[data-product-surface='contacts.create-group']",
+    );
+    expect(styles).toContain('max-height: calc(100dvh');
+  });
 });
