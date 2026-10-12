@@ -90,6 +90,24 @@ case "${PEERS_STATION_CLUSTER_MODE:-single}" in
     ;;
 esac
 
+validate_runtime_key_path() {
+  key_name="$1"
+  key_path="$2"
+  case "$key_path" in
+    ""|/*|*".."*|*[!A-Za-z0-9._/-]*)
+      echo "[entrypoint] ${key_name} must be a safe path relative to /app" >&2
+      exit 1
+      ;;
+  esac
+}
+
+PEERS_STATION_ROOT_KEY_FILE="${PEERS_STATION_ROOT_KEY_FILE:-data/bootstrap.key}"
+PEERS_STATION_NODE_KEY_FILE="${PEERS_STATION_NODE_KEY_FILE:-data/station-node.key}"
+PEERS_LIBP2P_IDENTITY_KEY_FILE="${PEERS_LIBP2P_IDENTITY_KEY_FILE:-data/libp2pIdentity.key}"
+validate_runtime_key_path PEERS_STATION_ROOT_KEY_FILE "$PEERS_STATION_ROOT_KEY_FILE"
+validate_runtime_key_path PEERS_STATION_NODE_KEY_FILE "$PEERS_STATION_NODE_KEY_FILE"
+validate_runtime_key_path PEERS_LIBP2P_IDENTITY_KEY_FILE "$PEERS_LIBP2P_IDENTITY_KEY_FILE"
+
 # /app/data is a named volume; subdirectories must be created at runtime
 # (mkdir from the Dockerfile would be shadowed by the empty volume mount).
 # Each subdirectory hosts a single concern so the volume layout is greppable:
@@ -103,7 +121,10 @@ mkdir -p \
   /app/data/oss \
   /app/data/messaging-attachments \
   /app/data/social-private-objects \
-  /app/data/relay-credentials
+  /app/data/relay-credentials \
+  "$(dirname "/app/$PEERS_STATION_ROOT_KEY_FILE")" \
+  "$(dirname "/app/$PEERS_STATION_NODE_KEY_FILE")" \
+  "$(dirname "/app/$PEERS_LIBP2P_IDENTITY_KEY_FILE")"
 
 # ── Node label pattern injection ──────────────────────────────────────────────
 # Expand ${PEERS_NODE_LABEL} in actor.yml using envsubst.
@@ -172,19 +193,19 @@ fi
 # ── paths.docker.yml (libp2p key files persistent under /app/data) ──────────
 # Always emitted so the named volume (`peers_data:/app/data`) preserves
 # Relay/Station PeerIDs across container recreation.
-cat > /app/conf/paths.docker.yml <<'EOF'
+cat > /app/conf/paths.docker.yml <<EOF
 peers:
   node:
     transport:
       addrs:
         - /ip4/0.0.0.0/tcp/4001
       native:
-        libp2p-identity-key-file: data/libp2pIdentity.key
+        libp2p-identity-key-file: ${PEERS_LIBP2P_IDENTITY_KEY_FILE}
     server:
       subserver:
         bootstrap:
-          station-root-key-file: data/bootstrap.key
-          node-identity-key-file: data/station-node.key
+          station-root-key-file: ${PEERS_STATION_ROOT_KEY_FILE}
+          node-identity-key-file: ${PEERS_STATION_NODE_KEY_FILE}
 EOF
 OVERLAYS="${OVERLAYS}, paths.docker.yml"
 

@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from tooling.acceptance.core.errors import ProvisioningError
+from tooling.acceptance.gates.station_access.node_connectivity_cluster_native_e2e import (
+    RUNTIME_REUSE,
+    SCENARIOS,
+)
+from tooling.acceptance.provisioners.node_connectivity_cluster import (
+    NodeConnectivityClusterProvisioner,
+    cluster_message_readback,
+    stop_cluster_node,
+)
+
+
+class NodeConnectivityClusterProvisionerTest(unittest.TestCase):
+    def test_compose_environment_binds_two_distinct_nodes(self) -> None:
+        environment = (
+            NodeConnectivityClusterProvisioner._compose_environment(
+                project="pt-ncp-0123456789abcdef",
+                host="10.37.246.80",
+                source_commit="a" * 40,
+                node_a_http=38121,
+                node_a_libp2p=38122,
+                node_b_http=38123,
+                node_b_libp2p=38124,
+            )
+        )
+        self.assertEqual(
+            environment["PT_NCP_NODE_A_URL"],
+            "http://10.37.246.80:38121",
+        )
+        self.assertEqual(
+            environment["PT_NCP_NODE_B_URL"],
+            "http://10.37.246.80:38123",
+        )
+        self.assertNotEqual(
+            environment["PT_NCP_NODE_A_LIBP2P_PORT"],
+            environment["PT_NCP_NODE_B_LIBP2P_PORT"],
+        )
+        self.assertFalse(
+            any("SECRET" in key or "PASSWORD" in key for key in environment)
+        )
+
+    def test_source_archive_is_exact_head_without_git_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            archive = Path(raw) / "source.tar.gz"
+            NodeConnectivityClusterProvisioner._source_archive(archive)
+            self.assertTrue(archive.is_file())
+            self.assertGreater(archive.stat().st_size, 0)
+
+    def test_control_functions_fail_closed_before_transport(self) -> None:
+        invalid = {
+            "artifactKind": "acceptance-runtime-manifest",
+            "environmentId": "node-connectivity-cluster",
+            "gateId": "NCP-G06",
+            "runId": "not-a-run",
+        }
+        with self.assertRaises(ProvisioningError):
+            stop_cluster_node(invalid, "station-node-a")
+        with self.assertRaises(ProvisioningError):
+            stop_cluster_node(
+                {**invalid, "runId": "0123456789abcdef"},
+                "station-node-c",
+            )
+        with self.assertRaises(ProvisioningError):
+            cluster_message_readback(invalid, "message-1")
+        with self.assertRaises(ProvisioningError):
+            cluster_message_readback(
+                {**invalid, "runId": "0123456789abcdef"},
+                "message with spaces",
+            )
+
+    def test_native_suite_reuses_one_runtime(self) -> None:
+        self.assertEqual(RUNTIME_REUSE.scope, "suite")
+        self.assertEqual(RUNTIME_REUSE.scenario_ids, SCENARIOS)
+        self.assertEqual(RUNTIME_REUSE.max_provisioning_runs, 1)
+        self.assertEqual(RUNTIME_REUSE.max_client_launches, 2)
+        self.assertTrue(RUNTIME_REUSE.require_attach_only_scenarios)
+        self.assertTrue(RUNTIME_REUSE.require_receiver_visible_proof)
+        self.assertFalse(RUNTIME_REUSE.allow_client_replacement)
+
+
+if __name__ == "__main__":
+    unittest.main()

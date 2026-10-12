@@ -4,18 +4,26 @@
   "domain": "station-access",
   "status": "active",
   "owners": [
+    "apps/station/app/main.go",
+    "apps/station/frame/core/server/options.go",
     "apps/station/frame/core/plugin/native/node/**",
     "apps/station/frame/core/auth/station_keyring.go",
     "apps/station/frame/core/facility/storage/**",
+    "apps/station/app/subserver/clusterreadiness/**",
+    "apps/station/app/subserver/conversation/subserver.go",
     "apps/station/app/subserver/events/**",
     "apps/station/app/subserver/agent/**",
     "apps/station/app/subserver/oss/**",
+    "apps/station/app/subserver/social/subserver.go",
     "apps/desktop/src-tauri/src/application/station_binding/**",
     "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
     "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
     "tooling/acceptance/environments/node-connectivity-cluster.yaml",
+    "tooling/acceptance/fixtures/chat_native_reset.py",
+    "tooling/acceptance/gates/station_access/node_connectivity_cluster_native_e2e.py",
     "tooling/acceptance/provisioners/node_connectivity_cluster.py",
-    "tooling/scripts/node-connectivity-journey.py"
+    "tooling/acceptance/runtime/node-connectivity-cluster.compose.yml",
+    "tooling/docker/entrypoint.sh"
   ],
   "truth_sources": [
     "database-time station_node_registry leases bound to logical Station, Node PeerID, authorization epoch, and boot incarnation",
@@ -50,7 +58,12 @@
       "a failed verified route advances route revision while preserving logical Station lifecycle generation",
       "safe reads and SSE reconnect through the replacement route while mutations with unknown outcomes are not blindly replayed"
     ],
-    "surface": []
+    "surface": [
+      "Alice sends through node A and Bob renders the exact plaintext through node B",
+      "Bob opens the 32 MiB attachment and reads the exact source digest",
+      "after node A stops, Alice adopts node B within 30 seconds without Actor, Device, Session, or logical Station replacement",
+      "Alice continues sending through node B and Bob renders one message with one durable event and one exact endpoint receipt"
+    ]
   },
   "negative": [
     "node-local object backing cannot publish clustered readiness",

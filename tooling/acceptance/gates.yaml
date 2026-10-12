@@ -414,12 +414,19 @@
       "description": "Prove two independent OSS processes over one source-attested PostgreSQL runtime and one shared-fs object backend provide cross-node authorized readback, fenced worker takeover, immutable generation deletion, stale completion rejection, and valid quota/refcount state."
     },
     "NCP-G06": {
-      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-cluster-journey --gate NCP-G06",
-      "timeout_seconds": 420,
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.node_connectivity_cluster_native_e2e"
+      ],
+      "timeout_seconds": 3600,
       "environment": "node-connectivity-cluster",
       "provisioner": "node-connectivity-cluster",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
       "tier": "env-evidence",
-      "description": "Prove two admitted Station node identities share one backing contract while Agent and OSS concurrently preserve healthy foreign ownership, advance domain fencing on expiry, reject stale effects, and retain one terminal effect with valid object refcounts."
+      "description": "Run two exact-source Native Desktop actors against two admitted nodes of one logical Station, prove cross-node text, READ receipt and 32 MiB attachment identity, kill node A, recover route and durable cursor through node B within 30 seconds without login, and retain one durable mutation."
     },
     "NCP-G07": {
       "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-native-cut --gate NCP-G07",

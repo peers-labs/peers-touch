@@ -314,14 +314,18 @@ func (a *stationClusterAdmission) readinessSnapshot(
 				continue
 			}
 			subserver := a.serverOptions.SubserverInstances[owner]
-			provider, ok := subserver.(clusterReadinessProvider)
-			if !ok {
+			probe := clusterReadinessProbeForOwner(
+				a.serverOptions,
+				owner,
+				subserver,
+			)
+			if probe == nil {
 				return stationNodeRegistryRecord{}, fmt.Errorf(
 					"enabled owner %q does not declare cluster readiness",
 					owner,
 				)
 			}
-			identity, err := provider.ClusterReadiness(ctx)
+			identity, err := probe(ctx)
 			if err != nil {
 				return stationNodeRegistryRecord{}, fmt.Errorf(
 					"owner %q is not cluster ready: %w",
@@ -366,6 +370,20 @@ func (a *stationClusterAdmission) readinessSnapshot(
 		SharedBackingDigest: clusterDigest("backing", backingIdentities),
 		EnabledOwnersDigest: clusterDigest("owners", ownerNames),
 	}, nil
+}
+
+func clusterReadinessProbeForOwner(
+	options *server.Options,
+	owner string,
+	subserver server.Subserver,
+) server.ClusterReadinessProbe {
+	if provider, ok := subserver.(clusterReadinessProvider); ok {
+		return provider.ClusterReadiness
+	}
+	if options == nil {
+		return nil
+	}
+	return options.ClusterReadinessProbes[owner]
 }
 
 func clusterDigest(domain string, values []string) string {
