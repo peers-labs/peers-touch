@@ -2,6 +2,10 @@ use crate::infrastructure::station_registry::{
     route_attestation_is_current, StationEntry, StationRegistry, StationRouteCandidate,
     StationRouteHealth, StationRouteType,
 };
+use reqwest::blocking::Client;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use reqwest::redirect::Policy;
+use reqwest::{Method, StatusCode};
 use station_libp2p_http::{Route, Transport};
 use std::fmt;
 use std::io::{Read, Write};
@@ -11,14 +15,13 @@ use std::time::{Duration, Instant};
 
 const MAX_PROXY_REQUEST_BYTES: usize = 64 * 1024 * 1024;
 
-static RELAY_PROXY: LazyLock<Mutex<Option<RelayProxy>>> = LazyLock::new(|| Mutex::new(None));
+static STATION_PROXY: LazyLock<Mutex<Option<StationProxy>>> = LazyLock::new(|| Mutex::new(None));
 static P2P_TRANSPORT: LazyLock<Mutex<Option<Transport>>> = LazyLock::new(|| Mutex::new(None));
 
 #[derive(Clone)]
-struct RelayProxy {
+struct StationProxy {
     origin: String,
     station_peer_id: String,
-    transport: Transport,
 }
 
 #[derive(Clone, Debug)]
@@ -26,6 +29,12 @@ pub(crate) struct RouteSnapshot {
     pub station_peer_id: String,
     pub route_revision: u64,
     pub route: StationRouteCandidate,
+}
+
+struct ProxyResponse {
+    status: StatusCode,
+    headers: HeaderMap,
+    body: Box<dyn Read>,
 }
 
 #[derive(Debug)]
@@ -103,11 +112,10 @@ pub(crate) fn active_transport_origin(
     registry: &'static StationRegistry,
 ) -> Result<String, TransportError> {
     let snapshot = active_route_snapshot(registry)?;
-    if !is_relay(&snapshot) {
-        return Ok(snapshot.route.endpoint_origin);
+    if is_relay(&snapshot) {
+        standard_route(&snapshot)?;
     }
-    standard_route(&snapshot)?;
-    let mut proxy = RELAY_PROXY
+    let mut proxy = STATION_PROXY
         .lock()
         .map_err(|_| TransportError::new("Station proxy lock poisoned"))?;
     if let Some(existing) = proxy.as_ref() {
@@ -120,11 +128,9 @@ pub(crate) fn active_transport_origin(
     let address = listener
         .local_addr()
         .map_err(|error| TransportError::new(format!("read Station proxy address: {error}")))?;
-    let transport = shared_transport()?;
-    let state = RelayProxy {
+    let state = StationProxy {
         origin: format!("http://{address}"),
         station_peer_id: snapshot.station_peer_id,
-        transport,
     };
     let worker_state = state.clone();
     std::thread::Builder::new()
@@ -147,6 +153,77 @@ fn shared_transport() -> Result<Transport, TransportError> {
         .map_err(|error| TransportError::new(format!("start Station transport: {error}")))?;
     *value = Some(transport.clone());
     Ok(transport)
+}
+
+fn route_round_trip(
+    snapshot: &RouteSnapshot,
+    raw_request: &[u8],
+) -> Result<ProxyResponse, TransportError> {
+    if !is_relay(snapshot) {
+        return direct_round_trip(&snapshot.route, raw_request);
+    }
+    let route = standard_route(snapshot)?;
+    let response = shared_transport()?
+        .round_trip(&route, raw_request)
+        .map_err(|error| TransportError::new(error.to_string()))?;
+    Ok(ProxyResponse {
+        status: response.status,
+        headers: response.headers,
+        body: Box::new(response.body),
+    })
+}
+
+fn direct_round_trip(
+    route: &StationRouteCandidate,
+    raw_request: &[u8],
+) -> Result<ProxyResponse, TransportError> {
+    let method = request_method(raw_request)
+        .ok_or_else(|| TransportError::new("Station request method is missing"))?
+        .parse::<Method>()
+        .map_err(|_| TransportError::new("Station request method is invalid"))?;
+    let target = request_target(raw_request)
+        .ok_or_else(|| TransportError::new("Station request target is missing"))?;
+    let header_end = find_header_end(raw_request)
+        .ok_or_else(|| TransportError::new("Station request headers are incomplete"))?;
+    let header_text = std::str::from_utf8(&raw_request[..header_end])
+        .map_err(|_| TransportError::new("Station request headers are not UTF-8"))?;
+    let endpoint = route.endpoint_origin.trim_end_matches('/');
+    let url = format!("{endpoint}{target}");
+    let client = Client::builder()
+        .timeout(Duration::from_secs(305))
+        .redirect(Policy::none())
+        .build()
+        .map_err(|error| TransportError::new(format!("create direct Station client: {error}")))?;
+    let mut request = client.request(method, url);
+    for line in header_text.lines().skip(1) {
+        let Some((name, value)) = line.split_once(':') else {
+            return Err(TransportError::new("Station request header is malformed"));
+        };
+        if name.eq_ignore_ascii_case("host")
+            || name.eq_ignore_ascii_case("connection")
+            || name.eq_ignore_ascii_case("content-length")
+            || name.eq_ignore_ascii_case("transfer-encoding")
+        {
+            continue;
+        }
+        let name = HeaderName::from_bytes(name.trim().as_bytes())
+            .map_err(|_| TransportError::new("Station request header name is invalid"))?;
+        let value = HeaderValue::from_str(value.trim())
+            .map_err(|_| TransportError::new("Station request header value is invalid"))?;
+        request = request.header(name, value);
+    }
+    let body_offset = header_end + 4;
+    if body_offset < raw_request.len() {
+        request = request.body(raw_request[body_offset..].to_vec());
+    }
+    let response = request
+        .send()
+        .map_err(|error| TransportError::new(format!("direct Station request failed: {error}")))?;
+    Ok(ProxyResponse {
+        status: response.status(),
+        headers: response.headers().clone(),
+        body: Box::new(response),
+    })
 }
 
 pub(crate) fn client_peer_id() -> Result<String, TransportError> {
@@ -179,7 +256,7 @@ fn standard_route(snapshot: &RouteSnapshot) -> Result<Route, TransportError> {
     })
 }
 
-fn serve_proxy(listener: TcpListener, registry: &'static StationRegistry, state: RelayProxy) {
+fn serve_proxy(listener: TcpListener, registry: &'static StationRegistry, state: StationProxy) {
     for connection in listener.incoming() {
         let Ok(connection) = connection else {
             break;
@@ -196,7 +273,7 @@ fn serve_proxy(listener: TcpListener, registry: &'static StationRegistry, state:
 fn serve_proxy_connection(
     mut connection: TcpStream,
     registry: &StationRegistry,
-    state: &RelayProxy,
+    state: &StationProxy,
 ) -> Result<(), TransportError> {
     let timeout = Duration::from_secs(305);
     connection
@@ -214,8 +291,7 @@ fn serve_proxy_connection(
             "Station proxy belongs to an inactive Station",
         ));
     }
-    let route = standard_route(&snapshot)?;
-    let mut response = match state.transport.round_trip(&route, &request) {
+    let mut response = match route_round_trip(&snapshot, &request) {
         Ok(response) => response,
         Err(first_error) => {
             let failed_route_id = snapshot.route.route_id.clone();
@@ -232,16 +308,12 @@ fn serve_proxy_connection(
                     snapshot.route.route_id
                 )));
             }
-            let retry_route = standard_route(&snapshot)?;
-            state
-                .transport
-                .round_trip(&retry_route, &request)
-                .map_err(|error| {
-                    TransportError::new(format!(
-                        "Station HTTP/2 request failed after failover to {}: {error}",
-                        snapshot.route.route_id
-                    ))
-                })?
+            route_round_trip(&snapshot, &request).map_err(|error| {
+                TransportError::new(format!(
+                    "Station HTTP request failed after failover to {}: {error}",
+                    snapshot.route.route_id
+                ))
+            })?
         }
     };
     if trace_attachment {
@@ -499,5 +571,55 @@ mod tests {
         assert!(!request_is_replay_safe(
             b"POST /conversation/messages HTTP/1.1\r\nHost: station\r\nContent-Length: 0\r\n\r\n"
         ));
+    }
+
+    #[test]
+    fn direct_round_trip_streams_the_verified_route_response() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 1024];
+            let count = stream.read(&mut request).unwrap();
+            let request = std::str::from_utf8(&request[..count]).unwrap();
+            assert!(request.starts_with("GET /conversation/messages?limit=1 HTTP/1.1\r\n"));
+            assert!(request.contains("\r\nx-device-id: device-a\r\n"));
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                      Content-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}",
+                )
+                .unwrap();
+        });
+        let route = StationRouteCandidate {
+            node_peer_id: "node-a".to_string(),
+            node_authorization_digest: vec![1; 32],
+            authorization_epoch: 1,
+            route_id: "direct-a".to_string(),
+            route_type: StationRouteType::Direct,
+            transport: "http".to_string(),
+            endpoint_origin: format!("http://{address}"),
+            relay_peer_id: None,
+            route_generation: 1,
+            inner_tls_spki_sha256: None,
+            addresses: vec![format!("http://{address}")],
+            attestation_bytes: None,
+            connection_grant: None,
+            attestation_expires_at_unix_ms: None,
+            last_verified_at: "2026-10-11T00:00:00Z".to_string(),
+            last_success_at: None,
+            health: StationRouteHealth::Available,
+        };
+        let mut response = direct_round_trip(
+            &route,
+            b"GET /conversation/messages?limit=1 HTTP/1.1\r\n\
+              Host: station\r\nX-Device-ID: device-a\r\n\r\n",
+        )
+        .unwrap();
+        let mut body = String::new();
+        response.body.read_to_string(&mut body).unwrap();
+        assert_eq!(response.status, StatusCode::OK);
+        assert_eq!(body, "{\"ok\":true}");
+        server.join().unwrap();
     }
 }
