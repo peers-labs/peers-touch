@@ -5,7 +5,7 @@ import { Button, Tooltip, toast } from '@lobehub/ui';
 import { Empty, Spin, theme, Typography } from 'antd';
 import {
   Inbox, Phone, Server, RefreshCw, Video, MoreHorizontal,
-  Lock,
+  Lock, ShieldAlert, Bot,
 } from 'lucide-react';
 import {
   CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN,
@@ -121,6 +121,7 @@ export function ChatMessageArea({
     pinnedMessages,
     reactToMessage,
     pinMessage,
+    isBotConversation: isBotConversationSelector,
   } = useActiveSocialChatSlice((s) => ({
     activeTab: s.activeTab,
     activeSessionUlid: s.activeSessionUlid,
@@ -159,6 +160,7 @@ export function ChatMessageArea({
     pinnedMessages: s.pinnedMessages,
     reactToMessage: s.reactToMessage,
     pinMessage: s.pinMessage,
+    isBotConversation: s.isBotConversation,
   }));
   const actorStationEntries = useActiveChatFederationSlice(
     (state) => state.actorStationEntries,
@@ -901,6 +903,10 @@ export function ChatMessageArea({
   const conversationEncrypted = activeTab === 'friend'
     ? directSecurityState === 'ready'
     : groupSecurityState[activeUlid] === 'ready';
+  // Bot direct conversations are Station-resident plaintext: no E2EE lock,
+  // no calls, and a one-way composer. Member actor_kind is the source.
+  const isBotConversation =
+    activeTab === 'friend' && activeUlid ? isBotConversationSelector(activeUlid) : false;
 
   return (
     <Flexbox
@@ -964,11 +970,22 @@ export function ChatMessageArea({
             <Flexbox>
               <Flexbox horizontal align="center" gap={6}>
                 <Text strong style={{ fontSize: 14 }}>{currentName}</Text>
-                {peerOnlineIndicator}
-                {encryptionEnabled && conversationEncrypted && (
-                  <Tooltip title={t('chat.social.encryption.enabled')}>
-                    <Lock size={13} style={{ color: token.colorTextTertiary, marginLeft: 2 }} />
+                {!isBotConversation && peerOnlineIndicator}
+                {isBotConversation ? (
+                  <Tooltip title={t('chat.bot.stationManagedTip', {
+                    defaultValue: 'Automated bot · Station-resident, not end-to-end encrypted',
+                  })}>
+                    <ShieldAlert
+                      size={13}
+                      style={{ color: token.colorWarning, marginLeft: 2 }}
+                    />
                   </Tooltip>
+                ) : (
+                  encryptionEnabled && conversationEncrypted && (
+                    <Tooltip title={t('chat.social.encryption.enabled')}>
+                      <Lock size={13} style={{ color: token.colorTextTertiary, marginLeft: 2 }} />
+                    </Tooltip>
+                  )
                 )}
                 <span
                   data-chat-station="authority"
@@ -1006,16 +1023,19 @@ export function ChatMessageArea({
                   </span>
                 </span>
               </Flexbox>
-              {headerSubtitle && (
+              {(headerSubtitle || isBotConversation) && (
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  {headerSubtitle}
+                  {isBotConversation
+                    ? t('chat.bot.stationManaged', { defaultValue: 'Automated bot · Station resident' })
+                    : headerSubtitle}
                 </Text>
               )}
             </Flexbox>
           </Flexbox>
         </Flexbox>
         <Flexbox horizontal align="center" gap={4}>
-          {/* Friend calls use P2P; group calls use the configured SFU. */}
+          {/* Bot conversations are one-way webhook channels: no calls. */}
+          {!isBotConversation && (
           <Tooltip
             title={
               callAvailable
@@ -1031,6 +1051,8 @@ export function ChatMessageArea({
               onClick={() => handleStartCall('audio')}
             />
           </Tooltip>
+          )}
+          {!isBotConversation && (
           <Tooltip
             title={
               callAvailable
@@ -1046,6 +1068,7 @@ export function ChatMessageArea({
               onClick={() => handleStartCall('video')}
             />
           </Tooltip>
+          )}
           <Button
             data-chat-detail-toggle
             type="text"
@@ -1162,6 +1185,27 @@ export function ChatMessageArea({
         </Flexbox>
       )}
 
+      {isBotConversation ? (
+        <Flexbox
+          horizontal
+          align="center"
+          justify="center"
+          gap={6}
+          data-bot-oneway-composer="true"
+          style={{
+            padding: '12px 16px',
+            borderTop: `1px solid ${token.colorBorderSecondary}`,
+            background: conversationSurfaceBackground,
+          }}
+        >
+          <Bot size={14} style={{ color: token.colorTextTertiary }} />
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {t('chat.bot.oneWayComposer', {
+              defaultValue: 'One-way webhook channel — replies are not supported',
+            })}
+          </Text>
+        </Flexbox>
+      ) : (
       <ChatComposer
         activeConversationId={activeUlid}
         disabled={!activeUlid}
@@ -1179,6 +1223,7 @@ export function ChatMessageArea({
         sending={sending}
         capabilities={CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN}
       />
+      )}
 
       {deleteTarget && (
         <ChatDeleteConfirmOverlay

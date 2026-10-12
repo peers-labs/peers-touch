@@ -2408,6 +2408,68 @@ pub fn messaging_list_messages(
     messaging_list_messages_result(&engine, &input)
 }
 
+#[derive(Debug, Deserialize)]
+pub struct MessagingListServiceMessagesInput {
+    pub conversation_id: String,
+}
+
+#[tauri::command]
+pub fn messaging_list_service_messages(
+    input: MessagingListServiceMessagesInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (_, _, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    messaging_list_service_messages_result(&engine, &input)
+}
+
+pub(crate) fn messaging_list_service_messages_result(
+    engine: &crate::messaging::MessagingEngine,
+    input: &MessagingListServiceMessagesInput,
+) -> AppResult<Value> {
+    if input.conversation_id.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id is required",
+            None,
+        );
+    }
+    let rows = match engine.service_messages(&input.conversation_id) {
+        Ok(rows) => rows,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    AppResult::success(json!({
+        "events": rows.iter().map(service_message_json).collect::<Vec<_>>(),
+    }))
+}
+
+fn service_message_json(event: &crate::messaging::ServiceMessageRow) -> Value {
+    let labels: serde_json::Value =
+        serde_json::from_str(&event.source_labels_json).unwrap_or_else(|_| json!({}));
+    json!({
+        "event_id": event.event_id,
+        "event_sequence": event.event_sequence,
+        "message_id": event.message_id,
+        "sender_ptid": event.sender_ptid,
+        "fallback_text": event.fallback_text,
+        "event_schema": event.event_schema,
+        "event_type": event.event_type,
+        "event_severity": event.event_severity,
+        "bot_ptid": event.bot_ptid,
+        "group_key": event.group_key,
+        "dedupe_key": event.dedupe_key,
+        "action_url": event.action_url,
+        "source_agent": event.source_agent,
+        "source_workspace": event.source_workspace,
+        "source_session_id": event.source_session_id,
+        "source_labels": labels,
+        "timestamp_unix_ms": event.committed_at_unix_ms,
+    })
+}
+
 pub(crate) fn messaging_list_messages_result(
     engine: &crate::messaging::MessagingEngine,
     input: &MessagingListMessagesInput,

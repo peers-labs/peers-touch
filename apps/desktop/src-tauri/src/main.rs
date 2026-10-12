@@ -1076,6 +1076,7 @@ fn main() {
             messaging_commands::messaging_submit_edit,
             messaging_commands::messaging_submit_metadata_interaction,
             messaging_commands::messaging_list_messages,
+            messaging_commands::messaging_list_service_messages,
             messaging_commands::messaging_list_thread_messages,
             messaging_commands::messaging_thread_counts,
             messaging_commands::messaging_get_member_settings,

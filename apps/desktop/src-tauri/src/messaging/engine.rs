@@ -2406,6 +2406,13 @@ impl MessagingEngine {
         self.store.conversation_message_projections(conversation_id)
     }
 
+    pub fn service_messages(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<crate::messaging::ServiceMessageRow>, String> {
+        self.store.service_messages_for_conversation(conversation_id)
+    }
+
     pub fn conversation_message_page(
         &self,
         conversation_id: &str,

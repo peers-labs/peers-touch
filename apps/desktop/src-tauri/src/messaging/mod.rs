@@ -140,7 +140,8 @@ pub use store::{
     MlsReceiveCommit, MlsRetirementReceiveCommit, MlsSendCommit, MlsSenderTransitionReceiveCommit,
     MlsTransitionReceiveCommit, PendingAttachmentUpload, PendingMembershipIntent,
     PendingMessageDraft, PendingMlsTransitionState, PendingSenderProjection,
-    PublicEventReceiveCommit, ReceiveCommitResult, SubmittedCommand, SupersededInteractionIntent,
+    PublicEventReceiveCommit, ReceiveCommitResult, ServiceMessageRow, SubmittedCommand,
+    SupersededInteractionIntent,
     ThreadCountProjection, COMMAND_RECONCILIATION_BATCH_LIMIT,
 };
 pub use transport::{

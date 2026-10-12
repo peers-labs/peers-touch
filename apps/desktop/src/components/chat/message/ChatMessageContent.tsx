@@ -12,6 +12,7 @@ import {
   type ChatMessage,
 } from './chatMessageModel';
 import { extractUrls, LinkPreviewCard } from './LinkPreviewCard';
+import { BotEventCard } from './BotEventCard';
 
 const { Text } = Typography;
 
@@ -39,8 +40,10 @@ export function ChatMessageContent({
   const { t } = useTranslation('chat');
   const isRecalled = isRecalledMessage(message);
   const encryptedPlaceholder = isEncryptedPlaceholder(message);
+  const botEvent = message.botEvent;
   const attachments = message.attachments || [];
-  const urls = !isRecalled && !encryptedPlaceholder ? extractUrls(message.content) : [];
+  const urls =
+    !isRecalled && !encryptedPlaceholder && !botEvent ? extractUrls(message.content) : [];
 
   return (
     <>
@@ -61,6 +64,8 @@ export function ChatMessageContent({
             {t('chat.social.encryption.encryptedMessage')}
           </Text>
         </Flexbox>
+      ) : botEvent ? (
+        <BotEventCard event={botEvent} />
       ) : (
         <span
           data-message-text={message.ulid}

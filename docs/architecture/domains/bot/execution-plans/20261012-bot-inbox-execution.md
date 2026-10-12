@@ -144,6 +144,12 @@ S0→S1→S2→S3→S5 为严格链（后片的主体身份与线协议由前片
 - 全局层 Settings → Bots 管理页接 management API（创建/轮换/停用/吊销/头像，与已确认原型一致）。
 - Mobile：遇未知 delivery kind skip+ack 不崩溃。
 
+实现切片与决策（2026-10-12 Owner 对齐）：
+
+- **S5-1 消息卡片渲染（只读）**：Desktop 读 `messaging_service_messages`（新增 Rust 读命令），TS 据 delivery kind + 成员 `actor_kind=AGENT` 双重识别 bot 会话；时间轴渲染结构化事件卡；头部去 E2EE 锁→琥珀色“Station 托管/自动化 Bot”，去语音/视频呼叫，底部单向提示条。覆盖 A21B/A26/G-BOT-10 渲染面。
+- **S5-2 Bots 设置 + 头像（owner token 内完成）**：Rust build.rs 编 bot proto + 4 个管理命令（list/create/rotate/set-state）。**头像复用 actor，不在 bot 表加字段**：bot 即 AGENT actor，头像存 `touch_actor.icon`；新增 `POST /bot/update-profile`（`{bot_ptid,avatar}`）与 `CreateBotRequest.optional avatar`，复用现有 owner 校验（`loadOwned`），由 Station bot 服务在内部 actor 写入（不开放通用 `/actor/profile` 的 target 参数）；图片走现有 `/sub-oss/upload`（bucket=avatar, public）存相对 URL；读取渲染零新通道（复用 `peerProfiles[botPtid].avatar`）。内部写 icon 不触发 HIDDEN actor 的 DHT publish。TS 设置区经模块注册表挂全局 section，创建两阶段凭证揭示（curl 片段，非 CLI 片段）；头像选择保留“预设图标×底色 + 上传”，统一落 OSS。
+- **S5-3 Tray 驻留 + OS 通知**：开 tauri `tray-icon` feature + `tauri-plugin-notification`；`application/tray` + `application/os_notification`；Rust 成为 `desktop:tray-open`/`desktop:notification-tap` 的原生生产者；deep-link 运行时路由；Dock badge=未读会话数（消息真源，BOT-D13，不数通知）；TS 在 `eventStream.ts` 增加 `botNotification`(arm 26) 分支，仅驱动“是否弹 OS 横幅”（focus/mute 两层门控、group_key 折叠每事件一条），消息 envelope 臂仍驱动收件箱/未读。覆盖 A30–A35/J03/J04。
+
 闭环（**打包 Desktop Journey，SOURCE_CHECK/单测不可替代**）：
 
 - BOT-A30（关窗驻留 tray、无 tray 环境降级不崩）、BOT-A31（隐藏→事件→OS 通知→点击→深链，每设备每事件恰好一条）、BOT-A32（聚焦时仅应用内更新）、BOT-A33（静音两层）、BOT-A34（非法 scheme 拒绝）、BOT-A35（多窗口每设备一条）。

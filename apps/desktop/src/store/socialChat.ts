@@ -23,6 +23,7 @@ import {
   ConversationStatus,
   MemberStatus,
 } from '../gen/proto/domain/chat/conversation_pb';
+import { ActorKind } from '../gen/proto/domain/actor/actor_pb';
 import { imServiceV1 } from '../services/im-service';
 import { shouldApplyPresenceRevision } from '../services/chatPresence';
 import type {
@@ -57,6 +58,7 @@ import {
   visibleConversationUnread,
   type ConversationLocalState,
   type DesktopIMConversationProjection,
+  type DesktopBotServiceEvent,
   type DesktopIMMessageProjection,
   type DesktopIMSenderProfileProjection,
   type FriendChatSession,
@@ -148,6 +150,21 @@ export function requireQueuedMessagingSendOutcome(
     commandId: outcome.commandId,
     state: outcome.state,
   };
+}
+
+// Loads structured bot webhook events for a conversation, keyed by message_id.
+// Best-effort: bot events enrich the ordinary fallback projection, so a read
+// failure must never block the message timeline.
+async function fetchBotEventMap(
+  conversationId: string,
+): Promise<Map<string, DesktopBotServiceEvent>> {
+  try {
+    const events = await imServiceV1.messaging.listServiceMessages(conversationId)
+    return new Map(events.map(event => [event.messageId, event]))
+  } catch (error) {
+    log.warn('socialChat', 'load bot service events failed', error)
+    return new Map()
+  }
 }
 
 function projectMessagingProjection(
@@ -598,6 +615,7 @@ interface SocialChatState {
   getUnifiedConversations: () => UnifiedConversation[];
   getIMConversations: () => DesktopIMConversationProjection[];
   getIMMessages: (kind: 'friend' | 'group', conversationUlid: string) => DesktopIMMessageProjection[];
+  isBotConversation: (conversationUlid: string) => boolean;
   getIMThreadMessages: (kind: 'friend' | 'group', conversationUlid: string, rootUlid: string) => DesktopIMMessageProjection[];
   getIMSenderProfile: (
     kind: 'friend' | 'group',
@@ -1317,9 +1335,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     try {
       const page = await imServiceV1.messaging.listMessages(ulid);
       const projections = page.messages;
-      const pageMessages = projections.map(projection =>
-        projectMessagingProjection(activeTab, ulid, projection),
-      );
+      const botEvents = await fetchBotEventMap(ulid);
+      const pageMessages = projections.map(projection => {
+        const message = projectMessagingProjection(activeTab, ulid, projection);
+        const botEvent = botEvents.get(message.ulid);
+        if (botEvent) message.botEvent = botEvent;
+        return message;
+      });
       const projectionReactions = Object.fromEntries(
         projections.map(projection => [
           projection.messageId,
@@ -1410,9 +1432,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         beforeSequence,
       });
       const projections = page.messages;
-      const olderMessages = projections.map(projection =>
-        projectMessagingProjection(activeKind, ulid, projection),
-      );
+      const botEvents = await fetchBotEventMap(ulid);
+      const olderMessages = projections.map(projection => {
+        const message = projectMessagingProjection(activeKind, ulid, projection);
+        const botEvent = botEvents.get(message.ulid);
+        if (botEvent) message.botEvent = botEvent;
+        return message;
+      });
       set((state) => {
         const mergedMessages = olderMessages.reduce(
           (messages, message) => mergeConversationMessages(messages, message),
@@ -2323,6 +2349,19 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       kind,
       conversationUlid,
       state.messages[conversationUlid] || [],
+    );
+  },
+
+  isBotConversation: (conversationUlid) => {
+    const state = get();
+    const members = state.conversationMembers[conversationUlid] || [];
+    const actorPtid = currentAuthenticatedActorPtid();
+    // Bot direct conversations carry a non-self member projected as
+    // ACTOR_KIND_AGENT (7). Kind is the source of truth; messages alone are
+    // not consulted so the header is correct before history loads.
+    return members.some(
+      (member) =>
+        member.ptid && member.ptid !== actorPtid && member.actorKind === ActorKind.AGENT,
     );
   },
 

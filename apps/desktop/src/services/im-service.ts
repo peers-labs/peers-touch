@@ -15,6 +15,7 @@ import type {
   MessagingServiceContract,
 } from './im-service-contract'
 import type { Conversation } from '../gen/proto/domain/chat/conversation_pb'
+import type { DesktopBotServiceEvent } from '../store/socialProjection'
 import {
   ConversationMemberSchema,
   ConversationSchema,
@@ -317,6 +318,50 @@ interface MessagingMessageWire {
   pinned_by_ptid?: string
   pinned_at_unix_ms?: number
   read_by_ptids: string[]
+}
+
+interface ServiceBotEventWire {
+  event_id: string
+  event_sequence: number
+  message_id: string
+  sender_ptid: string
+  fallback_text: string
+  event_schema: string
+  event_type: number
+  event_severity: number
+  bot_ptid: string
+  group_key: string
+  dedupe_key: string
+  action_url: string
+  source_agent: string
+  source_workspace: string
+  source_session_id: string
+  source_labels: Record<string, string>
+  timestamp_unix_ms: number
+}
+
+function normalizeServiceBotEvent(
+  event: ServiceBotEventWire,
+): DesktopBotServiceEvent {
+  return {
+    eventId: event.event_id,
+    eventSequence: event.event_sequence,
+    messageId: event.message_id,
+    senderPtid: event.sender_ptid,
+    fallbackText: event.fallback_text,
+    eventSchema: event.event_schema,
+    eventType: event.event_type,
+    eventSeverity: event.event_severity,
+    botPtid: event.bot_ptid,
+    groupKey: event.group_key,
+    dedupeKey: event.dedupe_key,
+    actionUrl: event.action_url,
+    sourceAgent: event.source_agent,
+    sourceWorkspace: event.source_workspace,
+    sourceSessionId: event.source_session_id,
+    sourceLabels: event.source_labels ?? {},
+    timestampUnixMs: event.timestamp_unix_ms,
+  }
 }
 
 function projectMessagingMessage(message: MessagingMessageWire): MessagingProjection {
@@ -758,6 +803,18 @@ const messagingService: MessagingServiceContract = {
       hasMore: response.has_more,
       nextBeforeSequence: response.next_before_sequence,
     }
+  },
+
+  async listServiceMessages(
+    conversationId,
+  ): Promise<DesktopBotServiceEvent[]> {
+    const response = await cmd<
+      { conversation_id: string },
+      { events: ServiceBotEventWire[] }
+    >('messaging_list_service_messages', {
+      conversation_id: conversationId,
+    })
+    return (response.events ?? []).map(normalizeServiceBotEvent)
   },
 
   async retryMessage(conversationId, messageId) {

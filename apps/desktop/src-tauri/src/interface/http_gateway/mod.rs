@@ -6904,6 +6904,34 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ),
             )
         }
+        "messaging_list_service_messages" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingListServiceMessagesInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(e)) => e,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
+            };
+            to_json(
+                crate::interface::tauri_commands::messaging::messaging_list_service_messages_result(
+                    &engine, &input,
+                ),
+            )
+        }
         "messaging_search_messages" => {
             let input = match parse_args::<
                 crate::interface::tauri_commands::messaging::MessagingSearchMessagesInput,

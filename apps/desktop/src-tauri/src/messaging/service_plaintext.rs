@@ -486,6 +486,21 @@ mod tests {
             "{\"branch\":\"feat/bot\",\"repo\":\"peers-touch\"}"
         );
 
+        // The read model used by the Desktop bot card renderer.
+        let service_rows = store
+            .service_messages_for_conversation("conv-bot-1")
+            .unwrap();
+        assert_eq!(service_rows.len(), 1);
+        let row = &service_rows[0];
+        assert_eq!(row.message_id, "msg-bot-1");
+        assert_eq!(row.bot_ptid, bot().ptid);
+        assert_eq!(row.event_schema, BOT_EVENT_SCHEMA);
+        assert_eq!(row.event_type, ServiceBotEventKind::TaskCompleted as i32);
+        assert_eq!(row.event_severity, ServiceBotEventSeverity::Attention as i32);
+        assert_eq!(row.source_agent, "claude-code");
+        assert_eq!(row.fallback_text, "任务已完成");
+        assert!(store.service_messages_for_conversation("").is_err());
+
         // Replay is idempotent: no duplicate projection or row.
         processor.consume(&item, 1).unwrap();
         let replay = store

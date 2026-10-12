@@ -471,6 +471,28 @@ pub struct ServicePlaintextReceiveCommit<'a> {
     pub consumed_at_unix_ms: i64,
 }
 
+/// Read-side row of a structured bot webhook event (`messaging_service_messages`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceMessageRow {
+    pub event_id: String,
+    pub event_sequence: i64,
+    pub message_id: String,
+    pub sender_ptid: String,
+    pub fallback_text: String,
+    pub event_schema: String,
+    pub event_type: i32,
+    pub event_severity: i32,
+    pub bot_ptid: String,
+    pub group_key: String,
+    pub dedupe_key: String,
+    pub action_url: String,
+    pub source_agent: String,
+    pub source_workspace: String,
+    pub source_session_id: String,
+    pub source_labels_json: String,
+    pub committed_at_unix_ms: i64,
+}
+
 /// Observe-only commit for an endpoint payload kind this build does not
 /// understand: the authority chain and consumption marker advance, but no
 /// message projection is created (forward-compatible skip+ack, G-BOT-10).
@@ -7204,6 +7226,58 @@ impl MessagingStore {
             }
             Ok(())
         })
+    }
+
+    /// Structured bot-event rows (`messaging_service_messages`) for a
+    /// conversation, ordered on the authority sequence. Read-only projection
+    /// used to render the rich `peers-touch.bot-event.v1` card; the ordinary
+    /// fallback row still lives in `messaging_message_projections`.
+    pub fn service_messages_for_conversation(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<ServiceMessageRow>, String> {
+        if conversation_id.trim().is_empty() {
+            return Err("messaging service conversation ID is required".to_string());
+        }
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT event_id, event_sequence, message_id, sender_ptid,
+                        fallback_text, event_schema, event_type, event_severity,
+                        bot_ptid, group_key, dedupe_key, action_url,
+                        source_agent, source_workspace, source_session_id,
+                        source_labels_json, committed_at_unix_ms
+                 FROM messaging_service_messages
+                 WHERE conversation_id = ?1
+                 ORDER BY event_sequence ASC, message_id ASC",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map(params![conversation_id], |row| {
+                Ok(ServiceMessageRow {
+                    event_id: row.get(0)?,
+                    event_sequence: row.get(1)?,
+                    message_id: row.get(2)?,
+                    sender_ptid: row.get(3)?,
+                    fallback_text: row.get(4)?,
+                    event_schema: row.get(5)?,
+                    event_type: row.get(6)?,
+                    event_severity: row.get(7)?,
+                    bot_ptid: row.get(8)?,
+                    group_key: row.get(9)?,
+                    dedupe_key: row.get(10)?,
+                    action_url: row.get(11)?,
+                    source_agent: row.get(12)?,
+                    source_workspace: row.get(13)?,
+                    source_session_id: row.get(14)?,
+                    source_labels_json: row.get(15)?,
+                    committed_at_unix_ms: row.get(16)?,
+                })
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(rows)
     }
 
     /// Observe-only commit for an endpoint payload kind this build does not
