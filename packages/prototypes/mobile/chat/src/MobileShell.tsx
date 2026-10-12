@@ -26,6 +26,13 @@ import {
   SocialUnavailablePage,
   type ShellEvidenceScenario,
 } from './components/ExperienceRecovery';
+import {
+  callSnapshotForScenario,
+  MobileCallSurface,
+  type PrototypeCallMediaKind,
+  type PrototypeCallScenario,
+  type PrototypeCallSnapshot,
+} from './components/MobileCallSurface';
 
 export function MobileShell({
   stationLabel,
@@ -37,6 +44,7 @@ export function MobileShell({
   dispatchSocialDemo,
   longLists = false,
   focusChatJourney = false,
+  callScenario,
   searchDemo,
 }: {
   stationLabel: string;
@@ -48,6 +56,7 @@ export function MobileShell({
   dispatchSocialDemo: Dispatch<SocialDemoAction>;
   longLists?: boolean;
   focusChatJourney?: boolean;
+  callScenario?: PrototypeCallScenario;
   searchDemo?: SearchDemoControl;
 }) {
   const [listMemory] = useState(() => new PrototypeListMemory());
@@ -63,8 +72,10 @@ export function MobileShell({
       || socialScenario === 'request-unknown',
   );
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(() => (
-    focusChatJourney || socialScenario === 'social-detail-unavailable'
-      ? demoConversations.find((conversation) => conversation.key === 'dev-team') ?? null
+    callScenario
+      ? demoConversations.find((conversation) => conversation.key === 'alice') ?? null
+      : focusChatJourney || socialScenario === 'social-detail-unavailable'
+        ? demoConversations.find((conversation) => conversation.key === 'dev-team') ?? null
       : null
   ));
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
@@ -72,6 +83,9 @@ export function MobileShell({
   const [selectedSetting, setSelectedSetting] = useState<SettingEntry | null>(null);
   const [shellToast, setShellToast] = useState<string | null>(null);
   const [shellToastKey, setShellToastKey] = useState(0);
+  const [callSnapshot, setCallSnapshot] = useState<PrototypeCallSnapshot | null>(
+    () => callScenario ? callSnapshotForScenario(callScenario) : null,
+  );
 
   useEffect(() => {
     if (shellToast) {
@@ -94,6 +108,19 @@ export function MobileShell({
 
   function handleConversationClick(conv: Conversation) {
     setSelectedConversation(conv);
+  }
+
+  function handleStartCall(
+    conversation: Conversation,
+    mediaKind: PrototypeCallMediaKind,
+  ) {
+    if (conversation.isGroup) return;
+    setCallSnapshot({
+      state: 'outgoing',
+      mediaKind,
+      peerName: conversation.name,
+      peerInitials: conversation.avatar,
+    });
   }
 
   function handleBackToList() {
@@ -157,6 +184,7 @@ export function MobileShell({
       return <ChatThread key={selectedConversation.key} conversation={selectedConversation}
         initialMessages={longLists ? longListMessages : selectedConversation.key.startsWith('demo-direct-') ? [] : undefined}
         listMemory={listMemory} searchDemo={searchDemo}
+        onStartCall={(mediaKind) => handleStartCall(selectedConversation, mediaKind)}
         onBack={handleBackToList} />;
     }
     if (activeTab === 'contacts' && selectedContact) {
@@ -165,6 +193,7 @@ export function MobileShell({
         return <ChatThread key={direct.conversation.key} conversation={direct.conversation}
           initialMessages={direct.conversation.key.startsWith('demo-direct-') ? [] : undefined}
           listMemory={listMemory}
+          onStartCall={(mediaKind) => handleStartCall(direct.conversation!, mediaKind)}
           onBack={() => dispatchSocialDemo({ type: 'close-direct' })} />;
       }
       return <ContactDetailView contact={selectedContact}
@@ -198,16 +227,17 @@ export function MobileShell({
   const showTabBar = !(activeTab === 'chat' && selectedConversation)
     && !(activeTab === 'contacts' && (selectedContact || selectedGroup))
     && !(activeTab === 'profile' && selectedSetting);
+  const overlayOpen = findPeopleOpen || Boolean(callSnapshot);
 
   return (
     <div className="mp-shell">
-      <div className="mp-shell-content" inert={findPeopleOpen}>{renderPage()}</div>
-      {!findPeopleOpen && (
+      <div className="mp-shell-content" inert={overlayOpen}>{renderPage()}</div>
+      {!overlayOpen && (
         <RequestRecoveryNotice request={socialDemo.request}
           onCheck={() => dispatchSocialDemo({ type: 'check-request' })} />
       )}
       {showTabBar && (
-        <nav className="mp-tabbar" inert={findPeopleOpen}>
+        <nav className="mp-tabbar" inert={overlayOpen}>
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -240,6 +270,13 @@ export function MobileShell({
           onSecondary={() => handleRecoveryAction('secondary')}
         />
       )}
+      {callSnapshot ? (
+        <MobileCallSurface
+          snapshot={callSnapshot}
+          onChange={setCallSnapshot}
+          onDismiss={() => setCallSnapshot(null)}
+        />
+      ) : null}
     </div>
   );
 }

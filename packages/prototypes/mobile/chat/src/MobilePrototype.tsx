@@ -27,6 +27,11 @@ import {
 import { SocialEvidenceControls } from './components/SocialEvidenceControls';
 import { SearchEvidenceControls } from './components/SearchEvidenceControls';
 import { emptySearchDemo, searchDemoReducer } from './searchDemo';
+import {
+  callEvidenceScenarioOptions,
+  isPrototypeCallScenario,
+  type PrototypeCallScenario,
+} from './components/MobileCallSurface';
 import './mobilePrototype.css';
 
 const { Text } = Typography;
@@ -40,7 +45,8 @@ type EvidenceScenario =
   | 'search-controlled'
   | BlockingEvidenceScenario
   | ShellEvidenceScenario
-  | SocialEvidenceScenario;
+  | SocialEvidenceScenario
+  | PrototypeCallScenario;
 
 const evidenceScenarioOptions: Array<{ label: string; value: EvidenceScenario }> = [
   { label: 'Default journey', value: 'journey' },
@@ -60,6 +66,7 @@ const evidenceScenarioOptions: Array<{ label: string; value: EvidenceScenario }>
   { label: 'Friend request / unknown outcome', value: 'request-unknown' },
   { label: 'Long lists / sample data only', value: 'long-lists' },
   { label: 'Search / controlled outcomes', value: 'search-controlled' },
+  ...callEvidenceScenarioOptions,
 ];
 
 const blockingScenarios: BlockingEvidenceScenario[] = [
@@ -108,6 +115,9 @@ export function MobilePrototype() {
   const [socialDemo, dispatchSocialDemo] = useReducer(socialDemoReducer, evidenceScenario, createSocialDemo);
   const [searchState, dispatchSearch] = useReducer(searchDemoReducer, emptySearchDemo);
   const socialScenario = socialEvidenceScenarios.find((scenario) => scenario === evidenceScenario);
+  const callScenario = isPrototypeCallScenario(evidenceScenario)
+    ? evidenceScenario
+    : undefined;
   const longLists = evidenceScenario === 'long-lists' || evidenceScenario === 'search-controlled';
 
   const activeStation = useMemo(
@@ -199,10 +209,10 @@ export function MobilePrototype() {
     }
 
     const shellRecovery = shellScenarios.find((scenario) => scenario === evidenceScenario);
-    if ((socialScenario || shellRecovery || longLists || evidenceScenario === 'chat-delivery-recovery' || launchState === 'shell') && activeStation) {
+    if ((socialScenario || shellRecovery || callScenario || longLists || evidenceScenario === 'chat-delivery-recovery' || launchState === 'shell') && activeStation) {
       return (
         <MobileShell
-          key={longLists || evidenceScenario === 'chat-delivery-recovery'
+          key={longLists || callScenario || evidenceScenario === 'chat-delivery-recovery'
             ? evidenceScenario
             : socialScenario ?? 'shell'}
           stationLabel={activeStation.label}
@@ -210,6 +220,7 @@ export function MobilePrototype() {
           recoveryScenario={shellRecovery}
           longLists={longLists}
           focusChatJourney={evidenceScenario === 'chat-delivery-recovery'}
+          callScenario={callScenario}
           searchDemo={evidenceScenario === 'search-controlled'
             ? { state: searchState, dispatch: dispatchSearch } : undefined}
           socialScenario={socialScenario}

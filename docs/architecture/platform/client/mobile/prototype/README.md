@@ -2,7 +2,7 @@
 
 > **Status**: pending-review
 > **Version**: v1.0
-> **Created**: 2026-07-08 | **Updated**: 2026-10-11
+> **Created**: 2026-07-08 | **Updated**: 2026-10-12
 > **Owner**: Mobile Product Team
 > **Module**: `packages/prototypes/mobile/chat/`
 
@@ -17,6 +17,9 @@ The prototype covers:
   Google OAuth progress.
 - Chat list projection for Friend and Group conversations.
 - Chat thread mode where the bottom tabbar is hidden and the composer owns the bottom safe area.
+- Direct-conversation audio/video actions and a shell-owned call surface for
+  outgoing, incoming, active audio/video, reconnecting, handled-elsewhere, and
+  ended states.
 - Contacts toolbar actions: create group and find people, matching `ContactsPage`.
 - Group creation with initial members and friend request search/send affordances.
 - Moments feed/composer/reaction/comment surfaces.
@@ -40,7 +43,8 @@ The prototype covers:
 | Moments feed and composer | MS-C08 / MS-J05 / MS-PA11 / MS-PA20 / MS-PA23 |
 | Me and settings details | MS-C09 / MS-J06 / MS-PA12 / MS-PA21 |
 | Runtime recovery sheets | MS-C10 / MS-J07 / MS-PA08 / MS-PA23 / MS-PA26 |
-| Deferred/local-only affordances | MS-C11..MS-C14 / MS-PA22 / MS-PA27 |
+| One-to-one call surface | MS-C12 / MS-J03 / MS-PA28 / MS-PA29 |
+| Deferred/local-only affordances | MS-C11, MS-C13, MS-C14 / MS-PA22 / MS-PA27 |
 
 ## Run
 
@@ -71,13 +75,58 @@ The out-of-device `Evidence scenario` selector exposes:
 - unknown write outcome;
 - command ledger full;
 - restored draft.
+- one-to-one call states: outgoing audio, incoming video, active audio/video,
+  reconnecting, handled elsewhere, and ended.
 
 These controls are Prototype Portal scaffolding. Each selected state renders a
 realistic product recovery surface inside the device frame.
 Each state is also directly reproducible from the standalone prototype with
 `?scenario=<scenario-id>`.
-The default journey also includes Station removal confirmation, disabled
-WeChat/call affordances, and device-only message flag copy.
+The default journey also includes Station removal confirmation, enabled Direct
+audio/video call actions, disabled WeChat, and device-only message flag copy.
+
+### 2026-10-12 One-To-One Call Contract Sync
+
+Mobile Call is no longer represented as a disabled future affordance. Direct
+conversation headers expose separate labeled audio and video actions. The call
+surface is mounted by `MobileShell`, outside the Chat page tree, so navigation
+cannot silently destroy its state. The underlying conversation remains the
+context owner while the modal call surface owns focus and controls.
+
+State evidence is directly addressable:
+
+- `?scenario=call-outgoing-audio`
+- `?scenario=call-incoming-video`
+- `?scenario=call-active-audio`
+- `?scenario=call-active-video`
+- `?scenario=call-reconnecting`
+- `?scenario=call-handled-elsewhere`
+- `?scenario=call-ended`
+
+Verification:
+
+- TypeScript `--noEmit` passes for the Mobile prototype package.
+- `scripts/check-call-states.py` passes all seven states at 430px, the active
+  video state at 1440px, and four L3 paths: cancel, accept/control/end,
+  handled-elsewhere dismissal, and Default journey -> Direct -> audio call.
+- Ten screenshots and the machine-readable result are under
+  `apps/mobile/src-tauri/target/prototype-call-states/`; the agent opened and
+  inspected outgoing, incoming, active video, reconnecting,
+  handled-elsewhere, ended, and Direct-entry captures.
+- Prototype Portal at `http://localhost:3200/` discovered the current
+  `pending-review` manifest, rendered `call-active-video` inside Mobile Shell,
+  kept the call surface inside the device bounds, and accepted the Mute
+  interaction without horizontal overflow.
+- The existing Portal layout regression produced 54 captures across 1440px,
+  554px, and 390px with zero geometry defects.
+- Call controls meet the prototype's 44px target check, the overlay remains
+  inside the device shell, no horizontal overflow or new page/console error is
+  present. The existing antd `List` deprecation warning is recorded separately.
+
+This amendment is `pending-review`. It proves browser interaction intent only.
+Native iOS media, production styling/i18n, permission and device selection,
+direct/TURN routing, reconnect/cleanup, cross-Station behavior, and exact-source
+Desktop/Mobile arbitration remain `UNPROVEN` under MS-PA28/MS-PA29.
 
 ### 2026-10-11 Chat Delivery Recovery
 
@@ -151,7 +200,7 @@ Evidence captured on 2026-08-27 at the Portal mobile preview:
 | L2 | Draft restored | `tmp/evidence/mobile-shell/prototype/20260827/draft-restored.jpg` |
 | L2 | Station removal confirmation | `tmp/evidence/mobile-shell/prototype/20260827/station-removal.jpg` |
 | L3 | Recovery actions | Scenario selector reached every state; Station/OAuth recovery returned to the correct pre-shell surface; unknown/ledger actions returned to readable Shell; Continue editing opened the conversation thread |
-| L3 | Deferred/local-only actions | Chat thread contains Chat/Pinned only; call and WeChat are disabled; message action reads “Flag on this device” |
+| L3 | Deferred/local-only actions | Chat thread contains Chat/Pinned only; Direct call is enabled, WeChat/Docs remain disabled or absent, and message action reads “Flag on this device” |
 
 ### 2026-09-12 Social And Recovery Samples
 
