@@ -349,7 +349,11 @@ func (s *Service) Register(
 	}
 	nodePeerID, err := peer.Decode(enrollment.NodePeerID)
 	if err != nil {
-		_, _ = s.repo.RevokeEnrollment(ctx, enrollment.StationPeerID)
+		_, _ = s.repo.RevokeEnrollment(
+			ctx,
+			enrollment.StationPeerID,
+			enrollment.NodePeerID,
+		)
 		return nil, fmt.Errorf("decode enrolled Node PeerID: %w", err)
 	}
 	if err := s.admission.AdmitNode(nativeRelay.NodeAdmission{
@@ -358,7 +362,11 @@ func (s *Service) Register(
 		Generation:    enrollment.Generation,
 		ExpiresAt:     enrollment.NodeAuthorizationUntil,
 	}); err != nil {
-		_, _ = s.repo.RevokeEnrollment(ctx, enrollment.StationPeerID)
+		_, _ = s.repo.RevokeEnrollment(
+			ctx,
+			enrollment.StationPeerID,
+			enrollment.NodePeerID,
+		)
 		return nil, fmt.Errorf("admit enrolled Relay node: %w", err)
 	}
 	credential, err := s.authority.IssueNodeCredential(enrollment, jti)
@@ -403,6 +411,7 @@ func (s *Service) RotateCredential(
 		return nil, fmt.Errorf("%w: %v", ErrProofInvalid, err)
 	}
 	if verifiedNode.StationPeerID != current.StationPeerID ||
+		verifiedNode.NodePeerID != current.NodePeerID ||
 		verifiedNode.NodePeerID != enrollment.NodePeerID ||
 		subtle.ConstantTimeCompare(
 			verifiedNode.StationRootPublicKey,
@@ -477,9 +486,14 @@ func (s *Service) authenticateNodeIdentity(
 	ctx context.Context,
 	identity domain.NodeIdentity,
 ) (*domain.Enrollment, error) {
-	enrollment, err := s.repo.GetEnrollmentByStationPeerID(ctx, identity.StationPeerID)
+	enrollment, err := s.repo.GetEnrollment(
+		ctx,
+		identity.StationPeerID,
+		identity.NodePeerID,
+	)
 	if err != nil || enrollment.Status == domain.EnrollmentStatusRevoked ||
 		enrollment.ID != identity.EnrollmentID ||
+		enrollment.NodePeerID != identity.NodePeerID ||
 		enrollment.Generation != identity.Generation ||
 		enrollment.CredentialJTI != identity.JTI ||
 		!enrollment.NodeAuthorizationUntil.After(s.now()) {
@@ -501,20 +515,25 @@ func (s *Service) CountOnlineEnrollments(ctx context.Context) (int64, error) {
 func (s *Service) RevokeEnrollment(
 	ctx context.Context,
 	stationPeerID string,
+	nodePeerID string,
 ) (*domain.Enrollment, error) {
-	enrollment, err := s.repo.RevokeEnrollment(ctx, stationPeerID)
+	enrollment, err := s.repo.RevokeEnrollment(
+		ctx,
+		stationPeerID,
+		nodePeerID,
+	)
 	if errors.Is(err, domain.ErrEnrollmentNotFound) {
 		return nil, ErrEnrollmentNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
-	nodePeerID, decodeErr := peer.Decode(enrollment.NodePeerID)
+	decodedNodePeerID, decodeErr := peer.Decode(enrollment.NodePeerID)
 	if decodeErr != nil {
 		return enrollment, fmt.Errorf("decode revoked Node PeerID: %w", decodeErr)
 	}
-	s.InvalidateStationRoutes(stationPeerID)
-	if revokeErr := s.admission.RevokeNode(nodePeerID); revokeErr != nil {
+	s.InvalidateNodeRoutes(stationPeerID, nodePeerID)
+	if revokeErr := s.admission.RevokeNode(decodedNodePeerID); revokeErr != nil {
 		return enrollment, fmt.Errorf("retire revoked Node circuits: %w", revokeErr)
 	}
 	return enrollment, nil
@@ -523,17 +542,25 @@ func (s *Service) RevokeEnrollment(
 func (s *Service) UpdateEnrollmentStatus(
 	ctx context.Context,
 	stationPeerID string,
+	nodePeerID string,
 	generation uint64,
 	status domain.EnrollmentStatus,
 ) error {
-	return s.repo.UpdateEnrollmentStatus(ctx, stationPeerID, generation, status)
+	return s.repo.UpdateEnrollmentStatus(
+		ctx,
+		stationPeerID,
+		nodePeerID,
+		generation,
+		status,
+	)
 }
 
-func (s *Service) GetEnrollmentByStationPeerID(
+func (s *Service) GetEnrollment(
 	ctx context.Context,
 	stationPeerID string,
+	nodePeerID string,
 ) (*domain.Enrollment, error) {
-	return s.repo.GetEnrollmentByStationPeerID(ctx, stationPeerID)
+	return s.repo.GetEnrollment(ctx, stationPeerID, nodePeerID)
 }
 
 // ---- ICE servers (TURN) ----

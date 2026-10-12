@@ -22,6 +22,21 @@ SPEC.loader.exec_module(JOURNEY)
 
 
 class NodeConnectivityJourneyTest(unittest.TestCase):
+    def test_process_only_contracts_do_not_claim_receiver_visible_proof(
+        self,
+    ) -> None:
+        for contract in (
+            JOURNEY.DURABLE_EVENTS_RUNTIME_REUSE,
+            JOURNEY.SHARED_ACCESS_RUNTIME_REUSE,
+            JOURNEY.AGENT_FENCING_RUNTIME_REUSE,
+            JOURNEY.OSS_FENCING_RUNTIME_REUSE,
+        ):
+            self.assertFalse(contract.require_receiver_visible_proof)
+
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertNotIn("SuiteRuntimeAction.UI_ACTION", source)
+        self.assertNotIn("SuiteRuntimeAction.RECEIVER_ASSERTION", source)
+
     def test_cluster_runtime_contract_matches_ncp08(self) -> None:
         self.assertEqual(
             JOURNEY.CLUSTER_RUNTIME_REUSE.scenario_ids,

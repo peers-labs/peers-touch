@@ -32,10 +32,15 @@ type Repository interface {
 		enrollment *Enrollment,
 		maxStations int,
 	) (*Enrollment, error)
-	GetEnrollmentByStationPeerID(ctx context.Context, stationPeerID string) (*Enrollment, error)
+	GetEnrollment(
+		ctx context.Context,
+		stationPeerID string,
+		nodePeerID string,
+	) (*Enrollment, error)
 	UpdateEnrollmentStatus(
 		ctx context.Context,
 		stationPeerID string,
+		nodePeerID string,
 		generation uint64,
 		status EnrollmentStatus,
 	) error
@@ -50,7 +55,11 @@ type Repository interface {
 		nodeAuthorizationEpoch uint64,
 		nodeAuthorizationUntil time.Time,
 	) error
-	RevokeEnrollment(ctx context.Context, stationPeerID string) (*Enrollment, error)
+	RevokeEnrollment(
+		ctx context.Context,
+		stationPeerID string,
+		nodePeerID string,
+	) (*Enrollment, error)
 	ListAdmittedEnrollments(ctx context.Context) ([]Enrollment, error)
 	ListOnlineEnrollments(ctx context.Context) ([]Enrollment, error)
 	CountOnlineEnrollments(ctx context.Context) (int64, error)

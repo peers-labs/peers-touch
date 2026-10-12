@@ -208,33 +208,59 @@ func (r *Resolver) resolveByHandle(
 		}
 	}
 
-	// Cache fast-path: serve a fresh remote_cached row without touching
-	// the DHT. We skip the cache entirely when the handle is locally
-	// owned (the local fast-path is already cheaper than a DB lookup
-	// and bypasses pollution risks).
+	var rec *locatorpb.ActorLocatorRecord
+
+	// Cached profiles are revalidated against the signed locator sequence.
+	// Standard Relay transport has no broadcast invalidation channel, so a
+	// cache hit cannot bypass the DHT authority that carries visibility and
+	// profile revision changes.
 	if !r.skipCache {
 		if cached, err := fedcache.Lookup(ctx, canon); err == nil && cached != nil {
-			env, locrec := cachedToProtos(cached, canon)
-			if env != nil && locrec != nil {
+			env, cachedLocator := cachedToProtos(cached, canon)
+			if env != nil && cachedLocator != nil {
+				rec, err = r.lookupLocator(ctx, canon)
+				if err != nil {
+					return nil, err
+				}
+				if rec.GetSeq() < cachedLocator.GetSeq() {
+					return nil, fedcache.ErrStaleEnvelope
+				}
 				if memberships != nil &&
-					locrec.GetHomeStationPeerId() != localStationPeerID {
+					rec.GetHomeStationPeerId() != localStationPeerID {
 					if err := requireActiveMembership(
 						ctx,
 						memberships,
 						federationID,
-						locrec.GetHomeStationPeerId(),
+						rec.GetHomeStationPeerId(),
 					); err != nil {
 						return nil, err
 					}
 				}
-				return &Resolved{Envelope: env, Locator: locrec, IsLocal: false, FromCache: true}, nil
+				if rec.GetTombstone() {
+					_, _ = fedcache.Evict(ctx, canon)
+					return nil, ErrTombstoned
+				}
+				if locatorMatchesCachedProfile(rec, cachedLocator) {
+					if err := r.rememberRemoteStationKey(ctx, rec); err != nil {
+						return nil, err
+					}
+					return &Resolved{
+						Envelope:  env,
+						Locator:   rec,
+						IsLocal:   false,
+						FromCache: true,
+					}, nil
+				}
+				_, _ = fedcache.Evict(ctx, canon)
 			}
 		}
 	}
 
-	rec, err := r.lookupLocator(ctx, canon)
-	if err != nil {
-		return nil, err
+	if rec == nil {
+		rec, err = r.lookupLocator(ctx, canon)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if memberships != nil &&
 		rec.GetHomeStationPeerId() != localStationPeerID {
@@ -284,6 +310,18 @@ func (r *Resolver) resolveByHandle(
 		logger.Warnf(ctx, "[resolver] cache upsert failed handle=%s err=%v", canon, cerr)
 	}
 	return res, nil
+}
+
+func locatorMatchesCachedProfile(
+	current *locatorpb.ActorLocatorRecord,
+	cached *locatorpb.ActorLocatorRecord,
+) bool {
+	return current != nil &&
+		cached != nil &&
+		current.GetSeq() == cached.GetSeq() &&
+		current.GetFederatedHandle() == cached.GetFederatedHandle() &&
+		current.GetHomeStationPeerId() == cached.GetHomeStationPeerId() &&
+		current.GetHomeStationDomain() == cached.GetHomeStationDomain()
 }
 
 func requireActiveMembership(

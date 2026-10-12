@@ -132,20 +132,76 @@ type Subscription struct {
 	mu              sync.Mutex
 	floorMu         sync.RWMutex
 	floorEventID    string
+	pendingFloors   []pendingDurableFloor
+}
+
+type pendingDurableFloor struct {
+	eventID    string
+	floorAfter string
 }
 
 // DurableFloorEventID returns the latest durable cursor this subscriber has
-// scanned, including rows filtered for another device.
+// either acknowledged on the SSE socket or safely skipped for this device.
 func (s *Subscription) DurableFloorEventID() string {
 	s.floorMu.RLock()
 	defer s.floorMu.RUnlock()
 	return s.floorEventID
 }
 
-func (s *Subscription) setDurableFloorEventID(eventID string) {
+// AcknowledgeDurableEvent advances the reconnect cursor only after the SSE
+// handler has written and flushed the corresponding durable event.
+func (s *Subscription) AcknowledgeDurableEvent(eventID string) bool {
+	if eventID == "" {
+		return false
+	}
 	s.floorMu.Lock()
-	s.floorEventID = eventID
+	defer s.floorMu.Unlock()
+	if len(s.pendingFloors) == 0 ||
+		s.pendingFloors[0].eventID != eventID {
+		return false
+	}
+	s.floorEventID = s.pendingFloors[0].floorAfter
+	s.pendingFloors = s.pendingFloors[1:]
+	return true
+}
+
+func (s *Subscription) queueDurableEvent(
+	eventID string,
+	floorAfter string,
+) {
+	s.floorMu.Lock()
+	s.pendingFloors = append(s.pendingFloors, pendingDurableFloor{
+		eventID:    eventID,
+		floorAfter: floorAfter,
+	})
 	s.floorMu.Unlock()
+}
+
+func (s *Subscription) discardDurableEvent(eventID string) {
+	s.floorMu.Lock()
+	defer s.floorMu.Unlock()
+	for index := len(s.pendingFloors) - 1; index >= 0; index-- {
+		if s.pendingFloors[index].eventID == eventID {
+			s.pendingFloors = append(
+				s.pendingFloors[:index],
+				s.pendingFloors[index+1:]...,
+			)
+			return
+		}
+	}
+}
+
+func (s *Subscription) advanceDurableFloor(eventID string) {
+	if eventID == "" {
+		return
+	}
+	s.floorMu.Lock()
+	defer s.floorMu.Unlock()
+	if len(s.pendingFloors) == 0 {
+		s.floorEventID = eventID
+		return
+	}
+	s.pendingFloors[len(s.pendingFloors)-1].floorAfter = eventID
 }
 
 // Stats is the snapshot returned by EventBus.Stats.
@@ -807,6 +863,13 @@ func (b *eventBus) Subscribe(ctx context.Context, actorPTID, deviceID, cursor st
 	if len(replay) > queueCap {
 		queueCap = len(replay)
 	}
+	initialFloorEventID := floorEventID
+	if b.cfg.store != nil && len(replay) > 0 {
+		initialFloorEventID = cursor
+		if replay[0].GetResync() != nil {
+			initialFloorEventID = ""
+		}
+	}
 
 	sub := &Subscription{
 		ActorPTID:       actorPTID,
@@ -815,11 +878,18 @@ func (b *eventBus) Subscribe(ctx context.Context, actorPTID, deviceID, cursor st
 		bus:             b,
 		state:           a,
 		durableSequence: throughSequence,
-		floorEventID:    floorEventID,
+		floorEventID:    initialFloorEventID,
 	}
 	sub.Events = sub.send
 
-	for _, ev := range replay {
+	for index, ev := range replay {
+		if b.cfg.store != nil {
+			floorAfter := ev.GetEventId()
+			if index == len(replay)-1 {
+				floorAfter = floorEventID
+			}
+			sub.queueDurableEvent(ev.GetEventId(), floorAfter)
+		}
 		sub.send <- ev
 	}
 	a.subs[sub] = struct{}{}
@@ -1062,15 +1132,20 @@ func (b *eventBus) reconcileActor(
 		if sub.durableSequence+1 >= oldest {
 			continue
 		}
-		if !b.sendLocked(
+		resync := newResync(
+			head.EventID,
+			"durable log retention gap",
+			b,
+		)
+		if !b.sendDurableLocked(
 			state,
 			sub,
-			newResync(head.EventID, "durable log retention gap", b),
+			resync,
+			head.EventID,
 		) {
 			continue
 		}
 		sub.durableSequence = head.Sequence
-		sub.setDurableFloorEventID(head.EventID)
 	}
 
 	start = state.scannedSequence
@@ -1100,13 +1175,18 @@ func (b *eventBus) reconcileActor(
 			if sub.durableSequence >= through {
 				continue
 			}
-			if b.sendLocked(
+			resync := newResync(
+				head.EventID,
+				"durable log sequence gap",
+				b,
+			)
+			if b.sendDurableLocked(
 				state,
 				sub,
-				newResync(head.EventID, "durable log sequence gap", b),
+				resync,
+				head.EventID,
 			) {
 				sub.durableSequence = head.Sequence
-				sub.setDurableFloorEventID(head.EventID)
 			}
 		}
 		state.scannedSequence = max(
@@ -1126,16 +1206,36 @@ func (b *eventBus) reconcileActor(
 			}
 			if record.TargetDeviceID == "" ||
 				record.TargetDeviceID == sub.DeviceID {
-				if !b.sendLocked(state, sub, record.Event) {
+				if !b.sendDurableLocked(
+					state,
+					sub,
+					record.Event,
+					record.Event.GetEventId(),
+				) {
 					continue
 				}
 			}
 			sub.durableSequence = record.Sequence
-			sub.setDurableFloorEventID(record.Event.GetEventId())
+			sub.advanceDurableFloor(record.Event.GetEventId())
 		}
 	}
 	state.scannedSequence = max(state.scannedSequence, through)
 	return nil
+}
+
+func (b *eventBus) sendDurableLocked(
+	state *actorState,
+	sub *Subscription,
+	event *realtime.StreamEvent,
+	floorAfter string,
+) bool {
+	eventID := event.GetEventId()
+	sub.queueDurableEvent(eventID, floorAfter)
+	if b.sendLocked(state, sub, event) {
+		return true
+	}
+	sub.discardDurableEvent(eventID)
+	return false
 }
 
 func (b *eventBus) sendLocked(

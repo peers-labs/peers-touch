@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,7 +45,7 @@ type agentFencingProcessResult struct {
 	TaskID                  string `json:"taskId,omitempty"`
 	StepID                  string `json:"stepId,omitempty"`
 	LeaseID                 string `json:"leaseId,omitempty"`
-	OwnerNodePeerID         string `json:"ownerNodePeerId,omitempty"`
+	OwnerNodeID             string `json:"ownerNodeId,omitempty"`
 	OwnerIncarnation        string `json:"ownerIncarnation,omitempty"`
 	FencingToken            uint64 `json:"fencingToken,omitempty"`
 	LeaseStatus             string `json:"leaseStatus,omitempty"`
@@ -78,7 +77,7 @@ func TestPostgresCrossProcessAgentFencing(t *testing.T) {
 	ready := waitAgentFencingResult(t, holder.readyPath)
 	nodeA, incarnationA := agentFencingNodeIdentity("a")
 	nodeB, incarnationB := agentFencingNodeIdentity("b")
-	if ready.OwnerNodePeerID != nodeA ||
+	if ready.OwnerNodeID != nodeA ||
 		ready.OwnerIncarnation != incarnationA ||
 		ready.FencingToken != 1 {
 		t.Fatalf("node A did not publish the initial authority: %+v", ready)
@@ -90,7 +89,7 @@ func TestPostgresCrossProcessAgentFencing(t *testing.T) {
 		ready.ProcessID <= 0 ||
 		healthy.ProcessID <= 0 ||
 		healthy.ProcessID == ready.ProcessID ||
-		healthy.OwnerNodePeerID != ready.OwnerNodePeerID ||
+		healthy.OwnerNodeID != ready.OwnerNodeID ||
 		healthy.FencingToken != ready.FencingToken ||
 		healthy.StepStatus != int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING) {
 		t.Fatalf("node B interrupted healthy foreign work: %+v", healthy)
@@ -107,7 +106,7 @@ func TestPostgresCrossProcessAgentFencing(t *testing.T) {
 		)
 	}
 	takeover := waitAgentFencingResult(t, watcher.takeoverPath)
-	if takeover.OwnerNodePeerID != nodeB ||
+	if takeover.OwnerNodeID != nodeB ||
 		takeover.OwnerIncarnation != incarnationB ||
 		takeover.FencingToken != ready.FencingToken+1 ||
 		takeover.StepStatus != int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING) {
@@ -151,13 +150,13 @@ func TestPostgresCrossProcessAgentFencing(t *testing.T) {
 				"NCP-G06-HEALTHY": map[string]any{
 					"ownerProcessId":    ready.ProcessID,
 					"observerProcessId": healthy.ProcessID,
-					"ownerNodePeerId":   healthy.OwnerNodePeerID,
+					"ownerNodeId":       healthy.OwnerNodeID,
 					"ownerIncarnation":  healthy.OwnerIncarnation,
 					"fencingToken":      healthy.FencingToken,
 					"healthyPreserved":  true,
 				},
 				"NCP-G06-TAKEOVER": map[string]any{
-					"ownerNodePeerId":  takeover.OwnerNodePeerID,
+					"ownerNodeId":      takeover.OwnerNodeID,
 					"ownerIncarnation": takeover.OwnerIncarnation,
 					"fencingToken":     takeover.FencingToken,
 					"tokenAdvanced":    true,
@@ -264,7 +263,7 @@ func runAgentFencingWatcherHelper(
 			t.Fatal(err)
 		}
 		takeover = loadAgentFencingResult(t, database, "watch-takeover")
-		if takeover.OwnerNodePeerID == service.nodeID &&
+		if takeover.OwnerNodeID == service.nodeID &&
 			takeover.OwnerIncarnation == service.nodeIncarnation &&
 			takeover.FencingToken > ready.FencingToken {
 			break
@@ -422,7 +421,7 @@ func loadAgentFencingResult(
 		TaskID:                step.TaskID,
 		StepID:                step.StepID,
 		LeaseID:               lease.LeaseID,
-		OwnerNodePeerID:       lease.OwnerNodePeerID,
+		OwnerNodeID:           lease.OwnerNodeID,
 		OwnerIncarnation:      lease.OwnerIncarnation,
 		FencingToken:          lease.FencingToken,
 		LeaseStatus:           lease.Status,
@@ -658,6 +657,13 @@ func writeAgentFencingResult(
 }
 
 func printAgentFencingResult(result agentFencingProcessResult) {
-	encoded, _ := json.Marshal(result)
-	fmt.Println("NCP_AGENT_RESULT " + string(encoded))
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		panic(err)
+	}
+	line := append([]byte("NCP_AGENT_RESULT "), encoded...)
+	line = append(line, '\n')
+	if _, err := os.Stdout.Write(line); err != nil {
+		panic(err)
+	}
 }

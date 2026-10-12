@@ -123,6 +123,20 @@ func fillFederationFieldsForLocalSignUp(a *db.Actor) {
 // The function increments touch_actor.locator_seq atomically before signing
 // so two concurrent publishes never reuse a seq.
 func PublishVisibility(ctx context.Context, actorID uint64) error {
+	return publishVisibility(ctx, actorID, true)
+}
+
+// RepublishVisibility refreshes the signed DHT record lifetime without
+// advancing the semantic locator revision used by remote cache revalidation.
+func RepublishVisibility(ctx context.Context, actorID uint64) error {
+	return publishVisibility(ctx, actorID, false)
+}
+
+func publishVisibility(
+	ctx context.Context,
+	actorID uint64,
+	advanceSequence bool,
+) error {
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
 		return fmt.Errorf("locator hook: db: %w", err)
@@ -158,11 +172,17 @@ func PublishVisibility(ctx context.Context, actorID uint64) error {
 	// Atomically bump locator_seq and read the post-update value. We read
 	// `a` after the UPDATE so the in-memory copy carries the seq we will
 	// sign with — pre-increment to avoid race with a parallel PublishVisibility.
-	tx := rds.Model(&db.Actor{}).
-		Where("id = ?", actorID).
-		UpdateColumn("locator_seq", gorm.Expr("locator_seq + 1"))
-	if tx.Error != nil {
-		return fmt.Errorf("locator hook: bump seq for actor %d: %w", actorID, tx.Error)
+	if advanceSequence || a.LocatorSeq == 0 {
+		tx := rds.Model(&db.Actor{}).
+			Where("id = ?", actorID).
+			UpdateColumn("locator_seq", gorm.Expr("locator_seq + 1"))
+		if tx.Error != nil {
+			return fmt.Errorf(
+				"locator hook: bump seq for actor %d: %w",
+				actorID,
+				tx.Error,
+			)
+		}
 	}
 	if err := rds.Select("locator_seq", "federated_handle", "home_station_peer_id", "home_station_domain", "visibility").First(&a, actorID).Error; err != nil {
 		return fmt.Errorf("locator hook: reload actor %d: %w", actorID, err)

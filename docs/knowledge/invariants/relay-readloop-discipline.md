@@ -2,10 +2,7 @@
 kind: invariant
 title: Relay readLoop goroutines must dispatch blocking work asynchronously
 status: superseded-by:docs/architecture/platform/runtime/node-connectivity/design.md
-owns:
-  - apps/station/frame/core/plugin/native/subserver/relay/stream.go
-  - apps/station/frame/core/plugin/native/subserver/relay/relay.go
-  - apps/station/frame/core/plugin/native/subserver/relay/client/relay_client.go
+owns: []
 referenced-by:
   - ../pitfalls/c1-tombstone-only-broadcast.md
   - ../playbooks/adding-federation-broadcast-topic.md

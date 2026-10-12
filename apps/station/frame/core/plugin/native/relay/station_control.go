@@ -478,13 +478,18 @@ func (c *StationControl) selectLiveRouteLocked(
 	now time.Time,
 ) (Target, CircuitRoute, error) {
 	routes := c.liveRoutes(now)
-	if len(routes) != 1 {
+	if len(routes) == 0 {
 		return Target{}, CircuitRoute{}, ErrConnectionMaterialUnavailable
 	}
-	route := routes[0]
-	for _, target := range c.pool.Targets {
-		if target.RelayPeerID == route.RelayPeerID {
-			return target, route, nil
+	sort.Slice(routes, func(left, right int) bool {
+		return routes[left].RelayPeerID.String() <
+			routes[right].RelayPeerID.String()
+	})
+	for _, route := range routes {
+		for _, target := range c.pool.Targets {
+			if target.RelayPeerID == route.RelayPeerID {
+				return target, route, nil
+			}
 		}
 	}
 	return Target{}, CircuitRoute{}, ErrConnectionMaterialUnavailable

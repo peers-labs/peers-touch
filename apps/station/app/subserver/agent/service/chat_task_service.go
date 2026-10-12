@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
@@ -191,7 +192,7 @@ func (s *ChatTaskService) BeginChatStep(
 		StepID:           step.StepID,
 		ExecutorID:       s.executorID,
 		ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
-		OwnerNodePeerID:  s.nodeID,
+		OwnerNodeID:      s.nodeID,
 		OwnerIncarnation: s.nodeIncarnation,
 		FencingToken:     1,
 		Status:           executorLeaseStatusActive,
@@ -277,6 +278,97 @@ func (s *ChatTaskService) BindChatStepToTurn(
 		}
 		return renewCurrentExecutorLeaseTx(tx, lease, now, chatLeaseTTL)
 	})
+}
+
+func (s *ChatTaskService) RenewChatStepLease(
+	ctx context.Context,
+	taskID string,
+	stepID string,
+	leaseID string,
+	fencingToken uint64,
+) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		lease, now, err := s.requireOwnedActiveLeaseTx(
+			tx,
+			strings.TrimSpace(taskID),
+			strings.TrimSpace(stepID),
+			leaseID,
+			fencingToken,
+		)
+		if err != nil {
+			return err
+		}
+		return renewCurrentExecutorLeaseTx(
+			tx,
+			lease,
+			now,
+			chatLeaseTTL,
+		)
+	})
+}
+
+func (s *ChatTaskService) MaintainChatStepLease(
+	ctx context.Context,
+	taskID string,
+	stepID string,
+	leaseID string,
+	fencingToken uint64,
+) (context.Context, func()) {
+	return maintainChatStepLease(
+		ctx,
+		chatLeaseTTL/3,
+		func(renewContext context.Context) error {
+			return s.RenewChatStepLease(
+				renewContext,
+				taskID,
+				stepID,
+				leaseID,
+				fencingToken,
+			)
+		},
+	)
+}
+
+func maintainChatStepLease(
+	ctx context.Context,
+	renewInterval time.Duration,
+	renew func(context.Context) error,
+) (context.Context, func()) {
+	leaseContext, cancelLease := context.WithCancelCause(ctx)
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	var stopOnce sync.Once
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(renewInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-leaseContext.Done():
+				return
+			case <-stop:
+				return
+			case <-ticker.C:
+				if err := renew(leaseContext); err != nil {
+					cancelLease(fmt.Errorf(
+						"chat executor lease renewal failed: %w",
+						err,
+					))
+					return
+				}
+			}
+		}
+	}()
+	return leaseContext, func() {
+		stopOnce.Do(func() {
+			close(stop)
+			<-done
+		})
+	}
 }
 
 // FinishChatStep marks the step COMPLETED, binds its TurnID, writes a recovery
@@ -921,7 +1013,7 @@ func (s *ChatTaskService) claimChatStepLeaseTx(
 			continue
 		}
 		healthy := lease.FencingToken > 0 &&
-			strings.TrimSpace(lease.OwnerNodePeerID) != "" &&
+			strings.TrimSpace(lease.OwnerNodeID) != "" &&
 			strings.TrimSpace(lease.OwnerIncarnation) != "" &&
 			lease.ExpiresAt.After(now)
 		if healthy {
@@ -940,7 +1032,7 @@ func (s *ChatTaskService) claimChatStepLeaseTx(
 		StepID:           stepID,
 		ExecutorID:       s.executorID,
 		ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
-		OwnerNodePeerID:  s.nodeID,
+		OwnerNodeID:      s.nodeID,
 		OwnerIncarnation: s.nodeIncarnation,
 		FencingToken:     maxToken + 1,
 		Status:           executorLeaseStatusActive,
@@ -975,7 +1067,7 @@ func (s *ChatTaskService) requireOwnedActiveLeaseTx(
 	var lease persistence.ExecutorLease
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where(
-			"lease_id = ? AND task_id = ? AND step_id = ? AND owner_node_peer_id = ? AND owner_incarnation = ? AND executor_id = ? AND fencing_token = ? AND status = ?",
+			"lease_id = ? AND task_id = ? AND step_id = ? AND owner_node_id = ? AND owner_incarnation = ? AND executor_id = ? AND fencing_token = ? AND status = ?",
 			leaseID,
 			taskID,
 			stepID,
@@ -1018,7 +1110,7 @@ func (s *ChatTaskService) LoadOwnedChatStepLeaseAuthority(
 		var lease persistence.ExecutorLease
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where(
-				"task_id = ? AND step_id = ? AND owner_node_peer_id = ? AND owner_incarnation = ? AND executor_id = ? AND status = ?",
+				"task_id = ? AND step_id = ? AND owner_node_id = ? AND owner_incarnation = ? AND executor_id = ? AND status = ?",
 				taskID,
 				stepID,
 				s.nodeID,
@@ -1095,7 +1187,7 @@ func (s *ChatTaskService) assertOwnedActiveLeaseTx(
 	now time.Time,
 ) error {
 	if lease == nil ||
-		lease.OwnerNodePeerID != s.nodeID ||
+		lease.OwnerNodeID != s.nodeID ||
 		lease.OwnerIncarnation != s.nodeIncarnation ||
 		lease.ExecutorID != s.executorID {
 		return staleChatLeaseError()

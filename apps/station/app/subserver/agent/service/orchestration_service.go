@@ -3675,7 +3675,7 @@ func (s *OrchestrationService) claimNodeLeaseTx(
 			continue
 		}
 		if lease.FencingToken == 0 ||
-			strings.TrimSpace(lease.OwnerNodePeerID) == "" ||
+			strings.TrimSpace(lease.OwnerNodeID) == "" ||
 			strings.TrimSpace(lease.OwnerIncarnation) == "" ||
 			!lease.ExpiresAt.After(now) {
 			if err := expireExecutorLeaseTx(tx, &lease, now); err != nil {
@@ -3700,7 +3700,7 @@ func (s *OrchestrationService) claimNodeLeaseTx(
 		StepID:           node.ID,
 		ExecutorID:       executorID,
 		ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE),
-		OwnerNodePeerID:  s.executorNodeID,
+		OwnerNodeID:      s.executorNodeID,
 		OwnerIncarnation: s.executorIncarnation,
 		FencingToken:     maxToken + 1,
 		Status:           executorLeaseStatusActive,
@@ -5171,16 +5171,16 @@ func nodeEventPayload(task *persistence.CollaborationTask, node *persistence.Col
 
 func executorLeaseEventPayload(task *persistence.CollaborationTask, node *persistence.CollaborationTaskNode, lease *persistence.ExecutorLease, reason string) map[string]interface{} {
 	payload := map[string]interface{}{
-		"task_id":            task.ID,
-		"node_id":            node.ID,
-		"agent_id":           node.AgentID,
-		"lease_id":           lease.LeaseID,
-		"executor_id":        lease.ExecutorID,
-		"executor_kind":      lease.ExecutorKind,
-		"owner_node_peer_id": lease.OwnerNodePeerID,
-		"owner_incarnation":  lease.OwnerIncarnation,
-		"fencing_token":      lease.FencingToken,
-		"lease_status":       lease.Status,
+		"task_id":           task.ID,
+		"node_id":           node.ID,
+		"agent_id":          node.AgentID,
+		"lease_id":          lease.LeaseID,
+		"executor_id":       lease.ExecutorID,
+		"executor_kind":     lease.ExecutorKind,
+		"owner_node_id":     lease.OwnerNodeID,
+		"owner_incarnation": lease.OwnerIncarnation,
+		"fencing_token":     lease.FencingToken,
+		"lease_status":      lease.Status,
 	}
 	if strings.TrimSpace(reason) != "" {
 		payload["reason"] = reason
@@ -5983,7 +5983,7 @@ func leaseRecordToProto(record *persistence.ExecutorLease) *model.ExecutorLease 
 		AcquiredAt:       timestamppb.New(record.AcquiredAt),
 		HeartbeatAt:      timestamppb.New(record.HeartbeatAt),
 		ExpiresAt:        timestamppb.New(record.ExpiresAt),
-		OwnerNodePeerId:  record.OwnerNodePeerID,
+		OwnerNodeId:      record.OwnerNodeID,
 		OwnerIncarnation: record.OwnerIncarnation,
 		FencingToken:     record.FencingToken,
 	}

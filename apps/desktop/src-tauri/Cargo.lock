@@ -7492,6 +7492,7 @@ name = "station-trust"
 version = "0.1.0"
 dependencies = [
  "libp2p-identity",
+ "multiaddr",
  "prost",
  "prost-build",
  "sha2 0.10.9",
@@ -8298,6 +8299,7 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

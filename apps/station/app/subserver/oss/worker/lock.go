@@ -45,9 +45,19 @@ type LeaseAuthority struct {
 }
 
 type leaseAuthorityContextKey struct{}
+type leaseValidatorContextKey struct{}
+
+type leaseValidator func(context.Context, LeaseAuthority) error
 
 func withLeaseAuthority(ctx context.Context, authority LeaseAuthority) context.Context {
 	return context.WithValue(ctx, leaseAuthorityContextKey{}, authority)
+}
+
+func withLeaseValidator(
+	ctx context.Context,
+	validate leaseValidator,
+) context.Context {
+	return context.WithValue(ctx, leaseValidatorContextKey{}, validate)
 }
 
 // LeaseAuthorityFromContext returns the authority of the current
@@ -56,6 +66,28 @@ func withLeaseAuthority(ctx context.Context, authority LeaseAuthority) context.C
 func LeaseAuthorityFromContext(ctx context.Context) (LeaseAuthority, bool) {
 	authority, ok := ctx.Value(leaseAuthorityContextKey{}).(LeaseAuthority)
 	return authority, ok
+}
+
+func ValidateLeaseAuthority(
+	ctx context.Context,
+	workerName string,
+) (LeaseAuthority, error) {
+	authority, ok := LeaseAuthorityFromContext(ctx)
+	if !ok ||
+		authority.WorkerName != workerName ||
+		authority.OwnerNodePeerID == "" ||
+		authority.OwnerIncarnation == "" ||
+		authority.FencingToken == 0 {
+		return LeaseAuthority{}, ErrStaleWorkerLease
+	}
+	if validate, ok := ctx.Value(
+		leaseValidatorContextKey{},
+	).(leaseValidator); ok && validate != nil {
+		if err := validate(ctx, authority); err != nil {
+			return LeaseAuthority{}, err
+		}
+	}
+	return authority, nil
 }
 
 // MemLock is an in-process LeaderLock for tests and SQLite fixtures.

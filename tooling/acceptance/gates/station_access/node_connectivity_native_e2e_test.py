@@ -167,6 +167,7 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
                     },
                     "relay": {
                         "endpoint": "https://relay.example:18081",
+                        "runtimeIdentity": "relay-peer",
                     },
                 }
             },
@@ -186,6 +187,7 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
                             "route": {
                                 "route_type": "relay",
                                 "health": "available",
+                                "relay_peer_id": "relay-peer",
                                 "endpoint_origin": (
                                     "https://relay.example:18443"
                                 ),

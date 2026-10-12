@@ -12,7 +12,7 @@ type ExecutorLease struct {
 	StepID           string    `gorm:"type:varchar(36);index:idx_agent_executor_leases_step"`
 	ExecutorID       string    `gorm:"not null;type:varchar(128)"`
 	ExecutorKind     int32     `gorm:"not null;type:integer"`
-	OwnerNodePeerID  string    `gorm:"not null;type:varchar(255);default:''"`
+	OwnerNodeID      string    `gorm:"not null;type:varchar(255);default:''"`
 	OwnerIncarnation string    `gorm:"not null;type:varchar(64);default:''"`
 	FencingToken     uint64    `gorm:"not null;default:0"`
 	Status           string    `gorm:"not null;type:varchar(32);index:idx_agent_executor_leases_status"`

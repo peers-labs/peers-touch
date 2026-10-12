@@ -13,7 +13,7 @@ rustls = { version = "0.23", features = ["ring"] }
 sha2 = "0.10"
 tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "sync", "time"] }
 tokio-rustls = "0.26"
-tokio-util = { version = "0.7", features = ["compat"] }
+tokio-util = { version = "0.7", features = ["compat", "rt"] }
 x509-parser = "0.17"
 
 [dev-dependencies]

@@ -207,7 +207,7 @@ func TestTTLSweeper_Integration_SoftDeletesExpiredAndDebits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTTLSweeper: %v", err)
 	}
-	if err := sweeper.RunOnce(ctx); err != nil {
+	if err := sweeper.RunOnce(testWorkerContext(ctx, sweeper.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
@@ -408,7 +408,7 @@ func TestBucketReconciler_Integration_CorrectsCountAndByteDrift(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBucketReconciler: %v", err)
 	}
-	if err := rec.RunOnce(ctx); err != nil {
+	if err := rec.RunOnce(testWorkerContext(ctx, rec.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
@@ -468,7 +468,7 @@ func TestPeerKeyTrim_Integration_DropsUnpinnedIdleOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPeerKeyTrim: %v", err)
 	}
-	if err := trim.RunOnce(ctx); err != nil {
+	if err := trim.RunOnce(testWorkerContext(ctx, trim.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
@@ -540,7 +540,7 @@ func TestKeyRotationFinalizer_Integration_ClearsPrevAfterGrace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKeyRotationFinalizer: %v", err)
 	}
-	if err := final.RunOnce(ctx); err != nil {
+	if err := final.RunOnce(testWorkerContext(ctx, final.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
@@ -585,7 +585,7 @@ func TestKeyRotationFinalizer_Integration_LeavesPrevWithinGrace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKeyRotationFinalizer: %v", err)
 	}
-	if err := final.RunOnce(ctx); err != nil {
+	if err := final.RunOnce(testWorkerContext(ctx, final.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
@@ -628,7 +628,7 @@ func TestAuditTrim_Integration_RemovesOldRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuditTrim: %v", err)
 	}
-	if err := trim.RunOnce(ctx); err != nil {
+	if err := trim.RunOnce(testWorkerContext(ctx, trim.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 

@@ -17,14 +17,14 @@ import (
 
 type enrollmentPO struct {
 	ID                     uint64 `gorm:"primaryKey;autoIncrement:false"`
-	StationPeerID          string `gorm:"size:255;uniqueIndex;uniqueIndex:idx_relay_enrollment_station_generation,priority:1"`
-	NodePeerID             string `gorm:"size:255;uniqueIndex"`
+	StationPeerID          string `gorm:"size:255;uniqueIndex:idx_relay_enrollment_station_node,priority:1;uniqueIndex:idx_relay_enrollment_station_node_generation,priority:1"`
+	NodePeerID             string `gorm:"size:255;uniqueIndex;uniqueIndex:idx_relay_enrollment_station_node,priority:2;uniqueIndex:idx_relay_enrollment_station_node_generation,priority:2"`
 	StationRootPublicKey   []byte
 	NodeAuthorizationEpoch uint64
 	NodeAuthorizationUntil time.Time               `gorm:"index"`
 	Label                  string                  `gorm:"size:255"`
 	Status                 domain.EnrollmentStatus `gorm:"index"`
-	Generation             uint64                  `gorm:"not null;default:1;uniqueIndex:idx_relay_enrollment_station_generation,priority:2"`
+	Generation             uint64                  `gorm:"not null;default:1;uniqueIndex:idx_relay_enrollment_station_node_generation,priority:3"`
 	CredentialJTI          string                  `gorm:"size:128;index"`
 	MaxClients             int32
 	BandwidthLimit         int64
@@ -192,6 +192,16 @@ func (r *GormRepo) AutoMigrate() error {
 				}
 			}
 		}
+		if tx.Migrator().HasTable(&enrollmentPO{}) {
+			for _, indexName := range []string{
+				"idx_relay_enrollment_station_peer_id",
+				"idx_relay_enrollment_station_generation",
+			} {
+				if err := dropLegacyEnrollmentIndex(tx, indexName); err != nil {
+					return err
+				}
+			}
+		}
 		if err := tx.AutoMigrate(&enrollmentPO{}, &invitePO{}); err != nil {
 			return err
 		}
@@ -274,7 +284,11 @@ func (r *GormRepo) ConsumeInviteAndCreateEnrollment(
 
 		var current enrollmentPO
 		getErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("station_peer_id = ?", enrollment.StationPeerID).
+			Where(
+				"station_peer_id = ? AND node_peer_id = ?",
+				enrollment.StationPeerID,
+				enrollment.NodePeerID,
+			).
 			First(&current).Error
 		if getErr != nil && !errorsIsRecordNotFound(getErr) {
 			return getErr
@@ -283,7 +297,12 @@ func (r *GormRepo) ConsumeInviteAndCreateEnrollment(
 		if errorsIsRecordNotFound(getErr) && maxStations > 0 {
 			var count int64
 			if err := tx.Model(&enrollmentPO{}).
-				Where("status <> ?", domain.EnrollmentStatusRevoked).
+				Distinct("station_peer_id").
+				Where(
+					"status <> ? AND station_peer_id <> ?",
+					domain.EnrollmentStatusRevoked,
+					enrollment.StationPeerID,
+				).
 				Count(&count).Error; err != nil {
 				return err
 			}
@@ -345,9 +364,19 @@ func (r *GormRepo) ExpireStaleInvites(ctx context.Context) (int64, error) {
 
 // ---- Enrollment ----
 
-func (r *GormRepo) GetEnrollmentByStationPeerID(ctx context.Context, stationPeerID string) (*domain.Enrollment, error) {
+func (r *GormRepo) GetEnrollment(
+	ctx context.Context,
+	stationPeerID string,
+	nodePeerID string,
+) (*domain.Enrollment, error) {
 	var po enrollmentPO
-	if err := r.db.WithContext(ctx).Where("station_peer_id = ?", stationPeerID).First(&po).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Where(
+			"station_peer_id = ? AND node_peer_id = ?",
+			stationPeerID,
+			nodePeerID,
+		).
+		First(&po).Error; err != nil {
 		return nil, err
 	}
 	out := toDomainEnrollment(po)
@@ -357,13 +386,15 @@ func (r *GormRepo) GetEnrollmentByStationPeerID(ctx context.Context, stationPeer
 func (r *GormRepo) UpdateEnrollmentStatus(
 	ctx context.Context,
 	stationPeerID string,
+	nodePeerID string,
 	generation uint64,
 	status domain.EnrollmentStatus,
 ) error {
 	result := r.db.WithContext(ctx).Model(&enrollmentPO{}).
 		Where(
-			"station_peer_id = ? AND generation = ? AND status <> ?",
+			"station_peer_id = ? AND node_peer_id = ? AND generation = ? AND status <> ?",
 			stationPeerID,
+			nodePeerID,
 			generation,
 			domain.EnrollmentStatusRevoked,
 		).
@@ -387,9 +418,10 @@ func (r *GormRepo) RotateNodeCredential(
 
 	result := r.db.WithContext(ctx).Model(&enrollmentPO{}).
 		Where(
-			"id = ? AND station_peer_id = ? AND generation = ? AND credential_jti = ? AND status <> ?",
+			"id = ? AND station_peer_id = ? AND node_peer_id = ? AND generation = ? AND credential_jti = ? AND status <> ?",
 			current.EnrollmentID,
 			current.StationPeerID,
+			current.NodePeerID,
 			current.Generation,
 			current.JTI,
 			domain.EnrollmentStatusRevoked,
@@ -403,7 +435,7 @@ func (r *GormRepo) RotateNodeCredential(
 	if result.RowsAffected == 0 {
 		return nil, domain.ErrNodeCredentialStale
 	}
-	return r.GetEnrollmentByStationPeerID(ctx, current.StationPeerID)
+	return r.GetEnrollment(ctx, current.StationPeerID, current.NodePeerID)
 }
 
 func (r *GormRepo) UpdateNodeAuthorization(
@@ -414,9 +446,10 @@ func (r *GormRepo) UpdateNodeAuthorization(
 ) error {
 	result := r.db.WithContext(ctx).Model(&enrollmentPO{}).
 		Where(
-			"id = ? AND station_peer_id = ? AND generation = ? AND credential_jti = ? AND status <> ?",
+			"id = ? AND station_peer_id = ? AND node_peer_id = ? AND generation = ? AND credential_jti = ? AND status <> ?",
 			current.EnrollmentID,
 			current.StationPeerID,
+			current.NodePeerID,
 			current.Generation,
 			current.JTI,
 			domain.EnrollmentStatusRevoked,
@@ -437,6 +470,7 @@ func (r *GormRepo) UpdateNodeAuthorization(
 func (r *GormRepo) RevokeEnrollment(
 	ctx context.Context,
 	stationPeerID string,
+	nodePeerID string,
 ) (*domain.Enrollment, error) {
 	r.enrollmentMu.Lock()
 	defer r.enrollmentMu.Unlock()
@@ -445,7 +479,11 @@ func (r *GormRepo) RevokeEnrollment(
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var current enrollmentPO
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("station_peer_id = ?", stationPeerID).
+			Where(
+				"station_peer_id = ? AND node_peer_id = ?",
+				stationPeerID,
+				nodePeerID,
+			).
 			First(&current).Error; err != nil {
 			if errorsIsRecordNotFound(err) {
 				return domain.ErrEnrollmentNotFound
@@ -523,6 +561,9 @@ func errorsIsRecordNotFound(err error) bool {
 }
 
 func dropLegacyIndex(tx *gorm.DB, indexName string) error {
+	if !tx.Migrator().HasIndex(&invitePO{}, indexName) {
+		return nil
+	}
 	statement := "DROP INDEX IF EXISTS " + indexName
 	if tx.Dialector.Name() == "mysql" {
 		statement = "DROP INDEX " + indexName + " ON relay_invite"
@@ -530,6 +571,25 @@ func dropLegacyIndex(tx *gorm.DB, indexName string) error {
 	if err := tx.Exec(statement).Error; err != nil &&
 		tx.Dialector.Name() == "mysql" {
 		return fmt.Errorf("drop legacy Relay invite index %s: %w", indexName, err)
+	}
+	return nil
+}
+
+func dropLegacyEnrollmentIndex(tx *gorm.DB, indexName string) error {
+	if !tx.Migrator().HasIndex(&enrollmentPO{}, indexName) {
+		return nil
+	}
+	statement := "DROP INDEX IF EXISTS " + indexName
+	if tx.Dialector.Name() == "mysql" {
+		statement = "DROP INDEX " + indexName + " ON relay_enrollment"
+	}
+	if err := tx.Exec(statement).Error; err != nil &&
+		tx.Dialector.Name() == "mysql" {
+		return fmt.Errorf(
+			"drop legacy Relay enrollment index %s: %w",
+			indexName,
+			err,
+		)
 	}
 	return nil
 }

@@ -584,6 +584,65 @@ func TestBlobRepo_StageCommitInsertsThenIncrementsRefCount(t *testing.T) {
 	}
 }
 
+func TestBlobRepo_ConcurrentFirstStageConverges(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	repository := NewBlobRepository("default")
+	start := make(chan struct{})
+	type stageResult struct {
+		write *BlobWrite
+		err   error
+	}
+	results := make(chan stageResult, 2)
+	for range 2 {
+		go func() {
+			<-start
+			write, err := repository.StageWrite(
+				context.Background(),
+				"local",
+				"cas/aa/concurrent-first",
+				42,
+				"concurrent-digest",
+			)
+			results <- stageResult{write: write, err: err}
+		}()
+	}
+	close(start)
+
+	first := <-results
+	second := <-results
+	if first.err != nil || second.err != nil {
+		t.Fatalf(
+			"concurrent first stage errors: first=%v second=%v",
+			first.err,
+			second.err,
+		)
+	}
+	if first.write == nil || second.write == nil ||
+		first.write.Generation != second.write.Generation ||
+		first.write.StorageKey != second.write.StorageKey {
+		t.Fatalf(
+			"concurrent stages diverged: first=%+v second=%+v",
+			first.write,
+			second.write,
+		)
+	}
+	var count int64
+	if err := db.Model(&ossmodel.Blob{}).
+		Where(
+			"backend = ? AND key = ?",
+			"local",
+			"cas/aa/concurrent-first",
+		).
+		Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("concurrent first stage created %d rows", count)
+	}
+}
+
 func TestBlobRepo_ReleaseDecrementsToZeroAndStops(t *testing.T) {
 	db := initStore(t)
 	reset(t, db)

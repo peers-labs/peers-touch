@@ -364,8 +364,8 @@ func (x *StationIdentityStatement) GetNodeAuthorizationDigest() []byte {
 type StationIdentityResponse struct {
 	state             protoimpl.MessageState    `protogen:"open.v1"`
 	StatementBytes    []byte                    `protobuf:"bytes,1,opt,name=statement_bytes,json=statementBytes,proto3" json:"statement_bytes,omitempty"`
-	NodeSignature     []byte                    `protobuf:"bytes,2,opt,name=node_signature,json=nodeSignature,proto3" json:"node_signature,omitempty"`
-	NodeAuthorization *StationNodeAuthorization `protobuf:"bytes,3,opt,name=node_authorization,json=nodeAuthorization,proto3" json:"node_authorization,omitempty"`
+	NodeSignature     []byte                    `protobuf:"bytes,4,opt,name=node_signature,json=nodeSignature,proto3" json:"node_signature,omitempty"`
+	NodeAuthorization *StationNodeAuthorization `protobuf:"bytes,5,opt,name=node_authorization,json=nodeAuthorization,proto3" json:"node_authorization,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -450,11 +450,11 @@ const file_domain_peer_station_identity_proto_rawDesc = "" +
 	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\x12)\n" +
 	"\x11issued_at_unix_ms\x18\x05 \x01(\x03R\x0eissuedAtUnixMs\x12+\n" +
 	"\x12expires_at_unix_ms\x18\x06 \x01(\x03R\x0fexpiresAtUnixMs\x12:\n" +
-	"\x19node_authorization_digest\x18\a \x01(\fR\x17nodeAuthorizationDigest\"\xcd\x01\n" +
+	"\x19node_authorization_digest\x18\a \x01(\fR\x17nodeAuthorizationDigest\"\xd9\x01\n" +
 	"\x17StationIdentityResponse\x12'\n" +
 	"\x0fstatement_bytes\x18\x01 \x01(\fR\x0estatementBytes\x12%\n" +
-	"\x0enode_signature\x18\x02 \x01(\fR\rnodeSignature\x12b\n" +
-	"\x12node_authorization\x18\x03 \x01(\v23.peers_touch.model.peer.v1.StationNodeAuthorizationR\x11nodeAuthorizationBGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/peer;peerb\x06proto3"
+	"\x0enode_signature\x18\x04 \x01(\fR\rnodeSignature\x12b\n" +
+	"\x12node_authorization\x18\x05 \x01(\v23.peers_touch.model.peer.v1.StationNodeAuthorizationR\x11nodeAuthorizationJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04BGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/peer;peerb\x06proto3"
 
 var (
 	file_domain_peer_station_identity_proto_rawDescOnce sync.Once

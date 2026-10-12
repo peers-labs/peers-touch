@@ -1367,7 +1367,7 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 				{name: "lease", value: &persistence.ExecutorLease{
 					LeaseID: "lease_" + test.name, TaskID: taskID, StepID: stepID,
 					ExecutorID: "node-test/incarnation-test", ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
-					OwnerNodePeerID: "node-test", OwnerIncarnation: "incarnation-test",
+					OwnerNodeID: "node-test", OwnerIncarnation: "incarnation-test",
 					FencingToken: 1, Status: executorLeaseStatusActive, AcquiredAt: now,
 					HeartbeatAt: now, ExpiresAt: time.Now().UTC().Add(time.Minute),
 				}},

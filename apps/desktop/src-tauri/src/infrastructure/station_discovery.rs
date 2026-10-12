@@ -12,11 +12,11 @@ use station_trust::{verify_node_authorization_bytes, verify_station_route_attest
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use crate::infrastructure::station_transport;
 use crate::model::peer::{
     AccessEndpointOutcome, AccessEndpointRequest, AccessEndpointResponse, AccessEndpointRole,
     StationConnectionEnvelope, StationRouteAttestation, StationRouteStatement,
 };
-use crate::infrastructure::station_transport;
 
 const ACCESS_PATH: &str = "/.well-known/peers-touch/access";
 const ACCESS_ENDPOINT_DOMAIN: &[u8] = b"peers-touch/access-endpoint/v1\0";
@@ -223,8 +223,7 @@ fn verify_discovery_response(
 
     match endpoint_role {
         Some(AccessEndpointRole::DirectStation) => {
-            if response.outcome != AccessEndpointOutcome::Ready as i32
-                || connection_grant.is_some()
+            if response.outcome != AccessEndpointOutcome::Ready as i32 || connection_grant.is_some()
             {
                 return Err(invalid_discovery(
                     "Direct Station discovery outcome is invalid",
@@ -253,9 +252,7 @@ fn verify_discovery_response(
             let mut routes = vec![VerifiedStationRoute {
                 station_peer_id: verified_authorization.station_peer_id.clone(),
                 node_peer_id: verified_authorization.node_peer_id.clone(),
-                station_root_public_key: verified_authorization
-                    .station_root_public_key
-                    .clone(),
+                station_root_public_key: verified_authorization.station_root_public_key.clone(),
                 node_authorization_digest: verified_authorization.authorization_digest,
                 authorization_epoch: verified_authorization.authorization_epoch,
                 route_id,
@@ -266,7 +263,7 @@ fn verify_discovery_response(
                 addresses: vec![canonical_origin.clone()],
                 attestation_bytes: None,
                 connection_grant: None,
-                expires_at_unix_ms: None,
+                expires_at_unix_ms: Some(verified_authorization.expires_at_unix_ms),
             }];
             for attestation in &response.station_routes {
                 let advertised =
@@ -595,6 +592,10 @@ mod tests {
             node.public().to_peer_id().to_string()
         );
         assert!(verified.routes[0].route_id.starts_with("direct-"));
+        assert_eq!(
+            verified.routes[0].expires_at_unix_ms,
+            Some(now + 60 * 60 * 1_000)
+        );
     }
 
     #[test]

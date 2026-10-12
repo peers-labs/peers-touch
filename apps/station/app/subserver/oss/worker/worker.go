@@ -268,7 +268,12 @@ func startLeaseRenewal(
 	lock LeaderLock,
 	authority LeaseAuthority,
 ) (context.Context, func() error) {
-	runCtx, cancel := context.WithCancel(withLeaseAuthority(ctx, authority))
+	runCtx, cancel := context.WithCancel(
+		withLeaseAuthority(
+			withLeaseValidator(ctx, lock.Validate),
+			authority,
+		),
+	)
 	done := make(chan struct{})
 	renewalErr := make(chan error, 1)
 	interval := time.Until(authority.ExpiresAt) / 3

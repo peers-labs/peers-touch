@@ -4,7 +4,8 @@
 > **Created**: 2026-10-11T00:00:00.000Z
 > **Owner**: Architecture Team
 
-Candidate: explicit North Star approval required.
+North Star approved by the user. Runtime, checkpoint and delivery authority
+remain limited to the explicit authorization block in this Plan.
 
 ## Plan
 
@@ -133,11 +134,11 @@ service tests. They do not claim cluster readiness. NCP-08 alone combines them
 with node admission and native failover. NCP-G06-AGENT/OSS are bounded subcontracts
 of NCP-G06; the integrated Gate checks their coexistence.
 
-New Gate IDs are required injection work, currently **NOT REGISTERED / UNPROVEN**.
-Each owning Task implements its attach-only Gate plus reusable Journey adapter
-before executing it. `node-connectivity-journey.py` named in Task checks is a
-planned entry point, currently absent; it must reuse current native Tauri driver
-and Suite lifecycle rather than claim a nonexistent command already works.
+The Gate IDs in this Plan are registered Acceptance owners. Registration alone
+does not prove a Gate: completion still requires durable exact-source evidence
+from the declared runtime cell. `node-connectivity-journey.py` owns the bounded
+process-level closures; Native product proof remains in the environment-backed
+Tauri Gates.
 
 One Suite owns exact-source services, DB/object backing, accounts, two native
 clients, namespaces and cleanup. DOM events drive login/send/upload and receiver
@@ -145,7 +146,7 @@ render assertions; harness controls failure/revoke and authoritative readback.
 Functional evidence precedes formal Gates. Initial source work runs focused
 checks; no old iOS or blanket cross-platform matrix is selected.
 
-No runtime profile or shared-service restart is authorized by this candidate.
+No runtime profile or shared-service restart is authorized by this Plan.
 Runtime owner must resolve existing isolated authorized cells; missing cells
 remain a specific external-resource boundary. No environment is manufactured.
 Local checkpoints needed for source-bound runtime proof require their own grant.
@@ -159,6 +160,6 @@ NCP-03 is the indivisible transport cut; if inventory cannot fit a bounded
 implementation continuation, amend preparatory library closures before beginning
 the cut, preserving one final atomic switch and the North Star.
 
-Generated approval remains null. This package does not replace the old PlanMount
-or fabricate ExecutionRun/Session/OWNER state. User approval applies to the
-objective and four criteria; exact runtime/storage permissions remain separate.
+The recorded North Star approval covers the objective and four criteria. This
+package does not fabricate ExecutionRun, Session or OWNER state; exact
+runtime/storage permissions remain separate and must be resolved at execution.

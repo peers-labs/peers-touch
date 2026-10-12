@@ -94,7 +94,7 @@ func TestRecoverRunningChatTasksSettlesDirectTurnAndSnapshot(t *testing.T) {
 			StepID:           "step-restart",
 			ExecutorID:       "node-a/incarnation-a",
 			ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
-			OwnerNodePeerID:  "node-a",
+			OwnerNodeID:      "node-a",
 			OwnerIncarnation: "incarnation-a",
 			FencingToken:     1,
 			Status:           executorLeaseStatusActive,
@@ -321,7 +321,7 @@ func TestRecoverRunningChatTasksCreatesInterruptedAssistantBeforeFirstText(t *te
 			StepID:           "step-restart-before-text",
 			ExecutorID:       "node-a/incarnation-a",
 			ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
-			OwnerNodePeerID:  "node-a",
+			OwnerNodeID:      "node-a",
 			OwnerIncarnation: "incarnation-a",
 			FencingToken:     1,
 			Status:           executorLeaseStatusActive,
@@ -453,7 +453,7 @@ func TestRecoverRunningChatTasksDoesNotCreateAssistantBeforeAdmission(t *testing
 			StepID:           "step-restart-before-admission",
 			ExecutorID:       "node-a/incarnation-a",
 			ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
-			OwnerNodePeerID:  "node-a",
+			OwnerNodeID:      "node-a",
 			OwnerIncarnation: "incarnation-a",
 			FencingToken:     1,
 			Status:           executorLeaseStatusActive,
@@ -496,7 +496,7 @@ func TestRecoverRunningChatTasksConvergesAlreadyTerminalTurn(t *testing.T) {
 		&persistence.TurnAttempt{ID: "attempt-terminal", TurnID: "turn-terminal", AttemptIndex: 1, Status: string(domain.TurnStatusCompleted), StartedAt: now, EndedAt: &now},
 		&persistence.TaskRun{TaskID: "task-terminal", Surface: int32(model.TaskSurface_TASK_SURFACE_CHAT), Status: int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING), OwnerActorPTID: "ptid:person:owner", ConversationID: "conversation-terminal", CreatedAt: now, StartedAt: now, UpdatedAt: now},
 		&persistence.ExecutionStep{StepID: "step-terminal", TaskID: "task-terminal", AgentID: "agent-1", TurnID: "turn-terminal", Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING), StartedAt: now},
-		&persistence.ExecutorLease{LeaseID: "lease-terminal", TaskID: "task-terminal", StepID: "step-terminal", ExecutorID: "node-a/incarnation-a", ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED), OwnerNodePeerID: "node-a", OwnerIncarnation: "incarnation-a", FencingToken: 1, Status: executorLeaseStatusActive, AcquiredAt: now, HeartbeatAt: now, ExpiresAt: now.Add(-time.Minute)},
+		&persistence.ExecutorLease{LeaseID: "lease-terminal", TaskID: "task-terminal", StepID: "step-terminal", ExecutorID: "node-a/incarnation-a", ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED), OwnerNodeID: "node-a", OwnerIncarnation: "incarnation-a", FencingToken: 1, Status: executorLeaseStatusActive, AcquiredAt: now, HeartbeatAt: now, ExpiresAt: now.Add(-time.Minute)},
 	}
 	for _, record := range records {
 		if err := db.Create(record).Error; err != nil {
@@ -561,7 +561,7 @@ func TestRecoverRunningChatTasksPreservesHealthyForeignLease(t *testing.T) {
 		StepID:           step.StepID,
 		ExecutorID:       "node-a/incarnation-a",
 		ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
-		OwnerNodePeerID:  "node-a",
+		OwnerNodeID:      "node-a",
 		OwnerIncarnation: "incarnation-a",
 		FencingToken:     7,
 		Status:           executorLeaseStatusActive,
@@ -638,7 +638,7 @@ func TestRecoverRunningChatTasksTakeoverFencesStaleOwnerCompletion(t *testing.T)
 		StepID:           step.StepID,
 		ExecutorID:       "node-a/incarnation-a",
 		ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
-		OwnerNodePeerID:  "node-a",
+		OwnerNodeID:      "node-a",
 		OwnerIncarnation: "incarnation-a",
 		FencingToken:     7,
 		Status:           executorLeaseStatusActive,
@@ -690,7 +690,7 @@ func TestRecoverRunningChatTasksTakeoverFencesStaleOwnerCompletion(t *testing.T)
 	).Error; err != nil {
 		t.Fatal(err)
 	}
-	if takeover.OwnerNodePeerID != "node-b" ||
+	if takeover.OwnerNodeID != "node-b" ||
 		takeover.OwnerIncarnation != "incarnation-b" ||
 		takeover.FencingToken != oldLease.FencingToken+1 {
 		t.Fatalf("takeover authority is invalid: %+v", takeover)

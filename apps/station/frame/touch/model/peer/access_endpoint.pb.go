@@ -551,8 +551,8 @@ func (x *StationRouteStatement) GetAddresses() []string {
 type StationRouteAttestation struct {
 	state             protoimpl.MessageState    `protogen:"open.v1"`
 	StatementBytes    []byte                    `protobuf:"bytes,1,opt,name=statement_bytes,json=statementBytes,proto3" json:"statement_bytes,omitempty"`
-	NodeSignature     []byte                    `protobuf:"bytes,2,opt,name=node_signature,json=nodeSignature,proto3" json:"node_signature,omitempty"`
-	NodeAuthorization *StationNodeAuthorization `protobuf:"bytes,3,opt,name=node_authorization,json=nodeAuthorization,proto3" json:"node_authorization,omitempty"`
+	NodeSignature     []byte                    `protobuf:"bytes,4,opt,name=node_signature,json=nodeSignature,proto3" json:"node_signature,omitempty"`
+	NodeAuthorization *StationNodeAuthorization `protobuf:"bytes,5,opt,name=node_authorization,json=nodeAuthorization,proto3" json:"node_authorization,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -727,8 +727,8 @@ func (x *StationConnectionGrantStatement) GetNodeAuthorizationDigest() []byte {
 type StationConnectionGrant struct {
 	state             protoimpl.MessageState    `protogen:"open.v1"`
 	StatementBytes    []byte                    `protobuf:"bytes,1,opt,name=statement_bytes,json=statementBytes,proto3" json:"statement_bytes,omitempty"`
-	NodeSignature     []byte                    `protobuf:"bytes,2,opt,name=node_signature,json=nodeSignature,proto3" json:"node_signature,omitempty"`
-	NodeAuthorization *StationNodeAuthorization `protobuf:"bytes,3,opt,name=node_authorization,json=nodeAuthorization,proto3" json:"node_authorization,omitempty"`
+	NodeSignature     []byte                    `protobuf:"bytes,4,opt,name=node_signature,json=nodeSignature,proto3" json:"node_signature,omitempty"`
+	NodeAuthorization *StationNodeAuthorization `protobuf:"bytes,5,opt,name=node_authorization,json=nodeAuthorization,proto3" json:"node_authorization,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1333,11 +1333,11 @@ const file_domain_peer_access_endpoint_proto_rawDesc = "" +
 	"nodePeerId\x12:\n" +
 	"\x19node_authorization_digest\x18\v \x01(\fR\x17nodeAuthorizationDigest\x12?\n" +
 	"\x04kind\x18\f \x01(\x0e2+.peers_touch.model.peer.v1.StationRouteKindR\x04kind\x12\x1c\n" +
-	"\taddresses\x18\r \x03(\tR\taddresses\"\xcd\x01\n" +
+	"\taddresses\x18\r \x03(\tR\taddresses\"\xd9\x01\n" +
 	"\x17StationRouteAttestation\x12'\n" +
 	"\x0fstatement_bytes\x18\x01 \x01(\fR\x0estatementBytes\x12%\n" +
-	"\x0enode_signature\x18\x02 \x01(\fR\rnodeSignature\x12b\n" +
-	"\x12node_authorization\x18\x03 \x01(\v23.peers_touch.model.peer.v1.StationNodeAuthorizationR\x11nodeAuthorization\"\x9f\x03\n" +
+	"\x0enode_signature\x18\x04 \x01(\fR\rnodeSignature\x12b\n" +
+	"\x12node_authorization\x18\x05 \x01(\v23.peers_touch.model.peer.v1.StationNodeAuthorizationR\x11nodeAuthorizationJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04\"\x9f\x03\n" +
 	"\x1fStationConnectionGrantStatement\x12\x19\n" +
 	"\bgrant_id\x18\x01 \x01(\tR\agrantId\x12&\n" +
 	"\x0fstation_peer_id\x18\x02 \x01(\tR\rstationPeerId\x12\"\n" +
@@ -1350,11 +1350,11 @@ const file_domain_peer_access_endpoint_proto_rawDesc = "" +
 	"\fnode_peer_id\x18\t \x01(\tR\n" +
 	"nodePeerId\x12:\n" +
 	"\x19node_authorization_digest\x18\n" +
-	" \x01(\fR\x17nodeAuthorizationDigest\"\xcc\x01\n" +
+	" \x01(\fR\x17nodeAuthorizationDigest\"\xd8\x01\n" +
 	"\x16StationConnectionGrant\x12'\n" +
 	"\x0fstatement_bytes\x18\x01 \x01(\fR\x0estatementBytes\x12%\n" +
-	"\x0enode_signature\x18\x02 \x01(\fR\rnodeSignature\x12b\n" +
-	"\x12node_authorization\x18\x03 \x01(\v23.peers_touch.model.peer.v1.StationNodeAuthorizationR\x11nodeAuthorization\"\xa8\x02\n" +
+	"\x0enode_signature\x18\x04 \x01(\fR\rnodeSignature\x12b\n" +
+	"\x12node_authorization\x18\x05 \x01(\v23.peers_touch.model.peer.v1.StationNodeAuthorizationR\x11nodeAuthorizationJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04\"\xa8\x02\n" +
 	"\x19StationConnectionEnvelope\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12!\n" +
 	"\frelay_origin\x18\x02 \x01(\tR\vrelayOrigin\x12_\n" +

@@ -8,6 +8,7 @@ import (
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Bootstrap migrates the OSS database to the current schema version
@@ -194,20 +195,17 @@ func readSchemaVersion(db *gorm.DB) (string, error) {
 }
 
 func writeSchemaVersion(db *gorm.DB, now time.Time, version string) error {
-	res := db.Model(&ossmodel.Meta{}).
-		Where("key = ?", ossmodel.MetaKeySchemaVersion).
-		Updates(map[string]any{"value": version, "updated_at": now})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return db.Create(&ossmodel.Meta{
-			Key:       ossmodel.MetaKeySchemaVersion,
-			Value:     version,
-			UpdatedAt: now,
-		}).Error
-	}
-	return nil
+	return db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "key"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"value":      version,
+			"updated_at": now,
+		}),
+	}).Create(&ossmodel.Meta{
+		Key:       ossmodel.MetaKeySchemaVersion,
+		Value:     version,
+		UpdatedAt: now,
+	}).Error
 }
 
 // ensureCapabilityVersion mints a fresh ULID into
@@ -224,7 +222,10 @@ func ensureCapabilityVersion(db *gorm.DB, now time.Time) error {
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
-	return db.Create(&ossmodel.Meta{
+	return db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "key"}},
+		DoNothing: true,
+	}).Create(&ossmodel.Meta{
 		Key:       ossmodel.MetaKeyCapabilityVersion,
 		Value:     newULID(now),
 		UpdatedAt: now,

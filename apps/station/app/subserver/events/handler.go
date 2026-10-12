@@ -175,7 +175,9 @@ func (s *eventsSubServer) handleStream(ctx context.Context, c *app.RequestContex
 				return
 			}
 			if eventID := ev.GetEventId(); eventID != "" {
-				floorID = eventID
+				if sub.AcknowledgeDurableEvent(eventID) {
+					floorID = sub.DurableFloorEventID()
+				}
 			}
 
 		case <-heartbeat.C:

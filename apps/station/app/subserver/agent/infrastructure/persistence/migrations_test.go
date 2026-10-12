@@ -1120,7 +1120,7 @@ func TestMigrateExecutorLeaseFencingExpiresLegacyAuthorityAndCreatesActiveFence(
 		t.Fatal(err)
 	}
 	if legacy.Status != "expired" ||
-		legacy.OwnerNodePeerID != "" ||
+		legacy.OwnerNodeID != "" ||
 		legacy.OwnerIncarnation != "" ||
 		legacy.FencingToken != 0 {
 		t.Fatalf("legacy lease received authority: %+v", legacy)
@@ -1132,7 +1132,7 @@ func TestMigrateExecutorLeaseFencingExpiresLegacyAuthorityAndCreatesActiveFence(
 		StepID:           "fenced-step",
 		ExecutorID:       "node-a/incarnation-a",
 		ExecutorKind:     1,
-		OwnerNodePeerID:  "node-a",
+		OwnerNodeID:      "node-a",
 		OwnerIncarnation: "incarnation-a",
 		FencingToken:     1,
 		Status:           "active",
@@ -1146,11 +1146,84 @@ func TestMigrateExecutorLeaseFencingExpiresLegacyAuthorityAndCreatesActiveFence(
 	second := *first
 	second.LeaseID = "fenced-lease-b"
 	second.ExecutorID = "node-b/incarnation-b"
-	second.OwnerNodePeerID = "node-b"
+	second.OwnerNodeID = "node-b"
 	second.OwnerIncarnation = "incarnation-b"
 	second.FencingToken = 2
 	if err := db.Create(&second).Error; err == nil {
 		t.Fatal("active lease uniqueness fence accepted a second owner")
+	}
+}
+
+func TestMigrateExecutorLeaseFencingRenamesLegacyOwnerWithoutLosingAuthority(
+	t *testing.T,
+) {
+	db, err := gorm.Open(
+		sqlite.Open("file:executor-lease-owner-rename?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := db.Exec(`
+		CREATE TABLE agent_executor_leases (
+			lease_id text PRIMARY KEY,
+			task_id text NOT NULL,
+			step_id text,
+			executor_id text NOT NULL,
+			executor_kind integer NOT NULL,
+			owner_node_peer_id text NOT NULL DEFAULT '',
+			owner_incarnation text NOT NULL DEFAULT '',
+			fencing_token integer NOT NULL DEFAULT 0,
+			status text NOT NULL,
+			acquired_at datetime NOT NULL,
+			heartbeat_at datetime NOT NULL,
+			expires_at datetime NOT NULL
+		)
+	`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`
+		INSERT INTO agent_executor_leases (
+			lease_id, task_id, step_id, executor_id, executor_kind,
+			owner_node_peer_id, owner_incarnation, fencing_token,
+			status, acquired_at, heartbeat_at, expires_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		"lease-renamed",
+		"task-renamed",
+		"step-renamed",
+		"node-a/incarnation-a",
+		1,
+		"node-a",
+		"incarnation-a",
+		7,
+		"active",
+		now,
+		now,
+		now.Add(time.Hour),
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MigrateExecutorLeaseFencing(db); err != nil {
+		t.Fatal(err)
+	}
+	if db.Migrator().HasColumn(
+		"agent_executor_leases",
+		"owner_node_peer_id",
+	) {
+		t.Fatal("legacy owner_node_peer_id column survived hard migration")
+	}
+	var lease ExecutorLease
+	if err := db.First(&lease, "lease_id = ?", "lease-renamed").Error; err != nil {
+		t.Fatal(err)
+	}
+	if lease.OwnerNodeID != "node-a" ||
+		lease.OwnerIncarnation != "incarnation-a" ||
+		lease.FencingToken != 7 ||
+		lease.Status != "active" {
+		t.Fatalf("renamed lease authority was not preserved: %+v", lease)
 	}
 }
 

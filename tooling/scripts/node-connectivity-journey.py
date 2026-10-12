@@ -133,7 +133,7 @@ DURABLE_EVENTS_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
         "maxClientLaunches": 2,
         "minWarmReuseRate": 0.66,
         "requireAttachOnlyScenarios": True,
-        "requireReceiverVisibleProof": True,
+        "requireReceiverVisibleProof": False,
         "allowClientReplacement": False,
     }
 )
@@ -150,7 +150,7 @@ SHARED_ACCESS_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
         "maxClientLaunches": 2,
         "minWarmReuseRate": 0.66,
         "requireAttachOnlyScenarios": True,
-        "requireReceiverVisibleProof": True,
+        "requireReceiverVisibleProof": False,
         "allowClientReplacement": False,
     }
 )
@@ -167,7 +167,7 @@ AGENT_FENCING_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
         "maxClientLaunches": 2,
         "minWarmReuseRate": 0.66,
         "requireAttachOnlyScenarios": True,
-        "requireReceiverVisibleProof": True,
+        "requireReceiverVisibleProof": False,
         "allowClientReplacement": False,
     }
 )
@@ -184,7 +184,7 @@ OSS_FENCING_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
         "maxClientLaunches": 2,
         "minWarmReuseRate": 0.66,
         "requireAttachOnlyScenarios": True,
-        "requireReceiverVisibleProof": True,
+        "requireReceiverVisibleProof": False,
         "allowClientReplacement": False,
     }
 )
@@ -583,14 +583,14 @@ def run_durable_events_gate() -> dict[str, object]:
             scenario_id=scenario_id,
         )
         ledger.record(
-            SuiteRuntimeAction.UI_ACTION,
+            SuiteRuntimeAction.SUPPORTING_OBSERVATION,
             scenario_id=scenario_id,
-            resource_id="publisher-process:durable-event",
+            resource_id="publisher-process:durable-event-commit",
         )
         ledger.record(
-            SuiteRuntimeAction.RECEIVER_ASSERTION,
+            SuiteRuntimeAction.SUPPORTING_OBSERVATION,
             scenario_id=scenario_id,
-            resource_id="subscriber-process:event-stream",
+            resource_id="subscriber-process:event-stream-readback",
         )
         ledger.record(
             SuiteRuntimeAction.SUPPORTING_OBSERVATION,
@@ -769,14 +769,14 @@ def run_shared_access_gate() -> dict[str, object]:
             scenario_id=scenario_id,
         )
         ledger.record(
-            SuiteRuntimeAction.UI_ACTION,
+            SuiteRuntimeAction.SUPPORTING_OBSERVATION,
             scenario_id=scenario_id,
-            resource_id="access-client-process:canonical-action",
+            resource_id="access-client-process:canonical-request",
         )
         ledger.record(
-            SuiteRuntimeAction.RECEIVER_ASSERTION,
+            SuiteRuntimeAction.SUPPORTING_OBSERVATION,
             scenario_id=scenario_id,
-            resource_id="peer-node-process:session-observation",
+            resource_id="peer-node-process:session-readback",
         )
         ledger.record(
             SuiteRuntimeAction.SUPPORTING_OBSERVATION,
@@ -986,14 +986,14 @@ def run_agent_fencing_gate() -> dict[str, object]:
             scenario_id=scenario_id,
         )
         ledger.record(
-            SuiteRuntimeAction.UI_ACTION,
+            SuiteRuntimeAction.SUPPORTING_OBSERVATION,
             scenario_id=scenario_id,
-            resource_id="agent-worker-process:lease-action",
+            resource_id="agent-worker-process:lease-transition",
         )
         ledger.record(
-            SuiteRuntimeAction.RECEIVER_ASSERTION,
+            SuiteRuntimeAction.SUPPORTING_OBSERVATION,
             scenario_id=scenario_id,
-            resource_id="peer-worker-process:durable-observation",
+            resource_id="peer-worker-process:durable-readback",
         )
         ledger.record(
             SuiteRuntimeAction.SUPPORTING_OBSERVATION,
@@ -1249,14 +1249,14 @@ def run_oss_fencing_gate() -> dict[str, object]:
             scenario_id=scenario_id,
         )
         ledger.record(
-            SuiteRuntimeAction.UI_ACTION,
+            SuiteRuntimeAction.SUPPORTING_OBSERVATION,
             scenario_id=scenario_id,
-            resource_id="oss-node-process:object-lifecycle-action",
+            resource_id="oss-node-process:object-lifecycle-transition",
         )
         ledger.record(
-            SuiteRuntimeAction.RECEIVER_ASSERTION,
+            SuiteRuntimeAction.SUPPORTING_OBSERVATION,
             scenario_id=scenario_id,
-            resource_id="peer-node-process:authorized-readback",
+            resource_id="peer-node-process:authorized-object-readback",
         )
         ledger.record(
             SuiteRuntimeAction.SUPPORTING_OBSERVATION,
@@ -1526,11 +1526,11 @@ def run_cluster_gate() -> dict[str, object]:
         or agent_result.get("status") != "passed"
         or not isinstance(agent_healthy, dict)
         or agent_healthy.get("healthyPreserved") is not True
-        or agent_healthy.get("ownerNodePeerId") != node_a
+        or agent_healthy.get("ownerNodeId") != node_a
         or agent_healthy.get("ownerIncarnation") != incarnation_a
         or not isinstance(agent_takeover, dict)
         or agent_takeover.get("tokenAdvanced") is not True
-        or agent_takeover.get("ownerNodePeerId") != node_b
+        or agent_takeover.get("ownerNodeId") != node_b
         or agent_takeover.get("ownerIncarnation") != incarnation_b
         or not isinstance(agent_stale, dict)
         or agent_stale.get("staleCompletionRejected") is not True

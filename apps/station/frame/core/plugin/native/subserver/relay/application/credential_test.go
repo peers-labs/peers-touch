@@ -18,6 +18,7 @@ func TestNodeCredentialUsesRelayEdDSAClaims(t *testing.T) {
 	enrollment := &domain.Enrollment{
 		ID:            42,
 		StationPeerID: "station-peer",
+		NodePeerID:    "node-peer",
 		Generation:    7,
 	}
 	credential, err := authority.IssueNodeCredential(enrollment, "credential-jti")
@@ -45,6 +46,7 @@ func TestNodeCredentialUsesRelayEdDSAClaims(t *testing.T) {
 	}
 	if claims.ID != "credential-jti" ||
 		claims.StationPeerID != enrollment.StationPeerID ||
+		claims.NodePeerID != enrollment.NodePeerID ||
 		claims.EnrollmentID != enrollment.ID ||
 		claims.Generation != enrollment.Generation {
 		t.Fatalf("enrollment claims were not preserved: %+v", claims)
@@ -67,6 +69,7 @@ func TestNodeCredentialUsesRelayEdDSAClaims(t *testing.T) {
 		t.Fatalf("validate enrollment credential: %v", err)
 	}
 	if identity.JTI != "credential-jti" ||
+		identity.NodePeerID != enrollment.NodePeerID ||
 		!identity.ExpiresAt.After(time.Now()) {
 		t.Fatalf("unexpected validated identity: %+v", identity)
 	}

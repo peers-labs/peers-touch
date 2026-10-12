@@ -1037,10 +1037,12 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             {
                 "route": {
                     "relayServiceId": "relay",
+                    "relayPeerId": "relay-peer",
                     "relayAttestationRef": relay_ref,
                 }
             },
             {
+                "runtimeIdentity": "relay-peer",
                 "runtimeSecurity": {
                     "tlsTrustAnchor": {
                         "sha256": "sha256:" + "c" * 64,

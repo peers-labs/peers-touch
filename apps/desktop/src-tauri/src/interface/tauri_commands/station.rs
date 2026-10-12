@@ -187,13 +187,10 @@ fn discover_and_store(command: &str, input: &str) -> AppResult<StubPayload> {
         Err(error) => return discovery_error(error),
     };
     let registry = station_client::station_registry();
-    let mut entries = Vec::with_capacity(endpoint.routes.len());
-    for route in &endpoint.routes {
-        match registry.upsert_verified_route(route, None) {
-            Ok(entry) => entries.push(entry),
-            Err(error) => return registry_error(command, error),
-        }
-    }
+    let entries = match registry.replace_verified_routes(&endpoint.routes) {
+        Ok(entries) => entries,
+        Err(error) => return registry_error(command, error),
+    };
     let payload = serde_json::json!({
         "role": endpoint.role,
         "endpoint_peer_id": endpoint.endpoint_peer_id,

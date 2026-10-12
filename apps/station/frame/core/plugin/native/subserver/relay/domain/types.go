@@ -107,6 +107,7 @@ type NodeCredential struct {
 	Token         string
 	RelayPeerID   string
 	StationPeerID string
+	NodePeerID    string
 	EnrollmentID  uint64
 	Generation    uint64
 	JTI           string
@@ -116,6 +117,7 @@ type NodeCredential struct {
 type NodeIdentity struct {
 	RelayPeerID   string
 	StationPeerID string
+	NodePeerID    string
 	EnrollmentID  uint64
 	Generation    uint64
 	JTI           string
