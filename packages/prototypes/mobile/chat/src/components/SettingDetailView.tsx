@@ -28,6 +28,7 @@ import {
 import type { SettingEntry } from '../types';
 import { GRADIENTS } from '../types';
 import copy from '../../../../../locales/en/common.json';
+import { PersonAvatar } from './PersonAvatar';
 
 const { Text } = Typography;
 
@@ -77,7 +78,7 @@ export function SettingDetailView({
         return (
           <SettingCard icon={<User size={16} />} title={copy['mobile.settings.section.profile']}>
             <div className="mp-setting-profile-summary">
-              <Avatar size={56} style={{ background: GRADIENTS[0], borderRadius: 16 }}>AC</Avatar>
+              <PersonAvatar background={GRADIENTS[0]} name="Alice Chen" size={56} />
               <span>
                 <Text strong>Alice Chen</Text>
                 <Text type="secondary">@alice@product.peers</Text>

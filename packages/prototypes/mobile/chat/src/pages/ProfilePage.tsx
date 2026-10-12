@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Avatar, Card, Typography } from 'antd';
+import { Card, Typography } from 'antd';
 import {
   Ban, Bell, ChevronRight, Fingerprint, Globe,
   Image as ImageIcon, MessageCircle, Server,
@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import type { SettingEntry, SettingGroup } from '../types';
 import { GRADIENTS } from '../types';
+import { PersonAvatar } from '../components/PersonAvatar';
 import copy from '../../../../../locales/en/common.json';
 
 const { Text } = Typography;
@@ -64,7 +65,7 @@ export function ProfilePage({ onChangeStation, onSettingClick }: { onChangeStati
         >
           <Card className="mp-profile-header-card" variant="borderless">
             <div className="mp-profile-header">
-              <Avatar size={64} style={{ background: GRADIENTS[0], borderRadius: 16 }}>AC</Avatar>
+              <PersonAvatar background={GRADIENTS[0]} name="Alice Chen" size={64} />
               <div className="mp-profile-info">
                 <Text strong className="mp-profile-name">Alice Chen</Text>
                 <Text type="secondary" className="mp-profile-subtitle">Connected to Product Station</Text>

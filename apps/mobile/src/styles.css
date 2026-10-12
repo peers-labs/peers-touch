@@ -4616,7 +4616,6 @@ select,
 }
 
 .settings-fixture-avatar {
-  border-radius: 16px !important;
   background: #e9eef9 !important;
   color: #3156a3 !important;
   font-weight: 700;

@@ -19,7 +19,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Avatar, Button, Card, Empty, Modal, Spin, Typography } from 'antd';
+import { Button, Card, Empty, Modal, Spin, Typography } from 'antd';
 import type { LucideIcon } from 'lucide-react';
 import {
   ArrowLeft,
@@ -50,6 +50,7 @@ import {
 } from '../features/station/stationRegistry';
 import { stationDisplayName } from '../features/station/stationDisplayName';
 import { useSettingsSurfaceFixture } from '../acceptance/settingsSurfaceFixture';
+import { MobileAvatar } from '../components/MobileAvatar';
 import {
   useBlockedUsersController,
   useNotificationPreferencesController,
@@ -546,16 +547,16 @@ function SettingsPageContent({
         >
           <Card className="settings-profile-header-card" variant="borderless">
             <div className="settings-profile-header">
-              <Avatar
+              <MobileAvatar
+                identityKey={authSession?.actorRef.ptid ?? displayName}
+                identityRole="person"
+                name={displayName}
                 size={64}
                 src={visibleProfile?.avatar || undefined}
                 style={{
                   background: 'linear-gradient(135deg, #667eea, #764ba2)',
-                  borderRadius: 16,
                 }}
-              >
-                {displayName ? displayName.slice(0, 2).toUpperCase() : '?'}
-              </Avatar>
+              />
               <div className="settings-profile-info">
                 <Text strong className="settings-profile-name">
                   {displayName || t('mobile.settings.notLoggedIn')}

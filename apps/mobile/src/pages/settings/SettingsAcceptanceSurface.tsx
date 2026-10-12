@@ -41,6 +41,7 @@ import {
   type MobileSettingDetailId,
 } from '../../app/navigation';
 import { useMobileI18n } from '../../app/mobileI18n';
+import { MobileAvatar } from '../../components/MobileAvatar';
 import { MobileNotice } from '../../components/MobileNotice';
 
 const { Text } = Typography;
@@ -158,7 +159,13 @@ function SettingsFixtureSummary({
           <>
             <Card className="settings-profile-header-card" variant="borderless">
               <div className="settings-profile-header">
-                <Avatar className="settings-fixture-avatar" size={64}>AC</Avatar>
+                <MobileAvatar
+                  className="settings-fixture-avatar"
+                  identityKey="ptid:alice"
+                  identityRole="person"
+                  name="Alice Chen"
+                  size={64}
+                />
                 <div className="settings-profile-info">
                   <Text strong className="settings-profile-name">Alice Chen</Text>
                   <Text type="secondary" className="settings-profile-subtitle">
