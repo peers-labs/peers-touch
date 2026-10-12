@@ -25,6 +25,9 @@ const (
 	TypeOrganization AccountType = "o"
 	TypeService      AccountType = "s"
 	TypeApplication  AccountType = "a"
+	// TypeAgent is an IM bot: a conversable, non-human, Station-resident
+	// actor driven by an inbound webhook. It is never E2EE.
+	TypeAgent AccountType = "b"
 )
 
 var (
@@ -86,7 +89,7 @@ func (id *PTID) Validate() error {
 		return ErrInvalidNamespace
 	}
 	switch id.Type {
-	case TypePerson, TypeGroup, TypeOrganization, TypeService, TypeApplication:
+	case TypePerson, TypeGroup, TypeOrganization, TypeService, TypeApplication, TypeAgent:
 	default:
 		return ErrInvalidType
 	}

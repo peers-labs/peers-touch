@@ -451,7 +451,10 @@ func validateManifestActor(operation string, actor *actormodel.ActorRef) error {
 		actormodel.ActorKind_ACTOR_KIND_ORGANIZATION,
 		actormodel.ActorKind_ACTOR_KIND_SERVICE,
 		actormodel.ActorKind_ACTOR_KIND_APPLICATION,
-		actormodel.ActorKind_ACTOR_KIND_NODE:
+		actormodel.ActorKind_ACTOR_KIND_NODE,
+		// Bots carry endpoint manifests for their system delivery path; this
+		// same validator gates both issuance and verification.
+		actormodel.ActorKind_ACTOR_KIND_AGENT:
 		return nil
 	default:
 		return domain.NewError(

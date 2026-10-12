@@ -32,6 +32,10 @@ const (
 	ActorKind_ACTOR_KIND_SERVICE      ActorKind = 4
 	ActorKind_ACTOR_KIND_APPLICATION  ActorKind = 5
 	ActorKind_ACTOR_KIND_NODE         ActorKind = 6
+	// IM bot: a conversable non-human actor driven by an inbound webhook.
+	// Distinct from APPLICATION/SERVICE: an AGENT owns an ordinary conversation
+	// graph edge with its owner but is never E2EE (service-plaintext delivery).
+	ActorKind_ACTOR_KIND_AGENT ActorKind = 7
 )
 
 // Enum value maps for ActorKind.
@@ -44,6 +48,7 @@ var (
 		4: "ACTOR_KIND_SERVICE",
 		5: "ACTOR_KIND_APPLICATION",
 		6: "ACTOR_KIND_NODE",
+		7: "ACTOR_KIND_AGENT",
 	}
 	ActorKind_value = map[string]int32{
 		"ACTOR_KIND_UNSPECIFIED":  0,
@@ -53,6 +58,7 @@ var (
 		"ACTOR_KIND_SERVICE":      4,
 		"ACTOR_KIND_APPLICATION":  5,
 		"ACTOR_KIND_NODE":         6,
+		"ACTOR_KIND_AGENT":        7,
 	}
 )
 
@@ -2586,7 +2592,7 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x05total\x18\x02 \x01(\x03R\x05total\"\"\n" +
 	"\x12SearchUsersRequest\x12\f\n" +
 	"\x01q\x18\x01 \x01(\tR\x01q\"\x0e\n" +
-	"\fGetMeRequest*\xba\x01\n" +
+	"\fGetMeRequest*\xd0\x01\n" +
 	"\tActorKind\x12\x1a\n" +
 	"\x16ACTOR_KIND_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11ACTOR_KIND_PERSON\x10\x01\x12\x14\n" +
@@ -2594,7 +2600,8 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x17ACTOR_KIND_ORGANIZATION\x10\x03\x12\x16\n" +
 	"\x12ACTOR_KIND_SERVICE\x10\x04\x12\x1a\n" +
 	"\x16ACTOR_KIND_APPLICATION\x10\x05\x12\x13\n" +
-	"\x0fACTOR_KIND_NODE\x10\x06*c\n" +
+	"\x0fACTOR_KIND_NODE\x10\x06\x12\x14\n" +
+	"\x10ACTOR_KIND_AGENT\x10\a*c\n" +
 	"\vActorOrigin\x12\x1c\n" +
 	"\x18ACTOR_ORIGIN_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12ACTOR_ORIGIN_LOCAL\x10\x01\x12\x1e\n" +

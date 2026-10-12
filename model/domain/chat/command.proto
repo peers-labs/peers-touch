@@ -28,6 +28,66 @@ enum PreparedEndpointPayloadKind {
   PREPARED_ENDPOINT_PAYLOAD_KIND_PUBLIC_EVENT = 5;
   PREPARED_ENDPOINT_PAYLOAD_KIND_CONVERSATION_STATE = 6;
   PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_RETIREMENT = 7;
+  // Non-E2EE, Station-resident service plaintext. Only a system sender may
+  // produce it (aggregate-enforced); human device commands using this kind
+  // are rejected. Serialized body is DirectServicePlaintextPayload.
+  PREPARED_ENDPOINT_PAYLOAD_KIND_DIRECT_SERVICE_PLAINTEXT = 8;
+}
+
+// Delivery security marker recorded alongside a committed message so history
+// stays classifiable even if a member projection/actor_kind is later missing.
+enum MessageDeliverySecurity {
+  MESSAGE_DELIVERY_SECURITY_UNSPECIFIED = 0;
+  MESSAGE_DELIVERY_SECURITY_E2EE = 1;
+  MESSAGE_DELIVERY_SECURITY_SERVICE_PLAINTEXT = 2;
+}
+
+// Structured body for peers-touch.bot-event.v1, self-contained in the chat
+// domain (the conversation wire must not depend on the edge bot domain).
+enum ServiceBotEventKind {
+  SERVICE_BOT_EVENT_KIND_UNSPECIFIED = 0;
+  SERVICE_BOT_EVENT_KIND_TASK_COMPLETED = 1;
+  SERVICE_BOT_EVENT_KIND_WAITING_INPUT = 2;
+  SERVICE_BOT_EVENT_KIND_TASK_FAILED = 3;
+  SERVICE_BOT_EVENT_KIND_IDLE = 4;
+  SERVICE_BOT_EVENT_KIND_CUSTOM = 5;
+}
+
+enum ServiceBotEventSeverity {
+  SERVICE_BOT_EVENT_SEVERITY_UNSPECIFIED = 0;
+  SERVICE_BOT_EVENT_SEVERITY_INFO = 1;
+  SERVICE_BOT_EVENT_SEVERITY_ATTENTION = 2;
+  SERVICE_BOT_EVENT_SEVERITY_ERROR = 3;
+}
+
+message ServiceBotEventSource {
+  string agent = 1;
+  string workspace = 2;
+  string session_id = 3;
+  map<string, string> labels = 4;
+}
+
+message ServiceBotEventContent {
+  // Always "peers-touch.bot-event.v1".
+  string schema = 1;
+  ServiceBotEventKind event_type = 2;
+  ServiceBotEventSeverity severity = 3;
+  string bot_ptid = 4;
+  string group_key = 5;
+  string dedupe_key = 6;
+  string action_url = 7;
+  ServiceBotEventSource source = 8;
+}
+
+// Body for PREPARED_ENDPOINT_PAYLOAD_KIND_DIRECT_SERVICE_PLAINTEXT. Unlike
+// ciphertext kinds this is readable by the Station and carries a rendered
+// fallback plus an optional structured event. Clients rendering it MUST show
+// a non-E2EE marker (and MUST NOT show a lock).
+message DirectServicePlaintextPayload {
+  string fallback_text = 1;
+  oneof content {
+    ServiceBotEventContent bot_event = 2;
+  }
 }
 
 // A command payload prepared for exactly one endpoint. The authority validates

@@ -11,6 +11,7 @@ import (
 	actoridentity "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity"
 	appmeta "github.com/peers-labs/peers-touch/station/app/subserver/app_meta"
 	appletstore "github.com/peers-labs/peers-touch/station/app/subserver/applet_store"
+	botsub "github.com/peers-labs/peers-touch/station/app/subserver/bot"
 	convsub "github.com/peers-labs/peers-touch/station/app/subserver/conversation"
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	frontendtelemetry "github.com/peers-labs/peers-touch/station/app/subserver/frontend_telemetry"
@@ -60,6 +61,7 @@ func main() {
 		server.WithSubServer("oauth", oauth.NewOAuthSubServer),
 		server.WithSubServer("social", social.NewSocialSubServer),
 		server.WithSubServer("notification", notifsubserver.NewNotificationSubServer),
+		server.WithSubServer("bot", botsub.NewBotSubServer),
 		server.WithSubServer("official_applet_note", officialapplets.NewNoteSubServer),
 		server.WithSubServer("official_applet_atelier", officialapplets.NewAtelierSubServer),
 		server.WithSubServer("applet_store", appletstore.NewAppletStoreSubServer),

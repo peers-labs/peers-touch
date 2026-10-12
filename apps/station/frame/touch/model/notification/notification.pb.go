@@ -103,6 +103,9 @@ const (
 	NotificationType_NOTIFICATION_TYPE_TASK_ASSIGNED  NotificationType = 400
 	NotificationType_NOTIFICATION_TYPE_TASK_COMPLETED NotificationType = 401
 	NotificationType_NOTIFICATION_TYPE_TASK_REMINDER  NotificationType = 402
+	// IM Bot webhook event (410-419). Category stays TASK so it inherits the
+	// existing task preference/mute/push bindings; no new category is added.
+	NotificationType_NOTIFICATION_TYPE_BOT_EVENT NotificationType = 410
 )
 
 // Enum value maps for NotificationType.
@@ -127,6 +130,7 @@ var (
 		400: "NOTIFICATION_TYPE_TASK_ASSIGNED",
 		401: "NOTIFICATION_TYPE_TASK_COMPLETED",
 		402: "NOTIFICATION_TYPE_TASK_REMINDER",
+		410: "NOTIFICATION_TYPE_BOT_EVENT",
 	}
 	NotificationType_value = map[string]int32{
 		"NOTIFICATION_TYPE_UNSPECIFIED":      0,
@@ -148,6 +152,7 @@ var (
 		"NOTIFICATION_TYPE_TASK_ASSIGNED":    400,
 		"NOTIFICATION_TYPE_TASK_COMPLETED":   401,
 		"NOTIFICATION_TYPE_TASK_REMINDER":    402,
+		"NOTIFICATION_TYPE_BOT_EVENT":        410,
 	}
 )
 
@@ -504,8 +509,12 @@ type Notification struct {
 	GroupKey      string                 `protobuf:"bytes,12,opt,name=group_key,json=groupKey,proto3" json:"group_key,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	ReadAt        *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=read_at,json=readAt,proto3" json:"read_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Producer idempotency key (e.g. inbound webhook request id). Produce with
+	// the same (recipient_ptid, idempotency_key, 24h bucket) returns the
+	// original notification; uniqueness is enforced by a DB unique index.
+	IdempotencyKey string `protobuf:"bytes,15,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Notification) Reset() {
@@ -634,6 +643,13 @@ func (x *Notification) GetReadAt() *timestamppb.Timestamp {
 		return x.ReadAt
 	}
 	return nil
+}
+
+func (x *Notification) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
 }
 
 // NotificationGroup represents an aggregated notification group.
@@ -2487,7 +2503,7 @@ var File_domain_notification_notification_proto protoreflect.FileDescriptor
 
 const file_domain_notification_notification_proto_rawDesc = "" +
 	"\n" +
-	"&domain/notification/notification.proto\x12!peers_touch.model.notification.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xec\x05\n" +
+	"&domain/notification/notification.proto\x12!peers_touch.model.notification.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x95\x06\n" +
 	"\fNotification\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
 	"\x0erecipient_ptid\x18\x02 \x01(\tR\rrecipientPtid\x12\x1d\n" +
@@ -2506,7 +2522,8 @@ const file_domain_notification_notification_proto_rawDesc = "" +
 	"\tgroup_key\x18\f \x01(\tR\bgroupKey\x129\n" +
 	"\n" +
 	"created_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x123\n" +
-	"\aread_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\x06readAt\x1a;\n" +
+	"\aread_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\x06readAt\x12'\n" +
+	"\x0fidempotency_key\x18\x0f \x01(\tR\x0eidempotencyKey\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01R\frecipient_id\"\xf1\x03\n" +
@@ -2655,7 +2672,7 @@ const file_domain_notification_notification_proto_rawDesc = "" +
 	"\x1cNOTIFICATION_CATEGORY_SOCIAL\x10\x01\x12\x1e\n" +
 	"\x1aNOTIFICATION_CATEGORY_CHAT\x10\x02\x12 \n" +
 	"\x1cNOTIFICATION_CATEGORY_SYSTEM\x10\x03\x12\x1e\n" +
-	"\x1aNOTIFICATION_CATEGORY_TASK\x10\x04*\xda\x05\n" +
+	"\x1aNOTIFICATION_CATEGORY_TASK\x10\x04*\xfc\x05\n" +
 	"\x10NotificationType\x12!\n" +
 	"\x1dNOTIFICATION_TYPE_UNSPECIFIED\x10\x00\x12&\n" +
 	"\"NOTIFICATION_TYPE_FOLLOW_REQUESTED\x10d\x12%\n" +
@@ -2675,7 +2692,8 @@ const file_domain_notification_notification_proto_rawDesc = "" +
 	"\x1dNOTIFICATION_TYPE_MAINTENANCE\x10\xaf\x02\x12$\n" +
 	"\x1fNOTIFICATION_TYPE_TASK_ASSIGNED\x10\x90\x03\x12%\n" +
 	" NOTIFICATION_TYPE_TASK_COMPLETED\x10\x91\x03\x12$\n" +
-	"\x1fNOTIFICATION_TYPE_TASK_REMINDER\x10\x92\x03*\x99\x01\n" +
+	"\x1fNOTIFICATION_TYPE_TASK_REMINDER\x10\x92\x03\x12 \n" +
+	"\x1bNOTIFICATION_TYPE_BOT_EVENT\x10\x9a\x03*\x99\x01\n" +
 	"\x12NotificationStatus\x12#\n" +
 	"\x1fNOTIFICATION_STATUS_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aNOTIFICATION_STATUS_UNREAD\x10\x01\x12\x1c\n" +

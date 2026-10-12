@@ -98,8 +98,12 @@ type MessageCommittedFact struct {
 	ThreadRootMessageId string                       `protobuf:"bytes,5,opt,name=thread_root_message_id,json=threadRootMessageId,proto3" json:"thread_root_message_id,omitempty"`
 	Attachments         []*EncryptedObjectDescriptor `protobuf:"bytes,6,rep,name=attachments,proto3" json:"attachments,omitempty"`
 	ClientTimestamp     *timestamppb.Timestamp       `protobuf:"bytes,7,opt,name=client_timestamp,json=clientTimestamp,proto3" json:"client_timestamp,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Message-level delivery security marker; keeps history classifiable even
+	// if member actor_kind projection is missing. SERVICE_PLAINTEXT for bot
+	// direct_service_plaintext messages (no E2EE lock).
+	DeliverySecurity MessageDeliverySecurity `protobuf:"varint,8,opt,name=delivery_security,json=deliverySecurity,proto3,enum=peers_touch.model.chat.v1.MessageDeliverySecurity" json:"delivery_security,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *MessageCommittedFact) Reset() {
@@ -179,6 +183,13 @@ func (x *MessageCommittedFact) GetClientTimestamp() *timestamppb.Timestamp {
 		return x.ClientTimestamp
 	}
 	return nil
+}
+
+func (x *MessageCommittedFact) GetDeliverySecurity() MessageDeliverySecurity {
+	if x != nil {
+		return x.DeliverySecurity
+	}
+	return MessageDeliverySecurity_MESSAGE_DELIVERY_SECURITY_UNSPECIFIED
 }
 
 type MessageEditedFact struct {
@@ -2345,7 +2356,7 @@ var File_domain_chat_event_proto protoreflect.FileDescriptor
 
 const file_domain_chat_event_proto_rawDesc = "" +
 	"\n" +
-	"\x17domain/chat/event.proto\x12\x19peers_touch.model.chat.v1\x1a\x1cdomain/chat/attachment.proto\x1a\x19domain/chat/command.proto\x1a\x1edomain/chat/conversation.proto\x1a\x1adomain/chat/endpoint.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcf\x03\n" +
+	"\x17domain/chat/event.proto\x12\x19peers_touch.model.chat.v1\x1a\x1cdomain/chat/attachment.proto\x1a\x19domain/chat/command.proto\x1a\x1edomain/chat/conversation.proto\x1a\x1adomain/chat/endpoint.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb0\x04\n" +
 	"\x14MessageCommittedFact\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tR\tmessageId\x12A\n" +
@@ -2354,7 +2365,8 @@ const file_domain_chat_event_proto_rawDesc = "" +
 	"\x13reply_to_message_id\x18\x04 \x01(\tR\x10replyToMessageId\x123\n" +
 	"\x16thread_root_message_id\x18\x05 \x01(\tR\x13threadRootMessageId\x12V\n" +
 	"\vattachments\x18\x06 \x03(\v24.peers_touch.model.chat.v1.EncryptedObjectDescriptorR\vattachments\x12E\n" +
-	"\x10client_timestamp\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x0fclientTimestamp\"\xae\x01\n" +
+	"\x10client_timestamp\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x0fclientTimestamp\x12_\n" +
+	"\x11delivery_security\x18\b \x01(\x0e22.peers_touch.model.chat.v1.MessageDeliverySecurityR\x10deliverySecurity\"\xae\x01\n" +
 	"\x11MessageEditedFact\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tR\tmessageId\x12A\n" +
@@ -2622,81 +2634,83 @@ var file_domain_chat_event_proto_goTypes = []any{
 	(MessagingContentKind)(0),                        // 27: peers_touch.model.chat.v1.MessagingContentKind
 	(*EncryptedObjectDescriptor)(nil),                // 28: peers_touch.model.chat.v1.EncryptedObjectDescriptor
 	(*timestamppb.Timestamp)(nil),                    // 29: google.protobuf.Timestamp
-	(GroupVisibilityV1)(0),                           // 30: peers_touch.model.chat.v1.GroupVisibilityV1
-	(ConversationKind)(0),                            // 31: peers_touch.model.chat.v1.ConversationKind
-	(MessagingMembershipAction)(0),                   // 32: peers_touch.model.chat.v1.MessagingMembershipAction
-	(ConversationMemberAuthorityAction)(0),           // 33: peers_touch.model.chat.v1.ConversationMemberAuthorityAction
-	(MemberRole)(0),                                  // 34: peers_touch.model.chat.v1.MemberRole
-	(ConversationCommandRejectCode)(0),               // 35: peers_touch.model.chat.v1.ConversationCommandRejectCode
-	(ConversationCommandSubmissionState)(0),          // 36: peers_touch.model.chat.v1.ConversationCommandSubmissionState
-	(PreparedEndpointPayloadKind)(0),                 // 37: peers_touch.model.chat.v1.PreparedEndpointPayloadKind
+	(MessageDeliverySecurity)(0),                     // 30: peers_touch.model.chat.v1.MessageDeliverySecurity
+	(GroupVisibilityV1)(0),                           // 31: peers_touch.model.chat.v1.GroupVisibilityV1
+	(ConversationKind)(0),                            // 32: peers_touch.model.chat.v1.ConversationKind
+	(MessagingMembershipAction)(0),                   // 33: peers_touch.model.chat.v1.MessagingMembershipAction
+	(ConversationMemberAuthorityAction)(0),           // 34: peers_touch.model.chat.v1.ConversationMemberAuthorityAction
+	(MemberRole)(0),                                  // 35: peers_touch.model.chat.v1.MemberRole
+	(ConversationCommandRejectCode)(0),               // 36: peers_touch.model.chat.v1.ConversationCommandRejectCode
+	(ConversationCommandSubmissionState)(0),          // 37: peers_touch.model.chat.v1.ConversationCommandSubmissionState
+	(PreparedEndpointPayloadKind)(0),                 // 38: peers_touch.model.chat.v1.PreparedEndpointPayloadKind
 }
 var file_domain_chat_event_proto_depIdxs = []int32{
 	26, // 0: peers_touch.model.chat.v1.MessageCommittedFact.sender:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
 	27, // 1: peers_touch.model.chat.v1.MessageCommittedFact.content_kind:type_name -> peers_touch.model.chat.v1.MessagingContentKind
 	28, // 2: peers_touch.model.chat.v1.MessageCommittedFact.attachments:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
 	29, // 3: peers_touch.model.chat.v1.MessageCommittedFact.client_timestamp:type_name -> google.protobuf.Timestamp
-	26, // 4: peers_touch.model.chat.v1.MessageEditedFact.editor:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	29, // 5: peers_touch.model.chat.v1.MessageEditedFact.edited_at:type_name -> google.protobuf.Timestamp
-	26, // 6: peers_touch.model.chat.v1.MessageRetractedFact.retractor:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	29, // 7: peers_touch.model.chat.v1.MessageRetractedFact.retracted_at:type_name -> google.protobuf.Timestamp
-	29, // 8: peers_touch.model.chat.v1.MessageHiddenForActorFact.hidden_at:type_name -> google.protobuf.Timestamp
-	26, // 9: peers_touch.model.chat.v1.MessageModeratedFact.moderator:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	29, // 10: peers_touch.model.chat.v1.MessageModeratedFact.moderated_at:type_name -> google.protobuf.Timestamp
-	26, // 11: peers_touch.model.chat.v1.MessageForwardedFact.sender:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	27, // 12: peers_touch.model.chat.v1.MessageForwardedFact.content_kind:type_name -> peers_touch.model.chat.v1.MessagingContentKind
-	28, // 13: peers_touch.model.chat.v1.MessageForwardedFact.destination_attachments:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
-	29, // 14: peers_touch.model.chat.v1.MessageForwardedFact.client_timestamp:type_name -> google.protobuf.Timestamp
-	26, // 15: peers_touch.model.chat.v1.ReactionCommittedFact.actor:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	26, // 16: peers_touch.model.chat.v1.MessagePinCommittedFact.actor:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	30, // 17: peers_touch.model.chat.v1.ConversationUpdatedFact.visibility:type_name -> peers_touch.model.chat.v1.GroupVisibilityV1
-	31, // 18: peers_touch.model.chat.v1.ConversationCreatedFact.kind:type_name -> peers_touch.model.chat.v1.ConversationKind
-	12, // 19: peers_touch.model.chat.v1.ConversationCreatedFact.members:type_name -> peers_touch.model.chat.v1.ConversationAuthorityMember
-	14, // 20: peers_touch.model.chat.v1.ConversationCreatedFact.post_state:type_name -> peers_touch.model.chat.v1.ConversationAuthoritySnapshot
-	32, // 21: peers_touch.model.chat.v1.MessagingMembershipChangeCommitted.action:type_name -> peers_touch.model.chat.v1.MessagingMembershipAction
-	29, // 22: peers_touch.model.chat.v1.ConversationAuthorityMember.muted_until:type_name -> google.protobuf.Timestamp
-	26, // 23: peers_touch.model.chat.v1.ConversationAuthorityEndpoint.endpoint:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	31, // 24: peers_touch.model.chat.v1.ConversationAuthoritySnapshot.kind:type_name -> peers_touch.model.chat.v1.ConversationKind
-	12, // 25: peers_touch.model.chat.v1.ConversationAuthoritySnapshot.active_members:type_name -> peers_touch.model.chat.v1.ConversationAuthorityMember
-	26, // 26: peers_touch.model.chat.v1.ConversationAuthoritySnapshot.active_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	13, // 27: peers_touch.model.chat.v1.ConversationAuthoritySnapshot.active_endpoint_routes:type_name -> peers_touch.model.chat.v1.ConversationAuthorityEndpoint
-	30, // 28: peers_touch.model.chat.v1.ConversationAuthoritySnapshot.visibility:type_name -> peers_touch.model.chat.v1.GroupVisibilityV1
-	11, // 29: peers_touch.model.chat.v1.MembershipTransitionCommittedFact.changes:type_name -> peers_touch.model.chat.v1.MessagingMembershipChangeCommitted
-	14, // 30: peers_touch.model.chat.v1.MembershipTransitionCommittedFact.post_state:type_name -> peers_touch.model.chat.v1.ConversationAuthoritySnapshot
-	33, // 31: peers_touch.model.chat.v1.ConversationMemberAuthorityCommittedFact.action:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityAction
-	34, // 32: peers_touch.model.chat.v1.ConversationMemberAuthorityCommittedFact.role:type_name -> peers_touch.model.chat.v1.MemberRole
-	29, // 33: peers_touch.model.chat.v1.ConversationMemberAuthorityCommittedFact.muted_until:type_name -> google.protobuf.Timestamp
-	14, // 34: peers_touch.model.chat.v1.ConversationMemberAuthorityCommittedFact.post_state:type_name -> peers_touch.model.chat.v1.ConversationAuthoritySnapshot
-	26, // 35: peers_touch.model.chat.v1.PublicEventMarker.sending_endpoint:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	26, // 36: peers_touch.model.chat.v1.MlsRetirementMarker.removed_endpoint:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	26, // 37: peers_touch.model.chat.v1.ConversationEvent.actor:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	29, // 38: peers_touch.model.chat.v1.ConversationEvent.committed_at:type_name -> google.protobuf.Timestamp
-	1,  // 39: peers_touch.model.chat.v1.ConversationEvent.message_committed:type_name -> peers_touch.model.chat.v1.MessageCommittedFact
-	2,  // 40: peers_touch.model.chat.v1.ConversationEvent.message_edited:type_name -> peers_touch.model.chat.v1.MessageEditedFact
-	3,  // 41: peers_touch.model.chat.v1.ConversationEvent.message_retracted:type_name -> peers_touch.model.chat.v1.MessageRetractedFact
-	7,  // 42: peers_touch.model.chat.v1.ConversationEvent.reaction_committed:type_name -> peers_touch.model.chat.v1.ReactionCommittedFact
-	8,  // 43: peers_touch.model.chat.v1.ConversationEvent.message_pin_committed:type_name -> peers_touch.model.chat.v1.MessagePinCommittedFact
-	9,  // 44: peers_touch.model.chat.v1.ConversationEvent.conversation_updated:type_name -> peers_touch.model.chat.v1.ConversationUpdatedFact
-	15, // 45: peers_touch.model.chat.v1.ConversationEvent.membership_transition_committed:type_name -> peers_touch.model.chat.v1.MembershipTransitionCommittedFact
-	10, // 46: peers_touch.model.chat.v1.ConversationEvent.conversation_created:type_name -> peers_touch.model.chat.v1.ConversationCreatedFact
-	20, // 47: peers_touch.model.chat.v1.ConversationEvent.conversation_dissolved:type_name -> peers_touch.model.chat.v1.ConversationDissolvedFact
-	16, // 48: peers_touch.model.chat.v1.ConversationEvent.member_authority_committed:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityCommittedFact
-	4,  // 49: peers_touch.model.chat.v1.ConversationEvent.message_hidden_for_actor:type_name -> peers_touch.model.chat.v1.MessageHiddenForActorFact
-	5,  // 50: peers_touch.model.chat.v1.ConversationEvent.message_moderated:type_name -> peers_touch.model.chat.v1.MessageModeratedFact
-	6,  // 51: peers_touch.model.chat.v1.ConversationEvent.message_forwarded:type_name -> peers_touch.model.chat.v1.MessageForwardedFact
-	21, // 52: peers_touch.model.chat.v1.ConversationCommandProposalResult.event:type_name -> peers_touch.model.chat.v1.ConversationEvent
-	35, // 53: peers_touch.model.chat.v1.ConversationCommandProposalResult.reject_code:type_name -> peers_touch.model.chat.v1.ConversationCommandRejectCode
-	36, // 54: peers_touch.model.chat.v1.ConversationCommandResultDelivery.state:type_name -> peers_touch.model.chat.v1.ConversationCommandSubmissionState
-	22, // 55: peers_touch.model.chat.v1.ConversationCommandResultDelivery.result:type_name -> peers_touch.model.chat.v1.ConversationCommandProposalResult
-	21, // 56: peers_touch.model.chat.v1.DeviceEventDelivery.event:type_name -> peers_touch.model.chat.v1.ConversationEvent
-	26, // 57: peers_touch.model.chat.v1.DeviceEventDelivery.recipient:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	37, // 58: peers_touch.model.chat.v1.DeviceEventDelivery.payload_kind:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayloadKind
-	0,  // 59: peers_touch.model.chat.v1.MessagingProjectionInvalidation.kind:type_name -> peers_touch.model.chat.v1.MessagingProjectionKind
-	60, // [60:60] is the sub-list for method output_type
-	60, // [60:60] is the sub-list for method input_type
-	60, // [60:60] is the sub-list for extension type_name
-	60, // [60:60] is the sub-list for extension extendee
-	0,  // [0:60] is the sub-list for field type_name
+	30, // 4: peers_touch.model.chat.v1.MessageCommittedFact.delivery_security:type_name -> peers_touch.model.chat.v1.MessageDeliverySecurity
+	26, // 5: peers_touch.model.chat.v1.MessageEditedFact.editor:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	29, // 6: peers_touch.model.chat.v1.MessageEditedFact.edited_at:type_name -> google.protobuf.Timestamp
+	26, // 7: peers_touch.model.chat.v1.MessageRetractedFact.retractor:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	29, // 8: peers_touch.model.chat.v1.MessageRetractedFact.retracted_at:type_name -> google.protobuf.Timestamp
+	29, // 9: peers_touch.model.chat.v1.MessageHiddenForActorFact.hidden_at:type_name -> google.protobuf.Timestamp
+	26, // 10: peers_touch.model.chat.v1.MessageModeratedFact.moderator:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	29, // 11: peers_touch.model.chat.v1.MessageModeratedFact.moderated_at:type_name -> google.protobuf.Timestamp
+	26, // 12: peers_touch.model.chat.v1.MessageForwardedFact.sender:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	27, // 13: peers_touch.model.chat.v1.MessageForwardedFact.content_kind:type_name -> peers_touch.model.chat.v1.MessagingContentKind
+	28, // 14: peers_touch.model.chat.v1.MessageForwardedFact.destination_attachments:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
+	29, // 15: peers_touch.model.chat.v1.MessageForwardedFact.client_timestamp:type_name -> google.protobuf.Timestamp
+	26, // 16: peers_touch.model.chat.v1.ReactionCommittedFact.actor:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	26, // 17: peers_touch.model.chat.v1.MessagePinCommittedFact.actor:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	31, // 18: peers_touch.model.chat.v1.ConversationUpdatedFact.visibility:type_name -> peers_touch.model.chat.v1.GroupVisibilityV1
+	32, // 19: peers_touch.model.chat.v1.ConversationCreatedFact.kind:type_name -> peers_touch.model.chat.v1.ConversationKind
+	12, // 20: peers_touch.model.chat.v1.ConversationCreatedFact.members:type_name -> peers_touch.model.chat.v1.ConversationAuthorityMember
+	14, // 21: peers_touch.model.chat.v1.ConversationCreatedFact.post_state:type_name -> peers_touch.model.chat.v1.ConversationAuthoritySnapshot
+	33, // 22: peers_touch.model.chat.v1.MessagingMembershipChangeCommitted.action:type_name -> peers_touch.model.chat.v1.MessagingMembershipAction
+	29, // 23: peers_touch.model.chat.v1.ConversationAuthorityMember.muted_until:type_name -> google.protobuf.Timestamp
+	26, // 24: peers_touch.model.chat.v1.ConversationAuthorityEndpoint.endpoint:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	32, // 25: peers_touch.model.chat.v1.ConversationAuthoritySnapshot.kind:type_name -> peers_touch.model.chat.v1.ConversationKind
+	12, // 26: peers_touch.model.chat.v1.ConversationAuthoritySnapshot.active_members:type_name -> peers_touch.model.chat.v1.ConversationAuthorityMember
+	26, // 27: peers_touch.model.chat.v1.ConversationAuthoritySnapshot.active_endpoints:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	13, // 28: peers_touch.model.chat.v1.ConversationAuthoritySnapshot.active_endpoint_routes:type_name -> peers_touch.model.chat.v1.ConversationAuthorityEndpoint
+	31, // 29: peers_touch.model.chat.v1.ConversationAuthoritySnapshot.visibility:type_name -> peers_touch.model.chat.v1.GroupVisibilityV1
+	11, // 30: peers_touch.model.chat.v1.MembershipTransitionCommittedFact.changes:type_name -> peers_touch.model.chat.v1.MessagingMembershipChangeCommitted
+	14, // 31: peers_touch.model.chat.v1.MembershipTransitionCommittedFact.post_state:type_name -> peers_touch.model.chat.v1.ConversationAuthoritySnapshot
+	34, // 32: peers_touch.model.chat.v1.ConversationMemberAuthorityCommittedFact.action:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityAction
+	35, // 33: peers_touch.model.chat.v1.ConversationMemberAuthorityCommittedFact.role:type_name -> peers_touch.model.chat.v1.MemberRole
+	29, // 34: peers_touch.model.chat.v1.ConversationMemberAuthorityCommittedFact.muted_until:type_name -> google.protobuf.Timestamp
+	14, // 35: peers_touch.model.chat.v1.ConversationMemberAuthorityCommittedFact.post_state:type_name -> peers_touch.model.chat.v1.ConversationAuthoritySnapshot
+	26, // 36: peers_touch.model.chat.v1.PublicEventMarker.sending_endpoint:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	26, // 37: peers_touch.model.chat.v1.MlsRetirementMarker.removed_endpoint:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	26, // 38: peers_touch.model.chat.v1.ConversationEvent.actor:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	29, // 39: peers_touch.model.chat.v1.ConversationEvent.committed_at:type_name -> google.protobuf.Timestamp
+	1,  // 40: peers_touch.model.chat.v1.ConversationEvent.message_committed:type_name -> peers_touch.model.chat.v1.MessageCommittedFact
+	2,  // 41: peers_touch.model.chat.v1.ConversationEvent.message_edited:type_name -> peers_touch.model.chat.v1.MessageEditedFact
+	3,  // 42: peers_touch.model.chat.v1.ConversationEvent.message_retracted:type_name -> peers_touch.model.chat.v1.MessageRetractedFact
+	7,  // 43: peers_touch.model.chat.v1.ConversationEvent.reaction_committed:type_name -> peers_touch.model.chat.v1.ReactionCommittedFact
+	8,  // 44: peers_touch.model.chat.v1.ConversationEvent.message_pin_committed:type_name -> peers_touch.model.chat.v1.MessagePinCommittedFact
+	9,  // 45: peers_touch.model.chat.v1.ConversationEvent.conversation_updated:type_name -> peers_touch.model.chat.v1.ConversationUpdatedFact
+	15, // 46: peers_touch.model.chat.v1.ConversationEvent.membership_transition_committed:type_name -> peers_touch.model.chat.v1.MembershipTransitionCommittedFact
+	10, // 47: peers_touch.model.chat.v1.ConversationEvent.conversation_created:type_name -> peers_touch.model.chat.v1.ConversationCreatedFact
+	20, // 48: peers_touch.model.chat.v1.ConversationEvent.conversation_dissolved:type_name -> peers_touch.model.chat.v1.ConversationDissolvedFact
+	16, // 49: peers_touch.model.chat.v1.ConversationEvent.member_authority_committed:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityCommittedFact
+	4,  // 50: peers_touch.model.chat.v1.ConversationEvent.message_hidden_for_actor:type_name -> peers_touch.model.chat.v1.MessageHiddenForActorFact
+	5,  // 51: peers_touch.model.chat.v1.ConversationEvent.message_moderated:type_name -> peers_touch.model.chat.v1.MessageModeratedFact
+	6,  // 52: peers_touch.model.chat.v1.ConversationEvent.message_forwarded:type_name -> peers_touch.model.chat.v1.MessageForwardedFact
+	21, // 53: peers_touch.model.chat.v1.ConversationCommandProposalResult.event:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	36, // 54: peers_touch.model.chat.v1.ConversationCommandProposalResult.reject_code:type_name -> peers_touch.model.chat.v1.ConversationCommandRejectCode
+	37, // 55: peers_touch.model.chat.v1.ConversationCommandResultDelivery.state:type_name -> peers_touch.model.chat.v1.ConversationCommandSubmissionState
+	22, // 56: peers_touch.model.chat.v1.ConversationCommandResultDelivery.result:type_name -> peers_touch.model.chat.v1.ConversationCommandProposalResult
+	21, // 57: peers_touch.model.chat.v1.DeviceEventDelivery.event:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	26, // 58: peers_touch.model.chat.v1.DeviceEventDelivery.recipient:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	38, // 59: peers_touch.model.chat.v1.DeviceEventDelivery.payload_kind:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayloadKind
+	0,  // 60: peers_touch.model.chat.v1.MessagingProjectionInvalidation.kind:type_name -> peers_touch.model.chat.v1.MessagingProjectionKind
+	61, // [61:61] is the sub-list for method output_type
+	61, // [61:61] is the sub-list for method input_type
+	61, // [61:61] is the sub-list for extension type_name
+	61, // [61:61] is the sub-list for extension extendee
+	0,  // [0:61] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_event_proto_init() }

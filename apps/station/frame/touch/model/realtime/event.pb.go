@@ -433,7 +433,7 @@ func (x SocialGraphEvent_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SocialGraphEvent_Kind.Descriptor instead.
 func (SocialGraphEvent_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{18, 0}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{19, 0}
 }
 
 // StreamEvent is the single envelope every realtime frame uses.
@@ -469,6 +469,7 @@ type StreamEvent struct {
 	//	*StreamEvent_EnvelopeDelivered
 	//	*StreamEvent_LedgerEventDelivered
 	//	*StreamEvent_SocialGraphEvent
+	//	*StreamEvent_BotNotification
 	Kind          isStreamEvent_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -669,6 +670,15 @@ func (x *StreamEvent) GetSocialGraphEvent() *SocialGraphEvent {
 	return nil
 }
 
+func (x *StreamEvent) GetBotNotification() *BotNotificationDelivered {
+	if x != nil {
+		if x, ok := x.Kind.(*StreamEvent_BotNotification); ok {
+			return x.BotNotification
+		}
+	}
+	return nil
+}
+
 type isStreamEvent_Kind interface {
 	isStreamEvent_Kind()
 }
@@ -737,6 +747,10 @@ type StreamEvent_SocialGraphEvent struct {
 	SocialGraphEvent *SocialGraphEvent `protobuf:"bytes,25,opt,name=social_graph_event,json=socialGraphEvent,proto3,oneof"`
 }
 
+type StreamEvent_BotNotification struct {
+	BotNotification *BotNotificationDelivered `protobuf:"bytes,26,opt,name=bot_notification,json=botNotification,proto3,oneof"`
+}
+
 func (*StreamEvent_Hb) isStreamEvent_Kind() {}
 
 func (*StreamEvent_Message) isStreamEvent_Kind() {}
@@ -768,6 +782,8 @@ func (*StreamEvent_EnvelopeDelivered) isStreamEvent_Kind() {}
 func (*StreamEvent_LedgerEventDelivered) isStreamEvent_Kind() {}
 
 func (*StreamEvent_SocialGraphEvent) isStreamEvent_Kind() {}
+
+func (*StreamEvent_BotNotification) isStreamEvent_Kind() {}
 
 // Heartbeat is emitted by the server every 15 seconds (default,
 // operator-tunable) so the client can detect a silent connection even
@@ -2344,6 +2360,100 @@ func (x *LedgerEventDelivered) GetCreatedAtUnixMs() int64 {
 	return 0
 }
 
+// BotNotificationDelivered wakes an online owner device after bot webhook
+// ingestion produced a durable notification row inside the same transaction
+// as the bot conversation message. Payload is intentionally minimal: clients
+// fetch authoritative notification/conversation detail through the existing
+// notification list/projection API. This arm drives OS banner/notification
+// center only; the unread badge still derives from conversation unread.
+//
+// notification_type/category carry the numeric NotificationType (410 = bot
+// event) and NotificationCategory (TASK = 4) values to keep this domain
+// self-contained without importing the notification contract.
+type BotNotificationDelivered struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	NotificationId     string                 `protobuf:"bytes,1,opt,name=notification_id,json=notificationId,proto3" json:"notification_id,omitempty"`
+	RecipientActorPtid string                 `protobuf:"bytes,2,opt,name=recipient_actor_ptid,json=recipientActorPtid,proto3" json:"recipient_actor_ptid,omitempty"`
+	NotificationType   int32                  `protobuf:"varint,3,opt,name=notification_type,json=notificationType,proto3" json:"notification_type,omitempty"`
+	Category           int32                  `protobuf:"varint,4,opt,name=category,proto3" json:"category,omitempty"`
+	GroupKey           string                 `protobuf:"bytes,5,opt,name=group_key,json=groupKey,proto3" json:"group_key,omitempty"`
+	CreatedTsUnixMs    int64                  `protobuf:"varint,6,opt,name=created_ts_unix_ms,json=createdTsUnixMs,proto3" json:"created_ts_unix_ms,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *BotNotificationDelivered) Reset() {
+	*x = BotNotificationDelivered{}
+	mi := &file_domain_realtime_event_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BotNotificationDelivered) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BotNotificationDelivered) ProtoMessage() {}
+
+func (x *BotNotificationDelivered) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_realtime_event_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BotNotificationDelivered.ProtoReflect.Descriptor instead.
+func (*BotNotificationDelivered) Descriptor() ([]byte, []int) {
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *BotNotificationDelivered) GetNotificationId() string {
+	if x != nil {
+		return x.NotificationId
+	}
+	return ""
+}
+
+func (x *BotNotificationDelivered) GetRecipientActorPtid() string {
+	if x != nil {
+		return x.RecipientActorPtid
+	}
+	return ""
+}
+
+func (x *BotNotificationDelivered) GetNotificationType() int32 {
+	if x != nil {
+		return x.NotificationType
+	}
+	return 0
+}
+
+func (x *BotNotificationDelivered) GetCategory() int32 {
+	if x != nil {
+		return x.Category
+	}
+	return 0
+}
+
+func (x *BotNotificationDelivered) GetGroupKey() string {
+	if x != nil {
+		return x.GroupKey
+	}
+	return ""
+}
+
+func (x *BotNotificationDelivered) GetCreatedTsUnixMs() int64 {
+	if x != nil {
+		return x.CreatedTsUnixMs
+	}
+	return 0
+}
+
 // SocialGraphEvent signals a change in the social relationship graph:
 // friend requests sent/accepted/rejected, new conversations created by
 // the social layer, unfriend actions, or relationship deny changes. Clients use this to refresh
@@ -2363,7 +2473,7 @@ type SocialGraphEvent struct {
 
 func (x *SocialGraphEvent) Reset() {
 	*x = SocialGraphEvent{}
-	mi := &file_domain_realtime_event_proto_msgTypes[18]
+	mi := &file_domain_realtime_event_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2375,7 +2485,7 @@ func (x *SocialGraphEvent) String() string {
 func (*SocialGraphEvent) ProtoMessage() {}
 
 func (x *SocialGraphEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[18]
+	mi := &file_domain_realtime_event_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2388,7 +2498,7 @@ func (x *SocialGraphEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SocialGraphEvent.ProtoReflect.Descriptor instead.
 func (*SocialGraphEvent) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{18}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SocialGraphEvent) GetKind() SocialGraphEvent_Kind {
@@ -2437,7 +2547,7 @@ var File_domain_realtime_event_proto protoreflect.FileDescriptor
 
 const file_domain_realtime_event_proto_rawDesc = "" +
 	"\n" +
-	"\x1bdomain/realtime/event.proto\x12\x1dpeers_touch.model.realtime.v1\"\xe3\v\n" +
+	"\x1bdomain/realtime/event.proto\x12\x1dpeers_touch.model.realtime.v1\"\xc9\f\n" +
 	"\vStreamEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1c\n" +
 	"\n" +
@@ -2458,7 +2568,8 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\x1dgroup_skdm_envelope_delivered\x18\x16 \x01(\v29.peers_touch.model.realtime.v1.GroupSkdmEnvelopeDeliveredH\x00R\x1agroupSkdmEnvelopeDelivered\x12a\n" +
 	"\x12envelope_delivered\x18\x17 \x01(\v20.peers_touch.model.realtime.v1.EnvelopeDeliveredH\x00R\x11envelopeDelivered\x12k\n" +
 	"\x16ledger_event_delivered\x18\x18 \x01(\v23.peers_touch.model.realtime.v1.LedgerEventDeliveredH\x00R\x14ledgerEventDelivered\x12_\n" +
-	"\x12social_graph_event\x18\x19 \x01(\v2/.peers_touch.model.realtime.v1.SocialGraphEventH\x00R\x10socialGraphEventB\x06\n" +
+	"\x12social_graph_event\x18\x19 \x01(\v2/.peers_touch.model.realtime.v1.SocialGraphEventH\x00R\x10socialGraphEvent\x12d\n" +
+	"\x10bot_notification\x18\x1a \x01(\v27.peers_touch.model.realtime.v1.BotNotificationDeliveredH\x00R\x0fbotNotificationB\x06\n" +
 	"\x04kind\"1\n" +
 	"\tHeartbeat\x12$\n" +
 	"\x0efloor_event_id\x18\x01 \x01(\tR\ffloorEventId\"\xed\x01\n" +
@@ -2658,7 +2769,14 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\x16actor_federated_handle\x18\f \x01(\tR\x14actorFederatedHandle\x12&\n" +
 	"\x0fstation_peer_id\x18\r \x01(\tR\rstationPeerId\x129\n" +
 	"\x19sequencer_station_peer_id\x18\x0e \x01(\tR\x16sequencerStationPeerId\x12+\n" +
-	"\x12created_at_unix_ms\x18\x0f \x01(\x03R\x0fcreatedAtUnixMs\"\xe8\x03\n" +
+	"\x12created_at_unix_ms\x18\x0f \x01(\x03R\x0fcreatedAtUnixMs\"\x88\x02\n" +
+	"\x18BotNotificationDelivered\x12'\n" +
+	"\x0fnotification_id\x18\x01 \x01(\tR\x0enotificationId\x120\n" +
+	"\x14recipient_actor_ptid\x18\x02 \x01(\tR\x12recipientActorPtid\x12+\n" +
+	"\x11notification_type\x18\x03 \x01(\x05R\x10notificationType\x12\x1a\n" +
+	"\bcategory\x18\x04 \x01(\x05R\bcategory\x12\x1b\n" +
+	"\tgroup_key\x18\x05 \x01(\tR\bgroupKey\x12+\n" +
+	"\x12created_ts_unix_ms\x18\x06 \x01(\x03R\x0fcreatedTsUnixMs\"\xe8\x03\n" +
 	"\x10SocialGraphEvent\x12H\n" +
 	"\x04kind\x18\x01 \x01(\x0e24.peers_touch.model.realtime.v1.SocialGraphEvent.KindR\x04kind\x12\x1d\n" +
 	"\n" +
@@ -2693,7 +2811,7 @@ func file_domain_realtime_event_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_realtime_event_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_domain_realtime_event_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_domain_realtime_event_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_domain_realtime_event_proto_goTypes = []any{
 	(MessageReceipt_Kind)(0),                   // 0: peers_touch.model.realtime.v1.MessageReceipt.Kind
 	(CallSignal_Kind)(0),                       // 1: peers_touch.model.realtime.v1.CallSignal.Kind
@@ -2720,7 +2838,8 @@ var file_domain_realtime_event_proto_goTypes = []any{
 	(*Resync)(nil),                             // 22: peers_touch.model.realtime.v1.Resync
 	(*EnvelopeDelivered)(nil),                  // 23: peers_touch.model.realtime.v1.EnvelopeDelivered
 	(*LedgerEventDelivered)(nil),               // 24: peers_touch.model.realtime.v1.LedgerEventDelivered
-	(*SocialGraphEvent)(nil),                   // 25: peers_touch.model.realtime.v1.SocialGraphEvent
+	(*BotNotificationDelivered)(nil),           // 25: peers_touch.model.realtime.v1.BotNotificationDelivered
+	(*SocialGraphEvent)(nil),                   // 26: peers_touch.model.realtime.v1.SocialGraphEvent
 }
 var file_domain_realtime_event_proto_depIdxs = []int32{
 	8,  // 0: peers_touch.model.realtime.v1.StreamEvent.hb:type_name -> peers_touch.model.realtime.v1.Heartbeat
@@ -2738,19 +2857,20 @@ var file_domain_realtime_event_proto_depIdxs = []int32{
 	21, // 12: peers_touch.model.realtime.v1.StreamEvent.group_skdm_envelope_delivered:type_name -> peers_touch.model.realtime.v1.GroupSkdmEnvelopeDelivered
 	23, // 13: peers_touch.model.realtime.v1.StreamEvent.envelope_delivered:type_name -> peers_touch.model.realtime.v1.EnvelopeDelivered
 	24, // 14: peers_touch.model.realtime.v1.StreamEvent.ledger_event_delivered:type_name -> peers_touch.model.realtime.v1.LedgerEventDelivered
-	25, // 15: peers_touch.model.realtime.v1.StreamEvent.social_graph_event:type_name -> peers_touch.model.realtime.v1.SocialGraphEvent
-	0,  // 16: peers_touch.model.realtime.v1.MessageReceipt.kind:type_name -> peers_touch.model.realtime.v1.MessageReceipt.Kind
-	1,  // 17: peers_touch.model.realtime.v1.CallSignal.kind:type_name -> peers_touch.model.realtime.v1.CallSignal.Kind
-	2,  // 18: peers_touch.model.realtime.v1.MessageMutation.kind:type_name -> peers_touch.model.realtime.v1.MessageMutation.Kind
-	3,  // 19: peers_touch.model.realtime.v1.GroupMembershipChange.kind:type_name -> peers_touch.model.realtime.v1.GroupMembershipChange.Kind
-	4,  // 20: peers_touch.model.realtime.v1.ConversationSettingsChanged.kind:type_name -> peers_touch.model.realtime.v1.ConversationSettingsChanged.Kind
-	5,  // 21: peers_touch.model.realtime.v1.MomentEvent.kind:type_name -> peers_touch.model.realtime.v1.MomentEvent.Kind
-	6,  // 22: peers_touch.model.realtime.v1.SocialGraphEvent.kind:type_name -> peers_touch.model.realtime.v1.SocialGraphEvent.Kind
-	23, // [23:23] is the sub-list for method output_type
-	23, // [23:23] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	26, // 15: peers_touch.model.realtime.v1.StreamEvent.social_graph_event:type_name -> peers_touch.model.realtime.v1.SocialGraphEvent
+	25, // 16: peers_touch.model.realtime.v1.StreamEvent.bot_notification:type_name -> peers_touch.model.realtime.v1.BotNotificationDelivered
+	0,  // 17: peers_touch.model.realtime.v1.MessageReceipt.kind:type_name -> peers_touch.model.realtime.v1.MessageReceipt.Kind
+	1,  // 18: peers_touch.model.realtime.v1.CallSignal.kind:type_name -> peers_touch.model.realtime.v1.CallSignal.Kind
+	2,  // 19: peers_touch.model.realtime.v1.MessageMutation.kind:type_name -> peers_touch.model.realtime.v1.MessageMutation.Kind
+	3,  // 20: peers_touch.model.realtime.v1.GroupMembershipChange.kind:type_name -> peers_touch.model.realtime.v1.GroupMembershipChange.Kind
+	4,  // 21: peers_touch.model.realtime.v1.ConversationSettingsChanged.kind:type_name -> peers_touch.model.realtime.v1.ConversationSettingsChanged.Kind
+	5,  // 22: peers_touch.model.realtime.v1.MomentEvent.kind:type_name -> peers_touch.model.realtime.v1.MomentEvent.Kind
+	6,  // 23: peers_touch.model.realtime.v1.SocialGraphEvent.kind:type_name -> peers_touch.model.realtime.v1.SocialGraphEvent.Kind
+	24, // [24:24] is the sub-list for method output_type
+	24, // [24:24] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_domain_realtime_event_proto_init() }
@@ -2775,6 +2895,7 @@ func file_domain_realtime_event_proto_init() {
 		(*StreamEvent_EnvelopeDelivered)(nil),
 		(*StreamEvent_LedgerEventDelivered)(nil),
 		(*StreamEvent_SocialGraphEvent)(nil),
+		(*StreamEvent_BotNotification)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2782,7 +2903,7 @@ func file_domain_realtime_event_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_realtime_event_proto_rawDesc), len(file_domain_realtime_event_proto_rawDesc)),
 			NumEnums:      7,
-			NumMessages:   19,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

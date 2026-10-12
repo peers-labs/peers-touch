@@ -31,6 +31,10 @@ message Notification {
   string group_key = 12;
   google.protobuf.Timestamp created_at = 13;
   google.protobuf.Timestamp read_at = 14;
+  // Producer idempotency key (e.g. inbound webhook request id). Produce with
+  // the same (recipient_ptid, idempotency_key, 24h bucket) returns the
+  // original notification; uniqueness is enforced by a DB unique index.
+  string idempotency_key = 15;
 }
 
 // NotificationGroup represents an aggregated notification group.
@@ -88,6 +92,10 @@ enum NotificationType {
   NOTIFICATION_TYPE_TASK_ASSIGNED = 400;
   NOTIFICATION_TYPE_TASK_COMPLETED = 401;
   NOTIFICATION_TYPE_TASK_REMINDER = 402;
+
+  // IM Bot webhook event (410-419). Category stays TASK so it inherits the
+  // existing task preference/mute/push bindings; no new category is added.
+  NOTIFICATION_TYPE_BOT_EVENT = 410;
 }
 
 enum NotificationStatus {

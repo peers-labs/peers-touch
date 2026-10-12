@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package peers_touch.model.bot.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/bot/model;model";
+
+// Bot registry and owner-scoped management API.
+//
+// A Bot is an ACTOR_KIND_AGENT actor owned by exactly one PERSON. The edge
+// ingestion contract lives in webhook.proto; management endpoints are JWT +
+// owner resolved and kept separate from the public webhook edge.
+
+enum BotState {
+  BOT_STATE_UNSPECIFIED = 0;
+  BOT_STATE_DRAFT = 1;
+  BOT_STATE_ACTIVE = 2;
+  BOT_STATE_DISABLED = 3;
+  BOT_STATE_REVOKED = 4;
+}
+
+// v1 delivery is always owner-only. LOCAL_ACTORS / FEDERATED are reserved for
+// a later scope expansion; a Bot never delivers to non-owners in v1.
+enum BotDeliveryScope {
+  BOT_DELIVERY_SCOPE_UNSPECIFIED = 0;
+  BOT_DELIVERY_SCOPE_OWNER_ONLY = 1;
+  reserved 2, 3;
+}
+
+message Bot {
+  string bot_ptid = 1;
+  string owner_ptid = 2;
+  string name = 3;
+  BotState state = 4;
+  string webhook_id = 5;
+  // True only between creation/rotation and the first owner read of the
+  // plaintext. The plaintext secret is never persisted.
+  bool secret_delivered = 6;
+  string secret_hint = 7;
+  BotDeliveryScope delivery_scope = 8;
+  int32 rate_limit_per_minute = 9;
+  int64 created_at_ms = 10;
+  int64 disabled_at_ms = 11;
+  int64 revoked_at_ms = 12;
+}
+
+message CreateBotRequest {
+  string name = 1;
+}
+
+message CreateBotResponse {
+  Bot bot = 1;
+  string webhook_url = 2;
+  // Plaintext, returned exactly once. The server stores only a SHA-256 hash.
+  string secret_plaintext = 3;
+}
+
+message RotateBotSecretRequest {
+  string bot_ptid = 1;
+}
+
+message RotateBotSecretResponse {
+  // Plaintext, returned exactly once; the prior secret is invalid immediately.
+  string secret_plaintext = 1;
+}
+
+message SetBotStateRequest {
+  string bot_ptid = 1;
+  BotState target_state = 2;
+}
+
+message SetBotStateResponse {
+  Bot bot = 1;
+}
+
+message ListMyBotsRequest {}
+
+message ListMyBotsResponse {
+  repeated Bot bots = 1;
+}

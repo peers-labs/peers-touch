@@ -45,6 +45,7 @@ message StreamEvent {
     EnvelopeDelivered         envelope_delivered               = 23;
     LedgerEventDelivered      ledger_event_delivered           = 24;
     SocialGraphEvent          social_graph_event               = 25;
+    BotNotificationDelivered  bot_notification                 = 26;
   }
 }
 
@@ -382,6 +383,25 @@ message LedgerEventDelivered {
   string station_peer_id = 13;
   string sequencer_station_peer_id = 14;
   int64  created_at_unix_ms = 15;
+}
+
+// BotNotificationDelivered wakes an online owner device after bot webhook
+// ingestion produced a durable notification row inside the same transaction
+// as the bot conversation message. Payload is intentionally minimal: clients
+// fetch authoritative notification/conversation detail through the existing
+// notification list/projection API. This arm drives OS banner/notification
+// center only; the unread badge still derives from conversation unread.
+//
+// notification_type/category carry the numeric NotificationType (410 = bot
+// event) and NotificationCategory (TASK = 4) values to keep this domain
+// self-contained without importing the notification contract.
+message BotNotificationDelivered {
+  string notification_id = 1;
+  string recipient_actor_ptid = 2;
+  int32 notification_type = 3;
+  int32 category = 4;
+  string group_key = 5;
+  int64 created_ts_unix_ms = 6;
 }
 
 // SocialGraphEvent signals a change in the social relationship graph:

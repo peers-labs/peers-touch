@@ -7,6 +7,7 @@
 package chat
 
 import (
+	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -1087,9 +1088,13 @@ type ConversationMember struct {
 	JoinedAt               *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=joined_at,json=joinedAt,proto3" json:"joined_at,omitempty"`
 	InvitedByPtid          string                 `protobuf:"bytes,8,opt,name=invited_by_ptid,json=invitedByPtid,proto3" json:"invited_by_ptid,omitempty"`
 	// Per-member settings
-	Nickname      string                 `protobuf:"bytes,10,opt,name=nickname,proto3" json:"nickname,omitempty"`
-	Muted         bool                   `protobuf:"varint,11,opt,name=muted,proto3" json:"muted,omitempty"`
-	MutedUntil    *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=muted_until,json=mutedUntil,proto3" json:"muted_until,omitempty"`
+	Nickname   string                 `protobuf:"bytes,10,opt,name=nickname,proto3" json:"nickname,omitempty"`
+	Muted      bool                   `protobuf:"varint,11,opt,name=muted,proto3" json:"muted,omitempty"`
+	MutedUntil *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=muted_until,json=mutedUntil,proto3" json:"muted_until,omitempty"`
+	// Read projection of the member's actor kind. Conversation-level signal
+	// (alongside per-message delivery security) used to suppress the E2EE lock
+	// for AGENT members in service-plaintext bot conversations.
+	ActorKind     model.ActorKind `protobuf:"varint,13,opt,name=actor_kind,json=actorKind,proto3,enum=peers_touch.model.actor.v1.ActorKind" json:"actor_kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1199,6 +1204,13 @@ func (x *ConversationMember) GetMutedUntil() *timestamppb.Timestamp {
 		return x.MutedUntil
 	}
 	return nil
+}
+
+func (x *ConversationMember) GetActorKind() model.ActorKind {
+	if x != nil {
+		return x.ActorKind
+	}
+	return model.ActorKind(0)
 }
 
 // D-15 device-scoped MLS leaf identity. Its deterministic protobuf bytes are
@@ -1766,7 +1778,7 @@ var File_domain_chat_conversation_proto protoreflect.FileDescriptor
 
 const file_domain_chat_conversation_proto_rawDesc = "" +
 	"\n" +
-	"\x1edomain/chat/conversation.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xef\x05\n" +
+	"\x1edomain/chat/conversation.proto\x12\x19peers_touch.model.chat.v1\x1a\x18domain/actor/actor.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xef\x05\n" +
 	"\fConversation\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12?\n" +
 	"\x04kind\x18\x02 \x01(\x0e2+.peers_touch.model.chat.v1.ConversationKindR\x04kind\x129\n" +
@@ -1806,7 +1818,7 @@ const file_domain_chat_conversation_proto_rawDesc = "" +
 	"\rtransition_id\x18\n" +
 	" \x01(\tR\ftransitionId\x12#\n" +
 	"\rcommit_sha256\x18\v \x01(\fR\fcommitSha256\x12\x16\n" +
-	"\x06status\x18\f \x01(\tR\x06status\"\xa1\x04\n" +
+	"\x06status\x18\f \x01(\tR\x06status\"\xe7\x04\n" +
 	"\x12ConversationMember\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x12\n" +
 	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x129\n" +
@@ -1820,7 +1832,9 @@ const file_domain_chat_conversation_proto_rawDesc = "" +
 	" \x01(\tR\bnickname\x12\x14\n" +
 	"\x05muted\x18\v \x01(\bR\x05muted\x12;\n" +
 	"\vmuted_until\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"mutedUntil\"`\n" +
+	"mutedUntil\x12D\n" +
+	"\n" +
+	"actor_kind\x18\r \x01(\x0e2%.peers_touch.model.actor.v1.ActorKindR\tactorKind\"`\n" +
 	"\x13MlsDeviceCredential\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x12\n" +
 	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x12\x1b\n" +
@@ -2021,6 +2035,7 @@ var file_domain_chat_conversation_proto_goTypes = []any{
 	(*MembershipTransitionChange)(nil),      // 18: peers_touch.model.chat.v1.MembershipTransitionChange
 	(*MessageReceipt)(nil),                  // 19: peers_touch.model.chat.v1.MessageReceipt
 	(*timestamppb.Timestamp)(nil),           // 20: google.protobuf.Timestamp
+	(model.ActorKind)(0),                    // 21: peers_touch.model.actor.v1.ActorKind
 }
 var file_domain_chat_conversation_proto_depIdxs = []int32{
 	1,  // 0: peers_touch.model.chat.v1.Conversation.kind:type_name -> peers_touch.model.chat.v1.ConversationKind
@@ -2033,15 +2048,16 @@ var file_domain_chat_conversation_proto_depIdxs = []int32{
 	5,  // 7: peers_touch.model.chat.v1.ConversationMember.member_status:type_name -> peers_touch.model.chat.v1.MemberStatus
 	20, // 8: peers_touch.model.chat.v1.ConversationMember.joined_at:type_name -> google.protobuf.Timestamp
 	20, // 9: peers_touch.model.chat.v1.ConversationMember.muted_until:type_name -> google.protobuf.Timestamp
-	7,  // 10: peers_touch.model.chat.v1.MembershipTransitionChange.action:type_name -> peers_touch.model.chat.v1.MembershipTransitionAction
-	4,  // 11: peers_touch.model.chat.v1.MembershipTransitionChange.role:type_name -> peers_touch.model.chat.v1.MemberRole
-	11, // 12: peers_touch.model.chat.v1.MessageReceipt.receipt_type:type_name -> peers_touch.model.chat.v1.ReceiptType
-	20, // 13: peers_touch.model.chat.v1.MessageReceipt.ts:type_name -> google.protobuf.Timestamp
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	21, // 10: peers_touch.model.chat.v1.ConversationMember.actor_kind:type_name -> peers_touch.model.actor.v1.ActorKind
+	7,  // 11: peers_touch.model.chat.v1.MembershipTransitionChange.action:type_name -> peers_touch.model.chat.v1.MembershipTransitionAction
+	4,  // 12: peers_touch.model.chat.v1.MembershipTransitionChange.role:type_name -> peers_touch.model.chat.v1.MemberRole
+	11, // 13: peers_touch.model.chat.v1.MessageReceipt.receipt_type:type_name -> peers_touch.model.chat.v1.ReceiptType
+	20, // 14: peers_touch.model.chat.v1.MessageReceipt.ts:type_name -> google.protobuf.Timestamp
+	15, // [15:15] is the sub-list for method output_type
+	15, // [15:15] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_conversation_proto_init() }
