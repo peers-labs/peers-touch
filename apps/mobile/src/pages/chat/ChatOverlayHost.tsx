@@ -50,7 +50,10 @@ import type {
 import {
   messageProjectionMetadata,
 } from '../../features/chat/messageProjection';
-import { isOwnChatMessage } from '../../features/chat/chatSelectors';
+import {
+  isOwnChatMessage,
+  messageDisplayText,
+} from '../../features/chat/chatSelectors';
 import type { ConversationSettingsFeedback } from './conversationSettingsState';
 
 const { Text } = Typography;
@@ -191,6 +194,90 @@ export interface MessageForwardDestination {
   readonly avatar: string;
 }
 
+export function PinnedMessagesSheet({
+  open,
+  messages,
+  resolveSenderName,
+  onClose,
+  onSelect,
+}: {
+  readonly open: boolean;
+  readonly messages: readonly SocialMessage[];
+  readonly resolveSenderName: (message: SocialMessage) => string;
+  readonly onClose: () => void;
+  readonly onSelect: (message: SocialMessage) => void;
+}) {
+  const { t } = useMobileI18n();
+  if (!open) return null;
+  return (
+    <div
+      className="chat-action-sheet-shell"
+      data-product-surface="chat.pinned-messages"
+    >
+      <button
+        className="chat-action-sheet-backdrop"
+        type="button"
+        aria-label={t('common.action.close')}
+        onClick={onClose}
+      />
+      <aside
+        className="chat-action-sheet pinned-messages-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pinned-messages-sheet-title"
+      >
+        <div className="chat-action-sheet-handle" aria-hidden="true" />
+        <div className="chat-action-sheet-header">
+          <Text strong id="pinned-messages-sheet-title">
+            {t('mobile.chat.pinnedMessages')}
+          </Text>
+          <button
+            className="header-action"
+            type="button"
+            aria-label={t('common.action.close')}
+            onClick={onClose}
+          >
+            <X size={18} />
+          </button>
+        </div>
+        {messages.length === 0 ? (
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={t('mobile.chat.noPinnedMessages')}
+          />
+        ) : (
+          <BoundedList
+            surfaceKey="pinned-messages"
+            items={messages}
+            itemKey={(message) => message.ulid}
+            size={100}
+          >
+            {(rows) => (
+              <div className="pinned-message-list">
+                {rows.map((message) => (
+                  <button
+                    key={message.ulid}
+                    type="button"
+                    className="pinned-message-item"
+                    onClick={() => onSelect(message)}
+                  >
+                    <span className="pinned-message-sender">
+                      {resolveSenderName(message)}
+                    </span>
+                    <span className="pinned-message-preview">
+                      {messageDisplayText(message, t)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </BoundedList>
+        )}
+      </aside>
+    </div>
+  );
+}
+
 export function ForwardMessageSheet({
   open,
   destinations,
@@ -255,13 +342,21 @@ export function ForwardMessageSheet({
                       ]}
                     >
                       <List.Item.Meta
+                        title={destination.title}
+                        description={destination.subtitle}
                         avatar={(
-                          <MobileAvatar src={destination.avatar}>
+                          <MobileAvatar
+                            identityKey={destination.key}
+                            identityRole={destination.kind === 'group'
+                              ? 'group'
+                              : 'person'}
+                            name={destination.title}
+                            size={48}
+                            src={destination.avatar}
+                          >
                             {destination.title.slice(0, 1).toUpperCase()}
                           </MobileAvatar>
                         )}
-                        title={destination.title}
-                        description={destination.subtitle}
                       />
                     </List.Item>
                   )}

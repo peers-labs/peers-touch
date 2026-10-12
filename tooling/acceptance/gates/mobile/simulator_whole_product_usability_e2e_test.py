@@ -72,14 +72,16 @@ REQUIRED_SURFACE_IDS = {
     ),
     "chat": frozenset(
         """
-        chat.list chat.list-loading chat.list-empty chat.list-error
+        chat.list chat.list-loading chat.list-refreshing chat.list-empty
+        chat.list-error
         chat.list-unavailable chat.list-search chat.list-search-empty
         chat.direct-thread chat.group-thread chat.thread-empty
         chat.history-loading chat.history-error chat.thread-search
         chat.thread-search-empty chat.thread-search-error chat.composer-keyboard
         chat.attachment-ready chat.attachment-uploading chat.attachment-failed
         chat.voice-recording chat.voice-failed chat.message-pending
-        chat.message-failed chat.message-uncertain chat.message-actions
+        chat.message-failed chat.message-uncertain chat.pinned-messages
+        chat.message-actions
         chat.conversation-actions chat.conversation-settings-pending
         chat.conversation-settings-saved chat.conversation-settings-failed
         chat.destructive-confirm chat.forward-picker chat.forward-pending

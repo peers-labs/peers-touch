@@ -103,6 +103,7 @@
     "chat": [
       {"id":"chat.list","kind":"primary-route","routeOrState":"tab:chat:ready","surfaceSelector":"[data-product-surface=\"chat.list\"]","entryAction":"tap-chat-tab"},
       {"id":"chat.list-loading","kind":"primary-state","routeOrState":"tab:chat:loading","surfaceSelector":"[data-product-surface=\"chat.list-loading\"]","entryAction":"fixture-chat-loading"},
+      {"id":"chat.list-refreshing","kind":"primary-state","routeOrState":"tab:chat:refreshing-cached","surfaceSelector":"[data-product-surface=\"chat.list-refreshing\"]","entryAction":"fixture-chat-cached-refresh"},
       {"id":"chat.list-empty","kind":"primary-state","routeOrState":"tab:chat:empty","surfaceSelector":"[data-product-surface=\"chat.list-empty\"]","entryAction":"fixture-empty-chat"},
       {"id":"chat.list-error","kind":"primary-state","routeOrState":"tab:chat:error","surfaceSelector":"[data-product-surface=\"chat.list-error\"]","entryAction":"fixture-chat-error"},
       {"id":"chat.list-unavailable","kind":"primary-state","routeOrState":"tab:chat:unavailable","surfaceSelector":"[data-product-surface=\"chat.list-unavailable\"]","entryAction":"fixture-chat-unavailable"},
@@ -125,6 +126,7 @@
       {"id":"chat.message-pending","kind":"detail-state","routeOrState":"detail:conversation:message-pending","surfaceSelector":"[data-product-surface=\"chat.message-pending\"]","entryAction":"send-message-with-delayed-readback"},
       {"id":"chat.message-failed","kind":"detail-state","routeOrState":"detail:conversation:message-failed","surfaceSelector":"[data-product-surface=\"chat.message-failed\"]","entryAction":"fixture-message-failure"},
       {"id":"chat.message-uncertain","kind":"detail-state","routeOrState":"detail:conversation:message-uncertain","surfaceSelector":"[data-product-surface=\"chat.message-uncertain\"]","entryAction":"fixture-message-unknown-outcome"},
+      {"id":"chat.pinned-messages","kind":"overlay","routeOrState":"overlay:pinned-messages","surfaceSelector":"[data-product-surface=\"chat.pinned-messages\"]","entryAction":"tap-pinned-message-banner"},
       {"id":"chat.message-actions","kind":"overlay","routeOrState":"overlay:message-actions","surfaceSelector":"[data-product-surface=\"chat.message-actions\"]","entryAction":"long-press-message"},
       {"id":"chat.conversation-actions","kind":"overlay","routeOrState":"overlay:conversation-actions","surfaceSelector":"[data-product-surface=\"chat.conversation-actions\"]","entryAction":"tap-conversation-more"},
       {"id":"chat.conversation-settings-pending","kind":"overlay-state","routeOrState":"overlay:conversation-actions:pending","surfaceSelector":"[data-product-surface=\"chat.conversation-settings-pending\"]","entryAction":"change-conversation-setting"},

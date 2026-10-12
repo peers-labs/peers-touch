@@ -68,6 +68,7 @@ import {
   dispatchMessagePin,
   dispatchMessageReaction,
   dispatchLoadConversationHistory,
+  dispatchRefreshConversationList,
   friendPatchFromActionPatch,
   type ChatMessageSendContext,
 } from '../features/chat/chatCommands';
@@ -145,6 +146,7 @@ import {
   MessageAttachmentPresentation,
   MessageCommandStatus,
   MessageDeliveryStatus,
+  PinnedMessageBanner,
 } from './chat/ChatMessagePresentation';
 import {
   ChatMessageSectionBoundary,
@@ -159,6 +161,7 @@ import {
   ForwardMessageSheet,
   GroupManagementModal,
   MessageActionSheet,
+  PinnedMessagesSheet,
   type MessageForwardDestination,
 } from './chat/ChatOverlayHost';
 import { ChatAcceptanceSurface } from './chat/ChatAcceptanceSurface';
@@ -301,6 +304,8 @@ function ChatPageInner({
   const [forwardError, setForwardError] = useState('');
   const [clearHistoryConfirmOpen, setClearHistoryConfirmOpen] = useState(false);
   const [clearHistoryBusy, setClearHistoryBusy] = useState(false);
+  const [pinnedMessagesOpen, setPinnedMessagesOpen] = useState(false);
+  const [checkingCommandMessageUlid, setCheckingCommandMessageUlid] = useState('');
   const [localActionError, setLocalActionError] = useState('');
   const [chatWriteAdmissionOpen, setChatWriteAdmissionOpen] = useState(
     () => !getRecoveryProjection().getSnapshot().isWriteBlocked,
@@ -324,7 +329,8 @@ function ChatPageInner({
   const {
     currentUserPtid,
     loading,
-    error,
+    conversationListRefreshing,
+    conversationListError,
     currentUserProfile,
     friendshipStatus,
     friendRequests,
@@ -343,7 +349,8 @@ function ChatPageInner({
   } = useSocialStore(useShallow((s) => ({
     currentUserPtid: s.currentUserPtid,
     loading: s.loading,
-    error: s.error,
+    conversationListRefreshing: s.conversationListRefreshing,
+    conversationListError: s.conversationListError,
     currentUserProfile: s.currentUserProfile,
     friendshipStatus: s.friendshipStatus,
     friendRequests: s.friendRequests,
@@ -846,6 +853,20 @@ function ChatPageInner({
       setLocalActionError(`${t(failureKey)}: ${formatChatOperationError(operationError)}`);
     }
   }, [t]);
+
+  const checkMessageCommandStatus = useCallback(async (messageUlid: string) => {
+    if (checkingCommandMessageUlid) return;
+    setCheckingCommandMessageUlid(messageUlid);
+    await runChatOperation(
+      refreshFriendMessageCommandOutcomes,
+      'mobile.chat.checkStatusFailed',
+    );
+    setCheckingCommandMessageUlid('');
+  }, [
+    checkingCommandMessageUlid,
+    refreshFriendMessageCommandOutcomes,
+    runChatOperation,
+  ]);
 
   const handleDraftChange = useCallback((value: string) => {
     draftValueRef.current = value;
@@ -1427,6 +1448,17 @@ function ChatPageInner({
     const visibleMessages = history.visible;
     const messageCommandOutcomes = friendMessageCommandOutcomes;
     const threadMessages = visibleMessages;
+    const pinnedMessages = visibleMessages
+      .filter((message) => {
+        const metadata = messageProjectionMetadata(message);
+        return Boolean(metadata.pinnedByPtid)
+          && !metadata.moderated
+          && !isRecalledChatMessage(message);
+      })
+      .sort((left, right) => (
+        (messageProjectionMetadata(right).pinnedAtUnixMs ?? 0)
+        - (messageProjectionMetadata(left).pinnedAtUnixMs ?? 0)
+      ));
     const selectedActionMessage = history.byId.get(messageActionUlid);
     const selectedActionModerated = selectedActionMessage
       ? messageProjectionMetadata(selectedActionMessage).moderated
@@ -1718,6 +1750,23 @@ function ChatPageInner({
             }}
           />
 
+          <PinnedMessagesSheet
+            open={pinnedMessagesOpen}
+            messages={pinnedMessages}
+            resolveSenderName={(message) => (
+              isOwnChatMessage(message, currentUserPtid)
+                ? ownName
+                : peerProfiles[message.senderPtid]?.displayName
+                  || activeConversation?.peerName
+                  || title
+            )}
+            onClose={() => setPinnedMessagesOpen(false)}
+            onSelect={(message) => {
+              setPinnedMessagesOpen(false);
+              void scrollToMessage(message.ulid);
+            }}
+          />
+
           <ChatDestructiveConfirmSheet
             open={clearHistoryConfirmOpen}
             busy={clearHistoryBusy}
@@ -1829,6 +1878,16 @@ function ChatPageInner({
           </section>
         ) : null}
 
+        {!threadRootMessageUlid ? (
+          <PinnedMessageBanner
+            count={pinnedMessages.length}
+            preview={pinnedMessages[0]
+              ? messageContentForSearch(pinnedMessages[0], t)
+              : ''}
+            onOpen={() => setPinnedMessagesOpen(true)}
+          />
+        ) : null}
+
         <ChatMessageSectionBoundary
           surfaceKey={`messages:${activeConversationKey}:${threadRootMessageUlid}`}
           background={actionState.background}
@@ -1859,6 +1918,7 @@ function ChatPageInner({
             commandOutcome,
             canRetry,
             recalled,
+            showMetadata,
           }) => (
             <MessageMetaRow
               time={formatRelativeTime(messageTimestampMillis(message), t)}
@@ -1868,11 +1928,18 @@ function ChatPageInner({
               commandOutcome={commandOutcome}
               canRetry={canRetry}
               canOpenActions={!recalled}
+              checkingCommandStatus={
+                checkingCommandMessageUlid === message.ulid
+              }
+              showMetadata={showMetadata}
               onRetry={() => {
                 void runChatOperation(
                   () => retryFailedMessage(message),
                   'mobile.chat.operationRetryFailed',
                 );
+              }}
+              onCheckStatus={() => {
+                void checkMessageCommandStatus(message.ulid);
               }}
               onOpenActions={() => {
                 setMessageActionUlid(message.ulid);
@@ -2047,9 +2114,12 @@ function ChatPageInner({
       query={conversationQuery}
       items={filteredConversationSurfaceItems}
       conversationCount={baseConversations.length}
-      loading={loading}
+      loading={loading || conversationListRefreshing}
+      refreshing={conversationListRefreshing && baseConversations.length > 0}
       localError={localActionError}
-      socialError={error ? formatSocialError(error) : ''}
+      socialError={conversationListError
+        ? formatSocialError(conversationListError)
+        : ''}
       groupError={''}
       onQueryChange={(nextQuery) => {
         setConversationQuery(nextQuery);
@@ -2058,6 +2128,9 @@ function ChatPageInner({
       onDismissLocalError={() => setLocalActionError('')}
       onDismissSocialError={clearSocialError}
       onDismissGroupError={() => undefined}
+      onRetryConversationList={() => {
+        void dispatchRefreshConversationList();
+      }}
       onStartConversation={onStartConversation}
       onOpenConversation={openConversation}
     />
@@ -2076,7 +2149,10 @@ function MessageMetaRow({
   commandOutcome,
   canRetry,
   canOpenActions,
+  checkingCommandStatus,
+  showMetadata,
   onRetry,
+  onCheckStatus,
   onOpenActions,
 }: {
   time: string;
@@ -2086,29 +2162,40 @@ function MessageMetaRow({
   commandOutcome?: ChatMessageCommandOutcome;
   canRetry: boolean;
   canOpenActions: boolean;
+  checkingCommandStatus: boolean;
+  showMetadata: boolean;
   onRetry: () => void;
+  onCheckStatus: () => void;
   onOpenActions: () => void;
 }) {
   const { t } = useMobileI18n();
   return (
-    <span className="message-meta attachment-only-meta message-meta-row">
-      {edited ? <span>{t('mobile.chat.edited')}</span> : null}
-      {flaggedOnDevice ? (
+    <span
+      className={showMetadata
+        ? 'message-meta attachment-only-meta message-meta-row'
+        : 'message-action-anchor-row'}
+    >
+      {showMetadata && edited ? <span>{t('mobile.chat.edited')}</span> : null}
+      {showMetadata && flaggedOnDevice ? (
         <span className="message-local-flag" data-message-local-flag="true">
           <Flag size={11} />
           <span>{t('mobile.chat.flaggedOnDevice')}</span>
         </span>
       ) : null}
-      <span>{time}</span>
-      {deliveryState ? (
+      {showMetadata ? <span>{time}</span> : null}
+      {showMetadata && deliveryState ? (
         <MessageDeliveryStatus
           state={deliveryState}
           canRetry={canRetry}
           onRetry={onRetry}
         />
       ) : null}
-      {commandOutcome ? (
-        <MessageCommandStatus outcome={commandOutcome} />
+      {showMetadata && commandOutcome ? (
+        <MessageCommandStatus
+          outcome={commandOutcome}
+          checking={checkingCommandStatus}
+          onCheck={onCheckStatus}
+        />
       ) : null}
       {canOpenActions ? (
         <button

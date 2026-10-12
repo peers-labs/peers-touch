@@ -9,6 +9,7 @@ const pageSource = source('../ChatPage.tsx');
 const pageContentSource = source('./ChatPageContent.tsx');
 const messageSectionSource = source('./ChatMessageSectionBoundary.tsx');
 const messagePresentationSource = source('./ChatMessagePresentation.tsx');
+const messageClusterSource = source('./chatMessageClusters.ts');
 const overlayHostSource = source('./ChatOverlayHost.tsx');
 const senderTypingFeedbackSource = source('./SenderTypingFeedback.tsx');
 const bottomOcclusionSource = source('./chatBottomOcclusion.ts');
@@ -17,6 +18,7 @@ const extractedSources = [
   pageContentSource,
   messageSectionSource,
   messagePresentationSource,
+  messageClusterSource,
   overlayHostSource,
   senderTypingFeedbackSource,
   bottomOcclusionSource,
@@ -61,6 +63,19 @@ describe('Chat component ownership boundaries', () => {
     expect(overlayHostSource).toContain('if (!open) return null');
     expect(overlayHostSource).toContain('if (!message) return null');
     expect(overlayHostSource).toContain('group-management-sheet');
+  });
+
+  it('keeps list refresh, sender clusters, recovery, and pinned content local', () => {
+    expect(pageContentSource).toContain('conversation-list-skeleton');
+    expect(pageContentSource).toContain('chat-list-refresh-status');
+    expect(pageContentSource).toContain("'chat.list-refreshing'");
+    expect(messageClusterSource).toContain('projectChatMessageClusters');
+    expect(messageClusterSource).toContain('showMetadata: endsCluster');
+    expect(messageSectionSource).toContain('data-message-cluster-position');
+    expect(pageSource).toContain('<PinnedMessageBanner');
+    expect(pageSource).toContain('<PinnedMessagesSheet');
+    expect(messagePresentationSource).toContain('message-check-status-button');
+    expect(messagePresentationSource).toContain("'mobile.chat.checkStatus'");
   });
 
   it('composes measured bottom layers and exposes recoverable sender typing', () => {

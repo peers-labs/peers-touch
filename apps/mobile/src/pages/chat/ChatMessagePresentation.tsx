@@ -6,6 +6,8 @@ import {
   Clock,
   Paperclip,
   Mic,
+  Pin,
+  RefreshCw,
   RotateCcw,
   X,
 } from 'lucide-react';
@@ -19,6 +21,36 @@ import type { ChatMessageCommandOutcome } from '../../features/chat/messageComma
 import type { MessageDeliveryDisplayState } from '../../features/chat/messageProjection';
 
 const { Text } = Typography;
+
+export function PinnedMessageBanner({
+  count,
+  preview,
+  onOpen,
+}: {
+  readonly count: number;
+  readonly preview: string;
+  readonly onOpen: () => void;
+}) {
+  const { t } = useMobileI18n();
+  if (count <= 0) return null;
+  return (
+    <button
+      type="button"
+      className="pinned-message-banner"
+      data-pinned-message-count={count}
+      onClick={onOpen}
+    >
+      <Pin size={13} />
+      <span className="pinned-message-banner-copy">
+        <span>{t('mobile.chat.pinnedMessageCount', { count })}</span>
+        <span>{preview}</span>
+      </span>
+      <span className="pinned-message-banner-action">
+        {t('common.action.view')}
+      </span>
+    </button>
+  );
+}
 
 export function MessageDeliveryStatus({
   state,
@@ -83,8 +115,12 @@ export function MessageDeliveryStatus({
 
 export function MessageCommandStatus({
   outcome,
+  checking = false,
+  onCheck,
 }: {
   readonly outcome: ChatMessageCommandOutcome;
+  readonly checking?: boolean;
+  readonly onCheck?: () => void;
 }) {
   const { t } = useMobileI18n();
   const key = outcome.state === 'failed'
@@ -100,6 +136,17 @@ export function MessageCommandStatus({
     >
       {outcome.state === 'pending' ? <Clock size={12} /> : null}
       <span>{t(key)}</span>
+      {outcome.state === 'uncertain' && onCheck ? (
+        <button
+          type="button"
+          className="message-check-status-button"
+          disabled={checking}
+          onClick={onCheck}
+        >
+          <RefreshCw size={12} />
+          <span>{t(checking ? 'mobile.chat.checkingStatus' : 'mobile.chat.checkStatus')}</span>
+        </button>
+      ) : null}
     </span>
   );
 }

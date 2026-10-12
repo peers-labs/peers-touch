@@ -1,4 +1,4 @@
-import type { ReactNode, Ref } from 'react';
+import { useMemo, type ReactNode, type Ref } from 'react';
 import { Empty, Typography } from 'antd';
 import { CornerUpLeft, Pin } from 'lucide-react';
 import { isRecalledChatMessage } from '@peers-touch/client-chat-core';
@@ -26,6 +26,9 @@ import type {
   SocialMessageAttachment,
   PeerProfile,
 } from '../../features/social/socialTypes';
+import {
+  projectChatMessageClusters,
+} from './chatMessageClusters';
 import { MessageAvatar } from './ChatMessagePresentation';
 
 const { Text } = Typography;
@@ -36,6 +39,7 @@ export interface MessageMetaRenderInput {
   readonly commandOutcome: ChatMessageCommandOutcome | undefined;
   readonly canRetry: boolean;
   readonly recalled: boolean;
+  readonly showMetadata: boolean;
 }
 
 interface ChatMessageSectionBoundaryProps {
@@ -87,6 +91,14 @@ export function ChatMessageSectionBoundary({
   onToggleReaction,
 }: ChatMessageSectionBoundaryProps) {
   const { t } = useMobileI18n();
+  const clusteredMessages = useMemo(
+    () => projectChatMessageClusters(
+      messages,
+      currentUserPtid,
+      messageCommandOutcomes,
+    ),
+    [currentUserPtid, messageCommandOutcomes, messages],
+  );
 
   return (
     <section
@@ -99,13 +111,14 @@ export function ChatMessageSectionBoundary({
       ) : (
         <BoundedList
           surfaceKey={surfaceKey}
-          items={messages}
-          itemKey={messageKey}
+          items={clusteredMessages}
+          itemKey={(entry) => messageKey(entry.message)}
           size={windowSize}
           initial="end"
           controllerRef={controllerRef}
         >
-          {(windowedMessages) => windowedMessages.map((message) => {
+          {(windowedMessages) => windowedMessages.map((entry) => {
+            const { message } = entry;
             const mine = isOwnChatMessage(message, currentUserPtid);
             const recalled = isRecalledChatMessage(message);
             const metadata = messageProjectionMetadata(message);
@@ -131,23 +144,38 @@ export function ChatMessageSectionBoundary({
             const canRetry = deliveryState === 'failed'
               && attachments.length === 0
               && Boolean(message.content.trim());
+            const metaRow = renderMetaRow({
+              message,
+              deliveryState,
+              commandOutcome,
+              canRetry,
+              recalled: recalled || moderated,
+              showMetadata: entry.showMetadata,
+            });
 
             return (
               <div
                 key={message.ulid}
                 data-message-ulid={message.ulid}
+                data-message-cluster-id={entry.clusterId}
+                data-message-cluster-position={entry.position}
                 data-scroll-anchor-id={message.ulid}
                 tabIndex={-1}
                 data-message-state={metadata.messagingState ?? ''}
                 data-message-moderated={moderated ? 'true' : undefined}
                 className={`message-bubble-row ${mine ? 'mine' : 'peer'} ${highlightedMessageUlid === message.ulid ? 'highlighted' : ''}`}
               >
-                {!mine ? (
-                  <MessageAvatar
-                    src={messageAvatarUrl(message, peerProfiles, peerMessageAvatar)}
-                    fallback={(peerName || title || message.senderPtid || '').slice(0, 1).toUpperCase()}
-                  />
-                ) : null}
+                {!mine
+                  ? entry.showAvatar
+                    ? (
+                        <MessageAvatar
+                          src={messageAvatarUrl(message, peerProfiles, peerMessageAvatar)}
+                          fallback={(peerName || title || message.senderPtid || '').slice(0, 1).toUpperCase()}
+                        />
+                      )
+                    : <span className="message-avatar-spacer" aria-hidden="true" />
+                  : null}
+                {!mine && !entry.showMetadata ? metaRow : null}
                 <div className="message-bubble">
                   {metadata.pinnedByPtid ? (
                     <span className="message-pin-indicator">
@@ -195,20 +223,19 @@ export function ChatMessageSectionBoundary({
                       ))}
                     </div>
                   ) : null}
-                  {renderMetaRow({
-                    message,
-                    deliveryState,
-                    commandOutcome,
-                    canRetry,
-                    recalled: recalled || moderated,
-                  })}
+                  {entry.showMetadata ? metaRow : null}
                 </div>
-                {mine ? (
-                  <MessageAvatar
-                    src={ownAvatar}
-                    fallback={ownName.slice(0, 1).toUpperCase()}
-                  />
-                ) : null}
+                {mine && !entry.showMetadata ? metaRow : null}
+                {mine
+                  ? entry.showAvatar
+                    ? (
+                        <MessageAvatar
+                          src={ownAvatar}
+                          fallback={ownName.slice(0, 1).toUpperCase()}
+                        />
+                      )
+                    : <span className="message-avatar-spacer" aria-hidden="true" />
+                  : null}
               </div>
             );
           })}

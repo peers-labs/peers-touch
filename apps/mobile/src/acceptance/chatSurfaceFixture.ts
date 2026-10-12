@@ -3,6 +3,7 @@ import { useSyncExternalStore } from 'react';
 export const CHAT_SURFACE_FIXTURE_IDS = [
   'chat.list',
   'chat.list-loading',
+  'chat.list-refreshing',
   'chat.list-empty',
   'chat.list-error',
   'chat.list-unavailable',
@@ -25,6 +26,7 @@ export const CHAT_SURFACE_FIXTURE_IDS = [
   'chat.message-pending',
   'chat.message-failed',
   'chat.message-uncertain',
+  'chat.pinned-messages',
   'chat.message-actions',
   'chat.conversation-actions',
   'chat.conversation-settings-pending',

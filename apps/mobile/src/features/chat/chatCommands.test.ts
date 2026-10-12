@@ -62,6 +62,7 @@ import {
   dispatchGroupUpdateMember,
   dispatchMessagePin,
   dispatchMessageReaction,
+  dispatchRefreshConversationList,
   dispatchRecallMessage,
   dispatchSendMessage,
 } from './chatCommands';
@@ -103,6 +104,12 @@ describe('Chat command dispatch', () => {
     await dispatchBlockUser('ptid:bob');
 
     expect(socialRuntime.blockUser).toHaveBeenCalledWith('ptid:bob');
+    expect(native.wakeMessaging).toHaveBeenCalledOnce();
+  });
+
+  it('routes list refresh through the Messaging runtime owner', async () => {
+    await dispatchRefreshConversationList();
+
     expect(native.wakeMessaging).toHaveBeenCalledOnce();
   });
 

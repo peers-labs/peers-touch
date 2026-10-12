@@ -146,6 +146,8 @@ export interface SocialState {
     lastMessage?: SocialMessage;
     unreadCount: number;
   }>;
+  conversationListRefreshing: boolean;
+  conversationListError: SocialApiError | null;
   friendRequests: FriendRequest[];
   messages: Record<string, SocialMessage[]>;
   threadMessages: Record<string, SocialMessage[]>;
@@ -330,6 +332,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   sessions: [],
   messagingConversations: [],
   conversationSummaries: {},
+  conversationListRefreshing: false,
+  conversationListError: null,
   friendRequests: [],
   messages: {},
   threadMessages: {},
@@ -381,6 +385,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         sessions: [],
         messagingConversations: [],
         conversationSummaries: {},
+        conversationListRefreshing: false,
+        conversationListError: null,
         friendRequests: [],
         messages: {},
         threadMessages: {},
@@ -428,6 +434,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       sessions: [],
       messagingConversations: [],
       conversationSummaries: {},
+      conversationListRefreshing: false,
+      conversationListError: null,
       friendRequests: [],
       messages: {},
       threadMessages: {},
@@ -558,6 +566,10 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     const account = messagingAccount(state);
     const currentUserPtid = state.currentUserPtid;
     if (!currentUserPtid) return;
+    set({
+      conversationListRefreshing: true,
+      conversationListError: null,
+    });
 
     try {
       const conversations = (await messagingListConversations(account))
@@ -627,8 +639,14 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         };
       });
     } catch (error) {
-      if (!isCurrent()) return;
+      if (isCurrent()) {
+        set({ conversationListError: normalizeError(error) });
+      }
       throw error;
+    } finally {
+      if (isCurrent()) {
+        set({ conversationListRefreshing: false });
+      }
     }
   },
 
@@ -2065,7 +2083,10 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     });
   },
 
-  clearError: () => set({ error: null }),
+  clearError: () => set({
+    error: null,
+    conversationListError: null,
+  }),
 }));
 
 export function selectConversations(state: SocialState): SocialConversation[] {
