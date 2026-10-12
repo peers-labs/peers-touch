@@ -21,6 +21,13 @@ be retried with short bounded delays. Permission, security, missing-device,
 constraint, and unsupported-media errors MUST fail immediately. Exhausted
 retries MUST terminate the call and release every local media resource.
 
+An identical `CALL_REQUEST` redelivery with the same `call_id`, peer PTID, and
+signaling session identity MUST be an idempotent no-op while that call remains
+locally active. It MUST NOT emit `CALL_REJECT busy`, replace the active call, or
+restart its ring deadline. A different `call_id` received while a call is
+non-terminal remains a distinct concurrent request and MAY be rejected as
+busy.
+
 ## Why this is non-negotiable
 
 `MediaStreamTrack.stop()` ends the web track synchronously, but Android and iOS
@@ -34,10 +41,17 @@ unsupported devices require user action and must not become hidden retry loops.
 The call runtime is the single owner of this distinction so outgoing and
 incoming calls cannot drift.
 
+Realtime delivery and reconnect reconciliation may expose the same sealed call
+request more than once. Treating that redelivery as a new concurrent call can
+commit a false busy rejection while the user is accepting the original request,
+preventing media acquisition from starting even though the endpoint is healthy.
+The canonical call identity, not delivery cursor identity, owns deduplication.
+
 ## How to verify
 
 - `pnpm --dir apps/mobile exec vitest run src/features/call/callState.test.ts`
-  must prove transient contention retries and permission denial does not retry.
+  must prove identical request redelivery is a no-op, transient contention
+  retries, and permission denial does not retry.
 - `node apps/mobile/scripts/run-three-client-product-journey.mjs --phase chat --publish-evidence`
   must prove reject, retry, accept, hangup, and stale-state cleanup through the
   foreground Android, Desktop, and iOS clients.
