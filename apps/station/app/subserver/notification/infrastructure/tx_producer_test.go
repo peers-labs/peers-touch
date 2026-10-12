@@ -32,7 +32,7 @@ func TestTxProducerProducesAndBumpsUnread(t *testing.T) {
 	producer := NewTxProducer(repo.db)
 	now := time.Now().UTC()
 
-	produced, err := producer.ProduceInTx(context.Background(), TxInput{
+	result, err := producer.ProduceInTx(context.Background(), TxInput{
 		RecipientPTID:  "ptid:owner",
 		ActorPTID:      "ptid:bot",
 		Type:           410,
@@ -46,8 +46,11 @@ func TestTxProducerProducesAndBumpsUnread(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProduceInTx: %v", err)
 	}
-	if !produced {
+	if !result.Produced {
 		t.Fatal("first production should report produced=true")
+	}
+	if result.NotificationID != "ntf-bot-event:req-1" {
+		t.Fatalf("notification id = %q, want ntf-bot-event:req-1", result.NotificationID)
 	}
 	counts, err := repo.GetUnreadCounts("ptid:owner")
 	if err != nil {
@@ -73,11 +76,11 @@ func TestTxProducerReplayCollapses(t *testing.T) {
 	if _, err := producer.ProduceInTx(context.Background(), input, now); err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	produced, err := producer.ProduceInTx(context.Background(), input, now)
+	replay, err := producer.ProduceInTx(context.Background(), input, now)
 	if err != nil {
 		t.Fatalf("replay: %v", err)
 	}
-	if produced {
+	if replay.Produced {
 		t.Fatal("replayed request must collapse without a second row")
 	}
 	counts, _ := repo.GetUnreadCounts("ptid:owner")
@@ -94,7 +97,7 @@ func TestTxProducerHonorsMutedPreference(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("mute task category: %v", err)
 	}
-	produced, err := NewTxProducer(repo.db).ProduceInTx(context.Background(), TxInput{
+	muted, err := NewTxProducer(repo.db).ProduceInTx(context.Background(), TxInput{
 		RecipientPTID:  "ptid:owner",
 		ActorPTID:      "ptid:bot",
 		Type:           410,
@@ -104,7 +107,7 @@ func TestTxProducerHonorsMutedPreference(t *testing.T) {
 	if err != nil {
 		t.Fatalf("produce muted: %v", err)
 	}
-	if produced {
+	if muted.Produced {
 		t.Fatal("muted category must not produce a notification row")
 	}
 	counts, _ := repo.GetUnreadCounts("ptid:owner")

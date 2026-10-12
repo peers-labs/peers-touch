@@ -142,6 +142,59 @@ func TestProductionRealtimePublishTypingUsesEphemeralActorFanout(t *testing.T) {
 	}
 }
 
+func TestProductionRealtimePublishBotNotificationFansOutToAllOwnerDevices(t *testing.T) {
+	ctx := context.Background()
+	bus := events.NewEventBus()
+	defer bus.Close()
+
+	desktop, cancelDesktop, err := bus.Subscribe(ctx, "ptid:owner", "owner-desktop", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancelDesktop()
+	phone, cancelPhone, err := bus.Subscribe(ctx, "ptid:owner", "owner-phone", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancelPhone()
+
+	adapter := newProductionRealtimeAdapter(func() events.EventBus {
+		return bus
+	})
+	wake := ports.BotNotificationWake{
+		RecipientActor:   "ptid:owner",
+		NotificationID:   "ntf-bot-event:req-1",
+		NotificationType: 410,
+		Category:         4,
+		GroupKey:         "task-42",
+		CreatedAtUnixMs:  1760000000000,
+	}
+	if err := adapter.PublishBotNotification(ctx, wake); err != nil {
+		t.Fatal(err)
+	}
+
+	// Actor-level publish reaches every live owner device (badge + banner).
+	for _, subscription := range []*events.Subscription{desktop, phone} {
+		event := receiveProductionRealtimeEvent(t, subscription.Events)
+		botNotification := event.GetBotNotification()
+		if botNotification == nil {
+			t.Fatalf("event kind = %T, want BotNotificationDelivered", event.GetKind())
+		}
+		if botNotification.GetNotificationId() != wake.NotificationID ||
+			botNotification.GetRecipientActorPtid() != string(wake.RecipientActor) ||
+			botNotification.GetNotificationType() != 410 ||
+			botNotification.GetCategory() != 4 ||
+			botNotification.GetGroupKey() != "task-42" ||
+			botNotification.GetCreatedTsUnixMs() != wake.CreatedAtUnixMs {
+			t.Fatalf("bot notification = %+v", botNotification)
+		}
+	}
+
+	if stats := bus.Stats(); stats.BufferedEvents != 1 {
+		t.Fatalf("buffered events = %d, want one durable actor wake", stats.BufferedEvents)
+	}
+}
+
 func TestProductionRealtimeFailsClosedWithoutEventBus(t *testing.T) {
 	adapter := newProductionRealtimeAdapter(func() events.EventBus {
 		return nil
@@ -173,6 +226,17 @@ func TestProductionRealtimeFailsClosedWithoutEventBus(t *testing.T) {
 					Generation:     1,
 					ExpiresAt:      time.Now().UTC().Add(time.Second),
 					IsTyping:       true,
+				})
+			},
+		},
+		{
+			name: "bot notification",
+			run: func() error {
+				return adapter.PublishBotNotification(ctx, ports.BotNotificationWake{
+					RecipientActor:   "ptid:bob",
+					NotificationID:   "ntf-bot-event:req-1",
+					NotificationType: 410,
+					Category:         4,
 				})
 			},
 		},

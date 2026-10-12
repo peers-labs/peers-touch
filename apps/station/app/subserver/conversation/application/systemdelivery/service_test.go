@@ -342,18 +342,21 @@ type memoryNotifications struct {
 
 func (n *memoryNotifications) ProduceInTx(
 	_ context.Context, input ports.ServiceNotificationInput, _ time.Time,
-) (bool, error) {
+) (ports.ServiceNotificationResult, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	for _, existing := range n.produced {
 		if existing.IdempotencyKey != "" &&
 			existing.IdempotencyKey == input.IdempotencyKey &&
 			existing.RecipientPTID == input.RecipientPTID {
-			return false, nil
+			return ports.ServiceNotificationResult{}, nil
 		}
 	}
 	n.produced = append(n.produced, input)
-	return true, nil
+	return ports.ServiceNotificationResult{
+		Produced:       true,
+		NotificationID: "ntf-" + input.IdempotencyKey,
+	}, nil
 }
 
 type memoryLocalScope struct{}
@@ -556,7 +559,7 @@ func (fixedIDGenerator) NewPlanID() valueobject.PlanID { return "plan-test" }
 
 type systemdeliveryServiceHandle struct {
 	service interface {
-		Deliver(context.Context, ingest.DeliverCommand) (string, bool, error)
+		Deliver(context.Context, ingest.DeliverCommand) (systemdelivery.Result, error)
 	}
 }
 
@@ -589,12 +592,12 @@ func TestDeliverCreatesConversationMessageNotificationOnce(t *testing.T) {
 	h := newHarness(t)
 	service := h.newService().service
 
-	eventID, replayed, err := service.Deliver(context.Background(), botInstruction())
+	result, err := service.Deliver(context.Background(), botInstruction())
 	if err != nil {
 		t.Fatalf("Deliver() error = %v", err)
 	}
-	if replayed || eventID == "" {
-		t.Fatalf("first delivery = (%q,%v), want fresh event id", eventID, replayed)
+	if result.Replayed || result.EventID == "" {
+		t.Fatalf("first delivery = (%q,%v), want fresh event id", result.EventID, result.Replayed)
 	}
 	if !h.authority.exists {
 		t.Fatal("system direct conversation was not created")
@@ -615,6 +618,17 @@ func TestDeliverCreatesConversationMessageNotificationOnce(t *testing.T) {
 	}
 	if h.notify.produced[0].Type != 410 {
 		t.Fatalf("notification type = %d, want 410", h.notify.produced[0].Type)
+	}
+	// A fresh notification must surface one post-commit actor wake descriptor.
+	wake := result.NotificationWake
+	if wake == nil {
+		t.Fatal("first delivery must return a post-commit notification wake")
+	}
+	if wake.NotificationID != "ntf-bot-event:req-1" ||
+		wake.NotificationType != 410 ||
+		string(wake.RecipientActor) != "ptid:owner-alice" ||
+		wake.CreatedAtUnixMs == 0 {
+		t.Fatalf("notification wake = %+v", wake)
 	}
 
 	// The committed endpoint payload must be a kind-8 readable service body.
@@ -640,16 +654,19 @@ func TestDeliverReplayReturnsSameEventWithoutDuplicates(t *testing.T) {
 	h := newHarness(t)
 	service := h.newService().service
 
-	firstID, _, err := service.Deliver(context.Background(), botInstruction())
+	first, err := service.Deliver(context.Background(), botInstruction())
 	if err != nil {
 		t.Fatalf("first Deliver: %v", err)
 	}
-	secondID, replayed, err := service.Deliver(context.Background(), botInstruction())
+	second, err := service.Deliver(context.Background(), botInstruction())
 	if err != nil {
 		t.Fatalf("replay Deliver: %v", err)
 	}
-	if !replayed || secondID != firstID {
-		t.Fatalf("replay = (%q,%v), want same id (%q) marked replayed", secondID, replayed, firstID)
+	if !second.Replayed || second.EventID != first.EventID {
+		t.Fatalf("replay = (%q,%v), want same id (%q) marked replayed", second.EventID, second.Replayed, first.EventID)
+	}
+	if second.NotificationWake != nil {
+		t.Fatal("replay must not surface a new post-commit notification wake")
 	}
 	if len(h.events.records) != 2 {
 		t.Fatalf("events after replay = %d, still want 2", len(h.events.records))
@@ -662,8 +679,7 @@ func TestDeliverReplayReturnsSameEventWithoutDuplicates(t *testing.T) {
 func TestDeliverRejectsWhenSystemGrantDenied(t *testing.T) {
 	h := newHarness(t)
 	h.system.denyGrant = true
-	_, _, err := h.newService().service.Deliver(context.Background(), botInstruction())
-	if err == nil {
+	if _, err := h.newService().service.Deliver(context.Background(), botInstruction()); err == nil {
 		t.Fatal("expected delivery failure when grant is denied")
 	}
 	if len(h.notify.produced) != 0 {

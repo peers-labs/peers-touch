@@ -127,6 +127,50 @@ func (a *ProductionRealtimeAdapter) NotifyCommitted(
 	return errors.Join(publishErrors...)
 }
 
+// PublishBotNotification emits the actor-level bot-notification wake (SSE
+// arm bot_notification) after the delivery transaction committed. Unlike the
+// device-targeted envelope wake it fans out to every live owner device and
+// enters the actor replay ring, so a reconnecting tray/badge client observes
+// it. It is a hint: the durable notification row and device inbox are truth.
+func (a *ProductionRealtimeAdapter) PublishBotNotification(
+	ctx context.Context,
+	wake ports.BotNotificationWake,
+) error {
+	if ctx == nil {
+		return fmt.Errorf("conversation production realtime: publish bot notification: context is required")
+	}
+	recipient := strings.TrimSpace(string(wake.RecipientActor))
+	if recipient == "" || strings.TrimSpace(wake.NotificationID) == "" {
+		return fmt.Errorf(
+			"conversation production realtime: publish bot notification: recipient and notification id are required",
+		)
+	}
+
+	bus, err := a.bus()
+	if err != nil {
+		return err
+	}
+	_, err = bus.Publish(recipient, &realtime.StreamEvent{
+		Kind: &realtime.StreamEvent_BotNotification{
+			BotNotification: &realtime.BotNotificationDelivered{
+				NotificationId:     wake.NotificationID,
+				RecipientActorPtid: recipient,
+				NotificationType:   wake.NotificationType,
+				Category:           wake.Category,
+				GroupKey:           wake.GroupKey,
+				CreatedTsUnixMs:    wake.CreatedAtUnixMs,
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf(
+			"conversation production realtime: publish bot notification recipient=%s notification=%s: %w",
+			recipient, wake.NotificationID, err,
+		)
+	}
+	return nil
+}
+
 // PublishTyping emits a droppable process-local typing projection.
 func (a *ProductionRealtimeAdapter) PublishTyping(
 	ctx context.Context,

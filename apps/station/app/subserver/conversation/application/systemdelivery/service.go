@@ -55,18 +55,27 @@ func (e *deliveryError) Error() string { return e.message }
 
 func errInvalid(message string) error { return &deliveryError{message: message} }
 
+// Result is the committed dual-product outcome. NotificationWake is non-nil
+// only when a fresh notification row committed (never on replay or a muted
+// task); the production layer publishes it after the transaction commits.
+type Result struct {
+	EventID          string
+	Replayed         bool
+	NotificationWake *ports.BotNotificationWake
+}
+
 // Deliver executes the idempotent dual-product effect. It returns the
-// committed conversation event id; replayed=true for a request id already
+// committed conversation event id; Replayed=true for a request id already
 // processed inside the idempotency window.
 func (s *Service) Deliver(
 	ctx context.Context,
 	instruction ingest.DeliverCommand,
-) (eventID string, replayed bool, err error) {
+) (Result, error) {
 	if instruction.Bot == nil ||
 		instruction.Bot.BotPtid == "" ||
 		instruction.Bot.OwnerPtid == "" ||
 		instruction.RequestID == "" {
-		return "", false, errInvalid("complete delivery instruction is required")
+		return Result{}, errInvalid("complete delivery instruction is required")
 	}
 	botPTID := valueobject.PTID(instruction.Bot.BotPtid)
 	ownerPTID := valueobject.PTID(instruction.Bot.OwnerPtid)
@@ -80,7 +89,12 @@ func (s *Service) Deliver(
 		now = s.clock()
 	}
 
-	err = s.unitOfWork.ExecuteSerialized(ctx, lockKey, func(tx ports.Transaction) error {
+	var (
+		eventID  string
+		replayed bool
+		wake     *ports.BotNotificationWake
+	)
+	err := s.unitOfWork.ExecuteSerialized(ctx, lockKey, func(tx ports.Transaction) error {
 		if tx.SystemDirectories == nil {
 			return errInvalid("system directories port is not wired")
 		}
@@ -180,9 +194,10 @@ func (s *Service) Deliver(
 		eventID = string(delivered.Event.ID)
 
 		// 7. Notification row in the same transaction (BOT-A05B silence leaves
-		//    the message intact; BOT-A28 idempotent).
+		//    the message intact; BOT-A28 idempotent). Capture the committed id
+		//    so the production layer can fire one post-commit realtime wake.
 		if tx.ServiceNotifications != nil {
-			if _, notifyErr := tx.ServiceNotifications.ProduceInTx(
+			notification, notifyErr := tx.ServiceNotifications.ProduceInTx(
 				ctx,
 				ports.ServiceNotificationInput{
 					RecipientPTID:  instruction.Bot.OwnerPtid,
@@ -198,8 +213,19 @@ func (s *Service) Deliver(
 					Metadata:       notificationMetadata(instruction, conversationID),
 				},
 				now,
-			); notifyErr != nil {
+			)
+			if notifyErr != nil {
 				return notifyErr
+			}
+			if notification.Produced {
+				wake = &ports.BotNotificationWake{
+					RecipientActor:   ownerPTID,
+					NotificationID:   notification.NotificationID,
+					NotificationType: NotificationTypeBotEvent,
+					Category:         int32(notificationdomain.CategoryTask),
+					GroupKey:         instruction.Event.GroupKey,
+					CreatedAtUnixMs:  now.UnixMilli(),
+				}
 			}
 		}
 
@@ -215,9 +241,13 @@ func (s *Service) Deliver(
 		)
 	})
 	if err != nil {
-		return "", false, err
+		return Result{}, err
 	}
-	return eventID, replayed, nil
+	return Result{
+		EventID:          eventID,
+		Replayed:         replayed,
+		NotificationWake: wake,
+	}, nil
 }
 
 func buildServicePayload(

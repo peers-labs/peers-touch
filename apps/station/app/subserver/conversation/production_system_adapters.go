@@ -82,8 +82,8 @@ func (n *productionServiceNotifications) ProduceInTx(
 	ctx context.Context,
 	input ports.ServiceNotificationInput,
 	at time.Time,
-) (bool, error) {
-	return n.producer.ProduceInTx(ctx, notificationinfra.TxInput{
+) (ports.ServiceNotificationResult, error) {
+	result, err := n.producer.ProduceInTx(ctx, notificationinfra.TxInput{
 		RecipientPTID:  input.RecipientPTID,
 		ActorPTID:      input.ActorPTID,
 		Type:           input.Type,
@@ -96,6 +96,13 @@ func (n *productionServiceNotifications) ProduceInTx(
 		IdempotencyKey: input.IdempotencyKey,
 		Metadata:       input.Metadata,
 	}, at)
+	if err != nil {
+		return ports.ServiceNotificationResult{}, err
+	}
+	return ports.ServiceNotificationResult{
+		Produced:       result.Produced,
+		NotificationID: result.NotificationID,
+	}, nil
 }
 
 // productionLocalScope resolves the Station's own active Federation for

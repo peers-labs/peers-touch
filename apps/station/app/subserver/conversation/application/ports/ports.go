@@ -128,15 +128,41 @@ type ServiceNotificationInput struct {
 	Metadata       map[string]string
 }
 
+// ServiceNotificationResult reports whether a fresh notification committed.
+// NotificationID is the stable row id, used post-commit for the realtime wake.
+type ServiceNotificationResult struct {
+	Produced       bool
+	NotificationID string
+}
+
 // ServiceNotificationProducer writes a notification row inside the delivery
-// transaction. produced=false means a muted preference or an idempotent
+// transaction. A zero Produced means a muted preference or an idempotent
 // replay; the causing message is still committed either way.
 type ServiceNotificationProducer interface {
 	ProduceInTx(
 		ctx context.Context,
 		input ServiceNotificationInput,
 		at time.Time,
-	) (produced bool, err error)
+	) (ServiceNotificationResult, error)
+}
+
+// BotNotificationWake is the post-commit, actor-level realtime descriptor for
+// the bot-notification SSE arm (badge/banner). The durable notification row
+// and the device inbox remain truth; this wake only reaches currently (and
+// ring-replaying) online owner devices and must never gate the webhook result.
+type BotNotificationWake struct {
+	RecipientActor   valueobject.PTID
+	NotificationID   string
+	NotificationType int32
+	Category         int32
+	GroupKey         string
+	CreatedAtUnixMs  int64
+}
+
+// BotNotificationPublisher emits the actor-level bot-notification wake after
+// the delivery transaction commits.
+type BotNotificationPublisher interface {
+	PublishBotNotification(ctx context.Context, wake BotNotificationWake) error
 }
 
 // LocalScope resolves the internal Federation scope for system-authored

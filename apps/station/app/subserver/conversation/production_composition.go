@@ -55,6 +55,7 @@ const (
 // canonical durable state commits.
 type ProductionRealtime interface {
 	ports.PostCommitPublisher
+	ports.BotNotificationPublisher
 	interactionapp.TypingPublisher
 }
 
