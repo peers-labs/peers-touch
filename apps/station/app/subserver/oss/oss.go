@@ -764,6 +764,16 @@ func (s *ossSubServer) ClusterObjectBackingReady(ctx context.Context) error {
 	if !ok || !shared.ClusterShared() {
 		return ErrClusterObjectBackingNotShared
 	}
+	identityProvider, ok := s.backend.(storage.ClusterBackingIdentityProvider)
+	if !ok {
+		return fmt.Errorf("oss: shared object backing identity is unavailable")
+	}
+	if _, err := identityProvider.EnsureClusterBackingIdentity(ctx); err != nil {
+		return fmt.Errorf(
+			"oss: shared object backing identity is unavailable: %w",
+			err,
+		)
+	}
 	return s.backend.Healthz(ctx)
 }
 

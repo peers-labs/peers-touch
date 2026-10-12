@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -96,9 +98,15 @@ func TestClusterObjectBackingReadyRejectsLocalAndAcceptsSharedFS(t *testing.T) {
 	if err := local.ClusterObjectBackingReady(context.Background()); !errors.Is(err, ErrClusterObjectBackingNotShared) {
 		t.Fatalf("local cluster readiness error=%v want=%v", err, ErrClusterObjectBackingNotShared)
 	}
-	shared := &ossSubServer{backend: storage.NewSharedFSBackend(t.TempDir())}
+	sharedRoot := filepath.Join(t.TempDir(), "not-created")
+	shared := &ossSubServer{
+		backend: storage.NewSharedFSBackend(sharedRoot),
+	}
 	if err := shared.ClusterObjectBackingReady(context.Background()); err != nil {
 		t.Fatalf("shared-fs cluster readiness: %v", err)
+	}
+	if _, err := os.Stat(sharedRoot); err != nil {
+		t.Fatalf("shared-fs cluster root was not initialized: %v", err)
 	}
 }
 
