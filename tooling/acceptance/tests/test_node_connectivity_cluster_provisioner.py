@@ -156,6 +156,8 @@ class NodeConnectivityClusterProvisionerTest(unittest.TestCase):
         )[0]
         self.assertIn('"conversation_sync_from_station"', failover)
         self.assertIn('"conversation_id": conversation_id', failover)
+        self.assertIn("call_async_harness(", failover)
+        self.assertIn('namespace="stationAccess"', failover)
         self.assertIn('"cluster.route-b.refresh"', failover)
         self.assertLess(
             failover.index('"cluster.route-b.refresh"'),

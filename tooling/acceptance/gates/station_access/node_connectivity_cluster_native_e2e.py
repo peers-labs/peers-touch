@@ -15,6 +15,7 @@ from tooling.acceptance.core import (
     RuntimeReuseContract,
     SuiteRuntimeAction,
     SuiteRuntimeLedger,
+    call_async_harness,
     validate_suite_runtime_report,
 )
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
@@ -366,12 +367,12 @@ class NodeConnectivityClusterNativeGate(
             timeout=FAILOVER_SECONDS,
             interval=0.25,
         )
-        binding = async_harness(
+        binding = call_async_harness(
             alice,
             "bindingState",
             {},
             namespace="stationAccess",
-            timeout=10,
+            script_timeout=10,
         )
         device = async_harness(alice, "getRealtimeDevice", {}, timeout=10)
         recovery_ms = round((time.monotonic() - started) * 1000)
