@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const source = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
+const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8');
 
 describe('Mobile App Station identity replacement', () => {
   it('requires destructive confirmation before replacing a saved identity', () => {
@@ -21,6 +22,16 @@ describe('Mobile App Station identity replacement', () => {
 
     expect(confirmations).toHaveLength(2);
     expect(replacements).toHaveLength(2);
+  });
+
+  it('lets maximum-text confirmation actions grow without clipping', () => {
+    const buttonRule = styles.match(
+      /\.entry-confirmation-button\s*\{[^}]*\}/,
+    )?.[0];
+
+    expect(buttonRule).toContain('min-height: 44px');
+    expect(buttonRule).not.toMatch(/\n\s*height:\s*44px/);
+    expect(buttonRule).toContain('overflow-wrap: anywhere');
   });
 
   it('delegates Shell admission to lifecycle readiness reconciliation', () => {

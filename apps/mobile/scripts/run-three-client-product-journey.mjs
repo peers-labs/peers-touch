@@ -36,7 +36,7 @@ const requiredPhases = Object.freeze([
   'social',
   'recovery',
 ]);
-const foregroundBoundPhases = Object.freeze([...requiredPhases]);
+const foregroundBoundPhases = Object.freeze([...requiredPhases, 'all']);
 const requiredScenarioIds = Object.freeze([
   'entry-station-login',
   'entry-restore-logout-relogin',
@@ -110,6 +110,34 @@ const chatRuntimeReuse = Object.freeze({
   requireAttachOnlyScenarios: true,
   requireReceiverVisibleProof: true,
   allowClientReplacement: false,
+});
+const frontierRuntimeReuse = Object.freeze({
+  scope: 'suite',
+  entryCheckId: 'three-client-final-functional',
+  scenarioIds: Object.freeze([
+    'entry',
+    'shell',
+    'direct',
+    'group',
+    'voice',
+    'call',
+    'social',
+    'recovery',
+  ]),
+  maxProvisioningRuns: 1,
+  maxClientLaunches: 3,
+  minWarmReuseRate: 0.85,
+  requireAttachOnlyScenarios: true,
+  requireReceiverVisibleProof: true,
+  allowClientReplacement: false,
+});
+const frontierScenariosByPhase = Object.freeze({
+  entry: Object.freeze(['entry']),
+  shell: Object.freeze(['shell']),
+  contacts: Object.freeze([]),
+  chat: Object.freeze(['direct', 'group', 'voice', 'call']),
+  social: Object.freeze(['social']),
+  recovery: Object.freeze(['recovery']),
 });
 const suiteRuntimeModule = (
   'tooling.acceptance.gates.mobile.three_client_suite_runtime'
@@ -10436,12 +10464,155 @@ async function runRecoveryPhase(manifest, evidenceDir, preflight) {
   return { ...report, reportPath, tracePath };
 }
 
+async function runForegroundPhase(phase, manifest, evidenceDir, preflight) {
+  if (phase === 'entry') {
+    return runEntryPhase(manifest, evidenceDir, preflight);
+  }
+  if (phase === 'shell') {
+    return runShellPhase(manifest, evidenceDir, preflight);
+  }
+  if (phase === 'contacts') {
+    return runContactsPhase(manifest, evidenceDir, preflight);
+  }
+  if (phase === 'chat') {
+    return runChatPhase(manifest, evidenceDir, preflight);
+  }
+  if (phase === 'social') {
+    return runSocialPhase(manifest, evidenceDir, preflight);
+  }
+  return runRecoveryPhase(manifest, evidenceDir, preflight);
+}
+
+async function runAllPhases(
+  matrix,
+  manifest,
+  evidenceDir,
+  preflight,
+) {
+  const suiteRuntime = createSuiteRuntimeInput(
+    manifest,
+    preflight,
+    evidenceDir,
+    {
+      phase: 'all',
+      runtimeReuse: frontierRuntimeReuse,
+    },
+  );
+  const interactionTrace = [];
+  const phaseResults = [];
+
+  for (const phase of requiredPhases) {
+    const phaseEvidenceDir = path.join(evidenceDir, phase);
+    mkdirSync(phaseEvidenceDir, { recursive: true });
+    const phasePreflight = {
+      ...preflight,
+      phase,
+      scenarioIds: scenariosForPhase(matrix, phase)
+        .map((scenario) => scenario.id),
+    };
+    writeFileSync(
+      path.join(phaseEvidenceDir, 'preflight.json'),
+      `${JSON.stringify(phasePreflight, null, 2)}\n`,
+    );
+    const phaseStartedAt = Date.now();
+    const result = await runForegroundPhase(
+      phase,
+      manifest,
+      phaseEvidenceDir,
+      phasePreflight,
+    );
+    for (const scenarioId of frontierScenariosByPhase[phase]) {
+      suiteRuntime.startScenario(scenarioId);
+      suiteRuntime.finishScenario(scenarioId, phaseStartedAt, {
+        uiAction: `three-client:${phase}`,
+        receiverAssertion: `three-client:${scenarioId}:visible`,
+        supportingObservation: `trace:${phase}/interaction-trace.json`,
+      });
+    }
+    for (const step of result.interactionTrace) {
+      interactionTrace.push({
+        ...step,
+        phase,
+        sequence: interactionTrace.length + 1,
+      });
+    }
+    phaseResults.push({
+      phase,
+      status: result.status,
+      scenarioIds: result.scenarioIds,
+      reportPath: result.reportPath,
+      tracePath: result.tracePath,
+      ...(result.suiteRuntime ? { suiteRuntime: result.suiteRuntime } : {}),
+    });
+  }
+
+  suiteRuntime.complete();
+  const suiteRuntimeResult = emitSuiteRuntimeReport(
+    suiteRuntime,
+    evidenceDir,
+    'Final frontier',
+  );
+  const report = {
+    kind: 'peers-touch-three-client-product-journey-result',
+    schemaVersion: 1,
+    phase: 'all',
+    status: 'PASS',
+    source: preflight.source,
+    stationUrl: manifest.stationUrl,
+    scenarioIds: preflight.scenarioIds,
+    preflight: path.join(evidenceDir, 'preflight.json'),
+    phases: phaseResults,
+    interactionTrace,
+    suiteRuntime: {
+      inputPath: suiteRuntimeResult.inputPath,
+      reportPath: suiteRuntimeResult.reportPath,
+      reportDigest: suiteRuntimeResult.report.reportDigest,
+      result: suiteRuntimeResult.report.result,
+      proofState: suiteRuntimeResult.report.proofState,
+    },
+    observedAt: new Date().toISOString(),
+  };
+  const reportPath = path.join(evidenceDir, 'result.json');
+  const tracePath = path.join(evidenceDir, 'interaction-trace.json');
+  writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  writeFileSync(
+    tracePath,
+    `${JSON.stringify(interactionTrace, null, 2)}\n`,
+  );
+  return { ...report, reportPath, tracePath };
+}
+
 function selfTest(matrix) {
   const matrixSummary = validateMatrix(matrix);
   assertContract(
-    requiredPhases.every((phase) => foregroundBoundPhases.includes(phase)),
+    [...requiredPhases, 'all'].every(
+      (phase) => foregroundBoundPhases.includes(phase),
+    ),
     'SELF_TEST_PHASE_BINDING',
     'every declared phase must have a foreground UI binding',
+  );
+  assertContract(
+    frontierRuntimeReuse.entryCheckId === 'three-client-final-functional'
+      && frontierRuntimeReuse.scenarioIds.join(',') === [
+        'entry',
+        'shell',
+        'direct',
+        'group',
+        'voice',
+        'call',
+        'social',
+        'recovery',
+      ].join(',')
+      && frontierRuntimeReuse.maxProvisioningRuns === 1
+      && frontierRuntimeReuse.maxClientLaunches === 3
+      && frontierRuntimeReuse.minWarmReuseRate === 0.85
+      && frontierRuntimeReuse.requireAttachOnlyScenarios === true
+      && frontierRuntimeReuse.requireReceiverVisibleProof === true
+      && frontierRuntimeReuse.allowClientReplacement === false
+      && Object.values(frontierScenariosByPhase).flat().join(',')
+        === frontierRuntimeReuse.scenarioIds.join(','),
+    'SELF_TEST_FRONTIER_SUITE_RUNTIME',
+    'final frontier Suite Runtime contract diverged from the mounted Task',
   );
   assertContract(
     scenariosForPhase(matrix, 'chat').length === 6,
@@ -10848,17 +11019,14 @@ async function main() {
     path.resolve(options.runtimeManifest),
     'runtime manifest',
   );
-  const result = options.phase === 'entry'
-    ? await runEntryPhase(manifest, evidenceDir, preflight)
-    : options.phase === 'shell'
-      ? await runShellPhase(manifest, evidenceDir, preflight)
-      : options.phase === 'contacts'
-        ? await runContactsPhase(manifest, evidenceDir, preflight)
-        : options.phase === 'chat'
-          ? await runChatPhase(manifest, evidenceDir, preflight)
-          : options.phase === 'social'
-            ? await runSocialPhase(manifest, evidenceDir, preflight)
-            : await runRecoveryPhase(manifest, evidenceDir, preflight);
+  const result = options.phase === 'all'
+    ? await runAllPhases(matrix, manifest, evidenceDir, preflight)
+    : await runForegroundPhase(
+      options.phase,
+      manifest,
+      evidenceDir,
+      preflight,
+    );
   if (options.publishEvidence) {
     result.durableEvidence = publishDurableJourneyEvidence(
       evidenceDir,
