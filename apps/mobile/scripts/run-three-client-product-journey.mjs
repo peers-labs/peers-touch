@@ -181,6 +181,15 @@ function assertContract(condition, code, message) {
   if (!condition) throw new JourneyContractError(code, message);
 }
 
+function assertMobileRuntimeAvailable(clientId, state) {
+  assertContract(
+    !String(state?.text || '').includes('Features Unavailable'),
+    'MOBILE_RUNTIME_UNAVAILABLE',
+    `${clientId} entered Shell before its required runtime graph was available`,
+  );
+  return state;
+}
+
 function readJson(filePath, label) {
   let value;
   try {
@@ -2297,7 +2306,7 @@ async function ensureMobileAuthenticated(
           const status = entry?.querySelector('.station-entry-status');
           return {
             ready: Boolean(entry && status?.classList.contains('online')),
-            status: status?.innerText || ''
+            stationStatus: status?.innerText || ''
           };
         `,
       );
@@ -2318,7 +2327,7 @@ async function ensureMobileAuthenticated(
             && status?.classList.contains('online')
             && continueButton instanceof HTMLButtonElement
             && !continueButton.disabled,
-          status: status?.innerText || ''
+          stationStatus: status?.innerText || ''
         };
       `,
     );
@@ -2411,7 +2420,7 @@ async function ensureMobileAuthenticated(
     );
   }
 
-  await waitForUi(
+  const runtimeState = await waitForUi(
     clientId,
     client,
     'ready mobile shell',
@@ -2425,6 +2434,7 @@ async function ensureMobileAuthenticated(
       };
     `,
   );
+  assertMobileRuntimeAvailable(clientId, runtimeState);
   return readClientUiState(client);
 }
 
@@ -2964,7 +2974,7 @@ async function prepareMobileStationSelection(
           && entry.querySelector('.station-entry-main')?.getAttribute('aria-pressed') === 'true'
         ),
         label,
-        status: status?.innerText || ''
+        stationStatus: status?.innerText || ''
       };
     `,
   );
@@ -10819,6 +10829,29 @@ function selfTest(matrix) {
       )) === false,
     'SELF_TEST_STALE_ELEMENT_RETRY',
     'stale element retry classification is invalid',
+  );
+  assertMobileRuntimeAvailable('self-test', { text: 'Chats' });
+  let unavailableRuntimeRejected = false;
+  try {
+    assertMobileRuntimeAvailable(
+      'self-test',
+      { text: 'Chats\nFeatures Unavailable' },
+    );
+  } catch (error) {
+    unavailableRuntimeRejected = error instanceof JourneyContractError
+      && error.code === 'MOBILE_RUNTIME_UNAVAILABLE';
+  }
+  assertContract(
+    unavailableRuntimeRejected,
+    'SELF_TEST_MOBILE_RUNTIME_ADMISSION',
+    'Mobile Shell admission did not reject an unavailable runtime graph',
+  );
+  assertContract(
+    !/\bstatus:\s*status\?\.innerText/.test(
+      readFileSync(fileURLToPath(import.meta.url), 'utf8'),
+    ),
+    'SELF_TEST_WEBDRIVER_RESERVED_STATUS',
+    'WebDriver script results must not expose a top-level status field',
   );
   assertContract(
     desktopActivationTargetMatches(
