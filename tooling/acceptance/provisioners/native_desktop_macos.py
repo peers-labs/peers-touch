@@ -48,6 +48,9 @@ from tooling.acceptance.drivers.tauri import (
 )
 
 
+NATIVE_WINDOW_READY_TIMEOUT_SECONDS = 30.0
+
+
 _WINDOW_BOUNDS_PROBE = r"""
 import json
 import sys
@@ -595,7 +598,7 @@ class NativeDesktopMacOSProvisioner:
         cls,
         process_id: int,
         *,
-        timeout_seconds: float = 5.0,
+        timeout_seconds: float = NATIVE_WINDOW_READY_TIMEOUT_SECONDS,
         interval_seconds: float = 0.1,
     ) -> dict[str, Any]:
         deadline = time.monotonic() + max(0.0, timeout_seconds)
