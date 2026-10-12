@@ -325,7 +325,7 @@ fi
 # We only append entries the file does not yet mention. Newly emitted overlays
 # are added to the end so hierarchy-merge applies them last.
 if [ -n "$OVERLAYS" ]; then
-  for overlay in store.docker.yml paths.docker.yml federation.docker.yml relay.docker.yml relay_pool.docker.yml server_host.docker.yml; do
+  for overlay in store.docker.yml oss_backend.docker.yml paths.docker.yml federation.docker.yml relay.docker.yml relay_pool.docker.yml server_host.docker.yml; do
     case ",$OVERLAYS," in
       *",$overlay,"*|*", $overlay,"*)
         if ! grep -q "$overlay" /app/conf/peers.yml; then
