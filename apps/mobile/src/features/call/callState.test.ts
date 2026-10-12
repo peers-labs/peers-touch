@@ -97,6 +97,37 @@ describe('mobile call manager', () => {
     manager.reset();
   });
 
+  it('treats duplicate delivery of the active incoming request idempotently', async () => {
+    const manager = new MobileCallManager();
+    const request = {
+      kind: 'call-signal',
+      signalKind: 'CALL_REQUEST',
+      callId: '01K5TCALL00000000000000000',
+      sessionUlid: 'ptid:alice-ptid:bob',
+      fromActorPtid: 'ptid:alice',
+      winningDeviceId: '',
+      payload: new Uint8Array([1]),
+      cursor: 'event-1',
+      timestampMs: 1,
+    };
+
+    await manager.activate(session);
+    await manager.ingestRealtimeSignal(request);
+    await manager.ingestRealtimeSignal({
+      ...request,
+      cursor: 'event-2',
+      timestampMs: 2,
+    });
+
+    expect(manager.getSnapshot()).toMatchObject({
+      callId: request.callId,
+      state: 'ringing_all_devices',
+      peerPtid: request.fromActorPtid,
+    });
+    expect(transportMocks.execute).not.toHaveBeenCalled();
+    manager.reset();
+  });
+
   it('retains the winning device when rejecting an incoming call', async () => {
     const manager = new MobileCallManager();
     await manager.activate(session);

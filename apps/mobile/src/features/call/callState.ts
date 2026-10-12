@@ -380,6 +380,14 @@ export class MobileCallManager {
   ): Promise<void> {
     const callId = stringValue(payload.callId) || event.callId;
     if (!callId) throw new Error('mobile.call.callIdMissing');
+    if (
+      this.call
+      && this.call.snapshot.callId === callId
+      && this.call.snapshot.peerPtid === event.fromActorPtid
+      && this.call.signalingSessionId === event.sessionUlid
+    ) {
+      return;
+    }
     if (this.call && !isTerminal(this.call.snapshot.state)) {
       await this.sendSignalFor(
         event.fromActorPtid,
