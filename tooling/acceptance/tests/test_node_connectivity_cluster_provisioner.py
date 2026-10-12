@@ -154,9 +154,10 @@ class NodeConnectivityClusterProvisionerTest(unittest.TestCase):
             "def _durable_scenario",
             maxsplit=1,
         )[0]
-        self.assertIn('"syncFriendSession"', failover)
-        self.assertIn('{"sessionUlid": conversation_id}', failover)
+        self.assertIn('"conversation_sync_from_station"', failover)
+        self.assertIn('"conversation_id": conversation_id', failover)
         self.assertNotIn('"hydrateActiveActor"', failover)
+        self.assertNotIn('"syncFriendSession"', failover)
 
 
 if __name__ == "__main__":

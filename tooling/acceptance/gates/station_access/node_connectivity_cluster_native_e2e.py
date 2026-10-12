@@ -330,11 +330,12 @@ class NodeConnectivityClusterNativeGate(
 
         def recovered_route() -> dict[str, Any] | None:
             try:
-                async_harness(
-                    alice,
-                    "syncFriendSession",
-                    {"sessionUlid": conversation_id},
-                    timeout=5,
+                alice.invoke_app_result(
+                    "conversation_sync_from_station",
+                    {
+                        "conversation_id": conversation_id,
+                        "limit": 50,
+                    },
                 )
             except Exception:
                 pass
