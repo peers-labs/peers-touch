@@ -69,6 +69,21 @@ type FederationDirectory interface {
 	) (bool, error)
 }
 
+// SystemSenderAuthorization is the transaction-scoped authorization for the
+// internal, non-E2EE system sender (bot webhook delivery). The bot edge
+// implements it by verifying the explicit
+// {bot, owner, bot-direct-conversation} grant plus the ACTIVE registry state;
+// the Conversation application never reaches into the bot registry itself, so
+// the two domains share a transaction without repository coupling (G-BOT-03).
+type SystemSenderAuthorization interface {
+	AuthorizeSystemMessage(
+		ctx context.Context,
+		bot valueobject.PTID,
+		owner valueobject.PTID,
+		conversation valueobject.ConversationID,
+	) error
+}
+
 type DeviceInboxIntent struct {
 	IntentID       string
 	ConversationID valueobject.ConversationID
@@ -169,6 +184,7 @@ type Transaction struct {
 	Repositories           repository.Repositories
 	Identity               IdentityDirectory
 	Federation             FederationDirectory
+	SystemSender           SystemSenderAuthorization
 	DeviceInbox            DeviceInboxWriter
 	FederationOutbox       FederationOutboxWriter
 	DeliveryCommitments    AuthorityDeliveryCommitmentWriter
