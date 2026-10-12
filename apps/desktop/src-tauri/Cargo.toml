@@ -58,7 +58,7 @@ dispatch2 = "0.3.1"
 keyring = { version = "3", features = ["apple-native"] }
 objc2 = "0.6.4"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["libc", "NSApplication", "NSResponder", "NSRunningApplication", "NSWindow", "NSDockTile"] }
-objc2-foundation = { version = "0.3.2", features = ["NSString", "NSDictionary", "NSObject", "NSError"] }
+objc2-foundation = { version = "0.3.2", features = ["NSString", "NSDictionary", "NSBundle", "NSObject", "NSError"] }
 objc2-user-notifications = "0.3"
 block2 = "0.6"
 

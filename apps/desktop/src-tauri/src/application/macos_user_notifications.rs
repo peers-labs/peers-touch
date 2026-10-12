@@ -11,6 +11,7 @@
 //! All AppKit/UserNotifications calls run on the main thread. The delegate is
 //! retained in a `OnceLock` because the center holds it weakly.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use block2::RcBlock;
@@ -20,7 +21,7 @@ use objc2::{
     runtime::{AnyObject, Bool, NSObject, NSObjectProtocol, ProtocolObject},
     AnyThread, MainThreadMarker,
 };
-use objc2_foundation::{ns_string, NSDictionary, NSError, NSString};
+use objc2_foundation::{ns_string, NSBundle, NSDictionary, NSError, NSString};
 use objc2_user_notifications::{
     UNAuthorizationOptions, UNMutableNotificationContent, UNNotification,
     UNNotificationPresentationOptions, UNNotificationRequest, UNNotificationResponse,
@@ -34,6 +35,10 @@ use crate::application::{host_events, tray};
 
 static APP_HANDLE: OnceLock<AppHandle<Wry>> = OnceLock::new();
 static DELEGATE: OnceLock<Retained<NotificationDelegate>> = OnceLock::new();
+/// UserNotifications only works inside a bundled `.app`; a bare debug binary
+/// aborts with "bundleProxyForCurrentProcess is nil" when touching the center.
+/// Track successful activation so `post` degrades instead of crashing.
+static AVAILABLE: AtomicBool = AtomicBool::new(false);
 
 define_class!(
     #[unsafe(super(NSObject))]
@@ -86,6 +91,15 @@ pub fn init(app: AppHandle<Wry>) -> Result<(), String> {
     if MainThreadMarker::new().is_none() {
         return Err("notification init must run on the main thread".to_string());
     }
+    // UserNotifications requires a bundled `.app` (it throws when the process
+    // has no bundle proxy). `tauri dev` runs an unbundled debug binary, so
+    // degrade gracefully there; packaged builds proceed normally.
+    if NSBundle::mainBundle().bundleIdentifier().is_none() {
+        tracing::warn!(
+            "native notifications unavailable: process is not running inside a bundled .app"
+        );
+        return Ok(());
+    }
 
     let delegate = unsafe {
         let allocated = NotificationDelegate::alloc().set_ivars(());
@@ -117,13 +131,23 @@ pub fn init(app: AppHandle<Wry>) -> Result<(), String> {
         &completion,
     );
 
+    AVAILABLE.store(true, Ordering::Release);
     Ok(())
+}
+
+/// Whether native notifications are usable in this process (bundled `.app`
+/// with an initialized center).
+pub fn is_available() -> bool {
+    AVAILABLE.load(Ordering::Acquire)
 }
 
 /// Schedule one notification. Reusing the same `notification_id` replaces a
 /// pending/delivered notification, giving one surface per event per device
 /// (BOT-A35). Construction hops to the main thread; only plain strings cross.
 pub fn post(route: NativeNotificationRoute) -> Result<(), String> {
+    if !is_available() {
+        return Err("native notifications are unavailable in this process".to_string());
+    }
     dispatch2::DispatchQueue::main().exec_async(move || {
         if let Err(error) = post_on_main(&route) {
             tracing::warn!(error = %error, notification_id = %route.notification_id, "failed to post native notification");
