@@ -53,6 +53,7 @@ const evidenceScenarioOptions: Array<{ label: string; value: EvidenceScenario }>
   { label: 'Command ledger full', value: 'ledger-full' },
   { label: 'Draft restored', value: 'draft-restored' },
   { label: 'Social unavailable / lifecycle retry', value: 'social-unavailable' },
+  { label: 'Conversation unavailable / lifecycle retry', value: 'social-detail-unavailable' },
   { label: 'Find People / no Federation membership', value: 'find-people-no-membership' },
   { label: 'Find People / active Federation', value: 'find-people-member' },
   { label: 'Accepted contact / Direct opening', value: 'contact-direct' },

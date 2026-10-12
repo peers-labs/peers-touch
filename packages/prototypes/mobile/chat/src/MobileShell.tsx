@@ -23,7 +23,6 @@ import { FindPeopleSheet } from './components/FindPeopleSheet';
 import {
   RequestRecoveryNotice,
   ShellRecoverySheet,
-  SocialRuntimeNotice,
   SocialUnavailablePage,
   type ShellEvidenceScenario,
 } from './components/ExperienceRecovery';
@@ -53,14 +52,18 @@ export function MobileShell({
 }) {
   const [listMemory] = useState(() => new PrototypeListMemory());
   const [activeTab, setActiveTab] = useState<TabId>(
-    socialScenario && socialScenario !== 'social-unavailable' ? 'contacts' : 'chat',
+    socialScenario
+      && socialScenario !== 'social-unavailable'
+      && socialScenario !== 'social-detail-unavailable'
+      ? 'contacts'
+      : 'chat',
   );
   const [findPeopleOpen, setFindPeopleOpen] = useState(
     socialScenario === 'find-people-member' || socialScenario === 'find-people-no-membership'
       || socialScenario === 'request-unknown',
   );
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(() => (
-    focusChatJourney
+    focusChatJourney || socialScenario === 'social-detail-unavailable'
       ? demoConversations.find((conversation) => conversation.key === 'dev-team') ?? null
       : null
   ));
@@ -138,9 +141,16 @@ export function MobileShell({
 
   function renderPage(): ReactNode {
     if ((activeTab === 'chat' || activeTab === 'contacts') && socialDemo.runtime !== 'ready') {
+      const conversationUnavailable = activeTab === 'chat' && selectedConversation;
       return <SocialUnavailablePage
-        title={copy[activeTab === 'chat' ? 'mobile.chat.title' : 'mobile.contacts.title']}
+        title={copy[conversationUnavailable
+          ? 'mobile.nav.chatConversation'
+          : activeTab === 'chat'
+            ? 'mobile.chat.title'
+            : 'mobile.contacts.title']}
         runtime={socialDemo.runtime}
+        onRetry={() => dispatchSocialDemo({ type: 'retry-runtime' })}
+        onBack={conversationUnavailable ? handleBackToList : undefined}
       />;
     }
     if (activeTab === 'chat' && selectedConversation) {
@@ -192,8 +202,6 @@ export function MobileShell({
   return (
     <div className="mp-shell">
       <div className="mp-shell-content" inert={findPeopleOpen}>{renderPage()}</div>
-      <SocialRuntimeNotice runtime={socialDemo.runtime}
-        onRetry={() => dispatchSocialDemo({ type: 'retry-runtime' })} />
       {!findPeopleOpen && (
         <RequestRecoveryNotice request={socialDemo.request}
           onCheck={() => dispatchSocialDemo({ type: 'check-request' })} />

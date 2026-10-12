@@ -1229,6 +1229,46 @@ select,
   padding: 16px 18px calc(var(--safe-area-bottom) + 24px);
 }
 
+.mobile-route-state {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 28px calc(var(--safe-area-bottom) + 32px);
+  text-align: center;
+}
+
+.mobile-route-state__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(102, 126, 234, 0.1);
+  color: var(--brand-primary);
+}
+
+.mobile-route-state__title {
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.mobile-route-state__description {
+  max-width: 300px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.mobile-route-state .ant-btn {
+  min-height: 44px;
+  margin-top: 4px;
+  border-radius: 12px;
+}
+
 .mobile-tabbar {
   display: flex;
   align-items: center;
@@ -2777,25 +2817,6 @@ select,
   box-shadow: none;
 }
 
-.sender-typing-feedback {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 24px;
-  padding-inline: 4px;
-  font-size: 12px;
-}
-
-.sender-typing-feedback.failed {
-  justify-content: flex-start;
-}
-
-.sender-typing-feedback .ant-btn {
-  min-height: 24px;
-  padding-inline: 4px;
-}
-
 .message-composer-surface.readonly {
   display: flex;
   align-items: center;
@@ -3846,7 +3867,7 @@ select,
   pointer-events: none;
 }
 
-.recovery-overlay-host[data-launch-state='shell'] {
+.recovery-overlay-host[data-launch-state='shell'][data-tabbar-visible='true'] {
   padding-bottom:
     calc(var(--tabbar-height) + var(--safe-area-bottom) + 12px);
 }
@@ -3948,6 +3969,23 @@ select,
   position: absolute;
   inset: 0;
   background: rgba(15, 23, 42, 0.42);
+}
+
+.recovery-draft-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  list-style: none;
+}
+
+.recovery-draft-list__item {
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.05);
+  color: rgba(15, 23, 42, 0.68);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .recovery-notice,
