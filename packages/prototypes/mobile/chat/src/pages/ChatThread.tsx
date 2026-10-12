@@ -23,7 +23,7 @@ import {
   CHAT_JOURNEY_MESSAGE_ID,
   resolveChatJourneyLocale,
 } from '../../../../shared/chat-journey';
-import type { PrototypeCallMediaKind } from '../components/MobileCallSurface';
+import type { PrototypeCallMediaKind } from '../callPrototype';
 
 const { Text } = Typography;
 const messageKey = (message: Message) => message.id;

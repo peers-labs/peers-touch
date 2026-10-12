@@ -31,7 +31,7 @@ import {
   callEvidenceScenarioOptions,
   isPrototypeCallScenario,
   type PrototypeCallScenario,
-} from './components/MobileCallSurface';
+} from './callPrototype';
 import './mobilePrototype.css';
 
 const { Text } = Typography;

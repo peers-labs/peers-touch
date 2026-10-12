@@ -26,13 +26,13 @@ import {
   SocialUnavailablePage,
   type ShellEvidenceScenario,
 } from './components/ExperienceRecovery';
+import { MobileCallSurface } from './components/MobileCallSurface';
 import {
   callSnapshotForScenario,
-  MobileCallSurface,
   type PrototypeCallMediaKind,
   type PrototypeCallScenario,
   type PrototypeCallSnapshot,
-} from './components/MobileCallSurface';
+} from './callPrototype';
 
 export function MobileShell({
   stationLabel,
