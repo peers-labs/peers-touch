@@ -25,8 +25,9 @@ func NewService(repo Repository, minter ActorMinter) *Service {
 }
 
 // Create mints a HIDDEN AGENT actor and registers an active bot. The returned
-// plaintext secret is shown exactly once.
-func (s *Service) Create(ctx context.Context, ownerPtid, displayName, namespace string) (*CreatedBot, error) {
+// plaintext secret is shown exactly once. An optional avatar (Station-relative
+// OSS URL) is written to the bot actor's icon after registration.
+func (s *Service) Create(ctx context.Context, ownerPtid, displayName, namespace, avatar string) (*CreatedBot, error) {
 	if ownerPtid == "" {
 		return nil, domain.NewError(domain.CodeUnauthenticated, "owner identity required")
 	}
@@ -71,7 +72,27 @@ func (s *Service) Create(ctx context.Context, ownerPtid, displayName, namespace 
 	if err := s.repo.Create(ctx, bot); err != nil {
 		return nil, err
 	}
+	// Avatar lives on the AGENT actor, not the registry row. A failure to set
+	// it does not invalidate the created bot; the owner can retry via
+	// SetProfile (read path already works with the default glyph).
+	if avatar != "" {
+		if err := s.minter.SetAgentAvatar(ctx, botPtid, avatar); err != nil {
+			return nil, err
+		}
+	}
 	return &CreatedBot{Bot: bot, SecretPlaintext: secret}, nil
+}
+
+// SetProfile updates owner-scoped bot actor profile fields (avatar in v1).
+func (s *Service) SetProfile(ctx context.Context, ownerPtid, botPtid, avatar string) (*domain.Bot, error) {
+	bot, err := s.loadOwned(ctx, ownerPtid, botPtid)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.minter.SetAgentAvatar(ctx, botPtid, avatar); err != nil {
+		return nil, domain.NewError(domain.CodeInvalidArgument, "invalid avatar: %v", err)
+	}
+	return bot, nil
 }
 
 // RotateSecret issues a new secret, invalidating the old one immediately.

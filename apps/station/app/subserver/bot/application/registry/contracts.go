@@ -22,4 +22,7 @@ type Repository interface {
 // actor persistence; the actor frame package implements this port.
 type ActorMinter interface {
 	MintAgentActor(ctx context.Context, handle, displayName, namespace string) (botPtid string, err error)
+	// SetAgentAvatar sets the bot actor's icon (Station-relative OSS URL;
+	// empty clears it) without any federation publish.
+	SetAgentAvatar(ctx context.Context, botPtid, avatarURL string) error
 }

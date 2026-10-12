@@ -75,7 +75,7 @@ func (s *subServer) handleCreate(ctx context.Context, req *botmodel.CreateBotReq
 	if err != nil {
 		return nil, err
 	}
-	created, err := s.registry.Create(ctx, owner, req.GetName(), "peers")
+	created, err := s.registry.Create(ctx, owner, req.GetName(), "peers", req.GetAvatar())
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -124,4 +124,16 @@ func (s *subServer) handleSetState(ctx context.Context, req *botmodel.SetBotStat
 		return nil, mapDomainError(err)
 	}
 	return &botmodel.SetBotStateResponse{Bot: toProtoBot(bot)}, nil
+}
+
+func (s *subServer) handleSetProfile(ctx context.Context, req *botmodel.SetBotProfileRequest) (*botmodel.SetBotProfileResponse, error) {
+	owner, err := ownerFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bot, err := s.registry.SetProfile(ctx, owner, req.GetBotPtid(), req.GetAvatar())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &botmodel.SetBotProfileResponse{Bot: toProtoBot(bot)}, nil
 }

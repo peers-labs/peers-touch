@@ -88,6 +88,7 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("bot-list", "/bot/list", server.POST, s.handleList, s.jwtWrapper),
 		server.NewTypedHandler("bot-rotate-secret", "/bot/rotate-secret", server.POST, s.handleRotateSecret, s.jwtWrapper),
 		server.NewTypedHandler("bot-set-state", "/bot/set-state", server.POST, s.handleSetState, s.jwtWrapper),
+		server.NewTypedHandler("bot-set-profile", "/bot/set-profile", server.POST, s.handleSetProfile, s.jwtWrapper),
 		server.NewHTTPHandler("bot-webhook", "/bot/webhook/:webhook_id", server.POST, s.handleWebhook),
 	}
 }

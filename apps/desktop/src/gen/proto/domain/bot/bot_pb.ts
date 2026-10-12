@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/bot/bot.proto.
  */
 export const file_domain_bot_bot: GenFile = /*@__PURE__*/
-  fileDesc("ChRkb21haW4vYm90L2JvdC5wcm90bxIYcGVlcnNfdG91Y2gubW9kZWwuYm90LnYxItgCCgNCb3QSEAoIYm90X3B0aWQYASABKAkSEgoKb3duZXJfcHRpZBgCIAEoCRIMCgRuYW1lGAMgASgJEjEKBXN0YXRlGAQgASgOMiIucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdFN0YXRlEhIKCndlYmhvb2tfaWQYBSABKAkSGAoQc2VjcmV0X2RlbGl2ZXJlZBgGIAEoCBITCgtzZWNyZXRfaGludBgHIAEoCRJCCg5kZWxpdmVyeV9zY29wZRgIIAEoDjIqLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3REZWxpdmVyeVNjb3BlEh0KFXJhdGVfbGltaXRfcGVyX21pbnV0ZRgJIAEoBRIVCg1jcmVhdGVkX2F0X21zGAogASgDEhYKDmRpc2FibGVkX2F0X21zGAsgASgDEhUKDXJldm9rZWRfYXRfbXMYDCABKAMiIAoQQ3JlYXRlQm90UmVxdWVzdBIMCgRuYW1lGAEgASgJIm4KEUNyZWF0ZUJvdFJlc3BvbnNlEioKA2JvdBgBIAEoCzIdLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3QSEwoLd2ViaG9va191cmwYAiABKAkSGAoQc2VjcmV0X3BsYWludGV4dBgDIAEoCSIqChZSb3RhdGVCb3RTZWNyZXRSZXF1ZXN0EhAKCGJvdF9wdGlkGAEgASgJIjMKF1JvdGF0ZUJvdFNlY3JldFJlc3BvbnNlEhgKEHNlY3JldF9wbGFpbnRleHQYASABKAkiYAoSU2V0Qm90U3RhdGVSZXF1ZXN0EhAKCGJvdF9wdGlkGAEgASgJEjgKDHRhcmdldF9zdGF0ZRgCIAEoDjIiLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3RTdGF0ZSJBChNTZXRCb3RTdGF0ZVJlc3BvbnNlEioKA2JvdBgBIAEoCzIdLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3QiEwoRTGlzdE15Qm90c1JlcXVlc3QiQQoSTGlzdE15Qm90c1Jlc3BvbnNlEisKBGJvdHMYASADKAsyHS5wZWVyc190b3VjaC5tb2RlbC5ib3QudjEuQm90Kn8KCEJvdFN0YXRlEhkKFUJPVF9TVEFURV9VTlNQRUNJRklFRBAAEhMKD0JPVF9TVEFURV9EUkFGVBABEhQKEEJPVF9TVEFURV9BQ1RJVkUQAhIWChJCT1RfU1RBVEVfRElTQUJMRUQQAxIVChFCT1RfU1RBVEVfUkVWT0tFRBAEKmUKEEJvdERlbGl2ZXJ5U2NvcGUSIgoeQk9UX0RFTElWRVJZX1NDT1BFX1VOU1BFQ0lGSUVEEAASIQodQk9UX0RFTElWRVJZX1NDT1BFX09XTkVSX09OTFkQASIECAIQAiIECAMQA0JJWkdnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9hcHAvc3Vic2VydmVyL2JvdC9tb2RlbDttb2RlbGIGcHJvdG8z");
+  fileDesc("ChRkb21haW4vYm90L2JvdC5wcm90bxIYcGVlcnNfdG91Y2gubW9kZWwuYm90LnYxItgCCgNCb3QSEAoIYm90X3B0aWQYASABKAkSEgoKb3duZXJfcHRpZBgCIAEoCRIMCgRuYW1lGAMgASgJEjEKBXN0YXRlGAQgASgOMiIucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdFN0YXRlEhIKCndlYmhvb2tfaWQYBSABKAkSGAoQc2VjcmV0X2RlbGl2ZXJlZBgGIAEoCBITCgtzZWNyZXRfaGludBgHIAEoCRJCCg5kZWxpdmVyeV9zY29wZRgIIAEoDjIqLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3REZWxpdmVyeVNjb3BlEh0KFXJhdGVfbGltaXRfcGVyX21pbnV0ZRgJIAEoBRIVCg1jcmVhdGVkX2F0X21zGAogASgDEhYKDmRpc2FibGVkX2F0X21zGAsgASgDEhUKDXJldm9rZWRfYXRfbXMYDCABKAMiQAoQQ3JlYXRlQm90UmVxdWVzdBIMCgRuYW1lGAEgASgJEhMKBmF2YXRhchgCIAEoCUgAiAEBQgkKB19hdmF0YXIibgoRQ3JlYXRlQm90UmVzcG9uc2USKgoDYm90GAEgASgLMh0ucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdBITCgt3ZWJob29rX3VybBgCIAEoCRIYChBzZWNyZXRfcGxhaW50ZXh0GAMgASgJIioKFlJvdGF0ZUJvdFNlY3JldFJlcXVlc3QSEAoIYm90X3B0aWQYASABKAkiMwoXUm90YXRlQm90U2VjcmV0UmVzcG9uc2USGAoQc2VjcmV0X3BsYWludGV4dBgBIAEoCSJgChJTZXRCb3RTdGF0ZVJlcXVlc3QSEAoIYm90X3B0aWQYASABKAkSOAoMdGFyZ2V0X3N0YXRlGAIgASgOMiIucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdFN0YXRlIkEKE1NldEJvdFN0YXRlUmVzcG9uc2USKgoDYm90GAEgASgLMh0ucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdCITChFMaXN0TXlCb3RzUmVxdWVzdCJBChJMaXN0TXlCb3RzUmVzcG9uc2USKwoEYm90cxgBIAMoCzIdLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3QiSAoUU2V0Qm90UHJvZmlsZVJlcXVlc3QSEAoIYm90X3B0aWQYASABKAkSEwoGYXZhdGFyGAIgASgJSACIAQFCCQoHX2F2YXRhciJDChVTZXRCb3RQcm9maWxlUmVzcG9uc2USKgoDYm90GAEgASgLMh0ucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdCp/CghCb3RTdGF0ZRIZChVCT1RfU1RBVEVfVU5TUEVDSUZJRUQQABITCg9CT1RfU1RBVEVfRFJBRlQQARIUChBCT1RfU1RBVEVfQUNUSVZFEAISFgoSQk9UX1NUQVRFX0RJU0FCTEVEEAMSFQoRQk9UX1NUQVRFX1JFVk9LRUQQBCplChBCb3REZWxpdmVyeVNjb3BlEiIKHkJPVF9ERUxJVkVSWV9TQ09QRV9VTlNQRUNJRklFRBAAEiEKHUJPVF9ERUxJVkVSWV9TQ09QRV9PV05FUl9PTkxZEAEiBAgCEAIiBAgDEANCSVpHZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9ib3QvbW9kZWw7bW9kZWxiBnByb3RvMw");
 
 /**
  * @generated from message peers_touch.model.bot.v1.Bot
@@ -95,6 +95,15 @@ export type CreateBotRequest = Message<"peers_touch.model.bot.v1.CreateBotReques
    * @generated from field: string name = 1;
    */
   name: string;
+
+  /**
+   * Optional relative avatar URL (an OSS `/sub-oss/file?key=...` reference).
+   * Stored on the bot's AGENT actor profile, not on the registry row. Empty
+   * leaves the default glyph.
+   *
+   * @generated from field: optional string avatar = 2;
+   */
+  avatar?: string | undefined;
 };
 
 /**
@@ -237,6 +246,52 @@ export type ListMyBotsResponse = Message<"peers_touch.model.bot.v1.ListMyBotsRes
  */
 export const ListMyBotsResponseSchema: GenMessage<ListMyBotsResponse> = /*@__PURE__*/
   messageDesc(file_domain_bot_bot, 8);
+
+/**
+ * Owner updates bot-owned actor profile fields (avatar for v1). The actor
+ * itself is the identity truth; this endpoint lets the owner (authenticated by
+ * their own JWT) mutate their bot's AGENT actor profile. Kept separate from the
+ * generic /actor/profile endpoint, whose target is always the JWT subject.
+ *
+ * @generated from message peers_touch.model.bot.v1.SetBotProfileRequest
+ */
+export type SetBotProfileRequest = Message<"peers_touch.model.bot.v1.SetBotProfileRequest"> & {
+  /**
+   * @generated from field: string bot_ptid = 1;
+   */
+  botPtid: string;
+
+  /**
+   * Relative OSS avatar URL; empty clears it back to the default glyph.
+   *
+   * @generated from field: optional string avatar = 2;
+   */
+  avatar?: string | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.bot.v1.SetBotProfileRequest.
+ * Use `create(SetBotProfileRequestSchema)` to create a new message.
+ */
+export const SetBotProfileRequestSchema: GenMessage<SetBotProfileRequest> = /*@__PURE__*/
+  messageDesc(file_domain_bot_bot, 9);
+
+/**
+ * @generated from message peers_touch.model.bot.v1.SetBotProfileResponse
+ */
+export type SetBotProfileResponse = Message<"peers_touch.model.bot.v1.SetBotProfileResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.bot.v1.Bot bot = 1;
+   */
+  bot?: Bot | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.bot.v1.SetBotProfileResponse.
+ * Use `create(SetBotProfileResponseSchema)` to create a new message.
+ */
+export const SetBotProfileResponseSchema: GenMessage<SetBotProfileResponse> = /*@__PURE__*/
+  messageDesc(file_domain_bot_bot, 10);
 
 /**
  * @generated from enum peers_touch.model.bot.v1.BotState

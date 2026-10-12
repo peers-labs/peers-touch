@@ -259,8 +259,12 @@ func (x *Bot) GetRevokedAtMs() int64 {
 }
 
 type CreateBotRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Optional relative avatar URL (an OSS `/sub-oss/file?key=...` reference).
+	// Stored on the bot's AGENT actor profile, not on the registry row. Empty
+	// leaves the default glyph.
+	Avatar        *string `protobuf:"bytes,2,opt,name=avatar,proto3,oneof" json:"avatar,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -298,6 +302,13 @@ func (*CreateBotRequest) Descriptor() ([]byte, []int) {
 func (x *CreateBotRequest) GetName() string {
 	if x != nil {
 		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateBotRequest) GetAvatar() string {
+	if x != nil && x.Avatar != nil {
+		return *x.Avatar
 	}
 	return ""
 }
@@ -628,6 +639,107 @@ func (x *ListMyBotsResponse) GetBots() []*Bot {
 	return nil
 }
 
+// Owner updates bot-owned actor profile fields (avatar for v1). The actor
+// itself is the identity truth; this endpoint lets the owner (authenticated by
+// their own JWT) mutate their bot's AGENT actor profile. Kept separate from the
+// generic /actor/profile endpoint, whose target is always the JWT subject.
+type SetBotProfileRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	BotPtid string                 `protobuf:"bytes,1,opt,name=bot_ptid,json=botPtid,proto3" json:"bot_ptid,omitempty"`
+	// Relative OSS avatar URL; empty clears it back to the default glyph.
+	Avatar        *string `protobuf:"bytes,2,opt,name=avatar,proto3,oneof" json:"avatar,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetBotProfileRequest) Reset() {
+	*x = SetBotProfileRequest{}
+	mi := &file_domain_bot_bot_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetBotProfileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetBotProfileRequest) ProtoMessage() {}
+
+func (x *SetBotProfileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_bot_bot_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetBotProfileRequest.ProtoReflect.Descriptor instead.
+func (*SetBotProfileRequest) Descriptor() ([]byte, []int) {
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *SetBotProfileRequest) GetBotPtid() string {
+	if x != nil {
+		return x.BotPtid
+	}
+	return ""
+}
+
+func (x *SetBotProfileRequest) GetAvatar() string {
+	if x != nil && x.Avatar != nil {
+		return *x.Avatar
+	}
+	return ""
+}
+
+type SetBotProfileResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Bot           *Bot                   `protobuf:"bytes,1,opt,name=bot,proto3" json:"bot,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetBotProfileResponse) Reset() {
+	*x = SetBotProfileResponse{}
+	mi := &file_domain_bot_bot_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetBotProfileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetBotProfileResponse) ProtoMessage() {}
+
+func (x *SetBotProfileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_bot_bot_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetBotProfileResponse.ProtoReflect.Descriptor instead.
+func (*SetBotProfileResponse) Descriptor() ([]byte, []int) {
+	return file_domain_bot_bot_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *SetBotProfileResponse) GetBot() *Bot {
+	if x != nil {
+		return x.Bot
+	}
+	return nil
+}
+
 var File_domain_bot_bot_proto protoreflect.FileDescriptor
 
 const file_domain_bot_bot_proto_rawDesc = "" +
@@ -649,9 +761,11 @@ const file_domain_bot_bot_proto_rawDesc = "" +
 	"\rcreated_at_ms\x18\n" +
 	" \x01(\x03R\vcreatedAtMs\x12$\n" +
 	"\x0edisabled_at_ms\x18\v \x01(\x03R\fdisabledAtMs\x12\"\n" +
-	"\rrevoked_at_ms\x18\f \x01(\x03R\vrevokedAtMs\"&\n" +
+	"\rrevoked_at_ms\x18\f \x01(\x03R\vrevokedAtMs\"N\n" +
 	"\x10CreateBotRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"\x90\x01\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
+	"\x06avatar\x18\x02 \x01(\tH\x00R\x06avatar\x88\x01\x01B\t\n" +
+	"\a_avatar\"\x90\x01\n" +
 	"\x11CreateBotResponse\x12/\n" +
 	"\x03bot\x18\x01 \x01(\v2\x1d.peers_touch.model.bot.v1.BotR\x03bot\x12\x1f\n" +
 	"\vwebhook_url\x18\x02 \x01(\tR\n" +
@@ -668,7 +782,13 @@ const file_domain_bot_bot_proto_rawDesc = "" +
 	"\x03bot\x18\x01 \x01(\v2\x1d.peers_touch.model.bot.v1.BotR\x03bot\"\x13\n" +
 	"\x11ListMyBotsRequest\"G\n" +
 	"\x12ListMyBotsResponse\x121\n" +
-	"\x04bots\x18\x01 \x03(\v2\x1d.peers_touch.model.bot.v1.BotR\x04bots*\x7f\n" +
+	"\x04bots\x18\x01 \x03(\v2\x1d.peers_touch.model.bot.v1.BotR\x04bots\"Y\n" +
+	"\x14SetBotProfileRequest\x12\x19\n" +
+	"\bbot_ptid\x18\x01 \x01(\tR\abotPtid\x12\x1b\n" +
+	"\x06avatar\x18\x02 \x01(\tH\x00R\x06avatar\x88\x01\x01B\t\n" +
+	"\a_avatar\"H\n" +
+	"\x15SetBotProfileResponse\x12/\n" +
+	"\x03bot\x18\x01 \x01(\v2\x1d.peers_touch.model.bot.v1.BotR\x03bot*\x7f\n" +
 	"\bBotState\x12\x19\n" +
 	"\x15BOT_STATE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fBOT_STATE_DRAFT\x10\x01\x12\x14\n" +
@@ -692,7 +812,7 @@ func file_domain_bot_bot_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_bot_bot_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_domain_bot_bot_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_domain_bot_bot_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_domain_bot_bot_proto_goTypes = []any{
 	(BotState)(0),                   // 0: peers_touch.model.bot.v1.BotState
 	(BotDeliveryScope)(0),           // 1: peers_touch.model.bot.v1.BotDeliveryScope
@@ -705,6 +825,8 @@ var file_domain_bot_bot_proto_goTypes = []any{
 	(*SetBotStateResponse)(nil),     // 8: peers_touch.model.bot.v1.SetBotStateResponse
 	(*ListMyBotsRequest)(nil),       // 9: peers_touch.model.bot.v1.ListMyBotsRequest
 	(*ListMyBotsResponse)(nil),      // 10: peers_touch.model.bot.v1.ListMyBotsResponse
+	(*SetBotProfileRequest)(nil),    // 11: peers_touch.model.bot.v1.SetBotProfileRequest
+	(*SetBotProfileResponse)(nil),   // 12: peers_touch.model.bot.v1.SetBotProfileResponse
 }
 var file_domain_bot_bot_proto_depIdxs = []int32{
 	0, // 0: peers_touch.model.bot.v1.Bot.state:type_name -> peers_touch.model.bot.v1.BotState
@@ -713,11 +835,12 @@ var file_domain_bot_bot_proto_depIdxs = []int32{
 	0, // 3: peers_touch.model.bot.v1.SetBotStateRequest.target_state:type_name -> peers_touch.model.bot.v1.BotState
 	2, // 4: peers_touch.model.bot.v1.SetBotStateResponse.bot:type_name -> peers_touch.model.bot.v1.Bot
 	2, // 5: peers_touch.model.bot.v1.ListMyBotsResponse.bots:type_name -> peers_touch.model.bot.v1.Bot
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	2, // 6: peers_touch.model.bot.v1.SetBotProfileResponse.bot:type_name -> peers_touch.model.bot.v1.Bot
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_domain_bot_bot_proto_init() }
@@ -725,13 +848,15 @@ func file_domain_bot_bot_proto_init() {
 	if File_domain_bot_bot_proto != nil {
 		return
 	}
+	file_domain_bot_bot_proto_msgTypes[1].OneofWrappers = []any{}
+	file_domain_bot_bot_proto_msgTypes[9].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_bot_bot_proto_rawDesc), len(file_domain_bot_bot_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   9,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

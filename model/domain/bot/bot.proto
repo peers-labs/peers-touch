@@ -45,6 +45,10 @@ message Bot {
 
 message CreateBotRequest {
   string name = 1;
+  // Optional relative avatar URL (an OSS `/sub-oss/file?key=...` reference).
+  // Stored on the bot's AGENT actor profile, not on the registry row. Empty
+  // leaves the default glyph.
+  optional string avatar = 2;
 }
 
 message CreateBotResponse {
@@ -76,4 +80,18 @@ message ListMyBotsRequest {}
 
 message ListMyBotsResponse {
   repeated Bot bots = 1;
+}
+
+// Owner updates bot-owned actor profile fields (avatar for v1). The actor
+// itself is the identity truth; this endpoint lets the owner (authenticated by
+// their own JWT) mutate their bot's AGENT actor profile. Kept separate from the
+// generic /actor/profile endpoint, whose target is always the JWT subject.
+message SetBotProfileRequest {
+  string bot_ptid = 1;
+  // Relative OSS avatar URL; empty clears it back to the default glyph.
+  optional string avatar = 2;
+}
+
+message SetBotProfileResponse {
+  Bot bot = 1;
 }

@@ -2,6 +2,7 @@ package actor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/crypto"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	"gorm.io/gorm"
 )
 
 // MintInternalAgentActor creates a HIDDEN, non-human AGENT actor owned by the
@@ -89,4 +91,59 @@ func MintInternalAgentActor(ctx context.Context, username, displayName, namespac
 
 	log.Infof(ctx, "[MintInternalAgentActor] minted AGENT actor %s (%s)", username, created.PTID)
 	return created.PTID, nil
+}
+
+// SetInternalAgentAvatar updates a Station-owned internal AGENT actor's icon
+// (an IM Bot avatar) on behalf of its owner. The bot never logs in, so the
+// generic /actor/profile endpoint (whose target is always the JWT subject)
+// cannot be used. The avatar is a Station-relative OSS URL
+// (`/sub-oss/file?key=...`); empty clears it back to the default glyph.
+//
+// Unlike user-driven profile edits this performs no optimistic-revision
+// conflict check (the owner is the only writer) and never publishes
+// visibility: a HIDDEN bot changing its avatar must not emit DHT noise.
+func SetInternalAgentAvatar(ctx context.Context, ptid, avatar string) error {
+	ptid = strings.TrimSpace(ptid)
+	if ptid == "" {
+		return fmt.Errorf("bot actor ptid is required")
+	}
+	avatar = strings.TrimSpace(avatar)
+	if avatar != "" && !strings.HasPrefix(avatar, "/") {
+		return fmt.Errorf("bot avatar must be a Station-relative URL, got %q", avatar)
+	}
+
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		return err
+	}
+
+	return rds.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var actor db.Actor
+		if err := tx.Where("ptid = ?", ptid).First(&actor).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&db.Actor{}).
+			Where("id = ?", actor.ID).
+			Update("icon", avatar).Error; err != nil {
+			return err
+		}
+		// Keep profile_revision canonical for readers, creating the meta row
+		// if an older mint left it absent.
+		var meta db.ActorTouchMeta
+		findErr := tx.Where("actor_id = ?", actor.ID).First(&meta).Error
+		if errors.Is(findErr, gorm.ErrRecordNotFound) {
+			return tx.Create(&db.ActorTouchMeta{ActorID: actor.ID, ProfileRevision: 1}).Error
+		}
+		if findErr != nil {
+			return findErr
+		}
+		next := meta.ProfileRevision
+		if next == 0 {
+			next = 1
+		}
+		next++
+		return tx.Model(&db.ActorTouchMeta{}).
+			Where("actor_id = ?", actor.ID).
+			Update("profile_revision", next).Error
+	})
 }

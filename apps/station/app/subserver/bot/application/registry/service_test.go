@@ -11,11 +11,22 @@ import (
 	"gorm.io/gorm"
 )
 
-type fakeMinter struct{ calls int }
+type fakeMinter struct {
+	calls   int
+	avatars map[string]string
+}
 
 func (f *fakeMinter) MintAgentActor(_ context.Context, handle, _, _ string) (string, error) {
 	f.calls++
 	return "ptid:v1:actor:peers:b:" + handle + ":fp" + string(rune('0'+f.calls)), nil
+}
+
+func (f *fakeMinter) SetAgentAvatar(_ context.Context, botPtid, avatarURL string) error {
+	if f.avatars == nil {
+		f.avatars = map[string]string{}
+	}
+	f.avatars[botPtid] = avatarURL
+	return nil
 }
 
 func newTestService(t *testing.T) (*Service, *persistence.GormRepo) {
@@ -42,7 +53,7 @@ func TestCreateBot(t *testing.T) {
 	svc, repo := newTestService(t)
 	ctx := context.Background()
 
-	created, err := svc.Create(ctx, owner, "Claude Code", "peers")
+	created, err := svc.Create(ctx, owner, "Claude Code", "peers", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -78,15 +89,15 @@ func TestCreateBot(t *testing.T) {
 func TestCreateDuplicateName(t *testing.T) {
 	svc, _ := newTestService(t)
 	ctx := context.Background()
-	if _, err := svc.Create(ctx, owner, "Dup", "peers"); err != nil {
+	if _, err := svc.Create(ctx, owner, "Dup", "peers", ""); err != nil {
 		t.Fatalf("first create: %v", err)
 	}
-	_, err := svc.Create(ctx, owner, "Dup", "peers")
+	_, err := svc.Create(ctx, owner, "Dup", "peers", "")
 	de, ok := domain.AsError(err)
 	if !ok || de.Code != domain.CodeNameConflict {
 		t.Fatalf("want BOT_NAME_CONFLICT, got %v", err)
 	}
-	if _, err := svc.Create(ctx, "ptid:v1:actor:peers:p:other:bbb", "Dup", "peers"); err != nil {
+	if _, err := svc.Create(ctx, "ptid:v1:actor:peers:p:other:bbb", "Dup", "peers", ""); err != nil {
 		t.Fatalf("same name for a different owner must be allowed: %v", err)
 	}
 }
@@ -95,7 +106,7 @@ func TestCreateDuplicateName(t *testing.T) {
 func TestRotateSecret(t *testing.T) {
 	svc, _ := newTestService(t)
 	ctx := context.Background()
-	created, _ := svc.Create(ctx, owner, "Rot", "peers")
+	created, _ := svc.Create(ctx, owner, "Rot", "peers", "")
 	ptid := created.Bot.BotPtid
 	webhookID := created.Bot.WebhookID
 
@@ -134,7 +145,7 @@ func TestRotateSecret(t *testing.T) {
 func TestDisableAndRevoke(t *testing.T) {
 	svc, repo := newTestService(t)
 	ctx := context.Background()
-	created, _ := svc.Create(ctx, owner, "Life", "peers")
+	created, _ := svc.Create(ctx, owner, "Life", "peers", "")
 	ptid := created.Bot.BotPtid
 
 	disabled, err := svc.SetState(ctx, owner, ptid, domain.StateDisabled)
@@ -166,5 +177,28 @@ func TestDisableAndRevoke(t *testing.T) {
 	stored, _ := repo.GetByPtid(ctx, ptid)
 	if stored == nil {
 		t.Fatal("revoking must preserve the registry row/history")
+	}
+}
+
+// SetProfile writes the avatar to the bot actor via the minter, owner-scoped.
+func TestSetProfileAvatar(t *testing.T) {
+	svc, _ := newTestService(t)
+	ctx := context.Background()
+	created, _ := svc.Create(ctx, owner, "Avatar Bot", "peers", "")
+	ptid := created.Bot.BotPtid
+	minter := svc.minter.(*fakeMinter)
+
+	if _, err := svc.SetProfile(ctx, owner, ptid, "/sub-oss/file?key=ab"); err != nil {
+		t.Fatalf("set profile: %v", err)
+	}
+	if got := minter.avatars[ptid]; got != "/sub-oss/file?key=ab" {
+		t.Fatalf("avatar not forwarded to actor minter, got %q", got)
+	}
+	// Non-owner is indistinguishable from not-found and must not mutate.
+	if _, err := svc.SetProfile(ctx, "ptid:v1:actor:peers:p:other:bbb", ptid, "/x"); err == nil {
+		t.Fatal("non-owner set-profile must be rejected")
+	}
+	if got := minter.avatars[ptid]; got != "/sub-oss/file?key=ab" {
+		t.Fatalf("non-owner attempt mutated avatar: %q", got)
 	}
 }
