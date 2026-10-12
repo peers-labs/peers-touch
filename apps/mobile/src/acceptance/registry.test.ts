@@ -497,6 +497,46 @@ describe('Mobile Acceptance Harness', () => {
     });
   });
 
+  it('verifies a written draft without consuming crash-recovery ownership', async () => {
+    activateAcceptanceSession();
+    let storedEnvelope: number[] | null = null;
+    invokeMock.mockImplementation(async (command: string, payload?: unknown) => {
+      if (command === 'draft_save') {
+        storedEnvelope = [
+          ...(payload as { input: { envelopeBytes: number[] } })
+            .input.envelopeBytes,
+        ];
+        return undefined;
+      }
+      if (command === 'draft_list') {
+        expect(payload).toMatchObject({
+          input: {
+            stationPeerId: 'station-peer',
+            actorPtid: 'ptid:alice',
+          },
+        });
+        return storedEnvelope ? [storedEnvelope] : [];
+      }
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    await expect(createMobileAcceptanceHarness()['reliability.draft.write']({
+      kind: 'chat',
+      targetId: 'recovery-after-restart',
+      text: 'Keep this draft',
+    })).resolves.toMatchObject({
+      kind: 'chat',
+      surfaceKind: 'chat',
+      targetId: 'recovery-after-restart',
+      payloadSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
+
+    expect(invokeMock.mock.calls.map(([command]) => command)).toEqual([
+      'draft_save',
+      'draft_list',
+    ]);
+  });
+
   it.each([false, true])(
     'reads readiness after restart acknowledgement, persistent failure: %s',
     async (persistentFailure) => {
