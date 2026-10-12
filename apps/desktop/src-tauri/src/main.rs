@@ -39,7 +39,7 @@ pub mod peers_touch {
 
 use interface::tauri_commands::{
     account, actor, admin, agent_events, agent_growth, agent_orchestration, agent_scheduler,
-    agent_turn, agents, applets, auth, capability_authority, channels, conversation, cron, crypto,
+    agent_turn, agents, applets, auth, bot, capability_authority, channels, conversation, cron, crypto,
     desktop_capture, evaluation, federation, frontend_log, frontend_telemetry, home, host_events,
     i18n, ice, key_exchange, mcp, memory, messaging as messaging_commands, messaging_recovery,
     model_config, notebook, notification, oauth2, oss, presence, profile, provider, realtime,
@@ -1022,6 +1022,12 @@ fn main() {
             agent_scheduler::agent_scheduler_status,
             agent_scheduler::agent_scheduler_add_job,
             notification::notification_list,
+            bot::bot_list,
+            bot::bot_create,
+            bot::bot_rotate_secret,
+            bot::bot_set_state,
+            bot::bot_set_profile,
+            bot::bot_upload_avatar,
             notification::notification_unread_counts,
             notification::notification_mark_read,
             notification::notification_mark_all_read,

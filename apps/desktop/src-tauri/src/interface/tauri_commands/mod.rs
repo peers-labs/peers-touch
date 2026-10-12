@@ -8,6 +8,7 @@ pub mod agent_scheduler;
 pub mod agent_turn;
 pub mod agents;
 pub mod applets;
+pub mod bot;
 pub mod auth;
 pub mod capability_authority;
 pub mod channels;

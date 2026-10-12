@@ -7800,6 +7800,36 @@ export const api = {
 
   // ── Notification ──
 
+  botList: () =>
+    invokeRustDataFromStatus<void, { bots: RegistryBot[] }>('bot_list'),
+
+  botCreate: (name: string, avatar?: string) =>
+    invokeRustDataFromStatus<{ name: string; avatar?: string }, BotCreateResponse>(
+      'bot_create', { name, avatar },
+    ),
+
+  botRotateSecret: (botPtid: string) =>
+    invokeRustDataFromStatus<{ bot_ptid: string }, { secretPlaintext: string }>(
+      'bot_rotate_secret', { bot_ptid: botPtid },
+    ),
+
+  botSetState: (botPtid: string, targetState: number) =>
+    invokeRustDataFromStatus<
+      { bot_ptid: string; target_state: number },
+      { bot: RegistryBot }
+    >('bot_set_state', { bot_ptid: botPtid, target_state: targetState }),
+
+  botSetProfile: (botPtid: string, avatar?: string) =>
+    invokeRustDataFromStatus<
+      { bot_ptid: string; avatar?: string },
+      { bot: RegistryBot }
+    >('bot_set_profile', { bot_ptid: botPtid, avatar }),
+
+  botUploadAvatar: (filePath: string) =>
+    invokeRustDataFromStatus<{ file_path: string }, { url: string }>(
+      'bot_upload_avatar', { file_path: filePath },
+    ),
+
   notificationList: (category?: number, status?: number, cursor?: string, limit?: number) =>
     invokeRustDataFromStatus<NotificationListInput, NotificationListResponse>(
       'notification_list', { category, status, cursor, limit },
@@ -8024,6 +8054,29 @@ export interface FriendRequestData {
   message: string;
   createdAt: string;
   respondedAt?: string;
+}
+
+export type RegistryBotState = 0 | 1 | 2 | 3 | 4;
+
+export interface RegistryBot {
+  botPtid: string;
+  ownerPtid: string;
+  name: string;
+  state: RegistryBotState;
+  webhookId: string;
+  secretDelivered: boolean;
+  secretHint: string;
+  deliveryScope: number;
+  rateLimitPerMinute: number;
+  createdAtMs: bigint | number;
+  disabledAtMs: bigint | number;
+  revokedAtMs: bigint | number;
+}
+
+export interface BotCreateResponse {
+  bot: RegistryBot;
+  webhookUrl: string;
+  secretPlaintext: string;
 }
 
 export interface NotificationData {

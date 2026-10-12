@@ -37,6 +37,13 @@ pub mod ai_chat {
     pub use v1::*;
 }
 
+pub mod bot {
+    pub mod v1 {
+        include!(concat!(env!("OUT_DIR"), "/peers_touch.model.bot.v1.rs"));
+    }
+    pub use v1::*;
+}
+
 pub mod actor {
     pub mod v1 {
         include!(concat!(env!("OUT_DIR"), "/peers_touch.model.actor.v1.rs"));

@@ -9,6 +9,7 @@ import './account';
 import './skills';
 import './mcp';
 import './channels';
+import './bots';
 import './cron';
 import './command-menu';
 import './memory';
