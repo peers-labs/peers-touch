@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v1.0
-> **Created**: 2026-10-11 | **Updated**: 2026-10-11
+> **Created**: 2026-10-11 | **Updated**: 2026-10-12（BOT-D10 superseded）
 > **Owner**: Architecture Team
 
 ---
@@ -20,7 +20,7 @@
 | BOT-D07 | 通信协议不得从 ActorKind 推断 | proposed |
 | BOT-D08 | Produce 补实时扇出为通用修补，新增 StreamEvent 通知臂 | proposed |
 | BOT-D09 | Desktop 使用 Tauri 2 内置 tray + 官方 notification 插件 | proposed |
-| BOT-D10 | `peersbot` 为零依赖二进制，fire-and-forget | proposed |
+| BOT-D10 | ~~`peersbot` 为零依赖二进制，fire-and-forget~~ v1 不维护 sender CLI，对外只交付 HTTP API + curl/hook 接法 | superseded |
 | BOT-D11 | 端点可达性是部署者责任，不建模公网边缘状态 | proposed |
 | BOT-D12 | 摄入单事务跨 bot/会话/通知，通知增加幂等键 | proposed |
 | BOT-D13 | 托盘角标计未读会话数；notification 臂只驱动横幅 | proposed |
@@ -75,7 +75,7 @@
 ### Decision
 
 每个 Bot 一个摄入原语：webhook id + secret，端点 `POST /bot/webhook/:webhook_id`。
-本机 CLI 与外部 SaaS 共用同一端点、同一摄入管道。secret 仅存 SHA-256，可独立轮换而 URL 不变。
+本机调用方（curl / agent hook）与外部 SaaS 共用同一端点、同一摄入管道。secret 仅存 SHA-256，可独立轮换而 URL 不变。v1 不提供官方 sender CLI（见 BOT-D10 superseded）。
 
 ### Rationale
 
@@ -337,35 +337,41 @@ Desktop 当前无托盘、无 OS 通知能力，关窗即退出，无法承担"a
 
 ---
 
-## BOT-D10: `peersbot` 为零依赖二进制，fire-and-forget
+## BOT-D10: ~~`peersbot` 为零依赖二进制，fire-and-forget~~
 
-**Status**: proposed
-**Date**: 2026-10-11
+**Status**: superseded（2026-10-12，v1 不实现该二进制）
+**Date**: 2026-10-11（原 proposed）
 
-### Context
+### 原决策（保留备查）
 
 coding agent 的 hook 在用户关键路径上同步执行；任何慢、挂起或非零退出都会直接伤害
-agent 使用体验。hook 运行环境也不应要求 Node 等运行时。
+agent 使用体验。原方案是提供仅用 Go 标准库的独立小模块
+`tooling/cli/peersbot`（自有 go.mod）：stdin 读取 hook 原生 JSON，映射为 canonical
+event，本地截断/脱敏，固定 5 秒预算 POST，失败写入有界 spool（1 MiB / 24 h），始终 exit 0。
 
-### Decision
+### 取代决策
 
-`peersbot` 是仅用 Go 标准库的独立小模块（自有 go.mod，位于
-`tooling/cli/peersbot`）：stdin 读取 hook 原生 JSON，映射为 canonical event，本地
-截断/脱敏，固定 5 秒预算 POST，失败写入有界 spool（1 MiB / 24 h），始终 exit 0。
+v1 **不新增、不发布** sender CLI，也不在 `tooling/` 下建该 module。对外只交付一个稳定的
+HTTP webhook 端点与一份调用方合同：[webhook-api.md](./webhook-api.md)。调用方用任意 HTTP
+工具（`curl`、CI、SaaS、agent hook 脚本）直接接入；“不阻塞 agent”由调用方按文档用短超时 +
+失败不致命（`curl --max-time 5 … || true`）保证，断网补偿由调用方按需处理，因为
+`request_id` 已在服务端提供 24h 幂等。
 
-### Rationale
+### 取代理由
 
-hook 绝不能拖慢或拖垮 agent；零依赖便于分发。它不能建在仓库现有 Go module 路径下
-（station module 位于 apps/station），因此独立 module。
-
-### Alternatives Considered
-
-Node 脚本（要求运行时）；依赖 station SDK（对 ~200 行适配器过重）；hook 内同步重试
-（拖垮 agent，被否）。
+- 关键价值（不阻塞、幂等重试）已由 `--max-time` + `|| true` + 服务端 `request_id` 幂等覆盖，
+  零依赖二进制的增量价值只是 hook JSON 映射与本地 spool，属未经验证的痛点。
+- 维护一个独立二进制要额外承担发版、与 webhook schema 同步、分发安装成本；`tooling/` 是开发
+  工具层，不是面向用户的产品面。
+- 若未来确需官方受维护的发送端（如 Desktop 内置投递助手或独立 agent 集成程序），它应作为
+  `apps/` 下的一等公民、有独立生命周期与发布，而不是埋在 `tooling/` 里的构建附属品。
 
 ### Consequences
 
-增加一个需发布的构建产物；CLI 仅持 webhook secret，不持任何 JWT/设备凭证。
+- 取消原执行计划 S4（标记 deferred / not-for-v1）；其 hook 映射与失败语义作为**调用方约定**
+  写进 webhook-api.md 第 8、9 节，不再有对应代码与 BOT-A40…A44 验收门。
+- 不改变 BOT-D02：webhook 仍是唯一摄入原语，本机调用方与外部 SaaS 共用同一端点。
+- 将来在 `apps/` 启动受维护客户端时，重开一条决策并恢复相应验收矩阵。
 
 ---
 
@@ -382,7 +388,8 @@ libp2p/节点连接性正在演进，纯 libp2p Station 对 GitHub 这类外部 
 ### Decision
 
 端点是 Station 上无状态 HTTP 路由。可达 URL（本机或公网域名）是唯一网络前提；
-不可达时由 CLI spool/重试。不新增"公网边缘"状态，不建 relay 网关组件。
+不可达时由**调用方**做有限重试/本地缓冲（v1 无官方 CLI，见 BOT-D10）。不新增"公网边缘"
+状态，不建 relay 网关组件。
 
 ### Rationale
 

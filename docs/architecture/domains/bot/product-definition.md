@@ -27,10 +27,10 @@ bot），能接收 webhook 入站事件、向 owner 发消息。联邦与更丰�
 
 ### C2 入站事件摄入
 
-- 任何 HTTP 客户端（CI、SaaS、本机 CLI、curl）可向可达 URL POST canonical JSON。
-- 一等适配：零依赖 `peersbot` CLI 接入 Claude Code hooks（Stop / Notification）。
+- 任何 HTTP 客户端（CI、SaaS、agent hook、curl）可向可达 URL POST canonical JSON；接入合同见 [webhook-api.md](./webhook-api.md)。
+- v1 不提供官方 sender CLI：Claude Code 等用文档中的 curl/jq hook 片段接入（Stop / Notification）。
 - 归一化、体积上限、限流、`request_id` 幂等、`dedupe_key` 折叠。
-- 摄入失败绝不阻塞 agent：CLI 固定超时 + 有界 spool + 始终 exit 0。
+- 摄入失败绝不阻塞 agent：由调用方按接入合同做固定超时 + 失败不致命（`curl --max-time 5 … || true`），并用同一 `request_id` 幂等重试。
 
 ### C3 Bot 会话与通知
 
@@ -56,19 +56,19 @@ bot），能接收 webhook 入站事件、向 owner 发消息。联邦与更丰�
 3. 外部源签名验真（GitHub HMAC 等）：协议预留字段。
 4. A2A / Agent Card 行为；Bot 是 IM 身份。
 5. 移动端功能开发（仅要求未知投递类型优雅忽略）。
-6. Claude Code 以外的专用适配器（canonical JSON 已可接入）。
+6. 官方发送端 CLI / 专用适配器（含 `peersbot`）：v1 只交付 HTTP webhook 合同与 curl/hook 示例（BOT-D10 superseded）；未来受维护客户端作为 `apps/` 一等公民另立。
 7. 离线移动 push（无分发器）。
 
 ## 4. 用户 Journey
 
 | ID | Journey |
 |----|---------|
-| BOT-J01 | 在 Settings 创建 Bot，复制 URL 与 CLI 配置片段；轮换/吊销 secret |
+| BOT-J01 | 在 Settings 创建 Bot，复制 URL 与 curl 接入片段；轮换/吊销 secret |
 | BOT-J02 | agent 完成任务，hook 投递事件；Desktop 打开状态下会话出现 Bot 消息 |
 | BOT-J03 | Desktop 隐藏菜单栏，事件触发 OS 通知；点击回到 Bot 会话并深链到 agent 会话 |
 | BOT-J04 | Desktop 离线时事件到达；重启后会话与未读完整回收 |
 | BOT-J05 | waiting_input 重复提示在未读期间折叠为一条，不刷屏 |
-| BOT-J06 | 非法/缺 secret/超限请求被安全拒绝；CLI 不拖慢 agent |
+| BOT-J06 | 非法/缺 secret/超限请求被安全拒绝；调用方 hook 不拖慢 agent（短超时、失败不致命） |
 | BOT-J07 | 停用/吊销即时生效，tray/通知面进入确定终态 |
 
 ## 5. 产品状态模型
@@ -103,7 +103,7 @@ OS 通知由窗口焦点/可见性、会话可见性与分类偏好共同决定�
 - ACP-1：同一 `request_id` 重试恰好产生一条会话消息；通知在 TASK 偏好允许时恰好一行，偏好关闭时不产生通知行（既有静音语义），两种情况下会话未读都存在。
 - ACP-2：无正确 secret 的请求不能产生任何归属该 Bot 的消息或通知。
 - ACP-3：打包 Desktop 上 hook→Station→OS 通知→点击→Bot 会话全链路可跑通。
-- ACP-4：hook CLI 任意失败路径均 exit 0 且有固定墙上时间预算。
+- ACP-4：按 webhook-api.md 接入的调用方（hook 脚本）任意失败路径都不致命（exit 0）且有固定墙上时间预算；以 curl 实测。
 - ACP-5：停用/吊销对后续请求即时生效，错误类型化，无半截消息。
 - ACP-6：Bot 会话在任何端都不出现 E2EE 保证标记；移动端遇服务明文类型不崩溃。
 

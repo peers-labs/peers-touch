@@ -11,8 +11,8 @@
 
 1. **Bot 是 actor 的一类**：身份走 actor/PTID 体系，消息走统一会话图；不建设平行 bot 通道、平行存储或平行身份。
 2. **信任边界诚实**：Station 驻留 Bot 不持有客户端侧 E2EE 语义；Bot 会话使用显式的服务明文投递类型，客户端不得显示端到端加密保证（BOT-D05）。
-3. **一个摄入原语**：本机 CLI 与外部 SaaS 共用同一 webhook 端点与同一条准入管道；凭证只管摄入，不触碰人类会话。
-4. **hook 绝不阻塞 agent**：调用方的失败语义由 CLI 在用户机器上兜底（超时、spool、exit 0），Station 不向 hook 同步路径施加重试压力。
+3. **一个摄入原语**：本机调用方（curl / agent hook）与外部 SaaS 共用同一 webhook 端点与同一条准入管道；凭证只管摄入，不触碰人类会话。
+4. **hook 绝不阻塞 agent**：调用方失败语义由调用端按 [webhook-api.md](./webhook-api.md) 兜底（固定超时、失败不致命），Station 不向 hook 同步路径施加重试压力，也不提供官方 sender CLI（BOT-D10 superseded）。
 5. **通用修补优先**：通知实时化是对所有通知生产方的通用修补，Bot 只是锚定租户。
 
 ## 2. 架构适用性评审（AAR）
@@ -36,7 +36,7 @@
 | AAR-C03 | i18n：`docs/architecture/i18n` | Bot 设置、通知文案、tray 菜单、错误 | required | 全部走 locale key；Bot 提供的 title/body 作为数据渲染，不做本地化 | 新增支持语言 |
 | AAR-C04 | Handler ownership：unified-handler / api-ownership | 新增公开 webhook 路由与 JWT 管理路由 | adapted | webhook 在 JWT 中间件之外挂载，自带 secret 鉴权包装；管理路由复用 JWT owner 解析；唯一 route/能力登记 | 路由或鉴权包装变化 |
 | AAR-C05 | Realtime：event-stream / kernel-events | Station→Desktop 实时通知、断线补偿 | adapted | 新增 StreamEvent 通知臂，Desktop SSE 优先；轮询降为补偿；ordering/replay 遵循 events 子服务器既有合同 | 扇出协议变化 |
-| AAR-C06 | Storage：unified runtime storage | 新 registry/inbound 表、secret 哈希、spool | required | Station 侧经既有 RDS/迁移机制；CLI spool 仅落用户机器配置目录（0600），不入项目目录 | 存储归属变化 |
+| AAR-C06 | Storage：unified runtime storage | 新 registry/inbound 表、secret 哈希 | required | Station 侧经既有 RDS/迁移机制；v1 无官方 CLI/spool，调用方缓冲只落其本机配置目录（0600），不入项目目录 | 存储归属变化 |
 | AAR-C07 | UI Foundation：LobeUI/packages/ui | Bot 设置页、Bot 消息卡片、tray 菜单 | required | 先复用 LobeUI/现有设置框架；tray 菜单是 Rust 原生菜单，不造 Web 平行实现 | UI 基础件升级 |
 | AAR-C08 | Identity/Trust：scope boundary、security | 新 actor 类型、secret 凭据、非 E2EE 会话、公开端点 | required | 服务端 mint 隐藏 actor；secret 仅哈希；新投递类型仅系统发送方可用；客户端去 E2EE 锁；联邦 v1 禁用 | 联邦化/常驻客户端加密落地 |
 | AAR-C09 | Logging/Errors | 外部入站、限流、失败路径 | required | 复用 station logger 与字符串错误码+HTTP 状态惯例；禁止日志记录 secret/完整 body | — |
@@ -48,10 +48,10 @@
 ## 3. 系统架构
 
 ```text
-┌──────── 用户机器 ──────────────────────────────────────────────────────┐
-│ coding agent ──hook──▶ peersbot CLI（stdlib、0600 配置、有界 spool）     │
+┌──────── 用户机器 / 外部系统 ─────────────────────────────────────────────┐
+│ coding agent ─hook→ curl/jq · CI · SaaS · 任意 HTTP 客户端（v1 无官方 CLI） │
 └──────────────────────────────┬────────────────────────────────────────┘
-                               │ HTTPS  Authorization: Bearer <secret>（固定 5s 预算）
+                               │ HTTPS  Authorization: Bearer <secret>（调用方固定 ~5s 预算）
 ┌──────── Station 进程 ─────────▼────────────────────────────────────────┐
 │ HTTP edge                                                              │
 │  POST /bot/webhook/:webhook_id     （JWT 外，secret 鉴权，流式 32KiB）   │
@@ -122,7 +122,7 @@
 
 ## 6. 失败语义
 
-- CLI：5s 超时 → 有界 spool（1 MiB/24h，最旧先丢，脱敏日志）→ exit 0；401/404 视该事件终态丢弃；下次调用先冲刷 spool。
+- 调用方（agent hook / CI）：固定约 5s 超时、失败不致命（`curl --max-time 5 … || true`）；401/400/413 视为终态丢弃；需补偿时用同一 `request_id` 重试（24h 幂等）。v1 不提供官方 CLI / spool，详见 webhook-api.md §8。
 - Station 准入后失败：inbound 行补偿为 quarantined 并返回 500；同 request_id 重试幂等驱动消息+通知两件产物，无部分成功稳态。
 - 扇出失败：持久化不回滚，SSE resume/轮询收敛。
 - 过载：先于 body 解析限流；大 payload fail-closed；无界队列禁止。
@@ -137,7 +137,7 @@
 | G-BOT-02 | AGENT 无法完成一台 Station 托管设备登记与 endpoint manifest 放行（含白名单/迁移映射传播集）。注意：服务明文投递不消费 content prekey/X3DH，prekey 发布不是 Bot 的必验路径 |
 | G-BOT-03 | 不经会话 repository 耦合完成服务明文投递不可行，或其线协议面未闭合：PreparedEndpointPayloadKind=8、成员 actor_kind/消息安全标记、messaging-core 明文 processor 与 skip+ack、FederationID 内部来源 |
 | G-BOT-04 | 同 request_id 重试产生重复消息，或在通知偏好允许时产生重复通知行 |
-| G-BOT-05 | hook CLI 可能非零退出或超预算拖慢 agent（实测，非推断） |
+| G-BOT-05 | 调用方（agent hook）可能因非零退出或超预算拖慢 agent。v1 无官方 CLI，证伪条件为 webhook-api.md §8 的调用约定无法满足“固定墙上时间 + 失败不致命 + 幂等重试”（以 curl 实测，非推断） |
 | G-BOT-06 | 打包 Desktop：隐藏→事件→OS 通知→点击→Bot 会话深链全链路失败 |
 | G-BOT-07 | 单 webhook 可突破速率/体积限制填满存储或扇出队列 |
 | G-BOT-08 | disable/revoke 对紧随其后的请求不即时生效 |

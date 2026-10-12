@@ -98,19 +98,14 @@ app/subserver/events/...                                        # StreamEvent �
 app/cmd/.../main.go                                            # server.WithSubServer(bot)
 ```
 
-## 4. CLI
+## 4. 调用方（v1 无仓库内 CLI）
 
-```text
-tooling/cli/peersbot/
-├── go.mod              # 独立 module；仅标准库依赖
-├── main.go             # flags/stdin/配置解析
-├── event.go            # canonical event（镜像 webhook.proto JSON）
-├── adapters/
-│   ├── claudecode.go   # Stop / Notification
-│   └── generic.go      # canonical JSON 透传
-├── spool.go           # 有界磁盘 spool + 启动冲刷
-└── config.go          # env + 0600 配置文件
-```
+v1 **不创建** `tooling/cli/peersbot`（BOT-D10 superseded、S4 deferred）。外部 agent / CI /
+SaaS 直接对 HTTP 端点负责，接入合同与 curl/jq hook 片段见
+[webhook-api.md](./webhook-api.md)，不占本仓库目录。
+
+未来若提供官方受维护的发送端，它作为 `apps/` 一等公民立项（独立 module、独立生命周期与
+发布），不放在 `tooling/` 开发工具层；届时再在本节登记目录树。
 
 ## 5. Desktop
 
@@ -145,5 +140,5 @@ apps/desktop/src/
 - ingest：归一化、脱敏、限流、32KiB 流式截断、补偿隔离。
 - http：未知 id/错 secret 不可区分、状态码、滥用计数、公开路由无 JWT 依赖。
 - 集成：manifest 白名单、系统发送端口、授予校验、服务明文端到端、通知事务一致性。
-- CLI：全失败路径 exit 0、spool 边界与冲刷、Claude fixture。
+- 对外合同：以真实 HTTP Journey 验证 curl 接入（鉴权不可区分、状态码、限流、幂等）；v1 无 CLI 单测/spool 测试（S4 deferred）。
 - Desktop：运行时投影单测 + 打包 Journey（G-BOT-06/10）。

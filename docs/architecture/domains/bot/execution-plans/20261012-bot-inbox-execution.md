@@ -14,8 +14,8 @@
 - **垂直闭环优先**：每个切片以"可验证交付"收尾（Station 集成测试或打包 Desktop Journey），不交付纯水平层。
 - **结构性证明前置**：G-BOT-02（AGENT 身份链）与 G-BOT-03（系统发送方服务明文投递）在任何 UI/webhook 编排前先证明；任一受阻立即回到 DESIGN，不堆功能。
 - **Proto-first**：任何数据模型先落 `model/domain/*`，禁止手写模型与编辑生成文件。
-- **无 mock**：前后端协同一律真实 BFF↔Station；CLI 对真实 webhook 端点。
-- **单一摄入管道**：本机 CLI 与外部系统共用同一个 Station webhook 入口，不建第二份。
+- **无 mock**：前后端协同一律真实 BFF↔Station；调用方对真实 webhook 端点。
+- **单一摄入管道**：本机调用方（curl/hook）与外部系统共用同一个 Station webhook 入口，不建第二份。
 - **单向 v1 语义**：Bot 仅入站 webhook；会话内无回复输入、无呼叫、无 safety number（原型已确认，见 [prototype/README.md](../prototype/README.md)）。
 
 ---
@@ -27,11 +27,15 @@ S0 契约（proto 全集 + 生成）
  └─> S1 AGENT 身份链（G-BOT-02）+ registry 管理
       └─> S2 系统发送方 + direct_service_plaintext（G-BOT-03）+ messaging-core 接收
            └─> S3 webhook 摄入 + 事务双产物 + 总线/SSE（Station 端到端）
-                 ├─> S4 peersbot CLI（可与 S5 并行）
                  └─> S5 Desktop tray/OS 通知/渲染/Bots 设置（G-BOT-06/10 打包 Journey）
+
+S4 peersbot CLI —— 已从 v1 移除（BOT-D10 superseded，2026-10-12）：
+   对外只交付 HTTP webhook 合同与 curl/hook 示例（../webhook-api.md），
+   不建 tooling/cli/peersbot；未来受维护发送端作为 apps/ 一等公民另立决策。
 ```
 
-S0→S1→S2→S3 为严格链（后片的主体身份与线协议由前片定义）。S4、S5 仅依赖 S3，可并行。
+S0→S1→S2→S3→S5 为严格链（后片的主体身份与线协议由前片定义）。S5 依赖 S3。
+原 S4 为可并行的可选发送端，现已 deferred / not-for-v1，不再是 S5 的前置。
 
 ---
 
@@ -45,7 +49,7 @@ S0→S1→S2→S3 为严格链（后片的主体身份与线协议由前片定�
 - `model/domain/chat/command.proto`：`PreparedEndpointPayloadKind = 8`（direct_service_plaintext）。
 - `model/domain/chat/conversation.proto`：`ConversationMember.actor_kind`；消息安全标记字段。
 - `model/domain/notification/notification.proto`：`NOTIFICATION_TYPE_BOT_EVENT = 410`；Produce 幂等键。
-- `model/domain/realtime/event.proto`：`StreamEvent` 新增通知臂（arm 27）。
+- `model/domain/realtime/event.proto`：`StreamEvent` 新增通知臂（arm 26 `bot_notification`）。
 - 新增 `model/domain/bot/bot.proto`（registry + 管理 API/枚举）、`webhook.proto`（IngestWebhookEvent*、source、severity）。
 - 运行 `./model/build.sh` 与 `./tooling/scripts/proto-gen-mobile.sh`。
 
@@ -115,11 +119,18 @@ S0→S1→S2→S3 为严格链（后片的主体身份与线协议由前片定�
 
 ---
 
-### S4 — peersbot CLI（与 S5 并行）
+### S4 — peersbot CLI（DEFERRED / not-for-v1，BOT-D10 superseded）
 
-范围（[module-layout.md §4](../module-layout.md)）：独立 Go module（仅标准库）；`adapters/claudecode.go`（Stop / Notification → task_completed / waiting_input / task_failed）、`adapters/generic.go`（canonical JSON 透传）；canonical event ≤32 KiB；5s 总预算超时；有界磁盘 spool（1 MiB / 24h、最旧先丢、启动冲刷）；env + 0600 配置；日志脱敏。
+**v1 不实现。** 不创建 `tooling/cli/peersbot`，不发布二进制，不承担 BOT-A40…A44 验收门。
 
-闭环：BOT-A40/A41（fixture 映射分类单测）、BOT-A42（Station 不可达 exit 0 + spool + 下次冲刷 Journey）、BOT-A43（spool 边界）、BOT-A44（401/404 终态丢弃、脱敏、exit 0、无递归告警）。
+- 对外交付物改为 [../webhook-api.md](../webhook-api.md)：端点、Bearer 鉴权、canonical JSON、
+  状态码、24h `request_id` 幂等、curl / CI / Claude Code hook 可直接抄的接入片段。
+- “hook 不阻塞 agent”由调用方按合同用 `curl --max-time 5 … || true` 满足；断网补偿以同
+  `request_id` 重试覆盖，不做官方 spool。
+- hook JSON→canonical event 的映射（Stop→task_completed、Notification→waiting_input/
+  task_failed）作为调用方约定写进 webhook-api.md §9，不属于 Station 代码。
+- 重启条件：若未来要官方受维护发送端，必须作为 `apps/` 一等公民立项（独立生命周期/发布），
+  重开 ADR 并恢复相应验收矩阵，而不是放回 `tooling/`。
 
 ---
 
@@ -143,15 +154,15 @@ S0→S1→S2→S3 为严格链（后片的主体身份与线协议由前片定�
 
 ## 3. 失败语义与横切验证
 
-- 入站任何失败都不阻塞 coding agent（CLI exit 0）；服务端不允许"静默成功"——准入后失败必须 quarantine 可补偿。
+- 入站任何失败都不阻塞 coding agent（调用方负责短超时与 exit 0，见 [webhook-api.md](../webhook-api.md) §8）；服务端不允许"静默成功"——准入后失败必须 quarantine 可补偿。
 - 每个切片收尾运行平台校验：Station `gofmt -l . && go test ./...`（受影响子服务器聚焦测试）；proto 两脚本；Desktop 收尾 `pnpm run check && pnpm run test && pnpm run build` + Tauri 打包 Journey。
 - 未演示的 Journey 一律标 `UNPROVEN`；BOT-A30/A31、G-BOT-10 不得以集成测试替代。
 
 ## 4. 切片外（v1 不做）
 
-Bot 双向指令/审批/回复、Bot 向非 owner 或联邦发信、A2A Agent Card、Mobile push 分发器、多账号 Bot 管理。
+Bot 双向指令/审批/回复、Bot 向非 owner 或联邦发信、A2A Agent Card、Mobile push 分发器、多账号 Bot 管理、官方 sender CLI（S4 deferred；对外只交付 [webhook-api.md](../webhook-api.md)）。
 
 ## 5. 开工前置（EXECUTE 首个动作）
 
 1. DESIGN 翻 active：登记 `architecture-governance/architecture-modules.json` 与 `docs/README.md` §4.1（required docs 齐备）。
-2. `make dev-start` 发布开发声明（来源：Station/frame/model/messaging-core/apps/desktop/CLI），按 §13.5 绑定执行 worktree。
+2. `make dev-start` 发布开发声明（来源：Station/frame/model/messaging-core/apps/desktop），按 §13.5 绑定执行 worktree。

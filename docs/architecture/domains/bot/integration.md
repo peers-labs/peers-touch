@@ -104,7 +104,7 @@ Rust（`apps/desktop/src-tauri`）：
 
 TypeScript（`apps/desktop/src`）：
 
-- 全局层 Settings 新增 Bots 管理区（创建/轮换/停用/吊销、URL 与 CLI 片段复制）。
+- 全局层 Settings 新增 Bots 管理区（创建/轮换/停用/吊销、URL 与 curl 接入片段复制）。
 - `peers-touch.bot-event.v1` Bot 事件卡片（状态字形、严重度、来源、主操作按钮）。
 - 通知 SSE 摄入改造；tray 角标只消费既有未读 store，不新建真源。
 - 全部可见文案走 i18n；Bot 提供的 title/body 作为数据渲染。
@@ -115,22 +115,26 @@ TypeScript（`apps/desktop/src`）：
   公开路由有既有先例（login/health/federation）；认证仅为 Bearer secret，
   常量时间比较；无 cookie/CSRF 面。
 - typed handler 在调用业务函数前缓冲至 64 MiB，**不能**用于该端点；webhook 处理器
-  使用流式 `BodyStream()` + 32 KiB `LimitReader` 包装，超限即 400。
+  使用流式 `BodyStream()` + 32 KiB `LimitReader` 包装，超限即 413。
 - 管理路由 `/bot/...` 走既有 JWT 包装与 owner subject 解析。
 - 端点无状态：同库任意 Station 进程均可接收，集群拓扑无需粘性会话。
 - 进程注册：新子服务器经 `app/cmd/...main.go` 的 `server.WithSubServer(...)` 挂载（
   module-layout 已列）。
 
-## 7. CLI 集成（`peersbot`）
+## 7. 调用方集成（v1 无官方 CLI）
 
-- 独立 Go 小模块：`tooling/cli/peersbot/go.mod`（仓库 Go module 位于
-  `apps/station/app`、`apps/station/frame`，该路径不属于任何现有 module；CLI 仅用
-  标准库，不依赖 station 代码）。
-- 适配器：Claude Code `Stop`→task_completed、`Notification`→waiting_input/
-  task_failed；另有 canonical JSON 透传模式。
-- 配置：flags → env（`PEERS_BOT_URL`/`PEERS_BOT_SECRET`）→ 用户配置目录 0600 文件。
-- 本地截断/脱敏是 UX 不是安全边界，Station 重新校验；spool 不存 secret 内容，
-  401/404 终态丢弃，始终 exit 0。
+v1 不提供、不维护 sender CLI（BOT-D10 superseded）。对外只交付
+[webhook-api.md](./webhook-api.md)：任意 HTTP 客户端（curl、CI、SaaS、agent hook 脚本）
+直接调用同一端点。要点：
+
+- 调用方发送 canonical proto-JSON（严格拒绝未知字段，枚举用完整名）；hook 原生 JSON
+  →canonical event 的映射（Claude Code `Stop`→task_completed、`Notification`→
+  waiting_input/task_failed）是调用方职责，webhook-api.md §9 给了 curl/jq 片段。
+- 凭证来自环境变量 / 本地 0600 配置（如 `PEERS_BOT_URL`、`PEERS_BOT_SECRET`），Station
+  不规定其装载方式。
+- 不阻塞 agent 由调用方保证：固定约 5s 超时、失败不致命（`|| true`）；401/400/413 终态
+  丢弃，需补偿时用同一 `request_id` 重试（24h 幂等）。v1 不提供官方 spool。
+- 未来若官方维护发送端，它是 `apps/` 下的一等公民（独立生命周期/发布），不落在 `tooling/`。
 
 ## 8. 联邦边界
 
@@ -152,7 +156,7 @@ TypeScript（`apps/desktop/src`）：
 | Station 新 bot 子服务器 | 全新 DDD 模块 |
 | Desktop Rust | tray-icon feature、官方通知插件、两个运行时模块 |
 | Desktop TS | 设置页、卡片、SSE 通知摄入、i18n |
-| CLI | 新独立 module 与构建产物 |
+| 调用方集成（无官方 CLI） | 仅文档化 HTTP 合同 webhook-api.md；不在本仓库新增发送端代码（S4 deferred） |
 | Mobile | 仅共享 crate 的 skip+ack 行为；无功能 UI 开发 |
 
 ## 10. 观测与文档触点

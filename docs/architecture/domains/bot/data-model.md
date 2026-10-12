@@ -274,14 +274,15 @@ POST → 解析 :webhook_id
 
 ## 5. 限流与常量（v1 默认）
 
-| 常量 | 值 |
+| 常量 | 值（与已上线实现一致） |
 |---|---|
-| body 上限 | 32 KiB（流式 LimitReader，typed handler 的 64 MiB 缓冲不适用） |
-| title / 单条 label | 200 / key 128、value 512；labels ≤ 16 |
-| request_id | ≤ 128 字符；幂等窗口 24h |
-| per-Bot | 60/min（可配置下限 1、上限 600） |
-| per-IP 溢出 | 共享突发桶，超限 429 |
-| CLI 超时 / spool | 5s 总预算 / 1 MiB / 24h，最旧先丢 |
+| body 上限 | 32 KiB（流式 `LimitReader`，超限 413；typed handler 的 64 MiB 缓冲不适用） |
+| 文本字段 | request_id / title / body / group_key / dedupe_key / source 各字符串均 ≤ `MaxFieldLen` = 2 KiB；title 与 body 至少一个非空 |
+| labels | ≤ 32 项；key ≤ 100 字节、value ≤ 512 字节 |
+| request_id 幂等窗口 | 24 h |
+| per-Bot | 默认 120/min（令牌桶，Bot 记录带 `rate_limit_per_minute`），超限 429 |
+| per-IP 溢出 | 600/min（`ipOverflowPerMinute`），超限 429 |
+| 调用方超时（非服务端常量） | v1 无官方 CLI/spool；建议调用方固定约 5s 墙上时间、失败不致命，并用同一 request_id 幂等重试（见 webhook-api.md §8） |
 
 ## 6. 错误码
 

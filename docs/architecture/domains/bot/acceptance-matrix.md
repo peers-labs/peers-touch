@@ -60,15 +60,19 @@
 | BOT-A34 | 非法 action scheme | 单测 | Rust 允许列表拒绝，无命令执行面 |
 | BOT-A35 | 多窗口 | Journey | 每设备一条 OS 通知 |
 
-## 5. CLI / hook
+## 5. 调用方接入（v1 无官方 CLI）
 
-| ID | 场景 | 类型 | 期望 |
-|----|------|------|------|
-| BOT-A40 | Claude Stop fixture | 单测 | 映射正确、≤32 KiB、canonical JSON |
-| BOT-A41 | Claude Notification fixture | 单测 | waiting_input/task_failed 分类正确 |
-| BOT-A42 | Station 不可达 | 单测/Journey | 预算内 exit 0；spool；下次冲刷（ACP-4、G-BOT-05 实测） |
-| BOT-A43 | spool 边界 | 单测 | 1 MiB/24h、最旧先丢、日志无密钥 |
-| BOT-A44 | 401/404 吊销 Bot | 单测 | 本地终态丢弃、脱敏日志、exit 0，无递归告警 |
+原 BOT-A40…A44 针对 `peersbot` 二进制（fixture 映射、spool 边界、终态丢弃 exit 0）。
+随 BOT-D10 superseded / S4 deferred，这些门在 v1 **取消**——没有受维护的客户端代码可测。
+
+v1 改为以**真实 HTTP Journey**验证调用方合同（已在 S3 完成，见
+[webhook-api.md](./webhook-api.md)）：
+
+- 正确 secret + canonical JSON → 200 `ACCEPTED`；同 `request_id` 重试 → 200 `DEDUPLICATED` 且产物不重复。
+- 未知 id / 错 secret 不可区分 → 401 `unauthorized`；坏 schema/未知字段 → 400；体 >32 KiB → 413。
+- 调用约定可满足不阻塞 agent：`curl --max-time 5 … || true` 固定墙上时间且失败不致命；以同一 `request_id` 幂等重试。
+
+当未来在 `apps/` 立项官方发送端时，恢复相应的映射分类、spool/重试与终态丢弃验收门。
 
 ## 6. 架构验证门（执行早期证明）
 
