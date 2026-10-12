@@ -181,11 +181,24 @@ function assertContract(condition, code, message) {
   if (!condition) throw new JourneyContractError(code, message);
 }
 
+const requiredMobileRuntimeIds = new Set([
+  'messaging',
+  'chat-storage',
+  'command',
+  'social',
+]);
+
 function assertMobileRuntimeAvailable(clientId, state) {
+  const unavailableRuntimeIds = Array.isArray(state?.unavailableRuntimeIds)
+    ? state.unavailableRuntimeIds
+    : [];
+  const requiredUnavailable = unavailableRuntimeIds.filter(
+    (runtimeId) => requiredMobileRuntimeIds.has(runtimeId),
+  );
   assertContract(
-    !String(state?.text || '').includes('Features Unavailable'),
+    requiredUnavailable.length === 0,
     'MOBILE_RUNTIME_UNAVAILABLE',
-    `${clientId} entered Shell before its required runtime graph was available`,
+    `${clientId} required runtimes are unavailable: ${requiredUnavailable.join(', ')}`,
   );
   return state;
 }
@@ -2427,10 +2440,22 @@ async function ensureMobileAuthenticated(
     `
       const shell = document.querySelector('[data-product-surface^="shell."]');
       const text = document.body?.innerText || '';
+      const unavailableRuntimeIds = [
+        ...document.querySelectorAll('[data-runtime-ids]')
+      ].filter((element) => (
+        element.getClientRects().length
+        && (element.innerText || '').includes('Features Unavailable')
+      )).flatMap((element) => (
+        (element.getAttribute('data-runtime-ids') || '')
+          .split(',')
+          .map((runtimeId) => runtimeId.trim())
+          .filter(Boolean)
+      ));
       return {
         ready: Boolean(shell)
           && !text.includes('Features Loading'),
-        text: text.slice(0, 1200)
+        text: text.slice(0, 1200),
+        unavailableRuntimeIds
       };
     `,
   );
@@ -10830,12 +10855,15 @@ function selfTest(matrix) {
     'SELF_TEST_STALE_ELEMENT_RETRY',
     'stale element retry classification is invalid',
   );
-  assertMobileRuntimeAvailable('self-test', { text: 'Chats' });
+  assertMobileRuntimeAvailable(
+    'self-test',
+    { unavailableRuntimeIds: ['private-social'] },
+  );
   let unavailableRuntimeRejected = false;
   try {
     assertMobileRuntimeAvailable(
       'self-test',
-      { text: 'Chats\nFeatures Unavailable' },
+      { unavailableRuntimeIds: ['private-social', 'messaging'] },
     );
   } catch (error) {
     unavailableRuntimeRejected = error instanceof JourneyContractError
