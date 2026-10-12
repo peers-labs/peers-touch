@@ -1135,23 +1135,17 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     }
     const port = getDraftRestorationPort();
     await port.save(envelope);
-    const persisted = await port.load(
-      account.stationPeerId,
-      account.actorPtid,
-      envelope.surfaceKind,
-      targetId,
-    );
+    const persisted = (
+      await port.list(
+        account.stationPeerId,
+        account.actorPtid,
+        envelope.surfaceKind,
+      )
+    ).find((draft) => draft.targetId === targetId);
     if (!persisted) {
       throw new Error('acceptance.mobile.reliabilityDraftWriteMissing');
     }
-    return publicReliabilityDraft({
-      key: `${persisted.surfaceKind}:${persisted.targetId}`,
-      kind: input.kind === 'chat' ? 'chat' : 'moments',
-      surfaceKind: input.kind,
-      targetId: persisted.targetId,
-      updatedAtMs: now,
-      envelope: persisted,
-    });
+    return publicReliabilityDraft(persisted);
   },
 
   'reliability.draft.read': async (input) => {
