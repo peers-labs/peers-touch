@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
@@ -13,12 +14,18 @@ const DefaultRequestReadTimeout = 3 * time.Minute
 // serverOptionsKey is the context key for server options.
 type serverOptionsKey struct{}
 
+// ClusterReadinessProbe verifies one enabled owner's shared runtime backing.
+// Stateful owners should prefer implementing ClusterReadiness on the
+// Subserver itself when the check depends on initialized private state.
+type ClusterReadinessProbe func(context.Context) (string, error)
+
 var (
 	wrapper = option.NewWrapper[Options](serverOptionsKey{}, func(options *option.Options) *Options {
 		o := &Options{
-			Options:            options,
-			SubServers:         map[string]subServerNewFunctions{},
-			SubserverInstances: map[string]Subserver{},
+			Options:                options,
+			SubServers:             map[string]subServerNewFunctions{},
+			SubserverInstances:     map[string]Subserver{},
+			ClusterReadinessProbes: map[string]ClusterReadinessProbe{},
 		}
 
 		return o
@@ -56,6 +63,10 @@ type Options struct {
 	// Populated by BaseServer.init() after each subserver is created and initialised,
 	// so that any subserver (e.g. dashboard) can discover its siblings at Start time.
 	SubserverInstances map[string]Subserver
+
+	// ClusterReadinessProbes holds explicit composition-root declarations for
+	// enabled owners whose readiness does not depend on private subserver state.
+	ClusterReadinessProbes map[string]ClusterReadinessProbe
 }
 
 // WithAddress sets the server address.
@@ -152,6 +163,18 @@ func WithSubServer(name string, newFunc func(opts ...option.Option) Subserver, s
 			exec:    newFunc,
 			options: subServerOptions,
 		}
+	})
+}
+
+// WithClusterReadinessProbe declares the shared backing contract for one
+// registered subserver. Cluster admission still fails closed when an enabled
+// owner has neither this declaration nor an owner-implemented readiness probe.
+func WithClusterReadinessProbe(
+	name string,
+	probe ClusterReadinessProbe,
+) option.Option {
+	return wrapper.Wrap(func(opts *Options) {
+		opts.ClusterReadinessProbes[name] = probe
 	})
 }
 

@@ -479,12 +479,17 @@
       "synthetic_paths": [
         "apps/station/frame/core/plugin/native/node/cluster_admission.go",
         "apps/station/frame/core/auth/station_keyring.go",
+        "apps/station/app/main.go",
+        "apps/station/app/subserver/clusterreadiness/readiness.go",
+        "apps/station/app/subserver/conversation/subserver.go",
         "apps/station/app/subserver/events/events.go",
         "apps/station/app/subserver/agent/agent.go",
         "apps/station/app/subserver/oss/oss.go",
+        "apps/station/app/subserver/social/subserver.go",
         "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
         "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
-        "tooling/scripts/node-connectivity-journey.py"
+        "tooling/acceptance/gates/station_access/node_connectivity_cluster_native_e2e.py",
+        "tooling/acceptance/provisioners/node_connectivity_cluster.py"
       ],
       "evidence": {
         "truth_sources": [
@@ -510,9 +515,10 @@
           "healthy foreign work survives peer boot and stale Agent/OSS effects cannot commit after takeover"
         ],
         "unproven_scope": [
-          "the complete production Station owner composition remains UNPROVEN and cluster mode fails closed until every enabled owner declares readiness",
-          "real Native Desktop same-Station failover, Session continuity, safe read retry, and mutation reconciliation remain UNPROVEN until the NCP-08 product Journey",
+          "the complete production Station owner composition remains UNPROVEN until the upgraded NCP-G06 runs on exact source",
+          "real Native Desktop same-Station failover, Session continuity, safe read retry, and mutation reconciliation remain UNPROVEN until the upgraded NCP-G06 product Journey passes",
           "Mobile runtime behavior remains UNPROVEN",
+          "S3-specific shared object behavior remains UNPROVEN",
           "database and object-store infrastructure HA remain operator-owned"
         ]
       }

@@ -38,6 +38,10 @@ type clusterReadinessSubserverFixture struct {
 	identity string
 }
 
+type clusterPlainSubserverFixture struct {
+	name string
+}
+
 func (clusterReadinessSubserverFixture) Init(
 	context.Context,
 	...option.Option,
@@ -80,6 +84,91 @@ func (f clusterReadinessSubserverFixture) ClusterReadiness(
 	context.Context,
 ) (string, error) {
 	return f.identity, nil
+}
+
+func (clusterPlainSubserverFixture) Init(
+	context.Context,
+	...option.Option,
+) error {
+	return nil
+}
+
+func (clusterPlainSubserverFixture) Start(
+	context.Context,
+	...option.Option,
+) error {
+	return nil
+}
+
+func (clusterPlainSubserverFixture) Stop(context.Context) error {
+	return nil
+}
+
+func (f clusterPlainSubserverFixture) Name() string {
+	return f.name
+}
+
+func (clusterPlainSubserverFixture) Address() server.SubserverAddress {
+	return server.SubserverAddress{}
+}
+
+func (clusterPlainSubserverFixture) Status() server.Status {
+	return server.StatusRunning
+}
+
+func (clusterPlainSubserverFixture) Handlers() []server.Handler {
+	return nil
+}
+
+func (clusterPlainSubserverFixture) Type() server.SubserverType {
+	return server.SubserverTypeHTTP
+}
+
+func TestClusterReadinessProbeUsesOwnerThenCompositionDeclaration(
+	t *testing.T,
+) {
+	direct := clusterReadinessSubserverFixture{
+		name:     "direct",
+		identity: "direct-identity",
+	}
+	options := &server.Options{
+		ClusterReadinessProbes: map[string]server.ClusterReadinessProbe{
+			"direct": func(context.Context) (string, error) {
+				return "wrong-identity", nil
+			},
+			"declared": func(context.Context) (string, error) {
+				return "declared-identity", nil
+			},
+		},
+	}
+	directProbe := clusterReadinessProbeForOwner(options, "direct", direct)
+	if directProbe == nil {
+		t.Fatal("owner readiness probe was not selected")
+	}
+	if identity, err := directProbe(t.Context()); err != nil ||
+		identity != "direct-identity" {
+		t.Fatalf("owner readiness identity=%q err=%v", identity, err)
+	}
+
+	declaredProbe := clusterReadinessProbeForOwner(
+		options,
+		"declared",
+		clusterPlainSubserverFixture{name: "declared"},
+	)
+	if declaredProbe == nil {
+		t.Fatal("composition readiness declaration was not selected")
+	}
+	if identity, err := declaredProbe(t.Context()); err != nil ||
+		identity != "declared-identity" {
+		t.Fatalf("declared readiness identity=%q err=%v", identity, err)
+	}
+	if probe := clusterReadinessProbeForOwner(
+		options,
+		"missing",
+		clusterPlainSubserverFixture{name: "missing"},
+	); probe != nil {
+		t.Fatal("undeclared cluster owner received a readiness probe")
+	}
 }
 
 func TestStationNodeRegistryFencesIncarnationAndBacking(t *testing.T) {

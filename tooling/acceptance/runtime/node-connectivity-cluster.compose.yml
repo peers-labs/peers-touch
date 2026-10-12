@@ -1,0 +1,98 @@
+x-station-common: &station-common
+  image: ${PT_NCP_STATION_IMAGE:?PT_NCP_STATION_IMAGE is required}
+  build:
+    context: ../../..
+    dockerfile: tooling/docker/station.Dockerfile
+    args:
+      BUILD_COMMIT: ${PT_NCP_SOURCE_COMMIT:?PT_NCP_SOURCE_COMMIT is required}
+      BUILD_LABEL: ncp-cluster-acceptance
+      BUILD_TIME: ${PT_NCP_BUILD_TIME:?PT_NCP_BUILD_TIME is required}
+      BUILDER_IMAGE: ${PT_NCP_BUILDER_IMAGE:-hub.byted.org/library/ubuntu:22.04}
+      BASE_IMAGE: ${PT_NCP_BASE_IMAGE:-hub.byted.org/library/ubuntu:22.04}
+  environment: &station-environment
+    PEERS_NODE_ROLE: station
+    PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
+    PEERS_OAUTH_BRIDGE_SECRET: ${PEERS_OAUTH_BRIDGE_SECRET:-}
+    PEERS_DATA_DIR: /app/shared
+    PEERS_DB_DSN: host=postgres user=${POSTGRES_USER:-peers} password=${PEERS_DB_PASSWORD} dbname=${POSTGRES_DB:-peers_touch} port=5432 sslmode=disable TimeZone=Asia/Shanghai
+    PEERS_STATION_CLUSTER_MODE: cluster
+    PEERS_STATION_CLUSTER_LEASE_SECONDS: "15"
+    PEERS_STATION_CLUSTER_HEARTBEAT_SECONDS: "5"
+    PEERS_STATION_ROOT_KEY_FILE: shared/bootstrap.key
+    PEERS_STATION_NODE_KEY_FILE: data/station-node.key
+    PEERS_LIBP2P_IDENTITY_KEY_FILE: data/libp2pIdentity.key
+    PEERS_NODE_SERVER_SUBSERVER_OSS_STORE_PATH: /app/shared/oss
+    PEERS_OSS_BACKEND: shared-fs
+    PEERS_FEDERATION_DIRECT_OUTBOUND: "true"
+    PEERS_FEDERATION_DIRECT_INBOUND: "true"
+    PEERS_NODE_LABEL: ${PT_NCP_NODE_LABEL:-NCP Cluster}
+    LIVEKIT_API_URL: ${LIVEKIT_API_URL:-}
+    LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-}
+    LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+    LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+  depends_on:
+    postgres:
+      condition: service_healthy
+  healthcheck:
+    test:
+      - CMD
+      - wget
+      - -qO-
+      - --tries=1
+      - --timeout=3
+      - http://127.0.0.1:18080/sub-oss/healthz
+    interval: 5s
+    timeout: 3s
+    retries: 24
+    start_period: 30s
+  restart: "no"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-peers}
+      POSTGRES_PASSWORD: ${PEERS_DB_PASSWORD:?PEERS_DB_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-peers_touch}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-peers} -d ${POSTGRES_DB:-peers_touch}
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: "no"
+
+  station-node-a:
+    <<: *station-common
+    environment:
+      <<: *station-environment
+      PEERS_NODE_SERVER_BASEURL: ${PT_NCP_NODE_A_URL:?PT_NCP_NODE_A_URL is required}
+      PEERS_LIBP2P_PUBLIC_ADDRS: /ip4/${PT_NCP_REMOTE_HOST:?PT_NCP_REMOTE_HOST is required}/tcp/${PT_NCP_NODE_A_LIBP2P_PORT:?PT_NCP_NODE_A_LIBP2P_PORT is required}
+    ports:
+      - ${PT_NCP_NODE_A_HTTP_PORT:?PT_NCP_NODE_A_HTTP_PORT is required}:18080
+      - ${PT_NCP_NODE_A_LIBP2P_PORT}:4001
+    volumes:
+      - station-shared:/app/shared
+      - station-node-a:/app/data
+
+  station-node-b:
+    <<: *station-common
+    environment:
+      <<: *station-environment
+      PEERS_NODE_SERVER_BASEURL: ${PT_NCP_NODE_B_URL:?PT_NCP_NODE_B_URL is required}
+      PEERS_LIBP2P_PUBLIC_ADDRS: /ip4/${PT_NCP_REMOTE_HOST:?PT_NCP_REMOTE_HOST is required}/tcp/${PT_NCP_NODE_B_LIBP2P_PORT:?PT_NCP_NODE_B_LIBP2P_PORT is required}
+    ports:
+      - ${PT_NCP_NODE_B_HTTP_PORT:?PT_NCP_NODE_B_HTTP_PORT is required}:18080
+      - ${PT_NCP_NODE_B_LIBP2P_PORT}:4001
+    volumes:
+      - station-shared:/app/shared
+      - station-node-b:/app/data
+
+volumes:
+  postgres-data:
+  station-shared:
+  station-node-a:
+  station-node-b:
