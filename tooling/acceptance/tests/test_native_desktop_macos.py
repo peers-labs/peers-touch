@@ -164,6 +164,13 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             source.index("bounds = self._await_window_bounds(process_id)"),
         )
 
+    def test_window_bounds_wait_uses_native_startup_budget(self) -> None:
+        default = inspect.signature(
+            NativeDesktopMacOSProvisioner._await_window_bounds
+        ).parameters["timeout_seconds"].default
+
+        self.assertEqual(default, 30.0)
+
     def test_window_bounds_wait_retries_transient_visibility(self) -> None:
         transient = BlockedError(
             reason=(
