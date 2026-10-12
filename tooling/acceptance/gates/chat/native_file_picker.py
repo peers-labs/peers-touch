@@ -68,10 +68,11 @@ def select_native_file(
         return (
             control
             if control.window_count >= 1
+            and control.dialog_count == 0
             and control.main_window
             and control.frontmost
-            and control.kind
-            not in {"list", "text-field", "application-dialog"}
+            and control.actual_frontmost_pid == process_id
+            and control.kind != "application-dialog"
             else None
         )
 
