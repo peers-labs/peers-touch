@@ -330,6 +330,21 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
       });
       return;
     }
+    case 'botNotification': {
+      const b = kind.value;
+      // Minimal wake signal: inbox/unread are driven by the envelope arm.
+      // This only publishes the gating input for the OS banner decision.
+      eventBus.publish(EVENT.REALTIME_BOT_NOTIFICATION, {
+        eventId,
+        notificationId: b.notificationId,
+        recipientActorPtid: b.recipientActorPtid,
+        notificationType: b.notificationType,
+        category: b.category,
+        groupKey: b.groupKey,
+        createdTsUnixMs: Number(b.createdTsUnixMs),
+      });
+      return;
+    }
     case 'conversationSettingsChanged': {
       const c = kind.value;
       const conversationKind = conversationSettingsKindFromEnum(c.kind);

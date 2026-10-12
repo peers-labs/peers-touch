@@ -919,5 +919,7 @@
   "chat.bot.openAction": "Open",
   "chat.bot.stationManagedTip": "Automated bot · Station-resident, not end-to-end encrypted",
   "chat.bot.stationManaged": "Automated bot · Station resident",
-  "chat.bot.oneWayComposer": "One-way webhook channel — replies are not supported"
+  "chat.bot.oneWayComposer": "One-way webhook channel — replies are not supported",
+  "chat.bot.notificationFallbackTitle": "Bot update",
+  "chat.bot.notificationFallbackBody": "A bot posted a new event in your conversation"
 }

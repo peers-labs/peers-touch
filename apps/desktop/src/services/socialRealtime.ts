@@ -12,6 +12,7 @@ import type {
   RelationshipChangedPayload,
 } from '../kernel/events/types';
 import { installEventStreamBridge, startEventStream, stopEventStream } from './eventStream';
+import { installBotNotificationGate, teardownBotNotificationGate } from './botNotificationGate';
 import { api, type NotificationData } from './desktop_api';
 import { NotificationType } from '../gen/proto/domain/notification/notification_pb';
 import { useNotificationStore } from '../store/notification';
@@ -176,6 +177,14 @@ export async function refreshSocialProjection(label: string, includeNotification
 
 export function dispatchSocialRuntimeHostEvent(event: SocialHostEvent): void {
   if (!currentAuthenticatedActorPtid()) return;
+
+  // BOT-A31: a native notification tap carries the conversation ULID — open
+  // that conversation (selecting it also clears unread / marks read) and
+  // navigate to the social chat surface.
+  if (event.kind === 'notification-tap' && event.sessionUlid) {
+    useSocialChatStore.getState().selectSession(event.sessionUlid);
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'chat' });
+  }
 
   if (socialHostEventTargetsNotifications(event)) {
     runDetached('host notification refresh', async () => {
@@ -382,10 +391,13 @@ export function installSocialRealtimeBridge(): void {
     useNotificationStore.subscribe(onNotificationProjectionChanged),
   ];
 
+  installBotNotificationGate();
+
   reconcileAuthenticatedRuntime();
 
   teardownBridge = () => {
     unsubs.forEach((unsubscribe) => unsubscribe());
+    teardownBotNotificationGate();
     stopSocialReconcile();
     if (externalHostReconcileTimer) {
       window.clearTimeout(externalHostReconcileTimer);

@@ -7915,6 +7915,18 @@ export const api = {
       input,
     ),
 
+  nativeNotificationShow: (input: NativeNotificationShowInput) =>
+    invokeRustDataFromStatus<NativeNotificationShowInput, NativeNotificationShowResult>(
+      'native_notification_show',
+      input,
+    ),
+
+  nativeDockSetBadge: (unreadConversationCount: number) =>
+    invokeRustDataFromStatus<
+      { unreadConversationCount: number },
+      NativeDockBadgeResult
+    >('native_dock_set_badge', { unreadConversationCount }),
+
   // ── Station registry (dynamic URL picker) ──
 
   stationList: () =>
@@ -8149,6 +8161,26 @@ export type NotificationPreferencesUpdateOutcome =
 export interface NotificationPreferencesUpdateResult {
   outcome: NotificationPreferencesUpdateOutcome;
   snapshot: NotificationPreferencesSnapshotData;
+}
+
+export interface NativeNotificationShowInput {
+  notificationId: string;
+  title: string;
+  body: string;
+  sessionUlid?: string;
+  target?: string;
+  groupKey?: string;
+  playSound?: boolean;
+}
+
+export interface NativeNotificationShowResult {
+  scheduled: boolean;
+  notificationId: string;
+}
+
+export interface NativeDockBadgeResult {
+  applied: boolean;
+  unreadConversationCount: number;
 }
 
 function notificationSnapshotMatchesUpdates(
