@@ -438,6 +438,78 @@ pub struct DirectMessageContent {
     pub thread_root_message_id: Option<String>,
 }
 
+/// Structured `peers-touch.bot-event.v1` body carried by a service-plaintext
+/// message. `None` for fallback-only service messages.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceBotEventProjection {
+    pub schema: String,
+    pub event_type: i32,
+    pub severity: i32,
+    pub bot_ptid: String,
+    pub group_key: String,
+    pub dedupe_key: String,
+    pub action_url: String,
+    pub source_agent: String,
+    pub source_workspace: String,
+    pub source_session_id: String,
+    /// Deterministically ordered (key, value) pairs.
+    pub source_labels: Vec<(String, String)>,
+}
+
+/// Readable projection of a non-E2EE, Station-resident service-plaintext
+/// message (bot webhook events). The message renders as an ordinary direct
+/// message; the security classification lives on the committed fact, not here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServicePlaintextMessageContent {
+    pub conversation_id: ConversationId,
+    pub event_id: String,
+    pub event_sequence: i64,
+    pub message_id: MessageId,
+    pub sender_ptid: Ptid,
+    pub sender_device_id: DeviceId,
+    pub fallback_text: String,
+    pub bot_event: Option<ServiceBotEventProjection>,
+    pub committed_at_unix_ms: i64,
+}
+
+/// Atomic receive commit for a direct_service_plaintext message. No crypto
+/// session is involved; the authority event chain is still advanced exactly
+/// like an encrypted receive.
+pub struct ServicePlaintextReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub event_sequence: i64,
+    pub projection: &'a ServicePlaintextMessageContent,
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
+/// Observe-only commit for an endpoint payload kind this client build does not
+/// understand. Durable consumption plus authority-chain advancement with no
+/// message projection: forward-compatible clients skip+ack future kinds
+/// instead of poisoning their device lane.
+pub struct SkippedEndpointReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub event_sequence: i64,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
 pub struct DirectReceiveCommit<'a> {
     pub item_id: &'a str,
     pub event_id: &'a str,

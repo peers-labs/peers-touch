@@ -323,6 +323,33 @@ CREATE INDEX IF NOT EXISTS idx_messaging_message_projections_thread
     ON messaging_message_projections(
         conversation_id, thread_root_message_id, event_sequence
     );
+-- Structured read model for non-E2EE Station service messages (bot webhook
+-- events). The ordinary row in messaging_message_projections carries the
+-- fallback text; this table holds the peers-touch.bot-event.v1 structured
+-- body for rich client rendering. Mobile v1 acks without inserting here.
+CREATE TABLE IF NOT EXISTS messaging_service_messages (
+    conversation_id TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    event_sequence INTEGER NOT NULL,
+    message_id TEXT NOT NULL,
+    sender_ptid TEXT NOT NULL,
+    sender_device_id TEXT NOT NULL,
+    fallback_text TEXT NOT NULL,
+    event_schema TEXT NOT NULL DEFAULT '',
+    event_type INTEGER NOT NULL DEFAULT 0,
+    event_severity INTEGER NOT NULL DEFAULT 0,
+    bot_ptid TEXT NOT NULL DEFAULT '',
+    group_key TEXT NOT NULL DEFAULT '',
+    dedupe_key TEXT NOT NULL DEFAULT '',
+    action_url TEXT NOT NULL DEFAULT '',
+    source_agent TEXT NOT NULL DEFAULT '',
+    source_workspace TEXT NOT NULL DEFAULT '',
+    source_session_id TEXT NOT NULL DEFAULT '',
+    source_labels_json TEXT NOT NULL DEFAULT '',
+    committed_at_unix_ms INTEGER NOT NULL,
+    PRIMARY KEY(conversation_id, event_id),
+    UNIQUE(conversation_id, message_id)
+);
 CREATE TABLE IF NOT EXISTS message_reactions (
     message_id TEXT NOT NULL,
     actor_ptid TEXT NOT NULL,

@@ -150,6 +150,29 @@ pub fn verify_device_event_delivery(
     local_ptid: &str,
     local_device_id: &str,
 ) -> Result<DeviceEventDelivery, String> {
+    verify_device_event_delivery_inner(item, local_ptid, local_device_id, false)
+        .map(|(delivery, _kind)| delivery)
+}
+
+/// Forward-compatible verification: an endpoint payload kind this build does
+/// not recognize is returned as `None` instead of failing. Every other
+/// binding (recipient, payload hash, authority event hash, delivery
+/// commitment, authority delivery set) is still enforced, so callers can
+/// skip+ack future kinds without weakening the channel.
+pub fn verify_device_event_delivery_any_kind(
+    item: &DurableDeviceInboxItem,
+    local_ptid: &str,
+    local_device_id: &str,
+) -> Result<(DeviceEventDelivery, Option<PreparedEndpointPayloadKind>), String> {
+    verify_device_event_delivery_inner(item, local_ptid, local_device_id, true)
+}
+
+fn verify_device_event_delivery_inner(
+    item: &DurableDeviceInboxItem,
+    local_ptid: &str,
+    local_device_id: &str,
+    allow_unknown_kind: bool,
+) -> Result<(DeviceEventDelivery, Option<PreparedEndpointPayloadKind>), String> {
     let recipient = item
         .recipient
         .as_ref()
@@ -190,14 +213,17 @@ pub fn verify_device_event_delivery(
     if delivery.delivery_commitment.len() != 32 {
         return Err("messaging delivery commitment shape is invalid".to_string());
     }
-    let payload_kind = PreparedEndpointPayloadKind::try_from(delivery.payload_kind)
-        .map_err(|_| "messaging delivery payload kind is invalid".to_string())?;
-    let commitment = delivery_commitment(
+    let parsed_kind = match PreparedEndpointPayloadKind::try_from(delivery.payload_kind) {
+        Ok(kind) => Some(kind),
+        Err(_) if allow_unknown_kind => None,
+        Err(_) => return Err("messaging delivery payload kind is invalid".to_string()),
+    };
+    let commitment = delivery_commitment_raw(
         &event.conversation_id,
         &event.event_id,
         recipient_ptid,
         &recipient.device_id,
-        payload_kind,
+        delivery.payload_kind as u32,
         &delivery.endpoint_payload_sha256,
     );
     if commitment.as_slice() != delivery.delivery_commitment {
@@ -210,7 +236,7 @@ pub fn verify_device_event_delivery(
     {
         return Err("messaging authority delivery set is invalid".to_string());
     }
-    Ok(delivery)
+    Ok((delivery, parsed_kind))
 }
 
 pub fn delivery_commitment(
@@ -221,6 +247,24 @@ pub fn delivery_commitment(
     payload_kind: PreparedEndpointPayloadKind,
     payload_sha256: &[u8],
 ) -> [u8; 32] {
+    delivery_commitment_raw(
+        conversation_id,
+        event_id,
+        recipient_ptid,
+        recipient_device_id,
+        payload_kind as u32,
+        payload_sha256,
+    )
+}
+
+pub fn delivery_commitment_raw(
+    conversation_id: &str,
+    event_id: &str,
+    recipient_ptid: &str,
+    recipient_device_id: &str,
+    payload_kind: u32,
+    payload_sha256: &[u8],
+) -> [u8; 32] {
     let mut input = Vec::new();
     input.extend_from_slice(DELIVERY_COMMITMENT_DOMAIN);
     input.push(0);
@@ -229,7 +273,7 @@ pub fn delivery_commitment(
     write_string(&mut input, event_id);
     write_string(&mut input, recipient_ptid);
     write_string(&mut input, recipient_device_id);
-    input.extend_from_slice(&(payload_kind as u32).to_be_bytes());
+    input.extend_from_slice(&payload_kind.to_be_bytes());
     input.extend_from_slice(payload_sha256);
     Sha256::digest(input).into()
 }

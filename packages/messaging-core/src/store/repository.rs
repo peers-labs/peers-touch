@@ -4,6 +4,7 @@ use crate::contracts::{
     MemberAuthorityReceiveCommit, MlsApplicationReceiveCommit, MlsRetirementReceiveCommit,
     MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit, PendingMlsKeyPackage,
     PendingMlsTransitionState, PublicEventReceiveCommit, ReceiveCommitResult,
+    ServicePlaintextReceiveCommit, SkippedEndpointReceiveCommit,
 };
 use crate::crypto::double_ratchet::DrSkippedMessageKey;
 use crate::crypto::session::DirectSession;
@@ -346,6 +347,20 @@ pub trait MessagingRepository: Send + Sync {
     ) -> Result<ReceiveCommitResult, String>;
 
     fn commit_direct_edit(&self, commit: &DirectEditCommit) -> Result<ReceiveCommitResult, String>;
+
+    /// Persist a non-E2EE Station service-plaintext message (bot event) as an
+    /// ordinary direct-message projection plus its structured read model.
+    fn commit_service_plaintext_receive(
+        &self,
+        commit: &ServicePlaintextReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String>;
+
+    /// Observe-only commit for an endpoint payload kind this build does not
+    /// render: consumption marker and authority chain advance, no projection.
+    fn commit_skipped_endpoint_payload(
+        &self,
+        commit: &SkippedEndpointReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String>;
 
     // --- Prekeys ---
 

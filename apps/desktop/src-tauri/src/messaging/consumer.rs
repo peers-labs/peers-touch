@@ -1,7 +1,7 @@
 use super::{
     ClaimedItemConsumer, CommandResultProcessor, ConversationStateProcessor,
     DeliveryReceiptProcessor, DirectMessageProcessor, EngineEndpoint, MessagingStore,
-    PublicEventProcessor,
+    PublicEventProcessor, ServicePlaintextProcessor, SkippedPayloadProcessor,
 };
 use crate::domain::crypto::IdentityKeyPair;
 use crate::model::chat::{
@@ -30,6 +30,8 @@ pub struct MessagingItemConsumer {
     mls_sender_transition: MlsSenderTransitionProcessor<MessagingStore>,
     command_result: CommandResultProcessor<MessagingStore, MlsGroupManager>,
     delivery_receipt: DeliveryReceiptProcessor,
+    service_plaintext: ServicePlaintextProcessor,
+    skipped: SkippedPayloadProcessor,
 }
 
 impl MessagingItemConsumer {
@@ -90,7 +92,17 @@ impl MessagingItemConsumer {
                 mls_endpoint,
                 clock,
             )?,
-            delivery_receipt: DeliveryReceiptProcessor::new(store, endpoint, clock)?,
+            delivery_receipt: DeliveryReceiptProcessor::new(
+                store.clone(),
+                endpoint.clone(),
+                clock,
+            )?,
+            service_plaintext: ServicePlaintextProcessor::new(
+                store.clone(),
+                endpoint.clone(),
+                clock,
+            )?,
+            skipped: SkippedPayloadProcessor::new(store, endpoint, clock)?,
         })
     }
 }
@@ -110,9 +122,14 @@ impl ClaimedItemConsumer for MessagingItemConsumer {
         }
         let delivery = DeviceEventDelivery::decode(item.opaque_payload.as_slice())
             .map_err(|_| "messaging consumer delivery payload is invalid".to_string())?;
-        match PreparedEndpointPayloadKind::try_from(delivery.payload_kind)
-            .map_err(|_| "messaging consumer endpoint payload kind is invalid".to_string())?
-        {
+        let payload_kind = match PreparedEndpointPayloadKind::try_from(delivery.payload_kind) {
+            Ok(kind) => kind,
+            // Forward compatibility: an endpoint payload kind this build does
+            // not understand is skip+acked through the observe-only processor
+            // instead of poisoning the device lane (G-BOT-10).
+            Err(_) => return self.skipped.consume(item, consumer_epoch),
+        };
+        match payload_kind {
             PreparedEndpointPayloadKind::DirectCiphertext => {
                 self.direct.consume(item, consumer_epoch)
             }
@@ -134,6 +151,9 @@ impl ClaimedItemConsumer for MessagingItemConsumer {
             }
             PreparedEndpointPayloadKind::ConversationState => {
                 self.conversation_state.consume(item, consumer_epoch)
+            }
+            PreparedEndpointPayloadKind::DirectServicePlaintext => {
+                self.service_plaintext.consume(item, consumer_epoch)
             }
             PreparedEndpointPayloadKind::Unspecified => {
                 Err("messaging consumer endpoint payload kind is unsupported".to_string())

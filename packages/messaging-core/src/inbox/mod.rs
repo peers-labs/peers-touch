@@ -5,6 +5,8 @@ pub mod direct;
 pub mod drain;
 pub mod public_event;
 pub mod receipt;
+pub mod service_plaintext;
+pub mod skipped;
 
 pub use command_result::{CommandResultLifecycle, CommandResultProcessor, CommandResultRepository};
 pub use consumer::{is_mls_sender_public_event, MessagingItemConsumer, MlsItemConsumer};
@@ -16,3 +18,7 @@ pub use drain::{
 };
 pub use public_event::PublicEventProcessor;
 pub use receipt::{decode_device_receipt_payload, DeliveryReceiptProcessor, DeviceReceiptPayload};
+pub use service_plaintext::{
+    ServicePlaintextProcessor, BOT_EVENT_SCHEMA, SERVICE_SYSTEM_DEVICE_ID,
+};
+pub use skipped::SkippedPayloadProcessor;

@@ -430,6 +430,65 @@ pub struct PublicEventReceiveCommit<'a> {
     pub consumed_at_unix_ms: i64,
 }
 
+/// Structured `peers-touch.bot-event.v1` body accompanying a service-plaintext
+/// message. `None` service messages persist only the fallback text row.
+pub struct ServiceBotEventCommit<'a> {
+    pub schema: &'a str,
+    pub event_type: i32,
+    pub severity: i32,
+    pub bot_ptid: &'a str,
+    pub group_key: &'a str,
+    pub dedupe_key: &'a str,
+    pub action_url: &'a str,
+    pub source_agent: &'a str,
+    pub source_workspace: &'a str,
+    pub source_session_id: &'a str,
+    /// Deterministically ordered label pairs, persisted as a JSON object.
+    pub source_labels: Vec<(String, String)>,
+}
+
+/// Atomic receive commit for a non-E2EE Station service-plaintext message (bot
+/// webhook event). No crypto session exists; the message is stored as an
+/// ordinary direct-message projection plus an optional structured row.
+pub struct ServicePlaintextReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub event_sequence: i64,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub message_id: &'a str,
+    pub sender_ptid: &'a str,
+    pub sender_device_id: &'a str,
+    pub fallback_text: &'a str,
+    pub bot_event: Option<ServiceBotEventCommit<'a>>,
+    pub committed_at_unix_ms: i64,
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
+/// Observe-only commit for an endpoint payload kind this build does not
+/// understand: the authority chain and consumption marker advance, but no
+/// message projection is created (forward-compatible skip+ack, G-BOT-10).
+pub struct SkippedEndpointReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub event_sequence: i64,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
 pub enum InteractionMutation<'a> {
     ObserveOnly,
     Edit {
@@ -4105,6 +4164,18 @@ impl MessagingStore {
         Ok(())
     }
 
+    /// Generic read-only query for receive-path tests that assert on internal
+    /// projection tables without a public read API yet.
+    #[cfg(test)]
+    pub fn test_query_row<T, F>(&self, sql: &str, map_row: F) -> Result<T, String>
+    where
+        F: FnOnce(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+    {
+        self.connection()?
+            .query_row(sql, [], map_row)
+            .map_err(|error| error.to_string())
+    }
+
     pub fn create_message_draft(&self, draft: &PendingMessageDraft) -> Result<(), String> {
         let private_content = super::private_content::encode_message_private_content(
             &draft.plaintext,
@@ -7042,6 +7113,123 @@ impl MessagingStore {
             }
             Ok(())
         })
+    }
+
+    /// Atomic receive for a non-E2EE Station service-plaintext message (bot
+    /// webhook event). It lands as an ordinary direct-message projection
+    /// carrying the fallback text; the structured peers-touch.bot-event.v1
+    /// body, when present, is persisted for rich rendering. The authority
+    /// chain advances through the same core path as encrypted receives.
+    pub fn commit_service_plaintext_receive(
+        &self,
+        input: &ServicePlaintextReceiveCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        validate_service_plaintext_receive(input)?;
+        let projection = MessageProjection {
+            conversation_id: input.conversation_id.to_string(),
+            event_id: input.event_id.to_string(),
+            event_sequence: input.event_sequence,
+            message_id: input.message_id.to_string(),
+            sender_ptid: input.sender_ptid.to_string(),
+            sender_device_id: input.sender_device_id.to_string(),
+            plaintext: input.fallback_text.to_string(),
+            attachments: Vec::new(),
+            committed_at_unix_ms: input.committed_at_unix_ms,
+            reply_to_message_id: None,
+            thread_root_message_id: None,
+            edited_text: None,
+            edited_at_unix_ms: None,
+            retracted: false,
+        };
+        let core = ReceiveCommitCore {
+            item_id: input.item_id,
+            event_id: input.event_id,
+            conversation_id: input.conversation_id,
+            lane_sequence: input.lane_sequence,
+            consumer_epoch: input.consumer_epoch,
+            payload_sha256: input.payload_sha256,
+            event_hash: input.event_hash,
+            previous_event_hash: input.previous_event_hash,
+            event_sequence: input.event_sequence,
+            allow_join_checkpoint: false,
+            projection: Some(&projection),
+            receipt_id: input.receipt_id,
+            receipt_bytes: input.receipt_bytes,
+            consumed_at_unix_ms: input.consumed_at_unix_ms,
+        };
+        self.commit_receive_core(&core, ReceiveFailPoint::None, |transaction| {
+            if let Some(event) = input.bot_event.as_ref() {
+                let mut labels = serde_json::Map::new();
+                for (key, value) in &event.source_labels {
+                    labels.insert(key.clone(), serde_json::Value::String(value.clone()));
+                }
+                let labels_json = serde_json::Value::Object(labels).to_string();
+                transaction
+                    .execute(
+                        "INSERT INTO messaging_service_messages(
+                            conversation_id, event_id, event_sequence, message_id,
+                            sender_ptid, sender_device_id, fallback_text,
+                            event_schema, event_type, event_severity,
+                            bot_ptid, group_key, dedupe_key, action_url,
+                            source_agent, source_workspace, source_session_id,
+                            source_labels_json, committed_at_unix_ms
+                         ) VALUES (
+                            ?1, ?2, ?3, ?4, ?5, ?6, ?7,
+                            ?8, ?9, ?10, ?11, ?12, ?13, ?14,
+                            ?15, ?16, ?17, ?18, ?19
+                         )",
+                        params![
+                            input.conversation_id,
+                            input.event_id,
+                            input.event_sequence,
+                            input.message_id,
+                            input.sender_ptid,
+                            input.sender_device_id,
+                            input.fallback_text,
+                            event.schema,
+                            event.event_type,
+                            event.severity,
+                            event.bot_ptid,
+                            event.group_key,
+                            event.dedupe_key,
+                            event.action_url,
+                            event.source_agent,
+                            event.source_workspace,
+                            event.source_session_id,
+                            labels_json,
+                            input.committed_at_unix_ms,
+                        ],
+                    )
+                    .map_err(|error| error.to_string())?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Observe-only commit for an endpoint payload kind this build does not
+    /// understand: the item is durably consumed and the authority hash chain
+    /// advances, but no message projection is created.
+    pub fn commit_skipped_endpoint_payload(
+        &self,
+        input: &SkippedEndpointReceiveCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        let core = ReceiveCommitCore {
+            item_id: input.item_id,
+            event_id: input.event_id,
+            conversation_id: input.conversation_id,
+            lane_sequence: input.lane_sequence,
+            consumer_epoch: input.consumer_epoch,
+            payload_sha256: input.payload_sha256,
+            event_hash: input.event_hash,
+            previous_event_hash: input.previous_event_hash,
+            event_sequence: input.event_sequence,
+            allow_join_checkpoint: false,
+            projection: None,
+            receipt_id: input.receipt_id,
+            receipt_bytes: input.receipt_bytes,
+            consumed_at_unix_ms: input.consumed_at_unix_ms,
+        };
+        self.commit_receive_core(&core, ReceiveFailPoint::None, |_| Ok(()))
     }
 
     pub fn commit_interaction_event(
@@ -10862,6 +11050,62 @@ fn validate_public_event_receive(input: &PublicEventReceiveCommit<'_>) -> Result
         || input.committed_at_unix_ms <= 0
     {
         return Err("messaging public-event receive input is incomplete".to_string());
+    }
+    Ok(())
+}
+
+fn validate_service_plaintext_receive(
+    input: &ServicePlaintextReceiveCommit<'_>,
+) -> Result<(), String> {
+    let projection = MessageProjection {
+        conversation_id: input.conversation_id.to_string(),
+        event_id: input.event_id.to_string(),
+        event_sequence: input.event_sequence,
+        message_id: input.message_id.to_string(),
+        sender_ptid: input.sender_ptid.to_string(),
+        sender_device_id: input.sender_device_id.to_string(),
+        plaintext: input.fallback_text.to_string(),
+        attachments: Vec::new(),
+        committed_at_unix_ms: input.committed_at_unix_ms,
+        reply_to_message_id: None,
+        thread_root_message_id: None,
+        edited_text: None,
+        edited_at_unix_ms: None,
+        retracted: false,
+    };
+    validate_receive_core(&ReceiveCommitCore {
+        item_id: input.item_id,
+        event_id: input.event_id,
+        conversation_id: input.conversation_id,
+        lane_sequence: input.lane_sequence,
+        consumer_epoch: input.consumer_epoch,
+        payload_sha256: input.payload_sha256,
+        event_hash: input.event_hash,
+        previous_event_hash: input.previous_event_hash,
+        event_sequence: input.event_sequence,
+        allow_join_checkpoint: false,
+        projection: Some(&projection),
+        receipt_id: input.receipt_id,
+        receipt_bytes: input.receipt_bytes,
+        consumed_at_unix_ms: input.consumed_at_unix_ms,
+    })?;
+    if input.message_id.trim().is_empty()
+        || input.sender_ptid.trim().is_empty()
+        || input.sender_device_id.trim().is_empty()
+        || input.fallback_text.trim().is_empty()
+        || input.committed_at_unix_ms <= 0
+    {
+        return Err("messaging service-plaintext receive input is incomplete".to_string());
+    }
+    if let Some(event) = input.bot_event.as_ref() {
+        if event.schema.trim().is_empty()
+            || event.bot_ptid != input.sender_ptid
+            || event.source_labels.windows(2).any(|w| w[0].0 > w[1].0)
+        {
+            return Err(
+                "messaging service-plaintext bot event is not bound to the sender".to_string(),
+            );
+        }
     }
     Ok(())
 }

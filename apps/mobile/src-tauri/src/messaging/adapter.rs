@@ -17,6 +17,7 @@ use messaging_core::contracts::{
     MemberAuthorityReceiveCommit, MlsApplicationReceiveCommit, MlsConversationProjection,
     MlsRetirementReceiveCommit, MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit,
     PendingMlsKeyPackage, PendingMlsTransitionState, PublicEventReceiveCommit, ReceiveCommitResult,
+    ServicePlaintextReceiveCommit, SkippedEndpointReceiveCommit,
 };
 use messaging_core::crypto::double_ratchet::{DrSessionState, DrSkippedMessageKey};
 use messaging_core::crypto::prekeys::{PendingPreKeyBundle, PreKeyRepository};
@@ -3111,6 +3112,76 @@ impl MobileMessagingStore {
         Ok(result)
     }
 
+    /// Observe-only receive commit: durable claimed-item marker, authority
+    /// hash-chain advancement and consumption receipt, but no message
+    /// projection. Used for service-plaintext messages that Mobile v1 does
+    /// not render and unknown future endpoint payload kinds, so the device
+    /// lane keeps draining and later events stay chain-contiguous.
+    fn commit_observe_only_receive(
+        &self,
+        commit: ObserveOnlyReceiveCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        let ObserveOnlyReceiveCommit {
+            item_id,
+            event_id,
+            conversation_id,
+            event_sequence,
+            lane_sequence,
+            consumer_epoch,
+            payload_sha256,
+            event_hash,
+            previous_event_hash,
+            receipt_id,
+            receipt_bytes,
+            consumed_at_unix_ms,
+        } = commit;
+        if item_id.trim().is_empty()
+            || event_id.trim().is_empty()
+            || conversation_id.trim().is_empty()
+            || event_sequence <= 0
+            || event_hash.len() != 32
+            || receipt_id.trim().is_empty()
+            || receipt_bytes.is_empty()
+            || consumed_at_unix_ms <= 0
+        {
+            return Err("mobile messaging observe-only receive is incomplete".to_string());
+        }
+        self.with_transaction(|transaction| {
+            let result = Self::commit_claimed_item(
+                transaction,
+                item_id,
+                event_id,
+                conversation_id,
+                lane_sequence,
+                consumer_epoch,
+                payload_sha256,
+                consumed_at_unix_ms,
+            )?;
+            if result == ReceiveCommitResult::AlreadyCommitted {
+                return Ok(result);
+            }
+            validate_authority_event(
+                transaction,
+                conversation_id,
+                event_sequence,
+                event_hash,
+                previous_event_hash,
+                false,
+            )?;
+            finish_authority_receive(
+                transaction,
+                conversation_id,
+                event_sequence,
+                event_hash,
+                event_id,
+                receipt_id,
+                receipt_bytes,
+                consumed_at_unix_ms,
+            )?;
+            Ok(result)
+        })
+    }
+
     pub(crate) fn create_message_draft_with_uploads(
         &self,
         draft: &PendingMessageDraft,
@@ -5773,6 +5844,61 @@ impl MetadataInteractionRepository for MobileMessagingStore {
     }
 }
 
+/// Borrowed fields shared by the two observe-only receive paths
+/// (service-plaintext v1 and unknown future payload kinds).
+struct ObserveOnlyReceiveCommit<'a> {
+    item_id: &'a str,
+    event_id: &'a str,
+    conversation_id: &'a str,
+    event_sequence: i64,
+    lane_sequence: i64,
+    consumer_epoch: u64,
+    payload_sha256: &'a [u8],
+    event_hash: &'a [u8],
+    previous_event_hash: &'a [u8],
+    receipt_id: &'a str,
+    receipt_bytes: &'a [u8],
+    consumed_at_unix_ms: i64,
+}
+
+impl<'a> From<&'a ServicePlaintextReceiveCommit<'a>> for ObserveOnlyReceiveCommit<'a> {
+    fn from(commit: &'a ServicePlaintextReceiveCommit<'a>) -> Self {
+        Self {
+            item_id: commit.item_id,
+            event_id: commit.event_id,
+            conversation_id: commit.conversation_id,
+            event_sequence: commit.event_sequence,
+            lane_sequence: commit.lane_sequence,
+            consumer_epoch: commit.consumer_epoch,
+            payload_sha256: commit.payload_sha256,
+            event_hash: commit.event_hash,
+            previous_event_hash: commit.previous_event_hash,
+            receipt_id: commit.receipt_id,
+            receipt_bytes: commit.receipt_bytes,
+            consumed_at_unix_ms: commit.consumed_at_unix_ms,
+        }
+    }
+}
+
+impl<'a> From<&'a SkippedEndpointReceiveCommit<'a>> for ObserveOnlyReceiveCommit<'a> {
+    fn from(commit: &'a SkippedEndpointReceiveCommit<'a>) -> Self {
+        Self {
+            item_id: commit.item_id,
+            event_id: commit.event_id,
+            conversation_id: commit.conversation_id,
+            event_sequence: commit.event_sequence,
+            lane_sequence: commit.lane_sequence,
+            consumer_epoch: commit.consumer_epoch,
+            payload_sha256: commit.payload_sha256,
+            event_hash: commit.event_hash,
+            previous_event_hash: commit.previous_event_hash,
+            receipt_id: commit.receipt_id,
+            receipt_bytes: commit.receipt_bytes,
+            consumed_at_unix_ms: commit.consumed_at_unix_ms,
+        }
+    }
+}
+
 impl MessagingRepository for MobileMessagingStore {
     fn persist_claimed_item(
         &self,
@@ -7062,6 +7188,23 @@ impl MessagingRepository for MobileMessagingStore {
             )?;
             Ok(result)
         })
+    }
+
+    fn commit_service_plaintext_receive(
+        &self,
+        commit: &ServicePlaintextReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String> {
+        // Mobile v1 renders no service-plaintext (bot) UI: the item is
+        // acknowledged through an observe-only commit so the lane and
+        // authority chain advance without a local message projection.
+        self.commit_observe_only_receive(commit.into())
+    }
+
+    fn commit_skipped_endpoint_payload(
+        &self,
+        commit: &SkippedEndpointReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String> {
+        self.commit_observe_only_receive(commit.into())
     }
 
     fn commit_direct_edit(&self, commit: &DirectEditCommit) -> Result<ReceiveCommitResult, String> {
