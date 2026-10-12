@@ -450,6 +450,10 @@ fn main() {
         .manage(capability_worker_supervisor)
         .manage(desktop_capture::ChatScreenshotShortcutState::default())
         .manage(presence_supervisor)
+        .manage(application::window_lifecycle::TrayResidency::default())
+        .on_window_event(|window, event| {
+            application::window_lifecycle::handle_window_event(window, event);
+        })
         .setup(|app| {
             app.state::<Arc<state::AppState>>()
                 .secure_content
@@ -572,6 +576,19 @@ fn main() {
                 Err(e) => {
                     tracing::error!(error = %e, "Failed to resolve attachment cache dir at startup");
                 }
+            }
+
+            // BOT-A30: menu-bar residency. Install the tray first and only mark
+            // the window resident once the tray is confirmed available; the
+            // window close hook otherwise keeps the default quit behavior.
+            match application::tray::install(app.handle()) {
+                Ok(()) => app
+                    .state::<application::window_lifecycle::TrayResidency>()
+                    .mark_resident(),
+                Err(error) => tracing::warn!(
+                    error = %error,
+                    "tray unavailable; closing the main window will quit the app"
+                ),
             }
             Ok(())
         })
@@ -1123,6 +1140,11 @@ fn main() {
                         &error.to_string(),
                     );
                 }
+            }
+            // BOT-A30: clicking the dock icon with the window resident-hidden
+            // reopens and focuses it, mirroring the tray Show action.
+            if matches!(event, tauri::RunEvent::Reopen { .. }) {
+                application::tray::restore_main_window(app);
             }
             if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
                 let _ = (api, code);

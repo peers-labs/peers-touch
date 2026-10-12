@@ -43,4 +43,6 @@ pub mod station_binding;
 pub mod station_client;
 pub mod system;
 pub mod tools;
+pub mod tray;
 pub mod tts;
+pub mod window_lifecycle;
