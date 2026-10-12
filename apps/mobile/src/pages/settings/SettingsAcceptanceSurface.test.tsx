@@ -14,6 +14,17 @@ vi.mock('../../app/mobileI18n', () => ({
 }));
 
 describe('SettingsAcceptanceSurface', () => {
+  it('uses the shared circular person avatar on the Me summary', () => {
+    const html = renderToStaticMarkup(
+      <SettingsAcceptanceSurface surfaceId="settings.summary" />,
+    );
+
+    expect(html).toContain('settings-fixture-avatar');
+    expect(html).toContain('mobile-user-avatar-person');
+    expect(html).toContain('data-identity-role="person"');
+    expect(html).toContain('--mobile-user-avatar-radius:32px');
+  });
+
   it.each(SETTINGS_SURFACE_FIXTURE_IDS)(
     'renders the declared foreground selector for %s',
     (surfaceId) => {

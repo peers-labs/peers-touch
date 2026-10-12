@@ -39,6 +39,14 @@ describe('Settings functional surface contract', () => {
     expect(pageSource).not.toContain('const momentsCount = 0');
   });
 
+  it('renders the Me identity through the shared circular person avatar', () => {
+    expect(pageSource).toContain("import { MobileAvatar }");
+    expect(pageSource).toContain('identityKey={authSession?.actorRef.ptid ?? displayName}');
+    expect(pageSource).toContain('identityRole="person"');
+    expect(pageSource).toContain('name={displayName}');
+    expect(pageSource).not.toContain('borderRadius: 16');
+  });
+
   it('fences stale Profile data and consumes the canonical Social blocked-user owner', () => {
     expect(pageSource).toContain('controller.profileAvailable ? (');
     expect(pageSource).toContain('<ProfileUnavailable');
