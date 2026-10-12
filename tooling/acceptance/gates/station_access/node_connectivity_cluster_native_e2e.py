@@ -314,6 +314,16 @@ class NodeConnectivityClusterNativeGate(
         scenario = SCENARIOS[1]
         alice = self.clients["alice"]
         bob = self.clients["bob"]
+        refreshed = self.step(
+            "cluster.route-b.refresh",
+            lambda: alice.invoke_app_result(
+                "station_add",
+                {"input": {"input": self.node_urls["station-node-b"]}},
+            ),
+            "alice",
+        )
+        if not isinstance(refreshed, dict) or refreshed.get("error"):
+            raise GateError("Alice could not refresh node B failover route")
         before = _station_inventory(alice)
         actor_before = self.ptids["alice"]
         device_before = self.device_ids["alice"]
