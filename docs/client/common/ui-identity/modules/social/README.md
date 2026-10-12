@@ -67,7 +67,10 @@ Rules:
 - Do not visually promote station metadata above author/content unless trust is degraded.
 - Do not use strong color for routine protocol metadata.
 - Destructive actions must be secondary until explicitly invoked.
-- Posts, comments, profiles, search results, and Circle members resolve one canonical actor identity and use the same shared rounded-square avatar primitive.
+- Posts, comments, profiles, search results, and Circle members resolve one
+  canonical actor identity and use the same shared circular person-avatar
+  primitive. Groups and Circles as collective identities use the shared
+  rounded-square group-avatar role.
 - A comment authored by the post author must not fall back to a different name, color, or avatar solely because its transport DTO is less complete.
 
 ## 6. Current Incomplete Capability As Validation

@@ -18,6 +18,7 @@
   "writeSet": [
     "apps/mobile/src/pages/SettingsPage.tsx",
     "apps/mobile/src/pages/settings",
+    "apps/mobile/src/components/MobileAvatar.tsx",
     "apps/mobile/src/features/station",
     "apps/mobile/src/styles.css",
     "packages/prototypes/mobile/chat",
@@ -70,6 +71,7 @@
   },
   "doneWhen": [
     "Me summary and every registered Settings detail are each opened and operated in foreground iOS",
+    "Me uses the shared person-avatar and row contract while PTID and Station trust details are progressively disclosed",
     "profile/privacy, notifications, blocked users, appearance, language, storage, Station change, and logout expose correct owner and state",
     "dirty, saving, saved, conflict, unavailable, permission, failure, and destructive confirmation states preserve task context",
     "foreground screenshots and interaction traces cover every declared Settings row"
@@ -89,3 +91,6 @@
 - Existing tests verify state wiring, but there is no foreground proof that
   every detail, long label, permission state, conflict, Station change, and
   logout confirmation remains understandable and operable.
+- The Owner-confirmed 2026-10-12 prototype defines the human-readable identity,
+  flat section boundary, shared row, and destructive-action hierarchy required
+  by this pending closure.

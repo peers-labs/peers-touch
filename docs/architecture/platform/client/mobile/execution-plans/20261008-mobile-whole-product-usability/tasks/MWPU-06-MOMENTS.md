@@ -24,6 +24,7 @@
     "apps/mobile/src/pages/MomentsPage.tsx",
     "apps/mobile/src/pages/moments",
     "apps/mobile/src/features/social",
+    "apps/mobile/src/components/MobileAvatar.tsx",
     "apps/mobile/src/styles.css",
     "apps/mobile/scripts/run-three-client-product-journey.mjs",
     "apps/station/app/subserver/social",
@@ -81,6 +82,7 @@
     "Desktop Bob likes Alice's post and the visible like state converges on Android and iOS",
     "iOS Coral publishes a post that Android Alice and Desktop Bob receive, open, and like",
     "feed, composer, detail, media, empty, unavailable, pending, retry, rollback, and relaunch states remain usable and visually aligned across clients",
+    "feed items form one continuous reading rail with the shared person-avatar and shell spacing contract instead of repeated elevated cards",
     "human content dominates protocol metadata and feed/detail/comments remain one continuous reading surface",
     "composer state and recovery stay inside the composer without blocking unrelated navigation",
     "foreground screenshots and interaction traces cover every declared Social workflow on all three clients",
@@ -101,3 +103,6 @@
   exist.
 - Current evidence does not prove their complete foreground composition,
   content hierarchy, media bounds, draft recovery, and empty/error distinction.
+- The Owner-confirmed 2026-10-12 prototype makes continuous feed boundaries,
+  shared avatar geometry, stable touch targets, and cross-tab visual continuity
+  part of this reopened closure.

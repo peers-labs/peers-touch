@@ -89,8 +89,9 @@ Rules:
 
 Rules:
 
-- Every person avatar uses the shared platform avatar primitive and rounded-square geometry.
-- Avatar radius is derived from size and remains visibly below half the avatar dimension.
+- Every person avatar uses the shared platform avatar primitive and circular geometry.
+- Every group or collective avatar uses the shared platform avatar primitive
+  and rounded-square geometry derived from its size.
 - The same canonical actor identity must project the same display name, avatar asset, and deterministic fallback color across feeds, comments, chat, contacts, and notifications.
 - Feature code may supply a DTO fallback, but it must not create a second avatar primitive or display a raw PTID when a canonical profile is available.
 - Account profiles present avatar and cover images as previews. Raw image
@@ -142,4 +143,4 @@ Out of scope:
 - [ ] Are tabs, CTA, and page header aligned as one system?
 - [ ] Are popovers anchored, bounded, and keyboard-recoverable?
 - [ ] Are empty/loading/error states designed, localized, and recoverable?
-- [ ] Do all user avatars use the shared rounded-square primitive and canonical identity projection?
+- [ ] Do person and group avatars use their shared role-specific geometry and canonical identity projection?

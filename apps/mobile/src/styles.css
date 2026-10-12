@@ -1702,14 +1702,49 @@ select,
 }
 
 .mobile-shell .mobile-user-avatar.ant-avatar {
+  position: relative;
   flex: 0 0 auto;
   overflow: hidden;
-  border-radius: var(--mobile-user-avatar-radius, 8px) !important;
+  border-radius: var(--mobile-user-avatar-radius, 999px) !important;
   font-weight: 600;
 }
 
 .mobile-shell .mobile-user-avatar .ant-avatar-string {
   border-radius: inherit;
+}
+
+.mobile-shell .mobile-user-avatar-loading {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  background: color-mix(in srgb, currentColor 8%, var(--brand-muted));
+}
+
+.mobile-shell .mobile-user-avatar-loading::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--brand-surface) 72%, transparent),
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: mobile-avatar-loading 1.4s ease-in-out infinite;
+}
+
+@keyframes mobile-avatar-loading {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-shell .mobile-user-avatar-loading::after {
+    animation: none;
+  }
 }
 
 .contacts-toolbar {
@@ -1724,6 +1759,11 @@ select,
 .contacts-search-input.ant-input-affix-wrapper {
   height: 44px;
   border-radius: 10px;
+}
+
+.contacts-search-icon,
+.contact-row-chevron {
+  color: var(--ant-color-text-quaternary, rgba(0, 0, 0, 0.25));
 }
 
 .contacts-add-button {
@@ -3480,7 +3520,7 @@ select,
   width: 44px;
   height: 44px;
   place-items: center;
-  border-radius: 14px;
+  border-radius: 999px;
   background: #e9eef9;
   color: #3156a3;
   font-weight: 700;
@@ -3528,7 +3568,7 @@ select,
 .contacts-fixture-profile-avatar {
   width: 76px;
   height: 76px;
-  border-radius: 20px;
+  border-radius: 999px;
   font-size: 28px;
 }
 
@@ -4513,12 +4553,19 @@ select,
 }
 
 .contact-item-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 20px;
   align-items: center;
   gap: 12px;
+  width: 100%;
+  min-height: 64px;
   padding: 10px 16px;
   background: #fff;
+  border: 0;
   border-bottom: 0.5px solid rgba(15, 23, 42, 0.06);
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   transition: background 0.12s;
 }
@@ -4548,6 +4595,17 @@ select,
   gap: 1px;
   flex: 1;
   min-width: 0;
+}
+
+.contact-info .ant-typography {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contact-relationship-state {
+  font-size: 12px;
 }
 
 /* Keep the Contacts recovery action visible above the tabbar on short screens. */

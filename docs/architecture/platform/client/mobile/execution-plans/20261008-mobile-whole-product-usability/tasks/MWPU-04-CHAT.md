@@ -24,6 +24,9 @@
     "apps/desktop/src-tauri/src/messaging",
     "apps/desktop/src-tauri/src/main.rs",
     "apps/mobile/scripts/run-three-client-product-journey.mjs",
+    "apps/mobile/scripts/review-mobile-surfaces.mjs",
+    "apps/mobile/src/components/MobileAvatar.tsx",
+    "apps/mobile/src/components/MobileAvatar.test.tsx",
     "apps/mobile/src/app/lifecycle",
     "apps/mobile/src/app/mobileI18n.test.tsx",
     "apps/mobile/src-tauri/Cargo.toml",
@@ -75,7 +78,7 @@
   "checks": [
     {
       "id": "chat-source",
-      "command": "cargo test --manifest-path packages/messaging-core/Cargo.toml inbox::drain && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml messaging:: && pnpm --dir apps/desktop exec vitest run src/components/chat src/pages/SocialChatPage.test.tsx src/modules/p2p && pnpm --dir apps/mobile exec vitest run src/app/lifecycle/runtimeReadiness.test.ts src/pages/ChatPage.history.test.tsx src/pages/ChatPage.localFlag.test.ts src/pages/chat src/features/chat",
+      "command": "cargo test --manifest-path packages/messaging-core/Cargo.toml inbox::drain && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml messaging:: && pnpm --dir apps/desktop exec vitest run src/components/chat src/pages/SocialChatPage.test.tsx src/modules/p2p && pnpm --dir apps/mobile run check:web && pnpm --dir apps/mobile exec vitest run src/components/MobileAvatar.test.tsx src/app/lifecycle/runtimeReadiness.test.ts src/pages/ChatPage.history.test.tsx src/pages/ChatPage.localFlag.test.ts src/pages/chat src/features/chat",
       "verificationClass": "SOURCE_CHECK"
     },
     {
@@ -110,6 +113,11 @@
     "all three actors create and use one Group, exercise membership and administration, and receive converged messages and metadata",
     "voice and video call start, ringing, answer, reject, hangup, retry, and stale-state cleanup are operated through foreground client controls",
     "conversation titles use friendly identity and never raw PTID",
+    "conversation first load preserves row geometry while cached refresh and recoverable failure retain readable rows",
+    "unread totals derive from projected conversations and relationship state no longer competes with preview and unread state",
+    "consecutive messages form sender clusters with one final metadata row and one avatar per incoming cluster",
+    "one failed message owns one local Retry action while unknown outcome owns Check status and forbids blind retry",
+    "pinned content uses a compact banner plus dedicated list instead of a permanent thread switch",
     "messages remain readable and all bottom/floating layers are non-occluding",
     "degraded runtime state is local and the composer remains usable whenever writes are admitted",
     "foreground screenshots and interaction traces cover every declared Chat workflow on all three clients"
@@ -117,6 +125,7 @@
   "failureBehavior": [
     "do not accept message delivery alone as Chat usability proof",
     "do not overlay message content with action controls",
+    "do not add a second avatar, delivery-status, or runtime owner",
     "do not advance while any Chat inventory row is unvisited or visually blocked"
   ],
   "updatedAt": "2026-10-08T00:00:00.000Z"
@@ -130,3 +139,6 @@
   app-obstructing module notice, and compromised composer space.
 - Conversation list, actions, search, Group management, keyboard, and
   attachment/voice states have not been reviewed as one foreground product.
+- The Owner-confirmed 2026-10-12 prototype adds the exact interaction baseline
+  for list loading, cached refresh, sender clusters, message-local recovery,
+  pinned navigation, avatar roles, and Mobile touch geometry.

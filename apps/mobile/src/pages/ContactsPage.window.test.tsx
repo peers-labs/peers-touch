@@ -48,6 +48,10 @@ describe('Contacts bounded surface', () => {
   it('bounds contacts without suppressing traversal to later accepted peers', () => {
     const html = render();
     expect(html.match(/class="contact-item-row"/g)).toHaveLength(100);
+    expect(html.match(/data-identity-role="person"/g)).toHaveLength(100);
+    expect(html).toContain('contact-row-chevron');
+    expect(html).toContain('<button class="contact-item-row"');
+    expect(html).not.toContain('ant-avatar-square');
     expect(html).toContain('data-window-total="240"');
     expect(html).toContain('mobile.list.next');
     expect(html).not.toContain('Peer 239');
