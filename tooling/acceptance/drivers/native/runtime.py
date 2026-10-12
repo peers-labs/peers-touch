@@ -541,6 +541,7 @@ class NativeDesktopRuntimeBinding(ABC):
             )
         expected_url = station_url.rstrip("/")
         fallback: tuple[str, str] | None = None
+        matches: list[tuple[tuple[int, str, int, str], str, str]] = []
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
@@ -552,6 +553,7 @@ class NativeDesktopRuntimeBinding(ABC):
                 len(entries) == 1
                 and len(routes) == 1
                 and isinstance(routes[0], dict)
+                and routes[0].get("health") != "unavailable"
             ):
                 route_id = str(routes[0].get("route_id") or "").strip()
                 if route_id:
@@ -563,17 +565,44 @@ class NativeDesktopRuntimeBinding(ABC):
                     == expected_url
                 ):
                     route_id = str(route.get("route_id") or "").strip()
-                    if route_id:
-                        session.invoke_app_result(
-                            "station_set_active",
-                            {
-                                "input": {
-                                    "station_peer_id": station_peer_id,
-                                    "route_id": route_id,
-                                }
-                            },
+                    health = str(route.get("health") or "")
+                    if route_id and health != "unavailable":
+                        expiry = route.get("attestation_expires_at_unix_ms")
+                        generation = route.get("route_generation")
+                        matches.append(
+                            (
+                                (
+                                    (
+                                        int(expiry)
+                                        if isinstance(expiry, int)
+                                        and not isinstance(expiry, bool)
+                                        else 0
+                                    ),
+                                    str(route.get("last_verified_at") or ""),
+                                    (
+                                        int(generation)
+                                        if isinstance(generation, int)
+                                        and not isinstance(generation, bool)
+                                        else 0
+                                    ),
+                                    route_id,
+                                ),
+                                station_peer_id,
+                                route_id,
+                            )
                         )
-                        return
+        if matches:
+            _, station_peer_id, route_id = max(matches)
+            session.invoke_app_result(
+                "station_set_active",
+                {
+                    "input": {
+                        "station_peer_id": station_peer_id,
+                        "route_id": route_id,
+                    }
+                },
+            )
+            return
         if fallback is not None:
             session.invoke_app_result(
                 "station_set_active",
