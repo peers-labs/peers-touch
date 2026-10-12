@@ -53,6 +53,7 @@ def select_native_file(
         client,
         all_sessions,
     )
+    last_baseline_control: NativeControlSnapshot | None = None
 
     def activate_and_observe() -> NativeControlSnapshot:
         if cooperative_activation:
@@ -64,23 +65,35 @@ def select_native_file(
         return adapter.activate_and_focused_control(process_id)
 
     def native_app_ready(_: Any) -> NativeControlSnapshot | None:
+        nonlocal last_baseline_control
         control = activate_and_observe()
+        last_baseline_control = control
         return (
             control
             if control.window_count >= 1
             and control.dialog_count == 0
             and control.main_window
             and control.frontmost
-            and control.actual_frontmost_pid == process_id
             and control.kind != "application-dialog"
             else None
         )
 
-    baseline = WebDriverWait(
-        client.driver,
-        timeout_seconds,
-        poll_frequency=POLL_SECONDS,
-    ).until(native_app_ready)
+    try:
+        baseline = WebDriverWait(
+            client.driver,
+            timeout_seconds,
+            poll_frequency=POLL_SECONDS,
+        ).until(native_app_ready)
+    except TimeoutException:
+        detail = (
+            last_baseline_control.to_dict()
+            if last_baseline_control is not None
+            else {}
+        )
+        raise GateError(
+            "Native file chooser owner was not ready before selection: "
+            f"{detail}"
+        ) from None
     trigger()
 
     def panel_open(control: NativeControlSnapshot) -> bool:

@@ -22,6 +22,7 @@ def _control(
     window_count: int = 1,
     dialog_count: int = 0,
     focused_window: bool = True,
+    actual_frontmost_pid: int = 42,
 ) -> NativeControlSnapshot:
     return NativeControlSnapshot(
         kind=kind,
@@ -30,7 +31,7 @@ def _control(
         frontmost=True,
         main_window=True,
         focused_window=focused_window,
-        actual_frontmost_pid=42,
+        actual_frontmost_pid=actual_frontmost_pid,
     )
 
 
@@ -41,8 +42,12 @@ class NativeFilePickerTest(unittest.TestCase):
             source.write_bytes(b"native-file-picker")
             adapter = Mock()
             adapter.platform = "macos"
-            adapter.activate_and_focused_control.return_value = _control(
-                kind="text-field"
+            adapter.activate_and_focused_control.side_effect = (
+                _control(
+                    kind="text-field",
+                    actual_frontmost_pid=99,
+                ),
+                _control(kind="text-field"),
             )
             adapter.focused_control.return_value = _control(
                 kind="list",
