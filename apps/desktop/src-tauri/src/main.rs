@@ -85,9 +85,9 @@ fn acceptance_request_activation(
     window: tauri::WebviewWindow,
 ) -> error::AppResult<serde_json::Value> {
     use objc2::MainThreadMarker;
-    use objc2_app_kit::NSApplication;
+    use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication};
 
-    let Some(main_thread) = MainThreadMarker::new() else {
+    let Some(_main_thread) = MainThreadMarker::new() else {
         return error::AppResult::fail(
             error::ErrorCode::InternalError,
             "acceptance activation request must run on the AppKit main thread",
@@ -109,7 +109,18 @@ fn acceptance_request_activation(
             None,
         );
     }
-    NSApplication::sharedApplication(main_thread).activateIgnoringOtherApps(true);
+    let current = NSRunningApplication::currentApplication();
+    let process_id = current.processIdentifier();
+    if !current.activateWithOptions(
+        NSApplicationActivationOptions::ActivateAllWindows
+            | NSApplicationActivationOptions::ActivateIgnoringOtherApps,
+    ) {
+        return error::AppResult::fail(
+            error::ErrorCode::InternalError,
+            "acceptance application activation request was rejected",
+            Some(serde_json::json!({ "processId": process_id })),
+        );
+    }
     if let Err(error) = window.set_focus() {
         return error::AppResult::fail(
             error::ErrorCode::InternalError,
@@ -117,7 +128,10 @@ fn acceptance_request_activation(
             None,
         );
     }
-    error::AppResult::success(serde_json::json!({ "requested": true }))
+    error::AppResult::success(serde_json::json!({
+        "processId": process_id,
+        "requested": true,
+    }))
 }
 
 #[cfg(feature = "acceptance-webdriver")]

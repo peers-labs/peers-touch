@@ -1291,6 +1291,9 @@ async function activateForegroundClient(clientId, client) {
           ? { previousApplication, desktopPid, client }
           : null,
       );
+    } else {
+      const owner = desktopActivationOwners.get(clientId);
+      if (owner) owner.desktopPid = desktopPid;
     }
     const result = await webdriverRequest(
       webdriverEndpoint(client, '/execute/async'),
@@ -1314,9 +1317,10 @@ async function activateForegroundClient(clientId, client) {
       },
     );
     assertContract(
-      result?.ok === true,
+      result?.ok === true && result?.data?.processId === desktopPid,
       'WEBDRIVER_CLIENT_NOT_FOREGROUND',
-      `${clientId} could not focus its native window: ${result?.error || 'unknown error'}`,
+      `${clientId} could not focus process ${desktopPid}: `
+        + `${result?.error || JSON.stringify(result)}`,
     );
     activateDesktopProcess(desktopPid);
     await waitForUi(
@@ -1391,11 +1395,31 @@ function frontmostDesktopPid() {
   ).trim());
 }
 
-function desktopActivationTargetMatches(target, application) {
+function desktopActivationTargetMatches(
+  target,
+  application,
+  targetProcessAlive = processIsAlive(target?.pid),
+) {
   if (!target || !application) return false;
-  if (processIsAlive(target.pid) && application.pid === target.pid) return true;
+  if (targetProcessAlive) return application.pid === target.pid;
   if (target.bundleId && application.bundleId === target.bundleId) return true;
   return Boolean(target.name && application.name === target.name);
+}
+
+function desktopActivationReleaseAction(
+  owner,
+  target,
+  application,
+  targetProcessAlive = processIsAlive(target?.pid),
+) {
+  if (application?.pid === owner?.desktopPid) return 'restore';
+  return desktopActivationTargetMatches(
+    target,
+    application,
+    targetProcessAlive,
+  )
+    ? 'restored'
+    : 'preserve';
 }
 
 function desktopActivationScript(pid) {
@@ -1509,6 +1533,16 @@ async function releaseForegroundClient(clientId, client) {
     'DESKTOP_ACTIVATION_OWNER_INVALID',
     `${clientId} has no valid previous application to restore`,
   );
+  if (
+    desktopActivationReleaseAction(
+      owner,
+      target,
+      frontmostDesktopApplication(),
+    ) !== 'restore'
+  ) {
+    return;
+  }
+  let verifyRestore = true;
   try {
     if (processIsAlive(target.pid)) {
       const yielded = await webdriverRequest(
@@ -1542,11 +1576,18 @@ async function releaseForegroundClient(clientId, client) {
     process.stderr.write(`Desktop activation yield observation: ${error.message}\n`);
   } finally {
     const application = frontmostDesktopApplication();
-    if (!desktopActivationTargetMatches(target, application)) {
+    const releaseAction = desktopActivationReleaseAction(
+      owner,
+      target,
+      application,
+    );
+    if (releaseAction === 'restore') {
       restoreDesktopApplication(target);
+    } else if (releaseAction === 'preserve') {
+      verifyRestore = false;
     }
   }
-  await waitForDesktopActivationRestore(target);
+  if (verifyRestore) await waitForDesktopActivationRestore(target);
 }
 
 async function holdDesktopForeground(clientId, client) {
@@ -10907,23 +10948,51 @@ function selfTest(matrix) {
     'utf8',
   );
   assertContract(
-    /fn acceptance_request_activation\([\s\S]*?window\.show\(\)[\s\S]*?window\.unminimize\(\)[\s\S]*?activateIgnoringOtherApps\(true\)[\s\S]*?window\.set_focus\(\)/.test(
+    /fn acceptance_request_activation\([\s\S]*?window\.show\(\)[\s\S]*?window\.unminimize\(\)[\s\S]*?NSRunningApplication::currentApplication\(\)[\s\S]*?activateWithOptions\([\s\S]*?window\.set_focus\(\)/.test(
       desktopMainSource,
     ),
     'SELF_TEST_DESKTOP_ACTIVATION_VISIBILITY',
-    'Desktop activation must restore a yielded native window before focusing it',
+    'Desktop activation must target its exact native process before focusing it',
   );
   assertContract(
     desktopActivationTargetMatches(
       { bundleId: 'cn.trae.app', name: 'Trae CN', pid: 42 },
-      { bundleId: 'cn.trae.app', name: 'Trae CN', pid: 84 },
+      { bundleId: 'cn.trae.app', name: 'Trae CN', pid: 42 },
+      true,
     )
       && !desktopActivationTargetMatches(
         { bundleId: 'cn.trae.app', name: 'Trae CN', pid: 42 },
+        { bundleId: 'cn.trae.app', name: 'Trae CN', pid: 84 },
+        true,
+      )
+      && desktopActivationTargetMatches(
+        { bundleId: 'cn.trae.app', name: 'Trae CN', pid: 42 },
+        { bundleId: 'cn.trae.app', name: 'Trae CN', pid: 84 },
+        false,
+      )
+      && !desktopActivationTargetMatches(
+        { bundleId: 'cn.trae.app', name: 'Trae CN', pid: 42 },
         { bundleId: 'com.peers.touch', name: 'Peers', pid: 84 },
+        false,
       ),
     'SELF_TEST_DESKTOP_ACTIVATION_RESTORE',
-    'Desktop activation restore must survive a restarted owner process',
+    'Desktop activation restore must distinguish live sibling instances',
+  );
+  assertContract(
+    desktopActivationReleaseAction(
+      { desktopPid: 7 },
+      { bundleId: 'cn.trae.app', name: 'Trae CN', pid: 42 },
+      { bundleId: 'com.apple.Terminal', name: 'Terminal', pid: 84 },
+      true,
+    ) === 'preserve'
+      && desktopActivationReleaseAction(
+        { desktopPid: 7 },
+        { bundleId: 'cn.trae.app', name: 'Trae CN', pid: 42 },
+        { bundleId: 'com.peers.touch', name: 'Peers', pid: 7 },
+        true,
+      ) === 'restore',
+    'SELF_TEST_DESKTOP_ACTIVATION_USER_CHOICE',
+    'Desktop activation release must preserve a user-selected foreground app',
   );
   const activationScript = desktopActivationScript(42);
   assertContract(
