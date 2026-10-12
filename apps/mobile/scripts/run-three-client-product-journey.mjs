@@ -1243,7 +1243,13 @@ async function activateForegroundClient(clientId, client) {
         body: JSON.stringify({
           script: `
             const done = arguments[arguments.length - 1];
-            window.__TAURI__.core.invoke('acceptance_request_activation')
+            const invoke = window.__TAURI__?.core?.invoke
+              || window.__TAURI_INTERNALS__?.invoke;
+            if (typeof invoke !== 'function') {
+              done({ ok: false, error: 'Tauri invoke is unavailable' });
+              return;
+            }
+            invoke('acceptance_request_activation')
               .then(done)
               .catch((error) => done({ ok: false, error: String(error) }));
           `,
@@ -1456,7 +1462,13 @@ async function releaseForegroundClient(clientId, client) {
           body: JSON.stringify({
             script: `
               const done = arguments[arguments.length - 1];
-              window.__TAURI__.core.invoke('acceptance_yield_activation', {
+              const invoke = window.__TAURI__?.core?.invoke
+                || window.__TAURI_INTERNALS__?.invoke;
+              if (typeof invoke !== 'function') {
+                done({ ok: false, error: 'Tauri invoke is unavailable' });
+                return;
+              }
+              invoke('acceptance_yield_activation', {
                 targetPid: arguments[0]
               }).then(done).catch((error) => done({ ok: false, error: String(error) }));
             `,
