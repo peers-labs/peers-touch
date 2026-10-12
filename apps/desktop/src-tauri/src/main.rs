@@ -581,17 +581,24 @@ fn main() {
             // BOT-A30: menu-bar residency. Install the tray first and only mark
             // the window resident once the tray is confirmed available; the
             // window close hook otherwise keeps the default quit behavior.
-            match application::tray::install(app.handle()) {
-                Ok(()) => app
-                    .state::<application::window_lifecycle::TrayResidency>()
-                    .mark_resident(),
-                Err(error) => tracing::warn!(
-                    error = %error,
-                    "tray unavailable; closing the main window will quit the app"
-                ),
-            }
-            if let Err(error) = application::native_surface::init_notifications(app.handle()) {
-                tracing::warn!(error = %error, "native notifications unavailable");
+            // Disabled under WebDriver acceptance runs so multi-slot window
+            // teardown and native permission prompts never perturb automation.
+            #[cfg(not(feature = "acceptance-webdriver"))]
+            {
+                match application::tray::install(app.handle()) {
+                    Ok(()) => app
+                        .state::<application::window_lifecycle::TrayResidency>()
+                        .mark_resident(),
+                    Err(error) => tracing::warn!(
+                        error = %error,
+                        "tray unavailable; closing the main window will quit the app"
+                    ),
+                }
+                if let Err(error) =
+                    application::native_surface::init_notifications(app.handle())
+                {
+                    tracing::warn!(error = %error, "native notifications unavailable");
+                }
             }
             Ok(())
         })
