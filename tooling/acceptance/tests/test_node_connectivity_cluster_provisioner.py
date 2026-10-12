@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.errors import ProvisioningError
 from tooling.acceptance.gates.station_access.node_connectivity_cluster_native_e2e import (
     RUNTIME_REUSE,
@@ -82,6 +83,20 @@ class NodeConnectivityClusterProvisionerTest(unittest.TestCase):
         self.assertTrue(RUNTIME_REUSE.require_attach_only_scenarios)
         self.assertTrue(RUNTIME_REUSE.require_receiver_visible_proof)
         self.assertFalse(RUNTIME_REUSE.allow_client_replacement)
+
+    def test_entrypoint_projects_explicit_shared_oss_backend(self) -> None:
+        source = (
+            REPO_ROOT / "tooling" / "docker" / "entrypoint.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "OVERLAYS=\"${OVERLAYS}, oss_backend.docker.yml\"",
+            source,
+        )
+        patch_loop = source.split(
+            "# ── Patch peers.yml `includes:` once, idempotently",
+            maxsplit=1,
+        )[1]
+        self.assertIn("oss_backend.docker.yml", patch_loop)
 
 
 if __name__ == "__main__":
