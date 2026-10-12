@@ -25,6 +25,8 @@
     "apps/mobile/src/pages/ContactsPage.tsx",
     "apps/mobile/src/pages/ContactsPage.window.test.tsx",
     "apps/mobile/src/features/social",
+    "apps/mobile/src/runtimes/socialProjectionRuntime.ts",
+    "apps/mobile/src/runtimes/socialProjectionRuntime.test.ts",
     "apps/mobile/src/styles.css",
     "apps/mobile/src-tauri/src/messaging",
     "apps/station/app/subserver/federation",
