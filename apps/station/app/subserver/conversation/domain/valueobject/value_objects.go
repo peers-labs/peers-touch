@@ -244,6 +244,12 @@ type Endpoint struct {
 	Device DeviceID
 }
 
+// SystemStationDeviceID is the reserved device id under which the Station
+// commits internal, non-E2EE service-plaintext messages (BOT-D05). It is not a
+// human device, holds no keys, and never appears in ActiveEndpoints; the
+// aggregate system-sender port is the only path that may author with it.
+const SystemStationDeviceID DeviceID = "station-system"
+
 func NewEndpoint(actor string, device string) (Endpoint, error) {
 	ptid, err := NewPTID(actor)
 	if err != nil {

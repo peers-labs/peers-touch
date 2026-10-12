@@ -466,7 +466,8 @@ func MapEvent(record domainevent.Record) (*chat.ConversationEvent, error) {
 	}
 	var source chat.ChatCommand
 	if record.Fact.Kind != domainevent.KindConversationCreated &&
-		record.Fact.Kind != domainevent.KindMemberAuthority {
+		record.Fact.Kind != domainevent.KindMemberAuthority &&
+		record.Fact.Kind != domainevent.KindSystemServiceMessageCommitted {
 		if err := proto.Unmarshal(record.Fact.Payload, &source); err != nil {
 			return nil, fmt.Errorf("conversation interface: decode event source command: %w", err)
 		}
@@ -504,6 +505,19 @@ func MapEvent(record domainevent.Record) (*chat.ConversationEvent, error) {
 				ThreadRootMessageId: intent.ThreadRootMessageId,
 				Attachments:         intent.Attachments,
 				ClientTimestamp:     source.ClientTimestamp,
+			},
+		}
+	case domainevent.KindSystemServiceMessageCommitted:
+		// Internal non-E2EE bot message. It surfaces on the same wire arm as an
+		// ordinary committed message but with explicit service-plaintext
+		// security and SYSTEM content; the readable/structured body travels in
+		// the endpoint payload (kind 8), not in this metadata fact.
+		wire.Payload = &chat.ConversationEvent_MessageCommitted{
+			MessageCommitted: &chat.MessageCommittedFact{
+				MessageId:        string(record.Fact.MessageID),
+				Sender:           endpointToProto(record.Actor),
+				ContentKind:      chat.MessagingContentKind_MESSAGING_CONTENT_KIND_SYSTEM,
+				DeliverySecurity: chat.MessageDeliverySecurity_MESSAGE_DELIVERY_SECURITY_SERVICE_PLAINTEXT,
 			},
 		}
 	case domainevent.KindMessageEdited:

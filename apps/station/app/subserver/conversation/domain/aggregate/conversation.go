@@ -1217,6 +1217,17 @@ func (c *Conversation) validateOrdinaryCommand(command Command) error {
 		)
 	}
 	for _, delivery := range command.Deliveries {
+		// direct_service_plaintext is restricted to the internal system sender
+		// port (CommitSystemServiceMessage). A human device command presenting
+		// it through ApplyCommand is rejected before any kind matching.
+		if delivery.Kind == valueobject.DeliveryKindDirectServicePlaintext {
+			return conversationdomain.NewError(
+				conversationdomain.ErrorCodeUnauthorized,
+				"aggregate.validate_command",
+				"delivery_kind",
+				"direct_service_plaintext is restricted to the internal system sender",
+			)
+		}
 		expected := valueobject.DeliveryKindPublicEvent
 		if command.Kind == domainevent.KindMessageCommitted ||
 			command.Kind == domainevent.KindMessageForwarded ||
