@@ -2157,12 +2157,16 @@ func (s *Service) persistTransition(
 			)
 		}
 	}
-	senderActorIdentityKey, err := transaction.Identity.ActorIdentityPublicKey(
-		ctx,
-		transition.Event.Actor.Actor,
-	)
-	if err != nil {
-		return transitionPersistenceStage("load_actor_identity", err)
+	var senderActorIdentityKey []byte
+	if transition.Event.Actor.Device != valueobject.SystemStationDeviceID {
+		loaded, err := transaction.Identity.ActorIdentityPublicKey(
+			ctx,
+			transition.Event.Actor.Actor,
+		)
+		if err != nil {
+			return transitionPersistenceStage("load_actor_identity", err)
+		}
+		senderActorIdentityKey = loaded
 	}
 	commitmentByEndpoint := make(map[string]valueobject.Hash, len(commitments))
 	for _, commitment := range commitments {

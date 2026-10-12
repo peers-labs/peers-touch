@@ -8,6 +8,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	conversationhttp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/interface/http"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	"google.golang.org/protobuf/proto"
 )
 
 // G-BOT-03: a system service message maps onto the ordinary committed-message
@@ -47,5 +48,59 @@ func TestMapEventSystemServiceMessageSecurityMarker(t *testing.T) {
 	}
 	if committed.Sender.GetDeviceId() != string(valueobject.SystemStationDeviceID) {
 		t.Fatalf("sender device = %q, want station-system", committed.Sender.GetDeviceId())
+	}
+}
+
+// G-BOT-03: the system author is keyless; device delivery encoding must
+// accept an empty sender identity key for the reserved station-system device
+// while still binding the delivery commitment and payload kind.
+func TestEncodeDeviceEventKeylessSystemAuthor(t *testing.T) {
+	record := domainevent.Record{
+		ID:             valueobject.EventID("evt-bot-2"),
+		ConversationID: valueobject.ConversationID("conv-bot"),
+		Sequence:       valueobject.Sequence(2),
+		CommandID:      valueobject.CommandID("cmd-bot-2"),
+		Actor: valueobject.Endpoint{
+			Actor:  valueobject.PTID("ptid:v1:actor:peers:b:claude:fp"),
+			Device: valueobject.SystemStationDeviceID,
+		},
+		CommittedAt: time.Date(2026, time.October, 12, 9, 0, 0, 0, time.UTC),
+		Fact:        domainevent.NewSystemServiceMessageFact(valueobject.MessageID("msg-bot-2"), []byte("payload")),
+	}
+	recipient := valueobject.Endpoint{
+		Actor:  valueobject.PTID("ptid:v1:actor:peers:p:alice:aaa"),
+		Device: valueobject.DeviceID("owner-device"),
+	}
+	delivery, err := valueobject.NewPreparedDelivery(
+		recipient,
+		valueobject.StationID("station-a"),
+		valueobject.DeliveryKindDirectServicePlaintext,
+		[]byte("peers-touch.bot-event.v1"),
+	)
+	if err != nil {
+		t.Fatalf("NewPreparedDelivery: %v", err)
+	}
+	var commitment valueobject.Hash
+	copy(commitment[:], []byte("0123456789abcdef0123456789abcdef"))
+
+	encoded, err := (conversationhttp.ProtobufDeviceEventEncoder{}).EncodeDeviceEvent(
+		record,
+		delivery,
+		commitment,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("EncodeDeviceEvent with empty system key: %v", err)
+	}
+	wire := chat.DeviceEventDelivery{}
+	if err := proto.Unmarshal(encoded, &wire); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if wire.PayloadKind !=
+		chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_DIRECT_SERVICE_PLAINTEXT {
+		t.Fatalf("payload kind = %v, want DIRECT_SERVICE_PLAINTEXT", wire.PayloadKind)
+	}
+	if len(wire.SenderActorIdentityPublicKey) != 0 {
+		t.Fatal("system delivery must not carry a sender identity key")
 	}
 }

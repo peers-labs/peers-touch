@@ -43,6 +43,9 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	if err := repo.AutoMigrate(); err != nil {
 		return err
 	}
+	if err := repo.AutoMigrateSystemTables(); err != nil {
+		return err
+	}
 	s.registry = registry.NewService(repo, infrastructure.NewActorMinter())
 
 	limiter := ingest.NewMemoryRateLimiter(nil)

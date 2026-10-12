@@ -47,8 +47,16 @@ func (ProtobufDeviceEventEncoder) EncodeDeviceEvent(
 	commitment valueobject.Hash,
 	senderActorIdentityPublicKey []byte,
 ) ([]byte, error) {
-	if len(senderActorIdentityPublicKey) != ed25519.PublicKeySize ||
-		commitment.IsZero() {
+	// The reserved station-system author is keyless by design (internal
+	// service-plaintext delivery); every other event must carry the full
+	// ed25519 actor identity key.
+	systemAuthor := event.Actor.Device == valueobject.SystemStationDeviceID
+	if !systemAuthor && len(senderActorIdentityPublicKey) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf(
+			"conversation interface: complete sender identity and delivery commitment are required",
+		)
+	}
+	if commitment.IsZero() {
 		return nil, fmt.Errorf(
 			"conversation interface: complete sender identity and delivery commitment are required",
 		)

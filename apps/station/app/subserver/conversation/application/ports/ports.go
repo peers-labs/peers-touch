@@ -84,6 +84,71 @@ type SystemSenderAuthorization interface {
 	) error
 }
 
+// SystemDirectories owns the internal bot-direct bookkeeping inside the
+// delivery transaction: recording the explicit system grant, and the 24h
+// webhook idempotency bucket. Implemented by the bot sub-server over a
+// transaction-bound store.
+type SystemDirectories interface {
+	EnsureSystemGrant(
+		ctx context.Context,
+		bot valueobject.PTID,
+		owner valueobject.PTID,
+		conversation valueobject.ConversationID,
+		at time.Time,
+	) error
+	LoadIngestion(
+		ctx context.Context,
+		bot valueobject.PTID,
+		requestID string,
+		now time.Time,
+	) (eventID string, found bool, err error)
+	RecordIngestion(
+		ctx context.Context,
+		bot valueobject.PTID,
+		requestID string,
+		eventID string,
+		at time.Time,
+	) error
+}
+
+// ServiceNotificationInput is a transaction-bound internal notification
+// production request (bot events). The implementation honors recipient
+// preferences and an idempotency key without leaving the caller transaction.
+type ServiceNotificationInput struct {
+	RecipientPTID  string
+	ActorPTID      string
+	Type           int32
+	Category       int32
+	TargetType     string
+	TargetID       string
+	Title          string
+	Body           string
+	GroupKey       string
+	IdempotencyKey string
+	Metadata       map[string]string
+}
+
+// ServiceNotificationProducer writes a notification row inside the delivery
+// transaction. produced=false means a muted preference or an idempotent
+// replay; the causing message is still committed either way.
+type ServiceNotificationProducer interface {
+	ProduceInTx(
+		ctx context.Context,
+		input ServiceNotificationInput,
+		at time.Time,
+	) (produced bool, err error)
+}
+
+// LocalScope resolves the internal Federation scope for system-authored
+// conversations (no client-supplied Federation id; v1 home-local only).
+type LocalScope interface {
+	LocalFederation(ctx context.Context) (
+		federationID valueobject.FederationID,
+		authorityEpoch valueobject.AuthorityEpoch,
+		err error,
+	)
+}
+
 type DeviceInboxIntent struct {
 	IntentID       string
 	ConversationID valueobject.ConversationID
@@ -185,6 +250,9 @@ type Transaction struct {
 	Identity               IdentityDirectory
 	Federation             FederationDirectory
 	SystemSender           SystemSenderAuthorization
+	SystemDirectories      SystemDirectories
+	ServiceNotifications   ServiceNotificationProducer
+	LocalScope             LocalScope
 	DeviceInbox            DeviceInboxWriter
 	FederationOutbox       FederationOutboxWriter
 	DeliveryCommitments    AuthorityDeliveryCommitmentWriter

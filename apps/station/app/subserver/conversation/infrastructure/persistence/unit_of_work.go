@@ -19,6 +19,10 @@ var sqliteTransactionLocks sync.Map
 type TransactionalAdapters struct {
 	Identity               ports.IdentityDirectory
 	Federation             ports.FederationDirectory
+	SystemSender           ports.SystemSenderAuthorization
+	SystemDirectories      ports.SystemDirectories
+	ServiceNotifications   ports.ServiceNotificationProducer
+	LocalScope             ports.LocalScope
 	DeviceInbox            ports.DeviceInboxWriter
 	FederationOutbox       ports.FederationOutboxWriter
 	DeliveryCommitments    ports.AuthorityDeliveryCommitmentWriter
@@ -488,6 +492,10 @@ func (u *UnitOfWork) bindTransaction(tx *gorm.DB) (ports.Transaction, error) {
 		},
 		Identity:               adapters.Identity,
 		Federation:             adapters.Federation,
+		SystemSender:           adapters.SystemSender,
+		SystemDirectories:      adapters.SystemDirectories,
+		ServiceNotifications:   adapters.ServiceNotifications,
+		LocalScope:             adapters.LocalScope,
 		DeviceInbox:            adapters.DeviceInbox,
 		FederationOutbox:       adapters.FederationOutbox,
 		DeliveryCommitments:    adapters.DeliveryCommitments,

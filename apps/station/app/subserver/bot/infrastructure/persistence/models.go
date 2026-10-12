@@ -22,3 +22,29 @@ type BotRegistrationModel struct {
 }
 
 func (BotRegistrationModel) TableName() string { return "bot_registration" }
+
+// BotSystemGrantModel records the explicit {bot, owner, direct-conversation}
+// authorization that gates internal service-plaintext delivery. It is written
+// in the same transaction as the lazy conversation genesis.
+type BotSystemGrantModel struct {
+	ID             uint64    `gorm:"column:id;primaryKey;autoIncrement:true"`
+	BotPtid        string    `gorm:"column:bot_ptid;size:255;not null;uniqueIndex:uidx_bot_system_grant,priority:1"`
+	OwnerPtid      string    `gorm:"column:owner_ptid;size:255;not null;uniqueIndex:uidx_bot_system_grant,priority:2"`
+	ConversationID string    `gorm:"column:conversation_id;size:255;not null;uniqueIndex:uidx_bot_system_grant,priority:3"`
+	CreatedAt      time.Time `gorm:"column:created_at"`
+}
+
+func (BotSystemGrantModel) TableName() string { return "bot_system_grant" }
+
+// BotInboundEventModel is the 24h idempotency bucket for public webhook
+// requests. The unique (bot_ptid, request_id) constraint makes replay
+// collapse to the original event id at the database level.
+type BotInboundEventModel struct {
+	ID        uint64    `gorm:"column:id;primaryKey;autoIncrement:true"`
+	BotPtid   string    `gorm:"column:bot_ptid;size:255;not null;uniqueIndex:uidx_bot_inbound_request,priority:1"`
+	RequestID string    `gorm:"column:request_id;size:255;not null;uniqueIndex:uidx_bot_inbound_request,priority:2"`
+	EventID   string    `gorm:"column:event_id;size:64;not null"`
+	CreatedAt time.Time `gorm:"column:created_at;index"`
+}
+
+func (BotInboundEventModel) TableName() string { return "bot_inbound_event" }

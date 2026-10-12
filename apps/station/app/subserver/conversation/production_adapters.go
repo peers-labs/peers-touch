@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	botpersistence "github.com/peers-labs/peers-touch/station/app/subserver/bot/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
 	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
@@ -24,6 +25,7 @@ import (
 	federationinfra "github.com/peers-labs/peers-touch/station/app/subserver/federation/infrastructure"
 	keyexchangedomain "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	keyexchangeinfra "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/infrastructure"
+	notificationinfra "github.com/peers-labs/peers-touch/station/app/subserver/notification/infrastructure"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
@@ -174,9 +176,21 @@ func (f *ProductionTransactionalAdapterFactory) Bind(
 		)
 	}
 
+	systemStore := botpersistence.NewSystemStore(tx)
+	systemGrant := &productionSystemGrant{store: systemStore}
+
 	return persistence.TransactionalAdapters{
-		Identity:            identity,
-		Federation:          federation,
+		Identity:          identity,
+		Federation:        federation,
+		SystemSender:      systemGrant,
+		SystemDirectories: systemGrant,
+		ServiceNotifications: &productionServiceNotifications{
+			producer: notificationinfra.NewTxProducer(tx),
+		},
+		LocalScope: &productionLocalScope{
+			db:           tx,
+			localStation: f.localStation,
+		},
 		DeviceInbox:         deviceInbox,
 		FederationOutbox:    federationOutbox,
 		DeliveryCommitments: deliveryCommitments,

@@ -32,9 +32,13 @@ type NotificationModel struct {
 	Body          string `gorm:"type:text"`
 	Metadata      string `gorm:"type:text"`
 	GroupKey      string `gorm:"size:255;index"`
-	ReadAt        *time.Time
-	CreatedAt     time.Time `gorm:"index:idx_recipient_ptid_created"`
-	UpdatedAt     time.Time
+	// IdempotencyKey is the bucket-scoped producer-supplied dedupe key. Empty
+	// for legacy producers; uniqueness for non-empty keys is enforced by a
+	// partial unique index on (recipient_ptid, idempotency_key).
+	IdempotencyKey string `gorm:"column:idempotency_key;size:255;not null;default:''"`
+	ReadAt         *time.Time
+	CreatedAt      time.Time `gorm:"index:idx_recipient_ptid_created"`
+	UpdatedAt      time.Time
 }
 
 func (NotificationModel) TableName() string { return "notifications" }
@@ -133,7 +137,7 @@ func (r *GormRepo) AutoMigrate() error {
 	if err := migrateNotificationPTIDColumns(r.db); err != nil {
 		return err
 	}
-	return r.db.AutoMigrate(
+	if err := r.db.AutoMigrate(
 		&NotificationModel{},
 		&UnreadCountModel{},
 		&PreferenceModel{},
@@ -141,7 +145,21 @@ func (r *GormRepo) AutoMigrate() error {
 		&PushRegistrationModel{},
 		&PushMutationReceiptModel{},
 		&PushCredentialKeyModel{},
-	)
+	); err != nil {
+		return err
+	}
+	return r.ensureIdempotencyIndex()
+}
+
+// ensureIdempotencyIndex installs the partial unique index that collapses
+// replayed producer requests per recipient while leaving legacy rows with an
+// empty key untouched. Both PostgreSQL and SQLite accept this predicate.
+func (r *GormRepo) ensureIdempotencyIndex() error {
+	return r.db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uidx_notification_idempotency
+		ON notifications (recipient_ptid, idempotency_key)
+		WHERE idempotency_key <> ''
+	`).Error
 }
 
 func (r *GormRepo) ActivatePushCredentialKey(
@@ -200,20 +218,21 @@ func (r *GormRepo) Create(n domain.Notification) (domain.Notification, error) {
 		metaJSON = string(b)
 	}
 	record := NotificationModel{
-		NotifID:       fmt.Sprintf("ntf-%d", now.UnixNano()),
-		RecipientPTID: n.RecipientPTID,
-		ActorPTID:     n.ActorPTID,
-		Type:          n.Type,
-		Category:      n.Category,
-		Status:        domain.StatusUnread,
-		TargetType:    n.TargetType,
-		TargetID:      n.TargetID,
-		Title:         n.Title,
-		Body:          n.Body,
-		Metadata:      metaJSON,
-		GroupKey:      n.GroupKey,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		NotifID:        fmt.Sprintf("ntf-%d", now.UnixNano()),
+		RecipientPTID:  n.RecipientPTID,
+		ActorPTID:      n.ActorPTID,
+		Type:           n.Type,
+		Category:       n.Category,
+		Status:         domain.StatusUnread,
+		TargetType:     n.TargetType,
+		TargetID:       n.TargetID,
+		Title:          n.Title,
+		Body:           n.Body,
+		Metadata:       metaJSON,
+		GroupKey:       n.GroupKey,
+		IdempotencyKey: n.IdempotencyKey,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 
 	err := r.db.Transaction(func(tx *gorm.DB) error {
@@ -903,20 +922,21 @@ func toDomain(m NotificationModel) domain.Notification {
 		_ = json.Unmarshal([]byte(m.Metadata), &metadata)
 	}
 	n := domain.Notification{
-		ID:            m.NotifID,
-		RecipientPTID: m.RecipientPTID,
-		ActorPTID:     m.ActorPTID,
-		Type:          m.Type,
-		Category:      m.Category,
-		Status:        m.Status,
-		TargetType:    m.TargetType,
-		TargetID:      m.TargetID,
-		Title:         m.Title,
-		Body:          m.Body,
-		Metadata:      metadata,
-		GroupKey:      m.GroupKey,
-		CreatedAt:     m.CreatedAt,
-		ReadAt:        m.ReadAt,
+		ID:             m.NotifID,
+		RecipientPTID:  m.RecipientPTID,
+		ActorPTID:      m.ActorPTID,
+		Type:           m.Type,
+		Category:       m.Category,
+		Status:         m.Status,
+		TargetType:     m.TargetType,
+		TargetID:       m.TargetID,
+		Title:          m.Title,
+		Body:           m.Body,
+		Metadata:       metadata,
+		GroupKey:       m.GroupKey,
+		IdempotencyKey: m.IdempotencyKey,
+		CreatedAt:      m.CreatedAt,
+		ReadAt:         m.ReadAt,
 	}
 	_ = strings.TrimSpace(n.ID)
 	return n

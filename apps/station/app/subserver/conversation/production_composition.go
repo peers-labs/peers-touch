@@ -17,6 +17,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	reconciliationapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/reconciliation"
+	systemdelivery "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/systemdelivery"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	attachmentinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/attachment"
@@ -151,6 +152,7 @@ type ProductionComposition struct {
 	DeliveryService    *deliveryapp.Service
 	AttachmentService  *attachmentapp.Service
 	InteractionService *interactionapp.Service
+	SystemDelivery     *systemdelivery.Service
 
 	DeviceInboxHandler   *conversationhttp.DeviceInboxHandler
 	CommandResultHandler *conversationhttp.CommandResultHandler
@@ -421,6 +423,15 @@ func NewProductionComposition(
 		return nil, fmt.Errorf("compose Conversation interaction handler: %w", err)
 	}
 
+	systemDelivery, err := systemdelivery.NewService(
+		unitOfWork,
+		commandService,
+		func() time.Time { return config.Clock.Now() },
+	)
+	if err != nil {
+		return nil, fmt.Errorf("compose Conversation system delivery service: %w", err)
+	}
+
 	return &ProductionComposition{
 		UnitOfWork:            unitOfWork,
 		CommandService:        commandService,
@@ -428,6 +439,7 @@ func NewProductionComposition(
 		DeliveryService:       deliveryService,
 		AttachmentService:     attachmentService,
 		InteractionService:    interactionService,
+		SystemDelivery:        systemDelivery,
 		DeviceInboxHandler:    deviceInboxHandler,
 		CommandResultHandler:  commandResultHandler,
 		AttachmentHandler:     attachmentHandler,
