@@ -138,6 +138,26 @@ class NodeConnectivityClusterProvisionerTest(unittest.TestCase):
         )[1]
         self.assertIn("oss_backend.docker.yml", patch_loop)
 
+    def test_failover_probe_uses_real_conversation_read(self) -> None:
+        source = (
+            REPO_ROOT
+            / "tooling"
+            / "acceptance"
+            / "gates"
+            / "station_access"
+            / "node_connectivity_cluster_native_e2e.py"
+        ).read_text(encoding="utf-8")
+        failover = source.split(
+            "def _failover_scenario",
+            maxsplit=1,
+        )[1].split(
+            "def _durable_scenario",
+            maxsplit=1,
+        )[0]
+        self.assertIn('"syncFriendSession"', failover)
+        self.assertIn('{"sessionUlid": conversation_id}', failover)
+        self.assertNotIn('"hydrateActiveActor"', failover)
+
 
 if __name__ == "__main__":
     unittest.main()

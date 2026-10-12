@@ -317,6 +317,7 @@ class NodeConnectivityClusterNativeGate(
         before = _station_inventory(alice)
         actor_before = self.ptids["alice"]
         device_before = self.device_ids["alice"]
+        conversation_id = self._active_conversation_id()
         self.suite.record(
             SuiteRuntimeAction.SCENARIO_START,
             scenario_id=scenario,
@@ -331,8 +332,8 @@ class NodeConnectivityClusterNativeGate(
             try:
                 async_harness(
                     alice,
-                    "hydrateActiveActor",
-                    {},
+                    "syncFriendSession",
+                    {"sessionUlid": conversation_id},
                     timeout=5,
                 )
             except Exception:
