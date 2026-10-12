@@ -594,6 +594,8 @@ fn main() {
             auth::auth_logout,
             #[cfg(feature = "acceptance-webdriver")]
             auth::acceptance_logout_window_session,
+            #[cfg(feature = "acceptance-webdriver")]
+            auth::acceptance_window_session_identity,
             auth::auth_restore_session,
             auth::auth_validate_token,
             auth::ensure_station_session,

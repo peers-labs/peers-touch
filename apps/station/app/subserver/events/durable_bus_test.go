@@ -261,6 +261,25 @@ func TestMissedWakeIsRepairedByBoundedReconciliation(t *testing.T) {
 	}
 }
 
+func TestDurableFloorDoesNotAdvancePastUnflushedEvent(t *testing.T) {
+	sub := &Subscription{floorEventID: "event-1"}
+	sub.queueDurableEvent("event-2", "event-2")
+	sub.advanceDurableFloor("event-3")
+
+	if floor := sub.DurableFloorEventID(); floor != "event-1" {
+		t.Fatalf("unflushed durable floor = %q, want event-1", floor)
+	}
+	if sub.AcknowledgeDurableEvent("ephemeral-event") {
+		t.Fatal("non-durable event advanced the durable floor")
+	}
+	if !sub.AcknowledgeDurableEvent("event-2") {
+		t.Fatal("queued durable event was not acknowledged")
+	}
+	if floor := sub.DurableFloorEventID(); floor != "event-3" {
+		t.Fatalf("acknowledged durable floor = %q, want event-3", floor)
+	}
+}
+
 func TestDurableRetentionGapEmitsHeadBoundResync(t *testing.T) {
 	store := newTestDurableStore(t).(*gormEventStore)
 	bus := newTestBus(t, WithDurableStore(store))

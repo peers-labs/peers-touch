@@ -56,6 +56,7 @@ func (c *StationControl) roundTrip(
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	var lastError error
+	bodySent := false
 	for _, target := range c.pool.Targets {
 		route, err := c.discoverRouteLocked(
 			ctx,
@@ -89,10 +90,18 @@ func (c *StationControl) roundTrip(
 			lastError = err
 			continue
 		}
-		response, err := client.RoundTrip(request)
+		attempt, err := relayRequestAttempt(ctx, request, &bodySent)
+		if err != nil {
+			client.CloseIdleConnections()
+			return nil, err
+		}
+		response, err := client.RoundTrip(attempt)
 		if err != nil {
 			client.CloseIdleConnections()
 			lastError = err
+			if !relayRequestAllowsAutomaticRetry(request.Method) {
+				return nil, err
+			}
 			continue
 		}
 		return response, nil
@@ -101,6 +110,45 @@ func (c *StationControl) roundTrip(
 		lastError = fmt.Errorf("no verified Relay route is available")
 	}
 	return nil, lastError
+}
+
+func relayRequestAllowsAutomaticRetry(method string) bool {
+	switch method {
+	case http.MethodGet,
+		http.MethodHead,
+		http.MethodOptions,
+		http.MethodTrace:
+		return true
+	default:
+		return false
+	}
+}
+
+func relayRequestAttempt(
+	ctx context.Context,
+	request *http.Request,
+	bodySent *bool,
+) (*http.Request, error) {
+	attempt := request.Clone(ctx)
+	if request.Body == nil {
+		return attempt, nil
+	}
+	if !*bodySent {
+		*bodySent = true
+		attempt.Body = request.Body
+		return attempt, nil
+	}
+	if request.GetBody == nil {
+		return nil, fmt.Errorf(
+			"Station Circuit request body is not replayable after a failed route",
+		)
+	}
+	body, err := request.GetBody()
+	if err != nil {
+		return nil, fmt.Errorf("replay Station Circuit request body: %w", err)
+	}
+	attempt.Body = body
+	return attempt, nil
 }
 
 type verifiedCircuitRoute struct {

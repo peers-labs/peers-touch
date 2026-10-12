@@ -3369,7 +3369,7 @@ type ExecutorLease struct {
 	AcquiredAt       *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=acquired_at,json=acquiredAt,proto3" json:"acquired_at,omitempty"`
 	HeartbeatAt      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=heartbeat_at,json=heartbeatAt,proto3" json:"heartbeat_at,omitempty"`
 	ExpiresAt        *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	OwnerNodePeerId  string                 `protobuf:"bytes,10,opt,name=owner_node_peer_id,json=ownerNodePeerId,proto3" json:"owner_node_peer_id,omitempty"`
+	OwnerNodeId      string                 `protobuf:"bytes,10,opt,name=owner_node_id,json=ownerNodeId,proto3" json:"owner_node_id,omitempty"`
 	OwnerIncarnation string                 `protobuf:"bytes,11,opt,name=owner_incarnation,json=ownerIncarnation,proto3" json:"owner_incarnation,omitempty"`
 	FencingToken     uint64                 `protobuf:"varint,12,opt,name=fencing_token,json=fencingToken,proto3" json:"fencing_token,omitempty"`
 	unknownFields    protoimpl.UnknownFields
@@ -3469,9 +3469,9 @@ func (x *ExecutorLease) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
-func (x *ExecutorLease) GetOwnerNodePeerId() string {
+func (x *ExecutorLease) GetOwnerNodeId() string {
 	if x != nil {
-		return x.OwnerNodePeerId
+		return x.OwnerNodeId
 	}
 	return ""
 }
@@ -6188,7 +6188,7 @@ const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"\rversions_json\x18\x05 \x01(\tR\fversionsJson\x122\n" +
 	"\x15pending_writes_cursor\x18\x06 \x01(\tR\x13pendingWritesCursor\x129\n" +
 	"\n" +
-	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x9a\x04\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x91\x04\n" +
 	"\rExecutorLease\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12\x17\n" +
@@ -6201,9 +6201,9 @@ const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"acquiredAt\x12=\n" +
 	"\fheartbeat_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\vheartbeatAt\x129\n" +
 	"\n" +
-	"expires_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12+\n" +
-	"\x12owner_node_peer_id\x18\n" +
-	" \x01(\tR\x0fownerNodePeerId\x12+\n" +
+	"expires_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\"\n" +
+	"\rowner_node_id\x18\n" +
+	" \x01(\tR\vownerNodeId\x12+\n" +
 	"\x11owner_incarnation\x18\v \x01(\tR\x10ownerIncarnation\x12#\n" +
 	"\rfencing_token\x18\f \x01(\x04R\ffencingToken\"\xb7\x03\n" +
 	"\x10InterruptRequest\x12!\n" +

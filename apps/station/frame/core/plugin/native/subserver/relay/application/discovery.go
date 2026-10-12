@@ -70,6 +70,7 @@ func (s *Service) PublishStationRoute(
 	if err := s.repo.UpdateEnrollmentStatus(
 		ctx,
 		identity.StationPeerID,
+		identity.NodePeerID,
 		identity.Generation,
 		domain.EnrollmentStatusOnline,
 	); err != nil {
@@ -85,6 +86,7 @@ func (s *Service) PublishStationRoute(
 		_ = s.repo.UpdateEnrollmentStatus(
 			ctx,
 			identity.StationPeerID,
+			identity.NodePeerID,
 			identity.Generation,
 			domain.EnrollmentStatusOffline,
 		)
@@ -369,11 +371,39 @@ func (s *Service) InvalidateStationRoutes(stationPeerID string) {
 	}
 }
 
+func (s *Service) InvalidateNodeRoutes(
+	stationPeerID string,
+	nodePeerID string,
+) {
+	s.discoveryMu.Lock()
+	defer s.discoveryMu.Unlock()
+	revokedRouteIDs := make(map[string]struct{})
+	for routeID, route := range s.routes {
+		if route.StationPeerID == stationPeerID &&
+			route.NodePeerID == nodePeerID {
+			revokedRouteIDs[routeID] = struct{}{}
+			delete(s.routes, routeID)
+		}
+	}
+	for digest, grant := range s.grants {
+		if grant.StationPeerID == stationPeerID {
+			if _, revoked := revokedRouteIDs[grant.RouteID]; !revoked {
+				continue
+			}
+			delete(s.grants, digest)
+		}
+	}
+}
+
 func (s *Service) routeIsCurrent(
 	ctx context.Context,
 	route domain.RouteRecord,
 ) bool {
-	enrollment, err := s.repo.GetEnrollmentByStationPeerID(ctx, route.StationPeerID)
+	enrollment, err := s.repo.GetEnrollment(
+		ctx,
+		route.StationPeerID,
+		route.NodePeerID,
+	)
 	return err == nil &&
 		enrollment.Status != domain.EnrollmentStatusRevoked &&
 		enrollment.Generation == route.RouteGeneration &&

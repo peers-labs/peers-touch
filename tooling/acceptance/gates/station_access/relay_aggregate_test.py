@@ -94,6 +94,10 @@ class RelayAggregateTest(unittest.TestCase):
             store.calls,
         )
         self.assertIn(
+            ("NCP-G03", "desktop-macos-native"),
+            store.calls,
+        )
+        self.assertIn(
             (
                 "station-access-desktop-relay-windows-e2e",
                 "desktop-windows-native",

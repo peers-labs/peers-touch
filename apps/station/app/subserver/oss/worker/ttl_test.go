@@ -222,7 +222,7 @@ func TestTTLSweeper_RunOnce_DeletesExpiredAndAudits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTTLSweeper: %v", err)
 	}
-	if err := sweeper.RunOnce(context.Background()); err != nil {
+	if err := sweeper.RunOnce(testWorkerContext(context.Background(), sweeper.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
@@ -281,7 +281,7 @@ func TestTTLSweeper_LostRaceIsBenign(t *testing.T) {
 		BackendName: "local",
 		Now:         func() time.Time { return now },
 	})
-	if err := sweeper.RunOnce(context.Background()); err != nil {
+	if err := sweeper.RunOnce(testWorkerContext(context.Background(), sweeper.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 	if buckets.debits["b1"] != 0 {
@@ -303,7 +303,7 @@ func TestTTLSweeper_ListExpiredErrorPropagates(t *testing.T) {
 		Audit:       &recordingAudit{},
 		BackendName: "local",
 	})
-	if err := sweeper.RunOnce(context.Background()); err == nil {
+	if err := sweeper.RunOnce(testWorkerContext(context.Background(), sweeper.Name())); err == nil {
 		t.Fatalf("ListExpired error should propagate")
 	}
 }

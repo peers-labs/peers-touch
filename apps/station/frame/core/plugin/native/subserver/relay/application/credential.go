@@ -30,6 +30,7 @@ var ErrInvalidCredential = errors.New("invalid relay credential")
 type credentialClaims struct {
 	CredentialType string   `json:"type"`
 	StationPeerID  string   `json:"station_peer_id"`
+	NodePeerID     string   `json:"node_peer_id"`
 	EnrollmentID   uint64   `json:"enrollment_id"`
 	Generation     uint64   `json:"generation"`
 	Scopes         []string `json:"scope"`
@@ -126,7 +127,8 @@ func (a *CredentialAuthority) issueCredential(
 	scopes []string,
 	ttl time.Duration,
 ) (*domain.NodeCredential, error) {
-	if enrollment == nil || enrollment.ID == 0 || enrollment.StationPeerID == "" ||
+	if enrollment == nil || enrollment.ID == 0 ||
+		enrollment.StationPeerID == "" || enrollment.NodePeerID == "" ||
 		enrollment.Generation == 0 || jti == "" {
 		return nil, ErrInvalidCredential
 	}
@@ -135,12 +137,17 @@ func (a *CredentialAuthority) issueCredential(
 	claims := credentialClaims{
 		CredentialType: credentialType,
 		StationPeerID:  enrollment.StationPeerID,
+		NodePeerID:     enrollment.NodePeerID,
 		EnrollmentID:   enrollment.ID,
 		Generation:     enrollment.Generation,
 		Scopes:         append([]string(nil), scopes...),
 		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    a.relayPeerID,
-			Subject:   subjectForCredential(credentialType, enrollment.StationPeerID),
+			Issuer: a.relayPeerID,
+			Subject: subjectForCredential(
+				credentialType,
+				enrollment.StationPeerID,
+				enrollment.NodePeerID,
+			),
 			Audience:  jwt.ClaimStrings{audience},
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -157,6 +164,7 @@ func (a *CredentialAuthority) issueCredential(
 		Token:         signed,
 		RelayPeerID:   a.relayPeerID,
 		StationPeerID: enrollment.StationPeerID,
+		NodePeerID:    enrollment.NodePeerID,
 		EnrollmentID:  enrollment.ID,
 		Generation:    enrollment.Generation,
 		JTI:           jti,
@@ -188,11 +196,13 @@ func (a *CredentialAuthority) ValidateCredential(
 	if err != nil || !token.Valid ||
 		claims.ID == "" ||
 		claims.StationPeerID == "" ||
+		claims.NodePeerID == "" ||
 		claims.EnrollmentID == 0 ||
 		claims.Generation == 0 ||
 		claims.Subject != subjectForCredential(
 			claims.CredentialType,
 			claims.StationPeerID,
+			claims.NodePeerID,
 		) ||
 		!containsScope(claims.Scopes, requiredScope) {
 		return domain.NodeIdentity{}, ErrInvalidCredential
@@ -200,6 +210,7 @@ func (a *CredentialAuthority) ValidateCredential(
 	return domain.NodeIdentity{
 		RelayPeerID:   a.relayPeerID,
 		StationPeerID: claims.StationPeerID,
+		NodePeerID:    claims.NodePeerID,
 		EnrollmentID:  claims.EnrollmentID,
 		Generation:    claims.Generation,
 		JTI:           claims.ID,
@@ -322,9 +333,13 @@ func parseEd25519PrivateKey(material []byte) (ed25519.PrivateKey, error) {
 	}
 }
 
-func subjectForCredential(credentialType, stationPeerID string) string {
+func subjectForCredential(
+	credentialType string,
+	stationPeerID string,
+	nodePeerID string,
+) string {
 	_ = credentialType
-	return domain.SubjectRelayAccess + stationPeerID
+	return domain.SubjectRelayAccess + stationPeerID + ":" + nodePeerID
 }
 
 func containsScope(scopes []string, required string) bool {

@@ -2398,6 +2398,70 @@ func TestToolDispatchServiceClaimReadyContinuation(t *testing.T) {
 	if _, err := fixture.service.ClaimReadyContinuation(context.Background(), time.Minute); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("second claim must not acquire an active lease, got %v", err)
 	}
+	if err := fixture.service.ReleaseContinuationClaim(
+		context.Background(),
+		claimed.ID,
+		claimed.LeaseID,
+		claimed.FencingToken,
+	); err != nil {
+		t.Fatalf("release unused continuation claim: %v", err)
+	}
+	reclaimed, err := fixture.service.ClaimReadyContinuation(
+		context.Background(),
+		time.Minute,
+	)
+	if err != nil {
+		t.Fatalf("reclaim released continuation: %v", err)
+	}
+	if reclaimed.ID != row.ID ||
+		reclaimed.FencingToken != claimed.FencingToken+1 {
+		t.Fatalf("released continuation was not fenced on reclaim: %+v", reclaimed)
+	}
+}
+
+func TestTurnServiceReleasesContinuationClaimBeforeProviderEmission(
+	t *testing.T,
+) {
+	fixture := newToolDispatchFixture(t)
+	row := &persistence.ToolContinuation{
+		ID:          "continuation-release-before-provider",
+		TurnID:      "turn-missing",
+		AttemptID:   "attempt-missing",
+		ToolBatchID: "batch-missing",
+		Status:      persistence.ToolContinuationStatusReady,
+		CreatedAt:   fixture.now,
+		UpdatedAt:   fixture.now,
+	}
+	if err := fixture.db.Create(row).Error; err != nil {
+		t.Fatalf("seed ready continuation: %v", err)
+	}
+	service := &TurnService{toolDispatch: fixture.service}
+
+	resumed, err := service.ResumeReadyToolContinuation(
+		context.Background(),
+		time.Minute,
+	)
+	if !resumed || err == nil {
+		t.Fatalf(
+			"missing batch result: resumed=%v err=%v",
+			resumed,
+			err,
+		)
+	}
+
+	var released persistence.ToolContinuation
+	if err := fixture.db.First(&released, "id = ?", row.ID).Error; err != nil {
+		t.Fatalf("reload released continuation: %v", err)
+	}
+	if released.Status != persistence.ToolContinuationStatusReady ||
+		released.LeaseID != "" ||
+		released.LeaseExpiresAt != nil ||
+		released.ProviderRequestEmitted {
+		t.Fatalf(
+			"pre-provider continuation claim was not released: %+v",
+			released,
+		)
+	}
 }
 
 func TestToolDispatchServiceSubmitDecision(t *testing.T) {
@@ -4636,7 +4700,7 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 		StepID:           authority.StepID,
 		ExecutorID:       "node-lifecycle/incarnation-lifecycle",
 		ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
-		OwnerNodePeerID:  "node-lifecycle",
+		OwnerNodeID:      "node-lifecycle",
 		OwnerIncarnation: "incarnation-lifecycle",
 		FencingToken:     1,
 		Status:           executorLeaseStatusActive,
@@ -4959,7 +5023,7 @@ func TestChatTaskServiceBindChatStepToTurn(t *testing.T) {
 		StepID:           step.StepID,
 		ExecutorID:       "node-bind/incarnation-bind",
 		ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
-		OwnerNodePeerID:  "node-bind",
+		OwnerNodeID:      "node-bind",
 		OwnerIncarnation: "incarnation-bind",
 		FencingToken:     1,
 		Status:           executorLeaseStatusActive,

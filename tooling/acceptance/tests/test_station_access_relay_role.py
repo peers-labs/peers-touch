@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import (
     ActorIdentity,
@@ -27,6 +27,7 @@ from tooling.acceptance.provisioners.station_access_relay_role import (
     NODE_CONNECTIVITY_STORAGE_ROOTS_ENV,
     _prepare_node_connectivity_storage,
     _relay_discovery_endpoint,
+    _relay_peer_identity,
     _service_source_compatibility,
     _validate_runtime_status,
 )
@@ -171,6 +172,11 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
+                "_relay_peer_identity",
+                return_value="relay-peer",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
                 "produce_station_attestation",
                 return_value=_attestation("station", "station"),
             ),
@@ -252,6 +258,11 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 "tooling.acceptance.provisioners.station_access_relay_role."
                 "resolve_posix_relay_trust_anchor",
                 return_value=(b"certificate", "sha256:" + "d" * 64),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "_relay_peer_identity",
+                return_value="relay-peer",
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
@@ -373,6 +384,11 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 "tooling.acceptance.provisioners.station_access_relay_role."
                 "resolve_posix_relay_trust_anchor",
                 return_value=(b"certificate", "sha256:" + "d" * 64),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "_relay_peer_identity",
+                return_value="relay-peer",
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
@@ -705,6 +721,48 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 "https://relay.example:18081",
                 {"publicPort": None},
             )
+
+    def test_relay_peer_identity_is_bound_to_attested_https_health(
+        self,
+    ) -> None:
+        context = Mock()
+        response = Mock()
+        response.status = 200
+        response.geturl.return_value = (
+            "https://relay.example:18081/healthz"
+        )
+        response.read.return_value = json.dumps(
+            {
+                "role": "relay",
+                "status": "ready",
+                "peer_id": "12D3KooWRelay",
+            }
+        ).encode("utf-8")
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+
+        with (
+            patch(
+                "tooling.acceptance.provisioners."
+                "station_access_relay_role.ssl.SSLContext",
+                return_value=context,
+            ),
+            patch(
+                "tooling.acceptance.provisioners."
+                "station_access_relay_role.urllib.request.urlopen",
+                return_value=response,
+            ),
+        ):
+            peer_id = _relay_peer_identity(
+                "https://relay.example:18081",
+                "https://relay.example:18081/healthz",
+                b"certificate",
+            )
+
+        self.assertEqual(peer_id, "12D3KooWRelay")
+        context.load_verify_locations.assert_called_once_with(
+            cadata="certificate"
+        )
 
 if __name__ == "__main__":
     unittest.main()

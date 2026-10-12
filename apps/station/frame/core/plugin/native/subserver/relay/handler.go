@@ -108,6 +108,12 @@ func (h *relayHandler) handlers() []server.Handler {
 func (h *relayHandler) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	status := http.StatusOK
 	body := map[string]string{"role": "relay", "status": "ready"}
+	if h.sub.opts == nil || h.sub.opts.Host == nil {
+		status = http.StatusServiceUnavailable
+		body["status"] = "not_ready"
+	} else {
+		body["peer_id"] = h.sub.opts.Host.ID().String()
+	}
 	if h.sub.status != server.StatusRunning {
 		status = http.StatusServiceUnavailable
 		body["status"] = "not_ready"

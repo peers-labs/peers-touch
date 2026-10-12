@@ -557,10 +557,50 @@ func MigrateExecutorLeaseFencing(db *gorm.DB) error {
 	}
 
 	return db.Transaction(func(tx *gorm.DB) error {
+		hasLegacyOwner := tx.Migrator().HasColumn(
+			"agent_executor_leases",
+			"owner_node_peer_id",
+		)
+		hasCurrentOwner := tx.Migrator().HasColumn(
+			"agent_executor_leases",
+			"owner_node_id",
+		)
+		if hasLegacyOwner && !hasCurrentOwner {
+			if err := tx.Migrator().RenameColumn(
+				"agent_executor_leases",
+				"owner_node_peer_id",
+				"owner_node_id",
+			); err != nil {
+				return fmt.Errorf(
+					"rename agent executor lease owner node: %w",
+					err,
+				)
+			}
+		} else if hasLegacyOwner {
+			if err := tx.Exec(`
+				UPDATE agent_executor_leases
+				SET owner_node_id = owner_node_peer_id
+				WHERE owner_node_id = '' AND owner_node_peer_id <> ''
+			`).Error; err != nil {
+				return fmt.Errorf(
+					"copy legacy agent executor lease owner node: %w",
+					err,
+				)
+			}
+			if err := tx.Migrator().DropColumn(
+				"agent_executor_leases",
+				"owner_node_peer_id",
+			); err != nil {
+				return fmt.Errorf(
+					"drop legacy agent executor lease owner node: %w",
+					err,
+				)
+			}
+		}
 		for column, field := range map[string]string{
-			"owner_node_peer_id": "OwnerNodePeerID",
-			"owner_incarnation":  "OwnerIncarnation",
-			"fencing_token":      "FencingToken",
+			"owner_node_id":     "OwnerNodeID",
+			"owner_incarnation": "OwnerIncarnation",
+			"fencing_token":     "FencingToken",
 		} {
 			if tx.Migrator().HasColumn("agent_executor_leases", column) {
 				continue
@@ -575,7 +615,7 @@ func MigrateExecutorLeaseFencing(db *gorm.DB) error {
 		}
 		if err := tx.Model(&ExecutorLease{}).
 			Where(
-				"status = ? AND (owner_node_peer_id = '' OR owner_incarnation = '' OR fencing_token = 0)",
+				"status = ? AND (owner_node_id = '' OR owner_incarnation = '' OR fencing_token = 0)",
 				"active",
 			).
 			Updates(map[string]interface{}{

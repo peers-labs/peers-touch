@@ -347,9 +347,14 @@ class NativeDesktopRuntimeBinding(ABC):
             )
             route_attestation = store.read_json(route_reference)
             route = route_attestation["route"]
+            expected_relay_peer_id = str(
+                relay_service.get("runtimeIdentity") or ""
+            )
             if (
                 not isinstance(route, dict)
                 or route.get("relayServiceId") != "relay"
+                or not expected_relay_peer_id
+                or route.get("relayPeerId") != expected_relay_peer_id
             ):
                 raise DriverError(
                     "Relay route attestation has no canonical Relay binding"
@@ -365,6 +370,13 @@ class NativeDesktopRuntimeBinding(ABC):
                     "Relay route attestation does not match runtime topology"
                 )
             relay_attestation = store.read_json(relay_reference)
+            if (
+                relay_attestation.get("runtimeIdentity")
+                != expected_relay_peer_id
+            ):
+                raise DriverError(
+                    "Relay service attestation identity does not match route"
+                )
             runtime_security = relay_attestation["runtimeSecurity"]
             trust = runtime_security["tlsTrustAnchor"]
             trust_reference = ArtifactRef.from_dict(trust["artifact"])

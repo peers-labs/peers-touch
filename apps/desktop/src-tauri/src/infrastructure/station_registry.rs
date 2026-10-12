@@ -197,19 +197,7 @@ impl StationRegistry {
         route: &VerifiedStationRoute,
         display_name: Option<String>,
     ) -> io::Result<StationEntry> {
-        if route.station_peer_id.trim().is_empty()
-            || route.node_peer_id.trim().is_empty()
-            || route.station_root_public_key.is_empty()
-            || route.node_authorization_digest.len() != 32
-            || route.authorization_epoch == 0
-            || route.route_id.trim().is_empty()
-            || route.endpoint_origin.trim().is_empty()
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Verified Station route is incomplete",
-            ));
-        }
+        validate_verified_route(route)?;
         let now = now_rfc3339();
         let candidate = route_candidate(route, &now);
         let mut state = self
@@ -228,6 +216,20 @@ impl StationRegistry {
                     "Station root identity changed without explicit replacement",
                 ));
             }
+            let highest_authorization_epoch = entry
+                .routes
+                .iter()
+                .filter(|existing| existing.node_peer_id == candidate.node_peer_id)
+                .map(|existing| existing.authorization_epoch)
+                .max()
+                .unwrap_or(0);
+            if candidate.authorization_epoch < highest_authorization_epoch {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "Station route uses a stale node authorization epoch",
+                ));
+            }
+            let mut revision_changed = false;
             if let Some(existing) = entry
                 .routes
                 .iter_mut()
@@ -235,15 +237,33 @@ impl StationRegistry {
             {
                 let active_contract_changed = entry.active_route_id == candidate.route_id
                     && !same_route_contract(existing, &candidate);
-                *existing = candidate;
+                *existing = candidate.clone();
                 if active_contract_changed {
                     entry.route_revision = entry.route_revision.saturating_add(1);
+                    revision_changed = true;
                 }
             } else {
-                entry.routes.push(candidate);
+                entry.routes.push(candidate.clone());
+            }
+            for existing in &mut entry.routes {
+                if existing.node_peer_id == candidate.node_peer_id
+                    && existing.authorization_epoch < candidate.authorization_epoch
+                {
+                    existing.health = StationRouteHealth::Revoked;
+                }
             }
             if entry.active_route_id.is_empty() {
                 entry.active_route_id = route.route_id.clone();
+            } else if entry
+                .active_route()
+                .is_some_and(|active| active.health == StationRouteHealth::Revoked)
+            {
+                if entry.active_route_id != candidate.route_id {
+                    entry.active_route_id = candidate.route_id.clone();
+                    if !revision_changed {
+                        entry.route_revision = entry.route_revision.saturating_add(1);
+                    }
+                }
             }
             if display_name.is_some() {
                 entry.display_name = display_name;
@@ -271,6 +291,169 @@ impl StationRegistry {
         self.persist(&next)?;
         *state = next;
         Ok(entry)
+    }
+
+    pub fn replace_verified_routes(
+        &self,
+        routes: &[VerifiedStationRoute],
+    ) -> io::Result<Vec<StationEntry>> {
+        if routes.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Verified Station route set is empty",
+            ));
+        }
+        for route in routes {
+            validate_verified_route(route)?;
+        }
+
+        let mut grouped: HashMap<&str, Vec<&VerifiedStationRoute>> = HashMap::new();
+        for route in routes {
+            grouped
+                .entry(route.station_peer_id.as_str())
+                .or_default()
+                .push(route);
+        }
+        let mut station_ids = grouped.keys().copied().collect::<Vec<_>>();
+        station_ids.sort_unstable();
+
+        let now = now_rfc3339();
+        let now_unix_ms = unix_ms();
+        let mut state = self
+            .state
+            .write()
+            .expect("StationRegistry write lock poisoned");
+        let mut next = state.clone();
+        let mut replaced = Vec::with_capacity(station_ids.len());
+
+        for station_peer_id in station_ids {
+            let verified = grouped
+                .get(station_peer_id)
+                .expect("grouped Station routes must exist");
+            let station_root_public_key = &verified[0].station_root_public_key;
+            if verified
+                .iter()
+                .any(|route| route.station_root_public_key != *station_root_public_key)
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "Verified routes disagree on Station root identity",
+                ));
+            }
+            let mut route_ids = HashSet::new();
+            if verified
+                .iter()
+                .any(|route| !route_ids.insert(route.route_id.as_str()))
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Verified Station route set contains duplicate route IDs",
+                ));
+            }
+
+            let mut candidates = verified
+                .iter()
+                .map(|route| route_candidate(route, &now))
+                .collect::<Vec<_>>();
+            let refreshed_nodes = candidates
+                .iter()
+                .map(|candidate| candidate.node_peer_id.clone())
+                .collect::<HashSet<_>>();
+
+            if let Some(entry) = next
+                .entries
+                .iter_mut()
+                .find(|entry| entry.station_peer_id == station_peer_id)
+            {
+                if entry.pinned_station_root_public_key != *station_root_public_key {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "Station root identity changed without explicit replacement",
+                    ));
+                }
+                for candidate in &candidates {
+                    let persisted_epoch = entry
+                        .routes
+                        .iter()
+                        .filter(|route| route.node_peer_id == candidate.node_peer_id)
+                        .map(|route| route.authorization_epoch)
+                        .max()
+                        .unwrap_or(0);
+                    if candidate.authorization_epoch < persisted_epoch {
+                        return Err(io::Error::new(
+                            io::ErrorKind::PermissionDenied,
+                            "Station route set rolls back a node authorization epoch",
+                        ));
+                    }
+                }
+
+                let previous_active = entry.active_route().cloned();
+                candidates.extend(
+                    entry
+                        .routes
+                        .iter()
+                        .filter(|route| !refreshed_nodes.contains(&route.node_peer_id))
+                        .cloned(),
+                );
+                mark_stale_authorizations_revoked(&mut candidates);
+                let selected_route_id = candidates
+                    .iter()
+                    .find(|candidate| {
+                        candidate.route_id == entry.active_route_id
+                            && route_is_selectable(candidate, &candidates, now_unix_ms)
+                    })
+                    .or_else(|| select_preferred_route(&candidates, now_unix_ms))
+                    .map(|candidate| candidate.route_id.clone())
+                    .ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "Station has no current verified route",
+                        )
+                    })?;
+                let selected = candidates
+                    .iter()
+                    .find(|candidate| candidate.route_id == selected_route_id)
+                    .expect("selected Station route must exist");
+                let active_contract_changed = previous_active.as_ref().is_none_or(|previous| {
+                    previous.route_id != selected_route_id
+                        || !same_route_contract(previous, selected)
+                });
+                entry.routes = candidates;
+                entry.active_route_id = selected_route_id;
+                if active_contract_changed {
+                    entry.route_revision = entry.route_revision.saturating_add(1);
+                }
+                entry.updated_at = now.clone();
+                replaced.push(entry.clone());
+            } else {
+                mark_stale_authorizations_revoked(&mut candidates);
+                let selected_route_id = select_preferred_route(&candidates, now_unix_ms)
+                    .map(|candidate| candidate.route_id.clone())
+                    .ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "Station has no current verified route",
+                        )
+                    })?;
+                let entry = StationEntry {
+                    station_peer_id: station_peer_id.to_string(),
+                    display_name: None,
+                    pinned_station_root_public_key: station_root_public_key.clone(),
+                    routes: candidates,
+                    active_route_id: selected_route_id,
+                    route_revision: 1,
+                    lifecycle_generation: 1,
+                    created_at: now.clone(),
+                    updated_at: now.clone(),
+                };
+                replaced.push(entry.clone());
+                next.entries.push(entry);
+            }
+        }
+
+        self.persist(&next)?;
+        *state = next;
+        Ok(replaced)
     }
 
     pub fn set_active_station(&self, station_peer_id: &str) -> io::Result<StationEntry> {
@@ -422,7 +605,6 @@ impl StationRegistry {
             .iter()
             .position(|route| route.route_id == failed_route_id)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Station route is unknown"))?;
-        let failed_type = entry.routes[failed_index].route_type;
         entry.routes[failed_index].health = StationRouteHealth::Unavailable;
         entry.routes[failed_index].last_verified_at = now_rfc3339();
 
@@ -432,12 +614,11 @@ impl StationRegistry {
             .iter()
             .filter(|route| {
                 route.route_id != failed_route_id
-                    && route.route_type == failed_type
                     && matches!(
                         route.health,
                         StationRouteHealth::Available | StationRouteHealth::Degraded
                     )
-                    && route_attestation_is_current(route, now_unix_ms)
+                    && route_is_selectable(route, &entry.routes, now_unix_ms)
             })
             .map(|route| {
                 (
@@ -614,6 +795,23 @@ struct PersistedFederationSigningKeyPin {
     ed25519_public_key: Vec<u8>,
 }
 
+fn validate_verified_route(route: &VerifiedStationRoute) -> io::Result<()> {
+    if route.station_peer_id.trim().is_empty()
+        || route.node_peer_id.trim().is_empty()
+        || route.station_root_public_key.is_empty()
+        || route.node_authorization_digest.len() != 32
+        || route.authorization_epoch == 0
+        || route.route_id.trim().is_empty()
+        || route.endpoint_origin.trim().is_empty()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Verified Station route is incomplete",
+        ));
+    }
+    Ok(())
+}
+
 fn route_candidate(route: &VerifiedStationRoute, now: &str) -> StationRouteCandidate {
     let route_type = if route.relay_peer_id.is_some() {
         StationRouteType::Relay
@@ -643,6 +841,57 @@ fn route_candidate(route: &VerifiedStationRoute, now: &str) -> StationRouteCandi
         last_success_at: Some(now.to_string()),
         health: StationRouteHealth::Available,
     }
+}
+
+fn mark_stale_authorizations_revoked(routes: &mut [StationRouteCandidate]) {
+    let mut highest_epoch_by_node = HashMap::new();
+    for route in routes.iter() {
+        highest_epoch_by_node
+            .entry(route.node_peer_id.clone())
+            .and_modify(|epoch: &mut u64| *epoch = (*epoch).max(route.authorization_epoch))
+            .or_insert(route.authorization_epoch);
+    }
+    for route in routes.iter_mut() {
+        if highest_epoch_by_node
+            .get(&route.node_peer_id)
+            .is_some_and(|epoch| route.authorization_epoch < *epoch)
+        {
+            route.health = StationRouteHealth::Revoked;
+        }
+    }
+}
+
+fn route_is_selectable(
+    route: &StationRouteCandidate,
+    routes: &[StationRouteCandidate],
+    now_unix_ms: i64,
+) -> bool {
+    !matches!(
+        route.health,
+        StationRouteHealth::Unavailable | StationRouteHealth::Revoked
+    ) && route_attestation_is_current(route, now_unix_ms)
+        && !routes.iter().any(|candidate| {
+            candidate.node_peer_id == route.node_peer_id
+                && candidate.authorization_epoch > route.authorization_epoch
+        })
+}
+
+fn select_preferred_route(
+    routes: &[StationRouteCandidate],
+    now_unix_ms: i64,
+) -> Option<&StationRouteCandidate> {
+    let mut candidates = routes
+        .iter()
+        .filter(|route| route_is_selectable(route, routes, now_unix_ms))
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|route| {
+        (
+            u8::from(route.health != StationRouteHealth::Available),
+            u8::from(route.route_type != StationRouteType::Direct),
+            route.route_id.as_str(),
+        )
+    });
+    candidates.into_iter().next()
 }
 
 fn same_route_contract(left: &StationRouteCandidate, right: &StationRouteCandidate) -> bool {
@@ -835,6 +1084,103 @@ mod tests {
                     .unwrap()
                     .health,
                 StationRouteHealth::Unavailable
+            );
+        });
+    }
+
+    #[test]
+    fn route_failover_can_switch_between_transport_types() {
+        with_seed(None, || {
+            let registry = StationRegistry::new(&temp_dir("cross-transport-failover"));
+            registry
+                .upsert_verified_route(
+                    &route("station-one", "direct-a", "https://station.example", false),
+                    None,
+                )
+                .unwrap();
+            let mut relay = route("station-one", "relay-b", "https://relay.example", true);
+            relay.node_peer_id = "station-one-node-b".to_string();
+            registry.upsert_verified_route(&relay, None).unwrap();
+            let before = registry.set_active_station("station-one").unwrap();
+
+            let after = registry
+                .failover_route("station-one", "direct-a", before.route_revision)
+                .unwrap();
+
+            assert_eq!(after.active_route_id, "relay-b");
+            assert_eq!(
+                after.active_route().unwrap().route_type,
+                StationRouteType::Relay
+            );
+        });
+    }
+
+    #[test]
+    fn authoritative_route_refresh_removes_omitted_routes() {
+        with_seed(None, || {
+            let registry = StationRegistry::new(&temp_dir("replace-routes"));
+            let direct = route("station-one", "direct-a", "https://station.example", false);
+            let relay = route("station-one", "relay-b", "https://relay.example", true);
+            registry
+                .replace_verified_routes(&[direct.clone(), relay])
+                .unwrap();
+
+            let entries = registry
+                .replace_verified_routes(std::slice::from_ref(&direct))
+                .unwrap();
+
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].routes.len(), 1);
+            assert_eq!(entries[0].routes[0].route_id, "direct-a");
+        });
+    }
+
+    #[test]
+    fn authoritative_route_refresh_preserves_sibling_node_routes() {
+        with_seed(None, || {
+            let registry = StationRegistry::new(&temp_dir("preserve-sibling-node"));
+            let node_a = route("station-one", "direct-a", "https://node-a.example", false);
+            let mut node_b = route("station-one", "direct-b", "https://node-b.example", false);
+            node_b.node_peer_id = "station-one-node-b".to_string();
+            registry
+                .replace_verified_routes(&[node_a.clone(), node_b.clone()])
+                .unwrap();
+
+            let entries = registry
+                .replace_verified_routes(std::slice::from_ref(&node_b))
+                .unwrap();
+
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].routes.len(), 2);
+            assert!(entries[0]
+                .routes
+                .iter()
+                .any(|route| route.route_id == node_a.route_id));
+            assert!(entries[0]
+                .routes
+                .iter()
+                .any(|route| route.route_id == node_b.route_id));
+        });
+    }
+
+    #[test]
+    fn route_refresh_rejects_authorization_epoch_rollback() {
+        with_seed(None, || {
+            let registry = StationRegistry::new(&temp_dir("authorization-rollback"));
+            let mut current = route("station-one", "direct-a", "https://station.example", false);
+            current.authorization_epoch = 2;
+            registry
+                .replace_verified_routes(std::slice::from_ref(&current))
+                .unwrap();
+
+            let mut stale = current;
+            stale.authorization_epoch = 1;
+            assert_eq!(
+                registry
+                    .replace_verified_routes(std::slice::from_ref(&stale))
+                    .unwrap_err()
+                    .kind(),
+                io::ErrorKind::PermissionDenied
             );
         });
     }

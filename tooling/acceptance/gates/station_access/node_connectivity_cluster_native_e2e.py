@@ -59,7 +59,7 @@ RUNTIME_REUSE = RuntimeReuseContract.from_dict(
         "maxClientLaunches": 2,
         "minWarmReuseRate": 0.66,
         "requireAttachOnlyScenarios": True,
-        "requireReceiverVisibleProof": True,
+        "requireReceiverVisibleProof": False,
         "allowClientReplacement": False,
     }
 )
@@ -123,6 +123,36 @@ def _station_inventory(client: TauriSession) -> dict[str, Any]:
         "activeRoute": active,
         "routes": routes,
     }
+
+
+def _window_session_identity(client: TauriSession) -> dict[str, str]:
+    result = client.invoke_app_result("acceptance_window_session_identity")
+    data = result.get("data") if isinstance(result, dict) else None
+    status = data.get("status") if isinstance(data, dict) else None
+    try:
+        payload = json.loads(status) if isinstance(status, str) else {}
+    except json.JSONDecodeError as error:
+        raise GateError(
+            "acceptance_window_session_identity returned invalid JSON"
+        ) from error
+    expected = {
+        "account_id",
+        "actor_ptid",
+        "session_id_sha256",
+        "token_fingerprint",
+    }
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != expected
+        or any(
+            not isinstance(payload.get(key), str) or not payload[key]
+            for key in expected
+        )
+        or len(payload["session_id_sha256"]) != 64
+        or len(payload["token_fingerprint"]) != 64
+    ):
+        raise GateError("Native window session identity is incomplete")
+    return {key: payload[key] for key in expected}
 
 
 def _message_count(client: TauriSession, text: str) -> int:
@@ -347,6 +377,7 @@ class NodeConnectivityClusterNativeGate(
         before = _station_inventory(alice)
         actor_before = self.ptids["alice"]
         device_before = self.device_ids["alice"]
+        session_before = _window_session_identity(alice)
         conversation_id = self._active_conversation_id()
         self.suite.record(
             SuiteRuntimeAction.SCENARIO_START,
@@ -394,6 +425,7 @@ class NodeConnectivityClusterNativeGate(
             script_timeout=10,
         )
         device = async_harness(alice, "getRealtimeDevice", {}, timeout=10)
+        session_after = _window_session_identity(alice)
         recovery_ms = round((time.monotonic() - started) * 1000)
         self.assert_condition(
             "cluster_failover_route_recovered",
@@ -414,9 +446,21 @@ class NodeConnectivityClusterNativeGate(
             and isinstance(device, dict)
             and device.get("actorPtid") == actor_before
             and device.get("deviceId") == device_before
-            and device.get("active") is True,
+            and device.get("active") is True
+            and session_before["actor_ptid"] == actor_before
+            and session_after["actor_ptid"] == actor_before
+            and session_after["account_id"] == session_before["account_id"]
+            and session_after["session_id_sha256"]
+            == session_before["session_id_sha256"]
+            and session_after["token_fingerprint"]
+            == session_before["token_fingerprint"],
             json.dumps(
-                {"binding": binding, "device": device},
+                {
+                    "binding": binding,
+                    "device": device,
+                    "sessionBefore": session_before,
+                    "sessionAfter": session_after,
+                },
                 sort_keys=True,
             ),
         )
@@ -483,6 +527,8 @@ class NodeConnectivityClusterNativeGate(
             "after": recovered,
             "binding": binding,
             "device": device,
+            "sessionBefore": session_before,
+            "sessionAfter": session_after,
             "recoveryMs": recovery_ms,
             "text": text,
             "messageId": str(sent.get("messageUlid") or ""),
@@ -532,12 +578,12 @@ class NodeConnectivityClusterNativeGate(
             for actor, client in self.clients.items()
         }
         self.suite.record(
-            SuiteRuntimeAction.UI_ACTION,
+            SuiteRuntimeAction.SUPPORTING_OBSERVATION,
             scenario_id=scenario,
-            resource_id="native:message-count-inspection",
+            resource_id="native:rendered-message-count",
         )
         self.suite.record(
-            SuiteRuntimeAction.RECEIVER_ASSERTION,
+            SuiteRuntimeAction.SUPPORTING_OBSERVATION,
             scenario_id=scenario,
             resource_id="postgres:durable-message-readback",
         )

@@ -118,15 +118,22 @@ class NodeConnectivityNativeGate(
         expected_station_peer_id = str(
             station.get("runtimeIdentity") or ""
         )
+        expected_relay_peer_id = str(relay.get("runtimeIdentity") or "")
         relay_locator = str(relay.get("endpoint") or "")
         routes = {
             actor: station_registry_snapshot(client)
             for actor, client in self.clients.items()
         }
-        valid = bool(expected_station_peer_id and relay_locator) and all(
+        valid = bool(
+            expected_station_peer_id
+            and expected_relay_peer_id
+            and relay_locator
+        ) and all(
             snapshot.get("stationPeerId") == expected_station_peer_id
             and (snapshot.get("route") or {}).get("route_type") == "relay"
             and (snapshot.get("route") or {}).get("health") == "available"
+            and (snapshot.get("route") or {}).get("relay_peer_id")
+            == expected_relay_peer_id
             and is_relay_transport(
                 relay_locator,
                 (snapshot.get("route") or {}).get("endpoint_origin"),
@@ -197,6 +204,7 @@ def validate_ncp_report(report: dict[str, Any]) -> None:
     expected_station_peer_id = str(
         station.get("runtimeIdentity") or ""
     )
+    expected_relay_peer_id = str(relay.get("runtimeIdentity") or "")
     relay_locator = str(relay.get("endpoint") or "")
     require(
         isinstance(identity_state, dict)
@@ -229,6 +237,8 @@ def validate_ncp_report(report: dict[str, Any]) -> None:
             == expected_station_peer_id
             and (snapshot.get("route") or {}).get("route_type") == "relay"
             and (snapshot.get("route") or {}).get("health") == "available"
+            and (snapshot.get("route") or {}).get("relay_peer_id")
+            == expected_relay_peer_id
             and is_relay_transport(
                 relay_locator,
                 (snapshot.get("route") or {}).get("endpoint_origin"),
@@ -236,8 +246,9 @@ def validate_ncp_report(report: dict[str, Any]) -> None:
             for snapshot in routes.values()
         )
         and bool(expected_station_peer_id)
+        and bool(expected_relay_peer_id)
         and bool(relay_locator),
-        "both Native clients must use Relay routes",
+        "both Native clients must use routes bound to the attested Relay PeerID",
     )
     require(
         isinstance(read, dict)

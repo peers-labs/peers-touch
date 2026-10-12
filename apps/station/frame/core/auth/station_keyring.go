@@ -90,9 +90,9 @@ func MigrateStationAccessKeyringSchema(
 	return nil
 }
 
-// OpenStationAccessKeyring installs or verifies the database-backed keyring.
-// The configured current secret bootstraps an empty Station database; once a
-// row exists, a different configured secret is a readiness failure.
+// OpenStationAccessKeyring installs or reconciles the database-backed keyring.
+// Rotation is explicit: a new current secret is accepted only when the
+// configured previous secret matches the persisted current key.
 func OpenStationAccessKeyring(
 	ctx context.Context,
 	database *gorm.DB,
@@ -117,62 +117,12 @@ func OpenStationAccessKeyring(
 
 	keyring := &gormStationAccessKeyring{db: database}
 	err := database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		now := time.Now().UTC()
-		if err := ensureStationAccessKeySlot(
+		return reconcileStationAccessKeys(
 			tx,
-			stationAccessKeySlotCurrent,
 			[]byte(currentSecret),
-			now,
-		); err != nil {
-			return err
-		}
-		if previousSecret != "" && previousSecret != currentSecret {
-			if err := ensureStationAccessKeySlot(
-				tx,
-				stationAccessKeySlotPrevious,
-				[]byte(previousSecret),
-				now,
-			); err != nil {
-				return err
-			}
-		}
-
-		var rows []StationAccessKeyRow
-		if err := tx.Order("slot ASC").Find(&rows).Error; err != nil {
-			return err
-		}
-		if len(rows) == 0 || len(rows) > 2 {
-			return fmt.Errorf(
-				"%w: expected one current and at most one previous key",
-				ErrStationAccessKeyringMismatch,
-			)
-		}
-		for i := range rows {
-			if err := validateStationAccessKeyRow(&rows[i]); err != nil {
-				return err
-			}
-			if rows[i].Slot != stationAccessKeySlotCurrent &&
-				rows[i].Slot != stationAccessKeySlotPrevious {
-				return fmt.Errorf(
-					"%w: unsupported slot %q",
-					ErrStationAccessKeyringMismatch,
-					rows[i].Slot,
-				)
-			}
-			if rows[i].Slot == stationAccessKeySlotPrevious &&
-				previousSecret != "" &&
-				subtle.ConstantTimeCompare(
-					rows[i].KeyMaterial,
-					[]byte(previousSecret),
-				) != 1 {
-				return fmt.Errorf(
-					"%w: configured previous key differs from persisted key %s",
-					ErrStationAccessKeyringMismatch,
-					rows[i].KeyID,
-				)
-			}
-		}
-		return nil
+			[]byte(previousSecret),
+			time.Now().UTC(),
+		)
 	})
 	if err != nil {
 		return nil, err
@@ -181,6 +131,152 @@ func OpenStationAccessKeyring(
 		return nil, err
 	}
 	return keyring, nil
+}
+
+func reconcileStationAccessKeys(
+	tx *gorm.DB,
+	currentMaterial []byte,
+	previousMaterial []byte,
+	now time.Time,
+) error {
+	if subtle.ConstantTimeCompare(currentMaterial, previousMaterial) == 1 {
+		previousMaterial = nil
+	}
+
+	var rows []StationAccessKeyRow
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Order("slot ASC").
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	if len(rows) > 2 {
+		return fmt.Errorf(
+			"%w: expected one current and at most one previous key",
+			ErrStationAccessKeyringMismatch,
+		)
+	}
+
+	var current *StationAccessKeyRow
+	var previous *StationAccessKeyRow
+	for i := range rows {
+		if err := validateStationAccessKeyRow(&rows[i]); err != nil {
+			return err
+		}
+		switch rows[i].Slot {
+		case stationAccessKeySlotCurrent:
+			current = &rows[i]
+		case stationAccessKeySlotPrevious:
+			previous = &rows[i]
+		default:
+			return fmt.Errorf(
+				"%w: unsupported slot %q",
+				ErrStationAccessKeyringMismatch,
+				rows[i].Slot,
+			)
+		}
+	}
+
+	if current == nil {
+		if previous != nil {
+			return fmt.Errorf(
+				"%w: previous key exists without a current key",
+				ErrStationAccessKeyringMismatch,
+			)
+		}
+		if err := ensureStationAccessKeySlot(
+			tx,
+			stationAccessKeySlotCurrent,
+			currentMaterial,
+			now,
+		); err != nil {
+			return err
+		}
+		if len(previousMaterial) != 0 {
+			return ensureStationAccessKeySlot(
+				tx,
+				stationAccessKeySlotPrevious,
+				previousMaterial,
+				now,
+			)
+		}
+		return nil
+	}
+
+	if subtle.ConstantTimeCompare(current.KeyMaterial, currentMaterial) == 1 {
+		return reconcileStationAccessPreviousKey(
+			tx,
+			previous,
+			previousMaterial,
+			now,
+		)
+	}
+	if len(previousMaterial) == 0 ||
+		subtle.ConstantTimeCompare(
+			current.KeyMaterial,
+			previousMaterial,
+		) != 1 {
+		return fmt.Errorf(
+			"%w: configured current key differs from persisted key %s without a matching previous key",
+			ErrStationAccessKeyringMismatch,
+			current.KeyID,
+		)
+	}
+
+	if err := tx.Where("slot = ?", stationAccessKeySlotPrevious).
+		Delete(&StationAccessKeyRow{}).Error; err != nil {
+		return fmt.Errorf("remove retired station access key: %w", err)
+	}
+	if err := tx.Model(&StationAccessKeyRow{}).
+		Where("slot = ?", stationAccessKeySlotCurrent).
+		Updates(map[string]any{
+			"key_id":          stationAccessKeyID(currentMaterial),
+			"algorithm":       stationAccessKeyAlgorithm,
+			"key_material":    append([]byte(nil), currentMaterial...),
+			"schema_revision": stationAccessKeySchemaRevision,
+			"updated_at":      now,
+		}).Error; err != nil {
+		return fmt.Errorf("rotate station access current key: %w", err)
+	}
+	return ensureStationAccessKeySlot(
+		tx,
+		stationAccessKeySlotPrevious,
+		current.KeyMaterial,
+		now,
+	)
+}
+
+func reconcileStationAccessPreviousKey(
+	tx *gorm.DB,
+	persisted *StationAccessKeyRow,
+	configured []byte,
+	now time.Time,
+) error {
+	if len(configured) == 0 {
+		if persisted == nil {
+			return nil
+		}
+		if err := tx.Where("slot = ?", stationAccessKeySlotPrevious).
+			Delete(&StationAccessKeyRow{}).Error; err != nil {
+			return fmt.Errorf("retire station access previous key: %w", err)
+		}
+		return nil
+	}
+	if persisted == nil {
+		return ensureStationAccessKeySlot(
+			tx,
+			stationAccessKeySlotPrevious,
+			configured,
+			now,
+		)
+	}
+	if subtle.ConstantTimeCompare(persisted.KeyMaterial, configured) != 1 {
+		return fmt.Errorf(
+			"%w: configured previous key differs from persisted key %s",
+			ErrStationAccessKeyringMismatch,
+			persisted.KeyID,
+		)
+	}
+	return nil
 }
 
 func InitializeConfiguredStationAccessKeyring(

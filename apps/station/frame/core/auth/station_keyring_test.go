@@ -14,12 +14,12 @@ import (
 
 func TestStationAccessKeyringSharesJWTAuthorityAcrossNodes(t *testing.T) {
 	database := openStationAccessKeyringTestDB(t)
-	const secret = "station-access-shared-secret-0123456789"
+	const keyMaterial = "station-access-shared-secret-0123456789"
 
 	nodeA, err := OpenStationAccessKeyring(
 		context.Background(),
 		database,
-		secret,
+		keyMaterial,
 		"",
 	)
 	if err != nil {
@@ -28,7 +28,7 @@ func TestStationAccessKeyringSharesJWTAuthorityAcrossNodes(t *testing.T) {
 	nodeB, err := OpenStationAccessKeyring(
 		context.Background(),
 		database,
-		secret,
+		keyMaterial,
 		"",
 	)
 	if err != nil {
@@ -94,12 +94,12 @@ func TestStationAccessKeyringSharesJWTAuthorityAcrossNodes(t *testing.T) {
 func TestStationAccessKeyringRejectsSecretAndSchemaMismatch(t *testing.T) {
 	database := openStationAccessKeyringTestDB(t)
 	ctx := context.Background()
-	const secret = "station-access-shared-secret-0123456789"
+	const keyMaterial = "station-access-shared-secret-0123456789"
 
 	if _, err := OpenStationAccessKeyring(
 		ctx,
 		database,
-		secret,
+		keyMaterial,
 		"",
 	); err != nil {
 		t.Fatal(err)
@@ -121,20 +121,88 @@ func TestStationAccessKeyringRejectsSecretAndSchemaMismatch(t *testing.T) {
 	if _, err := OpenStationAccessKeyring(
 		ctx,
 		database,
-		secret,
+		keyMaterial,
 		"",
 	); !errors.Is(err, ErrStationAccessKeyringMismatch) {
 		t.Fatalf("schema mismatch returned %v", err)
 	}
 }
 
+func TestStationAccessKeyringRotatesAndRetiresPreviousKey(t *testing.T) {
+	database := openStationAccessKeyringTestDB(t)
+	ctx := context.Background()
+	const oldSecret = "station-access-old-secret-0123456789"
+	const newSecret = "station-access-new-secret-0123456789"
+
+	oldKeyring, err := OpenStationAccessKeyring(
+		ctx,
+		database,
+		oldSecret,
+		"",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldKey, err := oldKeyring.Current(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rotated, err := OpenStationAccessKeyring(
+		ctx,
+		database,
+		newSecret,
+		oldSecret,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := rotated.Current(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.ID != stationAccessKeyID([]byte(newSecret)) {
+		t.Fatalf("rotated current key = %q", current.ID)
+	}
+	resolvedOld, err := rotated.Resolve(ctx, oldKey.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(resolvedOld.Material) != oldSecret {
+		t.Fatalf("rotated previous key material = %q", resolvedOld.Material)
+	}
+
+	retired, err := OpenStationAccessKeyring(
+		ctx,
+		database,
+		newSecret,
+		"",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := retired.Resolve(ctx, oldKey.ID); !errors.Is(
+		err,
+		ErrStationAccessKeyNotFound,
+	) {
+		t.Fatalf("retired previous key resolved with %v", err)
+	}
+	keys, err := retired.ValidationKeys(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 1 || keys[0].ID != current.ID {
+		t.Fatalf("validation keys after retirement = %#v", keys)
+	}
+}
+
 func TestJWTValidationAcceptsPreKeyIDTokenThroughSharedKeyring(t *testing.T) {
 	database := openStationAccessKeyringTestDB(t)
-	const secret = "station-access-shared-secret-0123456789"
+	const keyMaterial = "station-access-shared-secret-0123456789"
 	keyring, err := OpenStationAccessKeyring(
 		context.Background(),
 		database,
-		secret,
+		keyMaterial,
 		"",
 	)
 	if err != nil {
@@ -150,7 +218,7 @@ func TestJWTValidationAcceptsPreKeyIDTokenThroughSharedKeyring(t *testing.T) {
 			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
 		},
 	})
-	encoded, err := legacy.SignedString([]byte(secret))
+	encoded, err := legacy.SignedString([]byte(keyMaterial))
 	if err != nil {
 		t.Fatal(err)
 	}

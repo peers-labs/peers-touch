@@ -44,6 +44,7 @@ type inviteInfo struct {
 
 type enrollmentInfo struct {
 	StationPeerID string `json:"station_peer_id"`
+	NodePeerID    string `json:"node_peer_id"`
 	Label         string `json:"label"`
 	Status        int32  `json:"status"`
 	Generation    uint64 `json:"generation"`
@@ -157,6 +158,7 @@ func (h *relayHandler) handleListEnrollments(w http.ResponseWriter, r *http.Requ
 		}
 		result = append(result, enrollmentInfo{
 			StationPeerID: m.StationPeerID,
+			NodePeerID:    m.NodePeerID,
 			Label:         m.Label,
 			Status:        int32(m.Status),
 			Generation:    m.Generation,
@@ -173,17 +175,26 @@ func (h *relayHandler) handleDeleteEnrollment(w http.ResponseWriter, r *http.Req
 
 	var req struct {
 		StationPeerID string `json:"station_peer_id"`
+		NodePeerID    string `json:"node_peer_id"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
-	if req.StationPeerID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("station_peer_id is required"))
+	if req.StationPeerID == "" || req.NodePeerID == "" {
+		writeJSON(
+			w,
+			http.StatusBadRequest,
+			errorBody("station_peer_id and node_peer_id are required"),
+		)
 		return
 	}
 
-	if _, err := h.sub.svc.RevokeEnrollment(ctx, req.StationPeerID); err != nil {
+	if _, err := h.sub.svc.RevokeEnrollment(
+		ctx,
+		req.StationPeerID,
+		req.NodePeerID,
+	); err != nil {
 		if errors.Is(err, application.ErrEnrollmentNotFound) {
 			writeJSON(w, http.StatusNotFound, errorBody("enrollment not found"))
 			return

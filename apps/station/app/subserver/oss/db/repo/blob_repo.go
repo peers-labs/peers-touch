@@ -144,6 +144,7 @@ func (r *blobRepo) StageWrite(ctx context.Context, backend, key string, size int
 	}
 	now := r.clock()
 	var staged BlobWrite
+	var concurrentCreateErr error
 	err = db.Transaction(func(tx *gorm.DB) error {
 		var row ossmodel.Blob
 		findErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -163,6 +164,7 @@ func (r *blobRepo) StageWrite(ctx context.Context, backend, key string, size int
 				CreatedAt:      now,
 			}
 			if err := tx.Create(&fresh).Error; err != nil {
+				concurrentCreateErr = err
 				return err
 			}
 			staged = blobWriteFromRow(fresh, true)
@@ -232,6 +234,28 @@ func (r *blobRepo) StageWrite(ctx context.Context, backend, key string, size int
 		}
 	})
 	if err != nil {
+		if concurrentCreateErr != nil {
+			var winner ossmodel.Blob
+			if winnerErr := db.Where(
+				"backend = ? AND key = ?",
+				backend,
+				key,
+			).First(&winner).Error; winnerErr == nil {
+				normalizeBlobGeneration(&winner)
+				if winner.Size == size &&
+					(winner.Sha256 == "" || digest == "" ||
+						winner.Sha256 == digest) &&
+					(winner.LifecycleState == ossmodel.BlobLifecycleWriting ||
+						winner.LifecycleState == ossmodel.BlobLifecycleLive) {
+					write := blobWriteFromRow(
+						winner,
+						winner.LifecycleState ==
+							ossmodel.BlobLifecycleWriting,
+					)
+					return &write, nil
+				}
+			}
+		}
 		return nil, err
 	}
 	return &staged, nil

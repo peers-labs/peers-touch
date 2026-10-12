@@ -1522,6 +1522,16 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		); err != nil {
 			return nil, settleRunningFailure("failed to bind chat step to running turn", err)
 		}
+		var stopLeaseMaintenance func()
+		ctx, stopLeaseMaintenance = s.chatTaskService.MaintainChatStepLease(
+			ctx,
+			config.TaskID,
+			config.StepID,
+			config.ExecutorLeaseID,
+			config.LeaseFencingToken,
+		)
+		defer stopLeaseMaintenance()
+		config.ExecutionContext = ctx
 	}
 	trace := &domain.TurnTrace{
 		TraceID: generateID("trace"),
@@ -5209,6 +5219,17 @@ func (s *TurnService) ResumeReadyToolContinuation(
 	if err != nil {
 		return false, err
 	}
+	releaseContinuationClaim := true
+	defer func() {
+		if releaseContinuationClaim {
+			_ = s.toolDispatch.ReleaseContinuationClaim(
+				context.WithoutCancel(ctx),
+				continuation.ID,
+				continuation.LeaseID,
+				continuation.FencingToken,
+			)
+		}
+	}()
 
 	db, err := s.getDB(ctx)
 	if err != nil {
@@ -5257,6 +5278,18 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		attemptStartedAt,
 	)
 	defer cancelRuntimeBudget()
+	if strings.TrimSpace(batch.StepID) != "" {
+		var stopLeaseMaintenance func()
+		ctx, stopLeaseMaintenance = s.chatTaskService.MaintainChatStepLease(
+			ctx,
+			batch.TaskID,
+			batch.StepID,
+			config.ExecutorLeaseID,
+			config.LeaseFencingToken,
+		)
+		defer stopLeaseMaintenance()
+		config.ExecutionContext = ctx
+	}
 	settleExpiredContinuation := func(operationErr error) (bool, error) {
 		deadlineErr := executionContextError(ctx)
 		reason, exhausted := runtimeBudgetExhaustionReason(deadlineErr)
@@ -5328,6 +5361,7 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		}
 		return true, err
 	}
+	releaseContinuationClaim = false
 	budgetState, err := s.loadToolLoopBudgetState(ctx, batch.TurnID)
 	if err != nil {
 		if settled, settleErr := settleExpiredContinuation(err); settled {

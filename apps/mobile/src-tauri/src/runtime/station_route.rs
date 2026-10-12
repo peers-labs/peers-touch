@@ -17,7 +17,9 @@ use reqwest::header::{
 use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use station_libp2p_http::{Route as StandardRoute, Transport as StandardTransport};
+use station_libp2p_http::{
+    Response as StandardResponse, Route as StandardRoute, Transport as StandardTransport,
+};
 use station_trust::{verify_node_authorization_bytes, verify_station_route_attestation_bytes};
 use tauri::State;
 
@@ -248,6 +250,57 @@ impl RouteRuntime {
         ensure_route_current(&current.candidate)
     }
 
+    fn activate_alternate(&self, failed: &ActiveRoute) -> MobileResult<ActiveRoute> {
+        let discovered = self
+            .discovered
+            .read()
+            .map_err(|_| route_error("runtimeLock"))?;
+        let mut candidates = discovered
+            .values()
+            .filter(|cached| {
+                cached.candidate.station_peer_id == failed.candidate.station_peer_id
+                    && cached.candidate.route_id != failed.candidate.route_id
+                    && ensure_route_current(&cached.candidate).is_ok()
+                    && !discovered.values().any(|other| {
+                        other.candidate.station_peer_id == cached.candidate.station_peer_id
+                            && other.candidate.node_peer_id == cached.candidate.node_peer_id
+                            && other.candidate.authorization_epoch
+                                > cached.candidate.authorization_epoch
+                    })
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        candidates.sort_by_key(|cached| {
+            (
+                u8::from(cached.candidate.route_type != StationRouteType::Direct),
+                cached.candidate.route_id.clone(),
+            )
+        });
+        let candidate = candidates
+            .into_iter()
+            .next()
+            .ok_or_else(|| route_error("alternateRouteUnavailable"))?;
+        drop(discovered);
+
+        let mut active = self
+            .active
+            .write()
+            .map_err(|_| route_error("runtimeLock"))?;
+        if active.as_ref().is_none_or(|current| {
+            current.candidate.station_peer_id != failed.candidate.station_peer_id
+                || current.candidate.route_id != failed.candidate.route_id
+                || current.route_revision != failed.route_revision
+        }) {
+            return Err(route_error("routeChanged"));
+        }
+        let alternate = ActiveRoute {
+            candidate: candidate.candidate,
+            route_revision: failed.route_revision.saturating_add(1),
+        };
+        *active = Some(alternate.clone());
+        Ok(alternate)
+    }
+
     fn ensure_proxy(&self) -> MobileResult<String> {
         let mut origin = self
             .proxy_origin
@@ -414,10 +467,7 @@ fn discover_station_input(input: &str) -> MobileResult<VerifiedDiscovery> {
         challenge: challenge.to_vec(),
         connection_grant: parsed.connection_grant.clone().unwrap_or_default(),
         client_protocol_version: ACCESS_PROTOCOL_VERSION,
-        source_peer_id: ROUTES
-            .standard_transport()?
-            .client_peer_id()
-            .to_string(),
+        source_peer_id: ROUTES.standard_transport()?.client_peer_id().to_string(),
     };
     let endpoint = format!("{}{}", parsed.origin, ACCESS_PATH);
     let mut client = Client::builder()
@@ -534,7 +584,7 @@ fn verify_discovery_response(
                     inner_tls_spki_sha256: None,
                     addresses: vec![canonical_origin.clone()],
                     attestation_bytes: None,
-                    attestation_expires_at_unix_ms: None,
+                    attestation_expires_at_unix_ms: Some(verified_authorization.expires_at_unix_ms),
                     source_ref,
                 }],
             )
@@ -739,7 +789,7 @@ fn clean_source_ref(value: &str) -> MobileResult<String> {
 fn ensure_route_current(route: &StationRouteCandidate) -> MobileResult<()> {
     if route
         .attestation_expires_at_unix_ms
-        .is_some_and(|expiry| expiry < unix_ms() as i64 - CLOCK_SKEW_MS)
+        .is_some_and(|expiry| expiry <= unix_ms() as i64)
     {
         return Err(route_error("attestationExpired"));
     }
@@ -875,9 +925,35 @@ fn serve_proxy_connection(mut connection: TcpStream) -> MobileResult<()> {
         .map_err(|_| route_error("proxyTimeout"))?;
     let request = read_http_request(&mut connection)?;
     match route.candidate.route_type {
-        StationRouteType::Direct => forward_direct(connection, &route, request, timeout),
-        StationRouteType::Relay => forward_standard_route(connection, &route, &request),
+        StationRouteType::Direct => forward_direct(&mut connection, &route, &request, timeout),
+        StationRouteType::Relay => match open_standard_response(&route, &request) {
+            Ok(response) => write_standard_response(&mut connection, &route, response),
+            Err(_) => {
+                if !request_allows_automatic_failover(&request) {
+                    return Err(route_error("standardRoundTrip"));
+                }
+                let alternate = ROUTES.activate_alternate(&route)?;
+                match alternate.candidate.route_type {
+                    StationRouteType::Direct => {
+                        forward_direct(&mut connection, &alternate, &request, timeout)
+                    }
+                    StationRouteType::Relay => {
+                        let response = open_standard_response(&alternate, &request)?;
+                        write_standard_response(&mut connection, &alternate, response)
+                    }
+                }
+            }
+        },
     }
+}
+
+fn request_allows_automatic_failover(request: &[u8]) -> bool {
+    parse_proxy_request(request).is_ok_and(|parsed| {
+        matches!(
+            parsed.method,
+            Method::GET | Method::HEAD | Method::OPTIONS | Method::TRACE
+        )
+    })
 }
 
 fn standard_route(route: &ActiveRoute) -> MobileResult<StandardRoute> {
@@ -906,16 +982,19 @@ fn standard_route(route: &ActiveRoute) -> MobileResult<StandardRoute> {
     })
 }
 
-fn forward_standard_route(
-    mut connection: TcpStream,
-    route: &ActiveRoute,
-    request: &[u8],
-) -> MobileResult<()> {
+fn open_standard_response(route: &ActiveRoute, request: &[u8]) -> MobileResult<StandardResponse> {
     let route_spec = standard_route(route)?;
     let transport = ROUTES.standard_transport()?;
-    let mut response = transport
+    transport
         .round_trip(&route_spec, request)
-        .map_err(|_| route_error("standardRoundTrip"))?;
+        .map_err(|_| route_error("standardRoundTrip"))
+}
+
+fn write_standard_response(
+    connection: &mut TcpStream,
+    route: &ActiveRoute,
+    mut response: StandardResponse,
+) -> MobileResult<()> {
     ROUTES.assert_current(route)?;
     write!(
         connection,
@@ -953,9 +1032,9 @@ fn forward_standard_route(
 }
 
 fn forward_direct(
-    mut connection: TcpStream,
+    connection: &mut TcpStream,
     route: &ActiveRoute,
-    request: Vec<u8>,
+    request: &[u8],
     timeout: Duration,
 ) -> MobileResult<()> {
     let parsed = parse_proxy_request(&request)?;
@@ -975,7 +1054,7 @@ fn forward_direct(
         .body(parsed.body)
         .send()
         .map_err(|_| route_error("directUnavailable"))?;
-    write_proxy_response(&mut connection, route, &mut response)
+    write_proxy_response(connection, route, &mut response)
 }
 
 struct ParsedProxyRequest {
@@ -1273,6 +1352,77 @@ mod tests {
             .push("/dns4/relay.example/tcp/4001/p2p/relay-a/p2p-circuit/p2p/node-a".to_string());
         route.candidate.inner_tls_spki_sha256 = None;
         assert!(standard_route(&route).is_err());
+    }
+
+    #[test]
+    fn failed_standard_route_activates_verified_alternate() {
+        let runtime = RouteRuntime::default();
+        let direct = StationRouteCandidate {
+            station_peer_id: "station-a".to_string(),
+            node_peer_id: "node-b".to_string(),
+            station_root_public_key: vec![1],
+            node_authorization_digest: vec![3; 32],
+            authorization_epoch: 1,
+            route_id: "direct-b".to_string(),
+            route_type: StationRouteType::Direct,
+            transport: "direct_https".to_string(),
+            endpoint_origin: "https://station.example".to_string(),
+            relay_peer_id: None,
+            route_generation: 1,
+            inner_tls_spki_sha256: None,
+            addresses: vec!["https://station.example".to_string()],
+            attestation_bytes: None,
+            attestation_expires_at_unix_ms: Some(i64::MAX),
+            source_ref: "source-b".to_string(),
+        };
+        let mut relay = direct.clone();
+        relay.node_peer_id = "node-a".to_string();
+        relay.node_authorization_digest = vec![2; 32];
+        relay.route_id = "relay-a".to_string();
+        relay.route_type = StationRouteType::Relay;
+        relay.transport = "libp2p_http_v1".to_string();
+        relay.endpoint_origin = "https://relay.example".to_string();
+        relay.relay_peer_id = Some("relay-a".to_string());
+        relay.inner_tls_spki_sha256 = Some(vec![4; 32]);
+        relay.addresses = vec!["/p2p/relay-a/p2p-circuit/p2p/node-a".to_string()];
+        let failed = ActiveRoute {
+            candidate: relay.clone(),
+            route_revision: 7,
+        };
+        {
+            let mut discovered = runtime.discovered.write().unwrap();
+            for candidate in [relay, direct.clone()] {
+                discovered.insert(
+                    (
+                        candidate.station_peer_id.clone(),
+                        candidate.route_id.clone(),
+                    ),
+                    CachedRoute {
+                        candidate,
+                        source_input: "source".to_string(),
+                    },
+                );
+            }
+        }
+        *runtime.active.write().unwrap() = Some(failed.clone());
+
+        let alternate = runtime.activate_alternate(&failed).unwrap();
+        assert_eq!(alternate.candidate.route_id, direct.route_id);
+        assert_eq!(alternate.route_revision, 8);
+        assert_eq!(
+            runtime.active_snapshot().unwrap().candidate.route_type,
+            StationRouteType::Direct
+        );
+    }
+
+    #[test]
+    fn automatic_failover_never_replays_mutating_requests() {
+        assert!(request_allows_automatic_failover(
+            b"GET /conversation HTTP/1.1\r\nHost: station\r\n\r\n"
+        ));
+        assert!(!request_allows_automatic_failover(
+            b"POST /conversation HTTP/1.1\r\nHost: station\r\nContent-Length: 2\r\n\r\n{}"
+        ));
     }
 
     fn read_http_request_from_bytes(bytes: &[u8]) -> MobileResult<Vec<u8>> {

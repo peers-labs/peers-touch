@@ -21,6 +21,7 @@ use std::time::Duration;
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio_rustls::TlsConnector;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
+use tokio_util::sync::CancellationToken;
 use x509_parser::parse_x509_certificate;
 
 const STATION_HTTP_PROTOCOL: &str = "/peers-touch/station-http/1.0.0";
@@ -63,6 +64,7 @@ pub struct BodyReader {
     receiver: tokio_mpsc::Receiver<Result<Vec<u8>, String>>,
     current: Cursor<Vec<u8>>,
     complete: bool,
+    cancellation: CancellationToken,
 }
 
 impl Read for BodyReader {
@@ -87,6 +89,12 @@ impl Read for BodyReader {
                 Ok(0)
             }
         }
+    }
+}
+
+impl Drop for BodyReader {
+    fn drop(&mut self) {
+        self.cancellation.cancel();
     }
 }
 
@@ -181,18 +189,23 @@ impl Transport {
             .map_err(TransportError::new)?;
 
         let (reply_sender, reply_receiver) = mpsc::channel();
+        let cancellation = CancellationToken::new();
         self.commands
             .send(DriverCommand::Request {
                 peer,
                 expected_spki: route.inner_tls_spki_sha256,
                 request,
+                cancellation: cancellation.clone(),
                 reply: reply_sender,
             })
             .map_err(|_| TransportError::new("Station transport is unavailable"))?;
-        reply_receiver
-            .recv_timeout(RESPONSE_TIMEOUT)
-            .map_err(|_| TransportError::new("Station HTTP response timed out"))?
-            .map_err(TransportError::new)
+        match reply_receiver.recv_timeout(RESPONSE_TIMEOUT) {
+            Ok(result) => result.map_err(TransportError::new),
+            Err(_) => {
+                cancellation.cancel();
+                Err(TransportError::new("Station HTTP response timed out"))
+            }
+        }
     }
 }
 
@@ -305,6 +318,7 @@ enum DriverCommand {
         peer: PeerId,
         expected_spki: [u8; 32],
         request: ParsedRequest,
+        cancellation: CancellationToken,
         reply: mpsc::Sender<Result<Response, String>>,
     },
 }
@@ -356,6 +370,7 @@ impl Driver {
                 peer,
                 expected_spki,
                 request,
+                cancellation,
                 reply,
             } => {
                 if !self.active.contains(&peer) {
@@ -366,11 +381,14 @@ impl Driver {
                 let error_reply = reply.clone();
                 tokio::spawn(async move {
                     if let Err(error) =
-                        execute_request(control, peer, expected_spki, request, reply).await
+                        execute_request(control, peer, expected_spki, request, cancellation, reply)
+                            .await
                     {
                         // Sending after a response has already been projected is harmless:
                         // the synchronous caller has dropped this side of the channel.
-                        let _ = error_reply.send(Err(error));
+                        if error_reply.send(Err(error)).is_err() {
+                            return;
+                        }
                     }
                 });
             }
@@ -405,12 +423,77 @@ impl Driver {
 }
 
 async fn execute_request(
+    control: libp2p_stream::Control,
+    peer: PeerId,
+    expected_spki: [u8; 32],
+    parsed: ParsedRequest,
+    cancellation: CancellationToken,
+    reply: mpsc::Sender<Result<Response, String>>,
+) -> Result<(), String> {
+    let prepared = tokio::select! {
+        _ = cancellation.cancelled() => {
+            return Err("Station HTTP caller was cancelled".to_string());
+        }
+        result = tokio::time::timeout(
+            RESPONSE_TIMEOUT,
+            prepare_response(control, peer, expected_spki, parsed),
+        ) => {
+            result
+                .map_err(|_| "Station HTTP response timed out".to_string())??
+        }
+    };
+    let (status, headers, mut body) = prepared;
+    let (body_sender, body_receiver) = tokio_mpsc::channel(8);
+    reply
+        .send(Ok(Response {
+            status,
+            headers,
+            body: BodyReader {
+                receiver: body_receiver,
+                current: Cursor::new(Vec::new()),
+                complete: false,
+                cancellation: cancellation.clone(),
+            },
+        }))
+        .map_err(|_| "Station HTTP caller was cancelled".to_string())?;
+    loop {
+        let next = tokio::select! {
+            _ = cancellation.cancelled() => return Ok(()),
+            result = tokio::time::timeout(RESPONSE_TIMEOUT, body.data()) => {
+                match result {
+                    Ok(next) => next,
+                    Err(_) => {
+                        let _ = body_sender
+                            .send(Err("Station HTTP response body timed out".to_string()))
+                            .await;
+                        return Ok(());
+                    }
+                }
+            }
+        };
+        match next {
+            Some(Ok(bytes)) => {
+                let length = bytes.len();
+                if body_sender.send(Ok(bytes.to_vec())).await.is_err() {
+                    return Ok(());
+                }
+                let _ = body.flow_control().release_capacity(length);
+            }
+            Some(Err(error)) => {
+                let _ = body_sender.send(Err(error.to_string())).await;
+                return Ok(());
+            }
+            None => return Ok(()),
+        }
+    }
+}
+
+async fn prepare_response(
     mut control: libp2p_stream::Control,
     peer: PeerId,
     expected_spki: [u8; 32],
     parsed: ParsedRequest,
-    reply: mpsc::Sender<Result<Response, String>>,
-) -> Result<(), String> {
+) -> Result<(StatusCode, HeaderMap, h2::RecvStream), String> {
     let stream = control
         .open_stream(peer, StreamProtocol::new(STATION_HTTP_PROTOCOL))
         .await
@@ -453,35 +536,7 @@ async fn execute_request(
         .map_err(|error| format!("read Station HTTP/2 headers: {error}"))?;
     let status = response.status();
     let headers = response.headers().clone();
-    let mut body = response.into_body();
-    let (body_sender, body_receiver) = tokio_mpsc::channel(8);
-    reply
-        .send(Ok(Response {
-            status,
-            headers,
-            body: BodyReader {
-                receiver: body_receiver,
-                current: Cursor::new(Vec::new()),
-                complete: false,
-            },
-        }))
-        .map_err(|_| "Station HTTP caller was cancelled".to_string())?;
-    while let Some(next) = body.data().await {
-        match next {
-            Ok(bytes) => {
-                let length = bytes.len();
-                if body_sender.send(Ok(bytes.to_vec())).await.is_err() {
-                    return Ok(());
-                }
-                let _ = body.flow_control().release_capacity(length);
-            }
-            Err(error) => {
-                let _ = body_sender.send(Err(error.to_string())).await;
-                return Ok(());
-            }
-        }
-    }
-    Ok(())
+    Ok((status, headers, response.into_body()))
 }
 
 async fn send_body(stream: &mut h2::SendStream<Bytes>, body: Vec<u8>) -> Result<(), String> {

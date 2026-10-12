@@ -55,6 +55,11 @@ func (s *SubServer) AccessEndpoint(
 		return response, nil
 	}
 	for _, route := range s.opts.CircuitRoutes(now) {
+		addresses := make([]string, 0, len(route.DialMultiaddrs))
+		for _, address := range route.DialMultiaddrs {
+			addresses = append(addresses, address.String())
+		}
+		sort.Strings(addresses)
 		expiresAt := route.ExpiresAt
 		maxExpiry := now.Add(peerpb.MaxRouteAttestationLifetime)
 		if expiresAt.After(maxExpiry) {
@@ -71,6 +76,7 @@ func (s *SubServer) AccessEndpoint(
 					StationRouteVisibility_STATION_ROUTE_VISIBILITY_PUBLIC,
 				IssuedAtUnixMs:  now.UnixMilli(),
 				ExpiresAtUnixMs: expiresAt.UnixMilli(),
+				Addresses:       addresses,
 			},
 		)
 		if signErr != nil {

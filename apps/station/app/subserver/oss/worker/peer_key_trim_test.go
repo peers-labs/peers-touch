@@ -60,7 +60,7 @@ func TestPeerKeyTrim_HappyPathAuditsCount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPeerKeyTrim: %v", err)
 	}
-	if err := trim.RunOnce(context.Background()); err != nil {
+	if err := trim.RunOnce(testWorkerContext(context.Background(), trim.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
@@ -85,7 +85,7 @@ func TestPeerKeyTrim_NoOpQuietAudits(t *testing.T) {
 	peers := &peerTrimFake{deleted: 0}
 	audit := &recordingAudit{}
 	trim, _ := NewPeerKeyTrim(PeerKeyTrimConfig{Peers: peers, Audit: audit})
-	if err := trim.RunOnce(context.Background()); err != nil {
+	if err := trim.RunOnce(testWorkerContext(context.Background(), trim.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 	if len(audit.snapshot()) != 0 {
@@ -97,7 +97,7 @@ func TestPeerKeyTrim_RepoErrorAuditedAndPropagates(t *testing.T) {
 	peers := &peerTrimFake{err: errors.New("db locked")}
 	audit := &recordingAudit{}
 	trim, _ := NewPeerKeyTrim(PeerKeyTrimConfig{Peers: peers, Audit: audit})
-	if err := trim.RunOnce(context.Background()); err == nil {
+	if err := trim.RunOnce(testWorkerContext(context.Background(), trim.Name())); err == nil {
 		t.Fatalf("repo error should propagate so the scheduler emits an error heartbeat")
 	}
 	rows := audit.snapshot()

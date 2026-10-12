@@ -6,8 +6,10 @@ import json
 import os
 import shutil
 import socket
+import ssl
 import subprocess
 import tempfile
+import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -237,6 +239,7 @@ def _persist_relay_attestation(
     runtime_security: Mapping[str, Any],
     trust_anchor: bytes,
     trust_anchor_digest: str,
+    relay_peer_id: str,
 ) -> ServiceAttestation:
     commit, workspace_digest, protocol_digest = relay_identity
     attestation = ServiceAttestation(
@@ -252,7 +255,7 @@ def _persist_relay_attestation(
         produced_at=utc_now(),
         producer="station-relay-role-attachment",
         build_time=str(relay_runtime.get("buildTime") or ""),
-        runtime_identity=str(relay_runtime["runtimeOwner"]),
+        runtime_identity=relay_peer_id,
     )
     trust_anchor_path = "runtime/services/relay/tls-ca.pem"
     write_current_artifact(
@@ -266,6 +269,7 @@ def _persist_relay_attestation(
         "stationRuntime": dict(station_runtime),
         "relayRuntime": dict(relay_runtime),
         "relayStorageSecurity": dict(runtime_security),
+        "relayPeerId": relay_peer_id,
         "tlsTermination": {
             "implementation": "nginx",
             "runtimeOwner": (
@@ -337,6 +341,7 @@ def _persist_station_route_attestation(
         "stationAttestationRef": dict(station_attestation.artifact_ref),
         "relayServiceId": relay_attestation.service_id,
         "relayAttestationRef": dict(relay_attestation.artifact_ref),
+        "relayPeerId": relay_attestation.runtime_identity,
         "discoveryEndpoint": relay_discovery_endpoint,
     }
     relative_path = "runtime/services/station-via-relay/attestation.json"
@@ -548,6 +553,83 @@ def _relay_discovery_endpoint(
     return relay_url.rstrip("/")
 
 
+def _relay_peer_identity(
+    relay_url: str,
+    relay_health_url: str,
+    trust_anchor: bytes,
+) -> str:
+    relay_origin = urlparse(relay_url)
+    health = urlparse(relay_health_url)
+    if (
+        relay_origin.scheme.lower() != "https"
+        or health.scheme.lower() != "https"
+        or not relay_origin.hostname
+        or health.hostname != relay_origin.hostname
+        or (health.port or 443) != (relay_origin.port or 443)
+    ):
+        raise BlockedError(
+            reason="Relay health endpoint is outside the attested Relay origin",
+            resource="relay-runtime-identity",
+        )
+    try:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.minimum_version = ssl.TLSVersion.TLSv1_3
+        context.check_hostname = True
+        context.verify_mode = ssl.CERT_REQUIRED
+        context.load_verify_locations(cadata=trust_anchor.decode("ascii"))
+        request = urllib.request.Request(
+            relay_health_url,
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        with urllib.request.urlopen(
+            request,
+            context=context,
+            timeout=10,
+        ) as response:
+            raw = response.read(4097)
+            status = response.status
+            final_url = response.geturl()
+    except (OSError, UnicodeError, ValueError) as error:
+        raise BlockedError(
+            reason=f"Cannot verify Relay runtime identity: {error}",
+            resource="relay-runtime-identity",
+        ) from error
+    if (
+        status != 200
+        or final_url.rstrip("/") != relay_health_url.rstrip("/")
+        or len(raw) > 4096
+    ):
+        raise BlockedError(
+            reason="Relay health identity response is not canonical",
+            resource="relay-runtime-identity",
+        )
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise BlockedError(
+            reason="Relay health identity response is invalid JSON",
+            resource="relay-runtime-identity",
+        ) from error
+    if not isinstance(payload, dict):
+        raise BlockedError(
+            reason="Relay health identity response is incomplete",
+            resource="relay-runtime-identity",
+        )
+    peer_id = str(payload.get("peer_id") or "").strip()
+    if (
+        payload.get("role") != "relay"
+        or payload.get("status") != "ready"
+        or not peer_id
+        or len(peer_id) > 255
+    ):
+        raise BlockedError(
+            reason="Relay health identity response is incomplete",
+            resource="relay-runtime-identity",
+        )
+    return peer_id
+
+
 class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
     """Attach Station Access Gates to existing Station and Relay runtimes."""
 
@@ -604,7 +686,7 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                 "PT_STATION_DEPLOY_ENV",
             )
             relay_url = _required(profile_env, "PT_RELAY_URL").rstrip("/")
-            _required(profile_env, "PT_RELAY_HEALTH_URL")
+            relay_health = _required(profile_env, "PT_RELAY_HEALTH_URL")
             relay_deployment = _required(
                 profile_env,
                 "PT_RELAY_DEPLOY_ENV",
@@ -680,6 +762,11 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                 resolve_posix_relay_trust_anchor(relay_deployment)
             )
             self._relay_trust_anchor = trust_anchor
+            relay_peer_id = _relay_peer_identity(
+                relay_url,
+                relay_health,
+                trust_anchor,
+            )
             station_attestation = produce_station_attestation(
                 environment_id=self.environment_id,
                 run_id=manifest.run_id,
@@ -702,6 +789,7 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                 runtime_security=runtime_security,
                 trust_anchor=trust_anchor,
                 trust_anchor_digest=trust_anchor_digest,
+                relay_peer_id=relay_peer_id,
             )
             station_route_attestation = _persist_station_route_attestation(
                 environment_id=self.environment_id,

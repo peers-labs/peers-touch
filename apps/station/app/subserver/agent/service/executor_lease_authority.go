@@ -40,7 +40,7 @@ func assertCurrentExecutorLeaseTx(
 ) error {
 	if lease == nil ||
 		lease.FencingToken == 0 ||
-		lease.OwnerNodePeerID == "" ||
+		lease.OwnerNodeID == "" ||
 		lease.OwnerIncarnation == "" ||
 		lease.Status != executorLeaseStatusActive ||
 		!lease.ExpiresAt.After(now) {
@@ -121,12 +121,12 @@ func mutateCurrentExecutorLeaseTx(
 ) error {
 	result := tx.Model(&persistence.ExecutorLease{}).
 		Where(
-			"lease_id = ? AND task_id = ? AND step_id = ? AND executor_id = ? AND owner_node_peer_id = ? AND owner_incarnation = ? AND fencing_token = ? AND status = ? AND expires_at > ?",
+			"lease_id = ? AND task_id = ? AND step_id = ? AND executor_id = ? AND owner_node_id = ? AND owner_incarnation = ? AND fencing_token = ? AND status = ? AND expires_at > ?",
 			lease.LeaseID,
 			lease.TaskID,
 			lease.StepID,
 			lease.ExecutorID,
-			lease.OwnerNodePeerID,
+			lease.OwnerNodeID,
 			lease.OwnerIncarnation,
 			lease.FencingToken,
 			executorLeaseStatusActive,

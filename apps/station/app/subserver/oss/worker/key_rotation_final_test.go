@@ -120,7 +120,7 @@ func TestKeyRotationFinalizer_NoRotationInFlight(t *testing.T) {
 	krf, _ := NewKeyRotationFinalizer(KeyRotationFinalizerConfig{
 		Keys: keys, Audit: audit,
 	})
-	if err := krf.RunOnce(context.Background()); err != nil {
+	if err := krf.RunOnce(testWorkerContext(context.Background(), krf.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 	if keys.cleared {
@@ -141,7 +141,7 @@ func TestKeyRotationFinalizer_InsideGraceLeavesAlone(t *testing.T) {
 		Grace: 24 * time.Hour,
 		Now:   func() time.Time { return now },
 	})
-	if err := krf.RunOnce(context.Background()); err != nil {
+	if err := krf.RunOnce(testWorkerContext(context.Background(), krf.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 	if keys.cleared {
@@ -170,7 +170,7 @@ func TestKeyRotationFinalizerUsesRotationTimeNotGenerationTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := finalizer.RunOnce(context.Background()); err != nil {
+	if err := finalizer.RunOnce(testWorkerContext(context.Background(), finalizer.Name())); err != nil {
 		t.Fatal(err)
 	}
 	if keys.cleared || keys.prev == nil {
@@ -188,7 +188,7 @@ func TestKeyRotationFinalizer_GraceElapsedClearsAndAudits(t *testing.T) {
 		Grace: 24 * time.Hour,
 		Now:   func() time.Time { return now },
 	})
-	if err := krf.RunOnce(context.Background()); err != nil {
+	if err := krf.RunOnce(testWorkerContext(context.Background(), krf.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 	if !keys.cleared || keys.prev != nil {
@@ -215,7 +215,7 @@ func TestKeyRotationFinalizer_LoadFailureAuditedAndPropagates(t *testing.T) {
 	krf, _ := NewKeyRotationFinalizer(KeyRotationFinalizerConfig{
 		Keys: keys, Audit: audit,
 	})
-	if err := krf.RunOnce(context.Background()); err == nil {
+	if err := krf.RunOnce(testWorkerContext(context.Background(), krf.Name())); err == nil {
 		t.Fatalf("load failure should propagate")
 	}
 	rows := audit.snapshot()
@@ -236,7 +236,7 @@ func TestKeyRotationFinalizer_DeleteFailureAudited(t *testing.T) {
 		Grace: 24 * time.Hour,
 		Now:   func() time.Time { return now },
 	})
-	if err := krf.RunOnce(context.Background()); err == nil {
+	if err := krf.RunOnce(testWorkerContext(context.Background(), krf.Name())); err == nil {
 		t.Fatalf("delete failure should propagate")
 	}
 	rows := audit.snapshot()

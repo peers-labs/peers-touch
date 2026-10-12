@@ -438,7 +438,7 @@ message ExecutorLease {
   google.protobuf.Timestamp acquired_at = 7;
   google.protobuf.Timestamp heartbeat_at = 8;
   google.protobuf.Timestamp expires_at = 9;
-  string owner_node_peer_id = 10;
+  string owner_node_id = 10;
   string owner_incarnation = 11;
   uint64 fencing_token = 12;
 }

@@ -2436,6 +2436,42 @@ func (s *ToolDispatchService) ClaimReadyContinuation(
 	return &claimed, err
 }
 
+func (s *ToolDispatchService) ReleaseContinuationClaim(
+	ctx context.Context,
+	continuationID string,
+	leaseID string,
+	fencingToken uint64,
+) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	now := s.now()
+	result := db.WithContext(ctx).
+		Model(&persistence.ToolContinuation{}).
+		Where(
+			"id = ? AND status = ? AND lease_id = ? AND fencing_token = ? AND provider_request_emitted = ?",
+			strings.TrimSpace(continuationID),
+			persistence.ToolContinuationStatusClaimed,
+			strings.TrimSpace(leaseID),
+			fencingToken,
+			false,
+		).
+		Updates(map[string]interface{}{
+			"status":           persistence.ToolContinuationStatusReady,
+			"lease_id":         "",
+			"lease_expires_at": nil,
+			"updated_at":       now,
+		})
+	if result.Error != nil {
+		return internalToolError("release tool continuation claim", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return invalidToolState("tool continuation claim is no longer releasable")
+	}
+	return nil
+}
+
 func (s *ToolDispatchService) EnsureReadyContinuationForToolCall(
 	ctx context.Context,
 	actorPTID string,

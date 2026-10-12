@@ -1,3 +1,5 @@
+#[cfg(feature = "acceptance-webdriver")]
+use crate::contracts::StubPayload;
 use crate::contracts::{
     AccessDecisionInput, AccessDecisionPayload, AccessSubmitInviteInput, AccessSubmitLoginInput,
     AuthSessionPayload, AuthValidateTokenInput,
@@ -9,6 +11,8 @@ use crate::infrastructure::session_revocation::SESSION_KICKED_EVENT;
 use crate::state::AppState;
 #[cfg(feature = "acceptance-webdriver")]
 use serde::Deserialize;
+#[cfg(feature = "acceptance-webdriver")]
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State, Window};
 
@@ -317,6 +321,48 @@ pub fn acceptance_logout_window_session(
         );
     }
     auth_logout(state, app, window)
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
+pub fn acceptance_window_session_identity(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let Some(session) = state.sessions.get(window.label()) else {
+        return AppResult::fail(
+            ErrorCode::Unauthorized,
+            "Window has no committed session",
+            Some(serde_json::json!({
+                "command": "acceptance_window_session_identity",
+                "reason": "window_session_missing"
+            })),
+        );
+    };
+    let session_id = match crate::secure_content::adapter::jwt_session_id(&session.jwt) {
+        Ok(session_id) => session_id,
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "Window session has no canonical session identity",
+                Some(serde_json::json!({
+                    "command": "acceptance_window_session_identity",
+                    "reason": "jwt_session_id_invalid",
+                    "cause": error,
+                })),
+            )
+        }
+    };
+    AppResult::success(StubPayload {
+        command: "acceptance_window_session_identity".to_string(),
+        status: serde_json::json!({
+            "actor_ptid": session.actor.ptid,
+            "account_id": session.account_id,
+            "session_id_sha256": hex::encode(Sha256::digest(session_id.as_bytes())),
+            "token_fingerprint": hex::encode(Sha256::digest(session.jwt.as_bytes())),
+        })
+        .to_string(),
+    })
 }
 
 #[tauri::command]

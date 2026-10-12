@@ -1,7 +1,9 @@
 use libp2p_identity::{KeyType, PublicKey};
+use multiaddr::Multiaddr;
 use prost::Message;
 use sha2::{Digest, Sha256};
 use std::fmt;
+use std::str::FromStr;
 
 pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/peers_touch.model.peer.v1.rs"));
@@ -215,6 +217,7 @@ pub fn verify_station_route_attestation_bytes(
         )
         || !relay_is_valid
         || !canonical_addresses(&statement.addresses)
+        || !route_addresses_match_kind(&statement, kind)
         || statement.issued_at_unix_ms > now_unix_ms + CLOCK_SKEW_MS
         || statement.expires_at_unix_ms <= now_unix_ms
         || statement.expires_at_unix_ms <= statement.issued_at_unix_ms
@@ -367,6 +370,35 @@ fn canonical_addresses(addresses: &[String]) -> bool {
         && !addresses.windows(2).any(|pair| pair[0] >= pair[1])
 }
 
+fn route_addresses_match_kind(
+    statement: &StationRouteStatement,
+    kind: Option<StationRouteKind>,
+) -> bool {
+    let suffix = match kind {
+        Some(StationRouteKind::Direct) => {
+            format!("/p2p/{}", statement.node_peer_id)
+        }
+        Some(StationRouteKind::Circuit) => format!(
+            "/p2p/{}/p2p-circuit/p2p/{}",
+            statement.relay_peer_id, statement.node_peer_id
+        ),
+        _ => return false,
+    };
+    statement.addresses.iter().all(|raw| {
+        let Ok(address) = Multiaddr::from_str(raw) else {
+            return false;
+        };
+        if address.to_string() != *raw || !raw.ends_with(&suffix) {
+            return false;
+        }
+        let prefix = raw.trim_end_matches(&suffix);
+        !prefix.is_empty()
+            && !prefix.contains("/p2p/")
+            && !prefix.contains("/p2p-circuit")
+            && Multiaddr::from_str(prefix).is_ok_and(|parsed| parsed.to_string() == prefix)
+    })
+}
+
 fn validate_size(bytes: &[u8], code: &'static str) -> Result<(), TrustError> {
     if bytes.is_empty() || bytes.len() > MAX_SIGNED_CONTROL_BYTES {
         return Err(TrustError::new(code));
@@ -456,7 +488,7 @@ mod tests {
             node_authorization_digest: authorization_digest.to_vec(),
             kind: StationRouteKind::Circuit as i32,
             addresses: vec![format!(
-                "/p2p/{relay_peer_id}/p2p-circuit/p2p/{}",
+                "/ip4/127.0.0.1/tcp/4001/p2p/{relay_peer_id}/p2p-circuit/p2p/{}",
                 node.public().to_peer_id()
             )],
         };
@@ -557,10 +589,34 @@ mod tests {
         )
         .is_err());
 
-        let route = route_attestation(&root, &node, "relay-a");
+        let relay = Keypair::generate_ed25519()
+            .public()
+            .to_peer_id()
+            .to_string();
+        let other_relay = Keypair::generate_ed25519()
+            .public()
+            .to_peer_id()
+            .to_string();
+        let route = route_attestation(&root, &node, &relay);
         assert!(verify_station_route_attestation_bytes(
             &route.encode_to_vec(),
-            Some("relay-b"),
+            Some(&other_relay),
+            NOW,
+        )
+        .is_err());
+        let mut wrong_address_identity = route.clone();
+        let mut statement =
+            StationRouteStatement::decode(wrong_address_identity.statement_bytes.as_slice())
+                .unwrap();
+        statement.addresses = vec![format!(
+            "/ip4/127.0.0.1/tcp/4001/p2p/{}/p2p-circuit/p2p/{}",
+            other_relay,
+            node.public().to_peer_id()
+        )];
+        wrong_address_identity.statement_bytes = statement.encode_to_vec();
+        assert!(verify_station_route_attestation_bytes(
+            &wrong_address_identity.encode_to_vec(),
+            Some(&relay),
             NOW,
         )
         .is_err());
@@ -571,7 +627,7 @@ mod tests {
         wrong_spki.statement_bytes = statement.encode_to_vec();
         assert!(verify_station_route_attestation_bytes(
             &wrong_spki.encode_to_vec(),
-            Some("relay-a"),
+            Some(&relay),
             NOW,
         )
         .is_err());

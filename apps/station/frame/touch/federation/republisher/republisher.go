@@ -171,7 +171,7 @@ func (r *Republisher) runOnce(parent context.Context) {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(parent, r.cfg.PerRowTimeout)
-		err := touchactor.PublishVisibility(ctx, row.ID)
+		err := touchactor.RepublishVisibility(ctx, row.ID)
 		cancel()
 		if err != nil {
 			info.failed++
