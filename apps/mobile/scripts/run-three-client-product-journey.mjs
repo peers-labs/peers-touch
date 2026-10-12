@@ -531,6 +531,7 @@ function parseArgs(argv) {
     list: false,
     phase: '',
     preflightOnly: false,
+    publishEvidence: false,
     runtimeManifest: process.env.PT_THREE_CLIENT_RUNTIME_MANIFEST || '',
     selfTest: false,
   };
@@ -539,6 +540,7 @@ function parseArgs(argv) {
     if (flag === '--self-test') options.selfTest = true;
     else if (flag === '--list') options.list = true;
     else if (flag === '--preflight-only') options.preflightOnly = true;
+    else if (flag === '--publish-evidence') options.publishEvidence = true;
     else if (flag === '--phase') options.phase = argv[++index] || '';
     else if (flag === '--runtime-manifest') {
       options.runtimeManifest = argv[++index] || '';
@@ -2087,6 +2089,48 @@ function emitSuiteRuntimeReport(suiteRuntime, evidenceDir, phase) {
     ),
     reportPath,
   };
+}
+
+function publishDurableJourneyEvidence(evidenceDir, phase) {
+  let output;
+  try {
+    output = execFileSync(
+      'python3',
+      [
+        '-m',
+        'tooling.acceptance.gates.mobile.three_client_product_journey_evidence',
+        '--evidence-dir',
+        evidenceDir,
+        '--phase',
+        phase,
+      ],
+      {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+  } catch (error) {
+    const detail = error?.stderr?.toString?.().trim()
+      || error?.message
+      || String(error);
+    throw new JourneyContractError(
+      'DURABLE_EVIDENCE_PUBLICATION_FAILED',
+      `three-client ${phase} evidence publication failed: ${detail}`,
+    );
+  }
+  return readJsonOutput(output, `three-client ${phase} evidence publication`);
+}
+
+function readJsonOutput(output, label) {
+  try {
+    return JSON.parse(output);
+  } catch (error) {
+    throw new JourneyContractError(
+      'JSON_INVALID',
+      `${label} returned invalid JSON: ${error.message}`,
+    );
+  }
 }
 
 async function runPreflight(matrix, phase, runtimeManifestPath, evidenceDir) {
@@ -10802,6 +10846,16 @@ async function main() {
           : options.phase === 'social'
             ? await runSocialPhase(manifest, evidenceDir, preflight)
             : await runRecoveryPhase(manifest, evidenceDir, preflight);
+  if (options.publishEvidence) {
+    result.durableEvidence = publishDurableJourneyEvidence(
+      evidenceDir,
+      options.phase,
+    );
+    writeFileSync(
+      result.reportPath,
+      `${JSON.stringify(result, null, 2)}\n`,
+    );
+  }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
