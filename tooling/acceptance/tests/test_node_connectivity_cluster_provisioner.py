@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.errors import ProvisioningError
@@ -12,6 +13,7 @@ from tooling.acceptance.gates.station_access.node_connectivity_cluster_native_e2
 )
 from tooling.acceptance.provisioners.node_connectivity_cluster import (
     NodeConnectivityClusterProvisioner,
+    _wait_for_registry,
     cluster_message_readback,
     stop_cluster_node,
 )
@@ -83,6 +85,44 @@ class NodeConnectivityClusterProvisionerTest(unittest.TestCase):
         self.assertTrue(RUNTIME_REUSE.require_attach_only_scenarios)
         self.assertTrue(RUNTIME_REUSE.require_receiver_visible_proof)
         self.assertFalse(RUNTIME_REUSE.allow_client_replacement)
+
+    def test_registry_waits_for_two_live_nodes_and_shared_digests(self) -> None:
+        expected = [
+            {
+                "station_peer_id": "station",
+                "node_peer_id": "node-a",
+                "mode": "cluster",
+                "cluster_ready": True,
+                "lifecycle_state": "READY",
+                "shared_backing_digest": "backing",
+                "enabled_owners_digest": "owners",
+            },
+            {
+                "station_peer_id": "station",
+                "node_peer_id": "node-b",
+                "mode": "cluster",
+                "cluster_ready": True,
+                "lifecycle_state": "READY",
+                "shared_backing_digest": "backing",
+                "enabled_owners_digest": "owners",
+            },
+        ]
+        with patch(
+            "tooling.acceptance.provisioners.node_connectivity_cluster."
+            "_registry_rows",
+            side_effect=[expected[:1], expected],
+        ), patch(
+            "tooling.acceptance.provisioners.node_connectivity_cluster."
+            "time.sleep"
+        ):
+            rows = _wait_for_registry(
+                Mock(),
+                "postgres",
+                station_ids={"station"},
+                node_ids={"node-a", "node-b"},
+                timeout=1,
+            )
+        self.assertEqual(rows, expected)
 
     def test_entrypoint_projects_explicit_shared_oss_backend(self) -> None:
         source = (

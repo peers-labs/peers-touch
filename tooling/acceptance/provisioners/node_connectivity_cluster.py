@@ -202,6 +202,45 @@ def _registry_rows(
     return [dict(row) for row in rows]
 
 
+def _wait_for_registry(
+    transport: SshTransport,
+    postgres_container: str,
+    *,
+    station_ids: set[str],
+    node_ids: set[str],
+    timeout: float = 30,
+) -> list[dict[str, Any]]:
+    deadline = time.monotonic() + timeout
+    last_rows: list[dict[str, Any]] = []
+    while time.monotonic() < deadline:
+        last_rows = _registry_rows(transport, postgres_container)
+        if (
+            len(last_rows) == 2
+            and {row.get("node_peer_id") for row in last_rows} == node_ids
+            and all(
+                row.get("station_peer_id") in station_ids
+                and row.get("mode") == "cluster"
+                and row.get("cluster_ready") is True
+                and row.get("lifecycle_state") == "READY"
+                for row in last_rows
+            )
+            and len(
+                {row.get("shared_backing_digest") for row in last_rows}
+            )
+            == 1
+            and len(
+                {row.get("enabled_owners_digest") for row in last_rows}
+            )
+            == 1
+        ):
+            return last_rows
+        time.sleep(0.5)
+    raise ProvisioningError(
+        "remote Station node registry did not converge: "
+        + json.dumps(last_rows, sort_keys=True)
+    )
+
+
 class NodeConnectivityClusterProvisioner(EnvironmentProvisioner):
     environment_id = "node-connectivity-cluster"
     gate_id = GATE_ID
@@ -662,32 +701,12 @@ class NodeConnectivityClusterProvisioner(EnvironmentProvisioner):
                 raise ProvisioningError(
                     "remote Station cluster identity topology is invalid"
                 )
-            rows = _registry_rows(
+            _wait_for_registry(
                 self._transport,
                 self._postgres_container,
+                station_ids=station_ids,
+                node_ids=node_ids,
             )
-            if (
-                len(rows) != 2
-                or {row.get("node_peer_id") for row in rows} != node_ids
-                or any(
-                    row.get("station_peer_id") not in station_ids
-                    or row.get("mode") != "cluster"
-                    or row.get("cluster_ready") is not True
-                    or row.get("lifecycle_state") != "READY"
-                    for row in rows
-                )
-                or len(
-                    {row.get("shared_backing_digest") for row in rows}
-                )
-                != 1
-                or len(
-                    {row.get("enabled_owners_digest") for row in rows}
-                )
-                != 1
-            ):
-                raise ProvisioningError(
-                    "remote Station node registry did not converge"
-                )
             database_identity, object_identity = _remote_runtime_identity(
                 self._transport,
                 self._postgres_container,
