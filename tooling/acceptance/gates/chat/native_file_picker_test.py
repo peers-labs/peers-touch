@@ -35,6 +35,49 @@ def _control(
 
 
 class NativeFilePickerTest(unittest.TestCase):
+    def test_text_field_focus_is_ready_before_opening_picker(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            source = Path(raw) / "attachment.bin"
+            source.write_bytes(b"native-file-picker")
+            adapter = Mock()
+            adapter.platform = "macos"
+            adapter.activate_and_focused_control.return_value = _control(
+                kind="text-field"
+            )
+            adapter.focused_control.return_value = _control(
+                kind="list",
+                window_count=2,
+                dialog_count=1,
+            )
+            adapter.select_file_chooser_path_to_process.return_value = _control(
+                kind="text-field"
+            )
+            binding = SimpleNamespace(
+                native_adapter=adapter,
+                request_cooperative_activation=Mock(return_value=False),
+                stage_native_file=Mock(return_value=source),
+            )
+            driver = Mock()
+            driver.execute_script.return_value = True
+            client = SimpleNamespace(process_id=42, driver=driver)
+            trigger = Mock()
+
+            result = select_native_file(
+                actor="alice",
+                client=client,
+                sessions=(client,),
+                runtime_binding=binding,
+                source_path=source,
+                trigger=trigger,
+                timeout_seconds=0.1,
+            )
+
+        self.assertEqual(
+            result,
+            {"name": "attachment.bin", "size": 18},
+        )
+        trigger.assert_called_once_with()
+
     def test_direct_platform_selection_restores_native_window(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             source = Path(raw) / "attachment.bin"
