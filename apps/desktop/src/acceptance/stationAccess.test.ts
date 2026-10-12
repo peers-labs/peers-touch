@@ -180,4 +180,100 @@ describe('configureAcceptanceStation', () => {
       'route-relay',
     );
   });
+
+  it('selects the freshest available route for a shared Relay origin', async () => {
+    const transport = 'https://relay.invalid:18443';
+    const routes = [
+      {
+        route_id: 'route-expired',
+        route_type: 'relay' as const,
+        transport: 'wss',
+        endpoint_origin: transport,
+        route_generation: 1,
+        attestation_expires_at_unix_ms: 10,
+        last_verified_at: '2026-10-11T00:00:00Z',
+        health: 'available' as const,
+      },
+      {
+        route_id: 'route-unavailable',
+        route_type: 'relay' as const,
+        transport: 'wss',
+        endpoint_origin: transport,
+        route_generation: 3,
+        attestation_expires_at_unix_ms: 30,
+        last_verified_at: '2026-10-13T00:00:00Z',
+        health: 'unavailable' as const,
+      },
+      {
+        route_id: 'route-current',
+        route_type: 'relay' as const,
+        transport: 'wss',
+        endpoint_origin: transport,
+        route_generation: 2,
+        attestation_expires_at_unix_ms: 20,
+        last_verified_at: '2026-10-12T00:00:00Z',
+        health: 'available' as const,
+      },
+    ];
+    const stationApi = {
+      stationAdd: vi.fn(async () => ({
+        role: 'relay' as const,
+        endpoint_peer_id: 'relay-peer',
+        canonical_origin: transport,
+        entries: [{
+          station_peer_id: 'station-peer',
+          pinned_host_public_key: [1],
+          active_route_id: 'route-expired',
+          route_revision: 1,
+          lifecycle_generation: 1,
+          created_at: '2026-10-07T00:00:00Z',
+          updated_at: '2026-10-12T00:00:00Z',
+          routes,
+        }],
+      })),
+      stationSetActive: vi.fn(async (stationPeerId: string, routeId?: string) => ({
+        active_station_peer_id: stationPeerId,
+        active_route_id: routeId,
+        binding: {
+          phase: 'access_gate' as const,
+          station_peer_id: stationPeerId,
+          active_route_id: routeId,
+          route_revision: 2,
+          lifecycle_generation: 1,
+        },
+      })),
+      stationList: vi.fn(async () => ({
+        active_station_peer_id: 'station-peer',
+        binding: {
+          phase: 'access_gate' as const,
+          station_peer_id: 'station-peer',
+          active_route_id: 'route-current',
+          route_revision: 2,
+          lifecycle_generation: 1,
+        },
+        entries: [{
+          station_peer_id: 'station-peer',
+          pinned_host_public_key: [1],
+          active_route_id: 'route-current',
+          route_revision: 2,
+          lifecycle_generation: 1,
+          created_at: '2026-10-07T00:00:00Z',
+          updated_at: '2026-10-12T00:00:00Z',
+          routes,
+        }],
+      })),
+    };
+
+    await expect(
+      configureAcceptanceStation(stationApi, transport),
+    ).resolves.toMatchObject({
+      configured: true,
+      activeUrl: transport,
+      boundUrl: transport,
+    });
+    expect(stationApi.stationSetActive).toHaveBeenCalledWith(
+      'station-peer',
+      'route-current',
+    );
+  });
 });
