@@ -376,6 +376,35 @@ class NodeConnectivityClusterProvisioner(EnvironmentProvisioner):
             )
         except Exception as error:
             failures.append(f"compose down: {error}")
+        image = str(
+            compose_environment.get("PT_NCP_STATION_IMAGE") or ""
+        )
+        expected_image = f"{self._project}-station"
+        if image != expected_image or not self._project.startswith(
+            PROJECT_PREFIX
+        ):
+            failures.append("image cleanup: runtime image identity is invalid")
+        else:
+            try:
+                completed = self._transport.run_argv(
+                    ("docker", "image", "rm", image),
+                    timeout=120,
+                    check=False,
+                )
+                detail = (
+                    completed.stderr.strip()
+                    or completed.stdout.strip()
+                )
+                if (
+                    completed.returncode != 0
+                    and "No such image" not in detail
+                ):
+                    failures.append(
+                        "image cleanup: "
+                        + (detail[-4000:] or str(completed.returncode))
+                    )
+            except Exception as error:
+                failures.append(f"image cleanup: {error}")
         try:
             self._transport.run_argv(
                 ("rm", "-rf", "--", self._remote_root),
@@ -943,10 +972,9 @@ def cluster_message_readback(
             (
                 "psql -At -v ON_ERROR_STOP=1 "
                 "-U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" "
-                f"-v message_id={message_id} "
                 "-c \"WITH target AS ("
                 "SELECT event_id FROM conversation_events "
-                "WHERE message_id = :'message_id'"
+                f"WHERE message_id = '{message_id}'"
                 ") SELECT json_build_object("
                 "'eventCount', (SELECT count(*) FROM target), "
                 "'eventId', (SELECT min(event_id) FROM target), "
