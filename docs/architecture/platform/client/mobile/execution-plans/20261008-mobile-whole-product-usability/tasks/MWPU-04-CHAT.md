@@ -59,6 +59,7 @@
     "packages/locales",
     "docs/architecture/domains/chat/messaging/data-model.md",
     "docs/architecture/domains/social/core/prototype/README.md",
+    "docs/knowledge/invariants/mobile-call-media-acquisition.md",
     "docs/client/chat/chat-ux-contract.md",
     "docs/client/mobile/chat-layout-contract.md",
     "docs/client/common/ui-identity/components.md",
@@ -80,7 +81,7 @@
   "checks": [
     {
       "id": "chat-source",
-      "command": "cargo test --manifest-path packages/messaging-core/Cargo.toml inbox::drain && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml messaging:: && pnpm --dir apps/desktop exec vitest run src/components/chat src/pages/SocialChatPage.test.tsx src/modules/p2p && pnpm --dir apps/mobile run check:web && pnpm --dir apps/mobile exec vitest run src/components/MobileAvatar.test.tsx src/app/lifecycle/runtimeReadiness.test.ts src/pages/ChatPage.history.test.tsx src/pages/ChatPage.localFlag.test.ts src/pages/chat src/features/chat && python3 -m unittest tooling.acceptance.gates.mobile.three_client_product_journey_evidence_test",
+      "command": "cargo test --manifest-path packages/messaging-core/Cargo.toml inbox::drain && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml messaging:: && pnpm --dir apps/desktop exec vitest run src/components/chat src/pages/SocialChatPage.test.tsx src/modules/p2p && pnpm --dir apps/mobile run check:web && pnpm --dir apps/mobile exec vitest run src/components/MobileAvatar.test.tsx src/app/lifecycle/runtimeReadiness.test.ts src/pages/ChatPage.history.test.tsx src/pages/ChatPage.localFlag.test.ts src/pages/chat src/features/chat src/features/call/callState.test.ts && python3 -m unittest tooling.acceptance.gates.mobile.three_client_product_journey_evidence_test",
       "verificationClass": "SOURCE_CHECK"
     },
     {

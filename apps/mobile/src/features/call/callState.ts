@@ -69,6 +69,11 @@ interface CallResolutionWire {
 
 const RING_TIMEOUT_MS = 45_000;
 const RECONNECT_TIMEOUT_MS = 20_000;
+const MEDIA_ACQUISITION_RETRY_DELAYS_MS = [120, 300] as const;
+const RETRYABLE_MEDIA_ACQUISITION_ERRORS = new Set([
+  'AbortError',
+  'NotReadableError',
+]);
 
 export class MobileCallManager {
   private session: MobileAuthSession | null = null;
@@ -857,14 +862,39 @@ function numberValue(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isInteger(value) ? value : undefined;
 }
 
-function acquireMedia(kind: CallMediaKind): Promise<MediaStream> {
+async function acquireMedia(kind: CallMediaKind): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) {
-    return Promise.reject(new Error('mobile.call.mediaUnavailable'));
+    throw new Error('mobile.call.mediaUnavailable');
   }
-  return navigator.mediaDevices.getUserMedia({
-    audio: true,
-    video: kind === 'video',
-  });
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: kind === 'video',
+      });
+    } catch (error) {
+      const retryDelay = MEDIA_ACQUISITION_RETRY_DELAYS_MS[attempt];
+      if (
+        retryDelay === undefined
+        || !isRetryableMediaAcquisitionError(error)
+      ) {
+        throw error;
+      }
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, retryDelay);
+      });
+    }
+  }
+}
+
+function isRetryableMediaAcquisitionError(error: unknown): boolean {
+  return (
+    error !== null
+    && typeof error === 'object'
+    && 'name' in error
+    && typeof error.name === 'string'
+    && RETRYABLE_MEDIA_ACQUISITION_ERRORS.has(error.name)
+  );
 }
 
 export const mobileCallManager = new MobileCallManager();

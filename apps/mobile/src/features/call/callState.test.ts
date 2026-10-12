@@ -180,4 +180,98 @@ describe('mobile call manager', () => {
     });
     manager.reset();
   });
+
+  it('retries temporary media contention when accepting a follow-up call', async () => {
+    const manager = new MobileCallManager();
+    transportMocks.execute.mockImplementation(async (_session, operation) => {
+      if (operation.operationId === 'turn_ice_servers') {
+        return {
+          status: 200,
+          contentType: 'application/json',
+          bodyBytes: [],
+          json: { ice_servers: [] },
+        };
+      }
+      return { status: 204, contentType: '', bodyBytes: [] };
+    });
+    const stream = {
+      getTracks: () => [],
+      getAudioTracks: () => [],
+      getVideoTracks: () => [],
+    };
+    const temporaryContention = Object.assign(
+      new Error('Could not start audio source'),
+      { name: 'NotReadableError' },
+    );
+    const getUserMedia = vi.fn()
+      .mockRejectedValueOnce(temporaryContention)
+      .mockResolvedValueOnce(stream);
+    vi.stubGlobal('navigator', {
+      mediaDevices: { getUserMedia },
+    });
+    vi.stubGlobal('RTCPeerConnection', class {
+      connectionState = 'new';
+      onconnectionstatechange = null;
+      onicecandidate = null;
+      ontrack = null;
+      addTrack() {}
+      getSenders() { return []; }
+      close() {}
+    });
+
+    await manager.activate(session);
+    await manager.ingestRealtimeSignal({
+      kind: 'call-signal',
+      signalKind: 'CALL_REQUEST',
+      callId: '01K5TCALL00000000000000001',
+      sessionUlid: 'ptid:alice-ptid:bob',
+      fromActorPtid: 'ptid:alice',
+      winningDeviceId: '',
+      payload: new Uint8Array([1]),
+      cursor: 'event-3',
+      timestampMs: 3,
+    });
+
+    await expect(manager.acceptCall()).resolves.toMatchObject({
+      state: 'active_here',
+      winningDeviceId: 'bob-mobile',
+    });
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    manager.reset();
+  });
+
+  it('does not retry a denied media permission when accepting a call', async () => {
+    const manager = new MobileCallManager();
+    const permissionDenied = Object.assign(
+      new Error('Permission denied'),
+      { name: 'NotAllowedError' },
+    );
+    const getUserMedia = vi.fn().mockRejectedValue(permissionDenied);
+    vi.stubGlobal('navigator', {
+      mediaDevices: { getUserMedia },
+    });
+
+    await manager.activate(session);
+    await manager.ingestRealtimeSignal({
+      kind: 'call-signal',
+      signalKind: 'CALL_REQUEST',
+      callId: '01K5TCALL00000000000000002',
+      sessionUlid: 'ptid:alice-ptid:bob',
+      fromActorPtid: 'ptid:alice',
+      winningDeviceId: '',
+      payload: new Uint8Array([1]),
+      cursor: 'event-4',
+      timestampMs: 4,
+    });
+
+    await expect(manager.acceptCall()).rejects.toMatchObject({
+      name: 'NotAllowedError',
+    });
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(manager.getSnapshot()).toMatchObject({
+      state: 'ended',
+      endReason: 'media-failed',
+    });
+    manager.reset();
+  });
 });
