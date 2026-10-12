@@ -3,6 +3,8 @@ package bot
 import (
 	"context"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/bot/application/delivery"
+	"github.com/peers-labs/peers-touch/station/app/subserver/bot/application/ingest"
 	"github.com/peers-labs/peers-touch/station/app/subserver/bot/application/registry"
 	"github.com/peers-labs/peers-touch/station/app/subserver/bot/infrastructure"
 	"github.com/peers-labs/peers-touch/station/app/subserver/bot/infrastructure/persistence"
@@ -18,10 +20,11 @@ type subServer struct {
 	addrs      []string
 	jwtWrapper server.Wrapper
 	registry   *registry.Service
+	ingest     *ingest.Service
 }
 
-// NewBotSubServer constructs the IM Bot sub-server. The public webhook edge is
-// mounted in a later slice; this composition root owns registry management.
+// NewBotSubServer constructs the IM Bot sub-server: owner-scoped registry
+// management under JWT plus the public, Bearer-authenticated webhook edge.
 func NewBotSubServer(opts ...option.Option) server.Subserver {
 	return &subServer{status: server.StatusStopped, addrs: []string{}}
 }
@@ -41,6 +44,18 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 		return err
 	}
 	s.registry = registry.NewService(repo, infrastructure.NewActorMinter())
+
+	limiter := ingest.NewMemoryRateLimiter(nil)
+	ingestService, err := ingest.NewService(
+		s.registry,
+		limiter,
+		delivery.NewLazySink(),
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+	s.ingest = ingestService
 	return nil
 }
 
@@ -61,12 +76,15 @@ func (s *subServer) Address() server.SubserverAddress {
 	return server.SubserverAddress{Address: s.addrs}
 }
 
-// Handlers exposes the owner-scoped registry management API.
+// Handlers exposes the owner-scoped registry management API and the public
+// webhook edge. The webhook route intentionally carries no JWT wrapper:
+// authentication is the per-Bot Bearer secret verified inside the edge.
 func (s *subServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewTypedHandler("bot-create", "/bot/create", server.POST, s.handleCreate, s.jwtWrapper),
 		server.NewTypedHandler("bot-list", "/bot/list", server.POST, s.handleList, s.jwtWrapper),
 		server.NewTypedHandler("bot-rotate-secret", "/bot/rotate-secret", server.POST, s.handleRotateSecret, s.jwtWrapper),
 		server.NewTypedHandler("bot-set-state", "/bot/set-state", server.POST, s.handleSetState, s.jwtWrapper),
+		server.NewHTTPHandler("bot-webhook", "/bot/webhook/:webhook_id", server.POST, s.handleWebhook),
 	}
 }

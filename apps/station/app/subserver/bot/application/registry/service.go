@@ -141,3 +141,23 @@ func (s *Service) loadOwned(ctx context.Context, ownerPtid, botPtid string) (*do
 	}
 	return bot, nil
 }
+
+// AuthenticateWebhook verifies a public webhook edge call. Unknown ids,
+// inactive bots, and wrong secrets all return false with no detail so the edge
+// cannot distinguish them (BOT-A10). A dummy comparison still runs on misses
+// to keep the response path constant-time at the application layer.
+func (s *Service) AuthenticateWebhook(
+	ctx context.Context,
+	webhookID, presentedSecret string,
+) (*domain.Bot, bool) {
+	const dummyHash = ""
+	bot, err := s.repo.GetByWebhookID(ctx, webhookID)
+	if err != nil || bot == nil || !bot.CanIngest() || bot.SecretHash == "" {
+		domain.VerifySecret(dummyHash, presentedSecret)
+		return nil, false
+	}
+	if !domain.VerifySecret(bot.SecretHash, presentedSecret) {
+		return nil, false
+	}
+	return bot, true
+}
