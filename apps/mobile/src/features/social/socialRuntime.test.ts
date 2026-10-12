@@ -248,4 +248,48 @@ describe('social runtime supervisor', () => {
     expect(runtimeMocks.startRealtimeStream).toHaveBeenCalledTimes(2);
     await controller.teardown();
   });
+
+  it('rolls back partial ownership when messaging wake fails during startup', async () => {
+    let timerId = 0;
+    vi.stubGlobal('window', {
+      setInterval: vi.fn(() => {
+        timerId += 1;
+        return timerId;
+      }),
+      clearInterval: vi.fn(),
+      setTimeout: vi.fn(() => {
+        timerId += 1;
+        return timerId;
+      }),
+      clearTimeout: vi.fn(),
+      dispatchEvent: vi.fn(),
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })));
+
+    const socialStore = {
+      sessionKey: 'station-primary|ptid:alice',
+      refreshBlockedUsers: vi.fn(async () => undefined),
+      sweepTypingPeers: vi.fn(),
+      unblockUser: vi.fn(async () => undefined),
+    };
+    vi.mocked(wakeActiveMessagingSession)
+      .mockRejectedValueOnce(new Error('messaging wake failed'))
+      .mockResolvedValue(undefined);
+
+    await expect(startSocialRuntime(
+      session,
+      () => socialStore,
+    )).rejects.toThrow('messaging wake failed');
+
+    expect(runtimeMocks.projectionRuntime.teardown).toHaveBeenCalledOnce();
+    expect(runtimeMocks.projectionRuntime.drain).toHaveBeenCalledOnce();
+    expect(callMocks.reset).toHaveBeenCalledOnce();
+
+    const controller = await startSocialRuntime(
+      session,
+      () => socialStore,
+    );
+    expect(runtimeMocks.projectionRuntime.bootstrap).toHaveBeenCalledTimes(2);
+    await controller.teardown();
+  });
 });

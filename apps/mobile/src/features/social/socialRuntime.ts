@@ -364,9 +364,21 @@ export async function startSocialRuntime(
       reportError: reportSocialRuntimeError,
     },
   );
-  await mobileCallManager.activate(session);
-  await projectionRuntime.bootstrap();
-  await wakeMessaging();
+  try {
+    await mobileCallManager.activate(session);
+    await projectionRuntime.bootstrap();
+    await wakeMessaging();
+  } catch (error) {
+    try {
+      await projectionRuntime.teardown();
+      await projectionRuntime.drain();
+    } catch {
+      // Preserve the startup failure while releasing the remaining owner below.
+    } finally {
+      mobileCallManager.reset();
+    }
+    throw error;
+  }
 
   const runtimeRef: ActiveSocialRuntime = {
     sessionKey: getSocialStore().sessionKey,
