@@ -1,10 +1,102 @@
 # Mobile Prototype
 
-> **Status**: pending-review
+> **Status**: confirmed
 > **Version**: v1.0
 > **Created**: 2026-07-08 | **Updated**: 2026-10-12
 > **Owner**: Mobile Product Team
 > **Module**: `packages/prototypes/mobile/chat/`
+
+## 2026-10-12 Interaction Review Reset
+
+Current rendered review found blocking inconsistencies in avatar identity,
+Chat loading, message anatomy, error ownership, touch geometry, Design Tokens,
+and cross-module visual continuity. The prototype has therefore returned to
+`drafting`; prior `pending-review` evidence remains historical and does not
+authorize further production implementation.
+
+The active gap register and proposed confirmation decisions are:
+
+- [interaction-gap-register.md](./interaction-gap-register.md)
+
+The Owner confirmed the revised executable prototype on 2026-10-12
+(`USER-DECISION-20261012-MOBILE-PROTOTYPE-CONFIRMED`). Production
+implementation must still run through the mounted production Plan and its
+declared worktree; this confirmation does not authorize cross-worktree writes.
+
+## 2026-10-12 Confirmed Interaction Revision
+
+The accepted interaction baseline is now implemented in the executable
+prototype:
+
+- one shared semantic token source drives Mobile CSS variables and the antd
+  adapter; `#667eea` is the authoritative light-theme action accent;
+- light and dark review modes are available beside the evidence selector;
+- people use circular image/fallback avatars and groups use rounded-square
+  deterministic initials; loading and failed-source states keep stable
+  geometry;
+- the clean default journey contains no synthetic delivery failure;
+- conversation first-load, cached-refresh, cached-error, empty, long-content,
+  avatar-loading, avatar-fallback, thread first-load, older-history, route
+  unavailable, failed delivery, and unknown-outcome states are directly
+  addressable;
+- one failed message owns one local Retry action; unknown delivery owns
+  `Check status` and never offers blind Retry;
+- incoming messages use sender clusters, one final `MetaRow`, and one avatar
+  per cluster;
+- pinned content uses one compact thread banner and a dedicated pinned-message
+  page;
+- Chat, Moments, Contacts, and Me now share the same header, row, avatar,
+  surface, separator, and touch-target language.
+
+Rendered evidence is under:
+
+`docs/architecture/platform/client/mobile/prototype/evidence/20261012-interaction-revision/`
+
+The evidence set contains 23 device captures and `visual-check.json`.
+The agent opened and inspected the list/theme/loading/error contact sheet, the
+thread/loading/history/unknown/pinned contact sheet, Moments, Contacts, Me,
+conversation details, and both completed recovery captures.
+
+Observed evidence:
+
+- device geometry is 390 x 844 in every capture;
+- visible prototype actions in the covered Chat paths meet the 44 px Mobile
+  target; the machine output only reports antd's hidden 12 px input-clear
+  implementation detail;
+- default and recovery states contain zero legacy page-level delivery banners;
+- failed delivery has exactly one message-local Retry owner;
+- unknown delivery has exactly one message-local `Check status` owner;
+- Retry and Check status both converge to delivered state and append the peer
+  acknowledgement;
+- light uses `#667eea`; dark uses the shared dark token projection;
+- first-load skeletons preserve seven conversation rows; cached refresh/error
+  retain all projected rows;
+- the evidence run produced no page or console errors.
+
+Frontend tree review:
+
+- Surface: Mobile primary tabs, descriptor detail, message list, sheets.
+- Alive policy: unchanged from the registry: primary tabs and details are
+  `on-visit + none`; large content remains bounded/virtualized.
+- Store/runtime ownership: unchanged; prototype evidence state is scaffolding
+  outside the product tree.
+- Registry update: not required because no lifetime, cache, or runtime owner
+  changed.
+
+The Owner accepted the interaction baseline with the remaining evidence cells
+explicitly deferred:
+
+- full-shell Chinese localization and one additional expansion locale;
+- 200% dynamic type and VoiceOver/TalkBack order;
+- real software keyboard, emoji/attachment/voice panel clearance and focus
+  restoration;
+- attachment/media failure recovery;
+- native iOS/Android and production runtime evidence;
+- the separate Call gaps recorded in MUX-12.
+
+This confirmation establishes the production interaction reference. It does
+not replace production implementation, exact-source runtime proof, or the
+mounted Plan's execution controls.
 
 ## Scope
 

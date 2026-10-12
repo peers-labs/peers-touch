@@ -8,6 +8,12 @@ export const T = {
   primaryHover: '#5a4bc5',
   primaryActive: '#4a3cb4',
 
+  // Federated (cross-station) deviation cue. Quiet marker for a peer who lives
+  // on another station: distinct from both the selection/brand purple and from
+  // warning/danger red, so "from another network" never reads as selected or as
+  // an error. See ui-identity trust-state "Deviation cue".
+  federated: '#5b8def',
+
   // Surfaces
   bg: '#ffffff',
   bgElevated: '#ffffff',

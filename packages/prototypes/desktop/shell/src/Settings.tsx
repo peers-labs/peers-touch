@@ -58,7 +58,6 @@ import {
   Info,
   ChevronDown,
   ChevronRight,
-  RotateCcw,
   Copy,
   Command,
   FolderOpen,
@@ -228,7 +227,7 @@ function SettingsSection({ icon: Icon, title, subtitle, action, children }: {
 }
 
 function SettingsRow({ label, desc, children }: {
-  label: string; desc?: string; children: React.ReactNode;
+  label: string; desc?: string; children?: React.ReactNode;
 }) {
   return (
     <div style={{
@@ -355,9 +354,7 @@ function AccountSection() {
 
       {/* Relationships */}
       <SettingsSection icon={Users} title="Relationships" subtitle="Manage blocked users and relationships.">
-        <SettingsRow label="Blocked Users" desc="3 users currently blocked">
-          <GhostBtn label="Manage" onClick={() => {}} />
-        </SettingsRow>
+        <SettingsRow label="Blocked Users" desc="3 users currently blocked" />
       </SettingsSection>
     </SettingsContainer>
   );
@@ -603,7 +600,6 @@ function GeneralSection() {
         </SettingsRow>
         {pinLock ? (
           <div style={{ display: 'flex', gap: 8, paddingTop: 8 }}>
-            <GhostBtn label="Change PIN" onClick={() => {}} />
             <GhostBtn label="Remove PIN" danger onClick={() => setPinLock(false)} />
           </div>
         ) : null}
@@ -790,6 +786,11 @@ function MemorySection() {
   const [embModel, setEmbModel] = useState('text-embedding-3');
   const [storage, setStorage] = useState<'sqlite' | 'postgres'>('sqlite');
   const [dsn, setDsn] = useState('postgres://user:***@localhost:5432/peers_memory');
+  const [dsnTest, setDsnTest] = useState<'idle' | 'testing' | 'ok'>('idle');
+  const testDsn = () => {
+    setDsnTest('testing');
+    window.setTimeout(() => setDsnTest('ok'), 650);
+  };
   const [vectorWeight, setVectorWeight] = useState(70);
   const [keywordWeight, setKeywordWeight] = useState(30);
 
@@ -826,8 +827,12 @@ function MemorySection() {
           <div style={{ paddingTop: 8 }}>
             <div style={{ fontSize: 13, fontWeight: 500, color: T.text, marginBottom: 6 }}>PostgreSQL DSN</div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input value={dsn} onChange={(e) => setDsn(e.target.value)} style={{ ...inputStyle, flex: 1, fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12 }} />
-              <GhostBtn icon={Activity} label="Test" onClick={() => {}} />
+              <input value={dsn} onChange={(e) => { setDsn(e.target.value); setDsnTest('idle'); }} style={{ ...inputStyle, flex: 1, fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12 }} />
+              <GhostBtn
+                icon={dsnTest === 'ok' ? CheckCircle2 : Activity}
+                label={dsnTest === 'testing' ? 'Testing…' : dsnTest === 'ok' ? 'Reachable' : 'Test'}
+                onClick={testDsn}
+              />
             </div>
           </div>
         ) : null}
@@ -1424,17 +1429,7 @@ function HelpSection() {
             <div style={{ fontSize: 12, color: T.textTertiary, marginTop: 2 }}>Irreversible actions that reset application state.</div>
           </div>
         </div>
-        <SettingsRow label="Reset Onboarding" desc="Re-show the first-run setup wizard on next launch.">
-          <button onClick={() => {}} style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            height: 32, padding: '0 14px', borderRadius: 8,
-            border: '1px solid #ffa39e', backgroundColor: '#fff2f0',
-            color: '#cf1322', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-          }}>
-            <RotateCcw size={14} />
-            Reset
-          </button>
-        </SettingsRow>
+        <SettingsRow label="Reset Onboarding" desc="Re-show the first-run setup wizard on next launch." />
       </div>
     </SettingsContainer>
   );

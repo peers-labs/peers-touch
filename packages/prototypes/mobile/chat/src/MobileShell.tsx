@@ -1,8 +1,13 @@
 import { useEffect, useState, type Dispatch, type ReactNode } from 'react';
 import { Badge } from 'antd';
 import { Image as ImageIcon, MessageCircle, User, Users } from 'lucide-react';
-import type { TabId, Conversation, Contact, GroupItem, SettingEntry } from './types';
-import { demoConversations } from './data';
+import type { TabId, Conversation, Contact, GroupItem, MobileUiEvidence, SettingEntry } from './types';
+import {
+  deliveryRecoveryMessages,
+  demoConversations,
+  directDemoMessages,
+  unknownOutcomeMessages,
+} from './data';
 import {
   longListContacts, longListConversations, longListGroups, longListMembers,
   longListMessages, longListRequests,
@@ -44,6 +49,8 @@ export function MobileShell({
   dispatchSocialDemo,
   longLists = false,
   focusChatJourney = false,
+  deliveryRecovery = false,
+  uiEvidence,
   callScenario,
   searchDemo,
 }: {
@@ -56,6 +63,8 @@ export function MobileShell({
   dispatchSocialDemo: Dispatch<SocialDemoAction>;
   longLists?: boolean;
   focusChatJourney?: boolean;
+  deliveryRecovery?: boolean;
+  uiEvidence: MobileUiEvidence;
   callScenario?: PrototypeCallScenario;
   searchDemo?: SearchDemoControl;
 }) {
@@ -74,7 +83,9 @@ export function MobileShell({
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(() => (
     callScenario
       ? demoConversations.find((conversation) => conversation.key === 'alice') ?? null
-      : focusChatJourney || socialScenario === 'social-detail-unavailable'
+      : focusChatJourney
+        || socialScenario === 'social-detail-unavailable'
+        || uiEvidence.chatThreadState !== 'ready'
         ? demoConversations.find((conversation) => conversation.key === 'dev-team') ?? null
       : null
   ));
@@ -99,8 +110,18 @@ export function MobileShell({
     setShellToastKey((k) => k + 1);
   }
 
+  const baseConversations = longLists ? longListConversations : socialDemo.conversations;
+  const conversations = uiEvidence.longContent
+    ? baseConversations.map((conversation, index) => index === 0 ? {
+      ...conversation,
+      name: 'International Product Architecture Working Group',
+      lastMessage: 'Morgen besprechen wir die gerateubergreifende Wiederherstellung nach einem unterbrochenen Stationswechsel.',
+    } : conversation)
+    : baseConversations;
+  const unreadCount = conversations.reduce((total, conversation) => total + conversation.unread, 0);
+
   const tabs: { id: TabId; label: string; icon: typeof MessageCircle; badge?: number }[] = [
-    { id: 'chat', label: 'Chats', icon: MessageCircle, badge: 7 },
+    { id: 'chat', label: 'Chats', icon: MessageCircle, badge: unreadCount },
     { id: 'moments', label: 'Moments', icon: ImageIcon },
     { id: 'contacts', label: 'Contacts', icon: Users },
     { id: 'profile', label: 'Me', icon: User },
@@ -181,9 +202,20 @@ export function MobileShell({
       />;
     }
     if (activeTab === 'chat' && selectedConversation) {
+      const initialMessages = longLists
+        ? longListMessages
+        : deliveryRecovery
+          ? deliveryRecoveryMessages
+          : uiEvidence.chatThreadState === 'unknown-outcome'
+            ? unknownOutcomeMessages
+            : selectedConversation.key.startsWith('demo-direct-')
+              ? []
+              : selectedConversation.key === 'dev-team'
+                ? undefined
+                : directDemoMessages;
       return <ChatThread key={selectedConversation.key} conversation={selectedConversation}
-        initialMessages={longLists ? longListMessages : selectedConversation.key.startsWith('demo-direct-') ? [] : undefined}
-        listMemory={listMemory} searchDemo={searchDemo}
+        initialMessages={initialMessages}
+        listMemory={listMemory} searchDemo={searchDemo} uiEvidence={uiEvidence}
         onStartCall={(mediaKind) => handleStartCall(selectedConversation, mediaKind)}
         onBack={handleBackToList} />;
     }
@@ -192,7 +224,7 @@ export function MobileShell({
       if (direct?.status === 'ready' && direct.conversation) {
         return <ChatThread key={direct.conversation.key} conversation={direct.conversation}
           initialMessages={direct.conversation.key.startsWith('demo-direct-') ? [] : undefined}
-          listMemory={listMemory}
+          listMemory={listMemory} uiEvidence={uiEvidence}
           onStartCall={(mediaKind) => handleStartCall(direct.conversation!, mediaKind)}
           onBack={() => dispatchSocialDemo({ type: 'close-direct' })} />;
       }
@@ -213,14 +245,16 @@ export function MobileShell({
       return <SettingDetailView setting={selectedSetting} onBack={() => setSelectedSetting(null)} />;
     }
     switch (activeTab) {
-      case 'chat': return <ChatPage conversations={longLists ? longListConversations : socialDemo.conversations}
-        listMemory={listMemory} onConversationClick={handleConversationClick} />;
-      case 'moments': return <MomentsPage />;
+      case 'chat': return <ChatPage conversations={conversations}
+        listMemory={listMemory} uiEvidence={uiEvidence} onConversationClick={handleConversationClick} />;
+      case 'moments': return <MomentsPage avatarState={uiEvidence.avatarState} />;
       case 'contacts': return <ContactsPage contacts={longLists ? longListContacts : socialDemo.contacts}
         groups={longLists ? longListGroups : undefined} requests={longLists ? longListRequests : undefined}
         listMemory={listMemory} request={socialDemo.request}
+        avatarState={uiEvidence.avatarState}
         onContactClick={handleContactClick} onGroupClick={handleGroupClick} onAddContact={handleAddContact} />;
-      case 'profile': return <ProfilePage onChangeStation={onChangeStation} onSettingClick={handleSettingClick} />;
+      case 'profile': return <ProfilePage avatarState={uiEvidence.avatarState}
+        onChangeStation={onChangeStation} onSettingClick={handleSettingClick} />;
     }
   }
 
