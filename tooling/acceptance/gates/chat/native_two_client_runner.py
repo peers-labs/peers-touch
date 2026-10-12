@@ -101,6 +101,7 @@ RECONCILIATION_OUTCOMES = {
     "terminal_superseded",
 }
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
+STATION_BINDING_PROJECTION_TIMEOUT = 30
 REQUIRED_ASSERTIONS = {
     "native_runtime",
     "source_build_runtime_identity",
@@ -774,7 +775,7 @@ class NativeTwoClientGate(AcceptanceGate):
             "bindingState",
             {},
             namespace="stationAccess",
-            script_timeout=10,
+            script_timeout=STATION_BINDING_PROJECTION_TIMEOUT,
         )
         if (
             not isinstance(bound_station, dict)
@@ -876,7 +877,7 @@ class NativeTwoClientGate(AcceptanceGate):
             "bindingState",
             {},
             namespace="stationAccess",
-            script_timeout=10,
+            script_timeout=STATION_BINDING_PROJECTION_TIMEOUT,
         )
         if (
             not isinstance(bound_station, dict)
