@@ -10890,6 +10890,17 @@ function selfTest(matrix) {
     'SELF_TEST_MOBILE_RUNTIME_CONVERGENCE',
     'Mobile Shell admission must wait for required runtimes to converge',
   );
+  const desktopMainSource = readFileSync(
+    path.join(repoRoot, 'apps/desktop/src-tauri/src/main.rs'),
+    'utf8',
+  );
+  assertContract(
+    /fn acceptance_request_activation\([\s\S]*?window\.show\(\)[\s\S]*?window\.unminimize\(\)[\s\S]*?activateIgnoringOtherApps\(true\)[\s\S]*?window\.set_focus\(\)/.test(
+      desktopMainSource,
+    ),
+    'SELF_TEST_DESKTOP_ACTIVATION_VISIBILITY',
+    'Desktop activation must restore a yielded native window before focusing it',
+  );
   assertContract(
     desktopActivationTargetMatches(
       { bundleId: 'cn.trae.app', name: 'Trae CN', pid: 42 },

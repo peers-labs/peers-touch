@@ -81,7 +81,9 @@ fn acceptance_yield_activation(target_pid: i32) -> error::AppResult<serde_json::
 #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
 #[tauri::command]
 #[allow(deprecated)]
-fn acceptance_request_activation() -> error::AppResult<serde_json::Value> {
+fn acceptance_request_activation(
+    window: tauri::WebviewWindow,
+) -> error::AppResult<serde_json::Value> {
     use objc2::MainThreadMarker;
     use objc2_app_kit::NSApplication;
 
@@ -93,7 +95,28 @@ fn acceptance_request_activation() -> error::AppResult<serde_json::Value> {
         );
     };
 
+    if let Err(error) = window.show() {
+        return error::AppResult::fail(
+            error::ErrorCode::InternalError,
+            format!("acceptance window show failed: {error}"),
+            None,
+        );
+    }
+    if let Err(error) = window.unminimize() {
+        return error::AppResult::fail(
+            error::ErrorCode::InternalError,
+            format!("acceptance window unminimize failed: {error}"),
+            None,
+        );
+    }
     NSApplication::sharedApplication(main_thread).activateIgnoringOtherApps(true);
+    if let Err(error) = window.set_focus() {
+        return error::AppResult::fail(
+            error::ErrorCode::InternalError,
+            format!("acceptance window focus failed: {error}"),
+            None,
+        );
+    }
     error::AppResult::success(serde_json::json!({ "requested": true }))
 }
 
