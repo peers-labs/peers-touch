@@ -247,9 +247,6 @@ fn access_scope<T: serde::Serialize>(
         ));
     }
     let active_entry = station.registry().active_entry();
-    if let Some(entry) = active_entry.as_ref() {
-        binding = binding_service.reconcile_route_revision(entry);
-    }
     let binding_matches_registry = active_entry.as_ref().is_some_and(|entry| {
         binding.station_peer_id.as_deref() == Some(entry.station_peer_id.as_str())
             && binding.active_route_id.as_deref() == Some(entry.active_route_id.as_str())
@@ -881,12 +878,14 @@ fn run_required_logout_cleanup(
 pub(crate) fn detach_for_station_switch(
     state: &AppState,
 ) -> Result<(), AppResult<AuthSessionPayload>> {
-    if let Err(error) = state.secure_content.shutdown() {
-        tracing::warn!(error = %error, "failed to stop Secure Content for Station switch");
-    }
-    if let Err(error) = state.messaging_engines.deactivate_all() {
-        tracing::warn!(error = %error, "failed to deactivate messaging engines for Station switch");
-    }
+    state
+        .secure_content
+        .shutdown()
+        .map_err(|error| AppResult::fail(ErrorCode::InternalError, error, None))?;
+    state
+        .messaging_engines
+        .deactivate_all()
+        .map_err(|error| AppResult::fail(ErrorCode::InternalError, error, None))?;
     for session in state.sessions.clear() {
         crate::infrastructure::event_stream::stop(&session.actor.ptid);
     }

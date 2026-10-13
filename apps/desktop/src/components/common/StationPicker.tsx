@@ -26,7 +26,6 @@ import type {
   StationRouteHealth,
 } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
-import { dispatchStationActiveChanged } from './stationRegistryEvents';
 
 type StationHealthStatus = 'unknown' | 'checking' | 'online' | 'offline';
 
@@ -146,11 +145,6 @@ export function StationPicker() {
             }
           : candidate
       )));
-      dispatchStationActiveChanged({
-        stationPeerId: entry.station_peer_id,
-        routeId: result.active_route_id ?? route.route_id,
-        displayName: entry.display_name ?? undefined,
-      });
     } catch (error) {
       log.error('StationPicker', 'Failed to select Station route', {
         stationPeerId: entry.station_peer_id,

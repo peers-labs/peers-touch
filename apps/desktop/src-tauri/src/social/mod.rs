@@ -780,11 +780,12 @@ fn activate(
     let (signing_key_id, signing_key) = engine
         .device_signing_identity()?
         .ok_or_else(|| "secure content device signing key is unavailable".to_string())?;
-    let station_peer_id = state
+    let station_scope = state
         .station
-        .active_station_peer_id()
-        .ok_or_else(|| "secure content active Station peer ID is unavailable".to_string())?;
-    let station_url = state.station.active_endpoint_origin().unwrap_or_default();
+        .client()
+        .active_scope()
+        .ok_or_else(|| "secure content active Station scope is unavailable".to_string())?;
+    let station_peer_id = station_scope.station_peer_id.clone();
     let actor_profile = state
         .station
         .client()
@@ -809,7 +810,6 @@ fn activate(
     let trusted_station_signing_key = resolve_station_signing_key(
         state.station.client(),
         state.station.registry(),
-        &station_url,
         &station_peer_id,
         &actor_profile.federated_handle,
         &active.jwt,
@@ -818,6 +818,7 @@ fn activate(
     let session = SecureContentSession::new(
         SecureContentSessionKey {
             station_peer_id,
+            station_lifecycle_generation: station_scope.lifecycle_generation,
             actor_ptid: actor_ptid.to_string(),
             device_id: engine.endpoint().device_id.clone(),
             jwt_session_id: jwt_session_id(&active.jwt)?,
@@ -825,7 +826,7 @@ fn activate(
             session_generation: 0,
         },
         active.account_id,
-        station_url,
+        state.station.client().clone(),
         active.jwt,
         signing_key_id,
         profile_version,
@@ -843,14 +844,7 @@ fn activate(
     if current.account_id != session.account_id
         || current.actor.ptid != session.key.actor_ptid
         || !session.matches_token(&current.jwt)?
-        || state.station.active_station_peer_id().as_deref()
-            != Some(session.key.station_peer_id.as_str())
-        || state
-            .station
-            .active_endpoint_origin()
-            .unwrap_or_default()
-            .trim_end_matches('/')
-            != session.station_url.trim_end_matches('/')
+        || state.station.client().active_scope().as_ref() != Some(&session.station_scope())
     {
         return Err("secure content authority changed during activation".to_string());
     }

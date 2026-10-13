@@ -66,6 +66,7 @@ Relay 的标准传输替换与业务集群就绪分别验证，不能把连通�
 | [integration.md](./integration.md) | consumer cutover、风险与真实验证契约 |
 | [候选执行计划](./execution-plans/20261011-unified-station/plan.md) | 新目标、纵向闭环、依赖与批准边界 |
 | [Desktop StationRuntime 重构计划](./execution-plans/20261012-desktop-station-runtime/plan.md) | Desktop app-scoped transport lifecycle、typed client 与原生证明 |
+| [Desktop StationRuntime 一致性闭环](./execution-plans/20261012-desktop-station-runtime/consistency.md) | 原子 RouteLease、流生命周期、Secure Content StationClient 与 capability logical-scope ledger |
 
 ## 5. Related Sources
 

@@ -2129,6 +2129,7 @@ mod tests {
         SecureContentSession::new(
             crate::secure_content::SecureContentSessionKey {
                 station_peer_id: "station-1".to_string(),
+                station_lifecycle_generation: 1,
                 actor_ptid: "ptid:alice".to_string(),
                 device_id: "device-1".to_string(),
                 jwt_session_id: "session-1".to_string(),
@@ -2136,7 +2137,10 @@ mod tests {
                 session_generation: 1,
             },
             "account-1".to_string(),
-            "https://station.test".to_string(),
+            crate::application::station_runtime::client::StationClient::testing_scoped(
+                "station-1",
+                1,
+            ),
             "token".to_string(),
             "device-key-1".to_string(),
             1,
@@ -2811,6 +2815,7 @@ mod tests {
         let receiver_session = SecureContentSession::new(
             crate::secure_content::SecureContentSessionKey {
                 station_peer_id: attestation.station_peer_id.clone(),
+                station_lifecycle_generation: 1,
                 actor_ptid: endpoint.actor.as_ref().unwrap().ptid.clone(),
                 device_id: endpoint.device_id.clone(),
                 jwt_session_id: "fixture-session".to_string(),
@@ -2818,7 +2823,10 @@ mod tests {
                 session_generation: 1,
             },
             "fixture-account".to_string(),
-            "https://station-remote.test".to_string(),
+            crate::application::station_runtime::client::StationClient::testing_scoped(
+                attestation.station_peer_id.clone(),
+                1,
+            ),
             "fixture-token".to_string(),
             "fixture-device-key".to_string(),
             1,

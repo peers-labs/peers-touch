@@ -8,7 +8,7 @@
 //             — identity stores *who*, this module stores *files*.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::domain::user_profile;
@@ -108,16 +108,20 @@ pub fn store_bytes(resource_identity: &str, bytes: &[u8]) -> Result<PathBuf, Ava
     if bytes.is_empty() {
         return Err(AvatarCacheError::Download("empty body".to_string()));
     }
-    if let Some(path) = lookup(&identity) {
-        return Ok(path);
-    }
 
     let dir = avatars_dir()?;
+    store_bytes_at(&dir, &identity, bytes)
+}
+
+fn store_bytes_at(dir: &Path, identity: &str, bytes: &[u8]) -> Result<PathBuf, AvatarCacheError> {
     fs::create_dir_all(&dir).map_err(|e| AvatarCacheError::Io(e.to_string()))?;
     let dest = dir.join(user_profile::avatar_local_filename(&identity));
-    let temporary = dest.with_extension("tmp");
+    let temporary = dest.with_extension(format!("{}.tmp", ulid::Ulid::new()));
     fs::write(&temporary, bytes).map_err(|e| AvatarCacheError::Io(e.to_string()))?;
-    fs::rename(&temporary, &dest).map_err(|e| AvatarCacheError::Io(e.to_string()))?;
+    if let Err(error) = fs::rename(&temporary, &dest) {
+        let _ = fs::remove_file(&temporary);
+        return Err(AvatarCacheError::Io(error.to_string()));
+    }
     Ok(dest)
 }
 
@@ -169,7 +173,8 @@ fn canonical_remote_identity_for_base(
 
 #[cfg(test)]
 mod tests {
-    use super::canonical_remote_identity_for_base;
+    use super::{canonical_remote_identity_for_base, store_bytes_at};
+    use std::fs;
 
     #[test]
     fn station_media_identity_does_not_include_route_origin() {
@@ -199,5 +204,22 @@ mod tests {
                 .expect("external media identity"),
             url
         );
+    }
+
+    #[test]
+    fn refreshed_avatar_replaces_cached_bytes_for_the_same_identity() {
+        let dir = std::env::temp_dir().join(format!(
+            "peers-avatar-cache-test-{}-{}",
+            std::process::id(),
+            ulid::Ulid::new()
+        ));
+        let identity = "station:peer-a:7:/avatar/alice:";
+
+        let path = store_bytes_at(&dir, identity, b"first").unwrap();
+        let refreshed = store_bytes_at(&dir, identity, b"second").unwrap();
+
+        assert_eq!(refreshed, path);
+        assert_eq!(fs::read(&path).unwrap(), b"second");
+        let _ = fs::remove_dir_all(dir);
     }
 }

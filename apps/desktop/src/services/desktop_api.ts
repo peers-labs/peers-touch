@@ -7915,8 +7915,8 @@ export const api = {
   stationList: () =>
     invokeRustDataFromStatus<void, StationListResponse>('station_list'),
 
-  stationSetActive: (stationPeerId: string, routeId?: string) =>
-    invokeRustDataFromStatus<
+  stationSetActive: async (stationPeerId: string, routeId?: string) => {
+    const result = await invokeRustDataFromStatus<
       { station_peer_id: string; route_id?: string },
       {
         active_station_peer_id?: string | null;
@@ -7926,7 +7926,13 @@ export const api = {
     >('station_set_active', {
       station_peer_id: stationPeerId,
       ...(routeId ? { route_id: routeId } : {}),
-    }),
+    });
+    eventBus.publish(EVENT.STATION_ACTIVE_CHANGED, {
+      stationPeerId: result.active_station_peer_id?.trim() || stationPeerId,
+      routeId: result.active_route_id?.trim() || routeId || '',
+    });
+    return result;
+  },
 
   stationBindingComplete: () =>
     invokeRustDataFromStatus<void, StationBindingState>('station_binding_complete'),

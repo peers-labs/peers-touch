@@ -11,6 +11,13 @@ const rootDir = process.cwd();
 const outputDir = path.join(appletArtifactRoot, 'release');
 const outputPath = path.join(outputDir, 'l3-readiness-audit-output.txt');
 const candidateOnly = process.argv.includes('--candidate-only');
+const stationRuntimeInputs = [
+  'apps/desktop/src-tauri/src/application/station_runtime',
+  'apps/desktop/src-tauri/src/application/station_binding',
+  'apps/desktop/src-tauri/src/infrastructure/station',
+  'apps/desktop/src-tauri/src/infrastructure/station_registry.rs',
+  'packages/station-libp2p-http/src',
+];
 
 mkdirSync(outputDir, { recursive: true });
 
@@ -173,7 +180,9 @@ function newestMtimeMs(dir) {
 
 function newestInputMtimeMs(inputs, failures) {
   let newest = 0;
-  for (const input of inputs) {
+  const completeInputs = inputs.some((input) => input.includes('/station_runtime/'))
+    ? [...inputs, ...stationRuntimeInputs] : inputs;
+  for (const input of new Set(completeInputs)) {
     const absolute = path.resolve(input);
     if (!existsSync(absolute)) {
       failures.push(`platform check input is missing: ${input}`);

@@ -888,9 +888,7 @@ fn classify_command_transport_error(
         | StationClientErrorKind::StaleRoute => CommandSubmitFailure::Retryable {
             code: "station_unavailable".to_string(),
         },
-        StationClientErrorKind::AmbiguousOutcome => CommandSubmitFailure::Terminal {
-            code: "ambiguous_outcome".to_string(),
-        },
+        StationClientErrorKind::AmbiguousOutcome => CommandSubmitFailure::Ambiguous,
         StationClientErrorKind::Decode | StationClientErrorKind::InvalidResponse => {
             CommandSubmitFailure::Retryable {
                 code: "invalid_response".to_string(),

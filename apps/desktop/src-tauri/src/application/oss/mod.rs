@@ -596,6 +596,13 @@ pub fn oss_resolve_url(
         }
     };
 
+    if !oss_cache::is_bound_station(station_client, &uri.origin) {
+        // Canonical OSS origins are learned only from the bound Station's
+        // capabilities, never from an arbitrary foreign response.
+        if let Err(error) = oss_cache::capabilities_ensure(station_client, "self") {
+            return resolve_error(error);
+        }
+    }
     let bound_station = oss_cache::is_bound_station(station_client, &uri.origin);
     let caps = match oss_cache::capabilities_ensure(station_client, &uri.origin) {
         Ok(c) => c,
@@ -1203,7 +1210,7 @@ pub fn oss_delete_file(
         None,
     ) {
         Ok(v) => {
-            invalidate_local_cache(&key_owned, "delete");
+            invalidate_local_cache(station_client, &key_owned, "delete");
             json_payload("oss_delete_file", &v)
         }
         Err(e) => {
@@ -1254,7 +1261,7 @@ pub fn oss_restore_file(
             // stale cached copy that might have been retained out of
             // band (e.g. the file was force-deleted and then
             // restored within the same session).
-            invalidate_local_cache(&key_owned, "restore");
+            invalidate_local_cache(station_client, &key_owned, "restore");
             json_payload("oss_restore_file", &v)
         }
         Err(e) => {
@@ -1345,7 +1352,7 @@ pub fn oss_patch_file(
             // who is allowed to fetch the bytes; our local cache
             // outlives that decision and would serve stale content
             // to receivers if not flushed.
-            invalidate_local_cache(&key_owned, "patch");
+            invalidate_local_cache(station_client, &key_owned, "patch");
             json_payload("oss_patch_file", &v)
         }
         Err(e) => {
@@ -1359,7 +1366,7 @@ pub fn oss_patch_file(
 /// changes a file's lifecycle out-of-band (e.g. the operator
 /// force-deleted from the dashboard) so the next view does not
 /// surface the stale copy.
-pub fn oss_invalidate_cache(uri: &str) -> AppResult<StubPayload> {
+pub fn oss_invalidate_cache(station_client: &StationClient, uri: &str) -> AppResult<StubPayload> {
     let parsed = match OssUri::parse(uri) {
         Ok(u) => u,
         Err(e) => {
@@ -1369,6 +1376,10 @@ pub fn oss_invalidate_cache(uri: &str) -> AppResult<StubPayload> {
                 None,
             );
         }
+    };
+    let parsed = match oss_cache::scoped_cache_uri(station_client, &parsed) {
+        Ok(uri) => uri,
+        Err(error) => return resolve_error(error),
     };
     if let Err(err) = oss_cache::attachment_invalidate(&parsed) {
         tracing::warn!(error = %err, uri = %uri, "oss cache invalidate failed");
@@ -1382,13 +1393,20 @@ pub fn oss_invalidate_cache(uri: &str) -> AppResult<StubPayload> {
     })
 }
 
-fn invalidate_local_cache(key: &str, op: &str) {
+fn invalidate_local_cache(station_client: &StationClient, key: &str, op: &str) {
     // The user's own files always live on the bound Station; we
     // retain that lifecycle-relative identity instead of persisting
     // the current route endpoint as part of the cache key.
     let uri = OssUri {
         origin: "self".to_string(),
         key: key.to_string(),
+    };
+    let uri = match oss_cache::scoped_cache_uri(station_client, &uri) {
+        Ok(uri) => uri,
+        Err(error) => {
+            tracing::warn!(error = %error, "post-mutation cache scope unavailable");
+            return;
+        }
     };
     if let Err(err) = oss_cache::attachment_invalidate(&uri) {
         tracing::warn!(error = %err, key = %key, op = %op, "post-mutation cache invalidate failed");

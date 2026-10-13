@@ -32,11 +32,9 @@ pub struct StationIdentityInput {
 pub fn station_list(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
     let registry = state.station.registry();
     let binding_service = state.station.binding();
-    let binding = registry
-        .active_entry()
-        .map(|entry| binding_service.reconcile_route_revision(&entry))
-        .unwrap_or_else(|| binding_service.state());
-    station_list_result(registry.list(), registry.active_station_peer_id(), binding)
+    let binding = binding_service.state();
+    let active_station_peer_id = binding.station_peer_id.clone();
+    station_list_result(registry.list(), active_station_peer_id, binding)
 }
 
 fn station_list_result(
@@ -85,44 +83,29 @@ pub(crate) fn station_set_active_with_state(
             )
         }
     };
-    let registry = state.station.registry();
-    let binding_service = state.station.binding();
-    let station_changes = binding_service.station_changes(registry, station_peer_id);
-    let route_changes =
-        binding_service.route_changes(registry, station_peer_id, input.route_id.as_deref());
-    if route_changes {
-        if let Err(error) = state.secure_content.shutdown() {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                "Could not fence Secure Content before switching Station route",
-                Some(serde_json::json!({
-                    "code": "station_secure_content_fence_failed",
-                    "reason": error,
-                })),
-            );
-        }
-    }
-    let binding = match state
-        .station
-        .switch_station(station_peer_id, input.route_id.as_deref())
-    {
+    let binding = match state.station.switch_station_with_teardown(
+        station_peer_id,
+        input.route_id.as_deref(),
+        &|station_changed| {
+            if !station_changed {
+                return Ok(());
+            }
+            auth_service::detach_for_station_switch(state).map_err(|error| {
+                StationBindingError::new(
+                    "station_session_clear_failed",
+                    error
+                        .error
+                        .map(|error| error.message)
+                        .unwrap_or_else(|| "Station session cleanup failed".to_string()),
+                    true,
+                )
+            })?;
+            Ok(())
+        },
+    ) {
         Ok(binding) => binding,
         Err(error) => return binding_error(error),
     };
-    if station_changes {
-        if let Err(error) = auth_service::detach_for_station_switch(state) {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                "Could not clear the previous Station session",
-                error.error.map(|error| {
-                    serde_json::json!({
-                        "code": "station_session_clear_failed",
-                        "reason": error.message,
-                    })
-                }),
-            );
-        }
-    }
     let payload = serde_json::json!({
         "active_station_peer_id": binding.station_peer_id,
         "active_route_id": binding.active_route_id,
@@ -224,10 +207,9 @@ fn discover_and_store(command: &str, input: &str, state: &AppState) -> AppResult
         Ok(endpoint) => endpoint,
         Err(error) => return discovery_error(error),
     };
-    let registry = state.station.registry();
-    let entries = match registry.replace_verified_routes(&endpoint.routes) {
+    let entries = match state.station.store_verified_routes(&endpoint.routes) {
         Ok(entries) => entries,
-        Err(error) => return registry_error(command, error),
+        Err(error) => return binding_error(error),
     };
     let payload = serde_json::json!({
         "role": endpoint.role,
@@ -271,29 +253,13 @@ pub(crate) fn station_remove_with_state(
             )
         }
     };
-    let registry = state.station.registry();
-    let removing_active = registry.active_station_peer_id().as_deref() == Some(station_peer_id);
+    let removing_active =
+        state.station.binding().state().station_peer_id.as_deref() == Some(station_peer_id);
     if removing_active {
-        if let Err(error) = state.secure_content.shutdown() {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                "Could not fence Secure Content before removing Station",
-                Some(serde_json::json!({
-                    "code": "station_secure_content_fence_failed",
-                    "reason": error,
-                })),
-            );
-        }
-    }
-    let (binding, was_selected) = match state.station.remove_station(station_peer_id) {
-        Ok(result) => result,
-        Err(error) => return binding_error(error),
-    };
-    if was_selected {
         if let Err(error) = auth_service::detach_for_station_switch(state) {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "Could not clear the previous Station session",
+                "Could not clear the Station session before removal",
                 error.error.map(|error| {
                     serde_json::json!({
                         "code": "station_session_clear_failed",
@@ -303,6 +269,10 @@ pub(crate) fn station_remove_with_state(
             );
         }
     }
+    let (binding, was_selected) = match state.station.remove_station(station_peer_id) {
+        Ok(result) => result,
+        Err(error) => return binding_error(error),
+    };
     let payload = serde_json::json!({
         "removed_station_peer_id": station_peer_id,
         "was_selected": was_selected,
@@ -312,23 +282,6 @@ pub(crate) fn station_remove_with_state(
         command: "station_remove".to_string(),
         status: serde_json::to_string(&payload).unwrap_or_default(),
     })
-}
-
-fn registry_error(command: &str, error: std::io::Error) -> AppResult<StubPayload> {
-    let code = match error.kind() {
-        std::io::ErrorKind::InvalidInput => ErrorCode::InvalidArgument,
-        std::io::ErrorKind::NotFound => ErrorCode::NotFound,
-        std::io::ErrorKind::PermissionDenied => ErrorCode::Forbidden,
-        _ => ErrorCode::InternalError,
-    };
-    AppResult::fail(
-        code,
-        format!("{command} could not persist the Station binding"),
-        Some(serde_json::json!({
-            "code": "station_registry_persist_failed",
-            "reason": error.kind().to_string(),
-        })),
-    )
 }
 
 fn discovery_error(error: StationDiscoveryError) -> AppResult<StubPayload> {

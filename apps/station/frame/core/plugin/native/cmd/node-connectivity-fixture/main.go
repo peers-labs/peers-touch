@@ -105,6 +105,15 @@ func main() {
 				_, _ = writer.Write(event)
 				flusher.Flush()
 			}
+		case "/events-until-cancelled":
+			writer.Header().Set("Content-Type", "text/event-stream")
+			flusher, ok := writer.(http.Flusher)
+			if !ok {
+				http.Error(writer, "flush unavailable", http.StatusInternalServerError)
+				return
+			}
+			flusher.Flush()
+			<-request.Context().Done()
 		case "/upload":
 			digest := sha256.New()
 			count, readErr := io.Copy(digest, request.Body)

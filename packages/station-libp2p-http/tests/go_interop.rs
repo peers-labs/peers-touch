@@ -1,6 +1,8 @@
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use station_libp2p_http::{Request, RequestBody, Route, TrafficClass, TransportOwner};
+use station_libp2p_http::{
+    Request, RequestBody, Route, TrafficClass, TransportOwner, MAX_IN_FLIGHT_REQUESTS,
+};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -106,9 +108,37 @@ fn rust_client_reaches_go_station_over_standard_circuit() {
 
     drop(_blocked_event_one);
     drop(_blocked_event_two);
+    let mut held = Vec::new();
+    for _ in 0..MAX_IN_FLIGHT_REQUESTS {
+        let mut request = request(http::Method::GET, "/events-until-cancelled");
+        request.traffic_class = TrafficClass::Realtime;
+        request.timeout = Duration::from_secs(5 * 60);
+        request.admission_timeout = Duration::from_secs(30);
+        held.push(
+            handle
+                .round_trip(&fixture.route, request)
+                .expect("admit bounded unread response"),
+        );
+    }
+    let error = handle
+        .round_trip(&fixture.route, request(http::Method::GET, "/ping"))
+        .err()
+        .expect("full response admission must reject request");
+    assert_eq!(
+        error.kind(),
+        station_libp2p_http::TransportErrorKind::Overloaded
+    );
+    let stopped_at = std::time::Instant::now();
     transport
         .shutdown(Duration::from_secs(5))
         .expect("join Rust transport");
+    assert!(stopped_at.elapsed() < Duration::from_secs(5));
+    for response in &mut held {
+        assert_eq!(
+            response.body.read(&mut [0_u8; 1]).unwrap_err().kind(),
+            std::io::ErrorKind::ConnectionAborted
+        );
+    }
 }
 
 fn start_fixture() -> Fixture {

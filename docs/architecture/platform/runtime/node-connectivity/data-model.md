@@ -143,6 +143,7 @@ client credentials use distinct issuer, audience, scopes and keys.
 StationBinding
   station_peer_id / pinned_station_root_public_key
   verified_routes[]
+  candidate_route_refreshes[]
   active_route_id / active_node_peer_id
   route_revision / lifecycle_generation
 
@@ -158,6 +159,10 @@ Route revision fences transport callbacks; lifecycle generation fences Station
 replacement. Active node never enters the Session/Actor/Device scope key.
 Registry enrollment updates compare epoch. Operational lease updates compare
 node plus incarnation and cannot resurrect a revoked node.
+For a refreshed contract that retains the same `route_id`, the committed route
+stays in `verified_routes` while the newer contract remains in
+`candidate_route_refreshes`; only selection commit promotes it and advances
+`route_revision`.
 
 ```text
 node: INITIALIZING -> READY -> DRAINING -> STOPPED
@@ -200,7 +205,8 @@ StationRequest
   path_and_query
   headers
   body_stream
-  deadline
+  admission_deadline
+  body_deadline
   traffic_class
   replay_policy: SAFE_READ | IDEMPOTENT(key) | NEVER
 
@@ -236,7 +242,9 @@ The command queue, active route sessions and per-session HTTP/2 streams are
 finite. Admission failure returns `OVERLOADED`; shutdown and lease revocation
 return `CANCELLED` or `STALE_ROUTE`. A mutation interrupted after submission
 returns `AMBIGUOUS_OUTCOME` unless its accepted idempotency policy authorizes a
-replay.
+replay. Admission capacity remains owned until the response body reaches EOF,
+is dropped, is cancelled or is terminated by its body deadline. The shorter
+admission deadline never truncates an accepted long-lived SSE response.
 
 `StationResourceRef` is transport-independent and cannot be serialized as the
 active Direct/Relay origin. Native materialization uses `StationRequest`.

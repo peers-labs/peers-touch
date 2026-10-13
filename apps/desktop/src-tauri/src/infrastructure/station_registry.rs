@@ -52,6 +52,8 @@ pub struct StationEntry {
     pub display_name: Option<String>,
     pub pinned_station_root_public_key: Vec<u8>,
     pub routes: Vec<StationRouteCandidate>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    candidate_route_refreshes: Vec<StationRouteCandidate>,
     pub active_route_id: String,
     pub route_revision: u64,
     pub lifecycle_generation: u64,
@@ -64,6 +66,42 @@ impl StationEntry {
         self.routes
             .iter()
             .find(|route| route.route_id == self.active_route_id)
+    }
+
+    pub(crate) fn verified_candidate(&self, route_id: &str) -> Option<&StationRouteCandidate> {
+        self.candidate_route_refreshes
+            .iter()
+            .find(|route| route.route_id == route_id)
+            .or_else(|| self.routes.iter().find(|route| route.route_id == route_id))
+    }
+
+    pub(crate) fn selected_candidate(&self) -> Option<&StationRouteCandidate> {
+        self.verified_candidate(&self.active_route_id)
+    }
+
+    pub(crate) fn selection_view(&self, route_id: &str) -> Option<Self> {
+        let selected = self.verified_candidate(route_id)?.clone();
+        let mut selection = self.clone();
+        if let Some(route) = selection
+            .routes
+            .iter_mut()
+            .find(|route| route.route_id == route_id)
+        {
+            *route = selected;
+        } else {
+            selection.routes.push(selected);
+        }
+        selection
+            .candidate_route_refreshes
+            .retain(|route| route.route_id != route_id);
+        selection.active_route_id = route_id.to_string();
+        Some(selection)
+    }
+
+    pub(crate) fn has_same_active_contract(&self, other: &Self) -> bool {
+        self.active_route()
+            .zip(other.active_route())
+            .is_some_and(|(left, right)| same_route_contract(left, right))
     }
 }
 
@@ -275,6 +313,7 @@ impl StationRegistry {
                 display_name,
                 pinned_station_root_public_key: route.station_root_public_key.clone(),
                 routes: vec![candidate],
+                candidate_route_refreshes: Vec::new(),
                 active_route_id: route.route_id.clone(),
                 route_revision: 1,
                 lifecycle_generation: 1,
@@ -375,6 +414,7 @@ impl StationRegistry {
                     let persisted_epoch = entry
                         .routes
                         .iter()
+                        .chain(entry.candidate_route_refreshes.iter())
                         .filter(|route| route.node_peer_id == candidate.node_peer_id)
                         .map(|route| route.authorization_epoch)
                         .max()
@@ -387,42 +427,42 @@ impl StationRegistry {
                     }
                 }
 
-                let previous_active = entry.active_route().cloned();
+                let previous_active = entry.active_route().cloned().ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Station has no committed active route",
+                    )
+                })?;
+                let refreshed_active_contract = candidates
+                    .iter()
+                    .position(|candidate| candidate.route_id == previous_active.route_id)
+                    .map(|index| candidates.remove(index))
+                    .filter(|candidate| !same_route_contract(candidate, &previous_active));
+                let retained_active_refresh = refreshed_active_contract.or_else(|| {
+                    entry
+                        .candidate_route_refreshes
+                        .iter()
+                        .find(|candidate| {
+                            candidate.route_id == previous_active.route_id
+                                && !refreshed_nodes.contains(&candidate.node_peer_id)
+                        })
+                        .cloned()
+                });
                 candidates.extend(
                     entry
                         .routes
                         .iter()
-                        .filter(|route| !refreshed_nodes.contains(&route.node_peer_id))
+                        .filter(|route| {
+                            route.route_id != previous_active.route_id
+                                && !refreshed_nodes.contains(&route.node_peer_id)
+                        })
                         .cloned(),
                 );
+                candidates.retain(|candidate| candidate.route_id != previous_active.route_id);
                 mark_stale_authorizations_revoked(&mut candidates);
-                let selected_route_id = candidates
-                    .iter()
-                    .find(|candidate| {
-                        candidate.route_id == entry.active_route_id
-                            && route_is_selectable(candidate, &candidates, now_unix_ms)
-                    })
-                    .or_else(|| select_preferred_route(&candidates, now_unix_ms))
-                    .map(|candidate| candidate.route_id.clone())
-                    .ok_or_else(|| {
-                        io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "Station has no current verified route",
-                        )
-                    })?;
-                let selected = candidates
-                    .iter()
-                    .find(|candidate| candidate.route_id == selected_route_id)
-                    .expect("selected Station route must exist");
-                let active_contract_changed = previous_active.as_ref().is_none_or(|previous| {
-                    previous.route_id != selected_route_id
-                        || !same_route_contract(previous, selected)
-                });
+                candidates.push(previous_active);
                 entry.routes = candidates;
-                entry.active_route_id = selected_route_id;
-                if active_contract_changed {
-                    entry.route_revision = entry.route_revision.saturating_add(1);
-                }
+                entry.candidate_route_refreshes = retained_active_refresh.into_iter().collect();
                 entry.updated_at = now.clone();
                 replaced.push(entry.clone());
             } else {
@@ -440,6 +480,7 @@ impl StationRegistry {
                     display_name: None,
                     pinned_station_root_public_key: station_root_public_key.clone(),
                     routes: candidates,
+                    candidate_route_refreshes: Vec::new(),
                     active_route_id: selected_route_id,
                     route_revision: 1,
                     lifecycle_generation: 1,
@@ -456,6 +497,121 @@ impl StationRegistry {
         Ok(replaced)
     }
 
+    /// Persist one verified selection atomically. Candidate preparation never
+    /// changes the active registry entry.
+    pub(crate) fn commit_selection(
+        &self,
+        candidate: &StationEntry,
+        failed_route_id: Option<&str>,
+    ) -> io::Result<StationEntry> {
+        let mut state = self
+            .state
+            .write()
+            .expect("StationRegistry write lock poisoned");
+        let mut next = state.clone();
+        let changing_station =
+            next.active_station_peer_id.as_deref() != Some(candidate.station_peer_id.as_str());
+        let entry = next
+            .entries
+            .iter_mut()
+            .find(|entry| entry.station_peer_id == candidate.station_peer_id)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Station is not registered"))?;
+        if entry.route_revision != candidate.route_revision
+            || entry.lifecycle_generation != candidate.lifecycle_generation
+            || entry.pinned_station_root_public_key != candidate.pinned_station_root_public_key
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "Station candidate changed during verification",
+            ));
+        }
+        let selected = entry
+            .verified_candidate(&candidate.active_route_id)
+            .filter(|route| {
+                candidate
+                    .selected_candidate()
+                    .is_some_and(|verified| same_route_contract(route, verified))
+                    && route_is_selectable_in_entry(route, entry, unix_ms())
+            })
+            .cloned()
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Verified Station route changed or expired",
+                )
+            })?;
+        let selected_id = selected.route_id.clone();
+        if let Some(failed) = failed_route_id {
+            for route in entry
+                .routes
+                .iter_mut()
+                .chain(entry.candidate_route_refreshes.iter_mut())
+                .filter(|route| route.route_id == failed)
+            {
+                route.health = StationRouteHealth::Unavailable;
+            }
+        }
+        let contract_changed = entry
+            .active_route()
+            .is_none_or(|active| !same_route_contract(active, &selected));
+        if let Some(route) = entry
+            .routes
+            .iter_mut()
+            .find(|route| route.route_id == selected_id)
+        {
+            *route = selected;
+        } else {
+            entry.routes.push(selected);
+        }
+        entry.candidate_route_refreshes.clear();
+        mark_stale_authorizations_revoked(&mut entry.routes);
+        if entry.active_route_id != selected_id || failed_route_id.is_some() || contract_changed {
+            entry.active_route_id = selected_id;
+            entry.route_revision = entry.route_revision.saturating_add(1);
+        }
+        if changing_station && next.active_station_peer_id.is_some() {
+            entry.lifecycle_generation = entry.lifecycle_generation.saturating_add(1);
+        }
+        entry.updated_at = now_rfc3339();
+        let selected = entry.clone();
+        next.active_station_peer_id = Some(candidate.station_peer_id.clone());
+        self.persist(&next)?;
+        *state = next;
+        Ok(selected)
+    }
+
+    pub(crate) fn failover_candidate(
+        &self,
+        station_peer_id: &str,
+        failed_route_id: &str,
+    ) -> io::Result<StationEntry> {
+        let mut entry = self
+            .entry(station_peer_id)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Station is not registered"))?;
+        let selected = entry
+            .routes
+            .iter()
+            .filter(|route| {
+                route.route_id != failed_route_id
+                    && route_is_selectable(route, &entry.routes, unix_ms())
+            })
+            .min_by_key(|route| {
+                (
+                    u8::from(route.health != StationRouteHealth::Available),
+                    &route.route_id,
+                )
+            })
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotConnected,
+                    "Station has no verified failover route",
+                )
+            })?;
+        entry.active_route_id = selected.route_id.clone();
+        Ok(entry)
+    }
+
+    #[cfg(test)]
     pub fn set_active_station(&self, station_peer_id: &str) -> io::Result<StationEntry> {
         let mut state = self
             .state
@@ -488,6 +644,7 @@ impl StationRegistry {
         Ok(selected)
     }
 
+    #[cfg(test)]
     pub fn set_active_route(
         &self,
         station_peer_id: &str,
@@ -579,6 +736,7 @@ impl StationRegistry {
         Ok(updated)
     }
 
+    #[cfg(test)]
     pub fn failover_route(
         &self,
         station_peer_id: &str,
@@ -764,11 +922,28 @@ impl PersistedData {
             entry.routes.iter_mut().for_each(|route| {
                 route.endpoint_origin = normalize_origin(&route.endpoint_origin);
             });
+            entry
+                .candidate_route_refreshes
+                .iter_mut()
+                .for_each(|route| {
+                    route.endpoint_origin = normalize_origin(&route.endpoint_origin);
+                });
             let mut route_ids = HashSet::new();
             entry.routes.retain(|route| {
                 !route.route_id.trim().is_empty()
                     && !route.endpoint_origin.is_empty()
                     && route_ids.insert(route.route_id.clone())
+            });
+            let active_route = entry.active_route().cloned();
+            let mut refresh_ids = HashSet::new();
+            entry.candidate_route_refreshes.retain(|route| {
+                !route.route_id.trim().is_empty()
+                    && !route.endpoint_origin.is_empty()
+                    && route.route_id == entry.active_route_id
+                    && refresh_ids.insert(route.route_id.clone())
+                    && active_route
+                        .as_ref()
+                        .is_some_and(|active| !same_route_contract(active, route))
             });
             !entry.station_peer_id.is_empty()
                 && !entry.pinned_station_root_public_key.is_empty()
@@ -874,6 +1049,25 @@ fn route_is_selectable(
             candidate.node_peer_id == route.node_peer_id
                 && candidate.authorization_epoch > route.authorization_epoch
         })
+}
+
+fn route_is_selectable_in_entry(
+    route: &StationRouteCandidate,
+    entry: &StationEntry,
+    now_unix_ms: i64,
+) -> bool {
+    !matches!(
+        route.health,
+        StationRouteHealth::Unavailable | StationRouteHealth::Revoked
+    ) && route_attestation_is_current(route, now_unix_ms)
+        && !entry
+            .routes
+            .iter()
+            .chain(entry.candidate_route_refreshes.iter())
+            .any(|candidate| {
+                candidate.node_peer_id == route.node_peer_id
+                    && candidate.authorization_epoch > route.authorization_epoch
+            })
 }
 
 fn select_preferred_route(
@@ -1160,6 +1354,116 @@ mod tests {
                 .routes
                 .iter()
                 .any(|route| route.route_id == node_b.route_id));
+        });
+    }
+
+    #[test]
+    fn candidate_refresh_preserves_committed_route_until_selection() {
+        with_seed(None, || {
+            let config_dir = temp_dir("candidate-preserves-commit");
+            let registry = StationRegistry::new(&config_dir);
+            let current = route(
+                "station-one",
+                "direct-current",
+                "https://current.example",
+                false,
+            );
+            registry
+                .replace_verified_routes(std::slice::from_ref(&current))
+                .unwrap();
+            let before = registry.set_active_station("station-one").unwrap();
+
+            let mut candidate = route(
+                "station-one",
+                "direct-candidate",
+                "https://candidate.example",
+                false,
+            );
+            candidate.authorization_epoch = 2;
+            let refreshed = registry
+                .replace_verified_routes(std::slice::from_ref(&candidate))
+                .unwrap()
+                .remove(0);
+
+            assert_eq!(refreshed.active_route_id, before.active_route_id);
+            assert_eq!(refreshed.route_revision, before.route_revision);
+            assert_eq!(
+                refreshed.active_route().unwrap().endpoint_origin,
+                before.active_route().unwrap().endpoint_origin
+            );
+            assert_eq!(
+                registry.active_entry().unwrap().active_route_id,
+                before.active_route_id
+            );
+
+            drop(registry);
+            let restarted = StationRegistry::new(&config_dir);
+            let restored = restarted.active_entry().unwrap();
+            assert_eq!(restored.active_route_id, before.active_route_id);
+            assert_eq!(restored.route_revision, before.route_revision);
+            assert_eq!(
+                restored.active_route().unwrap().endpoint_origin,
+                before.active_route().unwrap().endpoint_origin
+            );
+        });
+    }
+
+    #[test]
+    fn same_route_id_refresh_preserves_new_contract_until_selection() {
+        with_seed(None, || {
+            let config_dir = temp_dir("same-id-candidate-preserves-contract");
+            let registry = StationRegistry::new(&config_dir);
+            let current = route(
+                "station-one",
+                "direct-current",
+                "https://current.example",
+                false,
+            );
+            registry
+                .replace_verified_routes(std::slice::from_ref(&current))
+                .unwrap();
+            let before = registry.set_active_station("station-one").unwrap();
+
+            let mut refreshed_contract = current;
+            refreshed_contract.authorization_epoch = 2;
+            refreshed_contract.node_authorization_digest = [9; 32];
+            refreshed_contract.expires_at_unix_ms = Some(i64::MAX);
+            let refreshed = registry
+                .replace_verified_routes(std::slice::from_ref(&refreshed_contract))
+                .unwrap()
+                .remove(0);
+
+            assert_eq!(refreshed.route_revision, before.route_revision);
+            assert_eq!(
+                refreshed.active_route().unwrap().authorization_epoch,
+                before.active_route().unwrap().authorization_epoch
+            );
+            let candidate = refreshed
+                .verified_candidate("direct-current")
+                .expect("refreshed same-ID route must remain selectable");
+            assert_eq!(candidate.authorization_epoch, 2);
+            assert_eq!(candidate.node_authorization_digest, vec![9; 32]);
+            assert_eq!(candidate.attestation_expires_at_unix_ms, Some(i64::MAX));
+
+            drop(registry);
+            let restarted = StationRegistry::new(&config_dir);
+            let restored = restarted.active_entry().unwrap();
+            assert_eq!(restored.route_revision, before.route_revision);
+            assert_eq!(
+                restored.active_route().unwrap().authorization_epoch,
+                before.active_route().unwrap().authorization_epoch
+            );
+            assert_eq!(
+                restored
+                    .verified_candidate("direct-current")
+                    .unwrap()
+                    .authorization_epoch,
+                2
+            );
+
+            let committed = restarted.commit_selection(&restored, None).unwrap();
+            assert_eq!(committed.active_route().unwrap().authorization_epoch, 2);
+            assert_eq!(committed.route_revision, before.route_revision + 1);
         });
     }
 

@@ -5,10 +5,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
-use reqwest::blocking::{Client, RequestBuilder, Response};
 use reqwest::header::{
-    HeaderMap, ACCEPT, ACCEPT_RANGES, AUTHORIZATION, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE,
-    ETAG, RANGE, RETRY_AFTER,
+    HeaderMap, HeaderValue, ACCEPT, ACCEPT_RANGES, AUTHORIZATION, CONTENT_LENGTH, CONTENT_RANGE,
+    CONTENT_TYPE, ETAG, RANGE, RETRY_AFTER,
 };
 use secure_content_core::object::{
     EncryptedObjectChunk, ObjectDescriptor, ObjectEncryptionSuite, ObjectNonceStrategy,
@@ -19,8 +18,13 @@ use secure_content_core::ports::{ObjectCommitmentCodec, ObjectTransferTransport}
 use secure_content_core::prekey::canonicalize_publish_content_prekeys_request;
 use sha2::{Digest, Sha256};
 
+use crate::application::station_runtime::client::{
+    ReplayPolicy, StationClientError, StationClientErrorKind, StationRequest, StationRequestBody,
+    StationResponse, StationRouteSecurity, TrafficClass,
+};
 use crate::model::{actor, error as error_model, federation, secure_content as wire, social};
 
+use super::station_trust::require_authenticated_station_transport;
 use super::store::SecureContentStore;
 use super::{SecureContentRequestGuard, SecureContentSession};
 
@@ -30,6 +34,9 @@ const PRIVATE_CONTENT_CODE_DETAIL: &str = "private_content_code";
 const CLIENT_SIGNING_DOMAIN: &[u8] = b"peers-touch:secure-content:client-command:v1\0";
 const PUBLISH_CAPABILITY: &str = "key_exchange.content_prekey.publish";
 const INVENTORY_CAPABILITY: &str = "key_exchange.content_prekey.inventory";
+const SECURE_CONTENT_ADMISSION_TIMEOUT: Duration = Duration::from_secs(5);
+const SECURE_CONTENT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const SECURE_CONTENT_OBJECT_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeErrorDisposition {
@@ -83,23 +90,18 @@ impl std::error::Error for NativeTransportError {}
 
 pub struct SecureContentTransport {
     session: Arc<SecureContentSession>,
-    client: Client,
 }
 
 impl SecureContentTransport {
     pub fn new(session: Arc<SecureContentSession>) -> Result<Self, String> {
-        if session.station_url.trim().is_empty() || session.key.device_id.trim().is_empty() {
+        if session.key.station_peer_id.trim().is_empty()
+            || session.key.station_lifecycle_generation == 0
+            || session.key.device_id.trim().is_empty()
+        {
             return Err("secure content transport identity is incomplete".to_string());
         }
         session.begin_request()?;
-        Ok(Self {
-            session,
-            client: Client::builder()
-                .connect_timeout(Duration::from_secs(5))
-                .timeout(Duration::from_secs(30))
-                .build()
-                .map_err(|error| format!("build secure content HTTP client: {error}"))?,
-        })
+        Ok(Self { session })
     }
 
     pub fn inventory(
@@ -400,17 +402,23 @@ impl SecureContentTransport {
     where
         Resp: Message + Default,
     {
-        let (_guard, builder) = self.request(reqwest::Method::POST, path)?;
-        let response = with_proto_content_negotiation(builder)
-            .body(request_bytes.to_vec())
-            .send()
-            .map_err(network_error)?;
-        let result = decode_proto_response_with_retry_after(
+        let (_guard, response) = execute_station_request(
+            &self.session,
+            reqwest::Method::POST,
+            path,
+            None,
+            proto_headers()?,
+            StationRequestBody::Bytes(request_bytes.to_vec()),
+            SECURE_CONTENT_REQUEST_TIMEOUT,
+            TrafficClass::Interactive,
+            ReplayPolicy::Never,
+            RequestCommitSemantics::MayCommit,
+        )?;
+        decode_proto_response_with_retry_after(
             response,
             RequestCommitSemantics::MayCommit,
             retry_after_semantics,
-        );
-        result
+        )
     }
 
     fn get_proto<Resp>(
@@ -444,40 +452,132 @@ impl SecureContentTransport {
     where
         Resp: Message + Default,
     {
-        let (_guard, mut request) = self.request(reqwest::Method::GET, path)?;
-        request = with_proto_content_negotiation(request);
-        if let Some(query) = query {
-            request = request.query(query);
-        }
+        let (_guard, response) = execute_station_request(
+            &self.session,
+            reqwest::Method::GET,
+            path,
+            query,
+            proto_headers()?,
+            StationRequestBody::Empty,
+            SECURE_CONTENT_REQUEST_TIMEOUT,
+            TrafficClass::Interactive,
+            ReplayPolicy::SafeRead,
+            RequestCommitSemantics::ReadOnly,
+        )?;
         decode_proto_response_with_retry_after(
-            request.send().map_err(network_error)?,
+            response,
             RequestCommitSemantics::ReadOnly,
             retry_after_semantics,
         )
     }
-
-    fn request(
-        &self,
-        method: reqwest::Method,
-        path: &str,
-    ) -> Result<(SecureContentRequestGuard<'_>, RequestBuilder), NativeTransportError> {
-        let guard = self.session.begin_request().map_err(cancelled_error)?;
-        let request = self
-            .client
-            .request(
-                method,
-                format!("{}{}", self.session.station_url.trim_end_matches('/'), path),
-            )
-            .header(AUTHORIZATION, format!("Bearer {}", guard.token()))
-            .header("X-Device-ID", &self.session.key.device_id);
-        Ok((guard, request))
-    }
 }
 
-fn with_proto_content_negotiation(request: RequestBuilder) -> RequestBuilder {
-    request
-        .header(CONTENT_TYPE, "application/protobuf")
-        .header(ACCEPT, "application/protobuf")
+fn proto_headers() -> Result<HeaderMap, NativeTransportError> {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("application/protobuf"),
+    );
+    headers.insert(ACCEPT, HeaderValue::from_static("application/protobuf"));
+    Ok(headers)
+}
+
+fn header_value(value: impl std::fmt::Display) -> Result<HeaderValue, NativeTransportError> {
+    HeaderValue::from_str(&value.to_string())
+        .map_err(|_| invalid_local_request("secure content request header is invalid"))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_station_request<'a>(
+    session: &'a SecureContentSession,
+    method: reqwest::Method,
+    path: &str,
+    query: Option<&[(&str, String)]>,
+    mut headers: HeaderMap,
+    body: StationRequestBody,
+    timeout: Duration,
+    traffic_class: TrafficClass,
+    replay_policy: ReplayPolicy,
+    semantics: RequestCommitSemantics,
+) -> Result<(SecureContentRequestGuard<'a>, StationResponse), NativeTransportError> {
+    require_authenticated_station_transport(session.station_client())
+        .map_err(invalid_local_request)?;
+    let guard = session.begin_request().map_err(cancelled_error)?;
+    headers.insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(&format!("Bearer {}", guard.token()))
+            .map_err(|_| invalid_local_request("secure content token is invalid"))?,
+    );
+    headers.insert(
+        "x-device-id",
+        HeaderValue::from_str(&session.key.device_id)
+            .map_err(|_| invalid_local_request("secure content device ID is invalid"))?,
+    );
+    let request = StationRequest {
+        method,
+        path_and_query: station_path_and_query(path, query)?,
+        headers,
+        body,
+        timeout,
+        admission_timeout: SECURE_CONTENT_ADMISSION_TIMEOUT,
+        traffic_class,
+        route_security: StationRouteSecurity::TlsOrLoopback,
+        replay_policy,
+        cancellation: session.request_cancellation(),
+        expected_scope: Some(session.station_scope()),
+    };
+    let response = session
+        .station_client()
+        .execute_raw(request)
+        .map_err(|error| station_client_error(error, semantics))?;
+    Ok((guard, response))
+}
+
+fn station_path_and_query(
+    path: &str,
+    query: Option<&[(&str, String)]>,
+) -> Result<String, NativeTransportError> {
+    let mut url = reqwest::Url::parse("http://station.invalid")
+        .and_then(|base| base.join(path))
+        .map_err(|_| invalid_local_request("secure content Station path is invalid"))?;
+    if let Some(query) = query {
+        url.query_pairs_mut()
+            .extend_pairs(query.iter().map(|(name, value)| (*name, value.as_str())));
+    }
+    let mut path_and_query = url.path().to_string();
+    if let Some(query) = url.query() {
+        path_and_query.push('?');
+        path_and_query.push_str(query);
+    }
+    Ok(path_and_query)
+}
+
+fn station_client_error(
+    error: StationClientError,
+    semantics: RequestCommitSemantics,
+) -> NativeTransportError {
+    let http_status = match &error.kind {
+        StationClientErrorKind::HttpStatus(status) => Some(*status),
+        _ => None,
+    };
+    let disposition = match &error.kind {
+        StationClientErrorKind::AmbiguousOutcome => NativeErrorDisposition::UnknownCommit,
+        StationClientErrorKind::Overloaded
+        | StationClientErrorKind::Network
+        | StationClientErrorKind::Cancelled
+        | StationClientErrorKind::StaleRoute => match semantics {
+            RequestCommitSemantics::ReadOnly => NativeErrorDisposition::Retryable,
+            RequestCommitSemantics::MayCommit => NativeErrorDisposition::UnknownCommit,
+        },
+        _ => NativeErrorDisposition::Terminal,
+    };
+    NativeTransportError {
+        http_status,
+        stable_code: error_model::ErrorCode::Undefined as i32,
+        retry_after_seconds: None,
+        disposition,
+        message: error.message,
+    }
 }
 
 pub fn jwt_session_id(token: &str) -> Result<String, String> {
@@ -540,33 +640,39 @@ pub fn content_prekey_target(
 }
 
 fn decode_proto_response<Resp: Message + Default>(
-    response: Response,
+    response: StationResponse,
     semantics: RequestCommitSemantics,
 ) -> Result<Resp, NativeTransportError> {
     decode_proto_response_with_retry_after(response, semantics, RetryAfterSemantics::Bounded)
 }
 
 fn decode_proto_response_with_retry_after<Resp: Message + Default>(
-    response: Response,
+    response: StationResponse,
     semantics: RequestCommitSemantics,
     retry_after_semantics: RetryAfterSemantics,
 ) -> Result<Resp, NativeTransportError> {
-    let status = response.status();
+    let status = response.status;
     let retry_after_seconds = response
-        .headers()
+        .headers
         .get(RETRY_AFTER)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<u64>().ok());
-    let body = bounded_response_body(response).map_err(|error| {
-        if status.is_success() && matches!(semantics, RequestCommitSemantics::MayCommit) {
-            committed_response_error(status.as_u16(), error.message)
+    let body = bounded_response_body(response).map_err(|mut error| {
+        if (200..300).contains(&status) && matches!(semantics, RequestCommitSemantics::MayCommit) {
+            committed_response_error(status, error.message)
+        } else if matches!(semantics, RequestCommitSemantics::ReadOnly)
+            && error.http_status.is_none()
+            && error.stable_code == error_model::ErrorCode::Undefined as i32
+        {
+            error.disposition = NativeErrorDisposition::Retryable;
+            error
         } else {
             error
         }
     })?;
-    if !status.is_success() {
+    if !(200..300).contains(&status) {
         return Err(decode_typed_error_with_retry_after(
-            status.as_u16(),
+            status,
             &body,
             retry_after_seconds,
             semantics,
@@ -574,7 +680,7 @@ fn decode_proto_response_with_retry_after<Resp: Message + Default>(
         ));
     }
     Resp::decode(body.as_slice()).map_err(|_| NativeTransportError {
-        http_status: Some(status.as_u16()),
+        http_status: Some(status),
         stable_code: error_model::ErrorCode::InvalidProtobuf as i32,
         retry_after_seconds: None,
         disposition: match semantics {
@@ -585,17 +691,20 @@ fn decode_proto_response_with_retry_after<Resp: Message + Default>(
     })
 }
 
-fn bounded_response_body(response: Response) -> Result<Vec<u8>, NativeTransportError> {
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_PROTO_RESPONSE_BYTES as u64)
-    {
+fn bounded_response_body(response: StationResponse) -> Result<Vec<u8>, NativeTransportError> {
+    let content_length = response
+        .headers
+        .get(CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok());
+    if content_length.is_some_and(|length| length > MAX_PROTO_RESPONSE_BYTES as u64) {
         return Err(invalid_local_request(
             "Station response exceeds the client bound",
         ));
     }
     let mut body = Vec::new();
     response
+        .body
         .take(MAX_PROTO_RESPONSE_BYTES as u64 + 1)
         .read_to_end(&mut body)
         .map_err(network_error)?;
@@ -650,8 +759,10 @@ fn decode_typed_error_with_retry_after(
         }
         (_, 30203) => NativeErrorDisposition::PoolNotFound,
         (_, 30208 | 30209) => NativeErrorDisposition::Retryable,
-        (_, 20008) if status >= 500 => NativeErrorDisposition::UnknownCommit,
-        _ if status >= 500 => NativeErrorDisposition::UnknownCommit,
+        _ if status >= 500 => match semantics {
+            RequestCommitSemantics::ReadOnly => NativeErrorDisposition::Retryable,
+            RequestCommitSemantics::MayCommit => NativeErrorDisposition::UnknownCommit,
+        },
         _ => NativeErrorDisposition::Terminal,
     };
     NativeTransportError {
@@ -891,7 +1002,6 @@ impl ObjectCommitmentCodec for SocialObjectCodec {
 pub struct StationObjectTransferTransport {
     session: Arc<SecureContentSession>,
     store: Arc<SecureContentStore>,
-    client: Client,
 }
 
 impl StationObjectTransferTransport {
@@ -899,32 +1009,30 @@ impl StationObjectTransferTransport {
         session: Arc<SecureContentSession>,
         store: Arc<SecureContentStore>,
     ) -> Result<Self, String> {
-        Ok(Self {
-            session,
-            store,
-            client: Client::builder()
-                .connect_timeout(Duration::from_secs(5))
-                .timeout(Duration::from_secs(90))
-                .build()
-                .map_err(|error| format!("build Social object HTTP client: {error}"))?,
-        })
+        Ok(Self { session, store })
     }
 
-    fn request(
+    fn execute(
         &self,
         method: reqwest::Method,
         path: &str,
-    ) -> Result<(SecureContentRequestGuard<'_>, RequestBuilder), NativeTransportError> {
-        let guard = self.session.begin_request().map_err(cancelled_error)?;
-        let request = self
-            .client
-            .request(
-                method,
-                format!("{}{}", self.session.station_url.trim_end_matches('/'), path),
-            )
-            .header(AUTHORIZATION, format!("Bearer {}", guard.token()))
-            .header("X-Device-ID", &self.session.key.device_id);
-        Ok((guard, request))
+        headers: HeaderMap,
+        body: StationRequestBody,
+        replay_policy: ReplayPolicy,
+        semantics: RequestCommitSemantics,
+    ) -> Result<(SecureContentRequestGuard<'_>, StationResponse), NativeTransportError> {
+        execute_station_request(
+            &self.session,
+            method,
+            path,
+            None,
+            headers,
+            body,
+            SECURE_CONTENT_OBJECT_TIMEOUT,
+            TrafficClass::Bulk,
+            replay_policy,
+            semantics,
+        )
     }
 
     fn map_failure(error: NativeTransportError) -> ObjectTransferFailure {
@@ -979,25 +1087,21 @@ impl ObjectTransferTransport for StationObjectTransferTransport {
             descriptor_commitment_sha256: prepared.descriptor_sha256.to_vec(),
             command_id: format!("object-begin:{}", transfer.operation_id),
         };
-        let (_guard, request_builder) = self
-            .request(
+        let (_guard, response) = self
+            .execute(
                 reqwest::Method::POST,
                 "/api/v1/social/moments/objects/uploads/begin",
+                proto_headers().map_err(Self::map_failure)?,
+                StationRequestBody::Bytes(request.encode_to_vec()),
+                ReplayPolicy::Never,
+                RequestCommitSemantics::MayCommit,
             )
             .map_err(Self::map_failure)?;
-        let response = request_builder
-            .header(CONTENT_TYPE, "application/protobuf")
-            .header(ACCEPT, "application/protobuf")
-            .body(request.encode_to_vec())
-            .send()
-            .map_err(network_error)
-            .and_then(|response| {
-                decode_proto_response::<wire::BeginEncryptedObjectUploadResponse>(
-                    response,
-                    RequestCommitSemantics::MayCommit,
-                )
-            })
-            .map_err(Self::map_failure)?;
+        let response = decode_proto_response::<wire::BeginEncryptedObjectUploadResponse>(
+            response,
+            RequestCommitSemantics::MayCommit,
+        )
+        .map_err(Self::map_failure)?;
         if response.upload_id.trim().is_empty() || response.generation == 0 {
             return Err(ObjectTransferFailure::terminal(
                 ObjectTransferErrorCode::DescriptorMismatch,
@@ -1016,32 +1120,48 @@ impl ObjectTransferTransport for StationObjectTransferTransport {
         transfer: &ObjectTransferRecord,
         chunk: &EncryptedObjectChunk,
     ) -> Result<(), ObjectTransferFailure> {
-        let (_guard, request) = self
-            .request(
+        let idempotency_key = format!("{}:{}", transfer.operation_id, chunk.chunk_index);
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static("application/octet-stream"),
+        );
+        headers.insert(
+            "x-upload-generation",
+            header_value(transfer.generation).map_err(Self::map_failure)?,
+        );
+        headers.insert(
+            "x-chunk-offset",
+            header_value(
+                u64::from(chunk.chunk_index)
+                    * u64::from(transfer.chunk_size + secure_content_core::object::OBJECT_TAG_SIZE),
+            )
+            .map_err(Self::map_failure)?,
+        );
+        headers.insert(
+            "x-ciphertext-size",
+            header_value(chunk.ciphertext.len()).map_err(Self::map_failure)?,
+        );
+        headers.insert(
+            "x-ciphertext-sha256",
+            header_value(hex::encode(chunk.ciphertext_sha256)).map_err(Self::map_failure)?,
+        );
+        headers.insert(
+            "idempotency-key",
+            header_value(&idempotency_key).map_err(Self::map_failure)?,
+        );
+        let (_guard, response) = self
+            .execute(
                 reqwest::Method::PUT,
                 &format!(
                     "/api/v1/social/moments/objects/uploads/{}/chunks/{}",
                     transfer.upload_id, chunk.chunk_index
                 ),
+                headers,
+                StationRequestBody::Bytes(chunk.ciphertext.clone()),
+                ReplayPolicy::Idempotent(idempotency_key),
+                RequestCommitSemantics::MayCommit,
             )
-            .map_err(Self::map_failure)?;
-        let response = request
-            .header(CONTENT_TYPE, "application/octet-stream")
-            .header("X-Upload-Generation", transfer.generation)
-            .header(
-                "X-Chunk-Offset",
-                u64::from(chunk.chunk_index)
-                    * u64::from(transfer.chunk_size + secure_content_core::object::OBJECT_TAG_SIZE),
-            )
-            .header("X-Ciphertext-Size", chunk.ciphertext.len())
-            .header("X-Ciphertext-SHA256", hex::encode(chunk.ciphertext_sha256))
-            .header(
-                "Idempotency-Key",
-                format!("{}:{}", transfer.operation_id, chunk.chunk_index),
-            )
-            .body(chunk.ciphertext.clone())
-            .send()
-            .map_err(network_error)
             .map_err(Self::map_failure)?;
         decode_proto_response::<wire::PutEncryptedObjectChunkResponse>(
             response,
@@ -1062,28 +1182,24 @@ impl ObjectTransferTransport for StationObjectTransferTransport {
             descriptor_commitment_sha256: prepared.descriptor_sha256.to_vec(),
             command_id: format!("object-complete:{}", transfer.operation_id),
         };
-        let (_guard, request_builder) = self
-            .request(
+        let (_guard, response) = self
+            .execute(
                 reqwest::Method::POST,
                 &format!(
                     "/api/v1/social/moments/objects/uploads/{}/complete",
                     transfer.upload_id
                 ),
+                proto_headers().map_err(Self::map_failure)?,
+                StationRequestBody::Bytes(request.encode_to_vec()),
+                ReplayPolicy::Never,
+                RequestCommitSemantics::MayCommit,
             )
             .map_err(Self::map_failure)?;
-        let response = request_builder
-            .header(CONTENT_TYPE, "application/protobuf")
-            .header(ACCEPT, "application/protobuf")
-            .body(request.encode_to_vec())
-            .send()
-            .map_err(network_error)
-            .and_then(|response| {
-                decode_proto_response::<wire::CompleteEncryptedObjectUploadResponse>(
-                    response,
-                    RequestCommitSemantics::MayCommit,
-                )
-            })
-            .map_err(Self::map_failure)?;
+        let response = decode_proto_response::<wire::CompleteEncryptedObjectUploadResponse>(
+            response,
+            RequestCommitSemantics::MayCommit,
+        )
+        .map_err(Self::map_failure)?;
         if response.state != wire::EncryptedObjectTransferState::CompleteUnattached as i32 {
             return Err(ObjectTransferFailure::terminal(
                 ObjectTransferErrorCode::IntegrityFailed,
@@ -1112,24 +1228,29 @@ impl ObjectTransferTransport for StationObjectTransferTransport {
         start: u64,
         end: u64,
     ) -> Result<Vec<u8>, ObjectTransferFailure> {
-        let (_guard, request) = self
-            .request(
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            RANGE,
+            header_value(format!("bytes={start}-{end}")).map_err(Self::map_failure)?,
+        );
+        let (_guard, response) = self
+            .execute(
                 reqwest::Method::GET,
                 &format!(
                     "/api/v1/social/moments/objects/{}?expected_descriptor_sha256={}",
                     transfer.operation_id,
                     hex::encode(&transfer.descriptor_sha256)
                 ),
+                headers,
+                StationRequestBody::Empty,
+                ReplayPolicy::SafeRead,
+                RequestCommitSemantics::ReadOnly,
             )
             .map_err(Self::map_failure)?;
-        let response = request
-            .header(RANGE, format!("bytes={start}-{end}"))
-            .send()
-            .map_err(network_error)
-            .map_err(Self::map_failure)?;
-        if response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+        if response.status != reqwest::StatusCode::PARTIAL_CONTENT.as_u16() {
+            let status = response.status;
             return Err(Self::map_failure(decode_typed_error(
-                response.status().as_u16(),
+                status,
                 &bounded_response_body(response).unwrap_or_default(),
                 None,
                 RequestCommitSemantics::ReadOnly,
@@ -1137,7 +1258,7 @@ impl ObjectTransferTransport for StationObjectTransferTransport {
         }
         let expected_length = end.saturating_sub(start).saturating_add(1);
         validate_download_response_headers(
-            response.headers(),
+            &response.headers,
             &transfer.descriptor_sha256,
             descriptor.commitment.ciphertext_size,
             start,
@@ -1160,29 +1281,25 @@ impl ObjectTransferTransport for StationObjectTransferTransport {
             generation: transfer.generation,
             command_id: format!("object-cancel:{}", transfer.operation_id),
         };
-        let (_guard, request_builder) = self
-            .request(
+        let (_guard, response) = self
+            .execute(
                 reqwest::Method::POST,
                 &format!(
                     "/api/v1/social/moments/objects/uploads/{}/cancel",
                     transfer.upload_id
                 ),
+                proto_headers().map_err(Self::map_failure)?,
+                StationRequestBody::Bytes(request.encode_to_vec()),
+                ReplayPolicy::Never,
+                RequestCommitSemantics::MayCommit,
             )
             .map_err(Self::map_failure)?;
-        request_builder
-            .header(CONTENT_TYPE, "application/protobuf")
-            .header(ACCEPT, "application/protobuf")
-            .body(request.encode_to_vec())
-            .send()
-            .map_err(network_error)
-            .and_then(|response| {
-                decode_proto_response::<wire::CancelEncryptedObjectUploadResponse>(
-                    response,
-                    RequestCommitSemantics::MayCommit,
-                )
-            })
-            .map(|_| ())
-            .map_err(Self::map_failure)
+        decode_proto_response::<wire::CancelEncryptedObjectUploadResponse>(
+            response,
+            RequestCommitSemantics::MayCommit,
+        )
+        .map(|_| ())
+        .map_err(Self::map_failure)
     }
 }
 
@@ -1223,6 +1340,220 @@ fn validate_download_response_headers(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::station_runtime::client::{
+        StationRequestExecutor, StationRequestScope, StationTransportError,
+        StationTransportErrorKind,
+    };
+    use crate::secure_content::station_trust::TrustedStationSigningKey;
+    use crate::secure_content::SecureContentSessionKey;
+    use ed25519_dalek::SigningKey;
+    use std::io::Cursor;
+    use std::sync::Mutex;
+
+    struct FailingResponseBody;
+
+    impl Read for FailingResponseBody {
+        fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::ConnectionAborted,
+                "route cancelled",
+            ))
+        }
+    }
+
+    struct SwitchingStationExecutor {
+        state: Mutex<(StationRequestScope, usize)>,
+        requests: Mutex<Vec<(usize, String)>>,
+    }
+
+    impl SwitchingStationExecutor {
+        fn new() -> Self {
+            Self {
+                state: Mutex::new((
+                    StationRequestScope {
+                        station_peer_id: "station-a".to_string(),
+                        lifecycle_generation: 7,
+                    },
+                    0,
+                )),
+                requests: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn switch_route(&self) {
+            self.state.lock().unwrap().1 = 1;
+        }
+
+        fn switch_station(&self) {
+            *self.state.lock().unwrap() = (
+                StationRequestScope {
+                    station_peer_id: "station-b".to_string(),
+                    lifecycle_generation: 8,
+                },
+                1,
+            );
+        }
+
+        fn switch_to_remote_plaintext(&self) {
+            self.state.lock().unwrap().1 = 2;
+        }
+    }
+
+    impl StationRequestExecutor for SwitchingStationExecutor {
+        fn execute(
+            &self,
+            request: StationRequest,
+        ) -> Result<StationResponse, StationTransportError> {
+            let (scope, route) = self.state.lock().unwrap().clone();
+            if request.expected_scope.as_ref() != Some(&scope) {
+                return Err(StationTransportError::new(
+                    StationTransportErrorKind::StaleRoute,
+                    "test Station scope changed",
+                    false,
+                ));
+            }
+            self.requests
+                .lock()
+                .unwrap()
+                .push((route, request.path_and_query));
+            let body = social::GetMomentResourceResponse::default().encode_to_vec();
+            Ok(StationResponse {
+                status: 200,
+                headers: HeaderMap::new(),
+                body: Box::new(Cursor::new(body)),
+            })
+        }
+
+        fn active_scope(&self) -> Option<StationRequestScope> {
+            Some(self.state.lock().unwrap().0.clone())
+        }
+
+        fn active_station_peer_id(&self) -> Option<String> {
+            Some(self.state.lock().unwrap().0.station_peer_id.clone())
+        }
+
+        fn active_endpoint_origin(&self) -> Option<String> {
+            Some(
+                match self.state.lock().unwrap().1 {
+                    0 => "https://direct.station.test",
+                    1 => "https://relay.station.test",
+                    _ => "http://remote.station.test",
+                }
+                .to_string(),
+            )
+        }
+
+        fn authority_endpoint_origin(&self, station_peer_id: &str) -> Result<String, String> {
+            if self.active_station_peer_id().as_deref() != Some(station_peer_id) {
+                return Err("unknown Station".to_string());
+            }
+            Ok(self.active_endpoint_origin().unwrap())
+        }
+    }
+
+    fn transport_session(executor: Arc<SwitchingStationExecutor>) -> Arc<SecureContentSession> {
+        let station_signing_key = SigningKey::from_bytes(&[8; 32]);
+        Arc::new(SecureContentSession::new(
+            SecureContentSessionKey {
+                station_peer_id: "station-a".to_string(),
+                station_lifecycle_generation: 7,
+                actor_ptid: "ptid:person:alice".to_string(),
+                device_id: "device-1".to_string(),
+                jwt_session_id: "session-1".to_string(),
+                window_label: "main".to_string(),
+                session_generation: 1,
+            },
+            "account-1".to_string(),
+            crate::application::station_runtime::client::StationClient::new(executor),
+            "token-1".to_string(),
+            "signing-key-1".to_string(),
+            1,
+            SigningKey::from_bytes(&[7; 32]),
+            TrustedStationSigningKey {
+                key_id: "station-signing-key-1".to_string(),
+                verifying_key: station_signing_key.verifying_key(),
+            },
+        ))
+    }
+
+    #[test]
+    fn secure_content_station_transport_has_no_endpoint_owned_http_client() {
+        let source = include_str!("adapter.rs");
+        for forbidden in [
+            ["session", ".station_url"].concat(),
+            ["Client", "::builder()"].concat(),
+        ] {
+            assert!(
+                !source.contains(&forbidden),
+                "Secure Content Station transport still owns {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn secure_content_new_requests_follow_same_station_route_switch() {
+        let executor = Arc::new(SwitchingStationExecutor::new());
+        let transport = SecureContentTransport::new(transport_session(executor.clone())).unwrap();
+
+        transport.get_private_moment("post-1").unwrap();
+        executor.switch_route();
+        transport.get_private_moment("post-2").unwrap();
+
+        assert_eq!(
+            executor.requests.lock().unwrap().as_slice(),
+            [
+                (0, "/api/v1/social/moments/post-1".to_string()),
+                (1, "/api/v1/social/moments/post-2".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn secure_content_rejects_cross_station_scope_before_dispatch() {
+        let executor = Arc::new(SwitchingStationExecutor::new());
+        let transport = SecureContentTransport::new(transport_session(executor.clone())).unwrap();
+
+        executor.switch_station();
+        let error = transport.get_private_moment("post-1").unwrap_err();
+
+        assert_eq!(error.disposition, NativeErrorDisposition::Retryable);
+        assert!(executor.requests.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn secure_content_rejects_remote_plaintext_route_before_dispatch() {
+        let executor = Arc::new(SwitchingStationExecutor::new());
+        let transport = SecureContentTransport::new(transport_session(executor.clone())).unwrap();
+
+        executor.switch_to_remote_plaintext();
+        let error = transport.get_private_moment("post-1").unwrap_err();
+
+        assert_eq!(error.disposition, NativeErrorDisposition::Terminal);
+        assert!(executor.requests.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn secure_content_body_cancellation_preserves_read_and_mutation_semantics() {
+        let response = || StationResponse {
+            status: 200,
+            headers: HeaderMap::new(),
+            body: Box::new(FailingResponseBody),
+        };
+
+        let read = decode_proto_response::<social::GetMomentResourceResponse>(
+            response(),
+            RequestCommitSemantics::ReadOnly,
+        )
+        .unwrap_err();
+        let mutation = decode_proto_response::<social::SubmitPrivateMomentResponse>(
+            response(),
+            RequestCommitSemantics::MayCommit,
+        )
+        .unwrap_err();
+
+        assert_eq!(read.disposition, NativeErrorDisposition::Retryable);
+        assert_eq!(mutation.disposition, NativeErrorDisposition::UnknownCommit);
+    }
 
     #[test]
     fn actor_federation_profile_requires_persisted_canonical_handle() {
@@ -1258,19 +1589,10 @@ mod tests {
 
     #[test]
     fn secure_content_proto_requests_declare_request_and_response_media_types() {
-        let request =
-            with_proto_content_negotiation(Client::new().get("http://127.0.0.1/secure-content"))
-                .build()
-                .unwrap();
+        let headers = proto_headers().unwrap();
 
-        assert_eq!(
-            request.headers().get(CONTENT_TYPE).unwrap(),
-            "application/protobuf"
-        );
-        assert_eq!(
-            request.headers().get(ACCEPT).unwrap(),
-            "application/protobuf"
-        );
+        assert_eq!(headers.get(CONTENT_TYPE).unwrap(), "application/protobuf");
+        assert_eq!(headers.get(ACCEPT).unwrap(), "application/protobuf");
     }
 
     #[test]
@@ -1381,6 +1703,15 @@ mod tests {
         let conflict =
             decode_typed_error(409, &conflict_body, None, RequestCommitSemantics::MayCommit);
         assert_eq!(conflict.message, "SOCIAL_PRIVATE_STALE_PLAN");
+
+        let read_failure = decode_typed_error(503, &[], None, RequestCommitSemantics::ReadOnly);
+        let mutation_failure =
+            decode_typed_error(503, &[], None, RequestCommitSemantics::MayCommit);
+        assert_eq!(read_failure.disposition, NativeErrorDisposition::Retryable);
+        assert_eq!(
+            mutation_failure.disposition,
+            NativeErrorDisposition::UnknownCommit
+        );
         assert_eq!(conflict.disposition, NativeErrorDisposition::Terminal);
 
         let committed = committed_response_error(200, "response body was truncated");

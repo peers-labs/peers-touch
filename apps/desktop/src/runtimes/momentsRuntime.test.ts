@@ -536,7 +536,8 @@ describe('momentsRuntime identity fence', () => {
       expect(mocks.privateMoments.admitMoment).toHaveBeenCalledTimes(1);
     });
     eventBus.publish(EVENT.STATION_ACTIVE_CHANGED, {
-      stationUrl: 'https://station-b.invalid/',
+      stationPeerId: 'station-b',
+      routeId: 'relay-b',
     });
     release({
       state: 'READY_PRIVATE',
@@ -624,7 +625,8 @@ describe('momentsRuntime identity fence', () => {
     const resetsBeforeSwitch = mocks.moments.reset.mock.calls.length;
 
     eventBus.publish(EVENT.STATION_ACTIVE_CHANGED, {
-      stationUrl: 'https://station-b.invalid/',
+      stationPeerId: 'station-b',
+      routeId: 'direct-b',
     });
 
     expect(captureMomentsRuntimeScope()).toBeNull();
@@ -636,9 +638,27 @@ describe('momentsRuntime identity fence', () => {
     expect(captureMomentsRuntimeScope()).toMatchObject({
       actorPtid: 'ptid:alice',
       sessionEpoch: 1,
-      stationIdentity: 'url:https://station-b.invalid',
+      stationIdentity: 'peer:station-b',
     });
     expect(mocks.moments.syncProjection).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves the logical projection scope across a same-Station route switch', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+    const before = captureMomentsRuntimeScope();
+    const resetsBeforeSwitch = mocks.moments.reset.mock.calls.length;
+    const syncsBeforeSwitch = mocks.moments.syncProjection.mock.calls.length;
+
+    eventBus.publish(EVENT.STATION_ACTIVE_CHANGED, {
+      stationPeerId: 'station-a',
+      routeId: 'relay-a',
+    });
+    await flushRuntime();
+
+    expect(captureMomentsRuntimeScope()).toEqual(before);
+    expect(mocks.moments.reset).toHaveBeenCalledTimes(resetsBeforeSwitch);
+    expect(mocks.moments.syncProjection).toHaveBeenCalledTimes(syncsBeforeSwitch);
   });
 
   it('clears projections on actor switch and logout', async () => {

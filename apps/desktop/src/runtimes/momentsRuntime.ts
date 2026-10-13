@@ -682,9 +682,9 @@ function reconcileAuthenticatedRuntime(_reason = 'session'): Promise<void> {
 }
 
 function onStationChanged(payload: StationActiveChangedPayload): void {
-  const stationUrl = payload.stationUrl.trim().replace(/\/+$/, '');
-  stationIdentityHint = stationUrl
-    ? `url:${stationUrl}`
+  const stationPeerId = payload.stationPeerId.trim();
+  stationIdentityHint = stationPeerId
+    ? `peer:${stationPeerId}`
     : `station-change:${bootstrapSequence + 1}`;
   void reconcileAuthenticatedRuntime('station-switch');
 }

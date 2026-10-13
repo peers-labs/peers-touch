@@ -876,7 +876,7 @@ fn materialize_avatar_reference(
             let (bytes, _) = resources
                 .fetch_bytes(resource, token)
                 .map_err(|error| error.to_string())?;
-            avatar_cache::store_bytes(resource.path_and_query(), &bytes)
+            avatar_cache::store_bytes(&resource.cache_identity(), &bytes)
                 .map_err(|error| error.to_string())?
         }
         ResourceReference::External(url) => {

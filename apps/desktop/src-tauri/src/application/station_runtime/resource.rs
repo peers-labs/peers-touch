@@ -1,6 +1,6 @@
 use super::client::{
     ReplayPolicy, StationClient, StationClientError, StationClientErrorKind, StationRequest,
-    StationRequestBody, StationRequestScope, StationResponse, TrafficClass,
+    StationRequestBody, StationRequestScope, StationResponse, StationRouteSecurity, TrafficClass,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::Method;
@@ -58,6 +58,20 @@ impl StationResourceRef {
 
     pub fn path_and_query(&self) -> &str {
         &self.path_and_query
+    }
+
+    pub fn cache_identity(&self) -> String {
+        let content_identity = self.content_identity.as_deref().unwrap_or_default();
+        format!(
+            "station:{}:{}:{}:{}:{}:{}:{}",
+            self.station_peer_id.len(),
+            self.station_peer_id,
+            self.lifecycle_generation,
+            self.path_and_query.len(),
+            self.path_and_query,
+            content_identity.len(),
+            content_identity
+        )
     }
 }
 
@@ -260,6 +274,30 @@ impl StationResourceHandle {
             )
             .map(ResourceReference::Station);
         }
+        if let Ok(url) = reqwest::Url::parse(&value) {
+            let origin = url.origin().ascii_serialization();
+            if self.client.owns_resource_origin(&origin)
+                && !url.query_pairs().any(|(key, _)| {
+                    matches!(
+                        key.to_ascii_lowercase().as_str(),
+                        "signature"
+                            | "x-amz-signature"
+                            | "x-goog-signature"
+                            | "x-oss-signature"
+                            | "sig"
+                    )
+                })
+            {
+                let path = format!(
+                    "{}{}",
+                    url.path(),
+                    url.query()
+                        .map(|query| format!("?{query}"))
+                        .unwrap_or_default()
+                );
+                return self.reference(path, content_identity);
+            }
+        }
         ExternalResourceUrl::parse(value).map(ResourceReference::External)
     }
 
@@ -325,7 +363,9 @@ impl StationResourceHandle {
             headers,
             body: StationRequestBody::Empty,
             timeout: Duration::from_secs(305),
+            admission_timeout: Duration::from_secs(30),
             traffic_class: TrafficClass::Bulk,
+            route_security: StationRouteSecurity::VerifiedRoute,
             replay_policy: ReplayPolicy::SafeRead,
             cancellation: CancellationToken::new(),
             expected_scope: Some(scope),
@@ -408,6 +448,7 @@ mod tests {
     struct RecordingExecutor {
         scope: Mutex<StationRequestScope>,
         requests: Mutex<Vec<(String, Option<StationRequestScope>)>>,
+        owned_origins: Vec<String>,
     }
 
     impl RecordingExecutor {
@@ -415,6 +456,7 @@ mod tests {
             Self {
                 scope: Mutex::new(scope),
                 requests: Mutex::new(Vec::new()),
+                owned_origins: vec!["https://station.example.test".to_string()],
             }
         }
 
@@ -453,6 +495,10 @@ mod tests {
 
         fn authority_endpoint_origin(&self, _station_peer_id: &str) -> Result<String, String> {
             Err("resource tests do not expose route origins".to_string())
+        }
+
+        fn owns_resource_origin(&self, origin: &str) -> bool {
+            self.owned_origins.iter().any(|value| value == origin)
         }
     }
 
@@ -557,6 +603,69 @@ mod tests {
             executor.requests.lock().unwrap().as_slice(),
             &[("/avatar/alice".to_string(), Some(scope("station", 7)))]
         );
+    }
+
+    #[test]
+    fn canonical_station_origin_remains_station_bound_but_presigned_url_is_external() {
+        let executor = Arc::new(RecordingExecutor::new(scope("station", 7)));
+        let resources = StationResourceHandle::new(StationClient::new(executor));
+
+        let canonical = resources
+            .reference(
+                "https://station.example.test/sub-oss/file?key=private%2Favatar.png",
+                None,
+            )
+            .expect("verified canonical Station origin");
+        assert!(matches!(
+            canonical,
+            ResourceReference::Station(ref resource)
+                if resource.path_and_query() == "/sub-oss/file?key=private%2Favatar.png"
+        ));
+
+        let presigned = resources
+            .reference(
+                "https://station.example.test/sub-oss/file?X-Amz-Signature=external",
+                None,
+            )
+            .expect("presigned external URL");
+        assert!(matches!(presigned, ResourceReference::External(_)));
+
+        let google_presigned = resources
+            .reference(
+                "https://station.example.test/sub-oss/file?X-Goog-Signature=external",
+                None,
+            )
+            .expect("Google presigned external URL");
+        assert!(matches!(google_presigned, ResourceReference::External(_)));
+
+        let encoded_google_presigned = resources
+            .reference(
+                "https://station.example.test/sub-oss/file?X%2DGoog%2DSignature=external",
+                None,
+            )
+            .expect("encoded Google presigned external URL");
+        assert!(matches!(
+            encoded_google_presigned,
+            ResourceReference::External(_)
+        ));
+    }
+
+    #[test]
+    fn cache_identity_isolated_by_station_and_lifecycle() {
+        let first = StationResourceRef::new("station-a", 7, "/avatar/alice", None).expect("first");
+        let second =
+            StationResourceRef::new("station-b", 7, "/avatar/alice", None).expect("second");
+        let next = StationResourceRef::new("station-a", 8, "/avatar/alice", None).expect("next");
+        let split_a =
+            StationResourceRef::new("station-a", 7, "/avatar:alice", Some("v1".to_string()))
+                .expect("split a");
+        let split_b =
+            StationResourceRef::new("station-a", 7, "/avatar", Some("alice:v1".to_string()))
+                .expect("split b");
+
+        assert_ne!(first.cache_identity(), second.cache_identity());
+        assert_ne!(first.cache_identity(), next.cache_identity());
+        assert_ne!(split_a.cache_identity(), split_b.cache_identity());
     }
 
     #[test]
