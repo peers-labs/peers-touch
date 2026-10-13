@@ -66,8 +66,6 @@
 > 状态取值：`drafting`（搭建中）· `pending-review`（待确认）· `confirmed`（已确认，可落地）· `landed`（已落地）· `superseded`（已废弃）。
 > 登记表的一级维度是原型站点（`desktop` / `mobile` / `dashboard`），不是每个原型工程目录；applet、通话、聊天等都必须挂在所属站点下。
 
-**Desktop 原型对齐总账**：新桌面原型（shell/social-chat/agent/applet/login）与真实 Station/Desktop 能力的逐项差距、证据与落地排序，统一登记在 [desktop-alignment-gaps.md](./desktop-alignment-gaps.md)；其中未就绪能力在原型中必须显示 Pending backend，不得伪装成可用。
-
 ---
 
 ## 4. 原型确认门
