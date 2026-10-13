@@ -40,6 +40,13 @@ pub struct AcceptanceStationRouteProbeInput {
 }
 
 #[cfg(feature = "acceptance-webdriver")]
+#[derive(Debug, Deserialize)]
+pub struct AcceptanceStationDirectRouteOverrideInput {
+    #[serde(default)]
+    pub endpoint_origin: Option<String>,
+}
+
+#[cfg(feature = "acceptance-webdriver")]
 #[tauri::command]
 pub fn acceptance_station_route_probe(
     input: AcceptanceStationRouteProbeInput,
@@ -111,6 +118,33 @@ pub fn acceptance_station_transport_diagnostics(
     AppResult::success(StubPayload {
         command: "acceptance_station_transport_diagnostics".to_string(),
         status: serde_json::to_string(&state.station.diagnostics()).unwrap_or_default(),
+    })
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
+pub fn acceptance_station_direct_route_override(
+    input: AcceptanceStationDirectRouteOverrideInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    if let Err(error) = state
+        .station
+        .set_acceptance_direct_route_override(input.endpoint_origin.as_deref())
+    {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            error,
+            Some(serde_json::json!({
+                "code": "station_acceptance_direct_override_invalid",
+            })),
+        );
+    }
+    AppResult::success(StubPayload {
+        command: "acceptance_station_direct_route_override".to_string(),
+        status: serde_json::json!({
+            "active": input.endpoint_origin.is_some(),
+        })
+        .to_string(),
     })
 }
 

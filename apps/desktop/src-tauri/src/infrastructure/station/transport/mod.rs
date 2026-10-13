@@ -42,6 +42,8 @@ struct Shared {
     direct: Client,
     identity_store: TransportIdentityStore,
     circuits: Mutex<HashMap<TransportIdentityScope, Arc<ScopedCircuit>>>,
+    #[cfg(feature = "acceptance-webdriver")]
+    direct_route_overrides: Mutex<HashMap<(String, String), String>>,
     shutdown: CancellationToken,
     requests: TaskTracker,
     admission: Arc<Semaphore>,
@@ -127,6 +129,8 @@ impl StationTransportOwner {
                 direct,
                 identity_store: TransportIdentityStore::new(),
                 circuits: Mutex::new(HashMap::new()),
+                #[cfg(feature = "acceptance-webdriver")]
+                direct_route_overrides: Mutex::new(HashMap::new()),
                 shutdown: CancellationToken::new(),
                 requests: TaskTracker::new(),
                 admission: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
@@ -283,6 +287,64 @@ impl StationTransportHandle {
         }
     }
 
+    #[cfg(feature = "acceptance-webdriver")]
+    pub fn set_acceptance_direct_route_override(
+        &self,
+        station_peer_id: &str,
+        route_id: &str,
+        endpoint_origin: &str,
+    ) -> Result<(), StationTransportLifecycleError> {
+        let endpoint = reqwest::Url::parse(endpoint_origin).map_err(|error| {
+            StationTransportLifecycleError(format!(
+                "Acceptance Direct route override is invalid: {error}"
+            ))
+        })?;
+        let loopback = endpoint.host_str().is_some_and(|host| {
+            host == "localhost"
+                || host
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| ip.is_loopback())
+        });
+        if endpoint.scheme() != "http"
+            || !loopback
+            || station_peer_id.trim().is_empty()
+            || route_id.trim().is_empty()
+        {
+            return Err(StationTransportLifecycleError(
+                "Acceptance Direct route override must be a loopback HTTP endpoint".to_string(),
+            ));
+        }
+        self.shared
+            .direct_route_overrides
+            .lock()
+            .map_err(|_| {
+                StationTransportLifecycleError(
+                    "Acceptance Direct route override lock poisoned".to_string(),
+                )
+            })?
+            .insert(
+                (station_peer_id.to_string(), route_id.to_string()),
+                endpoint_origin.trim_end_matches('/').to_string(),
+            );
+        Ok(())
+    }
+
+    #[cfg(feature = "acceptance-webdriver")]
+    pub fn clear_acceptance_direct_route_overrides(
+        &self,
+    ) -> Result<(), StationTransportLifecycleError> {
+        self.shared
+            .direct_route_overrides
+            .lock()
+            .map_err(|_| {
+                StationTransportLifecycleError(
+                    "Acceptance Direct route override lock poisoned".to_string(),
+                )
+            })?
+            .clear();
+        Ok(())
+    }
+
     pub fn close_route(&self, lease: &RouteLease) {
         if lease.route.route_type != StationRouteType::Relay {
             return;
@@ -338,9 +400,10 @@ impl StationTransportHandle {
         request: StationRequest,
         cancellation: LinkedCancellation,
     ) -> Result<StationResponse, StationTransportError> {
+        let endpoint_origin = self.direct_endpoint_origin(lease)?;
         let url = format!(
             "{}{}",
-            lease.route.endpoint_origin.trim_end_matches('/'),
+            endpoint_origin.trim_end_matches('/'),
             request.path_and_query
         );
         let admission_cancellation = cancellation.token();
@@ -515,6 +578,29 @@ impl StationTransportHandle {
                 cancellation,
             )),
         })
+    }
+
+    fn direct_endpoint_origin(&self, lease: &RouteLease) -> Result<String, StationTransportError> {
+        #[cfg(feature = "acceptance-webdriver")]
+        {
+            if let Some(endpoint) = self
+                .shared
+                .direct_route_overrides
+                .lock()
+                .map_err(|_| {
+                    StationTransportError::new(
+                        StationTransportErrorKind::Shutdown,
+                        "Acceptance Direct route override lock poisoned",
+                        false,
+                    )
+                })?
+                .get(&(lease.station_peer_id.clone(), lease.route_id.clone()))
+                .cloned()
+            {
+                return Ok(endpoint);
+            }
+        }
+        Ok(lease.route.endpoint_origin.clone())
     }
 
     fn execute_circuit(
@@ -745,5 +831,38 @@ mod tests {
             .expect("production transport source");
 
         assert!(!production.contains("tokio::time::timeout(admission_timeout, outgoing.send())"));
+    }
+
+    #[cfg(feature = "acceptance-webdriver")]
+    #[test]
+    fn acceptance_direct_override_changes_only_the_physical_endpoint() {
+        let owner = StationTransportOwner::start().unwrap();
+        let transport = owner.handle();
+
+        transport
+            .set_acceptance_direct_route_override(
+                "station-one",
+                "direct-one",
+                "http://127.0.0.1:39000",
+            )
+            .unwrap();
+        assert_eq!(
+            transport
+                .shared
+                .direct_route_overrides
+                .lock()
+                .unwrap()
+                .get(&("station-one".to_string(), "direct-one".to_string()))
+                .map(String::as_str),
+            Some("http://127.0.0.1:39000"),
+        );
+
+        transport.clear_acceptance_direct_route_overrides().unwrap();
+        assert!(transport
+            .shared
+            .direct_route_overrides
+            .lock()
+            .unwrap()
+            .is_empty());
     }
 }

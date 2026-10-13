@@ -1087,6 +1087,8 @@ fn main() {
             station::acceptance_station_route_probe,
             #[cfg(feature = "acceptance-webdriver")]
             station::acceptance_station_transport_diagnostics,
+            #[cfg(feature = "acceptance-webdriver")]
+            station::acceptance_station_direct_route_override,
             station::station_list,
             station::station_set_active,
             station::station_binding_complete,
