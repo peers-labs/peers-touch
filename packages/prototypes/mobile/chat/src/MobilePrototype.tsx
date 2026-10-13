@@ -66,7 +66,8 @@ type MobileUiScenario =
   | 'chat-unknown-outcome'
   | 'avatar-loading'
   | 'avatar-fallback'
-  | 'long-content';
+  | 'long-content'
+  | 'content-projection';
 
 const evidenceScenarioOptions: Array<{ label: string; value: EvidenceScenario }> = [
   { label: 'Default journey', value: 'journey' },
@@ -98,6 +99,7 @@ const evidenceScenarioOptions: Array<{ label: string; value: EvidenceScenario }>
   { label: 'UI / avatar loading', value: 'avatar-loading' },
   { label: 'UI / avatar fallback', value: 'avatar-fallback' },
   { label: 'UI / long localized content', value: 'long-content' },
+  { label: 'UI / human content & trust slots', value: 'content-projection' },
   ...callEvidenceScenarioOptions,
 ];
 
@@ -125,6 +127,7 @@ const mobileUiScenarios: MobileUiScenario[] = [
   'avatar-loading',
   'avatar-fallback',
   'long-content',
+  'content-projection',
 ];
 
 function resolveMobileUiEvidence(scenario: EvidenceScenario): MobileUiEvidence {
@@ -295,6 +298,7 @@ export function MobilePrototype() {
           focusChatJourney={evidenceScenario === 'chat-delivery-recovery'}
           uiEvidence={mobileUiEvidence}
           deliveryRecovery={evidenceScenario === 'chat-delivery-recovery'}
+          contentProjection={evidenceScenario === 'content-projection'}
           callScenario={callScenario}
           searchDemo={evidenceScenario === 'search-controlled'
             ? { state: searchState, dispatch: dispatchSearch } : undefined}

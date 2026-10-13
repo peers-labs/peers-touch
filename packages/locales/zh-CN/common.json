@@ -298,6 +298,8 @@
   "mobile.chat.noPreview": "暂无消息",
   "mobile.chat.latestMessage": "最新消息",
   "mobile.chat.emptyThread": "还没有消息",
+  "mobile.chat.contentPhoto": "[图片]",
+  "mobile.chat.contentSystemUpdate": "系统更新",
   "mobile.chat.messagePlaceholder": "输入消息",
   "mobile.chat.composerEmoji": "表情",
   "mobile.chat.composerMore": "更多输入功能",

@@ -298,6 +298,8 @@
   "mobile.chat.noPreview": "No messages yet",
   "mobile.chat.latestMessage": "Latest message",
   "mobile.chat.emptyThread": "No messages yet",
+  "mobile.chat.contentPhoto": "[Photo]",
+  "mobile.chat.contentSystemUpdate": "System update",
   "mobile.chat.messagePlaceholder": "Type a message",
   "mobile.chat.composerEmoji": "Emoji",
   "mobile.chat.composerMore": "More composer tools",

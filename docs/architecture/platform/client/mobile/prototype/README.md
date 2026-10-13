@@ -6,6 +6,38 @@
 > **Owner**: Mobile Product Team
 > **Module**: `packages/prototypes/mobile/chat/`
 
+## 2026-10-13 Human Content & Trust Slots
+
+Production review exposed inbound seed/transport strings rendered as product
+copy: acceptance seed text (`MWPU … <timestamp>`) appeared as conversation
+previews and Moment bodies, and a Station endpoint (`host:port`) appeared as
+Moment author sub-copy. The new `content-projection` scenario fixes the
+*contract* the production rebuild must implement, without changing any already
+confirmed surface.
+
+- Scenario: `?scenario=content-projection` ("UI / human content & trust slots").
+- Owner: `src/contentProjection.ts` presenter.
+  - plain human text passes through;
+  - emoji-only stays emoji; image/file become human media forms;
+  - seed/PTID/ULID/`host:port`/long-id strings never reach a human slot — they
+    become a neutral localized `System update` label;
+  - list previews keep existing human media labels (`[Photo]`, `report.pdf`).
+- Trust-slot hygiene: name, relationship meta, preview, and Moment author
+  slots carry no endpoint or machine id; transport identity is disclosed
+  progressively only on trust/Safety detail surfaces.
+- Launch-only federation mesh never renders inside the authenticated shell.
+- Verification:
+  - pure presenter unit checks:
+    `node --test packages/prototypes/mobile/chat/scripts/check-content-projection.mjs`
+    (7 assertions, no Portal required);
+  - L2/L3 rendered evidence: the scenario shows projected list previews and a
+    thread whose machine strings are replaced, with zero console/page errors.
+
+This is prototype interaction intent. Production implements the same boundary
+as a presenter between projection store and page and adds a data-hygiene
+visualization gate (no endpoint/PTID/seed prefix in human slots); it does not
+change Station/Conversation/Social authority ownership.
+
 ## 2026-10-12 Interaction Review Reset
 
 Current rendered review found blocking inconsistencies in avatar identity,
