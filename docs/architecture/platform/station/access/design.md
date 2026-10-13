@@ -1,8 +1,8 @@
 # Station 统一接入生命周期 - 架构设计
 
 > **Status**: active
-> **Version**: v2.2
-> **Created**: 2026-09-26 | **Updated**: 2026-10-11
+> **Version**: v2.4
+> **Created**: 2026-09-26 | **Updated**: 2026-10-13
 > **Owner**: Identity and Access
 > **Module**: `apps/desktop/`, `apps/mobile/`, `apps/station/frame/touch/`
 
@@ -110,6 +110,29 @@ Rules:
 
 Relay endpoint discovery, route attestation, connection grant, inner TLS/SPKI
 and tunnel state are consumed from Node Connectivity and are not redefined here.
+
+### 5.1 Desktop Binding Composition
+
+Desktop's Tauri `AppState` owns one `StationRuntime`. Station Access retains one
+`StationBindingCoordinator` inside that runtime as the only owner allowed to
+select an active Station, persist route choice, advance `route_revision` or
+advance `lifecycle_generation`.
+
+The coordinator publishes an immutable `RouteLease` to the Node Connectivity
+transport owner. It never exposes mutable registry state to request callers.
+The transport may report route failure, cancellation or overload, but it cannot
+select or persist a replacement route.
+
+Station replacement fences new requests, tears down the old Access scope and
+then commits the new lifecycle generation. Same-Station route failover preserves
+Access scope, revokes only the prior route lease and applies the request's
+explicit replay policy.
+
+Station-owned relative resources project as `StationResourceRef` bound to
+`station_peer_id + lifecycle_generation`; they never embed the active route
+origin. Native loaders use the typed Station client. WebView-visible resources
+use a scope-checked app-local URI. Absolute external/presigned URLs remain a
+separate type and policy.
 
 ## 6. Federation Boundary
 

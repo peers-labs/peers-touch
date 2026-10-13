@@ -916,6 +916,7 @@ mod tests {
 
     #[test]
     fn in_place_restore_preserves_authenticated_device_identity() {
+        let _guard = crate::infrastructure::storage::test_storage_env_lock();
         let archive = archive();
         let device_identity = generate_fresh_device_identity_from_seed(
             &archive.ptid,
@@ -998,6 +999,7 @@ mod tests {
 
     #[test]
     fn replacement_restore_rebinds_session_device_to_recovered_actor() {
+        let _guard = crate::infrastructure::storage::test_storage_env_lock();
         let archive = archive();
         let profile_id = format!("recovery-replacement-device-{:016x}", OsRng.next_u64());
         let spec = DatabaseOpenSpec::new_chat_main(profile_id.clone());

@@ -35,6 +35,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 use crate::application::chat_storage;
+use crate::application::station_runtime::client::StationClient;
 use crate::domain::presence::{PresenceState, PresenceTransition, PresenceTrigger};
 use crate::infrastructure::oss_cache;
 
@@ -61,18 +62,21 @@ struct ActorPresence {
 /// Supervisor singleton. Cheap to clone (`Arc`-style internals) and safe
 /// to share across threads. Lives on `AppState`.
 pub struct PresenceSupervisor {
+    station_client: StationClient,
     actors: Mutex<HashMap<String, ActorPresence>>,
 }
 
+#[cfg(test)]
 impl Default for PresenceSupervisor {
     fn default() -> Self {
-        Self::new()
+        Self::new(StationClient::testing_unavailable())
     }
 }
 
 impl PresenceSupervisor {
-    pub fn new() -> Self {
+    pub fn new(station_client: StationClient) -> Self {
         Self {
+            station_client,
             actors: Mutex::new(HashMap::new()),
         }
     }
@@ -239,7 +243,11 @@ impl PresenceSupervisor {
         token: &str,
         trigger: PresenceTrigger,
     ) -> ReconcileOutcome {
-        let result = match chat_storage::presence_offline(token, trigger.as_wire()) {
+        let result = match chat_storage::presence_offline(
+            &self.station_client,
+            token,
+            trigger.as_wire(),
+        ) {
             Ok(_) => {
                 tracing::info!(
                     actor = actor_ptid,
@@ -286,7 +294,9 @@ impl PresenceSupervisor {
     ) -> ReconcileOutcome {
         // Renew the actor presence lease. Durable message recovery is owned by
         // the Envelope runtime, which resumes its actor-device inbox separately.
-        if let Err(e) = chat_storage::presence_heartbeat(token, trigger.as_wire()) {
+        if let Err(e) =
+            chat_storage::presence_heartbeat(&self.station_client, token, trigger.as_wire())
+        {
             tracing::warn!(actor = actor_ptid, ?trigger, error = %e, "presence: /presence/heartbeat failed");
             return ReconcileOutcome::failed();
         }
@@ -324,13 +334,13 @@ mod tests {
 
     #[test]
     fn supervisor_starts_offline_for_unknown_actor() {
-        let s = PresenceSupervisor::new();
+        let s = PresenceSupervisor::default();
         assert_eq!(s.state_of("unknown"), PresenceState::Offline);
     }
 
     #[test]
     fn supervisor_state_partitions_per_actor() {
-        let s = PresenceSupervisor::new();
+        let s = PresenceSupervisor::default();
         // Manually populate two actors to exercise the per-actor map. We
         // do this through the Mutex directly because `notify` requires an
         // AppHandle (which is not available in unit tests).

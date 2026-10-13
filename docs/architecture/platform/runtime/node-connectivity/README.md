@@ -1,8 +1,8 @@
 # Node Connectivity
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-10-10 | **Updated**: 2026-10-11
+> **Version**: v1.3
+> **Created**: 2026-10-10 | **Updated**: 2026-10-13
 > **Owner**: Architecture Team
 > **Module**: `apps/station/frame/core/plugin/native/`
 
@@ -50,6 +50,10 @@ Relay 的标准传输替换与业务集群就绪分别验证，不能把连通�
 7. 同一逻辑 Station 切节点保留 Session、设备 cursor 和业务幂等语义。
 8. 单一传输切换完整删除自研 WSS/mount framing，无兼容数据面。
 9. Relay service host 继续使用 Linux/POSIX；平台适配分别证明。
+10. Desktop 由 Tauri composition root 持有一个显式 StationRuntime；不通过
+    getter、localhost proxy 或进程全局单例隐式创建 transport 资源。
+11. Desktop transport identity 按已验证 endpoint scope 持久化；Station 资源以
+    transport-independent reference 投影，不把 active route origin 当作资源身份。
 
 ## 4. Document Navigation
 
@@ -61,6 +65,7 @@ Relay 的标准传输替换与业务集群就绪分别验证，不能把连通�
 | [module-layout.md](./module-layout.md) | 目标 owner、现有扩展点与依赖方向 |
 | [integration.md](./integration.md) | consumer cutover、风险与真实验证契约 |
 | [候选执行计划](./execution-plans/20261011-unified-station/plan.md) | 新目标、纵向闭环、依赖与批准边界 |
+| [Desktop StationRuntime 重构计划](./execution-plans/20261012-desktop-station-runtime/plan.md) | Desktop app-scoped transport lifecycle、typed client 与原生证明 |
 
 ## 5. Related Sources
 

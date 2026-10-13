@@ -521,7 +521,9 @@
         "SAL-D06",
         "SAL-D07",
         "SAL-D08",
-        "SAL-D12"
+        "SAL-D12",
+        "SAL-D14",
+        "SAL-D15"
       ],
       "governedPaths": [
         "apps/desktop/src/components/common/StationPicker.tsx",
@@ -601,7 +603,10 @@
         "NCP-D12",
         "NCP-D13",
         "NCP-D14",
-        "NCP-D15"
+        "NCP-D15",
+        "NCP-D16",
+        "NCP-D17",
+        "NCP-D18"
       ],
       "governedPaths": [
         "apps/station/frame/core/federation",
@@ -611,7 +616,8 @@
         "apps/station/frame/core/plugin/native/registry",
         "apps/station/frame/core/plugin/native/subserver/bootstrap",
         "apps/station/frame/core/runtime/role",
-        "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
+        "apps/desktop/src-tauri/src/application/station_runtime",
+        "apps/desktop/src-tauri/src/infrastructure/station",
         "apps/mobile/src-tauri/src/runtime/station_route.rs",
         "docs/architecture/platform/runtime/node-connectivity",
         "packages/station-libp2p-http"
@@ -648,7 +654,7 @@
           ],
           "consumers": [
             "apps/station/frame/core/federation",
-            "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
+            "apps/desktop/src-tauri/src/infrastructure/station",
             "apps/mobile/src-tauri/src/runtime/station_route.rs"
           ],
           "allowedDependencies": [

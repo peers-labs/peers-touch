@@ -5,10 +5,10 @@
   "status": "active",
   "owners": [
     "apps/desktop/src-tauri/src/application/station_binding/**",
-    "apps/desktop/src-tauri/src/infrastructure/station_client.rs",
+    "apps/desktop/src-tauri/src/application/station_runtime/**",
     "apps/desktop/src-tauri/src/infrastructure/station_discovery.rs",
     "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
-    "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
+    "apps/desktop/src-tauri/src/infrastructure/station/**",
     "apps/desktop/src-tauri/src/interface/tauri_commands/station.rs",
     "apps/desktop/src/acceptance/stationAccess.ts",
     "apps/desktop/src/acceptance/station_access/**",

@@ -1,8 +1,8 @@
 # Station 统一接入生命周期 - 数据模型
 
 > **Status**: active
-> **Version**: v2.1
-> **Created**: 2026-09-27 | **Updated**: 2026-10-11
+> **Version**: v2.3
+> **Created**: 2026-09-27 | **Updated**: 2026-10-13
 > **Owner**: Identity and Access
 
 ---
@@ -80,6 +80,24 @@ Session, Messaging, Federation context, cache and projections use
 `AccessScope`. Only connection selection uses `TransportScope`. A transport
 failure cannot mutate ActorRef or regenerate a federated handle from request
 host.
+
+`StationBindingCoordinator` projects `TransportScope` as an immutable
+`RouteLease`. The lease contains lifecycle generation, route revision, verified
+node destination and a cancellation fence. Node Connectivity owns the remaining
+transport fields and execution semantics. A revoked lease cannot be reused by a
+late callback or pooled connection.
+
+```text
+StationResourceRef
+  station_peer_id
+  lifecycle_generation
+  path_and_query
+  content_identity?
+```
+
+`StationResourceRef` is the only Station-owned relative resource identity.
+Direct/Relay origin, Node PeerID and localhost projection are forbidden fields.
+External absolute URLs are not converted into this type.
 
 Access attempts, Session records and credential/keyring recovery share the
 logical Station database/keyring across ready nodes. Node PeerID and route

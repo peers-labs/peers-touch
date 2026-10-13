@@ -1,3 +1,5 @@
+use crate::application::station_runtime::client::{self as station_client, StationClient};
+use crate::application::station_runtime::StationRuntime;
 use crate::contracts::{
     AccessDecisionInput, AccessDecisionPayload, AccessDecisionProjection,
     AccessGateActionProjection, AccessGateProjection, AccessSubmitInviteInput,
@@ -9,7 +11,6 @@ use crate::domain::auth::session::{
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::session_store::SessionSource;
 use crate::infrastructure::session_vault::{self, SessionVaultError};
-use crate::infrastructure::station_client;
 use crate::model::access_gate::{
     submit_access_gate_request, AccessDecision, AccessDecisionState, AccessGateClientInfo,
     AccessGateState, AccessGateType, CancelAccessAttemptRequest, CancelAccessAttemptResponse,
@@ -25,17 +26,19 @@ use zeroize::Zeroizing;
 pub(crate) const DESKTOP_SESSION_CLASS: &str = "desktop";
 
 pub(crate) fn takeover_station_session_token(
+    station_client: &StationClient,
     token: &str,
 ) -> Result<String, station_client::StationClientError> {
-    takeover_station_session_token_for_device(token, DESKTOP_SESSION_CLASS)
+    takeover_station_session_token_for_device(station_client, token, DESKTOP_SESSION_CLASS)
 }
 
 pub(crate) fn takeover_station_session_token_for_device(
+    station_client: &StationClient,
     token: &str,
     device_type: &str,
 ) -> Result<String, station_client::StationClientError> {
     let body = json!({ "device_type": device_type });
-    let resp = station_client::request_json_auth(
+    let resp = station_client.request_json_auth(
         reqwest::Method::POST,
         "/actor/session/takeover",
         token,
@@ -90,8 +93,11 @@ fn persist_session_if_unprotected(
     .map_err(session_vault_to_app)
 }
 
-pub(crate) fn canonical_ptid_for_token(token: &str) -> Option<String> {
-    if let Ok(profile) = station_client::request_proto::<(), ActorProfile>(
+pub(crate) fn canonical_ptid_for_token(
+    station_client: &StationClient,
+    token: &str,
+) -> Option<String> {
+    if let Ok(profile) = station_client.request_proto::<(), ActorProfile>(
         reqwest::Method::GET,
         "/api/v1/social/users/me",
         token,
@@ -164,6 +170,7 @@ pub(crate) fn deactivate_messaging_profile(
 }
 
 fn access_post<Req, Resp, T>(
+    station_client: &StationClient,
     path: &str,
     body: &Req,
     err_code: ErrorCode,
@@ -174,31 +181,33 @@ where
     Resp: prost::Message + Default,
     T: serde::Serialize,
 {
-    station_client::post_peers_proto_no_auth(path, body).map_err(|error| {
-        use station_client::StationClientErrorKind;
-        match error.kind {
-            StationClientErrorKind::HttpStatus(status) => {
-                let code = match status {
-                    400 => ErrorCode::InvalidArgument,
-                    401 => ErrorCode::Unauthorized,
-                    403 => ErrorCode::Forbidden,
-                    404 => ErrorCode::NotFound,
-                    409 => ErrorCode::Conflict,
-                    _ => ErrorCode::InternalError,
-                };
-                AppResult::fail(
-                    code,
+    station_client
+        .post_peers_proto_no_auth(path, body)
+        .map_err(|error| {
+            use station_client::StationClientErrorKind;
+            match error.kind {
+                StationClientErrorKind::HttpStatus(status) => {
+                    let code = match status {
+                        400 => ErrorCode::InvalidArgument,
+                        401 => ErrorCode::Unauthorized,
+                        403 => ErrorCode::Forbidden,
+                        404 => ErrorCode::NotFound,
+                        409 => ErrorCode::Conflict,
+                        _ => ErrorCode::InternalError,
+                    };
+                    AppResult::fail(
+                        code,
+                        format!("{}: {}", context, error.message),
+                        error.details,
+                    )
+                }
+                _ => AppResult::fail(
+                    err_code,
                     format!("{}: {}", context, error.message),
                     error.details,
-                )
+                ),
             }
-            _ => AppResult::fail(
-                err_code,
-                format!("{}: {}", context, error.message),
-                error.details,
-            ),
-        }
-    })
+        })
 }
 
 fn should_resume_access_binding(
@@ -211,22 +220,22 @@ fn should_resume_access_binding(
     )
 }
 
-fn access_scope<T: serde::Serialize>() -> Result<(String, String, u64), AppResult<T>> {
-    let binding_service = crate::application::station_binding::service();
+fn access_scope<T: serde::Serialize>(
+    station: &StationRuntime,
+) -> Result<(String, String, u64), AppResult<T>> {
+    let binding_service = station.binding();
     let mut binding = binding_service.state();
     if should_resume_access_binding(&binding.phase) {
-        binding = binding_service
-            .resume_persisted(station_client::station_registry())
-            .map_err(|error| {
-                AppResult::fail(
-                    ErrorCode::Conflict,
-                    error.message,
-                    Some(json!({
-                        "code": error.code,
-                        "retryable": error.retryable,
-                    })),
-                )
-            })?;
+        binding = station.resume_persisted().map_err(|error| {
+            AppResult::fail(
+                ErrorCode::Conflict,
+                error.message,
+                Some(json!({
+                    "code": error.code,
+                    "retryable": error.retryable,
+                })),
+            )
+        })?;
     }
     if binding.phase != crate::application::station_binding::StationBindingPhase::AccessGate
         && binding.phase != crate::application::station_binding::StationBindingPhase::Bound
@@ -237,7 +246,7 @@ fn access_scope<T: serde::Serialize>() -> Result<(String, String, u64), AppResul
             None,
         ));
     }
-    let active_entry = station_client::station_registry().active_entry();
+    let active_entry = station.registry().active_entry();
     if let Some(entry) = active_entry.as_ref() {
         binding = binding_service.reconcile_route_revision(entry);
     }
@@ -254,7 +263,7 @@ fn access_scope<T: serde::Serialize>() -> Result<(String, String, u64), AppResul
             None,
         ));
     }
-    let station_peer_id = station_client::active_station_peer_id().ok_or_else(|| {
+    let station_peer_id = station.active_station_peer_id().ok_or_else(|| {
         AppResult::fail(
             ErrorCode::Unauthorized,
             "Active Station identity is unavailable",
@@ -269,7 +278,7 @@ fn access_scope<T: serde::Serialize>() -> Result<(String, String, u64), AppResul
                 None,
             )
         })?;
-    station_client::set_device_id(device_id.clone());
+    station.client().set_device_id(device_id.clone());
     let generation = binding.lifecycle_generation;
     if generation == 0 {
         return Err(AppResult::fail(
@@ -282,12 +291,14 @@ fn access_scope<T: serde::Serialize>() -> Result<(String, String, u64), AppResul
 }
 
 fn start_access_attempt_with_scope<T: serde::Serialize>(
+    station: &StationRuntime,
 ) -> Result<(StartAccessAttemptResponse, (String, String, u64)), AppResult<T>> {
-    let (station_peer_id, device_id, lifecycle_generation) = access_scope::<T>()?;
+    let (station_peer_id, device_id, lifecycle_generation) = access_scope::<T>(station)?;
     let response = access_post::<_, StartAccessAttemptResponse, T>(
+        station.client(),
         "/actor/access/start",
         &StartAccessAttemptRequest {
-            station_url: station_client::station_base_url(),
+            station_url: station.active_endpoint_origin().unwrap_or_default(),
             client: Some(AccessGateClientInfo {
                 platform: "desktop".to_string(),
                 app_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -304,8 +315,10 @@ fn start_access_attempt_with_scope<T: serde::Serialize>(
     Ok((response, (station_peer_id, device_id, lifecycle_generation)))
 }
 
-fn start_access_attempt<T: serde::Serialize>() -> Result<StartAccessAttemptResponse, AppResult<T>> {
-    start_access_attempt_with_scope::<T>().map(|(response, _)| response)
+fn start_access_attempt<T: serde::Serialize>(
+    station: &StationRuntime,
+) -> Result<StartAccessAttemptResponse, AppResult<T>> {
+    start_access_attempt_with_scope::<T>(station).map(|(response, _)| response)
 }
 
 #[derive(Debug, Clone)]
@@ -318,9 +331,10 @@ pub(crate) struct OAuthAccessAttemptBinding {
 }
 
 pub(crate) fn start_oauth_access_attempt<T: serde::Serialize>(
+    station: &StationRuntime,
 ) -> Result<OAuthAccessAttemptBinding, AppResult<T>> {
     let (response, (station_peer_id, device_id, lifecycle_generation)) =
-        start_access_attempt_with_scope::<T>()?;
+        start_access_attempt_with_scope::<T>(station)?;
     let decision = response.decision.ok_or_else(|| {
         AppResult::fail(
             ErrorCode::InternalError,
@@ -368,6 +382,7 @@ pub(crate) fn start_oauth_access_attempt<T: serde::Serialize>(
 }
 
 fn submit_request<T: serde::Serialize>(
+    station: &StationRuntime,
     attempt_id: String,
     gate_id: String,
     gate_type: i32,
@@ -377,8 +392,9 @@ fn submit_request<T: serde::Serialize>(
     submission_id: String,
     action_input: submit_access_gate_request::ActionInput,
 ) -> Result<SubmitAccessGateResponse, AppResult<T>> {
-    let (station_peer_id, device_id, lifecycle_generation) = access_scope::<T>()?;
+    let (station_peer_id, device_id, lifecycle_generation) = access_scope::<T>(station)?;
     access_post::<_, SubmitAccessGateResponse, T>(
+        station.client(),
         "/actor/access/submit",
         &SubmitAccessGateRequest {
             attempt_id,
@@ -398,14 +414,15 @@ fn submit_request<T: serde::Serialize>(
     )
 }
 
-pub fn access_start() -> AppResult<AccessDecisionPayload> {
-    match start_access_attempt::<AccessDecisionPayload>() {
+pub fn access_start(station: &StationRuntime) -> AppResult<AccessDecisionPayload> {
+    match start_access_attempt::<AccessDecisionPayload>(station) {
         Ok(response) => decision_payload("access_start", "ready", response.decision),
         Err(error) => error,
     }
 }
 
 pub fn access_submit_invite_code(
+    station: &StationRuntime,
     input: AccessSubmitInviteInput,
 ) -> AppResult<AccessDecisionPayload> {
     let code = input.invite_code.trim();
@@ -413,6 +430,7 @@ pub fn access_submit_invite_code(
         return AppResult::fail(ErrorCode::InvalidArgument, "Invite code is required", None);
     }
     let response = match submit_request::<AccessDecisionPayload>(
+        station,
         input.attempt_id,
         input.gate_id,
         input.gate_type,
@@ -429,6 +447,7 @@ pub fn access_submit_invite_code(
 }
 
 pub fn access_submit_login(
+    station: &StationRuntime,
     input: AccessSubmitLoginInput,
     state: &AppState,
 ) -> AppResult<AuthSessionPayload> {
@@ -440,6 +459,7 @@ pub fn access_submit_login(
         .as_deref()
         .unwrap_or(DESKTOP_SESSION_CLASS);
     let response = match submit_request::<AuthSessionPayload>(
+        station,
         input.attempt_id,
         input.gate_id,
         input.gate_type,
@@ -473,16 +493,25 @@ pub fn access_submit_login(
             None,
         );
     };
-    finish_login(login_response, state, "access_submit_login")
+    finish_login(
+        station.resources(),
+        login_response,
+        state,
+        "access_submit_login",
+    )
 }
 
-pub fn access_decision(input: AccessDecisionInput) -> AppResult<AccessDecisionPayload> {
+pub fn access_decision(
+    station: &StationRuntime,
+    input: AccessDecisionInput,
+) -> AppResult<AccessDecisionPayload> {
     let (station_peer_id, device_id, lifecycle_generation) =
-        match access_scope::<AccessDecisionPayload>() {
+        match access_scope::<AccessDecisionPayload>(station) {
             Ok(scope) => scope,
             Err(error) => return error,
         };
     match access_post::<_, GetAccessDecisionResponse, AccessDecisionPayload>(
+        station.client(),
         "/actor/access/decision",
         &GetAccessDecisionRequest {
             attempt_id: input.attempt_id,
@@ -498,13 +527,17 @@ pub fn access_decision(input: AccessDecisionInput) -> AppResult<AccessDecisionPa
     }
 }
 
-pub fn access_cancel(input: AccessDecisionInput) -> AppResult<AccessDecisionPayload> {
+pub fn access_cancel(
+    station: &StationRuntime,
+    input: AccessDecisionInput,
+) -> AppResult<AccessDecisionPayload> {
     let (station_peer_id, device_id, lifecycle_generation) =
-        match access_scope::<AccessDecisionPayload>() {
+        match access_scope::<AccessDecisionPayload>(station) {
             Ok(scope) => scope,
             Err(error) => return error,
         };
     match access_post::<_, CancelAccessAttemptResponse, AccessDecisionPayload>(
+        station.client(),
         "/actor/access/cancel",
         &CancelAccessAttemptRequest {
             attempt_id: input.attempt_id,
@@ -646,10 +679,12 @@ fn empty_access_decision() -> AccessDecisionProjection {
 }
 
 fn finish_login(
+    resources: &crate::application::station_runtime::resource::StationResourceHandle,
     data: LoginResponse,
     state: &AppState,
     command: &str,
 ) -> AppResult<AuthSessionPayload> {
+    let station_client = resources.client();
     let token = data
         .tokens
         .as_ref()
@@ -676,13 +711,14 @@ fn finish_login(
         );
     }
 
-    let profile = station_client::request_peers_proto_no_body::<ActorProfile>(
-        reqwest::Method::GET,
-        "/actor/profile",
-        &token,
-        None,
-    )
-    .ok();
+    let profile = station_client
+        .request_peers_proto_no_body::<ActorProfile>(
+            reqwest::Method::GET,
+            "/actor/profile",
+            &token,
+            None,
+        )
+        .ok();
     let name = profile
         .as_ref()
         .map(|profile| profile.display_name.clone())
@@ -695,23 +731,17 @@ fn finish_login(
 
     // Station login response may not include avatar; fetch from profile API.
     let avatar = if avatar.is_empty() && !token.is_empty() {
-        station_client::request_peers_proto_no_body::<ActorProfile>(
-            reqwest::Method::GET,
-            "/actor/profile",
-            &token,
-            None,
-        )
-        .ok()
-        .map(|p| p.avatar)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(avatar)
-    } else {
-        avatar
-    };
-
-    // Resolve relative Station avatar path to absolute URL
-    let avatar = if !avatar.is_empty() && avatar.starts_with('/') {
-        format!("{}{}", station_client::station_base_url(), avatar)
+        station_client
+            .request_peers_proto_no_body::<ActorProfile>(
+                reqwest::Method::GET,
+                "/actor/profile",
+                &token,
+                None,
+            )
+            .ok()
+            .map(|p| p.avatar)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(avatar)
     } else {
         avatar
     };
@@ -746,7 +776,7 @@ fn finish_login(
     // Download avatar to local cache immediately so the account picker shows
     // the correct image on next app start without waiting for sync_user_profile.
     let avatar_local_path = if !avatar.is_empty() {
-        crate::application::profile::sync_avatar_with_download(&access_token, &avatar)
+        crate::application::profile::sync_avatar_with_download(resources, &access_token, &avatar)
             .ok()
             .flatten()
     } else {
@@ -927,9 +957,10 @@ pub(crate) fn prepare_account_switch_session(
 }
 
 pub(crate) fn acquire_account_switch_session(
+    station_client: &StationClient,
     prevalidated: PrevalidatedAccountSwitchSession,
 ) -> Result<PreparedAccountSwitchSession, AppResult<AuthSessionPayload>> {
-    let token = takeover_station_session_token(&prevalidated.token)
+    let token = takeover_station_session_token(station_client, &prevalidated.token)
         .map_err(|error| session_takeover_failed(error, Some(&prevalidated.account_id), None))?;
     let session = validate_token(&token).map_err(map_domain_error)?;
     if session.actor_ptid != prevalidated.actor_ptid {
@@ -938,7 +969,7 @@ pub(crate) fn acquire_account_switch_session(
             json!({ "command": "account_switch", "reason": "actor_ptid_mismatch" }),
         ));
     }
-    probe_session_with_station(&token)?;
+    probe_session_with_station(station_client, &token)?;
 
     let profile =
         crate::infrastructure::auth_identity::find_profile_by_actor_ptid(&session.actor_ptid);
@@ -981,15 +1012,21 @@ pub(crate) fn persist_prepared_account_switch_session(
     Ok(())
 }
 
-pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
-    auth_restore_session_for_device(state, DESKTOP_SESSION_CLASS)
+pub fn auth_restore_session(
+    station_client: &StationClient,
+    state: &AppState,
+) -> AppResult<AuthSessionPayload> {
+    auth_restore_session_for_device(station_client, state, DESKTOP_SESSION_CLASS)
 }
 
 pub(crate) fn auth_restore_session_for_device(
+    station_client: &StationClient,
     state: &AppState,
     device_type: &str,
 ) -> AppResult<AuthSessionPayload> {
-    if let Err(error) = crate::application::oauth2::reconcile_broker_cancellations_after_restart() {
+    if let Err(error) =
+        crate::application::oauth2::reconcile_broker_cancellations_after_restart(station_client)
+    {
         return AppResult::fail(
             ErrorCode::InternalError,
             "oauth cancellation recovery failed",
@@ -1020,8 +1057,10 @@ pub(crate) fn auth_restore_session_for_device(
         Err(error) => return session_vault_to_app(error),
     };
     if blob.source == SessionSource::OauthBridge {
-        match crate::application::oauth2::reconcile_broker_acknowledgement_for_account(&account_id)
-        {
+        match crate::application::oauth2::reconcile_broker_acknowledgement_for_account(
+            station_client,
+            &account_id,
+        ) {
             Ok(crate::application::oauth2::BrokerAcknowledgementRecovery::Ready) => {}
             Ok(crate::application::oauth2::BrokerAcknowledgementRecovery::Pending) => {
                 return unauthorized(
@@ -1055,13 +1094,14 @@ pub(crate) fn auth_restore_session_for_device(
         Ok(session) => session,
         Err(error) => return map_domain_error(error),
     };
-    let token = match takeover_station_session_token_for_device(&blob.token, device_type) {
-        Ok(token) => token,
-        Err(error) => {
-            session_vault::purge_raw_session_for_actor_ptid(&initial_session.actor_ptid);
-            return session_takeover_failed(error, Some(&account_id), None);
-        }
-    };
+    let token =
+        match takeover_station_session_token_for_device(station_client, &blob.token, device_type) {
+            Ok(token) => token,
+            Err(error) => {
+                session_vault::purge_raw_session_for_actor_ptid(&initial_session.actor_ptid);
+                return session_takeover_failed(error, Some(&account_id), None);
+            }
+        };
     let session = match validate_token(&token) {
         Ok(session) => session,
         Err(error) => {
@@ -1076,7 +1116,7 @@ pub(crate) fn auth_restore_session_for_device(
             json!({ "command": "auth_restore_session", "reason": "actor_ptid_mismatch" }),
         );
     }
-    if let Err(error) = verify_session_with_station(&token, &account_id, state) {
+    if let Err(error) = verify_session_with_station(station_client, &token, &account_id, state) {
         return error;
     }
     if let Err(error) =
@@ -1120,6 +1160,7 @@ pub(crate) fn auth_restore_session_for_device(
 }
 
 pub fn auth_validate_token(
+    station_client: &StationClient,
     input: AuthValidateTokenInput,
     state: &AppState,
 ) -> AppResult<AuthSessionPayload> {
@@ -1142,7 +1183,7 @@ pub fn auth_validate_token(
             json!({ "command": "auth_validate_token", "reason": "account_missing" }),
         );
     };
-    if let Err(error) = verify_session_with_station(&token, &account_id, state) {
+    if let Err(error) = verify_session_with_station(station_client, &token, &account_id, state) {
         return error;
     }
     if let Err(error) =
@@ -1231,7 +1272,10 @@ fn mark_account_has_session(account_id: &str, _token: &str) {
 
 /// Load a Station JWT persisted for the **active** account (OAuth bridge) and
 /// mirror it into `AppState` for the BFF.
-pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload> {
+pub fn ensure_station_session(
+    station_client: &StationClient,
+    state: &AppState,
+) -> AppResult<AuthSessionPayload> {
     let active_account = session_vault::active_account_id();
     if active_account
         .as_deref()
@@ -1275,7 +1319,10 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
         }
         Err(error) => return session_vault_to_app(error),
     };
-    match crate::application::oauth2::reconcile_broker_acknowledgement_for_account(&account_id) {
+    match crate::application::oauth2::reconcile_broker_acknowledgement_for_account(
+        station_client,
+        &account_id,
+    ) {
         Ok(crate::application::oauth2::BrokerAcknowledgementRecovery::Ready) => {}
         Ok(crate::application::oauth2::BrokerAcknowledgementRecovery::Pending) => {
             return unauthorized(
@@ -1307,7 +1354,7 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
 
     let actor_ptid = blob.actor_ptid;
     let token = blob.token;
-    if let Err(error) = verify_session_with_station(&token, &account_id, state) {
+    if let Err(error) = verify_session_with_station(station_client, &token, &account_id, state) {
         return error;
     }
     let session = from_station_response(actor_ptid.clone(), token);
@@ -1358,69 +1405,75 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
 }
 
 fn verify_session_with_station(
+    station_client: &StationClient,
     token: &str,
     account_id: &str,
     state: &AppState,
 ) -> Result<(), AppResult<AuthSessionPayload>> {
-    station_client::request_peers_proto_no_body::<ActorProfile>(
-        reqwest::Method::GET,
-        "/actor/profile",
-        token,
-        None,
-    )
-    .map(|_| ())
-    .map_err(|error| {
-        if station_verification_rejects_session(&error) {
-            if run_required_logout_cleanup(
-                account_id,
-                crate::infrastructure::auth_identity::clear_account_session,
-                session_vault::purge_raw_session_for_account,
-                |account_id| deactivate_messaging_profile(state, account_id),
-            )
-            .is_err()
-            {
-                tracing::error!(
-                    "failed to fully clean local state after Station rejected the session"
+    station_client
+        .request_peers_proto_no_body::<ActorProfile>(
+            reqwest::Method::GET,
+            "/actor/profile",
+            token,
+            None,
+        )
+        .map(|_| ())
+        .map_err(|error| {
+            if station_verification_rejects_session(&error) {
+                if run_required_logout_cleanup(
+                    account_id,
+                    crate::infrastructure::auth_identity::clear_account_session,
+                    session_vault::purge_raw_session_for_account,
+                    |account_id| deactivate_messaging_profile(state, account_id),
+                )
+                .is_err()
+                {
+                    tracing::error!(
+                        "failed to fully clean local state after Station rejected the session"
+                    );
+                }
+                let mut details = error.details.unwrap_or_else(|| json!({}));
+                if let Some(object) = details.as_object_mut() {
+                    object.insert("code".to_string(), json!("session_revoked"));
+                    object
+                        .entry("reason".to_string())
+                        .or_insert_with(|| json!("station_rejected"));
+                }
+                return AppResult::fail(ErrorCode::Unauthorized, "session revoked", Some(details));
+            } else {
+                tracing::warn!(
+                    error_kind = ?error.kind,
+                    "session validation unavailable; retaining local session"
                 );
             }
-            let mut details = error.details.unwrap_or_else(|| json!({}));
-            if let Some(object) = details.as_object_mut() {
-                object.insert("code".to_string(), json!("session_revoked"));
-                object
-                    .entry("reason".to_string())
-                    .or_insert_with(|| json!("station_rejected"));
-            }
-            return AppResult::fail(ErrorCode::Unauthorized, "session revoked", Some(details));
-        } else {
-            tracing::warn!(
-                error_kind = ?error.kind,
-                "session validation unavailable; retaining local session"
-            );
-        }
-        error.into_app_result("Session validation failed")
-    })
+            error.into_app_result("Session validation failed")
+        })
 }
 
-fn probe_session_with_station(token: &str) -> Result<(), AppResult<AuthSessionPayload>> {
-    station_client::request_peers_proto_no_body::<ActorProfile>(
-        reqwest::Method::GET,
-        "/actor/profile",
-        token,
-        None,
-    )
-    .map(|_| ())
-    .map_err(|error| {
-        if station_verification_rejects_session(&error) {
-            let mut details = error.details.unwrap_or_else(|| json!({}));
-            if let Some(object) = details.as_object_mut() {
-                object.insert("code".to_string(), json!("session_revoked"));
-                object.insert("reason".to_string(), json!("station_rejected"));
+fn probe_session_with_station(
+    station_client: &StationClient,
+    token: &str,
+) -> Result<(), AppResult<AuthSessionPayload>> {
+    station_client
+        .request_peers_proto_no_body::<ActorProfile>(
+            reqwest::Method::GET,
+            "/actor/profile",
+            token,
+            None,
+        )
+        .map(|_| ())
+        .map_err(|error| {
+            if station_verification_rejects_session(&error) {
+                let mut details = error.details.unwrap_or_else(|| json!({}));
+                if let Some(object) = details.as_object_mut() {
+                    object.insert("code".to_string(), json!("session_revoked"));
+                    object.insert("reason".to_string(), json!("station_rejected"));
+                }
+                AppResult::fail(ErrorCode::Unauthorized, "session revoked", Some(details))
+            } else {
+                error.into_app_result("Session validation failed")
             }
-            AppResult::fail(ErrorCode::Unauthorized, "session revoked", Some(details))
-        } else {
-            error.into_app_result("Session validation failed")
-        }
-    })
+        })
 }
 
 fn station_verification_rejects_session(error: &station_client::StationClientError) -> bool {
@@ -1438,9 +1491,9 @@ mod tests {
         station_verification_rejects_session, DESKTOP_SESSION_CLASS,
     };
     use crate::application::station_binding::StationBindingPhase;
+    use crate::application::station_runtime::client::{StationClientError, StationClientErrorKind};
     use crate::contracts::AuthSessionPayload;
     use crate::error::ErrorCode;
-    use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
     use std::cell::Cell;
 
     #[test]

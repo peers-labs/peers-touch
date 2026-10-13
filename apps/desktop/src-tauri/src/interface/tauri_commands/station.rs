@@ -7,7 +7,6 @@ use crate::application::session_resolver;
 use crate::application::station_binding::{self, StationBindingError};
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::infrastructure::station_discovery::{self, StationDiscoveryError};
 use crate::infrastructure::station_registry::StationEntry;
 use crate::state::AppState;
@@ -30,9 +29,9 @@ pub struct StationIdentityInput {
 }
 
 #[tauri::command]
-pub fn station_list() -> AppResult<StubPayload> {
-    let registry = station_client::station_registry();
-    let binding_service = station_binding::service();
+pub fn station_list(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
+    let registry = state.station.registry();
+    let binding_service = state.station.binding();
     let binding = registry
         .active_entry()
         .map(|entry| binding_service.reconcile_route_revision(&entry))
@@ -86,8 +85,8 @@ pub(crate) fn station_set_active_with_state(
             )
         }
     };
-    let registry = station_client::station_registry();
-    let binding_service = station_binding::service();
+    let registry = state.station.registry();
+    let binding_service = state.station.binding();
     let station_changes = binding_service.station_changes(registry, station_peer_id);
     let route_changes =
         binding_service.route_changes(registry, station_peer_id, input.route_id.as_deref());
@@ -103,7 +102,9 @@ pub(crate) fn station_set_active_with_state(
             );
         }
     }
-    let binding = match binding_service.switch(registry, station_peer_id, input.route_id.as_deref())
+    let binding = match state
+        .station
+        .switch_station(station_peer_id, input.route_id.as_deref())
     {
         Ok(binding) => binding,
         Err(error) => return binding_error(error),
@@ -139,11 +140,13 @@ pub fn station_binding_complete(
     window: Window,
 ) -> AppResult<StubPayload> {
     station_binding_complete_authenticated(
+        state.inner(),
         session_resolver::token_for_window(&state, &window).is_some(),
     )
 }
 
 pub(crate) fn station_binding_complete_authenticated(
+    state: &AppState,
     authenticated: bool,
 ) -> AppResult<StubPayload> {
     if !authenticated {
@@ -153,12 +156,10 @@ pub(crate) fn station_binding_complete_authenticated(
             Some(serde_json::json!({ "code": "station_authentication_required" })),
         );
     }
-    if let Err(error) =
-        station_binding::service().resume_persisted(station_client::station_registry())
-    {
+    if let Err(error) = state.station.resume_persisted() {
         return binding_error(error);
     }
-    let binding = match station_binding::service().mark_bound() {
+    let binding = match state.station.binding().mark_bound() {
         Ok(binding) => binding,
         Err(error) => return binding_error(error),
     };
@@ -169,24 +170,61 @@ pub(crate) fn station_binding_complete_authenticated(
 }
 
 #[tauri::command]
-pub fn station_add(input: StationDiscoveryInput) -> AppResult<StubPayload> {
-    discover_and_store("station_add", &input.input)
+pub fn station_add(
+    input: StationDiscoveryInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    station_add_with_state(input, state.inner())
+}
+
+pub(crate) fn station_add_with_state(
+    input: StationDiscoveryInput,
+    state: &AppState,
+) -> AppResult<StubPayload> {
+    discover_and_store("station_add", &input.input, state)
 }
 
 #[tauri::command]
-pub fn station_probe(input: StationDiscoveryInput) -> AppResult<StubPayload> {
-    discover_and_store("station_probe", &input.input)
+pub fn station_probe(
+    input: StationDiscoveryInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    station_probe_with_state(input, state.inner())
 }
 
-fn discover_and_store(command: &str, input: &str) -> AppResult<StubPayload> {
+pub(crate) fn station_probe_with_state(
+    input: StationDiscoveryInput,
+    state: &AppState,
+) -> AppResult<StubPayload> {
+    discover_and_store("station_probe", &input.input, state)
+}
+
+fn discover_and_store(command: &str, input: &str, state: &AppState) -> AppResult<StubPayload> {
     if input.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "input is required", None);
     }
-    let endpoint = match station_discovery::discover_station_input(input) {
+    let identity_scope = match station_discovery::discovery_identity_scope(input) {
+        Ok(scope) => scope,
+        Err(error) => return discovery_error(error),
+    };
+    let source_peer_id = match state.station.prepare_transport_identity(identity_scope) {
+        Ok(peer_id) => peer_id,
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Could not prepare the scoped Station transport identity",
+                Some(serde_json::json!({
+                    "code": "station_discovery_unavailable",
+                    "reason": error,
+                })),
+            )
+        }
+    };
+    let endpoint = match station_discovery::discover_station_input(input, source_peer_id) {
         Ok(endpoint) => endpoint,
         Err(error) => return discovery_error(error),
     };
-    let registry = station_client::station_registry();
+    let registry = state.station.registry();
     let entries = match registry.replace_verified_routes(&endpoint.routes) {
         Ok(entries) => entries,
         Err(error) => return registry_error(command, error),
@@ -233,7 +271,7 @@ pub(crate) fn station_remove_with_state(
             )
         }
     };
-    let registry = station_client::station_registry();
+    let registry = state.station.registry();
     let removing_active = registry.active_station_peer_id().as_deref() == Some(station_peer_id);
     if removing_active {
         if let Err(error) = state.secure_content.shutdown() {
@@ -247,11 +285,10 @@ pub(crate) fn station_remove_with_state(
             );
         }
     }
-    let (binding, was_selected) =
-        match station_binding::service().remove_station(registry, station_peer_id) {
-            Ok(result) => result,
-            Err(error) => return binding_error(error),
-        };
+    let (binding, was_selected) = match state.station.remove_station(station_peer_id) {
+        Ok(result) => result,
+        Err(error) => return binding_error(error),
+    };
     if was_selected {
         if let Err(error) = auth_service::detach_for_station_switch(state) {
             return AppResult::fail(
@@ -338,7 +375,15 @@ mod tests {
 
     #[test]
     fn station_binding_complete_requires_authenticated_session() {
-        let result = station_binding_complete_authenticated(false);
+        let config_dir =
+            std::env::temp_dir().join(format!("station-binding-auth-test-{}", std::process::id()));
+        let station = crate::application::station_runtime::StationRuntime::start(&config_dir)
+            .expect("test Station runtime");
+        let layout =
+            crate::infrastructure::storage::initialize_app_storage("test").expect("test storage");
+        let i18n = crate::infrastructure::i18n::I18nService::new(&config_dir);
+        let state = AppState::new(layout, i18n, station);
+        let result = station_binding_complete_authenticated(&state, false);
         assert!(!result.ok);
         assert_eq!(
             result.error.map(|error| error.code),

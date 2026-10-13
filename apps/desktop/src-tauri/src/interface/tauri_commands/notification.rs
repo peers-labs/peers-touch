@@ -2,12 +2,12 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::application::session_resolver;
+use crate::application::station_runtime::client::{self as station_client, StationClient};
 use crate::contracts::{
     NotificationDeleteInput, NotificationListInput, NotificationMarkAllReadInput,
     NotificationMarkReadInput, NotificationPreferencesUpdateInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::model;
 use crate::state::AppState;
 use reqwest::Method;
@@ -94,19 +94,18 @@ fn notification_preferences_snapshot_to_value(
 }
 
 fn load_notification_preferences_snapshot(
+    station_client: &StationClient,
     token: &str,
 ) -> Result<model::notification::NotificationPreferencesSnapshot, station_client::StationClientError>
 {
-    let response = station_client::request_proto::<
-        (),
-        model::notification::GetNotificationPreferencesResponse,
-    >(
-        Method::GET,
-        "/notification/preferences",
-        token,
-        None,
-        None::<&()>,
-    )?;
+    let response = station_client
+        .request_proto::<(), model::notification::GetNotificationPreferencesResponse>(
+            Method::GET,
+            "/notification/preferences",
+            token,
+            None,
+            None::<&()>,
+        )?;
     response.snapshot.ok_or_else(|| {
         station_client::StationClientError::new(
             station_client::StationClientErrorKind::InvalidResponse,
@@ -117,10 +116,11 @@ fn load_notification_preferences_snapshot(
 }
 
 fn reconcile_notification_preferences_update(
+    station_client: &StationClient,
     token: &str,
     request: &model::notification::UpdateNotificationPreferencesRequest,
 ) -> Option<model::notification::UpdateNotificationPreferencesResponse> {
-    let snapshot = load_notification_preferences_snapshot(token).ok()?;
+    let snapshot = load_notification_preferences_snapshot(station_client, token).ok()?;
     let matches = request.updates.iter().all(|update| {
         snapshot.preferences.iter().any(|preference| {
             preference.category == update.category
@@ -194,17 +194,19 @@ pub fn notification_list(
     let limit = input.limit.unwrap_or(20);
     query.push(("limit", limit.to_string()));
 
-    let resp =
-        match station_client::request_proto::<(), model::notification::ListNotificationsResponse>(
+    let resp = match state
+        .station
+        .client()
+        .request_proto::<(), model::notification::ListNotificationsResponse>(
             Method::GET,
             "/notification/list",
             &token,
             Some(&query),
             None::<&()>,
         ) {
-            Ok(r) => r,
-            Err(e) => return e.into_app_result("Failed to list notifications"),
-        };
+        Ok(r) => r,
+        Err(e) => return e.into_app_result("Failed to list notifications"),
+    };
 
     let notifications: Vec<Value> = resp
         .notifications
@@ -232,13 +234,16 @@ pub fn notification_unread_counts(
         Err(e) => return e,
     };
 
-    let resp = match station_client::request_proto::<(), model::notification::GetUnreadCountsResponse>(
-        Method::GET,
-        "/notification/unread-counts",
-        &token,
-        None,
-        None::<&()>,
-    ) {
+    let resp = match state
+        .station
+        .client()
+        .request_proto::<(), model::notification::GetUnreadCountsResponse>(
+            Method::GET,
+            "/notification/unread-counts",
+            &token,
+            None,
+            None::<&()>,
+        ) {
         Ok(response) => response,
         Err(e) => return e.into_app_result("Failed to get unread notification counts"),
     };
@@ -272,7 +277,7 @@ pub fn notification_mark_read(
         notification_ids: input.notification_ids,
     };
 
-    let resp = match station_client::request_proto::<
+    let resp = match state.station.client().request_proto::<
         model::notification::MarkNotificationsReadRequest,
         model::notification::MarkNotificationsReadResponse,
     >(
@@ -307,7 +312,7 @@ pub fn notification_mark_all_read(
         category: input.category.unwrap_or(0),
     };
 
-    let resp = match station_client::request_proto::<
+    let resp = match state.station.client().request_proto::<
         model::notification::MarkAllNotificationsReadRequest,
         model::notification::MarkAllNotificationsReadResponse,
     >(
@@ -342,7 +347,7 @@ pub fn notification_delete(
         notification_ids: input.notification_ids,
     };
 
-    let resp = match station_client::request_proto::<
+    let resp = match state.station.client().request_proto::<
         model::notification::DeleteNotificationsRequest,
         model::notification::DeleteNotificationsResponse,
     >(
@@ -372,7 +377,7 @@ pub fn notification_preferences(
         Err(e) => return e,
     };
 
-    let snapshot = match load_notification_preferences_snapshot(&token) {
+    let snapshot = match load_notification_preferences_snapshot(state.station.client(), &token) {
         Ok(snapshot) => snapshot,
         Err(e) => return e.into_app_result("Failed to load notification preferences"),
     };
@@ -438,7 +443,7 @@ pub fn notification_preferences_update(
         observed_revision: input.observed_revision,
     };
 
-    let resp = match station_client::request_proto::<
+    let resp = match state.station.client().request_proto::<
         model::notification::UpdateNotificationPreferencesRequest,
         model::notification::UpdateNotificationPreferencesResponse,
     >(
@@ -450,7 +455,7 @@ pub fn notification_preferences_update(
     ) {
         Ok(r) => r,
         Err(error) if ambiguous_notification_preferences_error(&error) => {
-            match reconcile_notification_preferences_update(&token, &body) {
+            match reconcile_notification_preferences_update(state.station.client(), &token, &body) {
                 Some(response) => response,
                 None => return error.into_app_result("Failed to update notification preferences"),
             }

@@ -6,9 +6,9 @@ use serde_json::{json, Value};
 use tauri::{State, Window};
 
 use crate::application::key_exchange::wire;
+use crate::application::station_runtime::client::StationClient;
 use crate::contracts::{KeyExchangeFetchInput, KeyExchangeUploadInput, StubPayload};
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::model::key_exchange as kemodel;
 use crate::state::AppState;
 use messaging_core::proto::{actor_device_ptid, actor_device_ref, actor_ref};
@@ -137,7 +137,7 @@ pub fn key_exchange_upload_bundle(
             .collect(),
         supported_wire_versions: vec![1],
     };
-    match station_client::request_proto_for_device::<
+    match state.station.client().request_proto_for_device::<
         kemodel::UploadDirectKeyBundleRequest,
         kemodel::UploadDirectKeyBundleResponse,
     >(
@@ -178,7 +178,7 @@ pub fn key_exchange_fetch_bundle(
         request_id: Ulid::new().to_string(),
         requester: Some(actor_device_ref(actor_ptid, device_id.clone())),
     };
-    let r = match station_client::request_proto_for_device::<
+    let r = match state.station.client().request_proto_for_device::<
         kemodel::FetchDirectKeyBundlesRequest,
         kemodel::FetchDirectKeyBundlesResponse,
     >(
@@ -238,10 +238,11 @@ pub fn keypackage_upload(
         Ok(context) => context,
         Err(error) => return error,
     };
-    execute_keypackage_upload(context, input)
+    execute_keypackage_upload(state.station.client(), context, input)
 }
 
 pub(crate) fn execute_keypackage_upload(
+    station_client: &StationClient,
     context: ActiveKeyExchangeContext,
     input: KeyPackageUploadInput,
 ) -> AppResult<Value> {
@@ -269,7 +270,7 @@ pub(crate) fn execute_keypackage_upload(
         )),
         key_package,
     };
-    match station_client::request_proto_for_device::<
+    match station_client.request_proto_for_device::<
         kemodel::UploadMlsKeyPackageRequest,
         kemodel::UploadMlsKeyPackageResponse,
     >(
@@ -298,10 +299,11 @@ pub fn keypackage_fetch(
         Ok(context) => context,
         Err(error) => return error,
     };
-    execute_keypackage_fetch(context, input)
+    execute_keypackage_fetch(state.station.client(), context, input)
 }
 
 pub(crate) fn execute_keypackage_fetch(
+    station_client: &StationClient,
     context: ActiveKeyExchangeContext,
     input: KeyPackageFetchInput,
 ) -> AppResult<Value> {
@@ -317,7 +319,7 @@ pub(crate) fn execute_keypackage_fetch(
             context.device_id.clone(),
         )),
     };
-    let response = match station_client::request_proto_for_device::<
+    let response = match station_client.request_proto_for_device::<
         kemodel::FetchMlsKeyPackageRequest,
         kemodel::FetchMlsKeyPackageResponse,
     >(
@@ -362,17 +364,20 @@ pub fn keypackage_count(state: State<'_, Arc<AppState>>, window: Window) -> AppR
         Ok(context) => context,
         Err(error) => return error,
     };
-    execute_keypackage_count(context)
+    execute_keypackage_count(state.station.client(), context)
 }
 
-pub(crate) fn execute_keypackage_count(context: ActiveKeyExchangeContext) -> AppResult<Value> {
+pub(crate) fn execute_keypackage_count(
+    station_client: &StationClient,
+    context: ActiveKeyExchangeContext,
+) -> AppResult<Value> {
     let request = kemodel::CountMlsKeyPackagesRequest {
         device: Some(actor_device_ref(
             context.actor_ptid,
             context.device_id.clone(),
         )),
     };
-    match station_client::request_proto_for_device::<
+    match station_client.request_proto_for_device::<
         kemodel::CountMlsKeyPackagesRequest,
         kemodel::CountMlsKeyPackagesResponse,
     >(

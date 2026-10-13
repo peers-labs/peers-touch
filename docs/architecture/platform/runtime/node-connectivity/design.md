@@ -1,8 +1,8 @@
 # Node Connectivity - Architecture Design
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-10-10 | **Updated**: 2026-10-11
+> **Version**: v1.3
+> **Created**: 2026-10-10 | **Updated**: 2026-10-13
 > **Owner**: Architecture Team
 > **Module**: `apps/station/frame/core/plugin/native/`
 
@@ -37,6 +37,8 @@ source; neither an accepted design nor a source check proves runtime delivery.
 | OSS scheduler uses database-time node/incarnation/token leases; BlobGC claims immutable generations | verified_fact | `oss/oss.go`; `oss/worker/{db_lock,blob_gc}.go`; `oss/db/repo/blob_repo.go` | integrated Agent plus OSS cluster Gate |
 | Some handlers require Hertz RequestContext | verified_fact | `frame/core/server/handler.go:HertzHandlerFunc`; `touch/actor_router.go`; `oauth/oauth.go` | streaming ingress parity |
 | Circuit library defaults reset at 2 min / 128 KiB per direction | verified_fact | pinned `go-libp2p v0.45.0`, `circuitv2/relay/resources.go` | reviewed workload limits |
+| Desktop starts its local proxy and libp2p runtime from `station_base_url()` through process globals without an owned shutdown path | verified_fact | `apps/desktop/src-tauri/src/infrastructure/{station_client,station_transport}.rs` | target lifecycle cut |
+| Desktop opens a fresh Station protocol stream and performs TLS/HTTP2 setup for each relayed request | verified_fact | `packages/station-libp2p-http/src/lib.rs:prepare_response` | pooled route-session proof |
 | Standard transport reduces custom protocol ownership | inference | constructor/framing inventory above | runtime suitability; no speed claim |
 | Shared state and fenced domain workers permit multiple nodes | accepted_decision | NCP-D12..NCP-D15 | all cluster Gates |
 
@@ -140,6 +142,50 @@ Native Desktop and Mobile consume the same connectivity contract through their
 Rust transport boundary. Mobile's dial-only Host advertises no application
 listener, Relay service, DHT server or public peer API. Mobile adaptation remains
 separate proof; Desktop evidence cannot claim Mobile readiness.
+
+### 5.1 Desktop Station Runtime
+
+The Tauri composition root owns one app-scoped `StationRuntime` through
+`AppState`. The runtime contains the typed Station client, transport owner and
+the Node Connectivity side of route execution. Station Access retains ownership
+of binding and route selection; it publishes immutable `RouteLease` values to
+the transport instead of exposing mutable registry state.
+
+The transport owner starts during Tauri setup and shuts down from
+`ExitRequested`. It owns the libp2p driver, bounded command admission, route
+sessions, cancellation, draining and thread join. Getters, URL projections and
+request builders cannot create listeners, threads or network runtimes.
+
+Desktop persists transport keys through the platform secure-store adapter, but
+keys are scoped to a verified transport endpoint rather than shared across all
+Relays. Direct routes use logical Station scope. Relay routes use Relay PeerID
+scope; first contact derives a provisional scope from the normalized discovery
+origin and promotes or replaces it only after signed endpoint role and identity
+verification.
+Private connection material already carries the Relay identity required to
+select the scope before grant redemption. Actor, Session and logical Station
+keys are never reused. Normal restart retains the scoped key; unrelated Relay
+operators cannot correlate one installation through a global PeerID.
+
+Desktop business callers submit typed requests directly to a Direct or Circuit
+adapter. There is no loopback Desktop HTTP proxy, raw HTTP/1 parser or
+process-global transport singleton. Each request declares a traffic class and
+replay policy. A `RouteLease` binds Station lifecycle generation, route
+revision, destination PeerID, signed SPKI and cancellation. Revoking the lease
+prevents stale callbacks from committing after route or Station replacement.
+
+Station-owned relative media, object and bundle paths are represented as
+`StationResourceRef`, never as a transport origin. Native consumers fetch or
+stream them through the typed Station client. WebView consumers receive only an
+app-owned local asset/custom-protocol projection after scope validation.
+Externally issued absolute or presigned URLs remain a distinct
+`ExternalResourceUrl` and are never rewritten through Station transport.
+
+Circuit adapters maintain bounded HTTP/2 route sessions keyed by destination,
+route generation, SPKI and traffic class. Realtime and bulk sessions have
+separate budgets. Safe reads may retry once after verified failover; mutations
+without an accepted idempotency key return an ambiguous outcome and are never
+blindly replayed.
 
 ## 6. Relay Control And Admission
 

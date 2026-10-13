@@ -36,7 +36,7 @@ pub fn skills_import_url(
         Ok(token) => token,
         Err(result) => return result,
     };
-    application_skills_market::skills_import_url(input, &token)
+    application_skills_market::skills_import_url(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -49,7 +49,7 @@ pub fn skills_import_github(
         Ok(token) => token,
         Err(result) => return result,
     };
-    application_skills_market::skills_import_github(input, &token)
+    application_skills_market::skills_import_github(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -62,7 +62,7 @@ pub fn skills_import_zip(
         Ok(token) => token,
         Err(result) => return result,
     };
-    application_skills_market::skills_import_zip(input, &token)
+    application_skills_market::skills_import_zip(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -102,7 +102,7 @@ pub fn skills_market_sync(
     window: Window,
 ) -> AppResult<StubPayload> {
     let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    application_skills_market::skills_market_sync(input, &token)
+    application_skills_market::skills_market_sync(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -126,7 +126,12 @@ pub fn skills_market_install(
         Err(result) => return result,
     };
     let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
-    application_skills_market::skills_market_install(&actor_ptid, input, &token)
+    application_skills_market::skills_market_install(
+        state.station.client(),
+        &actor_ptid,
+        input,
+        &token,
+    )
 }
 
 #[tauri::command]
@@ -140,5 +145,10 @@ pub fn skills_market_uninstall(
         Err(result) => return result,
     };
     let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
-    application_skills_market::skills_market_uninstall(&actor_ptid, input, &token)
+    application_skills_market::skills_market_uninstall(
+        state.station.client(),
+        &actor_ptid,
+        input,
+        &token,
+    )
 }

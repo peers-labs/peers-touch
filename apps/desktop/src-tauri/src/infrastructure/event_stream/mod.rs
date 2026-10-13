@@ -18,19 +18,23 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use base64::Engine;
 use prost::Message;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT, AUTHORIZATION, CACHE_CONTROL};
+use reqwest::Method;
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
+use tokio_util::sync::CancellationToken;
 
+use crate::application::station_runtime::client::{
+    ReplayPolicy, StationClient, StationRequest, StationRequestBody, TrafficClass,
+};
 use crate::infrastructure::session_revocation;
-use crate::infrastructure::station_client::{active_station_peer_id, station_base_url};
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::model::realtime::v1::{stream_event::Kind as StreamKind, StreamEvent};
 
@@ -61,8 +65,28 @@ pub const EVENT_CONNECTION_STATE: &str = "realtime:connection-state";
 // Keyed by `actor_ptid`.
 // ---------------------------------------------------------------------
 
-fn registry() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
-    static REG: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+struct StreamControl {
+    cancellation: CancellationToken,
+}
+
+impl StreamControl {
+    fn new() -> Self {
+        Self {
+            cancellation: CancellationToken::new(),
+        }
+    }
+
+    fn cancel(&self) {
+        self.cancellation.cancel();
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancellation.is_cancelled()
+    }
+}
+
+fn registry() -> &'static Mutex<HashMap<String, Arc<StreamControl>>> {
+    static REG: OnceLock<Mutex<HashMap<String, Arc<StreamControl>>>> = OnceLock::new();
     REG.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -79,6 +103,7 @@ fn registry() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
 /// independent cursor tracking on the server side. Empty string is
 /// tolerated; the server falls back to an anonymous suffix.
 pub fn start(
+    station_client: StationClient,
     app: AppHandle,
     actor_ptid: String,
     session_epoch: u64,
@@ -89,17 +114,17 @@ pub fn start(
         tracing::warn!(actor = %actor_ptid, "event_stream: refusing to start with empty token");
         return;
     }
-    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel = Arc::new(StreamControl::new());
     {
         let mut map = registry().lock().expect("event_stream registry poisoned");
         if let Some(prev) = map.insert(actor_ptid.clone(), cancel.clone()) {
-            prev.store(true, Ordering::Relaxed);
+            prev.cancel();
         }
     }
     let actor_for_thread = actor_ptid.clone();
     let cancel_for_thread = cancel.clone();
-    let station_url = station_base_url();
-    let station_peer_id = active_station_peer_id().unwrap_or_default();
+    let station_url = station_client.active_endpoint_origin().unwrap_or_default();
+    let station_peer_id = station_client.active_station_peer_id().unwrap_or_default();
     let stream_cursor_path = cursor_path(&actor_ptid, &station_peer_id, &station_url);
     std::thread::Builder::new()
         .name(format!(
@@ -108,6 +133,7 @@ pub fn start(
         ))
         .spawn(move || {
             run_supervisor(
+                station_client,
                 app,
                 actor_for_thread.clone(),
                 session_epoch,
@@ -134,7 +160,7 @@ pub fn start(
 pub fn stop(actor_ptid: &str) {
     let mut map = registry().lock().expect("event_stream registry poisoned");
     if let Some(flag) = map.remove(actor_ptid) {
-        flag.store(true, Ordering::Relaxed);
+        flag.cancel();
     }
 }
 
@@ -142,7 +168,7 @@ pub fn stop(actor_ptid: &str) {
 pub fn stop_all() {
     let mut map = registry().lock().expect("event_stream registry poisoned");
     for (_, flag) in map.drain() {
-        flag.store(true, Ordering::Relaxed);
+        flag.cancel();
     }
 }
 
@@ -208,14 +234,14 @@ fn save_cursor(path: Option<&PathBuf>, event_id: &str) {
 
 fn with_current_supervisor(
     actor_ptid: &str,
-    cancel: &Arc<AtomicBool>,
+    cancel: &Arc<StreamControl>,
     operation: impl FnOnce(),
 ) -> bool {
     let map = registry().lock().expect("event_stream registry poisoned");
     let current = map
         .get(actor_ptid)
         .is_some_and(|registered| Arc::ptr_eq(registered, cancel));
-    if !current || cancel.load(Ordering::Acquire) {
+    if !current || cancel.is_cancelled() {
         return false;
     }
     operation();
@@ -227,6 +253,7 @@ fn with_current_supervisor(
 // ---------------------------------------------------------------------
 
 fn run_supervisor(
+    station_client: StationClient,
     app: AppHandle,
     actor_ptid: String,
     session_epoch: u64,
@@ -235,7 +262,7 @@ fn run_supervisor(
     cursor_path: Option<PathBuf>,
     token: String,
     device_id: String,
-    cancel: Arc<AtomicBool>,
+    cancel: Arc<StreamControl>,
 ) {
     // Exponential backoff capped at 30s. Full jitter would be ideal
     // for thundering-herd protection across many clients reconnecting
@@ -244,7 +271,7 @@ fn run_supervisor(
     let mut backoff_ms: u64 = 500;
     let mut last_state_connected: Option<bool> = None;
     loop {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return;
         }
 
@@ -253,6 +280,7 @@ fn run_supervisor(
 
         match run_once(
             &app,
+            &station_client,
             &actor_ptid,
             session_epoch,
             &station_url,
@@ -273,7 +301,7 @@ fn run_supervisor(
         // Sleep with cancellation polling.
         let mut slept = 0u64;
         while slept < backoff_ms {
-            if cancel.load(Ordering::Relaxed) {
+            if cancel.is_cancelled() {
                 return;
             }
             let step = std::cmp::min(100, backoff_ms - slept);
@@ -286,6 +314,7 @@ fn run_supervisor(
 
 fn run_once(
     app: &AppHandle,
+    station_client: &StationClient,
     actor_ptid: &str,
     session_epoch: u64,
     station_url: &str,
@@ -294,44 +323,51 @@ fn run_once(
     token: &str,
     device_id: &str,
     cursor: &str,
-    cancel: &Arc<AtomicBool>,
+    cancel: &Arc<StreamControl>,
 ) -> Result<(), String> {
-    let url = format!("{station_url}/events/stream");
-    tracing::info!(url = %url, actor = %actor_ptid, cursor_len = cursor.len(), "event_stream: connecting");
+    tracing::info!(actor = %actor_ptid, cursor_len = cursor.len(), "event_stream: connecting");
 
-    // Contract §2.4 wants a 30s no-frame deadline; reqwest 0.12.28
-    // blocking ClientBuilder does not expose per-read timeout (that's
-    // only on the async builder). We approximate the same outcome
-    // with aggressive TCP keepalive — a silent-NAT black hole becomes
-    // a TCP error within ~15-30s rather than minutes. Combined with
-    // the server's 15s heartbeat (so any healthy connection sees a
-    // frame at least that often), this is close enough to the
-    // contract for now. If we ever migrate this supervisor to
-    // tokio + async reqwest the per-read read_timeout becomes the
-    // canonical implementation.
-    let client = reqwest::blocking::Client::builder()
-        .tcp_keepalive(Some(Duration::from_secs(15)))
-        .connect_timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| format!("build client: {e}"))?;
-
-    let mut req = client
-        .get(&url)
-        .header("Accept", "text/event-stream")
-        .header("Cache-Control", "no-cache")
-        .bearer_auth(token);
+    let mut headers = HeaderMap::new();
+    headers.insert(ACCEPT, HeaderValue::from_static("text/event-stream"));
+    headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    headers.insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(&format!("Bearer {token}"))
+            .map_err(|error| format!("invalid event stream token: {error}"))?,
+    );
     if !cursor.is_empty() {
-        req = req.header("Last-Event-ID", cursor);
+        headers.insert(
+            HeaderName::from_static("last-event-id"),
+            HeaderValue::from_str(cursor)
+                .map_err(|error| format!("invalid event stream cursor: {error}"))?,
+        );
     }
     if !device_id.is_empty() {
-        req = req.header("X-Device-ID", device_id);
+        headers.insert(
+            HeaderName::from_static("x-device-id"),
+            HeaderValue::from_str(device_id)
+                .map_err(|error| format!("invalid event stream device ID: {error}"))?,
+        );
     }
 
-    let resp = req.send().map_err(|e| format!("send: {e}"))?;
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().unwrap_or_default();
-        if session_revocation::emit_if_session_revoked(app, token, status.as_u16(), &body) {
+    let mut response = station_client
+        .execute_raw(StationRequest {
+            method: Method::GET,
+            path_and_query: "/events/stream".to_string(),
+            headers,
+            body: StationRequestBody::Empty,
+            timeout: Duration::from_secs(24 * 60 * 60),
+            traffic_class: TrafficClass::Realtime,
+            replay_policy: ReplayPolicy::SafeRead,
+            cancellation: cancel.cancellation.clone(),
+            expected_scope: None,
+        })
+        .map_err(|error| format!("send: {error}"))?;
+    if !(200..300).contains(&response.status) {
+        let status = response.status;
+        let mut body = String::new();
+        let _ = response.body.read_to_string(&mut body);
+        if session_revocation::emit_if_session_revoked(app, token, status, &body) {
             return Ok(());
         }
         return Err(format!("station returned {status}: {body}"));
@@ -343,13 +379,13 @@ fn run_once(
         &json!({"connected": true, "reason": "connected"}),
     );
 
-    let mut reader = BufReader::new(resp);
+    let mut reader = BufReader::new(response.body);
     let mut current_event: Option<String> = None;
     let mut current_id: Option<String> = None;
     let mut data_buf = String::new();
     let mut line = String::new();
     loop {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return Ok(());
         }
         line.clear();
@@ -413,7 +449,7 @@ fn dispatch(
     station_url: &str,
     station_peer_id: &str,
     cursor_path: Option<&PathBuf>,
-    cancel: &Arc<AtomicBool>,
+    cancel: &Arc<StreamControl>,
     event_name: Option<&str>,
     event_id: Option<&str>,
     data_b64: &str,
@@ -548,12 +584,12 @@ mod tests {
         if let Some(path) = path.as_ref() {
             let _ = fs::remove_file(path);
         }
-        let old = Arc::new(AtomicBool::new(false));
-        let current = Arc::new(AtomicBool::new(false));
+        let old = Arc::new(StreamControl::new());
+        let current = Arc::new(StreamControl::new());
         {
             let mut map = registry().lock().unwrap();
             map.insert(actor.to_string(), old.clone());
-            old.store(true, Ordering::Release);
+            old.cancel();
             map.insert(actor.to_string(), current.clone());
         }
 

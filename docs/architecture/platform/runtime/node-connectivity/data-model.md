@@ -1,8 +1,8 @@
 # Node Connectivity - Data Model
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-10-10 | **Updated**: 2026-10-11
+> **Version**: v1.2
+> **Created**: 2026-10-10 | **Updated**: 2026-10-13
 > **Owner**: Architecture Team
 
 ## 1. Contract Roots
@@ -169,6 +169,80 @@ connection: DIALING -> PEER_VERIFIED -> TLS_VERIFIED -> ACTIVE -> CLOSED
 
 Registry expiration withdraws readiness. Existing domain work still uses its
 own fencing token; registry heartbeat alone cannot authorize task completion.
+
+## 5.1 Desktop Transport Identity And Route Lease
+
+```text
+DesktopTransportIdentity
+  scope: DIRECT_STATION(station_peer_id)
+       | RELAY(relay_peer_id)
+       | PROVISIONAL_ENDPOINT_ORIGIN(sha256(normalized_origin))
+  key_ref: peers-touch.desktop.station-transport.v1/<scope_digest>
+  peer_id
+  ed25519_private_key: platform secure store only
+  created_at
+
+RouteLease
+  station_peer_id
+  lifecycle_generation
+  route_id
+  route_revision
+  route_generation
+  node_peer_id
+  relay_peer_id?
+  addresses[]
+  inner_tls_spki_sha256?
+  traffic_class: INTERACTIVE | REALTIME | BULK
+  cancellation
+
+StationRequest
+  method
+  path_and_query
+  headers
+  body_stream
+  deadline
+  traffic_class
+  replay_policy: SAFE_READ | IDEMPOTENT(key) | NEVER
+
+StationResourceRef
+  station_peer_id
+  lifecycle_generation
+  path_and_query
+  content_identity?
+
+ExternalResourceUrl
+  absolute_url
+
+StationTransportState
+  CREATED -> RUNNING -> DRAINING -> STOPPED
+                     -> FAILED
+```
+
+Transport identity is endpoint-scoped and persisted for the installation. It is
+not an Actor identity, Station identity, Session credential or device
+concurrency class. A normal restart retains the key for the same verified
+endpoint so a source-bound private Relay permit can identify the same transport
+caller. Different Relay PeerIDs receive different transport keys. A provisional
+endpoint-origin scope can be promoted only after the signed endpoint role and
+PeerID verify. A direct endpoint may then switch to Station-scoped identity;
+private connection material selects Relay scope before discovery.
+
+Station Access is the sole producer of `RouteLease`. Transport may reject or
+cancel a lease but cannot select or persist another route. A lifecycle-generation
+change invalidates every prior lease. A route-revision change invalidates the
+affected route sessions without changing Access scope.
+
+The command queue, active route sessions and per-session HTTP/2 streams are
+finite. Admission failure returns `OVERLOADED`; shutdown and lease revocation
+return `CANCELLED` or `STALE_ROUTE`. A mutation interrupted after submission
+returns `AMBIGUOUS_OUTCOME` unless its accepted idempotency policy authorizes a
+replay.
+
+`StationResourceRef` is transport-independent and cannot be serialized as the
+active Direct/Relay origin. Native materialization uses `StationRequest`.
+WebView projection creates an app-local opaque URI bound to the same Station and
+lifecycle generation. `ExternalResourceUrl` is never fetched through a
+Station route and retains its own URL/security policy.
 
 ## 6. Durable Events And Device Isolation
 

@@ -1,8 +1,8 @@
 # Station 统一接入生命周期 - 集成与映射
 
 > **Status**: active
-> **Version**: v2.1
-> **Created**: 2026-09-26 | **Updated**: 2026-10-10
+> **Version**: v2.3
+> **Created**: 2026-09-26 | **Updated**: 2026-10-13
 > **Owner**: Identity and Access
 
 ---
@@ -90,6 +90,17 @@ clears projections and advances lifecycle generation.
 Every asynchronous callback compares the complete current scope before writing
 state. Session and business storage are never keyed by Relay origin.
 
+On Desktop, the Tauri composition root owns one `StationRuntime` in `AppState`.
+The Access-owned binding coordinator publishes `RouteLease`; the
+Node-Connectivity-owned transport executes it. Route failure returns typed
+evidence to the coordinator and never mutates the registry from inside a
+request adapter.
+
+Station-relative avatar, OSS, profile and applet bundle references become
+`StationResourceRef` and use the same typed client. WebView delivery is an
+app-local scope-checked projection. External absolute or presigned URLs remain
+outside Station transport.
+
 ## 6. Interface Validation
 
 - `station-api-ownership` validates Station routes, contracts and owners.
@@ -99,6 +110,8 @@ state. Session and business storage are never keyed by Relay origin.
   Federation consumption.
 - Node Connectivity Gates validate Relay role, enrollment, discovery, Circuit
   admission and standard-stream security.
+- Desktop StationRuntime Gates validate stable transport identity, repeated
+  switch cleanup, bounded admission and joined process shutdown.
 - Architecture module governance validates non-overlapping owners and complete
   active documents.
 

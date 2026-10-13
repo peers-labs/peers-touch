@@ -1,4 +1,4 @@
-use crate::infrastructure::station_client;
+use crate::application::station_runtime::client::StationClient;
 use crate::model::key_exchange::{
     DirectKeyBundle, FetchDirectKeyBundlesRequest, FetchDirectKeyBundlesResponse,
 };
@@ -9,16 +9,25 @@ use reqwest::Method;
 pub use messaging_core::outbox::{DirectSessionBootstrapper, KeyBundleTransport};
 
 pub struct StationKeyBundleTransport {
+    station_client: StationClient,
     token: String,
     device_id: String,
 }
 
 impl StationKeyBundleTransport {
-    pub fn new(token: String, device_id: String) -> Result<Self, String> {
+    pub fn new(
+        station_client: StationClient,
+        token: String,
+        device_id: String,
+    ) -> Result<Self, String> {
         if token.trim().is_empty() || device_id.trim().is_empty() {
             return Err("messaging key bundle transport requires token and device ID".to_string());
         }
-        Ok(Self { token, device_id })
+        Ok(Self {
+            station_client,
+            token,
+            device_id,
+        })
     }
 }
 
@@ -37,7 +46,7 @@ impl KeyBundleTransport for StationKeyBundleTransport {
         {
             return Err("messaging key bundle endpoint is incomplete".to_string());
         }
-        let response = station_client::request_proto_for_device::<
+        let response = self.station_client.request_proto_for_device::<
             FetchDirectKeyBundlesRequest,
             FetchDirectKeyBundlesResponse,
         >(

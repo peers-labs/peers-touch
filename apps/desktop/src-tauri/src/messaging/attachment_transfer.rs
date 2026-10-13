@@ -1,3 +1,6 @@
+use crate::application::station_runtime::client::{
+    ReplayPolicy, StationClient, StationRequest, StationRequestBody, StationResponse, TrafficClass,
+};
 use crate::model::chat::{
     AttachmentTransferError, AttachmentTransferErrorCode, AttachmentTransferState,
     BeginAttachmentUploadRequest, BeginAttachmentUploadResponse, CancelAttachmentUploadRequest,
@@ -8,12 +11,15 @@ use crate::model::chat::{
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
 use prost::Message;
-use reqwest::blocking::Client;
-use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, IF_MATCH, RANGE};
+use reqwest::header::{
+    HeaderMap, HeaderName, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE, IF_MATCH, RANGE,
+};
 use secure_content_core::object::{
     EncryptedObjectChunk as EncryptedAttachmentChunk, OBJECT_TAG_SIZE as ATTACHMENT_TAG_SIZE,
 };
+use std::io::Read;
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 
 pub use messaging_core::attachment::{
     upload_commitment_fields, AttachmentRetryPolicy, AttachmentTransferControl,
@@ -23,14 +29,18 @@ pub use messaging_core::attachment::{
 };
 
 pub struct StationAttachmentTransferTransport {
+    station_client: StationClient,
     token: String,
     device_id: String,
     endpoint: CryptoEndpoint,
-    client: Client,
 }
 
 impl StationAttachmentTransferTransport {
-    pub fn new(token: String, endpoint: CryptoEndpoint) -> Result<Self, String> {
+    pub fn new(
+        station_client: StationClient,
+        token: String,
+        endpoint: CryptoEndpoint,
+    ) -> Result<Self, String> {
         if token.trim().is_empty()
             || endpoint.ptid.trim().is_empty()
             || endpoint.device_id.trim().is_empty()
@@ -38,50 +48,67 @@ impl StationAttachmentTransferTransport {
             return Err("messaging attachment transport identity is incomplete".to_string());
         }
         Ok(Self {
+            station_client,
             token,
             device_id: endpoint.device_id.clone(),
             endpoint,
-            client: Client::builder()
-                .connect_timeout(Duration::from_secs(5))
-                .timeout(Duration::from_secs(30))
-                .build()
-                .map_err(|error| format!("build messaging attachment client: {error}"))?,
         })
     }
 
-    fn request(&self, method: reqwest::Method, path: &str) -> reqwest::blocking::RequestBuilder {
-        self.client
-            .request(
+    fn execute(
+        &self,
+        method: reqwest::Method,
+        path_and_query: String,
+        mut headers: HeaderMap,
+        body: StationRequestBody,
+        replay_policy: ReplayPolicy,
+    ) -> Result<StationResponse, AttachmentTransferFailure> {
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {}", self.token))
+                .map_err(|error| transport_error(error.to_string()))?,
+        );
+        headers.insert(
+            HeaderName::from_static("x-device-id"),
+            HeaderValue::from_str(&self.device_id)
+                .map_err(|error| transport_error(error.to_string()))?,
+        );
+        self.station_client
+            .execute_raw(StationRequest {
                 method,
-                format!(
-                    "{}{}",
-                    crate::infrastructure::station_client::station_base_url(),
-                    path
-                ),
-            )
-            .header(AUTHORIZATION, format!("Bearer {}", self.token))
-            .header("X-Device-ID", &self.device_id)
+                path_and_query,
+                headers,
+                body,
+                timeout: Duration::from_secs(30),
+                traffic_class: TrafficClass::Bulk,
+                replay_policy,
+                cancellation: CancellationToken::new(),
+                expected_scope: None,
+            })
+            .map_err(|error| transport_error(error.to_string()))
     }
 
     fn require_success(
-        response: reqwest::blocking::Response,
+        mut response: StationResponse,
     ) -> Result<Vec<u8>, AttachmentTransferFailure> {
-        let status = response.status();
+        let status = response.status;
         let retry_after_ms = response
-            .headers()
+            .headers
             .get(reqwest::header::RETRY_AFTER)
             .and_then(|value| value.to_str().ok())
             .and_then(|value| value.parse::<i64>().ok())
             .map(|seconds| seconds.saturating_mul(1_000));
-        let body = response
-            .bytes()
+        let mut body = Vec::new();
+        response
+            .body
+            .read_to_end(&mut body)
             .map_err(|error| transport_error(error.to_string()))?;
-        if !status.is_success() {
+        if !(200..300).contains(&status) {
             if let Some(failure) = decode_typed_transfer_failure(&body, retry_after_ms) {
                 return Err(failure);
             }
             let detail = format!("messaging attachment station status {status}");
-            return Err(match status.as_u16() {
+            return Err(match status {
                 401 | 403 => AttachmentTransferFailure::terminal(
                     AttachmentTransferErrorCode::NotGranted,
                     detail,
@@ -114,42 +141,57 @@ impl StationAttachmentTransferTransport {
                 ),
             });
         }
-        Ok(body.to_vec())
+        Ok(body)
     }
 
     fn download_chunk_request(
         &self,
-        station_base_url: &str,
         transfer: &AttachmentTransferRecord,
         descriptor: &EncryptedObjectDescriptor,
         start: u64,
         end: u64,
-    ) -> Result<reqwest::blocking::RequestBuilder, AttachmentTransferFailure> {
-        let url = reqwest::Url::parse(&format!(
-            "{station_base_url}/conversation/attachments/objects/{}",
-            descriptor.object_id
-        ))
-        .map_err(|error| {
-            AttachmentTransferFailure::terminal(
-                AttachmentTransferErrorCode::DescriptorMismatch,
-                error.to_string(),
-            )
-        })?;
-        Ok(self
-            .client
-            .get(url)
-            .header(AUTHORIZATION, format!("Bearer {}", self.token))
-            .header("X-Device-ID", &self.device_id)
-            .header("X-Peers-Conversation-ID", &transfer.conversation_id)
-            .header(
-                "X-Peers-Authority-Station-ID",
-                &transfer.authority_station_id,
-            )
-            .header(
-                IF_MATCH,
-                format!("\"{}\"", hex::encode(&descriptor.ciphertext_sha256)),
-            )
-            .header(RANGE, format!("bytes={start}-{end}")))
+    ) -> Result<StationResponse, AttachmentTransferFailure> {
+        let headers = Self::download_chunk_headers(transfer, descriptor, start, end)?;
+        self.execute(
+            reqwest::Method::GET,
+            format!("/conversation/attachments/objects/{}", descriptor.object_id),
+            headers,
+            StationRequestBody::Empty,
+            ReplayPolicy::SafeRead,
+        )
+    }
+
+    fn download_chunk_headers(
+        transfer: &AttachmentTransferRecord,
+        descriptor: &EncryptedObjectDescriptor,
+        start: u64,
+        end: u64,
+    ) -> Result<HeaderMap, AttachmentTransferFailure> {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            HeaderName::from_static("x-peers-conversation-id"),
+            HeaderValue::from_str(&transfer.conversation_id)
+                .map_err(|error| transport_error(error.to_string()))?,
+        );
+        headers.insert(
+            HeaderName::from_static("x-peers-authority-station-id"),
+            HeaderValue::from_str(&transfer.authority_station_id)
+                .map_err(|error| transport_error(error.to_string()))?,
+        );
+        headers.insert(
+            IF_MATCH,
+            HeaderValue::from_str(&format!(
+                "\"{}\"",
+                hex::encode(&descriptor.ciphertext_sha256)
+            ))
+            .map_err(|error| transport_error(error.to_string()))?,
+        );
+        headers.insert(
+            RANGE,
+            HeaderValue::from_str(&format!("bytes={start}-{end}"))
+                .map_err(|error| transport_error(error.to_string()))?,
+        );
+        Ok(headers)
     }
 }
 
@@ -208,17 +250,19 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
             authority_station_id: transfer.authority_station_id.clone(),
         };
         request.descriptor_commitment_sha256 = prepared.descriptor_sha256.to_vec();
-        let body = Self::require_success(
-            self.request(
-                reqwest::Method::POST,
-                "/conversation/attachments/uploads:begin",
-            )
-            .header(CONTENT_TYPE, "application/x-protobuf")
-            .header(ACCEPT, "application/x-protobuf")
-            .body(request.encode_to_vec())
-            .send()
-            .map_err(|error| transport_error(error.to_string()))?,
-        )?;
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static("application/x-protobuf"),
+        );
+        headers.insert(ACCEPT, HeaderValue::from_static("application/x-protobuf"));
+        let body = Self::require_success(self.execute(
+            reqwest::Method::POST,
+            "/conversation/attachments/uploads:begin".to_string(),
+            headers,
+            StationRequestBody::Bytes(request.encode_to_vec()),
+            ReplayPolicy::Idempotent(transfer.attachment_id.clone()),
+        )?)?;
         let response = BeginAttachmentUploadResponse::decode(body.as_slice()).map_err(|error| {
             AttachmentTransferFailure::terminal(
                 AttachmentTransferErrorCode::DescriptorMismatch,
@@ -258,23 +302,26 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
             authority_station_id: transfer.authority_station_id.clone(),
             conversation_id: transfer.conversation_id.clone(),
         };
-        Self::require_success(
-            self.request(
-                reqwest::Method::PUT,
-                &format!(
-                    "/conversation/attachments/uploads/{}/chunks/{}",
-                    transfer.upload_id, chunk.chunk_index
-                ),
-            )
-            .header(CONTENT_TYPE, "application/octet-stream")
-            .header(
-                "X-Peers-Attachment-Metadata-Bin",
-                B64.encode(metadata.encode_to_vec()),
-            )
-            .body(chunk.ciphertext.clone())
-            .send()
-            .map_err(|error| transport_error(error.to_string()))?,
-        )?;
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static("application/octet-stream"),
+        );
+        headers.insert(
+            HeaderName::from_static("x-peers-attachment-metadata-bin"),
+            HeaderValue::from_str(&B64.encode(metadata.encode_to_vec()))
+                .map_err(|error| transport_error(error.to_string()))?,
+        );
+        Self::require_success(self.execute(
+            reqwest::Method::PUT,
+            format!(
+                "/conversation/attachments/uploads/{}/chunks/{}",
+                transfer.upload_id, chunk.chunk_index
+            ),
+            headers,
+            StationRequestBody::Bytes(chunk.ciphertext.clone()),
+            ReplayPolicy::Idempotent(format!("{}:{}", transfer.attachment_id, chunk.chunk_index)),
+        )?)?;
         Ok(())
     }
 
@@ -290,20 +337,22 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
             authority_station_id: transfer.authority_station_id.clone(),
             conversation_id: transfer.conversation_id.clone(),
         };
-        let body = Self::require_success(
-            self.request(
-                reqwest::Method::POST,
-                &format!(
-                    "/conversation/attachments/uploads/{}/complete",
-                    transfer.upload_id
-                ),
-            )
-            .header(CONTENT_TYPE, "application/x-protobuf")
-            .header(ACCEPT, "application/x-protobuf")
-            .body(request.encode_to_vec())
-            .send()
-            .map_err(|error| transport_error(error.to_string()))?,
-        )?;
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static("application/x-protobuf"),
+        );
+        headers.insert(ACCEPT, HeaderValue::from_static("application/x-protobuf"));
+        let body = Self::require_success(self.execute(
+            reqwest::Method::POST,
+            format!(
+                "/conversation/attachments/uploads/{}/complete",
+                transfer.upload_id
+            ),
+            headers,
+            StationRequestBody::Bytes(request.encode_to_vec()),
+            ReplayPolicy::Idempotent(transfer.attachment_id.clone()),
+        )?)?;
         CompleteAttachmentUploadResponse::decode(body.as_slice())
             .map_err(|error| {
                 AttachmentTransferFailure::terminal(
@@ -328,17 +377,8 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
         start: u64,
         end: u64,
     ) -> Result<Vec<u8>, AttachmentTransferFailure> {
-        let response = self
-            .download_chunk_request(
-                &crate::infrastructure::station_client::station_base_url(),
-                transfer,
-                descriptor,
-                start,
-                end,
-            )?
-            .send()
-            .map_err(|error| transport_error(error.to_string()))?;
-        if response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+        let response = self.download_chunk_request(transfer, descriptor, start, end)?;
+        if response.status != 206 {
             return Self::require_success(response).and_then(|_| {
                 Err(AttachmentTransferFailure::terminal(
                     AttachmentTransferErrorCode::RangeInvalid,
@@ -359,20 +399,22 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
             authority_station_id: transfer.authority_station_id.clone(),
             conversation_id: transfer.conversation_id.clone(),
         };
-        let body = Self::require_success(
-            self.request(
-                reqwest::Method::POST,
-                &format!(
-                    "/conversation/attachments/uploads/{}/cancel",
-                    transfer.upload_id
-                ),
-            )
-            .header(CONTENT_TYPE, "application/x-protobuf")
-            .header(ACCEPT, "application/x-protobuf")
-            .body(request.encode_to_vec())
-            .send()
-            .map_err(|error| transport_error(error.to_string()))?,
-        )?;
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static("application/x-protobuf"),
+        );
+        headers.insert(ACCEPT, HeaderValue::from_static("application/x-protobuf"));
+        let body = Self::require_success(self.execute(
+            reqwest::Method::POST,
+            format!(
+                "/conversation/attachments/uploads/{}/cancel",
+                transfer.upload_id
+            ),
+            headers,
+            StationRequestBody::Bytes(request.encode_to_vec()),
+            ReplayPolicy::Idempotent(transfer.attachment_id.clone()),
+        )?)?;
         let response =
             CancelAttachmentUploadResponse::decode(body.as_slice()).map_err(|error| {
                 AttachmentTransferFailure::terminal(
@@ -407,6 +449,8 @@ mod tests {
     #[test]
     #[ignore = "requires a native Desktop profile, session file, and live Station"]
     fn live_engine_worker_uploads_through_station_transport() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         #[derive(serde::Deserialize)]
         struct NativeSession {
             actor_ptid: String,
@@ -477,13 +521,6 @@ mod tests {
             .expect("MESSAGING_ATTACHMENT_DEVICE_ID is required");
         let token_file = std::env::var("MESSAGING_ATTACHMENT_TOKEN_FILE")
             .expect("MESSAGING_ATTACHMENT_TOKEN_FILE is required");
-        let expected_station_url =
-            std::env::var("PEERS_STATION_URL").expect("PEERS_STATION_URL is required");
-        assert_eq!(
-            crate::infrastructure::station_client::station_base_url(),
-            expected_station_url.trim_end_matches('/'),
-            "live attachment gate resolved a different active Station"
-        );
         let session: NativeSession = serde_json::from_slice(
             &fs::read(token_file).expect("native Desktop session file must be readable"),
         )
@@ -533,10 +570,12 @@ mod tests {
         };
         let restart_phase = std::env::var("MESSAGING_ATTACHMENT_RESTART_PHASE").ok();
         let engine = match restart_phase.as_deref() {
-            Some("prepare" | "resume") => {
-                crate::messaging::MessagingEngine::open(profile_id.clone(), endpoint.clone())
-                    .unwrap()
-            }
+            Some("prepare" | "resume") => crate::messaging::MessagingEngine::open(
+                station_client.clone(),
+                profile_id.clone(),
+                endpoint.clone(),
+            )
+            .unwrap(),
             Some(phase) => panic!("unsupported attachment restart phase: {phase}"),
             None => crate::messaging::MessagingEngine::in_memory(
                 format!("attachment-live-{}", Ulid::new()),
@@ -560,7 +599,7 @@ mod tests {
                 let conversation_id = engine
                     .create_direct_conversation(&session.token, &peer_ptid, &federation_id)
                     .unwrap();
-                let response = crate::infrastructure::station_client::request_proto_for_device::<
+                let response = station_client.request_proto_for_device::<
                     ListConversationsRequest,
                     ListConversationsResponse,
                 >(
@@ -631,6 +670,7 @@ mod tests {
                 Arc::new(MessagingStore::open(&profile_id).unwrap()),
                 Arc::new(FailBeforeSecondChunk {
                     inner: StationAttachmentTransferTransport::new(
+                        station_client.clone(),
                         session.token,
                         CryptoEndpoint { ptid, device_id },
                     )
@@ -730,14 +770,6 @@ mod tests {
 
     #[test]
     fn download_request_uses_canonical_conversation_header() {
-        let transport = StationAttachmentTransferTransport::new(
-            "token".to_string(),
-            CryptoEndpoint {
-                ptid: "ptid:bob".to_string(),
-                device_id: "bob-1".to_string(),
-            },
-        )
-        .unwrap();
         let transfer = AttachmentTransferRecord {
             attachment_id: "attachment-1".to_string(),
             conversation_id: "conversation-1".to_string(),
@@ -774,28 +806,16 @@ mod tests {
             chunk_ciphertext_sha256: vec![vec![4; 32]],
         };
 
-        let request = transport
-            .download_chunk_request("http://127.0.0.1:18080", &transfer, &descriptor, 0, 19)
-            .unwrap()
-            .build()
-            .unwrap();
-
-        assert_eq!(
-            request.url().as_str(),
-            "http://127.0.0.1:18080/conversation/attachments/objects/object-1"
-        );
-        assert_eq!(
-            request.headers()["X-Peers-Conversation-ID"],
-            "conversation-1"
-        );
-        assert_eq!(
-            request.headers()["X-Peers-Authority-Station-ID"],
-            "station:local"
-        );
-        assert_eq!(
-            request.headers()[IF_MATCH],
-            format!("\"{}\"", "03".repeat(32))
-        );
-        assert_eq!(request.headers()[RANGE], "bytes=0-19");
+        let headers = StationAttachmentTransferTransport::download_chunk_headers(
+            &transfer,
+            &descriptor,
+            0,
+            19,
+        )
+        .unwrap();
+        assert_eq!(headers["X-Peers-Conversation-ID"], "conversation-1");
+        assert_eq!(headers["X-Peers-Authority-Station-ID"], "station:local");
+        assert_eq!(headers[IF_MATCH], format!("\"{}\"", "03".repeat(32)));
+        assert_eq!(headers[RANGE], "bytes=0-19");
     }
 }

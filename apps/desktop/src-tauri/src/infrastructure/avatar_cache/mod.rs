@@ -9,9 +9,9 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use crate::domain::user_profile;
-use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind};
 
 /// Errors surfaced by the avatar cache layer.
@@ -60,8 +60,7 @@ pub fn lookup(remote_url: &str) -> Option<PathBuf> {
     }
 }
 
-/// Resolve the local file for `remote_url`, downloading it from Station if
-/// it is not yet cached.
+/// Resolve the local file for an external HTTP(S) avatar.
 ///
 /// Behavior:
 /// 1. Empty URL → `EmptyUrl`.
@@ -71,49 +70,61 @@ pub fn lookup(remote_url: &str) -> Option<PathBuf> {
 /// Honors the project rule: the avatar component should *always* render a
 /// local file. Network or filesystem failures bubble up so the caller can
 /// either fall back to the unified placeholder or retry later.
-pub fn ensure_local(remote_url: &str) -> Result<PathBuf, AvatarCacheError> {
+pub fn ensure_external(remote_url: &str) -> Result<PathBuf, AvatarCacheError> {
     let identity = canonical_remote_identity(remote_url)?;
-    let url = absolute_url(&identity)?;
+    let parsed = reqwest::Url::parse(&identity)
+        .map_err(|error| AvatarCacheError::Download(error.to_string()))?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return Err(AvatarCacheError::Download(
+            "external avatar URL must use HTTP(S)".to_string(),
+        ));
+    }
 
     if let Some(path) = lookup(&identity) {
         return Ok(path);
     }
 
-    let dir = avatars_dir()?;
-    fs::create_dir_all(&dir).map_err(|e| AvatarCacheError::Io(e.to_string()))?;
-
-    let dest = dir.join(user_profile::avatar_local_filename(&identity));
-
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
+    let response = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(10))
         .build()
-        .map_err(|e| AvatarCacheError::Download(e.to_string()))?;
-    let response = client
-        .get(&url)
+        .map_err(|error| AvatarCacheError::Download(error.to_string()))?
+        .get(parsed)
         .send()
-        .map_err(|e| AvatarCacheError::Download(e.to_string()))?;
+        .map_err(|error| AvatarCacheError::Download(error.to_string()))?;
     if !response.status().is_success() {
         return Err(AvatarCacheError::Download(format!(
             "status {}",
             response.status()
         )));
     }
-
     let bytes = response
         .bytes()
-        .map_err(|e| AvatarCacheError::Download(e.to_string()))?;
+        .map_err(|error| AvatarCacheError::Download(error.to_string()))?;
+    store_bytes(&identity, bytes.as_ref())
+}
+
+pub fn store_bytes(resource_identity: &str, bytes: &[u8]) -> Result<PathBuf, AvatarCacheError> {
+    let identity = canonical_remote_identity(resource_identity)?;
     if bytes.is_empty() {
         return Err(AvatarCacheError::Download("empty body".to_string()));
     }
+    if let Some(path) = lookup(&identity) {
+        return Ok(path);
+    }
 
-    fs::write(&dest, &bytes).map_err(|e| AvatarCacheError::Io(e.to_string()))?;
+    let dir = avatars_dir()?;
+    fs::create_dir_all(&dir).map_err(|e| AvatarCacheError::Io(e.to_string()))?;
+    let dest = dir.join(user_profile::avatar_local_filename(&identity));
+    let temporary = dest.with_extension("tmp");
+    fs::write(&temporary, bytes).map_err(|e| AvatarCacheError::Io(e.to_string()))?;
+    fs::rename(&temporary, &dest).map_err(|e| AvatarCacheError::Io(e.to_string()))?;
     Ok(dest)
 }
 
 /// Convenience wrapper for callers that prefer a string path and accept
 /// silent failure (avatar will fall back to placeholder).
-pub fn try_ensure_local_string(remote_url: &str) -> Option<String> {
-    match ensure_local(remote_url) {
+pub fn try_ensure_external_string(remote_url: &str) -> Option<String> {
+    match ensure_external(remote_url) {
         Ok(path) => Some(path.to_string_lossy().to_string()),
         Err(AvatarCacheError::EmptyUrl) => None,
         Err(err) => {
@@ -131,7 +142,7 @@ fn path_is_present(path: &PathBuf) -> bool {
 /// proxy or alternate Station route must not become part of avatar identity or
 /// its content-addressed cache key.
 pub fn canonical_remote_identity(remote_url: &str) -> Result<String, AvatarCacheError> {
-    canonical_remote_identity_for_base(remote_url, &station_client::station_base_url())
+    canonical_remote_identity_for_base(remote_url, "")
 }
 
 fn canonical_remote_identity_for_base(
@@ -156,26 +167,12 @@ fn canonical_remote_identity_for_base(
     Ok(trimmed.to_string())
 }
 
-/// Normalize a possibly-relative Station URL (e.g. `/sub-oss/file?key=...`)
-/// to an absolute URL so `reqwest` can issue the request.
-fn absolute_url(remote_url: &str) -> Result<String, AvatarCacheError> {
-    let trimmed = remote_url.trim();
-    if trimmed.is_empty() {
-        return Err(AvatarCacheError::EmptyUrl);
-    }
-    if trimmed.starts_with('/') {
-        Ok(format!("{}{}", station_client::station_base_url(), trimmed))
-    } else {
-        Ok(trimmed.to_string())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::canonical_remote_identity_for_base;
 
     #[test]
-    fn station_media_identity_does_not_include_the_active_transport_origin() {
+    fn station_media_identity_does_not_include_route_origin() {
         let path = "/sub-oss/file?key=avatars%2Falice.png";
 
         assert_eq!(

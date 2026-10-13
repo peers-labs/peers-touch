@@ -1617,6 +1617,7 @@ mod tests {
 
     #[test]
     fn client_mcp_capability_uses_station_assigned_tool_identity() {
+        let _guard = storage::test_storage_env_lock();
         let actor_ptid = format!("ptid:person:mcp-dynamic-{}", ulid::Ulid::new());
         let script_path = write_stdio_mcp_fixture("stdio-capability");
         let capability_id = format!("mcp.tool.{}", "a".repeat(64));

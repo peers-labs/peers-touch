@@ -44,7 +44,7 @@ pub fn presence_query(
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
     let body = json!({ "actor_ptids": input.actor_ptids });
-    match crate::infrastructure::station_client::request_json_auth(
+    match state.station.client().request_json_auth(
         Method::POST,
         "/presence/query",
         &token,

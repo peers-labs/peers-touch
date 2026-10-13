@@ -1,7 +1,6 @@
 use crate::application::session_resolver;
 use crate::contracts::{ActorSearchUsersInput, StubPayload};
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::model;
 use crate::state::AppState;
 use reqwest::Method;
@@ -71,13 +70,16 @@ pub fn actor_search_users(
         Err(error) => return error,
     };
 
-    let resp = match station_client::request_proto::<(), model::actor::ActorList>(
-        Method::GET,
-        "/api/v1/social/users/search",
-        &token,
-        Some(&[("q", input.q.clone())]),
-        None::<&()>,
-    ) {
+    let resp = match state
+        .station
+        .client()
+        .request_proto::<(), model::actor::ActorList>(
+            Method::GET,
+            "/api/v1/social/users/search",
+            &token,
+            Some(&[("q", input.q.clone())]),
+            None::<&()>,
+        ) {
         Ok(r) => r,
         Err(e) => {
             tracing::error!(error = %e, "Failed to search actors");
@@ -100,13 +102,16 @@ pub fn actor_get_me(state: State<'_, Arc<AppState>>, window: Window) -> AppResul
         Err(error) => return error,
     };
 
-    let resp = match station_client::request_proto::<(), model::actor::ActorProfile>(
-        Method::GET,
-        "/api/v1/social/users/me",
-        &token,
-        None,
-        None::<&()>,
-    ) {
+    let resp = match state
+        .station
+        .client()
+        .request_proto::<(), model::actor::ActorProfile>(
+            Method::GET,
+            "/api/v1/social/users/me",
+            &token,
+            None,
+            None::<&()>,
+        ) {
         Ok(r) => r,
         Err(e) => {
             tracing::error!(error = %e, "Failed to get current user profile");
