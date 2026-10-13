@@ -152,6 +152,29 @@ export const demoMoments: Moment[] = [
   },
 ];
 
+// ── Content-projection evidence (R1) ────────────────────────────
+// Raw inbound values deliberately contain seed/transport strings. The
+// presenter (contentProjection.ts) must convert them to human content; these
+// raw strings must never reach preview/body/author slots verbatim.
+export const contentProjectionConversations: Conversation[] = [
+  { key: 'cp-bob', name: 'Bob Zhang', avatar: 'BZ', avatarUrl: demoAvatarUrls.bob, avatarGradient: GRADIENTS[2], lastMessage: '😀', time: '12m', unread: 1, online: true },
+  { key: 'cp-carol', name: 'Carol Li', avatar: 'CL', avatarUrl: demoAvatarUrls.carol, avatarGradient: GRADIENTS[3], lastMessage: 'MWPU Carol to Alice 1791856217298', time: '56m', unread: 0, online: true },
+  { key: 'cp-photo', name: 'Emma Liu', avatar: 'EL', avatarUrl: demoAvatarUrls.emma, avatarGradient: GRADIENTS[7], lastMessage: '[Photo]', time: '1h', unread: 0, online: true },
+  { key: 'cp-file', name: 'Product Design', avatar: 'PD', avatarGradient: GRADIENTS[4], lastMessage: 'design-spec-v3.pdf', time: '2h', unread: 0, isGroup: true, pinned: true, lastSender: 'David', memberCount: 8 },
+  { key: 'cp-system', name: 'Station Notice', avatar: 'SN', avatarGradient: GRADIENTS[6], lastMessage: '10.37.94.156:18132 federation sync 1791727923410', time: '1d', unread: 0 },
+];
+
+export const contentProjectionMessages: Message[] = [
+  { id: 'cp-d1', mine: false, time: '', dateLabel: 'Today' },
+  { id: 'cp-m1', mine: false, text: 'Hey, can you confirm the build landed?', time: '10:24 AM', status: 'read' },
+  { id: 'cp-m2', mine: false, text: '😀', time: '10:25 AM', status: 'read' },
+  { id: 'cp-m3', mine: false, image: demoMediaBackgrounds.waterfront, time: '10:26 AM', status: 'read' },
+  { id: 'cp-m4', mine: false, file: { name: 'design-spec-v3.pdf', size: '2.4 MB' }, time: '10:27 AM', status: 'read' },
+  { id: 'cp-m5', mine: false, text: 'MWPU Alice to Carol 1791856217298', time: '10:28 AM', status: 'read' },
+  { id: 'cp-m6', mine: false, text: '10.37.94.156:18132 federation sync 1791727923410', time: '10:29 AM', status: 'read' },
+  { id: 'cp-m7', mine: true, text: 'Build is green and the preview shows human content only.', time: '10:31 AM', status: 'delivered' },
+];
+
 export const demoContacts: Contact[] = [
   { key: 'alice', name: 'Alice Chen', avatar: 'AC', avatarUrl: demoAvatarUrls.alice, avatarGradient: GRADIENTS[0], note: 'Product Designer', online: true },
   { key: 'bob', name: 'Bob Zhang', avatar: 'BZ', avatarUrl: demoAvatarUrls.bob, avatarGradient: GRADIENTS[2], note: 'Backend Engineer', online: false },

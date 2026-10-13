@@ -7,7 +7,13 @@ import {
   demoConversations,
   directDemoMessages,
   unknownOutcomeMessages,
+  contentProjectionConversations,
+  contentProjectionMessages,
 } from './data';
+import {
+  projectMessage,
+  projectConversationLastMessage,
+} from './contentProjection';
 import {
   longListContacts, longListConversations, longListGroups, longListMembers,
   longListMessages, longListRequests,
@@ -50,6 +56,7 @@ export function MobileShell({
   longLists = false,
   focusChatJourney = false,
   deliveryRecovery = false,
+  contentProjection = false,
   uiEvidence,
   callScenario,
   searchDemo,
@@ -64,6 +71,7 @@ export function MobileShell({
   longLists?: boolean;
   focusChatJourney?: boolean;
   deliveryRecovery?: boolean;
+  contentProjection?: boolean;
   uiEvidence: MobileUiEvidence;
   callScenario?: PrototypeCallScenario;
   searchDemo?: SearchDemoControl;
@@ -110,14 +118,22 @@ export function MobileShell({
     setShellToastKey((k) => k + 1);
   }
 
-  const baseConversations = longLists ? longListConversations : socialDemo.conversations;
-  const conversations = uiEvidence.longContent
+  const baseConversations = contentProjection
+    ? contentProjectionConversations
+    : longLists
+      ? longListConversations
+      : socialDemo.conversations;
+  const conversations = (uiEvidence.longContent
     ? baseConversations.map((conversation, index) => index === 0 ? {
       ...conversation,
       name: 'International Product Architecture Working Group',
       lastMessage: 'Morgen besprechen wir die gerateubergreifende Wiederherstellung nach einem unterbrochenen Stationswechsel.',
     } : conversation)
-    : baseConversations;
+    : baseConversations
+  ).map((conversation) => {
+    if (!contentProjection) return conversation;
+    return { ...conversation, lastMessage: projectConversationLastMessage(conversation.lastMessage) };
+  });
   const unreadCount = conversations.reduce((total, conversation) => total + conversation.unread, 0);
 
   const tabs: { id: TabId; label: string; icon: typeof MessageCircle; badge?: number }[] = [
@@ -202,7 +218,18 @@ export function MobileShell({
       />;
     }
     if (activeTab === 'chat' && selectedConversation) {
-      const initialMessages = longLists
+      // Content-projection evidence: thread bodies run through the same
+      // presenter as the list so machine/seed strings never render verbatim.
+      const projectedThreadMessages = contentProjection
+        ? contentProjectionMessages.map((message) => {
+            if (!message.text) return message;
+            const projected = projectMessage(message);
+            return projected.label === message.text ? message : { ...message, text: projected.label };
+          })
+        : undefined;
+      const initialMessages = contentProjection
+        ? projectedThreadMessages
+        : longLists
         ? longListMessages
         : deliveryRecovery
           ? deliveryRecoveryMessages
