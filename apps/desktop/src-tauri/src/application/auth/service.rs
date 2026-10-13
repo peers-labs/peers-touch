@@ -163,19 +163,28 @@ pub(crate) fn prepare_messaging_profile(
     let canonical_identity_key_ref =
         crate::infrastructure::local_scope::LocalScope::from_actor_ptid(actor_ptid)
             .identity_key_ref();
-    let station_peer_id = state.station.active_station_peer_id();
-    let station_origin = state.station.active_endpoint_origin();
-    let legacy_identity_key_refs = if station_peer_id.is_some() || station_origin.is_some() {
-        vec![
-            crate::infrastructure::local_scope::legacy_identity_key_ref_for_actor_at_station(
-                actor_ptid,
-                station_peer_id.as_deref(),
-                station_origin.as_deref().unwrap_or_default(),
-            ),
-        ]
-    } else {
-        Vec::new()
-    };
+    let active_entry = state.station.registry().active_entry();
+    let station_peer_id = active_entry
+        .as_ref()
+        .map(|entry| entry.station_peer_id.clone())
+        .or_else(|| state.station.active_station_peer_id());
+    let mut station_origins = active_entry
+        .map(|entry| {
+            entry
+                .routes
+                .into_iter()
+                .map(|route| route.endpoint_origin)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    station_origins.extend(state.station.active_endpoint_origin());
+    station_origins.extend(state.station.registry().discovery_seed());
+    let legacy_identity_key_refs =
+        crate::infrastructure::local_scope::legacy_identity_key_refs_for_actor_at_station(
+            actor_ptid,
+            station_peer_id.as_deref(),
+            &station_origins,
+        );
     let actor_identity = crate::domain::crypto::get_or_migrate_identity(
         &canonical_identity_key_ref,
         &legacy_identity_key_refs,
