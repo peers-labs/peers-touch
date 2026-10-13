@@ -26,6 +26,20 @@ Every client surface must support:
 Rules:
 
 - Focus ring belongs to the semantic owner.
+- The browser's default focus outline (Chromium blue `auto` ring) is forbidden
+  on every control. Desktop prototypes normalize it in one shared stylesheet,
+  `packages/prototypes/desktop/shared/focus.css`, imported by every desktop
+  prototype entry point: pointer/touch interaction leaves no ring; keyboard
+  focus shows exactly one 2px brand (`#6b5bd6`) outline following the control
+  radius. Never remove keyboard focus indication.
+- antd composites keep their token-based focus ring and must not receive a
+  second outline. Composite text fields mark their container
+  `data-focus-boundary`: the parent shows the brand ring on `:focus-within`
+  and inner inputs render no outline of their own.
+- Pointer-opening a popover must not move focus into it or leave a ring behind
+  (a click on an already keyboard-focused element keeps `:focus-visible` in
+  Chromium — blur the trigger on pointer activation); keyboard opening moves
+  focus inside, and closing returns focus to the trigger.
 - Composite fields use one parent focus boundary.
 - Popovers and menus return focus to the source.
 - Route/detail transitions move focus to the new primary heading or thread root.
