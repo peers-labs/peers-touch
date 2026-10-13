@@ -1,8 +1,8 @@
 # Mobile Shell — 产品验收矩阵
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-08-27 | **Updated**: 2026-09-21
+> **Version**: v1.3
+> **Created**: 2026-08-27 | **Updated**: 2026-10-12
 > **Owner**: Mobile Product Team
 
 ---
@@ -35,7 +35,9 @@
 | MS-PA24 | MS-J01..07 | Complete primary journeys with screen reader, maximum supported text size, reduced motion, long locale, and restored focus | Accessibility tree, focus trace, screenshots | iOS Simulator |
 | MS-PA25 | MS-J01, MS-J07 | Station peer mismatch, capability incompatibility, OAuth expiry/replay, and session revocation show blocking trust state and recovery | Signed handshake/access/session evidence | iOS Simulator |
 | MS-PA26 | MS-J07 | Fill command capacity or overflow data events; reads remain available and writes explain why they are blocked | Queue/admission/reconcile counters | simulator stress cell |
-| MS-PA27 | MS-J01, MS-J03, MS-J07 | WeChat/call/Docs entries are absent or disabled with a useful reason; local-only capability is not advertised as shared | Surface inventory and interaction evidence | iOS Simulator |
+| MS-PA27 | MS-J01, MS-J03, MS-J07 | WeChat/Docs entries are absent or disabled with a useful reason; local-only capability is not advertised as shared | Surface inventory and interaction evidence | iOS Simulator |
+| MS-PA28 | MS-J03 | From a Direct conversation, two Mobile clients complete incoming/outgoing audio and video through ring, accept/reject/no-answer, active media, mute/camera controls, reconnect, hangup, and cleanup while Chat remains usable | Sealed signaling, one call identity, direct/TURN path evidence, visible receiver media, and zero leaked tracks/peer connections/timers after terminal state | same-Station and cross-Station iOS Simulator cells |
+| MS-PA29 | MS-J03, MS-J07 | Desktop and Mobile for one callee ring under the same call identity; the first accepted terminal action wins and the sibling becomes `handled_elsewhere` | Realtime resolution readback preserves one winner across duplicate, conflict, reconnect, and Station restart | `chat-mixed-native` |
 
 ## Architecture Gates
 
@@ -56,6 +58,8 @@ before runtime gates run.
 | MS-AG09 Admission/overload | same Acceptance command | 50 intents/5 s across 8 ordering keys; Station delay 10 s; fill ledger limits; flood 2,000 data events plus revocation | command bounds/fairness hold; overflow is typed; data overflow reconciles; revocation closes writes; zero silent drop/duplicate | Evidence Store admission and reconcile `ArtifactRef`s |
 | MS-AG10 Payload/storage | same Acceptance command | payload at 256 KiB and +1 byte; media at Station-advertised maximum and +1 byte; process kill during ledger/draft transition | boundaries hold; media bytes stay external; command/draft stores recover atomically; disk scan finds no token, secret, or plaintext content | Evidence Store payload, recovery and redaction `ArtifactRef`s |
 | MS-AG11 Accessibility/i18n | layout and platform simulator Gates | simulator accessibility trees; maximum supported text size; reduced motion; longest supported locale; keyboard/focus traversal | semantic order and labels complete; focus restored; no clipped/overlapping text; motion preference honored | Evidence Store accessibility tree, focus trace and screenshot `ArtifactRef`s |
+| MS-AG12 One-to-one call lifecycle | Required Mobile call Gate is not registered yet | two isolated iOS Simulator clients on same-Station and cross-Station direct/TURN cells | audio/video ring through teardown passes; Chat remains usable; media and signaling resources return to baseline | `UNPROVEN` until a Mobile-native Gate is registered and passes on exact source |
+| MS-AG13 Cross-device call resolution | `python3 tooling/scripts/acceptance-run.py --gate chat-lifecycle-call-resolution-e2e` | one Native Desktop plus one isolated iOS Simulator for the same callee, with an independent caller | dual ring, first-terminal-action-wins, loser `handled_elsewhere`, conflict/reconnect/restart cases pass | Evidence Store latest for `chat-lifecycle-call-resolution-e2e` |
 
 Missing required iOS Simulator evidence remains `UNPROVEN`. Android Emulator,
 physical-device, live-provider, VoiceOver/TalkBack, OEM scheduler/picker,
@@ -82,6 +86,8 @@ evidence cannot be promoted to that scope.
 | MS-PA18, MS-PA19, MS-PA20, MS-PA21 | MS-AG04, MS-AG06, MS-AG08, MS-AG09, MS-AG10 |
 | MS-PA22, MS-PA23, MS-PA26 | MS-AG04, MS-AG05, MS-AG09, MS-AG10 |
 | MS-PA24, MS-PA27 | MS-AG08, MS-AG11 |
+| MS-PA28 | MS-AG08, MS-AG11, MS-AG12 |
+| MS-PA29 | MS-AG13 |
 
 ## Capability Traceability
 
@@ -98,7 +104,8 @@ evidence cannot be promoted to that scope.
 | MS-C09 | MS-J06 | MS-PA12, MS-PA21, MS-PA24 | Me/settings/details |
 | MS-C10 | MS-J02, MS-J07 | MS-PA04, MS-PA05, MS-PA08, MS-PA13, MS-PA14, MS-PA25, MS-PA26 | Runtime recovery scenarios |
 | MS-C11 | MS-J01 | MS-PA27 | Disabled/absent WeChat OAuth entry |
-| MS-C12, MS-C13 | MS-J03 | MS-PA27 | Disabled/absent call and Docs entries |
+| MS-C12 | MS-J03, MS-J07 | MS-PA28, MS-PA29 | Direct call actions + shell-owned outgoing/incoming/active/reconnecting/handled-elsewhere/ended surface |
+| MS-C13 | MS-J03 | MS-PA27 | Disabled/absent Docs entry |
 | MS-C14 | MS-J07 | MS-PA22, MS-PA27 | Device-only message flag |
 
 ## Architecture Requirement Traceability
@@ -114,6 +121,8 @@ evidence cannot be promoted to that scope.
 | MS-PA22 | Device-local typed flag projection; no shared business contract |
 | MS-PA23 | MS-P08 device-local draft envelope |
 | MS-PA24, MS-PA27 | UI Identity and component-tree contracts; no new business schema |
+| MS-PA28 | CHAT-D05 sealed CallSignal + shared Realtime + WebRTC direct/TURN; Mobile shell OverlayHost and call runtime |
+| MS-PA29 | CCU-E09 Realtime call-resolution owner and CHAT-G19 mixed-client arbitration |
 
 Execution-plan W0 must register the concrete Acceptance JSON and run:
 

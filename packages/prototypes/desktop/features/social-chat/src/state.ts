@@ -8,6 +8,7 @@ import {
   type MockConversation,
   type MockGroupMember,
   type MockGroupRole,
+  type FederatedFriendMeta,
 } from './mock';
 import {
   CHAT_JOURNEY,
@@ -195,8 +196,8 @@ export function useChatState() {
             return {
               ...message,
               content: CHAT_JOURNEY_LOCALE === 'zh'
-                ? '远端 Station 已确认该消息。'
-                : 'Remote Station acknowledged this message.',
+                ? '对方已确认收到该消息。'
+                : 'Delivered and confirmed.',
             };
           }
           return message;
@@ -263,6 +264,26 @@ export function useChatState() {
     )));
   }, []);
 
+  const addGroupMembers = useCallback((conversationId: string, userIds: string[]) => {
+    if (userIds.length === 0) return;
+    setGroupMembers((prev) => {
+      const existing = new Set((prev[conversationId] ?? []).map((member) => member.userId));
+      const added = userIds
+        .filter((userId) => !existing.has(userId))
+        .map((userId) => ({ userId, role: 'member' as const, muted: false, joinedAt: Date.now() }));
+      return { ...prev, [conversationId]: [...(prev[conversationId] ?? []), ...added] };
+    });
+    setConversations((prevConversations) => prevConversations.map((conversation) => {
+      if (conversation.id !== conversationId) return conversation;
+      const existing = (groupMembers[conversationId] ?? []).length;
+      const merged = new Set([
+        ...(groupMembers[conversationId] ?? []).map((member) => member.userId),
+        ...userIds,
+      ]);
+      return { ...conversation, memberCount: merged.size || existing };
+    }));
+  }, [groupMembers]);
+
   const renameGroup = useCallback((id: string, name: string) => {
     setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
   }, []);
@@ -310,7 +331,11 @@ export function useChatState() {
     }));
   }, []);
 
-  const createFriendConversation = useCallback((name: string, peerId: string) => {
+  const createFriendConversation = useCallback((
+    name: string,
+    peerId: string,
+    federatedMeta?: FederatedFriendMeta,
+  ) => {
     const displayName = name.trim() || peerId.trim() || 'New Friend';
     const id = `friend-${Date.now()}`;
     const next: MockConversation = {
@@ -326,10 +351,15 @@ export function useChatState() {
       online: false,
       trustLabel: 'Pending verification',
       trustTone: 'attention',
-      detailHint: `Maps to Friend create/list flow · peer: ${peerId.trim() || 'station/user id pending'}`,
+      detailHint: '',
       // Structural identity key: lets the session-search dropdown dedupe this
       // contact instead of opening another identical friend session.
       peerPtid: peerId.trim() || undefined,
+      // Federation provenance supplied by the caller (contact book / search).
+      // Drives the single cross-station deviation cue; addresses stay in detail.
+      federated: federatedMeta?.federated || undefined,
+      station: federatedMeta?.station,
+      handle: federatedMeta?.handle,
       background: 'Default',
     };
     setConversations((prev) => [next, ...prev]);
@@ -338,7 +368,7 @@ export function useChatState() {
       [id]: [{
         id: `system-${Date.now()}`,
         senderId: 'system',
-        content: 'Friend chat session is ready. Production maps this to /friend-chat/create before messaging.',
+        content: 'Chat started. Say hello.',
         timestamp: Date.now(),
         type: 'system',
       }],
@@ -364,7 +394,7 @@ export function useChatState() {
       memberCount: 1 + invited.length,
       trustLabel: 'Owner controls available',
       trustTone: 'verified',
-      detailHint: 'Maps to Group create, then invite selected members.',
+      detailHint: '',
       myNickname: CURRENT_USER.name,
       background: 'Default',
     };
@@ -379,7 +409,7 @@ export function useChatState() {
         id: `system-${Date.now()}`,
         senderId: 'system',
         content: invited.length > 0
-          ? `Group created. Invites queued for ${invited.join(', ')}.`
+          ? `Group created · ${invited.length} member${invited.length > 1 ? 's' : ''} invited.`
           : 'Group created. Invite members from group details.',
         timestamp: Date.now(),
         type: 'system',
@@ -403,6 +433,7 @@ export function useChatState() {
     messagesByConversation,
     currentUserId: CURRENT_USER.id,
     groupMembers: activeGroupMembers,
+    groupMembersByConversation: groupMembers,
     showDetail,
     selectConversation,
     toggleDetail,
@@ -420,6 +451,7 @@ export function useChatState() {
     sendVoiceMessage,
     renameGroup,
     removeGroupMember,
+    addGroupMembers,
     toggleMemberMute,
     setMemberRole,
     transferOwnership,

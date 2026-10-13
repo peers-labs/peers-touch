@@ -1,45 +1,51 @@
-import { Avatar, Card, Typography } from 'antd';
+import { Typography } from 'antd';
 import {
   Ban, Bell, ChevronRight, Fingerprint, Globe,
   Image as ImageIcon, MessageCircle, Server,
   Settings as SettingsIcon, Shield, ShieldCheck, User,
 } from 'lucide-react';
 import type { SettingEntry, SettingGroup } from '../types';
-import { GRADIENTS } from '../types';
+import type { AvatarRenderState } from '../types';
+import { demoAvatarUrls } from '../data';
+import { IdentityAvatar } from '../components/IdentityAvatar';
 
 const { Text } = Typography;
 
-export function ProfilePage({ onChangeStation, onSettingClick }: { onChangeStation: () => void; onSettingClick: (s: SettingEntry) => void }) {
+export function ProfilePage({ avatarState, onChangeStation, onSettingClick }: {
+  avatarState: AvatarRenderState;
+  onChangeStation: () => void;
+  onSettingClick: (s: SettingEntry) => void;
+}) {
   const settingGroups: SettingGroup[] = [
     {
       title: 'Account',
       items: [
-        { label: 'Account Info', icon: User, tint: '#6366f1' },
-        { label: 'Notifications', value: 'In-app', icon: Bell, tint: '#f59e0b' },
-        { label: 'Privacy & Security', icon: Shield, tint: '#22c55e' },
-        { label: 'Safety Number', icon: Fingerprint, tint: '#0ea5e9' },
-        { label: 'Blocked Users', value: '2', icon: Ban, tint: '#ef4444' },
+        { label: 'Account Info', icon: User, tint: 'primary' },
+        { label: 'Notifications', value: 'In-app', icon: Bell, tint: 'warning' },
+        { label: 'Privacy & Security', icon: Shield, tint: 'success' },
+        { label: 'Safety Number', icon: Fingerprint, tint: 'primary' },
+        { label: 'Blocked Users', value: '2', icon: Ban, tint: 'danger' },
       ],
     },
     {
       title: 'Chat',
       items: [
-        { label: 'Chat Settings', icon: MessageCircle, tint: '#6366f1' },
-        { label: 'Chat Background', icon: ImageIcon, tint: '#ec4899' },
+        { label: 'Chat Settings', icon: MessageCircle, tint: 'primary' },
+        { label: 'Chat Background', icon: ImageIcon, tint: 'neutral' },
       ],
     },
     {
       title: 'Network',
       items: [
-        { label: 'Station Connection', value: 'Local Station', icon: Server, tint: '#22c55e' },
-        { label: 'Encryption', value: 'Active', icon: ShieldCheck, tint: '#6366f1' },
-        { label: 'Language', value: 'English', icon: Globe, tint: '#0ea5e9' },
+        { label: 'Station Connection', value: 'Local Station', icon: Server, tint: 'success' },
+        { label: 'Encryption', value: 'Active', icon: ShieldCheck, tint: 'primary' },
+        { label: 'Language', value: 'English', icon: Globe, tint: 'neutral' },
       ],
     },
     {
       title: 'About',
       items: [
-        { label: 'About Peers Touch', value: 'v1.0.0', icon: ShieldCheck, tint: '#f59e0b' },
+        { label: 'About Peers Touch', value: 'v1.0.0', icon: ShieldCheck, tint: 'neutral' },
       ],
     },
   ];
@@ -48,20 +54,21 @@ export function ProfilePage({ onChangeStation, onSettingClick }: { onChangeStati
     <div className="mp-page">
       <header className="mp-header">
         <h1 className="mp-header-title">Me</h1>
-        <button type="button" className="mp-header-action" aria-label="Settings" onClick={() => onSettingClick({ label: 'Account Info', icon: User, tint: '#6366f1' })}>
+        <button type="button" className="mp-header-action" aria-label="Settings" onClick={() => onSettingClick({ label: 'Account Info', icon: User, tint: 'primary' })}>
           <SettingsIcon size={20} />
         </button>
       </header>
 
       <div className="mp-profile-body">
-        <Card className="mp-profile-header-card" variant="borderless">
+        <section className="mp-profile-header-card">
           <div className="mp-profile-header">
-            <Avatar size={64} style={{ background: GRADIENTS[0], borderRadius: 16 }}>AC</Avatar>
+            <IdentityAvatar name="Alice Chen" initials="AC" src={demoAvatarUrls.alice}
+              size={64} renderState={avatarState} />
             <div className="mp-profile-info">
               <Text strong className="mp-profile-name">Alice Chen</Text>
-              <Text type="secondary" className="mp-profile-did">ptid:v1:actor:local:p:alice:a3f9...</Text>
+              <Text type="secondary" className="mp-profile-did">Local identity · Local Station</Text>
             </div>
-            <ChevronRight size={20} color="#9ca0ab" />
+            <ChevronRight size={20} className="mp-row-chevron" />
           </div>
           <div className="mp-profile-stats">
             <div className="mp-stat"><Text strong className="mp-stat-value">128</Text><Text type="secondary" className="mp-stat-label">Friends</Text></div>
@@ -70,12 +77,12 @@ export function ProfilePage({ onChangeStation, onSettingClick }: { onChangeStati
             <div className="mp-stat-divider" />
             <div className="mp-stat"><Text strong className="mp-stat-value">34</Text><Text type="secondary" className="mp-stat-label">Moments</Text></div>
           </div>
-        </Card>
+        </section>
 
         {settingGroups.map((group) => (
           <div key={group.title} className="mp-settings-group">
             <div className="mp-settings-group-title">{group.title}</div>
-            <Card className="mp-settings-card" variant="borderless">
+            <div className="mp-settings-card">
               {group.items.map((item, idx) => {
                 const Icon = item.icon;
                 return (
@@ -85,16 +92,16 @@ export function ProfilePage({ onChangeStation, onSettingClick }: { onChangeStati
                     className={`mp-setting-row ${idx > 0 ? 'mp-setting-row--border' : ''}`}
                     onClick={() => onSettingClick(item)}
                   >
-                    <span className="mp-setting-icon" style={{ backgroundColor: `${item.tint}14`, color: item.tint }}>
+                    <span className={`mp-setting-icon tone-${item.tint}`}>
                       <Icon size={17} />
                     </span>
                     <Text className="mp-setting-label">{item.label}</Text>
                     {item.value && <Text type="secondary" className="mp-setting-value">{item.value}</Text>}
-                    <ChevronRight size={17} color="#c1c4cc" />
+                    <ChevronRight size={17} className="mp-row-chevron" />
                   </button>
                 );
               })}
-            </Card>
+            </div>
           </div>
         ))}
 

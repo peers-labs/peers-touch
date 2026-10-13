@@ -52,6 +52,10 @@ Rules:
 - Composer is an action surface attached to the feed or thread context.
 - Federation metadata appears as a quiet meta line by default.
 - Trust or policy state expands only when it changes the user's decision.
+- Placement follows the decision-distance stages in
+  [trust-state.md](../../patterns/trust-state.md): the live conversation is
+  in-flow hidden; cross-station peers may carry a single deviation cue; full
+  station/relay/verification detail lives in the detail surface.
 
 ## 5. Social Surface Hierarchy
 

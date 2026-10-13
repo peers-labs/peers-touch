@@ -6,9 +6,9 @@
  * Chat supports full-screen thread with composer, reply, action sheet.
  */
 
-import { useMemo, useReducer, useState } from 'react';
-import { ConfigProvider, Select, Typography } from 'antd';
-import type { LaunchState, StationEntry } from './types';
+import { useMemo, useReducer, useState, type CSSProperties } from 'react';
+import { ConfigProvider, Segmented, Select, Typography, theme as antdTheme } from 'antd';
+import type { LaunchState, MobileUiEvidence, StationEntry } from './types';
 import { demoStations } from './data';
 import {
   BlockingRecoveryScreen,
@@ -27,6 +27,16 @@ import {
 import { SocialEvidenceControls } from './components/SocialEvidenceControls';
 import { SearchEvidenceControls } from './components/SearchEvidenceControls';
 import { emptySearchDemo, searchDemoReducer } from './searchDemo';
+import {
+  callEvidenceScenarioOptions,
+  isPrototypeCallScenario,
+  type PrototypeCallScenario,
+} from './callPrototype';
+import {
+  createAntdTokenTheme,
+  createDesignTokenCssVariables,
+  type DesignThemeMode,
+} from '../../../shared/design-tokens';
 import './mobilePrototype.css';
 
 const { Text } = Typography;
@@ -40,7 +50,23 @@ type EvidenceScenario =
   | 'search-controlled'
   | BlockingEvidenceScenario
   | ShellEvidenceScenario
-  | SocialEvidenceScenario;
+  | SocialEvidenceScenario
+  | PrototypeCallScenario
+  | MobileUiScenario;
+
+type MobileUiScenario =
+  | 'chat-default'
+  | 'chat-list-loading'
+  | 'chat-list-refreshing'
+  | 'chat-list-empty'
+  | 'chat-list-error'
+  | 'chat-thread-loading'
+  | 'chat-history-loading'
+  | 'chat-thread-error'
+  | 'chat-unknown-outcome'
+  | 'avatar-loading'
+  | 'avatar-fallback'
+  | 'long-content';
 
 const evidenceScenarioOptions: Array<{ label: string; value: EvidenceScenario }> = [
   { label: 'Default journey', value: 'journey' },
@@ -53,12 +79,26 @@ const evidenceScenarioOptions: Array<{ label: string; value: EvidenceScenario }>
   { label: 'Command ledger full', value: 'ledger-full' },
   { label: 'Draft restored', value: 'draft-restored' },
   { label: 'Social unavailable / lifecycle retry', value: 'social-unavailable' },
+  { label: 'Conversation unavailable / lifecycle retry', value: 'social-detail-unavailable' },
   { label: 'Find People / no Federation membership', value: 'find-people-no-membership' },
   { label: 'Find People / active Federation', value: 'find-people-member' },
   { label: 'Accepted contact / Direct opening', value: 'contact-direct' },
   { label: 'Friend request / unknown outcome', value: 'request-unknown' },
   { label: 'Long lists / sample data only', value: 'long-lists' },
   { label: 'Search / controlled outcomes', value: 'search-controlled' },
+  { label: 'UI / clean default shell', value: 'chat-default' },
+  { label: 'UI / conversation first load', value: 'chat-list-loading' },
+  { label: 'UI / cached conversation refresh', value: 'chat-list-refreshing' },
+  { label: 'UI / empty conversation list', value: 'chat-list-empty' },
+  { label: 'UI / cached conversation error', value: 'chat-list-error' },
+  { label: 'UI / thread first load', value: 'chat-thread-loading' },
+  { label: 'UI / older history loading', value: 'chat-history-loading' },
+  { label: 'UI / thread route unavailable', value: 'chat-thread-error' },
+  { label: 'UI / unknown delivery outcome', value: 'chat-unknown-outcome' },
+  { label: 'UI / avatar loading', value: 'avatar-loading' },
+  { label: 'UI / avatar fallback', value: 'avatar-fallback' },
+  { label: 'UI / long localized content', value: 'long-content' },
+  ...callEvidenceScenarioOptions,
 ];
 
 const blockingScenarios: BlockingEvidenceScenario[] = [
@@ -72,29 +112,56 @@ const shellScenarios: ShellEvidenceScenario[] = [
   'draft-restored',
 ];
 
+const mobileUiScenarios: MobileUiScenario[] = [
+  'chat-default',
+  'chat-list-loading',
+  'chat-list-refreshing',
+  'chat-list-empty',
+  'chat-list-error',
+  'chat-thread-loading',
+  'chat-history-loading',
+  'chat-thread-error',
+  'chat-unknown-outcome',
+  'avatar-loading',
+  'avatar-fallback',
+  'long-content',
+];
+
+function resolveMobileUiEvidence(scenario: EvidenceScenario): MobileUiEvidence {
+  return {
+    avatarState: scenario === 'avatar-loading'
+      ? 'loading'
+      : scenario === 'avatar-fallback'
+        ? 'failed'
+        : 'ready',
+    chatListState: scenario === 'chat-list-loading'
+      ? 'initial-loading'
+      : scenario === 'chat-list-refreshing'
+        ? 'refreshing'
+        : scenario === 'chat-list-empty'
+          ? 'empty'
+          : scenario === 'chat-list-error'
+            ? 'cached-error'
+            : 'ready',
+    chatThreadState: scenario === 'chat-thread-loading'
+      ? 'initial-loading'
+      : scenario === 'chat-history-loading'
+        ? 'history-loading'
+        : scenario === 'chat-thread-error'
+          ? 'route-error'
+          : scenario === 'chat-unknown-outcome'
+            ? 'unknown-outcome'
+            : 'ready',
+    longContent: scenario === 'long-content',
+  };
+}
+
 function getInitialEvidenceScenario(): EvidenceScenario {
   const scenario = new URLSearchParams(window.location.search).get('scenario');
   return evidenceScenarioOptions.some((option) => option.value === scenario)
     ? scenario as EvidenceScenario
     : 'journey';
 }
-
-// ── antd theme ─────────────────────────────────────────────────
-const antdTheme = {
-  token: {
-    colorPrimary: '#6366f1',
-    colorInfo: '#6366f1',
-    borderRadius: 10,
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif",
-    colorBgContainer: '#ffffff',
-  },
-  components: {
-    Button: { borderRadius: 10, controlHeight: 40, fontWeight: 600 },
-    Input: { borderRadius: 10, controlHeight: 40 },
-    Card: { borderRadiusLG: 16 },
-    List: { paddingContentHorizontalLG: 0 },
-  },
-};
 
 export function MobilePrototype() {
   const [launchState, setLaunchState] = useState<LaunchState>('station-selection');
@@ -104,10 +171,27 @@ export function MobilePrototype() {
   const [evidenceScenario, setEvidenceScenario] = useState<EvidenceScenario>(
     getInitialEvidenceScenario,
   );
+  const [themeMode, setThemeMode] = useState<DesignThemeMode>('light');
   const [socialDemo, dispatchSocialDemo] = useReducer(socialDemoReducer, evidenceScenario, createSocialDemo);
   const [searchState, dispatchSearch] = useReducer(searchDemoReducer, emptySearchDemo);
   const socialScenario = socialEvidenceScenarios.find((scenario) => scenario === evidenceScenario);
+  const callScenario = isPrototypeCallScenario(evidenceScenario)
+    ? evidenceScenario
+    : undefined;
   const longLists = evidenceScenario === 'long-lists' || evidenceScenario === 'search-controlled';
+  const mobileUiEvidence = useMemo(
+    () => resolveMobileUiEvidence(evidenceScenario),
+    [evidenceScenario],
+  );
+  const isMobileUiScenario = mobileUiScenarios.includes(evidenceScenario as MobileUiScenario);
+  const theme = useMemo(() => ({
+    ...createAntdTokenTheme(themeMode),
+    algorithm: themeMode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+  }), [themeMode]);
+  const cssVariables = useMemo(
+    () => createDesignTokenCssVariables(themeMode) as CSSProperties,
+    [themeMode],
+  );
 
   const activeStation = useMemo(
     () => stations.find((s) => s.url === activeUrl),
@@ -198,10 +282,10 @@ export function MobilePrototype() {
     }
 
     const shellRecovery = shellScenarios.find((scenario) => scenario === evidenceScenario);
-    if ((socialScenario || shellRecovery || longLists || evidenceScenario === 'chat-delivery-recovery' || launchState === 'shell') && activeStation) {
+    if ((socialScenario || shellRecovery || callScenario || longLists || isMobileUiScenario || evidenceScenario === 'chat-delivery-recovery' || launchState === 'shell') && activeStation) {
       return (
         <MobileShell
-          key={longLists || evidenceScenario === 'chat-delivery-recovery'
+          key={longLists || callScenario || isMobileUiScenario || evidenceScenario === 'chat-delivery-recovery'
             ? evidenceScenario
             : socialScenario ?? 'shell'}
           stationLabel={activeStation.label}
@@ -209,6 +293,9 @@ export function MobilePrototype() {
           recoveryScenario={shellRecovery}
           longLists={longLists}
           focusChatJourney={evidenceScenario === 'chat-delivery-recovery'}
+          uiEvidence={mobileUiEvidence}
+          deliveryRecovery={evidenceScenario === 'chat-delivery-recovery'}
+          callScenario={callScenario}
           searchDemo={evidenceScenario === 'search-controlled'
             ? { state: searchState, dispatch: dispatchSearch } : undefined}
           socialScenario={socialScenario}
@@ -251,8 +338,12 @@ export function MobilePrototype() {
   }
 
   return (
-    <ConfigProvider theme={antdTheme}>
-      <div className="mobile-prototype-scope">
+    <ConfigProvider theme={theme}>
+      <div
+        className="mobile-prototype-scope"
+        data-theme={themeMode}
+        style={cssVariables}
+      >
         <div className="mp-workbench">
           <div className="mp-evidence-toolbar">
             <Text strong>Evidence scenario</Text>
@@ -261,6 +352,16 @@ export function MobilePrototype() {
               value={evidenceScenario}
               options={evidenceScenarioOptions}
               onChange={selectEvidenceScenario}
+            />
+            <Text strong>Theme</Text>
+            <Segmented
+              aria-label="Preview theme"
+              value={themeMode}
+              options={[
+                { label: 'Light', value: 'light' },
+                { label: 'Dark', value: 'dark' },
+              ]}
+              onChange={(value) => setThemeMode(value as DesignThemeMode)}
             />
           </div>
           {longLists && (

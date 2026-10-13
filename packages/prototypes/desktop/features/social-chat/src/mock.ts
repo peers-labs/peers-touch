@@ -23,6 +23,12 @@ export interface MockUser {
   homeStationPeerId?: string;
   federationId?: string;
   federationName?: string;
+  /**
+   * Home station differs from the local station (cross-station federation).
+   * Every contact has a home station, so presence of `homeStation` is NOT the
+   * signal; this explicit boolean drives the single trust deviation cue.
+   */
+  federated?: boolean;
 }
 
 export interface MockMessage {
@@ -64,11 +70,25 @@ export interface MockConversation {
   station?: string;
   peerPtid?: string;
   federationId?: string;
+  // Peer's home station differs from the local station (federated/cross-station).
+  // Explicit signal for the trust-state deviation cue; never inferred from strings.
+  federated?: boolean;
   chatKindLabel?: string;
   stats?: { posts: number; followers: number; following: number };
 }
 
 export type MockGroupRole = 'owner' | 'admin' | 'member';
+
+/**
+ * Federation provenance carried when a friend session is opened from a contact
+ * or search result. Addresses here are locators only; the UI surfaces the
+ * boolean as a deviation cue and keeps the strings in the detail surface.
+ */
+export interface FederatedFriendMeta {
+  federated?: boolean;
+  station?: string;
+  handle?: string;
+}
 
 export interface MockGroupMember {
   userId: string;
@@ -105,6 +125,7 @@ export const USERS: Record<string, MockUser> = {
     homeStationPeerId: '12D3KooW-aspen',
     federationId: 'fed-friends',
     federationName: 'Friends Federation',
+    federated: true,
   },
   'bob-harbor': {
     id: 'ptid:bob:harbor',
@@ -117,6 +138,7 @@ export const USERS: Record<string, MockUser> = {
     homeStationPeerId: '12D3KooW-harbor',
     federationId: 'fed-friends',
     federationName: 'Friends Federation',
+    federated: true,
   },
 };
 
@@ -134,6 +156,7 @@ export const CONTACTS = [
     homeStationPeerId: '12D3KooW-aspen',
     federationId: 'fed-friends',
     federationName: 'Friends Federation',
+    federated: true,
   },
 ] satisfies MockUser[];
 
@@ -176,6 +199,32 @@ export const CONVERSATIONS: MockConversation[] = [
     federationId: 'fed-friends',
     chatKindLabel: 'Standard chat',
     stats: { posts: 0, followers: 0, following: 0 },
+  },
+  {
+    // Cross-station friend: the built-in federated contact Bob (USERS['bob-aspen'],
+    // home station aspen.social) rendered as an open conversation, so the single
+    // deviation cue is visible against same-station peers in the list.
+    id: 'conv-7',
+    type: 'friend',
+    name: 'Bob',
+    avatar: '',
+    lastMessage: 'See you at the team call.',
+    lastMessageTime: Date.now() - 200_000,
+    unread: 1,
+    muted: false,
+    pinned: false,
+    online: true,
+    trustLabel: 'Verified identity',
+    trustTone: 'verified',
+    detailHint: 'Cross-station friend on aspen.social.',
+    background: 'Default',
+    handle: '@bob@aspen.social',
+    station: 'aspen.social',
+    peerPtid: 'ptid:bob:aspen',
+    federationId: 'fed-friends',
+    federated: true,
+    chatKindLabel: 'Standard chat',
+    stats: { posts: 4, followers: 11, following: 9 },
   },
   {
     id: 'conv-3',
@@ -257,10 +306,10 @@ export const CONVERSATIONS: MockConversation[] = [
 
 export const MESSAGES: Record<string, MockMessage[]> = {
   'conv-1': [
-    { id: 'm1', senderId: 'user-3', content: CHAT_JOURNEY_LOCALE === 'zh' ? 'Frankfurt Station 的重连验证仍在运行。' : 'Reconnect verification is still running against the Frankfurt Station.', timestamp: Date.now() - 540_000, type: 'text' },
+    { id: 'm1', senderId: 'user-3', content: CHAT_JOURNEY_LOCALE === 'zh' ? '我还在确认重连是否恢复。' : "I'm still verifying the reconnect.", timestamp: Date.now() - 540_000, type: 'text' },
     { id: 'm2', senderId: 'user-1', content: CHAT_JOURNEY.messages.inbound[CHAT_JOURNEY_LOCALE], timestamp: Date.now() - 360_000, type: 'text' },
     { id: CHAT_JOURNEY_MESSAGE_ID, senderId: 'user-self', content: CHAT_JOURNEY.messages.outbound[CHAT_JOURNEY_LOCALE], timestamp: Date.now() - 240_000, type: 'text', status: 'failed' },
-    { id: 'm4', senderId: 'system', content: CHAT_JOURNEY_LOCALE === 'zh' ? '加密消息已保存在本机，正在等待远端确认。' : 'Encrypted payload saved locally. Remote acknowledgement is pending.', timestamp: Date.now() - 210_000, type: 'system' },
+    { id: 'm4', senderId: 'system', content: CHAT_JOURNEY_LOCALE === 'zh' ? '已保存在本机，等待发送。' : 'Saved on this device · waiting to send.', timestamp: Date.now() - 210_000, type: 'system' },
   ],
   'conv-2': [
     { id: 'f1', senderId: 'user-1', content: 'Hey, are you free for coffee tomorrow?', timestamp: Date.now() - 600_000, type: 'text' },
@@ -269,22 +318,36 @@ export const MESSAGES: Record<string, MockMessage[]> = {
     { id: 'f2b', senderId: 'user-1', content: '', timestamp: Date.now() - 360_000, type: 'voice', durationSeconds: 14, transferState: 'ready' },
     { id: 'f2c', senderId: 'user-1', content: 'Design notes are up: https://design.peers-touch.dev/release-room', timestamp: Date.now() - 330_000, type: 'text' },
     { id: 'f3', senderId: 'user-1', content: 'Sounds good, see you tomorrow!', timestamp: Date.now() - 300_000, type: 'text' },
+    ...Array.from({ length: 7 }, (_, index) => ({
+      id: `f-photo-${index + 1}`,
+      senderId: index % 2 === 0 ? 'user-1' : 'user-self',
+      content: '',
+      timestamp: Date.now() - (280_000 - index * 4_000),
+      type: 'image' as const,
+      attachmentName: `shared-${index + 1}.jpg`,
+      attachmentMeta: 'Photo',
+    })),
+  ],
+  'conv-7': [
+    { id: 'b1', senderId: 'bob-aspen', content: 'Thanks for walking me through the setup.', timestamp: Date.now() - 260_000, type: 'text' },
+    { id: 'b2', senderId: 'user-self', content: 'Anytime — happy to help!', timestamp: Date.now() - 240_000, type: 'text', status: 'read' },
+    { id: 'b3', senderId: 'bob-aspen', content: 'See you at the team call.', timestamp: Date.now() - 200_000, type: 'text' },
   ],
   'conv-3': [
-    { id: 'd1', senderId: 'user-1', content: 'Please review the compact group detail layout first.', timestamp: Date.now() - 1_500_000, type: 'text' },
-    { id: 'd2', senderId: 'user-3', content: 'The member grid should stay readable with long names.', timestamp: Date.now() - 1_200_000, type: 'text' },
-    { id: 'd3', senderId: 'user-self', content: 'Agree. Low-frequency admin actions should move behind Manage members.', timestamp: Date.now() - 900_000, type: 'text', status: 'delivered' },
+    { id: 'd1', senderId: 'user-1', content: 'Can you take a first pass at the rollout notes?', timestamp: Date.now() - 1_500_000, type: 'text' },
+    { id: 'd2', senderId: 'user-3', content: 'Sure — I will share the draft this afternoon.', timestamp: Date.now() - 1_200_000, type: 'text' },
+    { id: 'd3', senderId: 'user-self', content: 'Sounds good. I will review it tonight.', timestamp: Date.now() - 900_000, type: 'text', status: 'delivered' },
     { id: 'd4', senderId: 'user-5', content: 'mockup-v3.fig', timestamp: Date.now() - 600_000, type: 'file', attachmentName: 'mockup-v3.fig', attachmentMeta: 'Figma source · 2.4 MB' },
   ],
   'conv-4': [
     { id: 'p1', senderId: 'user-2', content: 'Can you review my PR?', timestamp: Date.now() - 3_900_000, type: 'text' },
     { id: 'p1v', senderId: 'user-2', content: '', timestamp: Date.now() - 3_750_000, type: 'voice', durationSeconds: 9, transferState: 'failed' },
-    { id: 'p2', senderId: 'user-self', content: 'I will check after the chat prototype pass.', timestamp: Date.now() - 3_600_000, type: 'text', status: 'failed' },
+    { id: 'p2', senderId: 'user-self', content: 'Looking now — will leave comments by noon.', timestamp: Date.now() - 3_600_000, type: 'text', status: 'failed' },
   ],
   'conv-5': [
     { id: 'pt1', senderId: 'user-4', content: 'Sprint planning moved to Friday.', timestamp: Date.now() - 7_800_000, type: 'text' },
-    { id: 'pt2', senderId: 'user-self', content: 'I only need read-only group settings here.', timestamp: Date.now() - 7_500_000, type: 'text', status: 'sent' },
-    { id: 'pt3', senderId: 'system', content: 'You are a member. Management actions are locked.', timestamp: Date.now() - 7_200_000, type: 'system' },
+    { id: 'pt2', senderId: 'user-self', content: 'I will join a few minutes late.', timestamp: Date.now() - 7_500_000, type: 'text', status: 'sent' },
+    { id: 'pt3', senderId: 'system', content: 'You joined the group.', timestamp: Date.now() - 7_200_000, type: 'system' },
   ],
   'conv-6': [
     { id: 'l1', senderId: 'user-5', content: 'Thanks for the help!', timestamp: Date.now() - 86_600_000, type: 'text' },
@@ -339,6 +402,8 @@ export interface MockContactRequest {
   federationName?: string;
   homeStation?: string;
   handle?: string;
+  /** Cross-station request; explicit (a same-station friend like local.dev stays unmarked). */
+  federated?: boolean;
 }
 
 export const INITIAL_FRIEND_REQUESTS: MockContactRequest[] = [
@@ -353,6 +418,7 @@ export const INITIAL_FRIEND_REQUESTS: MockContactRequest[] = [
     federationName: 'Friends Federation',
     homeStation: 'acceptance.dev',
     handle: '@acceptance-9464@acceptance.dev',
+    federated: true,
   },
   {
     id: 'cr-carol',
@@ -378,6 +444,7 @@ export const INITIAL_FRIEND_REQUESTS: MockContactRequest[] = [
     federationName: 'Friends Federation',
     homeStation: 'relay-eu.dev',
     handle: '@dana@relay-eu.dev',
+    federated: true,
   },
 ];
 

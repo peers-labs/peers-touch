@@ -5,6 +5,8 @@
  * this component only visualizes the Rust-owned state.
  */
 
+import { HardDrive } from 'lucide-react';
+
 import type { CapacityReadOnlyState } from '../../runtimes/recoveryProjection';
 
 interface CapacityWarningProps {
@@ -29,7 +31,7 @@ export function CapacityWarning({ state, t }: CapacityWarningProps) {
       aria-label={t('mobile.recovery.capacityWarning.title')}
     >
       <span className="recovery-bar__icon" aria-hidden="true">
-        &#x1F6AB;
+        <HardDrive size={18} />
       </span>
       <span className="recovery-bar__text">
         {t(bodyKey, {

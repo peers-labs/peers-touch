@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { Avatar, Card, Typography } from 'antd';
+import { Typography } from 'antd';
 import { Heart, ImagePlus, MessageCircle, Send, Share2 } from 'lucide-react';
-import type { Moment, MomentComment, ReactionKind } from '../types';
+import type { AvatarRenderState, Moment, MomentComment, ReactionKind } from '../types';
 import { GRADIENTS, REACTION_EMOJI } from '../types';
-import { demoMoments } from '../data';
+import { demoAvatarUrls, demoMoments } from '../data';
+import { IdentityAvatar } from '../components/IdentityAvatar';
 
 const { Text } = Typography;
 
-export function MomentsPage() {
+export function MomentsPage({ avatarState }: { avatarState: AvatarRenderState }) {
   const [moments, setMoments] = useState<Moment[]>(demoMoments);
   const [reactionPickerId, setReactionPickerId] = useState<string | null>(null);
   const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
@@ -50,6 +51,7 @@ export function MomentsPage() {
       id: `mo-${Date.now()}`,
       name: 'Alice Chen',
       avatar: 'AC',
+      avatarUrl: demoAvatarUrls.alice,
       avatarGradient: GRADIENTS[0],
       time: 'Just now',
       text,
@@ -69,6 +71,7 @@ export function MomentsPage() {
       id: `c-${Date.now()}`,
       name: 'Alice Chen',
       avatar: 'AC',
+      avatarUrl: demoAvatarUrls.alice,
       avatarGradient: GRADIENTS[0],
       text,
       time: 'Just now',
@@ -131,9 +134,10 @@ export function MomentsPage() {
           const visibleComments = showComments ? moment.comments : moment.comments.slice(0, 2);
           const totalReactions = Object.values(moment.reactionCounts ?? {}).reduce((a, b) => a + (b ?? 0), 0);
           return (
-            <Card key={moment.id} className="mp-moment-card" variant="borderless">
+            <article key={moment.id} className="mp-moment-card">
               <div className="mp-moment-header">
-                <Avatar size={42} style={{ background: moment.avatarGradient, borderRadius: 14 }}>{moment.avatar}</Avatar>
+                <IdentityAvatar name={moment.name} initials={moment.avatar}
+                  src={moment.avatarUrl} size={42} renderState={avatarState} />
                 <div className="mp-moment-author">
                   <Text strong className="mp-moment-name">{moment.name}</Text>
                   <Text type="secondary" className="mp-moment-time">{moment.time}</Text>
@@ -161,15 +165,17 @@ export function MomentsPage() {
                   <button
                     type="button"
                     className={`mp-moment-action ${moment.myReaction ? 'reacted' : ''}`}
+                    aria-label="React to post"
                     onClick={() => setReactionPickerId(reactionPickerId === moment.id ? null : moment.id)}
                   >
                     <Heart size={18} fill={moment.myReaction ? 'currentColor' : 'none'} />
                   </button>
-                  <button type="button" className="mp-moment-action" onClick={() => toggleComments(moment.id)}>
+                  <button type="button" className="mp-moment-action" aria-label="Show comments" onClick={() => toggleComments(moment.id)}>
                     <MessageCircle size={18} />
                     {moment.comments.length > 0 && <span>{moment.comments.length}</span>}
                   </button>
-                  <button type="button" className="mp-moment-action mp-moment-action--share" disabled title="Share coming soon">
+                  <button type="button" className="mp-moment-action mp-moment-action--share" disabled
+                    aria-label="Share unavailable" title="Share coming soon">
                     <Share2 size={18} />
                   </button>
                 </div>
@@ -181,6 +187,7 @@ export function MomentsPage() {
                         key={kind}
                         type="button"
                         className={`mp-moment-reaction-picker-btn ${moment.myReaction === kind ? 'active' : ''}`}
+                        aria-label={`React with ${kind}`}
                         onClick={() => toggleReaction(moment.id, kind)}
                       >
                         {REACTION_EMOJI[kind]}
@@ -194,7 +201,8 @@ export function MomentsPage() {
                 <div className="mp-moment-comments">
                   {visibleComments.map((c) => (
                     <div key={c.id} className="mp-moment-comment">
-                      <Avatar size={28} style={{ background: c.avatarGradient, borderRadius: 8 }}>{c.avatar}</Avatar>
+                      <IdentityAvatar name={c.name} initials={c.avatar} src={c.avatarUrl}
+                        size={28} renderState={avatarState} />
                       <div className="mp-moment-comment-body">
                         <Text strong className="mp-moment-comment-name">{c.name}</Text>
                         <span className="mp-moment-comment-text">{c.text}</span>
@@ -223,12 +231,13 @@ export function MomentsPage() {
                 <button
                   type="button"
                   className={`mp-moment-comment-send ${(commentInputs[moment.id] ?? '').trim() ? 'active' : ''}`}
+                  aria-label="Send comment"
                   onClick={() => handleAddComment(moment.id)}
                 >
                   <Send size={14} />
                 </button>
               </div>
-            </Card>
+            </article>
           );
         })}
       </div>

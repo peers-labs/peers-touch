@@ -76,6 +76,7 @@ export function SocialChatPage() {
     messagesByConversation,
     currentUserId,
     groupMembers,
+    groupMembersByConversation,
     showDetail,
     selectConversation,
     toggleDetail,
@@ -92,6 +93,7 @@ export function SocialChatPage() {
     retryMessage,
     renameGroup,
     removeGroupMember,
+    addGroupMembers,
     toggleMemberMute,
     setMemberRole,
     transferOwnership,
@@ -131,12 +133,13 @@ export function SocialChatPage() {
       <ChatRail activeTab={activeTab} onSelect={setActiveTab} />
       {activeTab === 'contacts' ? (
         <ContactsBook
+          compact={compact}
           onOpenConversation={(conversationId) => {
             selectConversation(conversationId);
             setActiveTab('chat');
           }}
-          onStartChatWithPerson={(name, peerId) => {
-            createFriendConversation(name, peerId);
+          onStartChatWithPerson={(name, peerId, meta) => {
+            createFriendConversation(name, peerId, meta);
             setActiveTab('chat');
           }}
         />
@@ -156,6 +159,7 @@ export function SocialChatPage() {
           onDelete={deleteConversation}
           onCreateFriend={createFriendConversation}
           onCreateGroup={createGroupConversation}
+          groupMembersByConversation={groupMembersByConversation}
           onFindPeople={() => setFindPeopleOpen(true)}
         />
       )}
@@ -186,6 +190,7 @@ export function SocialChatPage() {
               onClearHistory={clearConversationData}
               onSelectBackgroundImage={setConversationBackgroundImage}
               onRemoveMember={removeGroupMember}
+              onAddMembers={addGroupMembers}
               onRenameGroup={renameGroup}
               onSetMemberRole={setMemberRole}
               onToggleMemberMute={toggleMemberMute}
@@ -204,6 +209,7 @@ export function SocialChatPage() {
             onClearHistory={clearConversationData}
             onSelectBackgroundImage={setConversationBackgroundImage}
             onRemoveMember={removeGroupMember}
+            onAddMembers={addGroupMembers}
             onRenameGroup={renameGroup}
             onSetMemberRole={setMemberRole}
             onToggleMemberMute={toggleMemberMute}
