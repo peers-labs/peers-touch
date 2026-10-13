@@ -100,6 +100,145 @@ func TestAdmissionRenewalPreservesRouteAndRevocationFailsClosed(t *testing.T) {
 	}
 }
 
+func TestAdmissionGenerationReplacementClearsRouteAndPrivatePermits(
+	t *testing.T,
+) {
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	admission := NewAdmission()
+	admission.now = func() time.Time { return now }
+	destination := testPeerID(t)
+	permittedSource := testPeerID(t)
+	ordinarySource := testPeerID(t)
+
+	if err := admission.AdmitNode(NodeAdmission{
+		StationPeerID: "station-a",
+		NodePeerID:    destination,
+		Generation:    1,
+		ExpiresAt:     now.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("admit generation one: %v", err)
+	}
+	if err := admission.PublishRoute(RouteAdmission{
+		NodePeerID: destination,
+		Generation: 1,
+		Public:     false,
+		ExpiresAt:  now.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("publish generation-one route: %v", err)
+	}
+	if err := admission.Permit(ConnectPermit{
+		SourcePeerID:      permittedSource,
+		DestinationPeerID: destination,
+		Generation:        1,
+		RemainingUses:     2,
+		ExpiresAt:         now.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("install generation-one permit: %v", err)
+	}
+	if admission.AllowConnect(ordinarySource, nil, destination) {
+		t.Fatal("private permit was not bound to its source PeerID")
+	}
+
+	if err := admission.AdmitNode(NodeAdmission{
+		StationPeerID: "station-a",
+		NodePeerID:    destination,
+		Generation:    2,
+		ExpiresAt:     now.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("replace node generation: %v", err)
+	}
+	if nodes, routes, permits := admission.Counts(); nodes != 1 ||
+		routes != 0 || permits != 0 {
+		t.Fatalf(
+			"replacement retained stale state: nodes=%d routes=%d permits=%d",
+			nodes,
+			routes,
+			permits,
+		)
+	}
+	if admission.AllowConnect(permittedSource, nil, destination) {
+		t.Fatal("generation replacement retained the old route or permit")
+	}
+	if err := admission.PublishRoute(RouteAdmission{
+		NodePeerID: destination,
+		Generation: 1,
+		Public:     true,
+		ExpiresAt:  now.Add(time.Minute),
+	}); err == nil {
+		t.Fatal("stale generation republished a route")
+	}
+	if err := admission.PublishRoute(RouteAdmission{
+		NodePeerID: destination,
+		Generation: 2,
+		Public:     true,
+		ExpiresAt:  now.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("publish replacement route: %v", err)
+	}
+	if !admission.AllowConnect(ordinarySource, nil, destination) {
+		t.Fatal("ordinary source could not reach a public admitted destination")
+	}
+}
+
+func TestAdmissionRestartDoesNotRestorePrivatePermit(t *testing.T) {
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	destination := testPeerID(t)
+	source := testPeerID(t)
+
+	admission := NewAdmission()
+	admission.now = func() time.Time { return now }
+	if err := admission.AdmitNode(NodeAdmission{
+		StationPeerID: "station-a",
+		NodePeerID:    destination,
+		Generation:    4,
+		ExpiresAt:     now.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("admit node: %v", err)
+	}
+	if err := admission.PublishRoute(RouteAdmission{
+		NodePeerID: destination,
+		Generation: 4,
+		Public:     false,
+		ExpiresAt:  now.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("publish private route: %v", err)
+	}
+	if err := admission.Permit(ConnectPermit{
+		SourcePeerID:      source,
+		DestinationPeerID: destination,
+		Generation:        4,
+		RemainingUses:     1,
+		ExpiresAt:         now.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("install private permit: %v", err)
+	}
+	if !admission.AllowConnect(source, nil, destination) {
+		t.Fatal("valid private permit was rejected")
+	}
+
+	restarted := NewAdmission()
+	restarted.now = func() time.Time { return now }
+	if err := restarted.AdmitNode(NodeAdmission{
+		StationPeerID: "station-a",
+		NodePeerID:    destination,
+		Generation:    4,
+		ExpiresAt:     now.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("rehydrate node after restart: %v", err)
+	}
+	if err := restarted.PublishRoute(RouteAdmission{
+		NodePeerID: destination,
+		Generation: 4,
+		Public:     false,
+		ExpiresAt:  now.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("republish private route after restart: %v", err)
+	}
+	if restarted.AllowConnect(source, nil, destination) {
+		t.Fatal("consumed private permit was restored after restart")
+	}
+}
+
 func testPeerID(t *testing.T) peer.ID {
 	t.Helper()
 	_, publicKey, err := crypto.GenerateEd25519Key(nil)

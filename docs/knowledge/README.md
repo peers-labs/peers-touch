@@ -152,6 +152,7 @@ Pick one based on intent:
 
 - [`invariants/relay-readloop-discipline.md`](invariants/relay-readloop-discipline.md) — readLoop goroutines must dispatch blocking work asynchronously.
 - [`invariants/relay-runtime-role-is-minimal.md`](invariants/relay-runtime-role-is-minimal.md) — Relay composition is deny-by-default and fails closed on missing transport/operator security.
+- [`invariants/circuit-relay-control-plane-boundary.md`](invariants/circuit-relay-control-plane-boundary.md) — Circuit Relay stays an opaque standard data plane with fenced admission and independent reservations.
 - [`invariants/locator-publisher-symmetry.md`](invariants/locator-publisher-symmetry.md) — `PublishVisibility` callers split into "user-driven" (broadcast) and "maintenance" (no broadcast); no third category.
 - [`invariants/chat-message-boundaries.md`](invariants/chat-message-boundaries.md) — Chat message content must not be covered by actions, metadata, composers, safe areas, or floating layers.
 - [`invariants/mobile-chat-layout-boundaries.md`](invariants/mobile-chat-layout-boundaries.md) — Mobile Chat bottom layers must participate in one bottom clearance model.
