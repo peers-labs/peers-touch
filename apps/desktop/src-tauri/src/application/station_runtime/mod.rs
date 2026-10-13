@@ -16,7 +16,7 @@ use crate::infrastructure::station::{
 use crate::infrastructure::station_registry::{StationEntry, StationRegistry, StationRouteType};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 struct RuntimeRequestExecutor {
@@ -24,6 +24,7 @@ struct RuntimeRequestExecutor {
     binding: Arc<StationBindingService>,
     transport: StationTransportHandle,
     stopped: Arc<AtomicBool>,
+    transition: Arc<Mutex<()>>,
 }
 
 struct RuntimeAttemptFailure {
@@ -33,6 +34,7 @@ struct RuntimeAttemptFailure {
 
 struct RuntimeBindingHooks<'a> {
     transport: &'a StationTransportHandle,
+    before_commit: Option<&'a (dyn Fn(bool) -> Result<(), StationBindingError> + Send + Sync)>,
 }
 
 impl StationBindingHooks for RuntimeBindingHooks<'_> {
@@ -46,7 +48,9 @@ impl StationBindingHooks for RuntimeBindingHooks<'_> {
         _previous: Option<&StationEntry>,
         _target: &StationEntry,
     ) -> Result<(), StationBindingError> {
-        crate::infrastructure::event_stream::stop_all();
+        if let Some(before_commit) = self.before_commit {
+            before_commit(false)?;
+        }
         Ok(())
     }
 
@@ -56,6 +60,9 @@ impl StationBindingHooks for RuntimeBindingHooks<'_> {
         _target: &StationEntry,
     ) -> Result<(), StationBindingError> {
         crate::infrastructure::event_stream::stop_all();
+        if let Some(before_commit) = self.before_commit {
+            before_commit(true)?;
+        }
         Ok(())
     }
 }
@@ -84,10 +91,7 @@ impl RuntimeRequestExecutor {
         &self,
         request: StationRequest,
     ) -> Result<(route_lease::RouteLease, StationResponse), RuntimeAttemptFailure> {
-        let lease = match self
-            .binding
-            .route_lease(&self.registry, request.traffic_class)
-        {
+        let lease = match self.binding.route_lease(request.traffic_class) {
             Ok(lease) => lease,
             Err(error) => {
                 return Err(RuntimeAttemptFailure {
@@ -109,6 +113,16 @@ impl RuntimeRequestExecutor {
                 ),
             });
         }
+        if !request.route_security.permits(&lease.route.endpoint_origin) {
+            return Err(RuntimeAttemptFailure {
+                lease: Some(lease),
+                error: StationTransportError::new(
+                    StationTransportErrorKind::InvalidRoute,
+                    "Station route does not satisfy the request transport security policy",
+                    false,
+                ),
+            });
+        }
         match self.transport.execute(&lease, request) {
             Ok(response) => Ok((lease, response)),
             Err(error) => Err(RuntimeAttemptFailure {
@@ -120,11 +134,24 @@ impl RuntimeRequestExecutor {
 }
 
 impl StationRequestExecutor for RuntimeRequestExecutor {
-    fn execute(&self, request: StationRequest) -> Result<StationResponse, StationTransportError> {
+    fn execute(
+        &self,
+        mut request: StationRequest,
+    ) -> Result<StationResponse, StationTransportError> {
         if self.stopped.load(Ordering::Acquire) {
             return Err(StationTransportError::new(
                 StationTransportErrorKind::Shutdown,
                 "Station runtime is shutting down",
+                false,
+            ));
+        }
+        if request.expected_scope.is_none() {
+            request.expected_scope = self.active_scope();
+        }
+        if request.expected_scope.is_none() {
+            return Err(StationTransportError::new(
+                StationTransportErrorKind::Unavailable,
+                "Station binding is not ready",
                 false,
             ));
         }
@@ -168,13 +195,22 @@ impl StationRequestExecutor for RuntimeRequestExecutor {
                 let Some(stale) = lease else {
                     return Err(error);
                 };
+                let _transition = self.transition.lock().map_err(|_| {
+                    StationTransportError::new(
+                        StationTransportErrorKind::Shutdown,
+                        "Station transition lock unavailable",
+                        false,
+                    )
+                })?;
                 self.transport.close_route(&stale);
                 let hooks = RuntimeBindingHooks {
                     transport: &self.transport,
+                    before_commit: None,
                 };
                 self.binding
                     .failover(&self.registry, &stale, &hooks)
                     .map_err(binding_transport_error)?;
+                retire_inactive_transport(&self.binding, &self.transport);
                 self.execute_once(replay)
                     .map(|(_, response)| response)
                     .map_err(|failure| failure.error)
@@ -188,11 +224,32 @@ impl StationRequestExecutor for RuntimeRequestExecutor {
     }
 
     fn active_station_peer_id(&self) -> Option<String> {
-        self.registry.active_station_peer_id()
+        self.binding
+            .committed_entry()
+            .map(|entry| entry.station_peer_id)
     }
 
     fn active_endpoint_origin(&self) -> Option<String> {
-        self.registry.active_endpoint_origin()
+        self.binding.committed_entry().and_then(|entry| {
+            entry
+                .active_route()
+                .map(|route| route.endpoint_origin.clone())
+        })
+    }
+
+    fn owns_resource_origin(&self, origin: &str) -> bool {
+        let Some(scope) = self.active_scope() else {
+            return false;
+        };
+        self.registry
+            .entry(&scope.station_peer_id)
+            .is_some_and(|entry| {
+                entry.routes.iter().any(|route| {
+                    route.route_type == StationRouteType::Direct
+                        && route.endpoint_origin.trim_end_matches('/')
+                            == origin.trim_end_matches('/')
+                })
+            })
     }
 
     fn authority_endpoint_origin(&self, station_peer_id: &str) -> Result<String, String> {
@@ -229,6 +286,7 @@ pub struct StationRuntime {
     client: StationClient,
     resources: StationResourceHandle,
     stopped: Arc<AtomicBool>,
+    transition: Arc<Mutex<()>>,
 }
 
 impl StationRuntime {
@@ -238,6 +296,7 @@ impl StationRuntime {
         let transport_owner = StationTransportOwner::start().map_err(|error| error.to_string())?;
         let transport = transport_owner.handle();
         let stopped = Arc::new(AtomicBool::new(false));
+        let transition = Arc::new(Mutex::new(()));
         if let Some(entry) = registry.active_entry() {
             prepare_entry_transport(&transport, &entry)?;
         }
@@ -246,6 +305,7 @@ impl StationRuntime {
             binding: binding.clone(),
             transport: transport.clone(),
             stopped: stopped.clone(),
+            transition: transition.clone(),
         });
         let client = StationClient::new(executor);
         let resources = StationResourceHandle::new(client.clone());
@@ -257,6 +317,7 @@ impl StationRuntime {
             client,
             resources,
             stopped,
+            transition,
         })
     }
 
@@ -277,41 +338,77 @@ impl StationRuntime {
     }
 
     pub fn active_station_peer_id(&self) -> Option<String> {
-        self.registry
-            .active_station_peer_id()
+        self.binding
+            .committed_entry()
+            .map(|entry| entry.station_peer_id)
             .filter(|peer_id| !peer_id.trim().is_empty())
     }
 
     pub fn active_endpoint_origin(&self) -> Option<String> {
-        self.registry.active_endpoint_origin()
+        self.binding.committed_entry().and_then(|entry| {
+            entry
+                .active_route()
+                .map(|route| route.endpoint_origin.clone())
+        })
     }
 
-    pub fn switch_station(
+    pub fn switch_station_with_teardown(
         &self,
         station_peer_id: &str,
         route_id: Option<&str>,
+        before_commit: &(dyn Fn(bool) -> Result<(), StationBindingError> + Send + Sync),
     ) -> Result<StationBindingState, StationBindingError> {
-        let previous = self
-            .binding
-            .route_lease(&self.registry, TrafficClass::Interactive)
-            .ok();
+        let _transition = self.transition.lock().map_err(|_| {
+            StationBindingError::new(
+                "station_switch_failed",
+                "Station transition lock unavailable",
+                true,
+            )
+        })?;
+        if self.stopped.load(Ordering::Acquire) {
+            return Err(StationBindingError::new(
+                "station_runtime_stopped",
+                "Station runtime is stopped",
+                false,
+            ));
+        }
+        let previous = self.binding.route_lease(TrafficClass::Interactive).ok();
         let hooks = RuntimeBindingHooks {
             transport: &self.transport,
+            before_commit: Some(before_commit),
         };
-        let state =
+        let result =
             self.binding
-                .switch_with_hooks(&self.registry, station_peer_id, route_id, &hooks)?;
-        if let Some(previous) = previous {
-            self.transport.close_route(&previous);
-            self.resources
-                .revoke_scope(&previous.station_peer_id, previous.lifecycle_generation);
+                .switch_with_hooks(&self.registry, station_peer_id, route_id, &hooks);
+        if let (Ok(state), Some(previous)) = (&result, previous) {
+            if previous.route_id != state.active_route_id.clone().unwrap_or_default()
+                || previous.route_revision != state.route_revision
+                || previous.station_peer_id != state.station_peer_id.clone().unwrap_or_default()
+            {
+                self.transport.close_route(&previous);
+            }
+            if state.station_peer_id.as_deref() != Some(previous.station_peer_id.as_str())
+                || state.lifecycle_generation != previous.lifecycle_generation
+            {
+                self.resources
+                    .revoke_scope(&previous.station_peer_id, previous.lifecycle_generation);
+            }
         }
-        Ok(state)
+        retire_inactive_transport(&self.binding, &self.transport);
+        result
     }
 
     pub fn resume_persisted(&self) -> Result<StationBindingState, StationBindingError> {
+        let _transition = self.transition.lock().map_err(|_| {
+            StationBindingError::new(
+                "station_switch_failed",
+                "Station transition lock unavailable",
+                true,
+            )
+        })?;
         let hooks = RuntimeBindingHooks {
             transport: &self.transport,
+            before_commit: None,
         };
         self.binding
             .resume_persisted_with_hooks(&self.registry, &hooks)
@@ -321,17 +418,22 @@ impl StationRuntime {
         &self,
         station_peer_id: &str,
     ) -> Result<(StationBindingState, bool), StationBindingError> {
-        let previous = self
-            .binding
-            .route_lease(&self.registry, TrafficClass::Interactive)
-            .ok();
+        let _transition = self.transition.lock().map_err(|_| {
+            StationBindingError::new(
+                "station_switch_failed",
+                "Station transition lock unavailable",
+                true,
+            )
+        })?;
+        let previous = self.binding.route_lease(TrafficClass::Interactive).ok();
         let result = self
             .binding
             .remove_station(&self.registry, station_peer_id)?;
-        if let Some(previous) = previous {
+        if let Some(previous) = previous.filter(|_| result.1) {
             self.transport.close_route(&previous);
             self.resources
                 .revoke_scope(&previous.station_peer_id, previous.lifecycle_generation);
+            retire_inactive_transport(&self.binding, &self.transport);
         }
         Ok(result)
     }
@@ -345,10 +447,29 @@ impl StationRuntime {
             .map_err(|error| error.to_string())
     }
 
+    pub fn store_verified_routes(
+        &self,
+        routes: &[crate::infrastructure::station_discovery::VerifiedStationRoute],
+    ) -> Result<Vec<StationEntry>, StationBindingError> {
+        let _transition = self.transition.lock().map_err(|_| {
+            StationBindingError::new(
+                "station_switch_failed",
+                "Station transition lock unavailable",
+                true,
+            )
+        })?;
+        let result = self.binding.store_verified_routes(&self.registry, routes);
+        retire_inactive_transport(&self.binding, &self.transport);
+        result
+    }
+
     pub fn shutdown(&self) -> Result<(), String> {
-        if self.stopped.swap(true, Ordering::AcqRel) {
-            return Ok(());
-        }
+        let _transition = self
+            .transition
+            .lock()
+            .map_err(|_| "Station transition lock unavailable".to_string())?;
+        self.stopped.store(true, Ordering::Release);
+        self.binding.revoke();
         self.resources.clear();
         self.transport_owner
             .shutdown(Duration::from_secs(5))
@@ -387,8 +508,142 @@ fn prepare_entry_transport(
             .clone()
             .ok_or_else(|| "Circuit route has no Relay identity".to_string())?;
         transport
-            .prepare_identity(TransportIdentityScope::Relay(relay_peer_id))
+            .prepare_route(TransportIdentityScope::Relay(relay_peer_id))
             .map_err(|error| error.to_string())?;
     }
     Ok(())
+}
+
+fn entry_transport_scope(entry: &StationEntry) -> Option<TransportIdentityScope> {
+    let route = entry.active_route()?;
+    (route.route_type == StationRouteType::Relay)
+        .then(|| {
+            route
+                .relay_peer_id
+                .clone()
+                .map(TransportIdentityScope::Relay)
+        })
+        .flatten()
+}
+
+fn retire_inactive_transport(binding: &StationBindingService, transport: &StationTransportHandle) {
+    let retained = binding
+        .committed_entry()
+        .as_ref()
+        .and_then(entry_transport_scope);
+    if let Err(error) = transport.retire_except(retained.as_ref(), Duration::from_secs(5)) {
+        tracing::warn!(
+            error = %error,
+            "inactive Station transport did not retire after binding commit"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::station_runtime::client::{StationRequestBody, StationRouteSecurity};
+    use crate::infrastructure::station_discovery::VerifiedStationRoute;
+    use reqwest::Method;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::path::PathBuf;
+    use std::thread;
+    use tokio_util::sync::CancellationToken;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "peers-station-runtime-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn direct_route(route_id: &str, origin: String) -> VerifiedStationRoute {
+        VerifiedStationRoute {
+            station_peer_id: "station-one".to_string(),
+            node_peer_id: format!("station-one-{route_id}"),
+            station_root_public_key: vec![1, 2, 3],
+            node_authorization_digest: [4; 32],
+            authorization_epoch: 1,
+            route_id: route_id.to_string(),
+            route_generation: 1,
+            endpoint_origin: origin.clone(),
+            relay_peer_id: None,
+            inner_tls_spki_sha256: None,
+            addresses: vec![origin],
+            attestation_bytes: None,
+            connection_grant: None,
+            expires_at_unix_ms: None,
+        }
+    }
+
+    fn serve_empty_response_once() -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request);
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                .unwrap();
+        });
+        (origin, server)
+    }
+
+    #[test]
+    fn automatic_failover_replays_sse_without_cancelling_caller_scope() {
+        let unavailable_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let unavailable_origin = format!("http://{}", unavailable_listener.local_addr().unwrap());
+        drop(unavailable_listener);
+        let (available_origin, server) = serve_empty_response_once();
+        let runtime = StationRuntime::start(&temp_dir("sse-failover")).unwrap();
+        runtime
+            .store_verified_routes(&[
+                direct_route("route-a", unavailable_origin),
+                direct_route("route-b", available_origin),
+            ])
+            .unwrap();
+        runtime
+            .switch_station_with_teardown("station-one", Some("route-a"), &|_| Ok(()))
+            .unwrap();
+        runtime.binding().mark_bound().unwrap();
+
+        let actor_ptid = format!("ptid:test:sse-failover-{}", std::process::id());
+        let cancellation = CancellationToken::new();
+        crate::infrastructure::event_stream::register_test_control(
+            &actor_ptid,
+            cancellation.clone(),
+        );
+        let response = runtime
+            .client()
+            .execute_raw(StationRequest {
+                method: Method::GET,
+                path_and_query: "/events/stream".to_string(),
+                headers: Default::default(),
+                body: StationRequestBody::Empty,
+                timeout: Duration::from_secs(5),
+                admission_timeout: Duration::from_secs(1),
+                traffic_class: TrafficClass::Realtime,
+                route_security: StationRouteSecurity::VerifiedRoute,
+                replay_policy: ReplayPolicy::SafeRead,
+                cancellation: cancellation.clone(),
+                expected_scope: None,
+            })
+            .expect("SSE request must replay on the replacement route");
+
+        assert_eq!(response.status, 200);
+        assert!(!cancellation.is_cancelled());
+        assert_eq!(
+            runtime.binding().state().active_route_id.as_deref(),
+            Some("route-b")
+        );
+
+        drop(response);
+        crate::infrastructure::event_stream::stop(&actor_ptid);
+        server.join().unwrap();
+    }
 }

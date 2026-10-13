@@ -1,5 +1,6 @@
 use crate::application::station_runtime::client::{
-    ReplayPolicy, StationClient, StationRequest, StationRequestBody, TrafficClass,
+    ReplayPolicy, StationClient, StationRequest, StationRequestBody, StationRouteSecurity,
+    TrafficClass,
 };
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Method;
@@ -84,7 +85,9 @@ pub fn stream(
             headers,
             body: StationRequestBody::Bytes(body),
             timeout: Duration::from_secs(24 * 60 * 60),
+            admission_timeout: Duration::from_secs(30),
             traffic_class: TrafficClass::Realtime,
+            route_security: StationRouteSecurity::VerifiedRoute,
             replay_policy: ReplayPolicy::SafeRead,
             cancellation: cancellation.clone(),
             expected_scope: None,

@@ -45,7 +45,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::application::station_runtime::client::{
     ReplayPolicy, StationClient, StationClientError, StationClientErrorKind, StationRequest,
-    StationRequestBody, TrafficClass,
+    StationRequestBody, StationRouteSecurity, TrafficClass,
 };
 use crate::application::station_runtime::resource::{StationResourceHandle, StationResourceRef};
 use crate::infrastructure::storage::{self, StorageKind};
@@ -341,7 +341,7 @@ fn capabilities_cache_key(
     station_client: &StationClient,
     normalized_origin: &str,
 ) -> Result<String, OssCacheError> {
-    if normalized_origin == "self" {
+    if is_bound_station(station_client, normalized_origin) {
         let scope = station_client
             .active_scope()
             .filter(|scope| {
@@ -367,11 +367,17 @@ pub fn capabilities_ensure(
     origin: &str,
 ) -> Result<OssCapabilities, OssCacheError> {
     let normalized = canonical_bound_origin(origin);
+    let bound = is_bound_station(station_client, &normalized);
+    let scope = station_client.active_scope();
     let cache_key = capabilities_cache_key(station_client, &normalized)?;
     if let Some(cached) = capabilities_lookup(&cache_key) {
+        if bound {
+            if let Some(scope) = scope.as_ref() {
+                station_client.bind_resource_origin(scope, &cached.host);
+            }
+        }
         return Ok(cached);
     }
-    let bound = normalized == "self";
     let bytes = if bound {
         station_get_bytes(station_client, "/sub-oss/capabilities", None)?
     } else {
@@ -381,13 +387,18 @@ pub fn capabilities_ensure(
         serde_json::from_slice(&bytes).map_err(|e| OssCacheError::Decode(e.to_string()))?;
     let requested_origin = if bound { "self" } else { normalized.as_str() };
     caps.host = canonical_capability_host(requested_origin, &caps.host);
+    if bound {
+        if let Some(scope) = scope.as_ref() {
+            station_client.bind_resource_origin(scope, &caps.host);
+        }
+    }
 
     if let Ok(mut m) = caps_map().write() {
         capabilities_insert(&mut m, cache_key, &caps);
         // Index by the *advertised* host too so `oss://override/key`
         // and `oss://probe-origin/key` resolve to the same entry once
         // the server reports its canonical host.
-        if !caps.host.is_empty() && caps.host != normalized {
+        if !bound && !caps.host.is_empty() && caps.host != normalized {
             capabilities_insert(
                 &mut m,
                 format!("external:{}", normalize_origin(&caps.host)),
@@ -487,7 +498,11 @@ pub fn attachment_ensure(
     bearer: Option<&str>,
 ) -> Result<PathBuf, OssCacheError> {
     let canonical_uri = OssUri {
-        origin: canonical_bound_origin(&uri.origin),
+        origin: format!(
+            "station:{}:{}",
+            resource.station_peer_id(),
+            resource.lifecycle_generation()
+        ),
         key: uri.key.clone(),
     };
     if let Some(path) = attachment_lookup(&canonical_uri) {
@@ -647,7 +662,9 @@ fn station_get_bytes(
             headers,
             body: StationRequestBody::Empty,
             timeout: Duration::from_secs(30),
+            admission_timeout: Duration::from_secs(30),
             traffic_class: TrafficClass::Bulk,
+            route_security: StationRouteSecurity::VerifiedRoute,
             replay_policy: ReplayPolicy::SafeRead,
             cancellation: CancellationToken::new(),
             expected_scope: Some(expected_scope),
@@ -732,9 +749,28 @@ fn write_to_cache(uri: &OssUri, bytes: &[u8]) -> Result<PathBuf, OssCacheError> 
 /// Returns true when `origin` matches the bound Station after
 /// trailing-slash normalisation. Used by `oss_resolve_url` to
 /// decide between the local and federated download paths.
-pub fn is_bound_station(_station_client: &StationClient, origin: &str) -> bool {
+pub fn is_bound_station(station_client: &StationClient, origin: &str) -> bool {
     let candidate = canonical_bound_origin(origin);
-    candidate == "self"
+    candidate == "self" || station_client.owns_resource_origin(&candidate)
+}
+
+pub fn scoped_cache_uri(
+    station_client: &StationClient,
+    uri: &OssUri,
+) -> Result<OssUri, OssCacheError> {
+    if !is_bound_station(station_client, &uri.origin) {
+        return Ok(uri.clone());
+    }
+    let scope = station_client
+        .active_scope()
+        .ok_or_else(|| OssCacheError::Network("Station scope is unavailable".to_string()))?;
+    Ok(OssUri {
+        origin: format!(
+            "station:{}:{}",
+            scope.station_peer_id, scope.lifecycle_generation
+        ),
+        key: uri.key.clone(),
+    })
 }
 
 // ── garbage collection ──────────────────────────────────────────────
@@ -1017,6 +1053,27 @@ mod tests {
             capabilities_cache_key(&next_station, "self").unwrap()
         );
         assert!(!first_key.contains("http://") && !first_key.contains("https://"));
+    }
+
+    #[test]
+    fn bound_capabilities_cache_hit_rebinds_canonical_origin_to_current_client() {
+        let client = StationClient::testing_scoped("station-cache-rebind", 41);
+        let cache_key = capabilities_cache_key(&client, "self").unwrap();
+        let capabilities: OssCapabilities = serde_json::from_value(serde_json::json!({
+            "version": 3,
+            "host": "https://cached-station.example.test"
+        }))
+        .unwrap();
+        caps_map()
+            .write()
+            .unwrap()
+            .insert(cache_key, capabilities.clone());
+
+        let cached = capabilities_ensure(&client, "self").unwrap();
+
+        assert_eq!(cached.version, capabilities.version);
+        assert_eq!(cached.host, capabilities.host);
+        assert!(client.owns_resource_origin("https://cached-station.example.test"));
     }
 
     #[test]

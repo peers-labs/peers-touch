@@ -8,7 +8,6 @@ export {
   onWindowKeydown,
   onWindowOnline,
   onWindowOffline,
-  onWindowStationActiveChanged,
 } from './renderer';
 export { eventDebugBuffer } from './debug';
 export type { EventDebugRecord } from './debug';

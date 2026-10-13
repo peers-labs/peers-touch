@@ -10,7 +10,7 @@ use super::station_transport::{
     CapabilityNegativeControl, CapabilityNegativeControlStationFact, CapabilityStationTransport,
 };
 use crate::application::oauth2;
-use crate::application::station_runtime::client::StationClient;
+use crate::application::station_runtime::client::{StationClient, StationRequestScope};
 use crate::domain::identity::ActiveSession;
 use crate::model::agent::{
     CapabilityAcceptanceScenarioFamily, CapabilityConstraints, CapabilityPermissionKind,
@@ -379,8 +379,8 @@ impl CapabilityWorkerSupervisor {
 
 struct WorkerContext {
     station_client: StationClient,
+    station_scope: StationRequestScope,
     account_id: String,
-    station_url: String,
     actor_ptid: String,
     device_id: String,
     token: String,
@@ -454,7 +454,7 @@ impl ActiveWorker {
 
     fn same_identity(&self, candidate: &WorkerContext) -> bool {
         self.context.account_id == candidate.account_id
-            && self.context.station_url == candidate.station_url
+            && self.context.station_scope == candidate.station_scope
             && self.context.actor_ptid == candidate.actor_ptid
             && self.context.device_id == candidate.device_id
             && self.context.signing_key_id == candidate.signing_key_id
@@ -1234,10 +1234,13 @@ fn worker_context(
     let (signing_key_id, signing_key) = engine
         .device_signing_identity()?
         .ok_or_else(|| "device signing identity not yet enrolled".to_string())?;
+    let station_scope = station_client
+        .active_scope()
+        .ok_or_else(|| "client capability Station scope is unavailable".to_string())?;
     Ok(WorkerContext {
         station_client: station_client.clone(),
+        station_scope,
         account_id: session.account_id,
-        station_url: station_client.active_endpoint_origin().unwrap_or_default(),
         actor_ptid: session.actor.ptid,
         device_id: engine.endpoint().device_id.clone(),
         token: session.jwt,
@@ -1384,7 +1387,7 @@ fn execution_lease(
 ) -> Result<ExecutionLease, String> {
     ensure_lease_identity(context, lease)?;
     Ok(ExecutionLease {
-        station_url: context.station_url.clone(),
+        station_peer_id: context.station_scope.station_peer_id.clone(),
         actor_ptid: context.actor_ptid.clone(),
         device_id: context.device_id.clone(),
         capability_session_id: lease.capability_session_id.clone(),
@@ -1403,16 +1406,18 @@ fn recover_persisted_receipts(
 ) -> Result<(), String> {
     resources.delete_expired(now_unix_ms())?;
     for record in ledger.list()? {
-        if record.station_url.trim().is_empty() {
+        if record.station_peer_id != context.station_scope.station_peer_id {
             tracing::warn!(
                 tool_call_id = %record.envelope.tool_call_id,
-                "persisted client capability receipt has no Station origin; recovery is unavailable"
+                receipt_station_peer_id = %record.station_peer_id,
+                active_station_peer_id = %context.station_scope.station_peer_id,
+                "persisted client capability receipt belongs to another Station; recovery deferred"
             );
             continue;
         }
         let envelope = record.envelope;
         let recovery_lease = ExecutionLease {
-            station_url: record.station_url.clone(),
+            station_peer_id: record.station_peer_id.clone(),
             actor_ptid: context.actor_ptid.clone(),
             device_id: context.device_id.clone(),
             capability_session_id: envelope.capability_session_id.clone(),
@@ -1443,7 +1448,7 @@ fn recover_persisted_receipts(
             Err(error) if error == "CLIENT_CAPABILITY_RECONCILIATION_DEADLINE_EXPIRED" => {}
             Err(error) => {
                 tracing::warn!(
-                    station = %record.station_url,
+                    station_peer_id = %record.station_peer_id,
                     error = %error,
                     "persisted client capability receipt recovery deferred"
                 );
@@ -1570,6 +1575,54 @@ mod tests {
             }),
             ..ClientCapabilityLease::default()
         }
+    }
+
+    fn test_worker(station_peer_id: &str, lifecycle_generation: u64) -> ActiveWorker {
+        ActiveWorker {
+            context: WorkerContext {
+                station_client: StationClient::testing_scoped(
+                    station_peer_id,
+                    lifecycle_generation,
+                ),
+                station_scope: StationRequestScope {
+                    station_peer_id: station_peer_id.to_string(),
+                    lifecycle_generation,
+                },
+                account_id: "account-1".to_string(),
+                actor_ptid: "ptid:person:alice".to_string(),
+                device_id: "device-1".to_string(),
+                token: "token-1".to_string(),
+                signing_key_id: "signing-key-1".to_string(),
+                signing_key: ed25519_dalek::SigningKey::from_bytes(&[7; 32]),
+            },
+            lease: ClientCapabilityLease::default(),
+            ledger: None,
+            resources: None,
+            executor: None,
+            pull_cursor: 0,
+            surface: ClientSurface::Desktop,
+            paused: false,
+            connector_projection_epoch: 1,
+            mcp_projection_epoch: 1,
+        }
+    }
+
+    #[test]
+    fn worker_identity_survives_same_station_route_change() {
+        let worker = test_worker("station-a", 7);
+        let candidate = test_worker("station-a", 7).context;
+
+        assert!(worker.same_identity(&candidate));
+    }
+
+    #[test]
+    fn worker_identity_rejects_changed_logical_station_scope() {
+        let worker = test_worker("station-a", 7);
+        let candidate = test_worker("station-b", 7).context;
+        let reselected = test_worker("station-a", 8).context;
+
+        assert!(!worker.same_identity(&candidate));
+        assert!(!worker.same_identity(&reselected));
     }
 
     #[test]

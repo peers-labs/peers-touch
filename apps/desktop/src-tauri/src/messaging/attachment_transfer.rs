@@ -1,5 +1,6 @@
 use crate::application::station_runtime::client::{
-    ReplayPolicy, StationClient, StationRequest, StationRequestBody, StationResponse, TrafficClass,
+    ReplayPolicy, StationClient, StationRequest, StationRequestBody, StationResponse,
+    StationRouteSecurity, TrafficClass,
 };
 use crate::model::chat::{
     AttachmentTransferError, AttachmentTransferErrorCode, AttachmentTransferState,
@@ -80,7 +81,9 @@ impl StationAttachmentTransferTransport {
                 headers,
                 body,
                 timeout: Duration::from_secs(30),
+                admission_timeout: Duration::from_secs(30),
                 traffic_class: TrafficClass::Bulk,
+                route_security: StationRouteSecurity::VerifiedRoute,
                 replay_policy,
                 cancellation: CancellationToken::new(),
                 expected_scope: None,
@@ -449,8 +452,24 @@ mod tests {
     #[test]
     #[ignore = "requires a native Desktop profile, session file, and live Station"]
     fn live_engine_worker_uploads_through_station_transport() {
-        let station_client =
-            &crate::application::station_runtime::client::StationClient::testing_unavailable();
+        let profile = std::env::var("PT_PROFILE").unwrap_or_else(|_| "desktop".to_string());
+        let layout = crate::infrastructure::storage::resolve_layout(&profile)
+            .expect("native Desktop storage layout");
+        let config_dir = layout
+            .dirs
+            .get(&crate::infrastructure::storage::StorageKind::Config)
+            .expect("native Desktop config directory");
+        let station_runtime =
+            crate::application::station_runtime::StationRuntime::start(config_dir)
+                .expect("native Station runtime");
+        station_runtime
+            .resume_persisted()
+            .expect("resume persisted Station binding");
+        station_runtime
+            .binding()
+            .mark_bound()
+            .expect("complete live Station binding");
+        let station_client = station_runtime.client().clone();
         #[derive(serde::Deserialize)]
         struct NativeSession {
             actor_ptid: String,

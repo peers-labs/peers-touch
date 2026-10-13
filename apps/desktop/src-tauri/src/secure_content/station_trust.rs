@@ -121,13 +121,12 @@ pub fn verify_profile_actor_device_signing_key(
 pub fn resolve_station_signing_key(
     station_client: &StationClient,
     registry: &StationRegistry,
-    station_url: &str,
     station_peer_id: &str,
     actor_handle: &str,
     token: &str,
     device_id: &str,
 ) -> Result<TrustedStationSigningKey, String> {
-    require_authenticated_station_transport(station_url)?;
+    require_authenticated_station_transport(station_client)?;
     if let Some(pin) = registry
         .federation_signing_key_pin(station_peer_id)
         .map_err(|error| format!("load Station Federation signing-key pin: {error}"))?
@@ -166,8 +165,17 @@ pub fn resolve_station_signing_key(
     Ok(trusted)
 }
 
-fn require_authenticated_station_transport(station_url: &str) -> Result<(), String> {
-    let url = reqwest::Url::parse(station_url)
+pub(crate) fn require_authenticated_station_transport(
+    station_client: &StationClient,
+) -> Result<(), String> {
+    let origin = station_client
+        .active_endpoint_origin()
+        .ok_or_else(|| "Secure Content Station transport is unavailable".to_string())?;
+    require_authenticated_station_origin(&origin)
+}
+
+fn require_authenticated_station_origin(origin: &str) -> Result<(), String> {
+    let url = reqwest::Url::parse(origin)
         .map_err(|_| "Secure Content Station URL is invalid".to_string())?;
     let host = url
         .host_str()
@@ -178,9 +186,7 @@ fn require_authenticated_station_transport(station_url: &str) -> Result<(), Stri
             .map(|address| address.is_loopback())
             .unwrap_or(false);
     if url.scheme() != "https" && !(url.scheme() == "http" && loopback) {
-        return Err(
-            "Secure Content first-use Station trust requires HTTPS or loopback HTTP".to_string(),
-        );
+        return Err("Secure Content Station transport requires HTTPS or loopback HTTP".to_string());
     }
     Ok(())
 }
@@ -441,11 +447,11 @@ mod tests {
     }
 
     #[test]
-    fn secure_content_station_trust_rejects_remote_plaintext_transport() {
-        assert!(require_authenticated_station_transport("https://station.test").is_ok());
-        assert!(require_authenticated_station_transport("http://127.0.0.1:18080").is_ok());
-        assert!(require_authenticated_station_transport("http://localhost:18080").is_ok());
-        assert!(require_authenticated_station_transport("http://station.test").is_err());
-        assert!(require_authenticated_station_transport("ftp://station.test").is_err());
+    fn secure_content_transport_rejects_remote_plaintext_origin() {
+        assert!(require_authenticated_station_origin("https://station.test").is_ok());
+        assert!(require_authenticated_station_origin("http://127.0.0.1:18080").is_ok());
+        assert!(require_authenticated_station_origin("http://localhost:18080").is_ok());
+        assert!(require_authenticated_station_origin("http://station.test").is_err());
+        assert!(require_authenticated_station_origin("ftp://station.test").is_err());
     }
 }

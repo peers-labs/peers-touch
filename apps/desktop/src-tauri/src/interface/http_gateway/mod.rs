@@ -64,7 +64,8 @@ use crate::application::tts as app_tts;
 
 // Actor & chat modules use station_client + proto directly
 use crate::application::station_runtime::client::{
-    ReplayPolicy, StationClient, StationRequest, StationRequestBody, TrafficClass,
+    ReplayPolicy, StationClient, StationRequest, StationRequestBody, StationRouteSecurity,
+    TrafficClass,
 };
 use crate::interface::tauri_commands::actor::actor_profile_to_json;
 use crate::interface::tauri_commands::oss::{
@@ -769,7 +770,9 @@ fn handle_agent_stream_proxy(
         headers,
         body: StationRequestBody::Bytes(body.into_bytes()),
         timeout: std::time::Duration::from_secs(24 * 60 * 60),
+        admission_timeout: std::time::Duration::from_secs(30),
         traffic_class: TrafficClass::Realtime,
+        route_security: StationRouteSecurity::VerifiedRoute,
         replay_policy: ReplayPolicy::Never,
         cancellation: tokio_util::sync::CancellationToken::new(),
         expected_scope: None,

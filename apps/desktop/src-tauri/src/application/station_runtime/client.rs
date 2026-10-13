@@ -9,6 +9,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
 use std::io::{Cursor, Read};
+use std::net::IpAddr;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -69,6 +70,32 @@ pub enum TrafficClass {
     Bulk,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StationRouteSecurity {
+    VerifiedRoute,
+    TlsOrLoopback,
+}
+
+impl StationRouteSecurity {
+    pub(crate) fn permits(self, origin: &str) -> bool {
+        if self == Self::VerifiedRoute {
+            return true;
+        }
+        let Ok(url) = reqwest::Url::parse(origin) else {
+            return false;
+        };
+        let Some(host) = url.host_str() else {
+            return false;
+        };
+        let loopback = host.eq_ignore_ascii_case("localhost")
+            || host
+                .parse::<IpAddr>()
+                .map(|address| address.is_loopback())
+                .unwrap_or(false);
+        url.scheme() == "https" || (url.scheme() == "http" && loopback)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReplayPolicy {
     SafeRead,
@@ -123,7 +150,9 @@ pub struct StationRequest {
     pub headers: HeaderMap,
     pub body: StationRequestBody,
     pub timeout: Duration,
+    pub admission_timeout: Duration,
     pub traffic_class: TrafficClass,
+    pub route_security: StationRouteSecurity,
     pub replay_policy: ReplayPolicy,
     pub cancellation: CancellationToken,
     pub expected_scope: Option<StationRequestScope>,
@@ -143,9 +172,11 @@ impl StationRequest {
             headers: self.headers.clone(),
             body: self.body.replay_copy()?,
             timeout: self.timeout,
+            admission_timeout: self.admission_timeout,
             traffic_class: self.traffic_class,
+            route_security: self.route_security,
             replay_policy: self.replay_policy.clone(),
-            cancellation: CancellationToken::new(),
+            cancellation: self.cancellation.clone(),
             expected_scope: self.expected_scope.clone(),
         })
     }
@@ -204,6 +235,10 @@ pub trait StationRequestExecutor: Send + Sync {
     fn active_station_peer_id(&self) -> Option<String>;
     fn active_endpoint_origin(&self) -> Option<String>;
     fn authority_endpoint_origin(&self, station_peer_id: &str) -> Result<String, String>;
+    fn owns_resource_origin(&self, origin: &str) -> bool {
+        self.active_endpoint_origin()
+            .is_some_and(|active| active.trim_end_matches('/') == origin.trim_end_matches('/'))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -332,6 +367,7 @@ pub fn session_revoked_details_from_text(text: &str) -> Option<Value> {
 pub struct StationClient {
     executor: Arc<dyn StationRequestExecutor>,
     device_id: Arc<RwLock<Option<String>>>,
+    resource_origins: Arc<RwLock<HashMap<String, Vec<String>>>>,
 }
 
 impl StationClient {
@@ -339,6 +375,7 @@ impl StationClient {
         Self {
             executor,
             device_id: Arc::new(RwLock::new(None)),
+            resource_origins: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -378,6 +415,44 @@ impl StationClient {
 
     pub fn active_endpoint_origin(&self) -> Option<String> {
         self.executor.active_endpoint_origin()
+    }
+
+    pub fn owns_resource_origin(&self, origin: &str) -> bool {
+        if self.executor.owns_resource_origin(origin) {
+            return true;
+        }
+        let Some(scope) = self.active_scope() else {
+            return false;
+        };
+        let key = format!("{}:{}", scope.station_peer_id, scope.lifecycle_generation);
+        self.resource_origins.read().ok().is_some_and(|origins| {
+            origins.get(&key).is_some_and(|values| {
+                values
+                    .iter()
+                    .any(|value| value == origin.trim_end_matches('/'))
+            })
+        })
+    }
+
+    pub(crate) fn bind_resource_origin(&self, scope: &StationRequestScope, origin: &str) {
+        if self.active_scope().as_ref() != Some(scope) {
+            return;
+        }
+        let Ok(url) = reqwest::Url::parse(origin) else {
+            return;
+        };
+        if !matches!(url.scheme(), "http" | "https") || url.path() != "/" {
+            return;
+        }
+        if let Ok(mut origins) = self.resource_origins.write() {
+            let key = format!("{}:{}", scope.station_peer_id, scope.lifecycle_generation);
+            origins.retain(|existing, _| existing == &key);
+            let values = origins.entry(key).or_default();
+            let origin = url.origin().ascii_serialization();
+            if values.len() < 16 && !values.contains(&origin) {
+                values.push(origin);
+            }
+        }
     }
 
     pub fn authority_endpoint_origin(
@@ -441,7 +516,9 @@ impl StationClient {
                 )
             })?),
             timeout,
+            admission_timeout: Duration::from_secs(30).min(timeout),
             traffic_class: TrafficClass::Realtime,
+            route_security: StationRouteSecurity::VerifiedRoute,
             replay_policy,
             cancellation,
             expected_scope: None,
@@ -1162,12 +1239,14 @@ impl StationClient {
             headers,
             body,
             timeout: policy.timeout(),
+            admission_timeout: policy.timeout(),
             traffic_class,
-            replay_policy,
+            route_security: StationRouteSecurity::VerifiedRoute,
+            replay_policy: replay_policy.clone(),
             cancellation: CancellationToken::new(),
             expected_scope: None,
         })?;
-        buffer_response(path, response)
+        buffer_response(path, response, &replay_policy)
     }
 }
 
@@ -1205,6 +1284,7 @@ impl StationRequestExecutor for UnavailableTestExecutor {
     }
 }
 
+#[derive(Debug)]
 struct BufferedResponse {
     status: u16,
     headers: HeaderMap,
@@ -1214,13 +1294,25 @@ struct BufferedResponse {
 fn buffer_response(
     path: &str,
     mut response: StationResponse,
+    replay_policy: &ReplayPolicy,
 ) -> Result<BufferedResponse, StationClientError> {
     let mut body = Vec::new();
     response.body.read_to_end(&mut body).map_err(|error| {
+        let (kind, code) = if matches!(replay_policy, ReplayPolicy::Never) {
+            (
+                StationClientErrorKind::AmbiguousOutcome,
+                "station_ambiguous_outcome",
+            )
+        } else {
+            (StationClientErrorKind::Decode, "station_body_read_failed")
+        };
         StationClientError::new(
-            StationClientErrorKind::Decode,
+            kind,
             format!("read body failed: {error}"),
-            None,
+            Some(serde_json::json!({
+                "code": code,
+                "submitted": true,
+            })),
         )
     })?;
     if !(200..300).contains(&response.status) {
@@ -1254,6 +1346,10 @@ fn map_transport_error(
     replay_policy: ReplayPolicy,
 ) -> StationClientError {
     let (kind, code) = match error.kind {
+        _ if error.submitted && matches!(replay_policy, ReplayPolicy::Never) => (
+            StationClientErrorKind::AmbiguousOutcome,
+            "station_ambiguous_outcome",
+        ),
         StationTransportErrorKind::Overloaded => {
             (StationClientErrorKind::Overloaded, "station_overloaded")
         }
@@ -1263,10 +1359,6 @@ fn map_transport_error(
         StationTransportErrorKind::StaleRoute => {
             (StationClientErrorKind::StaleRoute, "station_stale_route")
         }
-        _ if error.submitted && matches!(replay_policy, ReplayPolicy::Never) => (
-            StationClientErrorKind::AmbiguousOutcome,
-            "station_ambiguous_outcome",
-        ),
         _ => (StationClientErrorKind::Network, "station_transport_failed"),
     };
     StationClientError::new(
@@ -1684,6 +1776,17 @@ pub fn probe_station(url: &str) -> (bool, Option<String>, Option<String>, Option
 mod tests {
     use super::*;
 
+    struct FailingBody;
+
+    impl Read for FailingBody {
+        fn read(&mut self, _output: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::ConnectionAborted,
+                "route revoked",
+            ))
+        }
+    }
+
     #[test]
     fn transport_policies_are_bounded_by_operation_semantics() {
         assert_eq!(
@@ -1703,6 +1806,40 @@ mod tests {
     }
 
     #[test]
+    fn authenticated_route_security_rejects_remote_plaintext() {
+        assert!(StationRouteSecurity::TlsOrLoopback.permits("https://station.test"));
+        assert!(StationRouteSecurity::TlsOrLoopback.permits("http://127.0.0.1:18080"));
+        assert!(StationRouteSecurity::TlsOrLoopback.permits("http://localhost:18080"));
+        assert!(!StationRouteSecurity::TlsOrLoopback.permits("http://station.test"));
+    }
+
+    #[test]
+    fn replay_copy_retains_caller_cancellation() {
+        let cancellation = CancellationToken::new();
+        let request = StationRequest {
+            method: Method::GET,
+            path_and_query: "/actor/profile".to_string(),
+            headers: HeaderMap::new(),
+            body: StationRequestBody::Empty,
+            timeout: Duration::from_secs(30),
+            admission_timeout: Duration::from_secs(5),
+            traffic_class: TrafficClass::Interactive,
+            route_security: StationRouteSecurity::VerifiedRoute,
+            replay_policy: ReplayPolicy::SafeRead,
+            cancellation: cancellation.clone(),
+            expected_scope: Some(StationRequestScope {
+                station_peer_id: "station-a".to_string(),
+                lifecycle_generation: 7,
+            }),
+        };
+        let replay = request.replay_copy().expect("safe read is replayable");
+
+        cancellation.cancel();
+
+        assert!(replay.cancellation.is_cancelled());
+    }
+
+    #[test]
     fn request_path_query_is_encoded_once() {
         assert_eq!(
             encode_path_and_query(
@@ -1712,5 +1849,48 @@ mod tests {
             .unwrap(),
             "/actor/profile?view=compact&actor=ptid%3Aa%2Fb"
         );
+    }
+
+    #[test]
+    fn failed_mutation_response_body_is_an_ambiguous_outcome() {
+        let error = buffer_response(
+            "/conversation/command",
+            StationResponse {
+                status: 200,
+                headers: HeaderMap::new(),
+                body: Box::new(FailingBody),
+            },
+            &ReplayPolicy::Never,
+        )
+        .expect_err("submitted mutation with unreadable response is ambiguous");
+
+        assert!(matches!(
+            error.kind,
+            StationClientErrorKind::AmbiguousOutcome
+        ));
+        assert_eq!(
+            error
+                .details
+                .as_ref()
+                .and_then(|details| details.get("submitted"))
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn failed_safe_read_response_body_remains_a_decode_failure() {
+        let error = buffer_response(
+            "/actor/profile",
+            StationResponse {
+                status: 200,
+                headers: HeaderMap::new(),
+                body: Box::new(FailingBody),
+            },
+            &ReplayPolicy::SafeRead,
+        )
+        .expect_err("safe read body failure");
+
+        assert!(matches!(error.kind, StationClientErrorKind::Decode));
     }
 }

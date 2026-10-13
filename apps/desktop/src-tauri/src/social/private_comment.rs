@@ -2029,6 +2029,7 @@ mod tests {
         SecureContentSession::new(
             SecureContentSessionKey {
                 station_peer_id: "station-1".to_string(),
+                station_lifecycle_generation: 1,
                 actor_ptid: "ptid:alice".to_string(),
                 device_id: "device-1".to_string(),
                 jwt_session_id: "session-1".to_string(),
@@ -2036,7 +2037,10 @@ mod tests {
                 session_generation: 0,
             },
             "account-1".to_string(),
-            "https://station.test".to_string(),
+            crate::application::station_runtime::client::StationClient::testing_scoped(
+                "station-1",
+                1,
+            ),
             "token".to_string(),
             "device-key-1".to_string(),
             1,

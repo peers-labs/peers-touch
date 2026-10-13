@@ -19,7 +19,7 @@ pub(crate) const ACCEPTANCE_BARRIER_CANCEL_RESULT_RACE: &str = "cancel-result-ra
 
 #[derive(Debug, Clone)]
 pub struct ExecutionLease {
-    pub station_url: String,
+    pub station_peer_id: String,
     pub actor_ptid: String,
     pub device_id: String,
     pub capability_session_id: String,
@@ -135,7 +135,7 @@ impl<'a> FencedExecutor<'a> {
             .ledger
             .load(&envelope.tool_call_id, envelope.fencing_token)?
         {
-            ensure_identical_envelope(&existing, &envelope, &self.lease.station_url)?;
+            ensure_identical_envelope(&existing, &envelope, &self.lease.station_peer_id)?;
             return self.resume_existing(&envelope, existing, now_ms, hook);
         }
 
@@ -152,7 +152,7 @@ impl<'a> FencedExecutor<'a> {
 
         let prepared = prepared_receipt(&envelope, now_ms);
         self.ledger
-            .prepare(&self.lease.station_url, &envelope, &prepared)?;
+            .prepare(&self.lease.station_peer_id, &envelope, &prepared)?;
         self.reporter.submit(&prepared).map_err(|error| {
             format!("submit PREPARED receipt before local side effect: {error}")
         })?;
@@ -673,9 +673,9 @@ fn validate_recovery_scope(
 fn ensure_identical_envelope(
     existing: &ReceiptRecord,
     envelope: &ClientCapabilityRequest,
-    station_url: &str,
+    station_peer_id: &str,
 ) -> Result<(), String> {
-    if existing.station_url != station_url.trim_end_matches('/')
+    if existing.station_peer_id != station_peer_id
         || existing.envelope.encode_to_vec() != envelope.encode_to_vec()
     {
         return Err("CLIENT_CAPABILITY_ENVELOPE_CONFLICT".to_string());
@@ -893,7 +893,7 @@ mod tests {
 
     fn lease() -> ExecutionLease {
         ExecutionLease {
-            station_url: "https://station.test".to_string(),
+            station_peer_id: "station-a".to_string(),
             actor_ptid: ACTOR_PTID.to_string(),
             device_id: DEVICE_ID.to_string(),
             capability_session_id: SESSION_ID.to_string(),

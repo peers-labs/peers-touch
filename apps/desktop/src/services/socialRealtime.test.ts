@@ -409,7 +409,8 @@ describe('social realtime group membership side effects', () => {
     });
 
     eventBus.publish(EVENT.STATION_ACTIVE_CHANGED, {
-      stationUrl: 'https://station-b.test',
+      stationPeerId: 'station-b',
+      routeId: 'direct-b',
     });
     await vi.waitFor(() => {
       expect(mocks.stopEventStream).toHaveBeenCalledTimes(2);

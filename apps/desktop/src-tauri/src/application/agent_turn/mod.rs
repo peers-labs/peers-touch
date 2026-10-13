@@ -25,7 +25,6 @@ use crate::contracts::{
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::model::agent;
-use futures_lite::StreamExt;
 use prost::Message;
 use reqwest::{Client, Method};
 use serde::Serialize;
@@ -791,7 +790,7 @@ pub fn agent_execute_turn_stream(
                 }
             }
             let body = build_turn_request_body(input, true);
-            tauri::async_runtime::block_on(stream_station_turn(
+            stream_station_turn(
                 station_client,
                 &app,
                 &window_label,
@@ -801,7 +800,7 @@ pub fn agent_execute_turn_stream(
                 &ptid,
                 &mut cancellation.receiver,
                 provider.as_str(),
-            ))
+            )
         }
     };
     if let Err(error) = result {
@@ -910,7 +909,7 @@ fn apply_resolved_agent_workspace(input: &mut AgentExecuteTurnInput) -> Result<(
     Ok(())
 }
 
-async fn stream_station_turn(
+fn stream_station_turn(
     station_client: &StationClient,
     app: &AppHandle,
     window_label: &str,
@@ -932,9 +931,9 @@ async fn stream_station_turn(
             "/sub-agent/agent/turn/stream",
             token.trim(),
             body,
-            AGENT_STREAM_ADMISSION_TIMEOUT,
+            Duration::from_secs(24 * 60 * 60),
             ReplayPolicy::Never,
-            request_cancellation,
+            request_cancellation.clone(),
         )
         .map_err(|error| format!("Station turn stream request failed: {error}"))?;
     let admission_control = live_stream_control(cancellation);
@@ -961,6 +960,10 @@ async fn stream_station_turn(
     if admission_control == LiveStreamControl::DisconnectTransport && admitted_turn_id.is_empty() {
         return Err("agent.error.streamIdentityMissing".to_string());
     }
+    let _stream_fence =
+        watch_transport_cancellation(cancellation.clone(), request_cancellation, |control| {
+            *control != LiveStreamControl::Active
+        });
 
     let mut error_emitted = false;
     let mut terminal_received = false;
@@ -1092,7 +1095,57 @@ async fn stream_station_turn(
             }),
         );
     }
+    if live_stream_control(cancellation) == LiveStreamControl::CancelTurn && !turn_id.is_empty() {
+        return cancel_live_stream_turn(station_client, &turn_id, token);
+    }
     Ok(())
+}
+
+struct StreamTransportFence(CancellationToken);
+
+impl Drop for StreamTransportFence {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
+fn watch_transport_cancellation<T: Clone + Send + Sync + 'static>(
+    mut receiver: watch::Receiver<T>,
+    transport: CancellationToken,
+    cancelled: fn(&T) -> bool,
+) -> StreamTransportFence {
+    let stop = CancellationToken::new();
+    let stopped = stop.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            if cancelled(&receiver.borrow()) {
+                transport.cancel();
+                return;
+            }
+            tokio::select! {
+                _ = stopped.cancelled() => return,
+                changed = receiver.changed() => {
+                    if changed.is_err() { transport.cancel(); return; }
+                }
+            }
+        }
+    });
+    StreamTransportFence(stop)
+}
+
+fn deadline_transport_cancellation(
+    transport: CancellationToken,
+    timeout: Duration,
+) -> StreamTransportFence {
+    let stop = CancellationToken::new();
+    let stopped = stop.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::select! {
+            _ = stopped.cancelled() => {}
+            _ = tokio::time::sleep(timeout) => transport.cancel(),
+        }
+    });
+    StreamTransportFence(stop)
 }
 
 enum CancellableStreamItem<T> {
@@ -1524,14 +1577,20 @@ fn replay_station_turn_events(
     if replay_is_cancelled(cancellation) {
         return Ok(ReplayOutcome::Cancelled);
     }
+    let transport_cancellation = CancellationToken::new();
+    let _stream_fence = watch_transport_cancellation(
+        cancellation.clone(),
+        transport_cancellation.clone(),
+        |cancelled| *cancelled,
+    );
     let mut response = station_client
         .open_json_stream(
             "/sub-agent/agent/conversation/events",
             token.trim(),
             &build_replay_request_body(conversation_id, turn_id, attempt_id, after_sequence),
-            AGENT_STREAM_ADMISSION_TIMEOUT,
+            Duration::from_secs(24 * 60 * 60),
             ReplayPolicy::SafeRead,
-            CancellationToken::new(),
+            transport_cancellation.clone(),
         )
         .map_err(|error| format!("Station turn replay request failed: {error}"))?;
     if !(200..300).contains(&response.status) {
@@ -1552,6 +1611,10 @@ fn replay_station_turn_events(
     let mut chunk = [0_u8; 4096];
     let mut last_sequence = after_sequence;
     let mut live_tail_established = false;
+    let mut catchup_fence = Some(deadline_transport_cancellation(
+        transport_cancellation.clone(),
+        AGENT_STREAM_ADMISSION_TIMEOUT,
+    ));
     let catchup_deadline = Instant::now() + AGENT_STREAM_ADMISSION_TIMEOUT;
     let mut replay_turn_id = turn_id.to_string();
     let mut replay_conversation_id = conversation_id.to_string();
@@ -1562,10 +1625,14 @@ fn replay_station_turn_events(
         if !live_tail_established && Instant::now() >= catchup_deadline {
             return Err("Station turn replay catchup timed out".to_string());
         }
-        let read = response
-            .body
-            .read(&mut chunk)
-            .map_err(|error| format!("failed to read Station turn replay: {error}"))?;
+        let read = match response.body.read(&mut chunk) {
+            Ok(read) => read,
+            Err(_) if replay_is_cancelled(cancellation) => return Ok(ReplayOutcome::Cancelled),
+            Err(_) if !live_tail_established && transport_cancellation.is_cancelled() => {
+                return Err("Station turn replay catchup timed out".to_string())
+            }
+            Err(error) => return Err(format!("failed to read Station turn replay: {error}")),
+        };
         if read == 0 {
             break;
         }
@@ -1584,6 +1651,9 @@ fn replay_station_turn_events(
                 &mut live_tail_established,
             ) {
                 return Ok(ReplayOutcome::Terminal);
+            }
+            if live_tail_established {
+                catchup_fence.take();
             }
         }
     }
@@ -3059,6 +3129,28 @@ mod tests {
             read,
             LiveStreamItem::Control(LiveStreamControl::DisconnectTransport)
         ));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn replay_catchup_deadline_cancels_a_silent_transport() {
+        let transport = CancellationToken::new();
+        let _deadline =
+            deadline_transport_cancellation(transport.clone(), Duration::from_millis(10));
+
+        tokio::time::timeout(Duration::from_millis(100), transport.cancelled())
+            .await
+            .expect("catchup deadline must cancel a silent replay");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn established_replay_can_disarm_the_catchup_deadline() {
+        let transport = CancellationToken::new();
+        let deadline =
+            deadline_transport_cancellation(transport.clone(), Duration::from_millis(20));
+        drop(deadline);
+
+        tokio::time::sleep(Duration::from_millis(40)).await;
+        assert!(!transport.is_cancelled());
     }
 
     #[test]

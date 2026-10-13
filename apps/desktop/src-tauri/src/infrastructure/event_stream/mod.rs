@@ -32,7 +32,8 @@ use tauri::{AppHandle, Emitter};
 use tokio_util::sync::CancellationToken;
 
 use crate::application::station_runtime::client::{
-    ReplayPolicy, StationClient, StationRequest, StationRequestBody, TrafficClass,
+    ReplayPolicy, StationClient, StationRequest, StationRequestBody, StationRouteSecurity,
+    TrafficClass,
 };
 use crate::infrastructure::session_revocation;
 use crate::infrastructure::storage::{self, StorageKind};
@@ -88,6 +89,15 @@ impl StreamControl {
 fn registry() -> &'static Mutex<HashMap<String, Arc<StreamControl>>> {
     static REG: OnceLock<Mutex<HashMap<String, Arc<StreamControl>>>> = OnceLock::new();
     REG.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[cfg(test)]
+pub(crate) fn register_test_control(actor_ptid: &str, cancellation: CancellationToken) {
+    let control = Arc::new(StreamControl { cancellation });
+    let mut map = registry().lock().expect("event_stream registry poisoned");
+    if let Some(previous) = map.insert(actor_ptid.to_string(), control) {
+        previous.cancel();
+    }
 }
 
 /// Start (or restart) the event-stream supervisor for an actor.
@@ -357,7 +367,9 @@ fn run_once(
             headers,
             body: StationRequestBody::Empty,
             timeout: Duration::from_secs(24 * 60 * 60),
+            admission_timeout: Duration::from_secs(30),
             traffic_class: TrafficClass::Realtime,
+            route_security: StationRouteSecurity::VerifiedRoute,
             replay_policy: ReplayPolicy::SafeRead,
             cancellation: cancel.cancellation.clone(),
             expected_scope: None,
@@ -569,9 +581,11 @@ mod tests {
     fn cursor_path_is_scoped_by_station_identity() {
         let actor = "cross-station-cursor-actor";
         let station_a = cursor_path(actor, "station-a", "https://shared.test");
+        let station_a_relay = cursor_path(actor, "station-a", "https://relay.test");
         let station_b = cursor_path(actor, "station-b", "https://shared.test");
         let url_fallback = cursor_path(actor, "", "https://station-c.test");
 
+        assert_eq!(station_a, station_a_relay);
         assert_ne!(station_a, station_b);
         assert_ne!(station_a, url_fallback);
         assert_ne!(station_b, url_fallback);

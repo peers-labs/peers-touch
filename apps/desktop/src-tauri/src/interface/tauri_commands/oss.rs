@@ -1051,6 +1051,9 @@ pub fn oss_patch_file(
 }
 
 #[tauri::command]
-pub fn oss_invalidate_cache(input: OssInvalidateCacheInput) -> AppResult<StubPayload> {
-    application_oss::oss_invalidate_cache(&input.uri)
+pub fn oss_invalidate_cache(
+    input: OssInvalidateCacheInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    application_oss::oss_invalidate_cache(state.station.client(), &input.uri)
 }
