@@ -56,12 +56,25 @@ The goal is to catch "functionally correct but visually assembled" UI before it 
 - [ ] Spacing, alignment, and edge-insets are verified with measured box values
   (padding/gap/min-height/edge distance), not only by looking at a screenshot;
   the machine-checked rules in §13 apply to every changed surface.
+- [ ] Symmetry and optical balance are explicit: corresponding insets match,
+  repeated rows share content/metadata/action axes, and mixed action counts
+  or state transitions do not move them. Any purposeful asymmetry has a
+  content/platform reason ([layout.md §3.1](./layout.md#31-symmetry-and-repeated-row-tracks)).
 - [ ] Floating layers are anchored and do not cover primary content unexpectedly.
 - [ ] **Transient popovers behave correctly**: only one menu/picker open at a time; it opens away from the item it acts on (flip only when space is lacking); clicking outside, pressing Escape, scrolling the source list, or switching context dismisses it. A popover that stays open over unrelated content is a defect.
 
 ## 5. Component Style
 
 - [ ] Button roles are named and visually consistent.
+- [ ] Every button sits on the canonical size/radius scale (components.md §3);
+  bespoke per-surface button dimensions are a defect.
+- [ ] Row action groups share one horizontal center line and trailing edge
+  (button bottoms align); see components.md §3.
+- [ ] **One entity, one component.** A recurring entity (relationship request,
+  contact/session row, identity block, decision pair) renders from its single
+  shared component on every surface, carrying the same `data-entity` /
+  `data-decision-action` markers and identical control geometry. A second
+  hand-built look-alike is a defect (components.md §3.1).
 - [ ] Primary CTA does not visually fight tabs, header, or content.
 - [ ] Cards/surfaces are not nested without distinct user intent.
 - [ ] Inputs and composite controls have one parent boundary.
@@ -188,6 +201,22 @@ measured geometry, not screenshots alone.
 - [ ] **Reachability is geometry.** Icon-only/quiet controls must still have
   a full hit target (≥28px, 34px in desktop chrome) and, when discoverability
   matters, a visual separator or boundary; "click works" is not enough.
+- [ ] **Floating anchors are measured.** Check the popover's declared aligned
+  edge against its source button's live rectangle across window resize,
+  multiline content, and empty states (components.md §8). For a bottom-aligned
+  rail popover, panel and button bottoms agree within 1 CSS pixel.
+- [ ] **Complete viewers remain one surface.** Preview expansion mounts one
+  dialog, with bounded current-page rows, working search, empty-result
+  recovery, pagination and valid page correction after deletion. Verify
+  stable dialog geometry, shared read/decision state, teardown and source
+  focus restoration.
+- [ ] **Painted boundaries are checked.** Foreground contours that overlap
+  another surface remain visible on all four edges and rounded corners
+  (components.md §4). Sample screenshot pixels against the boundary's declared
+  color and use hit testing across its edges and primary content. Cover
+  changes, clipping, and open menus are included; a transparent menu backdrop
+  may intercept hits, but must still pass the contour checks. CSS properties
+  and rectangle overlap alone cannot pass this class of check.
 - [ ] **Screenshots are opened and judged after the gate is green.** Each
   evidence shot records path / state / viewport / theme / verdict; a saved
   path that was never viewed is not evidence.
@@ -196,3 +225,29 @@ measured geometry, not screenshots alone.
 - [ ] Harnesses live next to the surface they govern (example:
   `packages/prototypes/desktop/features/social-chat/qa/geometry_checks.py`);
   extend the existing gate rather than creating one-off scripts or docs.
+- [ ] **Class-level, not case-by-case.** The gate encodes reusable visual
+  invariants across all surfaces, not the current bug: the canonical button
+  size/radius scale applied to every visible button; row action groups sharing
+  one center line and trailing edge; cross-surface entity consistency
+  (`data-entity` rows must expose the same `data-decision-action` controls with
+  identical geometry wherever they appear). A surface-specific pixel is only
+  added as an instance of one of these classes.
+- [ ] **Cross-row symmetry is a separate class.** Compare corresponding
+  start/end/center axes, visible action edges and opposed insets within
+  1 CSS pixel. A centered dialog and aligned buttons inside one row do not
+  establish alignment across its rows. Include mixed action counts,
+  multiline content, metadata expansion and pending-to-resolved transitions.
+- [ ] **Spatial declarations are covered and falsifiable.** Changed repeated
+  surfaces declare `data-ui-rows`, `data-ui-row` and named `data-ui-column`
+  slots with `data-ui-column-align` (`start/end/center/stretch`). Centered
+  slots carry `data-ui-row-center`; trailing control groups carry
+  `data-ui-controls-align="end"`. Balanced frames declare
+  `data-ui-balance="inline block"` for the applicable axes. Require expected
+  slot coverage; deliberately shift a column, unbalance an inset and offset
+  a visible control, then check that the same production probe fails.
+  These markers expose intended relationships, never waive an observed
+  alignment defect. Screenshot review is still required for glyphs and
+  optical weight that rectangle probes cannot assess.
+- [ ] When the same entity appears in two surfaces (list, popover, detail,
+  notification), the gate visits both and compares the entity control
+  geometry — the check fails if the implementations drift.

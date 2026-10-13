@@ -2,7 +2,6 @@ import { useState, type CSSProperties, type KeyboardEvent, type ReactNode } from
 import { Flexbox } from 'react-layout-kit';
 import { Collapse, Empty, Tag, theme, Typography } from 'antd';
 import {
-  Check,
   CheckCheck,
   ChevronDown,
   ChevronRight,
@@ -13,9 +12,9 @@ import {
   ShieldCheck,
   UserPlus,
   Users,
-  X,
 } from 'lucide-react';
 import { Avatar } from './Avatar';
+import { RequestDecisionButtons } from './RequestDecisionButtons';
 import {
   CONTACTS,
   INITIAL_FRIEND_REQUESTS,
@@ -164,6 +163,7 @@ export function ContactsBook({ compact = false, onOpenConversation, onStartChatW
           <Flexbox
             key={request.id}
             data-chat-friend-request-id={request.id}
+            data-entity="friend-request"
             horizontal
             align="center"
             gap={9}
@@ -220,45 +220,11 @@ export function ContactsBook({ compact = false, onOpenConversation, onStartChatW
               </span>
             </Flexbox>
             {pendingIncoming ? (
-              <Flexbox horizontal gap={5} style={{ flexShrink: 0 }}>
-                <button
-                  type="button"
-                  data-chat-friend-request-action="accept"
-                  aria-label={`Accept ${request.name}`}
-                  title="Accept"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setRequestStatus(request.id, 2);
-                  }}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    width: 30, height: 30, border: 'none', borderRadius: 8,
-                    background: token.colorPrimaryBg, color: token.colorPrimary,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Check size={15} />
-                </button>
-                <button
-                  type="button"
-                  data-chat-friend-request-action="reject"
-                  aria-label={`Reject ${request.name}`}
-                  title="Reject"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setRequestStatus(request.id, 3);
-                  }}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    width: 30, height: 30,
-                    border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 8,
-                    background: token.colorBgContainer, color: token.colorTextSecondary,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <X size={14} />
-                </button>
-              </Flexbox>
+              <RequestDecisionButtons
+                targetName={request.name}
+                onAccept={() => setRequestStatus(request.id, 2)}
+                onReject={() => setRequestStatus(request.id, 3)}
+              />
             ) : null}
           </Flexbox>
         );
@@ -478,6 +444,11 @@ function ContactsDetail({ compact = false, request, friend, group, copiedKey, on
   // PTID / station / handle are low-frequency technical provenance: collapsed
   // by default (trust-state "On-demand detail"), never inline jargon.
   const [technicalOpen, setTechnicalOpen] = useState(false);
+  // Profile background configured in Settings (same-origin storage).
+  const [profileCover] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    return window.localStorage.getItem('pt.profile.cover') ?? '';
+  });
 
   if (!request && !friend && !group) {
     return (
@@ -572,28 +543,42 @@ function ContactsDetail({ compact = false, request, friend, group, copiedKey, on
           width: 'min(380px, 100%)',
           minWidth: 0,
           boxSizing: 'border-box',
-          padding: compact ? 20 : 28,
+          padding: 0,
+          overflow: 'hidden',
           background: token.colorBgContainer,
           border: `1px solid ${token.colorBorderSecondary}`,
           borderRadius: 14,
         }}
       >
+        {/* Profile background (the banner seen on this person's details) */}
+        <div
+          data-contact-cover
+          style={{
+            width: '100%', height: 88, flexShrink: 0,
+            background: profileCover
+              ? `center / cover url("${profileCover}")`
+              : 'linear-gradient(120deg,#6b5bd6 0%,#8b7df0 55%,#b794f6 100%)',
+          }}
+        />
+        <Flexbox align="center" gap={10} style={{ width: '100%', padding: `0 ${compact ? 20 : 28}px ${compact ? 20 : 24}px`, marginTop: -4 }}>
         {group ? (
           <Flexbox
             align="center"
             justify="center"
-            style={{ width: 72, height: 72, borderRadius: 18, background: token.colorFillSecondary, color: token.colorTextSecondary }}
+            style={{ position: 'relative', zIndex: 1, width: 72, height: 72, borderRadius: 14, background: token.colorFillSecondary, color: token.colorTextSecondary, boxShadow: '0 4px 14px rgba(15,23,42,0.16)', border: '4px solid #fff' }}
           >
             <Users size={34} />
           </Flexbox>
         ) : (
-          <Avatar
-            identityKey={request?.identityKey ?? friend?.identityKey ?? name}
-            name={name}
-            initials={request?.initials ?? friend?.initials}
-            size={72}
-            federated={Boolean(request?.federated ?? friend?.federated)}
-          />
+          <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', borderRadius: 14, boxShadow: '0 4px 14px rgba(15,23,42,0.16)', border: '4px solid #fff', lineHeight: 0, overflow: 'hidden' }}>
+            <Avatar
+              identityKey={request?.identityKey ?? friend?.identityKey ?? name}
+              name={name}
+              initials={request?.initials ?? friend?.initials}
+              size={72}
+              federated={Boolean(request?.federated ?? friend?.federated)}
+            />
+          </span>
         )}
         <Text strong style={{ fontSize: 17, textAlign: 'center', overflowWrap: 'anywhere' }}>{name}</Text>
         {relationTag}
@@ -660,6 +645,7 @@ function ContactsDetail({ compact = false, request, friend, group, copiedKey, on
             Message
           </button>
         ) : null}
+        </Flexbox>
       </Flexbox>
     </Flexbox>
   );
