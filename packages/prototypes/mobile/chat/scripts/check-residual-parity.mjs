@@ -358,7 +358,7 @@ try {
     await back();
     await back();
     await device.getByRole('button', { name: 'Me', exact: true }).click();
-    await device.locator('.mp-tabbar-item').filter({ hasText: copy['mobile.chat.title'] }).click();
+    await device.getByRole('button', { name: new RegExp(`^${copy['mobile.chat.title']}(?:,|$)`) }).click();
     await rows(list('conversations')).first().click();
     await openHistory();
     await expect(searchQuery()).toHaveValue(query);

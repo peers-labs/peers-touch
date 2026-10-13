@@ -302,17 +302,19 @@ export function MobileShell({
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
+            const unread = socialDemo.runtime === 'ready' ? tab.badge ?? 0 : 0;
             return (
               <button
                 key={tab.id}
                 type="button"
                 className={`mp-tabbar-item ${isActive ? 'active' : ''}`}
+                aria-label={unread > 0 ? `${tab.label}, ${unread} unread` : tab.label}
+                aria-current={isActive ? 'page' : undefined}
                 onClick={() => { dispatchSocialDemo({ type: 'close-direct' }); setFindPeopleOpen(false); setActiveTab(tab.id); setSelectedConversation(null); setSelectedContact(null); setSelectedGroup(null); setSelectedSetting(null); }}
               >
-                <Badge count={socialDemo.runtime === 'ready' ? tab.badge ?? 0 : 0} size="small" offset={[4, -2]}>
+                <Badge count={unread} size="small" offset={[4, -2]}>
                   <Icon size={24} strokeWidth={isActive ? 2.2 : 1.7} />
                 </Badge>
-                <span className="mp-tabbar-label">{tab.label}</span>
               </button>
             );
           })}

@@ -818,11 +818,9 @@
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 2px; flex: 1; height: 100%; border: none; background: none; color: var(--mp-gray-400);
     cursor: pointer; transition: color 0.15s, transform 0.1s; padding: 0; -webkit-tap-highlight-color: transparent;
-    &.active { color: var(--mp-primary); .mp-tabbar-label { font-weight: 600; } }
+    &.active { color: var(--mp-primary); }
     &:active { transform: scale(0.92); }
   }
-
-  .mp-tabbar-label { font-size: 10px; font-weight: 500; letter-spacing: 0.01em; }
 
   /* ── Chat thread ── */
   .mp-thread { display: flex; flex-direction: column; height: 100%; width: 100%; background: var(--mp-chat-bg); position: relative; overflow: hidden; }
