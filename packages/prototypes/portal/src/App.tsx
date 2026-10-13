@@ -539,9 +539,17 @@ const styles: Record<string, CSSProperties> = {
     minHeight: 0,
     overflow: 'auto',
   },
+  // Definite-height clipping host, mirroring the remote iframe preview
+  // (previewBody height:720 + overflow:auto). Full-screen app prototypes
+  // (e.g. DesktopShell) use height:100% plus internal scroll surfaces, so
+  // they need a definite ancestor: without one the whole height chain
+  // collapses to content size, bottom-pinned chrome (rail notifications /
+  // settings) detaches and the surface grows past the preview, clipping its
+  // bottom. Document-style prototypes still scroll inside this host.
   localPreviewBody: {
-    minHeight: 780,
-    overflow: 'visible',
+    height: 780,
+    minHeight: 0,
+    overflow: 'auto',
   },
   previewPlaceholder: {
     height: '100%',

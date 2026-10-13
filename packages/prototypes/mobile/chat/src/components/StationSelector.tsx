@@ -1,13 +1,6 @@
 import { useState } from 'react';
-import { Button, Modal, Typography } from 'antd';
-import {
-  AlertTriangle,
-  Check,
-  Plus,
-  Server,
-  Trash2,
-  X,
-} from 'lucide-react';
+import { Button, Modal, Tag, Typography } from 'antd';
+import { Check, Plus, Server, X } from 'lucide-react';
 import type { StationEntry } from '../types';
 
 const { Text } = Typography;
@@ -19,10 +12,11 @@ export function StationSelector({
   activeUrl: string;
   onSelect: (url: string) => void;
   onRemove: (url: string) => void;
-  onAdd: (url: string) => void;
+  onAdd: () => void;
   showRemovalConfirmation?: boolean;
 }) {
-  const [stationUrl, setStationUrl] = useState('');
+  const [protocol, setProtocol] = useState<'http' | 'https'>('https');
+  const [address, setAddress] = useState('');
   const [addingStation, setAddingStation] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState<StationEntry | null>(
     showRemovalConfirmation
@@ -31,7 +25,6 @@ export function StationSelector({
   );
   const hasEntries = entries.length > 0;
   const showStationInput = !hasEntries || addingStation;
-  const canAdd = /^https?:\/\/\S+$/i.test(stationUrl.trim());
 
   function getStatus(entry: StationEntry): { className: string; label: string } {
     if (entry.online === undefined) return { className: 'validating', label: 'Validating' };
@@ -40,74 +33,50 @@ export function StationSelector({
   }
 
   function closeStationInput() {
-    setStationUrl('');
+    setAddress('');
     setAddingStation(false);
   }
 
   function handleAdd() {
-    if (!canAdd) return;
-    onAdd(stationUrl.trim());
+    onAdd();
     closeStationInput();
   }
 
   return (
     <section className="mp-station-selector">
       <div className="mp-station-selector-header">
-        <div>
-          <Text strong>Your Station</Text>
-          <Text className="mp-station-helper">
-            Tap a recent Station to change the target
-          </Text>
-        </div>
-        <span className={`mp-station-selection-state ${activeUrl ? 'selected' : ''}`}>
-          {activeUrl ? 'Selected' : 'Required'}
-        </span>
+        <Text strong>Your Station</Text>
+        <Tag color={activeUrl ? 'green' : 'default'}>{activeUrl ? 'Selected' : 'Required'}</Tag>
       </div>
 
       {showStationInput && (
         <div className="mp-station-input-row">
           <div className="mp-station-url-control">
+            <button type="button" className="mp-station-protocol" onClick={() => setProtocol(protocol === 'https' ? 'http' : 'https')}>
+              {protocol.toUpperCase()}
+            </button>
             <input
               className="mp-station-address"
-              value={stationUrl}
-              placeholder="http://station.local:18080"
+              value={address}
+              placeholder="localhost:9000"
               inputMode="url"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
               autoFocus
-              onChange={(e) => setStationUrl(e.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') handleAdd();
-              }}
+              onChange={(e) => setAddress(e.target.value)}
             />
-            <button
-              type="button"
-              className="mp-station-submit"
-              aria-label="Add Station"
-              disabled={!canAdd}
-              onClick={handleAdd}
-            >
-              <Plus size={17} aria-hidden="true" />
-            </button>
+            {address && (
+              <button type="button" className="mp-station-clear" aria-label="Clear" onClick={() => setAddress('')}>
+                <X size={16} />
+              </button>
+            )}
           </div>
+          <Button type="primary" icon={<Plus size={16} />} onClick={handleAdd} />
           {hasEntries && (
-            <Button
-              type="text"
-              className="mp-station-cancel-btn"
-              aria-label="Cancel adding Station"
-              icon={<X size={16} />}
-              onClick={closeStationInput}
-            />
+            <Button type="text" className="mp-station-cancel-btn" onClick={closeStationInput}>Cancel</Button>
           )}
         </div>
-      )}
-
-      {showStationInput && stationUrl.trim().toLowerCase().startsWith('http://') && (
-        <Text className="mp-station-field-helper">
-          <AlertTriangle size={12} aria-hidden="true" />
-          <span>HTTP is unencrypted. Trusted networks only.</span>
-        </Text>
       )}
 
       <div className="mp-station-list">
@@ -130,6 +99,7 @@ export function StationSelector({
                   <span className="mp-station-entry-icon"><Server size={18} /></span>
                   <span className="mp-station-entry-copy">
                     <Text strong={isActive} className="mp-truncate">{entry.label}</Text>
+                    <Text type="secondary" className="mp-truncate">{entry.url}</Text>
                   </span>
                   <span className={`mp-station-entry-status ${status.className}`}>{status.label}</span>
                   <span className="mp-station-check-slot">
@@ -140,7 +110,7 @@ export function StationSelector({
                   type="text"
                   className="mp-station-remove"
                   aria-label={`Remove ${entry.label}`}
-                  icon={<Trash2 size={15} />}
+                  icon={<X size={16} />}
                   onClick={() => setPendingRemoval(entry)}
                 />
               </div>

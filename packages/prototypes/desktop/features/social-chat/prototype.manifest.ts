@@ -9,7 +9,7 @@ const manifest = {
   status: 'pending-review',
   module: 'social-chat',
   path: 'packages/prototypes/desktop/features/social-chat/',
-  description: 'Desktop private chat and group chat confirmation prototype.',
+  description: 'Desktop Chat feature mounted in the single Shell, including the shared delivery-recovery review journey.',
   order: 40,
   hidden: true,
   previewExport: 'SocialChatPrototype',
