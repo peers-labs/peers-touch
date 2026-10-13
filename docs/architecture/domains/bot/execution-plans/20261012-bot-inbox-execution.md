@@ -163,7 +163,20 @@ S0→S1→S2→S3→S5 为严格链（后片的主体身份与线协议由前片
     - BOT-A33 三层语义（TASK 类，`/notification/preferences` 实测；服务端 `notification/application/service.go:85` 只有 `Enabled=false` 抑制通知行）：`enabled=false` → 新事件**无通知行**（list 行数不增）；`push_enabled=false` → 通知行仍在，但客户端 `botNotificationGate` 不调用 `native_notification_show`（横幅抑制）；`sound_enabled=false` → delivered 内容 `sound=nil`（旧事件为 set），横幅照常；消息与未读会话数不受偏好影响。验收后偏好已还原（revision 5，全开）。
     - BOT-A32：窗口可见聚焦时 gate 零原生通知调用，仅应用内更新（此前已证）。
   - 至此 S5-3 Journey **A30/A31/A32/A33/A34/A35/A20/A21B/A22/A24/A25/A26/G-BOT-10 全部 PROVEN**（A35 的多设备并存维度为单机 Journey，单设备每事件一条+折叠+幂等已证）。
-  - 待 S5-1 复核（非 S5-3 面）：webhook bot 会话头部仍显示语音/视频按钮与完整输入框，并显示 `Offline / Station unavailable`，与 S5-1「AGENT 会话去呼叫按钮、底部改单向提示条」约定不完全一致，需核对 `actor_kind=AGENT` 在该惰性会话投影上是否未被客户端识别。
+  - 待 S5-1 复核（非 S5-3 面）：webhook bot 会话头部仍显示语音/视频按钮与完整输入框，并显示 `Offline / Station unavailable`，与 S5-1「AGENT 会话去呼叫按钮、底部改单向提示条」约定不完全一致，需核对 `actor_kind=AGENT` 在该惰性会话投影上是否未被客户端识别。**已在下方 2026-10-13 S5-1/A/B/C Journey 复核中关闭。**
+  - **S5-1 复核 + 头像实时性 A/B/C Journey（2026-10-13，远程 profile `chat-native-five`，Station build_commit `dc5831b6f` = 含 realtime arm27 与 `ActorProfile.kind=34`；exact-source debug `.app`，唯一 identifier `com.peers.touch.desktop.journey`，登录 `alice@p.t`）**：
+    - **Journey 抓出并修复的真实缺陷（commit `71dcc393a`，React #310 为阻断级）**：
+      1. **打开任意会话即崩（React error #310）**：`isBotConversation` 选择器被声明在空态/错误态提前 `return` 之后，空态少渲染一个 hook，选中会话时 hook 数不一致整页崩溃（AGENT 判定首次为真才暴露，人类会话同受影响）。选择器上移到其余 store hook 旁。
+      2. 头部 authority-station chip 在 bot 会话渲染成错误态「Station unavailable」（authority id 为空）；头部与详情面板两处均对 bot 隐藏（琥珀色盾牌 + managed 副标题已表达 Station 托管）。
+      3. 详情面板据缺失 presence 显示「Offline」；bot 无 presence 概念，关系行改显「Automated bot · Station resident」。
+    - **B PROVEN（S5-1 复核关闭）**：Journey Notify 会话打开不崩溃；头部无语音/视频按钮（仅 `...`）、无在线指示、无 Station unavailable chip，仅琥珀色盾牌 + 副标题「Automated bot · Station resident」；底部为「One-way webhook channel — replies are not supported」单向提示条，无回复输入框；事件卡渲染与此前一致。详情面板关系行为 managed 文案、无 Offline、无 authority 不可用行（「Standard chat」明文徽章保留为预期）。
+    - **A PROVEN（头像/资料变更实时生效，替代 30s 轮询）**：经 `/sub-oss/upload` 上传两张纯色头像，`POST /bot/set-profile`（与 UI 同一产品端点）提交后：
+      - 协议层（第二 owner 流设备 `X-Device-ID: journey-sse-observer-cu2` 直连 `/events/stream`）：提交（09:22:28.3Z）后 ≤3s 收到 arm27 `ActorProfileChanged{actor_ptid=bot wh_79af4247c3ba, changed_ts_unix_ms=1791883347114}`，event_id `01M4T9415A2Z5P6NH2KRSNE0S1`（identifiers-only，排序用外层 event_id，与设计一致）；不同 device id 同 owner 流均收到，验证多设备扇出。
+      - 客户端层：app 在会话页保持挂载、无导航/重登的前提下，日志显示提交后 35ms（09:19:33.335Z，aqua 次变更）出现**仅该 bot 单个 actor** 的 `peer_profile_get`（事件处理 `refreshChangedActorProfile` 形态；周期 reconcile 是带 `"label":"periodic reconcile"` 标记的 5-actor 批量拉取，下一周期在约 28s 后），会话列表头像 dog→aqua 在 ≤10s 内可见，远早于任何周期轮询；aqua→coral 重复一次，列表与时间轴头像一致变 coral（时间轴头像亦随当前 profile 渲染，非逐消息快照）。Bots 设置页 BotAvatar（订阅唯一 `peerProfiles[botPtid]`）同显 coral。
+      - 既有 30s `socialRealtime` reconcile 仍在（全量校正语义），实时性由 arm27 事件路径提供；两条路径独立可见。
+    - **C PROVEN**：Channels 列表 Webhook 频道名由原始键 `i18n:channels.default.title` 正确解析为「Default Channel」（zh-CN 键 `默认频道` 已在 `common.json`，解析机制相同）；详情抽屉同名解析随 `resolveI18nValue` 同源修复（commit `c8b7739e9`）。
+    - **Bots 设置页密度与列名（commit `dc5831b6f`）**：表格容器改 `fullHeight maxWidth=1100` 与 Channels 数据 tab 一致，右侧空白带消失；列名 `Rate/min` → `Rate limit/min`（`rateLimitPerMinute` 是 webhook 强制限流配额而非观测流量，所有 bot 恒 120 包括 Revoked）。
+    - 观察备注（非本次范围）：`/conversation/delivery/receipt` 周期性 409（约每 2.5s）为既有噪声；channel 行「Invalid Date」为该默认频道缺 `createdAt` 的既有展示问题。
 
 闭环（**打包 Desktop Journey，SOURCE_CHECK/单测不可替代**）：
 
