@@ -814,6 +814,33 @@ async function executeWebScript(client, script, args = []) {
   );
 }
 
+async function readMobileRecoverySnapshot(client) {
+  if (client.platform === 'desktop') return null;
+  return webdriverRequest(
+    webdriverEndpoint(client, '/execute/async'),
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        script: `
+          const done = arguments[arguments.length - 1];
+          const action = window.__PEERS_MOBILE_ACCEPTANCE__?.['recovery.snapshot'];
+          if (typeof action !== 'function') {
+            done({ available: false, error: 'recovery.snapshot unavailable' });
+            return;
+          }
+          Promise.resolve(action())
+            .then((snapshot) => done({ available: true, snapshot }))
+            .catch((error) => done({
+              available: false,
+              error: error instanceof Error ? error.message : String(error)
+            }));
+        `,
+        args: [],
+      }),
+    },
+  );
+}
+
 async function waitForVisualFrame(client) {
   await webdriverRequest(
     webdriverEndpoint(client, '/execute/async'),
@@ -1167,6 +1194,7 @@ async function captureJourneyStep(
   evidenceDir,
   sequence,
   stepId,
+  { includeDiagnostics = false } = {},
 ) {
   const fileStem = [
     String(sequence).padStart(3, '0'),
@@ -1181,6 +1209,14 @@ async function captureJourneyStep(
     webdriverEndpoint(client, '/source'),
   );
   const state = await readClientUiState(client);
+  if (includeDiagnostics && client.platform !== 'desktop') {
+    state.runtimeDiagnostics = {
+      recovery: await readMobileRecoverySnapshot(client).catch((error) => ({
+        available: false,
+        error: error instanceof Error ? error.message : String(error),
+      })),
+    };
+  }
   assertContract(
     typeof screenshot === 'string' && screenshot.length > 100,
     'WEBDRIVER_SCREENSHOT_INVALID',
@@ -1260,6 +1296,7 @@ async function recordJourneyStep({
         evidenceDir,
         sequence,
         `${stepId}-failed`,
+        { includeDiagnostics: true },
       );
     } catch {
       // Preserve the first actionable interaction failure.
@@ -10934,6 +10971,15 @@ function selfTest(matrix) {
     journeySource.includes('requiredUnavailableRuntimeIds.length === 0'),
     'SELF_TEST_MOBILE_RUNTIME_CONVERGENCE',
     'Mobile Shell admission must wait for required runtimes to converge',
+  );
+  assertContract(
+    journeySource.includes("['recovery.snapshot']")
+      && journeySource.includes('{ includeDiagnostics: true }')
+      && !/captureJourneyStep\(\s*clientId,\s*client,\s*evidenceDir,\s*evidenceDir,/.test(
+        journeySource,
+      ),
+    'SELF_TEST_FAILURE_RUNTIME_DIAGNOSTICS',
+    'failed steps must capture the exact sequence and Mobile recovery diagnostics',
   );
   assertContract(
     /permission inspection timed out[\s\S]*Invalid index[\s\S]*\(-1719\)/.test(
