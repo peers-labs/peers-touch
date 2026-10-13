@@ -84,6 +84,8 @@ export interface MomentComment {
   replyTo?: string;
 }
 
+export type MomentAudience = 'public' | 'followers' | 'circles';
+
 export interface Moment {
   id: string;
   name: string;
@@ -93,6 +95,7 @@ export interface Moment {
   time: string;
   text: string;
   images?: string[];
+  audience?: MomentAudience;
   likes: number;
   liked?: boolean;
   myReaction?: ReactionKind;
