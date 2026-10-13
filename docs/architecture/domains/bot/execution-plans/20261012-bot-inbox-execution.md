@@ -176,7 +176,15 @@ S0→S1→S2→S3→S5 为严格链（后片的主体身份与线协议由前片
       - 既有 30s `socialRealtime` reconcile 仍在（全量校正语义），实时性由 arm27 事件路径提供；两条路径独立可见。
     - **C PROVEN**：Channels 列表 Webhook 频道名由原始键 `i18n:channels.default.title` 正确解析为「Default Channel」（zh-CN 键 `默认频道` 已在 `common.json`，解析机制相同）；详情抽屉同名解析随 `resolveI18nValue` 同源修复（commit `c8b7739e9`）。
     - **Bots 设置页密度与列名（commit `dc5831b6f`）**：表格容器改 `fullHeight maxWidth=1100` 与 Channels 数据 tab 一致，右侧空白带消失；列名 `Rate/min` → `Rate limit/min`（`rateLimitPerMinute` 是 webhook 强制限流配额而非观测流量，所有 bot 恒 120 包括 Revoked）。
-    - 观察备注（非本次范围）：`/conversation/delivery/receipt` 周期性 409（约每 2.5s）为既有噪声；channel 行「Invalid Date」为该默认频道缺 `createdAt` 的既有展示问题。
+    - 观察备注（两个既有问题，2026-10-13 同日完成根因修复，见下）。
+  - **既有缺陷根因修复（2026-10-13，commits `f059fb34c` station / `5e32d9983`+`6be633136` desktop；Station 部署 build_commit `5e32d9983`，Journey 真机复核）**：
+    - **`/conversation/delivery/receipt` 恒定 409 死循环**：
+      - 现象：客户端约每 2.4s 重放同一条回执，Station 恒定 409；`conversation_delivery_receipts` 全表 0 行，意味着该端点对**所有** bot 事件回执从未成功；FIFO outbox 单头结构使这条毒回执永久阻塞其后所有回执。
+      - 根因：bot/服务明文事件由保留的无密钥设备 `station-system`（`valueobject.SystemStationDeviceID`）创作，该设备按聚合约束从不入队、没有任何 originator 同步投递；而 `ReceiptRecorder.Record` 无条件调用 `loadOriginatorRoutes`，要求至少一条 `recipient_ptid=事件 actor AND required_recipient=false` 的承诺，bot 事件结构性缺失 → `ErrorCodeIntegrityFailed`（"does not contain an originator synchronization route"）→ 409。
+      - 修复（station）：事件 actor device 为 `station-system` 时跳过 originator 路由要求（系统发送方无设备可唤醒，post-commit 通知空路由为 no-op）；人类事件校验完全不变。回归测试 `TestReceiptRecorderAcceptsSystemSenderWithoutOriginatorRoute`，强制路由查找时以生产同款错误失败（变异验证）。
+      - 修复（desktop，纵深防御）：`StationDeliveryReceiptTransport::submit` 透出 HTTP 状态；引擎对权威终态拒绝（400/404/409/410/422 及本地畸形）把 outbox 行置为终态 `rejected`（记录 `last_error_code`，新增两列），FIFO 头继续推进；网络/5xx/401 仍可重试。含 outbox 单测。
+      - 真机证据：部署后 Journey 启动即把历史积压的 15 条回执全部补提成功（`delivery/receipt 200` ×15，PG `conversation_delivery_receipts` 0→15），随后流量归零、零 409；客户端无死信告警。
+    - **频道行「Invalid Date」**：channels 是进程内 stub，种子/新建频道从未写 `createdAt/updatedAt`，UI 无条件 `new Date(ch.createdAt)`。stub 现在在 seed/create/update 写入时间戳；UI 加 `formatChannelDate`（纯数字毫秒串按数字解析，不可解析回退 em dash，列表与详情两处）。真机复核：频道行显示 `channel-1 · 10/13/2026`。
 
 闭环（**打包 Desktop Journey，SOURCE_CHECK/单测不可替代**）：
 
