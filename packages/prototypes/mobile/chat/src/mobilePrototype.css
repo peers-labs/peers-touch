@@ -738,7 +738,7 @@
   .mp-search-bar {
     padding: 8px 16px 10px; background: #fff; border-bottom: 0.5px solid var(--mp-gray-100);
     .ant-input-affix-wrapper {
-      height: 36px; border-radius: var(--mp-r-pill); background: var(--mp-gray-100); border-color: transparent;
+      height: 36px; border-radius: var(--mp-r-md); background: var(--mp-gray-100); border-color: transparent;
       &:focus, &:hover { border-color: transparent; background: var(--mp-gray-200); }
     }
   }
@@ -965,7 +965,8 @@
 
   .mp-call-control-icon {
     display: grid; place-items: center; width: 54px; height: 54px;
-    border: 1px solid rgba(255,255,255,0.16); border-radius: var(--mp-r-pill);
+    /* Icon buttons use the control radius, never a circle/pill. */
+    border: 1px solid rgba(255,255,255,0.16); border-radius: var(--mp-r-lg);
     background: rgba(255,255,255,0.10); transition: background 0.15s, transform 0.1s;
   }
 
@@ -1002,7 +1003,7 @@
   .mp-delivery-recovery-icon {
     display: inline-flex; align-items: center; justify-content: center;
     width: 30px; height: 30px; border: 1px solid rgba(239,68,68,0.18);
-    border-radius: var(--mp-r-pill); background: #fff; color: var(--mp-error);
+    border-radius: var(--mp-r-md); background: #fff; color: var(--mp-error);
   }
   .mp-delivery-recovery.recovering .mp-delivery-recovery-icon {
     border-color: var(--mp-gray-200); color: var(--mp-primary);
@@ -2193,7 +2194,7 @@
     justify-content: center;
     width: 28px;
     height: 28px;
-    border-radius: 50%;
+    border-radius: var(--mp-r-md);
     border: none;
     background: var(--mp-gray-100);
     color: var(--mp-gray-400);
@@ -2381,7 +2382,7 @@
     place-items: center;
     width: 44px;
     height: 44px;
-    border-radius: var(--pt-radius-full);
+    border-radius: var(--pt-radius-lg);
     background: var(--pt-surface-subtle);
     color: var(--pt-action-primary);
   }

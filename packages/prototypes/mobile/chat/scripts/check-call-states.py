@@ -46,10 +46,18 @@ def assert_layout(page: Page, expected: str) -> dict:
           const controls = [...surface.querySelectorAll('.mp-call-control')]
             .map((control) => {
               const rect = control.getBoundingClientRect();
+              const icon = control.querySelector('.mp-call-control-icon');
+              const iconStyle = icon ? getComputedStyle(icon) : null;
+              const iconRect = icon ? icon.getBoundingClientRect() : null;
               return {
                 label: control.getAttribute('aria-label'),
                 width: rect.width,
                 height: rect.height,
+                // Icon buttons are rounded-square controls, never circular.
+                iconRadius: iconStyle
+                  ? Math.round(Number.parseFloat(iconStyle.borderTopLeftRadius))
+                  : null,
+                iconSize: iconRect ? Math.round(iconRect.width) : null,
               };
             });
           return {
@@ -75,6 +83,17 @@ def assert_layout(page: Page, expected: str) -> dict:
         control["width"] >= 44 and control["height"] >= 44
         for control in evidence["controls"]
     ), evidence
+    for control in evidence["controls"]:
+        if control["iconRadius"] is None or control["iconSize"] is None:
+            continue
+        assert (
+            control["iconRadius"] == 12
+            and control["iconRadius"] < control["iconSize"] / 2 - 1
+        ), (
+            f'{expected}: call control {control["label"]!r} must be a '
+            f'rounded-square icon button, got radius '
+            f'{control["iconRadius"]} / size {control["iconSize"]}'
+        )
     return evidence
 
 
