@@ -16,15 +16,11 @@ import {
 } from '../../app/lifecycle';
 import { useMobileI18n } from '../../app/mobileI18n';
 import { useMobileNavigationStore } from '../../app/navigation';
-import { useChatSurfaceFixture } from '../../acceptance/chatSurfaceFixture';
-import { useContactsSurfaceFixture } from '../../acceptance/contactsSurfaceFixture';
-import { useMomentsSurfaceFixture } from '../../acceptance/momentsSurfaceFixture';
 import {
   recoveryStateForFixture,
   setRecoverySurfaceFixture,
   useRecoverySurfaceFixture,
 } from '../../acceptance/recoverySurfaceFixture';
-import { useSettingsSurfaceFixture } from '../../acceptance/settingsSurfaceFixture';
 import {
   applyReliabilityCommandRecoveryAction,
   applyLegacyReliabilityDisposition,
@@ -69,7 +65,6 @@ interface RecoveryOverlayHostProps {
 export function visibleRecoveryStates(
   states: readonly RecoveryState[],
   launchState: MobileLaunchState,
-  _domainFixtureActive = false,
 ): readonly RecoveryState[] {
   const actorIdentityRecovery = states.find(
     (state) => state.kind === 'actor-identity-recovery',
@@ -111,16 +106,6 @@ export function RecoveryOverlayHost({
   const { t } = useMobileI18n();
   const lifecycle = useLifecycleKernel();
   const fixture = useRecoverySurfaceFixture();
-  const chatFixture = useChatSurfaceFixture();
-  const contactsFixture = useContactsSurfaceFixture();
-  const momentsFixture = useMomentsSurfaceFixture();
-  const settingsFixture = useSettingsSurfaceFixture();
-  const domainFixtureActive = Boolean(
-    chatFixture.surfaceId
-    || contactsFixture.surfaceId
-    || momentsFixture.surfaceId
-    || settingsFixture.surfaceId,
-  );
   const tabBarVisible = useMobileNavigationStore(
     (state) => state.detailStack.length === 0,
   );
@@ -312,7 +297,6 @@ export function RecoveryOverlayHost({
     : visibleRecoveryStates(
         snapshot.states,
         lifecycle.launchState,
-        domainFixtureActive,
       );
   if (visibleStates.length === 0) return null;
 
