@@ -162,8 +162,38 @@ try {
     await capture('direct-info-scrolled');
     await device.getByRole('button', { name: 'Retry', exact: true }).click();
     await page.getByRole('button', { name: 'Direct ready', exact: true }).click();
-    await device.getByText('No messages yet', { exact: true }).waitFor();
+    await page.getByText('No messages yet', { exact: true }).waitFor();
     await capture('direct-empty');
+
+    // Identity geometry contract (shared with Desktop): person avatars are a
+    // full circle, group avatars are an lg-radius rounded square. The list
+    // must contain both kinds so the assertion cannot pass on an empty set.
+    await open('chat-default');
+    const identityShapes = await device.locator('.mp-identity-avatar').evaluateAll(
+      (elements) => elements.map((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        const tl = Number.parseFloat(style.borderTopLeftRadius);
+        return {
+          kind: element.classList.contains('group') ? 'group' : 'person',
+          size: Math.round(rect.width),
+          radius: Math.round(tl),
+        };
+      }),
+    );
+    const personShapes = identityShapes.filter((shape) => shape.kind === 'person');
+    const groupShapes = identityShapes.filter((shape) => shape.kind === 'group');
+    assert(personShapes.length > 0 && groupShapes.length > 0,
+      `expected both person and group identity avatars, got ${JSON.stringify(identityShapes)}`);
+    for (const shape of personShapes) {
+      assert(shape.radius >= shape.size / 2 - 1,
+        `person avatar must be circular (radius ${shape.radius} / size ${shape.size})`);
+    }
+    for (const shape of groupShapes) {
+      assert(shape.radius === 12,
+        `group avatar must use lg radius 12, got ${shape.radius}`);
+    }
+
     assert.deepEqual(errors, []);
     await page.close();
   }
