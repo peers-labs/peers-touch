@@ -6,7 +6,7 @@
  * Chat supports full-screen thread with composer, reply, action sheet.
  */
 
-import { useMemo, useReducer, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react';
 import { ConfigProvider, Segmented, Select, Typography, theme as antdTheme } from 'antd';
 import type { LaunchState, MobileUiEvidence, StationEntry } from './types';
 import { demoStations } from './data';
@@ -168,8 +168,11 @@ function getInitialEvidenceScenario(): EvidenceScenario {
 
 export function MobilePrototype() {
   const [launchState, setLaunchState] = useState<LaunchState>('station-selection');
-  const [stations, setStations] = useState<StationEntry[]>(demoStations);
+  const [stations, setStations] = useState<StationEntry[]>(
+    () => demoStations.map((station) => ({ ...station, online: undefined })),
+  );
   const [activeUrl, setActiveUrl] = useState('http://localhost:9000');
+  const verificationTimers = useRef<Map<string, number>>(new Map());
   const [scenes, setScenes] = useState<string[]>(['Launch']);
   const [evidenceScenario, setEvidenceScenario] = useState<EvidenceScenario>(
     getInitialEvidenceScenario,
@@ -201,6 +204,30 @@ export function MobilePrototype() {
     [stations, activeUrl],
   );
 
+  useEffect(() => {
+    beginStationVerification(activeUrl);
+    return () => {
+      verificationTimers.current.forEach((timer) => window.clearTimeout(timer));
+      verificationTimers.current.clear();
+    };
+  }, []);
+
+  function beginStationVerification(url: string) {
+    if (!url) return;
+    const existingTimer = verificationTimers.current.get(url);
+    if (existingTimer !== undefined) window.clearTimeout(existingTimer);
+    setStations((previous) => previous.map((station) => (
+      station.url === url ? { ...station, online: undefined } : station
+    )));
+    const timer = window.setTimeout(() => {
+      setStations((previous) => previous.map((station) => (
+        station.url === url ? { ...station, online: true } : station
+      )));
+      verificationTimers.current.delete(url);
+    }, 700);
+    verificationTimers.current.set(url, timer);
+  }
+
   function handleContinue() {
     setLaunchState('access-gate-chain');
     setScenes(['Launch', 'Auth Gate']);
@@ -225,6 +252,8 @@ export function MobilePrototype() {
 
   function handleSelectStation(url: string) {
     setActiveUrl(url);
+    const station = stations.find((entry) => entry.url === url);
+    if (station?.online !== true) beginStationVerification(url);
   }
 
   function handleRemoveStation(url: string) {
@@ -235,11 +264,19 @@ export function MobilePrototype() {
     }
   }
 
-  function handleAddStation() {
-    const newUrl = 'https://new-station.peers.social';
-    if (!stations.find((s) => s.url === newUrl)) {
-      setStations((prev) => [...prev, { url: newUrl, label: 'New Station', online: true }]);
-      setActiveUrl(newUrl);
+  function handleAddStation(url: string) {
+    if (!stations.find((station) => station.url === url)) {
+      const label = url.replace(/^https?:\/\//, '').split(/[/:]/)[0]
+        .split('.')
+        .map((part) => part ? part[0].toUpperCase() + part.slice(1) : part)
+        .join(' ');
+      setStations((previous) => [...previous, {
+        url,
+        label: label || 'New Station',
+        online: undefined,
+      }]);
+      setActiveUrl(url);
+      beginStationVerification(url);
     }
   }
 

@@ -88,13 +88,32 @@ try {
 
     await open('journey');
     await capture('default');
+    await device.getByRole('button', { name: 'Add Station', exact: true }).click();
+    const stationAddress = device.locator('.mp-station-address');
+    await stationAddress.fill('invalid-address');
+    await device.getByRole('button', { name: 'Verify and add Station', exact: true }).click();
+    assert(await device.getByText('Enter a full HTTP(S) Station URL.', { exact: true }).isVisible());
+    assert.equal(await device.locator('.mp-station-protocol').count(), 0);
+    await stationAddress.fill('https://edge.peers.social');
+    await device.getByRole('button', { name: 'Verify and add Station', exact: true }).click();
+    assert(await device.getByText('https://edge.peers.social', { exact: true }).isVisible());
     await open('session-revoked');
     await capture('auth-session-revoked');
+    assert.equal(await device.locator('.mp-oauth-overlay').count(), 0);
+    await device.getByRole('button', { name: 'Continue with GitHub', exact: true }).click();
+    const githubAction = device.locator('[data-oauth-provider="github"]');
+    assert.notEqual(await githubAction.getAttribute('data-oauth-state'), 'idle');
+    await device.getByRole('button', { name: 'Cancel GitHub sign-in', exact: true }).click();
+    assert.equal(await githubAction.getAttribute('data-oauth-state'), 'idle');
     await open('social-unavailable');
     const initial = await device.boundingBox();
     assert.equal(await device.locator('[data-demo-recovery-owner="lifecycle"]').count(), 1);
     assert.equal(await device.locator('.mp-runtime-notice').count(), 0);
     await capture('unavailable');
+    await device.getByRole('button', { name: 'Moments', exact: true }).click();
+    assert.equal(await device.locator('[data-social-post]').count(), 0);
+    assert.equal(await device.locator('[data-demo-recovery-owner="lifecycle"]').count(), 1);
+    await capture('social-unavailable');
     await device.getByRole('button', { name: 'Me', exact: true }).click();
     const me = await device.boundingBox();
     assert.equal(initial.width, me.width);
@@ -293,6 +312,69 @@ try {
     assert(composer.sendInside && composer.emojiInside, 'send and emoji must live inside the dock');
     assert(Math.max(...insetValues) - Math.min(...insetValues) <= 2,
       `composer dock frame must be equal on all four sides, got ${JSON.stringify(composer.insets)}`);
+
+    // 4. Social has the same semantic information architecture as Desktop:
+    // Home / Public / Search / Circles, plus a continuous post detail thread.
+    await open('chat-default');
+    await device.getByRole('button', { name: 'Moments', exact: true }).click();
+    const socialScopes = await device.locator('.mp-social-scope button').allTextContents();
+    assert.deepEqual(socialScopes, ['Home', 'Public', 'Search', 'Circles']);
+    assert.equal(await device.locator('[data-social-post]').count(), 5);
+    await capture('social-home');
+    await device.getByRole('button', { name: 'Public', exact: true }).click();
+    assert.equal(await device.locator('[data-social-post]').count(), 2);
+    assert.equal(await device.locator('[data-social-post] .mp-moment-audience').evaluateAll(
+      (elements) => elements.every((element) => element.textContent?.trim() === 'Public'),
+    ), true);
+    await capture('social-public');
+    await device.getByRole('button', { name: 'Search', exact: true }).click();
+    await device.getByPlaceholder('Search people by name or handle', { exact: true }).fill('Carol');
+    const follow = device.getByRole('button', { name: 'Following', exact: true });
+    assert(await follow.isVisible());
+    await follow.click();
+    assert(await device.getByRole('button', { name: 'Follow', exact: true }).isVisible());
+    await capture('social-search');
+    await device.getByRole('button', { name: 'Circles', exact: true }).click();
+    assert.equal(await device.locator('.mp-circle-card').count(), 2);
+    await device.getByPlaceholder('New circle name', { exact: true }).fill('Release review');
+    await device.getByRole('button', { name: 'Create circle', exact: true }).click();
+    assert(await device.getByText('Release review', { exact: true }).isVisible());
+    await capture('social-circles');
+    await device.getByRole('button', { name: 'Home', exact: true }).click();
+    await device.getByRole('button', { name: 'Open post by Carol Li', exact: true }).click();
+    assert.equal(await device.locator('[data-prototype-page="social-detail"]').count(), 1);
+    assert.equal(await device.locator('.mp-tabbar').count(), 0);
+    assert(await device.getByPlaceholder('Add a comment...', { exact: true }).isVisible());
+    await capture('social-detail');
+    await device.getByRole('button', { name: 'Back', exact: true }).click();
+
+    // 5. Mobile Settings preserves Desktop's four ownership groups and every
+    // meaningful section. No generic placeholder is allowed to satisfy a row.
+    await device.getByRole('button', { name: 'Me', exact: true }).click();
+    assert.deepEqual(
+      await device.locator('.mp-settings-group-title').allTextContents(),
+      ['General', 'Network', 'AI', 'Advanced'],
+    );
+    const settingIds = [
+      'account', 'notifications', 'privacy', 'appearance',
+      'station', 'discovery', 'federation',
+      'providers', 'models', 'memory', 'skills', 'mcp',
+      'storage', 'channels', 'applets', 'statistics', 'logs', 'cron',
+      'command-menu', 'about',
+    ];
+    assert.equal(await device.locator('[data-setting-id]').count(), settingIds.length);
+    await capture('settings-home');
+    for (const settingId of settingIds) {
+      await device.locator(`[data-setting-id="${settingId}"]`).click();
+      const detail = device.locator(`[data-setting-detail="${settingId}"]`);
+      assert.equal(await detail.count(), 1, `missing setting detail ${settingId}`);
+      assert.equal(await detail.getByText(/Configure your .* preferences here\./).count(), 0,
+        `generic setting placeholder leaked for ${settingId}`);
+      assert(await detail.locator('.mp-setting-section, .mp-account-identity, .mp-about-hero').count() > 0,
+        `setting detail ${settingId} has no meaningful section`);
+      if (settingId === 'station') await capture('settings-station');
+      await detail.getByRole('button', { name: 'Back', exact: true }).click();
+    }
 
     assert.deepEqual(errors, []);
     await page.close();

@@ -1,18 +1,17 @@
 # Mobile Shell Interaction Gap Register
 
 > **Status**: resolved
-> **Verdict**: confirmed interaction baseline
-> **Reviewed**: 2026-10-12
+> **Verdict**: whole-product Mobile baseline aligned with Desktop master
+> **Reviewed**: 2026-10-14
 > **Scope**: `packages/prototypes/mobile/chat/`
 > **Implementation gate**: Owner-confirmed on 2026-10-12. Production changes
 > remain subject to the mounted production Plan and worktree binding.
 
 ## 1. Purpose
 
-This register resets the Mobile prototype review after current rendered
-evidence contradicted the prior `pending-review` claim. It records the
-experience gaps that must be resolved before Mobile and Desktop Chat parity
-work resumes.
+This register owns the Mobile prototype interaction baseline and its closure
+criteria. Sections 3-6 preserve the review contract; Section 7 records the
+current executable disposition after the whole-product alignment pass.
 
 The governing direction is:
 
@@ -335,8 +334,12 @@ Current executable source and rendered evidence resolve:
 - MUX-08: shared semantic tokens drive CSS and antd in light/dark themes.
 - MUX-09: details expose trust on demand and separate device-local clear,
   relationship block, and safety report hierarchy.
-- MUX-10: Moments, Contacts, Me, and Chat use one continuous Mobile shell
-  language.
+- MUX-10: Station/Login, Chat/Contacts/Detail, Social, and Settings use one
+  continuous Mobile shell language. Social now preserves Desktop master scope
+  ownership (`Home / Public / Search / Circles`), post detail, actor routing,
+  follow actions, and circle management. Settings preserves Desktop master's
+  four groups and all 20 meaningful sections; generic placeholder detail
+  pages are forbidden.
 
 Partially resolved:
 
@@ -381,3 +384,17 @@ Owner-confirmed under
 `USER-DECISION-20261012-MOBILE-PROTOTYPE-CONFIRMED`. The remaining
 `UNPROVEN` cells stay explicit and production work may proceed only through its
 mounted Plan.
+
+The 2026-10-14 whole-product alignment is guarded by:
+
+- `scripts/check-layout.mjs`: 78 rendered captures across three viewports,
+  including Station validation, inline OAuth state, Social scopes/detail, all
+  20 Settings detail routes, overflow, touch geometry, and negative controls.
+- `scripts/check-chat-parity.mjs`: live Desktop master versus Mobile measured
+  Chat geometry and interaction parity.
+- `scripts/check-product-parity.mjs`: live Desktop master versus Mobile auth,
+  Contacts/Group detail commands, Social scope/detail, and exact Settings
+  group/section ownership.
+
+These are prototype gates only. Native runtime and production evidence remain
+owned by the mounted execution Plan.

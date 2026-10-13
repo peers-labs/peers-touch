@@ -1,6 +1,18 @@
 import { useMemo, useState } from 'react';
 import { Input, Typography } from 'antd';
-import { ArrowLeft, Calendar, LogOut, MessageCircle, Search, ShieldCheck, Volume2, VolumeX } from 'lucide-react';
+import {
+  ArrowLeft,
+  Calendar,
+  Crown,
+  LogOut,
+  MessageCircle,
+  Search,
+  ShieldCheck,
+  UserMinus,
+  UserRoundCog,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import type { Contact, GroupItem } from '../types';
 import { demoContacts } from '../data';
 import copy from '../../../../../locales/en/common.json';
@@ -13,23 +25,32 @@ const defaultMembers = demoContacts.slice(0, 4);
 const memberKey = (member: Contact) => member.key;
 
 export function GroupDetailView({
-  group, members = defaultMembers, listMemory, sampleOnly = false, onMemberClick, onBack,
+  group, members = defaultMembers, listMemory, sampleOnly = false,
+  onMemberClick, onOpenChat, onExit, onBack,
 }: {
   group: GroupItem;
   members?: Contact[];
   listMemory: PrototypeListMemory;
   sampleOnly?: boolean;
   onMemberClick?: (member: Contact) => void;
+  onOpenChat?: (group: GroupItem) => void;
+  onExit?: (group: GroupItem) => void;
   onBack: () => void;
 }) {
   const [isMuted, setIsMuted] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<Contact | null>(null);
+  const [moderationNotice, setModerationNotice] = useState('');
+  const [managedMembers, setManagedMembers] = useState(members);
+  const [memberStates, setMemberStates] = useState<Record<string, 'Admin' | 'Muted'>>({});
+  const canModerate = Boolean(group.canModerate && !sampleOnly);
+  const exitLabel = group.isOwner && !sampleOnly ? 'Dissolve Group' : copy['mobile.group.leaveGroup'];
   const queryKey = `members-query:${group.key}`;
   const [query, setQuery] = useState(() => listMemory.read(queryKey)?.query ?? '');
   const filteredMembers = useMemo(() => {
     const value = query.trim().toLowerCase();
-    return members.filter((member) => member.name.toLowerCase().includes(value));
-  }, [members, query]);
+    return managedMembers.filter((member) => member.name.toLowerCase().includes(value));
+  }, [managedMembers, query]);
 
   return (
     <div className="mp-detail-page" data-prototype-page="group-detail">
@@ -47,7 +68,8 @@ export function GroupDetailView({
       </div>
 
       <div className="mp-detail-actions">
-        <button type="button" className="mp-detail-action-btn" disabled={sampleOnly}>
+        <button type="button" className="mp-detail-action-btn" disabled={sampleOnly || !onOpenChat}
+          onClick={() => onOpenChat?.(group)}>
           <span className="mp-detail-action-icon"><MessageCircle size={22} /></span>
           <span className="mp-detail-action-label">{copy['mobile.contacts.openChat']}</span>
         </button>
@@ -57,7 +79,7 @@ export function GroupDetailView({
         </button>
         <button type="button" className="mp-detail-action-btn" disabled={sampleOnly} onClick={() => setShowLeaveConfirm(true)}>
           <span className="mp-detail-action-icon danger"><LogOut size={22} /></span>
-          <span className="mp-detail-action-label">{copy['mobile.group.leaveGroup']}</span>
+          <span className="mp-detail-action-label">{exitLabel}</span>
         </button>
       </div>
       {sampleOnly && <div className="mp-direct-state" role="status">{copy['mobile.launch.unavailable']}</div>}
@@ -65,11 +87,21 @@ export function GroupDetailView({
       {showLeaveConfirm && (
         <div className="mp-confirm-backdrop" onClick={() => setShowLeaveConfirm(false)}>
           <div className="mp-confirm-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="mp-confirm-title">Leave Group?</div>
-            <div className="mp-confirm-desc">You will no longer receive messages from {group.name}.</div>
+            <div className="mp-confirm-title">{group.isOwner && !sampleOnly ? 'Dissolve Group?' : 'Leave Group?'}</div>
+            <div className="mp-confirm-desc">
+              {group.isOwner && !sampleOnly
+                ? `${group.name} will be removed for every member.`
+                : `You will no longer receive messages from ${group.name}.`}
+            </div>
             <div className="mp-confirm-actions">
               <button type="button" className="mp-confirm-btn" onClick={() => setShowLeaveConfirm(false)}>Cancel</button>
-              <button type="button" className="mp-confirm-btn mp-confirm-btn--danger" onClick={() => { setShowLeaveConfirm(false); onBack(); }}>Leave</button>
+              <button type="button" className="mp-confirm-btn mp-confirm-btn--danger" onClick={() => {
+                setShowLeaveConfirm(false);
+                onExit?.(group);
+                onBack();
+              }}>
+                {group.isOwner && !sampleOnly ? 'Dissolve' : 'Leave'}
+              </button>
             </div>
           </div>
         </div>
@@ -91,18 +123,25 @@ export function GroupDetailView({
           surfaceKey={`members:${group.key}:${query.trim().toLowerCase()}`} memory={listMemory}>
           {(window) => window.map((m) => (
           <div key={m.key} className="mp-member-item" data-scroll-anchor-id={m.key}
-            role={onMemberClick ? 'button' : undefined} tabIndex={onMemberClick ? 0 : undefined}
-            onClick={() => onMemberClick?.(m)} onKeyDown={(event) => {
-              if (onMemberClick && (event.key === 'Enter' || event.key === ' ')) {
+            role={onMemberClick || canModerate ? 'button' : undefined}
+            tabIndex={onMemberClick || canModerate ? 0 : undefined}
+            onClick={() => {
+              if (canModerate) setSelectedMember(m);
+              else onMemberClick?.(m);
+            }} onKeyDown={(event) => {
+              if ((onMemberClick || canModerate) && (event.key === 'Enter' || event.key === ' ')) {
                 event.preventDefault();
-                onMemberClick(m);
+                if (canModerate) setSelectedMember(m);
+                else onMemberClick?.(m);
               }
             }}>
             <IdentityAvatar name={m.name} initials={m.avatar} src={m.avatarUrl}
               size={38} online={m.online} showPresence />
             <div className="mp-member-info">
               <Text strong style={{ fontSize: 14 }}>{m.name}</Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>{m.note}</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {m.note}{memberStates[m.key] ? ` · ${memberStates[m.key]}` : ''}
+              </Text>
             </div>
           </div>
           ))}
@@ -111,6 +150,72 @@ export function GroupDetailView({
           <div className="mp-details-empty" role="status">{copy['mobile.group.noMembers']}</div>
         )}
       </div>
+
+      {canModerate && (
+        <section className="mp-detail-section mp-group-admin">
+          <div className="mp-detail-section-title">Group administration</div>
+          <div className="mp-group-admin-copy">
+            <Text strong>{selectedMember ? selectedMember.name : 'Select a member'}</Text>
+            <Text type="secondary">
+              {selectedMember
+                ? 'Moderation actions apply to this group only.'
+                : 'Tap a member above to manage their group role.'}
+            </Text>
+          </div>
+          <div className="mp-group-admin-actions">
+            <button type="button" disabled={!selectedMember} onClick={() => {
+              if (!selectedMember) return;
+              const wasMuted = memberStates[selectedMember.key] === 'Muted';
+              setMemberStates((current) => {
+                const next = { ...current };
+                if (wasMuted) delete next[selectedMember.key];
+                else next[selectedMember.key] = 'Muted';
+                return next;
+              });
+              setModerationNotice(`${selectedMember.name} ${wasMuted ? 'unmuted' : 'muted'} in this group`);
+              setSelectedMember(null);
+            }}>
+              {selectedMember && memberStates[selectedMember.key] === 'Muted' ? <Volume2 size={16} /> : <VolumeX size={16} />}
+              {selectedMember && memberStates[selectedMember.key] === 'Muted' ? 'Unmute' : 'Mute'}
+            </button>
+            <button type="button" disabled={!selectedMember} onClick={() => {
+              if (!selectedMember) return;
+              const wasAdmin = memberStates[selectedMember.key] === 'Admin';
+              setMemberStates((current) => {
+                const next = { ...current };
+                if (wasAdmin) delete next[selectedMember.key];
+                else next[selectedMember.key] = 'Admin';
+                return next;
+              });
+              setModerationNotice(`${selectedMember.name} ${wasAdmin ? 'is now a member' : 'promoted to admin'}`);
+              setSelectedMember(null);
+            }}>
+              <UserRoundCog size={16} />
+              {selectedMember && memberStates[selectedMember.key] === 'Admin' ? 'Demote' : 'Promote'}
+            </button>
+            <button type="button" className="danger" disabled={!selectedMember} onClick={() => {
+              if (selectedMember) {
+                setManagedMembers((current) => current.filter((member) => member.key !== selectedMember.key));
+              }
+              setModerationNotice(`${selectedMember?.name} removed from the group`);
+              setSelectedMember(null);
+            }}>
+              <UserMinus size={16} /> Remove
+            </button>
+          </div>
+          {group.isOwner && (
+            <button type="button" className="mp-group-transfer" disabled={!selectedMember} onClick={() => {
+              if (!selectedMember) return;
+              setMemberStates((current) => ({ ...current, [selectedMember.key]: 'Admin' }));
+              setModerationNotice(`Ownership transfer to ${selectedMember.name} is ready for confirmation`);
+              setSelectedMember(null);
+            }}>
+              <Crown size={15} /> Transfer ownership
+            </button>
+          )}
+          {moderationNotice && <div className="mp-group-admin-notice" role="status">{moderationNotice}</div>}
+        </section>
+      )}
 
       <div className="mp-detail-section">
         <div className="mp-detail-section-title">Group Info</div>

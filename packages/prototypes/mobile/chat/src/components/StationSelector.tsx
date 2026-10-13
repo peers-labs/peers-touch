@@ -12,11 +12,11 @@ export function StationSelector({
   activeUrl: string;
   onSelect: (url: string) => void;
   onRemove: (url: string) => void;
-  onAdd: () => void;
+  onAdd: (url: string) => void;
   showRemovalConfirmation?: boolean;
 }) {
-  const [protocol, setProtocol] = useState<'http' | 'https'>('https');
   const [address, setAddress] = useState('');
+  const [addressError, setAddressError] = useState('');
   const [addingStation, setAddingStation] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState<StationEntry | null>(
     showRemovalConfirmation
@@ -29,16 +29,36 @@ export function StationSelector({
   function getStatus(entry: StationEntry): { className: string; label: string } {
     if (entry.online === undefined) return { className: 'validating', label: 'Validating' };
     if (entry.online) return { className: 'online', label: 'Verified' };
-    return { className: 'offline', label: 'Unavailable' };
+    return { className: 'offline', label: 'Retry' };
   }
 
   function closeStationInput() {
     setAddress('');
+    setAddressError('');
     setAddingStation(false);
   }
 
   function handleAdd() {
-    onAdd();
+    let parsed: URL;
+    try {
+      parsed = new URL(address.trim());
+    } catch {
+      setAddressError('Enter a full HTTP(S) Station URL.');
+      return;
+    }
+    if (
+      !['http:', 'https:'].includes(parsed.protocol)
+      || !parsed.hostname
+      || parsed.username
+      || parsed.password
+      || parsed.search
+      || parsed.hash
+    ) {
+      setAddressError('Enter a full HTTP(S) Station URL.');
+      return;
+    }
+    const path = parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/+$/, '');
+    onAdd(`${parsed.origin}${path}`);
     closeStationInput();
   }
 
@@ -52,19 +72,23 @@ export function StationSelector({
       {showStationInput && (
         <div className="mp-station-input-row">
           <div className="mp-station-url-control">
-            <button type="button" className="mp-station-protocol" onClick={() => setProtocol(protocol === 'https' ? 'http' : 'https')}>
-              {protocol.toUpperCase()}
-            </button>
             <input
               className="mp-station-address"
               value={address}
-              placeholder="localhost:9000"
+              placeholder="https://station.example.com"
               inputMode="url"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
               autoFocus
-              onChange={(e) => setAddress(e.target.value)}
+              aria-invalid={Boolean(addressError)}
+              onChange={(e) => {
+                setAddress(e.target.value);
+                setAddressError('');
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') handleAdd();
+              }}
             />
             {address && (
               <button type="button" className="mp-station-clear" aria-label="Clear" onClick={() => setAddress('')}>
@@ -72,11 +96,16 @@ export function StationSelector({
               </button>
             )}
           </div>
-          <Button type="primary" icon={<Plus size={16} />} onClick={handleAdd} />
+          <Button type="primary" aria-label="Verify and add Station"
+            icon={<Plus size={16} />} disabled={!address.trim()} onClick={handleAdd} />
           {hasEntries && (
             <Button type="text" className="mp-station-cancel-btn" onClick={closeStationInput}>Cancel</Button>
           )}
         </div>
+      )}
+      {showStationInput && addressError && <Text type="danger" className="mp-station-error">{addressError}</Text>}
+      {showStationInput && !addressError && address.trim().startsWith('http://') && (
+        <Text className="mp-station-helper warning">HTTP connections are not encrypted.</Text>
       )}
 
       <div className="mp-station-list">

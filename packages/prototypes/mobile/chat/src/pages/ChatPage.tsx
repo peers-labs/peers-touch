@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Badge, Input, List, Typography } from 'antd';
-import { MessageCircle, Pencil, Search } from 'lucide-react';
+import { ArrowLeft, MessageCircle, Pencil, Search } from 'lucide-react';
 import type { ChatListEvidenceState, Conversation, MobileUiEvidence } from '../types';
-import { demoConversations } from '../data';
+import { demoContacts, demoConversations } from '../data';
 import copy from '../../../../../locales/en/common.json';
 import { PrototypeListWindow } from '../components/PrototypeListWindow';
 import type { PrototypeListMemory } from '../listPresentation';
@@ -23,6 +23,8 @@ export function ChatPage({ conversations = demoConversations, listMemory, uiEvid
   onConversationClick: (conv: Conversation) => void;
 }) {
   const [searchQuery, setSearchQuery] = useState(() => listMemory.read('chat-query')?.query ?? '');
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeQuery, setComposeQuery] = useState('');
   const [localState, setLocalState] = useState<ChatListEvidenceState>(uiEvidence.chatListState);
   const recoveryTimer = useRef<number | null>(null);
 
@@ -58,7 +60,7 @@ export function ChatPage({ conversations = demoConversations, listMemory, uiEvid
     <div className="mp-page" data-prototype-page="chats">
       <header className="mp-header">
         <h1 className="mp-header-title">Chats</h1>
-        <button type="button" className="mp-header-action" aria-label="Compose">
+        <button type="button" className="mp-header-action" aria-label="Compose" onClick={() => setComposeOpen(true)}>
           <Pencil size={20} />
         </button>
       </header>
@@ -152,6 +154,70 @@ export function ChatPage({ conversations = demoConversations, listMemory, uiEvid
         </PrototypeListWindow>
         )}
       </div>
+
+      {composeOpen && (
+        <section className="mp-compose-conversation" aria-label="New conversation">
+          <header className="mp-detail-header">
+            <button type="button" className="mp-thread-back" aria-label="Back" onClick={() => setComposeOpen(false)}>
+              <ArrowLeft size={22} />
+            </button>
+            <h2 className="mp-detail-header-title">New conversation</h2>
+          </header>
+          <div className="mp-search-bar">
+            <Input
+              autoFocus
+              prefix={<Search size={16} />}
+              placeholder="Search people"
+              allowClear
+              value={composeQuery}
+              onChange={(event) => setComposeQuery(event.target.value)}
+            />
+          </div>
+          <div className="mp-compose-people">
+            {demoContacts
+              .filter((contact) => {
+                const query = composeQuery.trim().toLowerCase();
+                return !query || contact.name.toLowerCase().includes(query) || contact.note.toLowerCase().includes(query);
+              })
+              .map((contact) => (
+                <button
+                  key={contact.key}
+                  type="button"
+                  className="mp-compose-person"
+                  onClick={() => {
+                    const existing = conversations.find((conversation) => conversation.key === contact.key);
+                    onConversationClick(existing ?? {
+                      key: `demo-direct-${contact.key}`,
+                      name: contact.name,
+                      avatar: contact.avatar,
+                      avatarUrl: contact.avatarUrl,
+                      avatarGradient: contact.avatarGradient,
+                      lastMessage: '',
+                      time: '',
+                      unread: 0,
+                      online: contact.online,
+                    });
+                    setComposeOpen(false);
+                  }}
+                >
+                  <IdentityAvatar
+                    name={contact.name}
+                    initials={contact.avatar}
+                    src={contact.avatarUrl}
+                    size={44}
+                    online={contact.online}
+                    showPresence
+                    renderState={uiEvidence.avatarState}
+                  />
+                  <span>
+                    <Text strong>{contact.name}</Text>
+                    <Text type="secondary">{contact.note}</Text>
+                  </span>
+                </button>
+              ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

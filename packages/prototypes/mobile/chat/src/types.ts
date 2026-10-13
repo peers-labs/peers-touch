@@ -119,10 +119,36 @@ export interface GroupItem {
   avatar: string;
   avatarGradient: string;
   memberCount: number;
+  canModerate?: boolean;
+  isOwner?: boolean;
 }
 
+export type SettingId =
+  | 'account'
+  | 'notifications'
+  | 'privacy'
+  | 'appearance'
+  | 'station'
+  | 'discovery'
+  | 'federation'
+  | 'providers'
+  | 'models'
+  | 'memory'
+  | 'skills'
+  | 'mcp'
+  | 'storage'
+  | 'channels'
+  | 'applets'
+  | 'statistics'
+  | 'logs'
+  | 'cron'
+  | 'command-menu'
+  | 'about';
+
 export interface SettingEntry {
+  id: SettingId;
   label: string;
+  description: string;
   value?: string;
   icon: React.ComponentType<{ size?: number }>;
   tint: 'primary' | 'success' | 'warning' | 'danger' | 'neutral';
