@@ -10,6 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from tooling.acceptance.core import REPO_ROOT
+from tooling.acceptance.core.redaction import redact_value
 from tooling.acceptance.gates.station_access.node_connectivity_native_e2e import (
     ATTACHMENT_BYTES,
     GATE_ID,
@@ -365,11 +366,11 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
                             },
                             "sessionBefore": {
                                 "session_id_sha256": "c" * 64,
-                                "token_fingerprint": "d" * 64,
+                                "session_binding_sha256": "d" * 64,
                             },
                             "sessionAfter": {
                                 "session_id_sha256": "c" * 64,
-                                "token_fingerprint": "d" * 64,
+                                "session_binding_sha256": "d" * 64,
                             },
                             "transition": {
                                 "previousLeaseCancelled": True,
@@ -403,7 +404,7 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
             }
         }
 
-        validate_ncp_report(report)
+        validate_ncp_report(redact_value(report))
         report["runtime"]["nodeConnectivity"]["attachment"][
             "receiverSha256"
         ] = "b" * 64

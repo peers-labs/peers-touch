@@ -366,7 +366,7 @@ pub fn acceptance_window_session_identity(
             "actor_ptid": session.actor.ptid,
             "account_id": session.account_id,
             "session_id_sha256": hex::encode(Sha256::digest(session_id.as_bytes())),
-            "token_fingerprint": hex::encode(Sha256::digest(session.jwt.as_bytes())),
+            "session_binding_sha256": hex::encode(Sha256::digest(session.jwt.as_bytes())),
         })
         .to_string(),
     })

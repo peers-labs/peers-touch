@@ -138,8 +138,8 @@ def _window_session_identity(client: TauriSession) -> dict[str, str]:
     expected = {
         "account_id",
         "actor_ptid",
+        "session_binding_sha256",
         "session_id_sha256",
-        "token_fingerprint",
     }
     if (
         not isinstance(payload, dict)
@@ -148,8 +148,8 @@ def _window_session_identity(client: TauriSession) -> dict[str, str]:
             not isinstance(payload.get(key), str) or not payload[key]
             for key in expected
         )
+        or len(payload["session_binding_sha256"]) != 64
         or len(payload["session_id_sha256"]) != 64
-        or len(payload["token_fingerprint"]) != 64
     ):
         raise GateError("Native window session identity is incomplete")
     return {key: payload[key] for key in expected}
@@ -450,10 +450,10 @@ class NodeConnectivityClusterNativeGate(
             and session_before["actor_ptid"] == actor_before
             and session_after["actor_ptid"] == actor_before
             and session_after["account_id"] == session_before["account_id"]
+            and session_after["session_binding_sha256"]
+            == session_before["session_binding_sha256"]
             and session_after["session_id_sha256"]
-            == session_before["session_id_sha256"]
-            and session_after["token_fingerprint"]
-            == session_before["token_fingerprint"],
+            == session_before["session_id_sha256"],
             json.dumps(
                 {
                     "binding": binding,
