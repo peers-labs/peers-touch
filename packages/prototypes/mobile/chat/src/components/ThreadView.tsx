@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Input, Typography } from 'antd';
-import { ArrowLeft, Plus, Send } from 'lucide-react';
+import { ArrowLeft, Send } from 'lucide-react';
 import type { Message, Conversation } from '../types';
 import { demoAvatarUrls } from '../data';
 import { IdentityAvatar } from './IdentityAvatar';
@@ -66,23 +66,27 @@ export function ThreadView({ message, conversation, onBack }: { message: Message
       </div>
 
       <div className="mp-composer">
-        <button type="button" className="mp-composer-attach" aria-label="Attach"><Plus size={22} /></button>
-        <Input.TextArea
-          className="mp-composer-input"
-          value={threadInput}
-          placeholder="Reply in thread"
-          autoSize={{ minRows: 1, maxRows: 4 }}
-          onChange={(e) => setThreadInput(e.target.value)}
-          onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); handleThreadSend(); } }}
-        />
-        <button
-          type="button"
-          className={`mp-composer-send ${threadInput.trim() ? 'active' : ''}`}
-          aria-label="Send"
-          onClick={handleThreadSend}
-        >
-          <Send size={18} />
-        </button>
+        <div className="mp-composer-dock">
+          <Input.TextArea
+            className="mp-composer-input"
+            value={threadInput}
+            placeholder="Reply in thread"
+            autoSize={{ minRows: 1, maxRows: 4 }}
+            onChange={(e) => setThreadInput(e.target.value)}
+            onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); handleThreadSend(); } }}
+          />
+          <div className="mp-composer-tools mp-composer-tools--end">
+            <button
+              type="button"
+              className={`mp-composer-send ${threadInput.trim() ? 'active' : ''}`}
+              aria-label="Send"
+              disabled={!threadInput.trim()}
+              onClick={handleThreadSend}
+            >
+              <Send size={18} />
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -1080,11 +1080,11 @@
   }
   .peer .mp-bubble {
     background: var(--mp-bubble-peer); color: var(--mp-gray-800);
-    border-radius: var(--mp-r-lg) var(--mp-r-lg) var(--mp-r-lg) var(--mp-r-xs);
+    border-radius: var(--mp-r-lg);
   }
   .mine .mp-bubble {
     background: var(--mp-bubble-own); color: #fff;
-    border-radius: var(--mp-r-lg) var(--mp-r-lg) var(--mp-r-xs) var(--mp-r-lg);
+    border-radius: var(--mp-r-lg);
   }
   .mp-bubble-pin {
     display: inline-block; vertical-align: middle; margin-right: 4px;
@@ -1135,11 +1135,11 @@
   }
   .peer .mp-message-file {
     background: var(--mp-bubble-peer); box-shadow: 0 1px 2px rgba(31,35,48,0.04);
-    border-radius: var(--mp-r-lg) var(--mp-r-lg) var(--mp-r-lg) var(--mp-r-xs);
+    border-radius: var(--mp-r-lg);
   }
   .mine .mp-message-file {
     background: var(--mp-bubble-own);
-    border-radius: var(--mp-r-lg) var(--mp-r-lg) var(--mp-r-xs) var(--mp-r-lg);
+    border-radius: var(--mp-r-lg);
   }
 
   .mp-file-icon {
@@ -1162,13 +1162,17 @@
   .mp-receipt--read { color: var(--mp-primary); }
   .mp-receipt--pending { opacity: 0.6; }
   .mp-receipt--failed { color: var(--mp-error); }
-  .mp-message-retry {
-    display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-    min-height: 44px; margin-top: 2px; padding: 0 10px;
-    border: 0; border-radius: var(--mp-r-md); background: transparent;
-    color: var(--mp-error); font: inherit; font-size: 11px; font-weight: 700;
+  /* Inline delivery retry/check action lives inside the meta row, matching
+     Desktop's single inline "Failed, click to retry" (no block button). */
+  .mp-meta-action {
+    display: inline-flex; align-items: center; gap: 3px;
+    border: 0; background: transparent; padding: 2px 4px;
+    font: inherit; font-size: 11px; line-height: 1.4; font-weight: 600;
     cursor: pointer; -webkit-tap-highlight-color: transparent;
   }
+  .mp-meta-action--retry { color: var(--mp-error); }
+  .mp-meta-action--check { color: var(--pt-trust-warning, var(--mp-gray-500)); }
+  .mp-meta-action:disabled { opacity: 0.6; cursor: default; }
 
   /* ── Typing indicator ── */
   .mp-typing-bubble {
@@ -1204,32 +1208,76 @@
     &:active { background: var(--mp-gray-200); }
   }
 
-  /* ── Composer ── */
+  /* ── Grounded composer (symmetric with Desktop): white chrome bar under a
+     hairline, holding one soft-gray writing dock with an equal frame on all
+     four sides; text + tool row live inside the dock. ── */
   .mp-composer {
-    display: flex; align-items: center; gap: 8px; padding: 8px 12px 10px;
-    background: #fff; border-top: 0.5px solid var(--mp-gray-200);
+    flex: 0 0 auto;
+    background: var(--pt-surface-base);
+    border-top: 0.5px solid var(--mp-gray-200);
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0));
   }
-  .mp-composer-attach {
-    display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;
-    border: none; background: var(--mp-gray-100); color: var(--mp-gray-600); cursor: pointer;
-    border-radius: var(--mp-r-md); flex: 0 0 auto; transition: background 0.12s; -webkit-tap-highlight-color: transparent;
-    &:active { background: var(--mp-gray-200); }
-  }
-  .mp-composer-input {
-    flex: 1; min-width: 0;
-    .ant-input {
-      border-radius: var(--mp-r-lg) !important; background: var(--mp-gray-100) !important;
-      border-color: transparent !important; padding: 8px 14px !important; font-size: 15px;
-      height: 36px; resize: none; box-shadow: none !important;
+  .mp-composer-dock {
+    position: relative;
+    background: var(--mp-gray-100);
+    border: 1px solid var(--mp-gray-200);
+    border-radius: var(--mp-r-lg);
+    padding: 4px 6px 6px;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+    &:focus-within {
+      border-color: color-mix(in srgb, var(--mp-primary) 35%, transparent);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--mp-primary) 10%, transparent);
     }
   }
+  .mp-composer-input {
+    .ant-input {
+      min-height: 40px; padding: 6px 8px 2px !important;
+      background: transparent !important;
+      border: none !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      resize: none; font-size: 15px;
+    }
+  }
+  .mp-composer-tools {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 34px;
+    &--end { justify-content: flex-end; }
+  }
+  .mp-composer-tool {
+    display: flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; padding: 0;
+    border: 0; border-radius: var(--mp-r-md);
+    background: transparent; color: var(--mp-gray-500); cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    &[aria-pressed='true'] { color: var(--mp-primary); }
+    &:active { background: var(--mp-gray-200); }
+  }
+  .mp-composer-emoji {
+    position: absolute; left: 0; right: 0; bottom: calc(100% + 6px);
+    display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px;
+    max-height: 176px; overflow-y: auto;
+    padding: 10px; background: #fff;
+    border: 1px solid var(--mp-gray-200); border-radius: var(--mp-r-lg);
+    box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.16);
+  }
+  .mp-composer-emoji-btn {
+    width: 100%; aspect-ratio: 1; padding: 0;
+    border: 0; border-radius: var(--mp-r-xs);
+    background: transparent; font-size: 20px; cursor: pointer;
+    &:active { background: var(--mp-gray-100); }
+  }
   .mp-composer-send {
-    display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;
-    border: none; background: var(--mp-gray-200); color: var(--mp-gray-400); cursor: pointer;
-    border-radius: var(--mp-r-md); flex: 0 0 auto;
-    transition: background 0.15s, color 0.15s, transform 0.1s; -webkit-tap-highlight-color: transparent;
-    &.active { background: var(--mp-primary); color: #fff; box-shadow: var(--pt-shadow-soft); }
-    &:active { transform: scale(0.9); }
+    display: flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; padding: 0;
+    border: 0; border-radius: var(--mp-r-md);
+    background: transparent; color: var(--mp-gray-400); cursor: default;
+    transition: background 0.15s, color 0.15s;
+    -webkit-tap-highlight-color: transparent;
+    &.active {
+      background: var(--mp-primary); color: #fff; cursor: pointer;
+      box-shadow: var(--pt-shadow-soft);
+    }
   }
 
   /* ── Action sheet ── */
@@ -2534,8 +2582,6 @@
   .mp-header-action,
   .mp-thread-back,
   .mp-thread-action,
-  .mp-composer-attach,
-  .mp-composer-send,
   .mp-reply-banner-close {
     width: 44px;
     height: 44px;
@@ -2608,7 +2654,9 @@
   .mp-message-row.cluster-start:first-child { margin-top: 0; }
   .mp-message-avatar-slot {
     display: flex;
-    align-items: flex-end;
+    /* Identity anchors the cluster at the top, aligned with the sender
+       name — symmetric with Desktop's avatar/name/bubble alignment. */
+    align-items: flex-start;
     justify-content: center;
     width: 34px;
     min-width: 34px;
@@ -2623,17 +2671,17 @@
     font-size: 11px;
     font-weight: 600;
   }
-  .mp-peer .mp-bubble,
-  .peer .mp-bubble { border-radius: var(--pt-radius-lg); }
-  .peer .mp-bubble:not(.cluster-start) { border-top-left-radius: var(--pt-radius-xs); }
-  .peer .mp-bubble:not(.cluster-end) { border-bottom-left-radius: var(--pt-radius-xs); }
-  .mine .mp-bubble:not(.cluster-start) { border-top-right-radius: var(--pt-radius-xs); }
-  .mine .mp-bubble:not(.cluster-end) { border-bottom-right-radius: var(--pt-radius-xs); }
+  /* One rounded-square bubble language: the tail sits at the TOP corner of
+     the cluster-start bubble (same side as the identity), matching Desktop. */
+  .peer .mp-bubble,
+  .mp-peer .mp-bubble { border-radius: var(--pt-radius-lg); }
+  .peer.cluster-start .mp-bubble { border-top-left-radius: var(--pt-radius-xs); }
+  .mine.cluster-start .mp-bubble { border-top-right-radius: var(--pt-radius-xs); }
+  .peer.cluster-start .mp-message-file { border-top-left-radius: var(--pt-radius-xs); }
+  .mine.cluster-start .mp-message-file { border-top-right-radius: var(--pt-radius-xs); }
   .mp-message-meta { min-height: 16px; }
   .mp-message-time { font-size: 11px; }
   .mp-receipt--unknown { color: var(--pt-trust-warning); }
-  .mp-message-retry.unknown { color: var(--pt-trust-warning); }
-  .mp-message-retry:disabled { opacity: 0.64; }
   .mp-reaction-chip,
   .mp-reaction-add,
   .mp-thread-badge {
@@ -2679,13 +2727,8 @@
   .mp-pinned-item-sender { color: var(--pt-action-primary); }
   .mp-pinned-item-text { grid-column: 1; color: var(--pt-text-primary); }
   .mp-pinned-item-time { grid-column: 2; grid-row: 1; color: var(--pt-text-muted); font-size: 11px; }
-  .mp-composer {
-    min-height: 60px;
-    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-    background: var(--pt-surface-base);
-  }
   .mp-composer-input .ant-input {
-    min-height: 44px;
+    min-height: 40px;
     height: auto;
     color: var(--pt-text-primary);
   }

@@ -93,7 +93,15 @@ Required interaction contract:
 - source image is preferred; deterministic initials are the fallback;
 - loading reserves the final geometry; asset failure falls back in place;
 - online state appears only where presence changes a decision;
-- consecutive messages are grouped, with identity shown once per cluster.
+- consecutive messages are grouped, with identity shown once per cluster;
+  the 32px avatar anchors the cluster START, top-aligned with the sender name
+  (symmetric with Desktop), and the 4px bubble tail sits at that same top
+  corner — middle and end bubbles keep the full 12px corner;
+- failed delivery offers one compact inline retry inside the message meta
+  row ("Failed, click to retry"), never a separate block-level button;
+- the conversation composer is one grounded soft-gray writing dock with an
+  equal frame on all four sides; text, emoji, and send live inside the dock
+  (Desktop composer symmetry), not as separate exterior buttons.
 
 ### MUX-03 Chat Loading States Are Missing Or Structurally Wrong
 
