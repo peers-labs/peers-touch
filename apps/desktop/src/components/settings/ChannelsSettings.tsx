@@ -17,6 +17,7 @@ import { LarkSimulateLoginModal } from './LarkSimulateLoginModal';
 import { SettingsContainer, SettingsPanelHeader } from './SettingsLayout';
 import { useOAuth2Store } from '../../store/oauth2';
 import { EVENT, eventBus } from '../../kernel/events';
+import { resolveI18nValue } from '../../i18n';
 
 const { Text } = Typography;
 
@@ -458,7 +459,7 @@ export function ChannelsSettings() {
                               </div>
                               <Flexbox>
                                 <Flexbox horizontal align="center" gap={8}>
-                                  <Text strong>{ch.name}</Text>
+                                  <Text strong>{resolveI18nValue(ch.name)}</Text>
                                   {!ch.enabled && <Tag color="default">{t('channels.card.disabled')}</Tag>}
                                   {isBot && botConnected && (
                                     <Tag color="success" style={{ margin: 0 }}>
@@ -734,7 +735,7 @@ export function ChannelsSettings() {
         title={detailChannel ? (
           <Flexbox horizontal align="center" gap={8}>
             {getTypeInfo(detailChannel.type).icon}
-            <span>{detailChannel.name}</span>
+            <span>{resolveI18nValue(detailChannel.name)}</span>
           </Flexbox>
         ) : t('channels.detail.title')}
         open={!!detailChannel}
