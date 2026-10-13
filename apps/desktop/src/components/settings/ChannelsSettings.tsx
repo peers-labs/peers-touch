@@ -52,6 +52,15 @@ const SlackIcon = ({ size = 20 }: { size?: number }) => (
 
 type TFunc = (key: string, opts?: Record<string, unknown>) => string;
 
+// Older/local-stub channels may carry no parseable created date; render a
+// neutral dash instead of the raw "Invalid Date" Date.toString fallback.
+function formatChannelDate(value: string | undefined | null, withTime: boolean): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return withTime ? date.toLocaleString() : date.toLocaleDateString();
+}
+
 interface ChannelTypeInfo {
   value: string;
   label: string;
@@ -473,7 +482,7 @@ export function ChannelsSettings() {
                                   )}
                                 </Flexbox>
                                 <Text type="secondary" style={{ fontSize: 12 }}>
-                                  {ch.id} · {new Date(ch.createdAt).toLocaleDateString()}
+                                  {ch.id} · {formatChannelDate(ch.createdAt, false)}
                                   {isBot && cfg.botToken && ` · ${t('channels.card.tokenPrefix', { token: cfg.botToken.slice(0, 8) })}`}
                                   {isBot && cfg.appId && ` · ${t('channels.card.appPrefix', { appId: cfg.appId })}`}
                                   {ch.botStatus?.error && (
@@ -919,8 +928,8 @@ function ChannelDetailPanel({
                         onRefresh();
                       }} />
                   </Descriptions.Item>
-                  <Descriptions.Item label={t('channels.detail.info.created')}>{new Date(ch.createdAt).toLocaleString()}</Descriptions.Item>
-                  <Descriptions.Item label={t('channels.detail.info.updated')}>{new Date(ch.updatedAt).toLocaleString()}</Descriptions.Item>
+                  <Descriptions.Item label={t('channels.detail.info.created')}>{formatChannelDate(ch.createdAt, true)}</Descriptions.Item>
+                  <Descriptions.Item label={t('channels.detail.info.updated')}>{formatChannelDate(ch.updatedAt, true)}</Descriptions.Item>
                 </Descriptions>
                 <Card size="small" title={t('channels.detail.info.configuration')}>
                   {Object.entries(cfg).map(([key, val]) => {

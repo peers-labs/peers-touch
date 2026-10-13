@@ -2009,6 +2009,42 @@ impl MessagingStore {
         Ok(())
     }
 
+    /// Terminal transition for a receipt the Station rejected with a
+    /// permanent verdict (malformed/unknown/conflict). The row is retained
+    /// for audit but leaves the pending queue so it can never block the
+    /// FIFO outbox head again.
+    pub fn mark_delivery_receipt_rejected(
+        &self,
+        receipt_id: &str,
+        receipt_bytes: &[u8],
+        error_code: &str,
+    ) -> Result<(), String> {
+        let now_unix_ms = i64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_millis())
+                .unwrap_or(0),
+        )
+        .unwrap_or(0);
+        let changed = self
+            .connection()?
+            .execute(
+                "UPDATE messaging_receipt_outbox
+                 SET state = 'rejected',
+                     last_error_code = ?3,
+                     updated_at_unix_ms = ?4
+                 WHERE receipt_id = ?1
+                   AND receipt_bytes = ?2
+                   AND state = 'pending'",
+                params![receipt_id, receipt_bytes, error_code, now_unix_ms],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("messaging delivery receipt transition mismatch".to_string());
+        }
+        Ok(())
+    }
+
     pub fn mark_command_submitted(
         &self,
         command_id: &str,
@@ -18768,5 +18804,54 @@ mod tests {
                 .len(),
             0
         );
+    }
+
+    #[test]
+    fn rejected_delivery_receipt_leaves_pending_head() {
+        let store = MessagingStore::in_memory().unwrap();
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "INSERT INTO messaging_receipt_outbox(
+                    receipt_id, event_id, receipt_bytes, state, created_at_unix_ms
+                 ) VALUES ('device-consumed:item-1', 'event-1', X'01', 'pending', 100)",
+                [],
+            )
+            .unwrap();
+        assert!(store.next_delivery_receipt().unwrap().is_some());
+
+        store
+            .mark_delivery_receipt_rejected("device-consumed:item-1", &[1u8], "http_409")
+            .unwrap();
+
+        // A permanently rejected receipt must not block the FIFO head: the
+        // pending queue is empty while the row is retained for audit.
+        assert!(store.next_delivery_receipt().unwrap().is_none());
+        let (state, code): (String, String) = store
+            .connection()
+            .unwrap()
+            .query_row(
+                "SELECT state, last_error_code FROM messaging_receipt_outbox WHERE receipt_id = 'device-consumed:item-1'",
+                [],
+                |row| Ok((row.get(0).unwrap(), row.get(1).unwrap())),
+            )
+            .unwrap();
+        assert_eq!(state, "rejected");
+        assert_eq!(code, "http_409");
+
+        // A newer pending receipt now dispatches.
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "INSERT INTO messaging_receipt_outbox(
+                    receipt_id, event_id, receipt_bytes, state, created_at_unix_ms
+                 ) VALUES ('device-consumed:item-2', 'event-2', X'02', 'pending', 200)",
+                [],
+            )
+            .unwrap();
+        let next = store.next_delivery_receipt().unwrap().unwrap();
+        assert_eq!(next.receipt_id, "device-consumed:item-2");
     }
 }

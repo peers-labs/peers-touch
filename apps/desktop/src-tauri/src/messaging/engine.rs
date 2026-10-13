@@ -1725,11 +1725,60 @@ impl MessagingEngine {
         if consumer.ptid != self.endpoint.ptid || consumer.device_id != self.endpoint.device_id {
             return Err("messaging delivery receipt endpoint mismatch".to_string());
         }
-        StationDeliveryReceiptTransport::new(token.to_string(), self.endpoint.device_id.clone())?
-            .submit(&receipt)?;
-        self.store
-            .mark_delivery_receipt_submitted(&entry.receipt_id, &entry.receipt_bytes)?;
-        Ok(true)
+        let transport = StationDeliveryReceiptTransport::new(
+            token.to_string(),
+            self.endpoint.device_id.clone(),
+        )?;
+        match transport.submit(&receipt) {
+            Ok(()) => {
+                self.store
+                    .mark_delivery_receipt_submitted(&entry.receipt_id, &entry.receipt_bytes)?;
+                Ok(true)
+            }
+            // The Authority has permanently rejected this receipt (malformed,
+            // unknown, or an integrity/idempotency conflict). Retrying cannot
+            // change the verdict and — because the outbox dispatches a single
+            // oldest pending row — would wedge every later receipt behind it
+            // forever. Dead-letter the row so the head advances.
+            Err(error) if Self::is_terminal_receipt_rejection(&error) => {
+                tracing::warn!(
+                    receipt_id = %entry.receipt_id,
+                    error = %error,
+                    "delivery receipt permanently rejected by Station; moving outbox row to rejected"
+                );
+                self.store.mark_delivery_receipt_rejected(
+                    &entry.receipt_id,
+                    &entry.receipt_bytes,
+                    &Self::receipt_rejection_code(&error),
+                )?;
+                Ok(true)
+            }
+            Err(error) => Err(error.to_string()),
+        }
+    }
+
+    /// Whether a receipt submit failure can never succeed on retry.
+    fn is_terminal_receipt_rejection(error: &station_client::StationClientError) -> bool {
+        use station_client::StationClientErrorKind::*;
+        match error.kind {
+            // A locally malformed receipt cannot be repaired by waiting.
+            InvalidResponse | Decode => true,
+            // Authoritative permanent verdicts on the receipt itself:
+            // malformed, unknown/gone, or integrity/idempotency conflict.
+            // 401/403 are excluded — they can succeed again after re-login.
+            HttpStatus(status) => matches!(status, 400 | 404 | 409 | 410 | 422),
+            // Network/server outages and session revocations may resolve.
+            Network | SessionRevoked => false,
+        }
+    }
+
+    fn receipt_rejection_code(error: &station_client::StationClientError) -> String {
+        match &error.kind {
+            station_client::StationClientErrorKind::HttpStatus(status) => {
+                format!("http_{status}")
+            }
+            other => format!("{other:?}").to_lowercase(),
+        }
     }
 
     pub fn set_projection_notifier(
@@ -2410,7 +2459,8 @@ impl MessagingEngine {
         &self,
         conversation_id: &str,
     ) -> Result<Vec<crate::messaging::ServiceMessageRow>, String> {
-        self.store.service_messages_for_conversation(conversation_id)
+        self.store
+            .service_messages_for_conversation(conversation_id)
     }
 
     pub fn conversation_message_page(

@@ -741,6 +741,16 @@ pub const REQUIRED_COLUMNS: &[RequiredColumn] = &[
         column: "one_time_prekey_high_watermark",
         definition: "INTEGER NOT NULL DEFAULT 0",
     },
+    RequiredColumn {
+        table: "messaging_receipt_outbox",
+        column: "updated_at_unix_ms",
+        definition: "INTEGER NOT NULL DEFAULT 0",
+    },
+    RequiredColumn {
+        table: "messaging_receipt_outbox",
+        column: "last_error_code",
+        definition: "TEXT NOT NULL DEFAULT ''",
+    },
 ];
 
 pub const POST_COLUMN_MIGRATION_SQL: &str = r#"
