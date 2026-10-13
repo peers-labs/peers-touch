@@ -217,7 +217,7 @@ class NodeConnectivityNativeGate(
             proxy.url,
         )
         try:
-            self.runtime_binding.apply_transport_override(
+            self.runtime_binding.apply_verified_direct_route_override(
                 "alice",
                 "station",
                 override,
@@ -450,7 +450,14 @@ class NodeConnectivityNativeGate(
             )
             return evidence
         finally:
-            proxy.stop()
+            try:
+                self.runtime_binding.clear_verified_direct_route_override(
+                    "alice",
+                    "station",
+                    override,
+                )
+            finally:
+                proxy.stop()
 
     def prove_additional_journey_assertions(self) -> None:
         identity_state = self._prove_persistent_identity_state()

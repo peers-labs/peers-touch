@@ -109,12 +109,30 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
         for command in (
             "acceptance_station_route_probe",
             "acceptance_station_transport_diagnostics",
+            "acceptance_station_direct_route_override",
         ):
             self.assertIn(f"pub fn {command}", command_source)
             self.assertIn(f"station::{command}", main_source)
         self.assertIn(
             '#[cfg(feature = "acceptance-webdriver")]',
             command_source,
+        )
+        gate_source = (
+            REPO_ROOT
+            / "tooling/acceptance/gates/station_access/"
+            "node_connectivity_native_e2e.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "apply_verified_direct_route_override(",
+            gate_source,
+        )
+        self.assertIn(
+            "clear_verified_direct_route_override(",
+            gate_source,
+        )
+        self.assertNotIn(
+            "self.runtime_binding.apply_transport_override(",
+            gate_source,
         )
 
     def test_gate_separates_circuit_locator_from_station_identity_url(

@@ -446,6 +446,59 @@ class NativeDesktopRuntimeBinding(ABC):
             )
         self._configure_session_station(session, override.endpoint)
 
+    def apply_verified_direct_route_override(
+        self,
+        client_id: str,
+        binding_role: str,
+        handle: TransportOverrideHandle,
+    ) -> None:
+        override = self._require_transport_override(
+            client_id,
+            binding_role,
+            handle,
+        )
+        session = self._sessions_by_client.get(client_id)
+        if session is None or not session.is_alive():
+            raise self._transport_override_error(
+                client_id,
+                binding_role,
+                "bound client session is not live",
+            )
+        session.invoke_app_result(
+            "acceptance_station_direct_route_override",
+            {
+                "input": {
+                    "endpoint_origin": override.endpoint,
+                }
+            },
+        )
+
+    def clear_verified_direct_route_override(
+        self,
+        client_id: str,
+        binding_role: str,
+        handle: TransportOverrideHandle,
+    ) -> None:
+        override = self._require_transport_override(
+            client_id,
+            binding_role,
+            handle,
+        )
+        session = self._sessions_by_client.get(client_id)
+        command_error: Exception | None = None
+        if session is not None and session.is_alive():
+            try:
+                session.invoke_app_result(
+                    "acceptance_station_direct_route_override",
+                    {"input": {"endpoint_origin": None}},
+                )
+            except Exception as error:
+                command_error = error
+        self._transport_overrides.pop(handle._token, None)
+        self._release_transport_endpoint(override.endpoint_lease_id)
+        if command_error is not None:
+            raise command_error
+
     def clear_transport_override(
         self,
         client_id: str,

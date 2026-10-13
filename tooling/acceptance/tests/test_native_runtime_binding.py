@@ -830,6 +830,60 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         self.assertTrue(cleanup["endpointsReleased"])
         self.assertEqual(cleanup["cleanupErrors"], [])
 
+    def test_verified_direct_override_keeps_station_discovery_untouched(
+        self,
+    ) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle("/tmp/fixture.png")
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+        binding.set_runtime_manifest(self.runtime_manifest())
+        session = Mock()
+        session.is_alive.return_value = True
+        binding._sessions_by_client["alice"] = session
+        handle = binding.create_transport_override(
+            "alice",
+            "station",
+            "http://127.0.0.1:39000",
+        )
+
+        binding.apply_verified_direct_route_override(
+            "alice",
+            "station",
+            handle,
+        )
+        binding.clear_verified_direct_route_override(
+            "alice",
+            "station",
+            handle,
+        )
+
+        self.assertEqual(
+            session.invoke_app_result.call_args_list,
+            [
+                call(
+                    "acceptance_station_direct_route_override",
+                    {
+                        "input": {
+                            "endpoint_origin": (
+                                "http://127.0.0.1:40123/proxy"
+                            )
+                        }
+                    },
+                ),
+                call(
+                    "acceptance_station_direct_route_override",
+                    {"input": {"endpoint_origin": None}},
+                ),
+            ],
+        )
+        self.assertEqual(
+            lifecycle.released_endpoints,
+            ["orchestrator-endpoint-1"],
+        )
+
     def test_bound_session_launches_observes_and_accumulates_proof(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle("/tmp/fixture.png")
         binding = LinuxNativeDesktopRuntimeBinding(

@@ -518,6 +518,35 @@ impl StationRuntime {
             .unwrap_or_default()
     }
 
+    #[cfg(feature = "acceptance-webdriver")]
+    pub fn set_acceptance_direct_route_override(
+        &self,
+        endpoint_origin: Option<&str>,
+    ) -> Result<(), String> {
+        let Some(endpoint_origin) = endpoint_origin else {
+            return self
+                .transport
+                .clear_acceptance_direct_route_overrides()
+                .map_err(|error| error.to_string());
+        };
+        let lease = self
+            .binding
+            .route_lease(TrafficClass::Interactive)
+            .map_err(|error| error.message)?;
+        if lease.route.route_type != StationRouteType::Direct {
+            return Err(
+                "Acceptance Direct route override requires an active Direct route".to_string(),
+            );
+        }
+        self.transport
+            .set_acceptance_direct_route_override(
+                &lease.station_peer_id,
+                &lease.route_id,
+                endpoint_origin,
+            )
+            .map_err(|error| error.to_string())
+    }
+
     pub fn active_station_peer_id(&self) -> Option<String> {
         self.binding
             .committed_entry()
