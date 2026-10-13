@@ -55,6 +55,7 @@ RUNTIME_CELL_ID = "desktop-macos-native"
 JOURNEY_ID = "native-circuit-chat"
 NCP_ASSERTIONS = {
     "native_actor_identity_state_persistent",
+    "native_device_enrollment_profile_revision",
     "native_clients_use_circuit_route",
     "native_text_read",
     "native_attachment_receiver_visible",
@@ -529,6 +530,12 @@ def validate_ncp_report(report: dict[str, Any]) -> None:
             and item.get("storageLifecycle") == "persistent"
             and item.get("devicePolicy") == "persistent-acceptance"
             and bool(item.get("storageRoot"))
+            and isinstance(item.get("endpoint"), dict)
+            and isinstance(item.get("profile"), dict)
+            and item["endpoint"].get("active") is True
+            and int(item["endpoint"].get("profileRevision") or 0)
+            == int(item["profile"].get("profile_revision") or 0)
+            > 0
             for item in identity_state.values()
         ),
         "Native Actor identity storage must be persistent and isolated",

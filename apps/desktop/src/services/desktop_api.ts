@@ -7652,7 +7652,7 @@ export const api = {
   messagingAcceptanceCurrentEndpoint: (expectedActorPtid: string) =>
     invokeRustData<
       { expected_actor_ptid: string },
-      { actor_ptid: string; device_id: string }
+      { actor_ptid: string; device_id: string; profile_revision: number }
     >('messaging_acceptance_current_endpoint', {
       expected_actor_ptid: expectedActorPtid,
     }),

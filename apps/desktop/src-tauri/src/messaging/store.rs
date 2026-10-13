@@ -6766,6 +6766,84 @@ impl MessagingStore {
         transaction.commit().map_err(|error| error.to_string())
     }
 
+    pub(super) fn refresh_device_identity_profile(
+        &self,
+        state: &FreshDeviceIdentityState,
+    ) -> Result<(), String> {
+        let enrollment = &state.enrollment;
+        let certificate = &enrollment.certificate;
+        let device = certificate
+            .device
+            .as_ref()
+            .ok_or_else(|| "refreshed messaging device identity has no endpoint".to_string())?;
+        let ptid = actor_device_ptid(device)?;
+        let next_version = i64::try_from(certificate.observed_profile_version)
+            .map_err(|_| "refreshed messaging profile version is invalid")?;
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let current = transaction
+            .query_row(
+                "SELECT ptid, device_id, actor_identity_public_key,
+                        actor_identity_key_fingerprint, profile_version
+                 FROM messaging_device_identity WHERE id = 1",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Vec<u8>>(2)?,
+                        row.get::<_, Vec<u8>>(3)?,
+                        row.get::<_, i64>(4)?,
+                    ))
+                },
+            )
+            .map_err(|error| error.to_string())?;
+        if current.0 != ptid
+            || current.1 != device.device_id
+            || current.2 != certificate.actor_identity_public_key
+            || current.3 != certificate.actor_identity_key_fingerprint
+            || next_version < current.4
+        {
+            return Err("refreshed messaging device identity continuity mismatch".to_string());
+        }
+        if next_version == current.4 {
+            return Ok(());
+        }
+        let changed = transaction
+            .execute(
+                "UPDATE messaging_device_identity
+                 SET device_signing_seed = ?1,
+                     device_signing_public_key = ?2,
+                     actor_cross_signature = ?3,
+                     signing_key_id = ?4,
+                     profile_version = ?5
+                 WHERE id = 1 AND profile_version = ?6",
+                params![
+                    state.device_signing_seed.as_slice(),
+                    certificate.device_signing_public_key,
+                    enrollment.actor_cross_signature.as_slice(),
+                    certificate.signing_key_id,
+                    next_version,
+                    current.4,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("refreshed messaging profile version changed concurrently".to_string());
+        }
+        transaction
+            .execute(
+                "UPDATE messaging_recovery_state
+                 SET status = 'awaiting_device_enrollment'
+                 WHERE id = 1",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
     pub fn commit_direct_receive(
         &self,
         input: &DirectReceiveCommit<'_>,

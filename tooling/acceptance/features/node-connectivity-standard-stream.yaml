@@ -55,6 +55,7 @@
       "Direct-only uses the committed Direct lease, Relay-only uses the committed Circuit lease, and both reject conflicting or unavailable routes with closed typed errors",
       "Auto reaches Circuit only after a real Direct connection failure, preserving Session and lifecycle while advancing route revision and cancelling the prior lease",
       "canonical Profile mutation and peer readback remain visible through both Direct and Circuit routes",
+      "Native device enrollment binds its certificate to the current canonical Profile revision and refreshes the same device key when that revision advances",
       "two Native Desktop actors exchange receiver-visible plaintext with DELIVERED and READ receipts through Circuit",
       "the receiver opens a 32 MiB Native attachment whose local readback digest equals the sender source",
       "two Events processes allocate one gap-free per-Actor sequence and deliver committed rows through PostgreSQL wake hints plus bounded reconciliation",

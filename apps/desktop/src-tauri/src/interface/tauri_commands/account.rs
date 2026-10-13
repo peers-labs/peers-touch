@@ -162,6 +162,7 @@ pub fn account_switch(
                 state.inner(),
                 &prepared.account_id,
                 &prepared.actor_ptid,
+                &prepared.token,
             )
             .map_err(|error| account_transition_failure("prepare_new_messaging", error))?;
 

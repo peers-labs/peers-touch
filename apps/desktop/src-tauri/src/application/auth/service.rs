@@ -119,7 +119,7 @@ pub(crate) fn activate_messaging_profile(
     actor_ptid: &str,
     token: &str,
 ) -> Result<(), String> {
-    prepare_messaging_profile(state, account_id, actor_ptid)?;
+    prepare_messaging_profile(state, account_id, actor_ptid, token)?;
     activate_messaging_profile_worker(state, account_id, token)
 }
 
@@ -127,8 +127,9 @@ pub(crate) fn prepare_messaging_profile(
     state: &AppState,
     account_id: &str,
     actor_ptid: &str,
+    token: &str,
 ) -> Result<(), String> {
-    if account_id.trim().is_empty() || actor_ptid.trim().is_empty() {
+    if account_id.trim().is_empty() || actor_ptid.trim().is_empty() || token.trim().is_empty() {
         return Err("messaging activation identity is incomplete".to_string());
     }
     if !actor_ptid.starts_with("ptid:") {
@@ -140,13 +141,55 @@ pub(crate) fn prepare_messaging_profile(
     let actor_identity = crate::domain::crypto::get_or_create_identity(&identity_key_ref)
         .map_err(|error| format!("messaging actor identity unavailable: {error}"))?;
     let actor_identity_seed = Zeroizing::new(actor_identity.seed_bytes());
+    let actor_profile = state
+        .station
+        .client()
+        .request_peers_proto_no_body::<ActorProfile>(
+            reqwest::Method::GET,
+            "/actor/profile",
+            token,
+            None,
+        )
+        .map_err(|error| format!("messaging actor profile unavailable: {error}"))?;
+    let actor_profile_version = canonical_actor_profile_version(&actor_profile, actor_ptid)?;
     state.messaging_engines.activate_profile(
         account_id.to_string(),
         actor_ptid.to_string(),
         &actor_identity_seed,
-        crate::messaging::INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
+        actor_profile_version,
     )?;
     Ok(())
+}
+
+fn canonical_actor_profile_version(
+    profile: &ActorProfile,
+    expected_actor_ptid: &str,
+) -> Result<u64, String> {
+    let profile_ptid = profile
+        .r#ref
+        .as_ref()
+        .map(|actor| actor.ptid.as_str())
+        .filter(|ptid| !ptid.is_empty())
+        .or_else(|| {
+            profile
+                .peers_touch
+                .as_ref()
+                .map(|info| info.network_id.as_str())
+                .filter(|ptid| !ptid.is_empty())
+        })
+        .or_else(|| {
+            profile
+                .id
+                .starts_with("ptid:")
+                .then_some(profile.id.as_str())
+        });
+    if profile_ptid != Some(expected_actor_ptid) {
+        return Err("messaging actor profile identity mismatch".to_string());
+    }
+    if profile.profile_revision == 0 {
+        return Err("messaging actor profile revision is unavailable".to_string());
+    }
+    Ok(profile.profile_revision)
 }
 
 pub(crate) fn activate_messaging_profile_worker(
@@ -1486,18 +1529,42 @@ fn station_verification_rejects_session(error: &station_client::StationClientErr
 #[cfg(test)]
 mod tests {
     use super::{
-        run_required_logout_cleanup, should_resume_access_binding,
+        canonical_actor_profile_version, run_required_logout_cleanup, should_resume_access_binding,
         station_verification_rejects_session, DESKTOP_SESSION_CLASS,
     };
     use crate::application::station_binding::StationBindingPhase;
     use crate::application::station_runtime::client::{StationClientError, StationClientErrorKind};
     use crate::contracts::AuthSessionPayload;
     use crate::error::ErrorCode;
+    use crate::model::actor::ActorProfile;
     use std::cell::Cell;
 
     #[test]
     fn desktop_uses_the_canonical_session_class() {
         assert_eq!(DESKTOP_SESSION_CLASS, "desktop");
+    }
+
+    #[test]
+    fn messaging_enrollment_uses_canonical_profile_revision() {
+        let profile = ActorProfile {
+            id: "ptid:alice".to_string(),
+            profile_revision: 7,
+            ..ActorProfile::default()
+        };
+
+        assert_eq!(
+            canonical_actor_profile_version(&profile, "ptid:alice").unwrap(),
+            7
+        );
+        assert!(canonical_actor_profile_version(&profile, "ptid:bob").is_err());
+        assert!(canonical_actor_profile_version(
+            &ActorProfile {
+                id: "ptid:alice".to_string(),
+                ..ActorProfile::default()
+            },
+            "ptid:alice",
+        )
+        .is_err());
     }
 
     #[test]

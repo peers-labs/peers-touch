@@ -44,7 +44,8 @@ use crate::model::chat::{
 use messaging_core::codec::verification::{verify_authority_event, verify_direct_genesis_event};
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
 use messaging_core::identity::enrollment::{
-    generate_fresh_device_identity_from_seed, load_or_create_device_identity_from_seed,
+    generate_device_identity_for_device_from_parts, generate_fresh_device_identity_from_seed,
+    load_or_create_device_identity_from_seed,
 };
 use messaging_core::identity::{
     is_stale_endpoint_error, DeviceEnrollmentManager, FreshDeviceEnrollment,
@@ -538,6 +539,12 @@ impl MessagingEngine {
         actor_profile_version: u64,
         store: Arc<MessagingStore>,
     ) -> Result<Self, String> {
+        Self::refresh_stored_device_profile(
+            store.as_ref(),
+            &ptid,
+            actor_identity_seed,
+            actor_profile_version,
+        )?;
         let enrollment = load_or_create_device_identity_from_seed(
             store.as_ref(),
             &ptid,
@@ -560,6 +567,45 @@ impl MessagingEngine {
             store,
             Some(Arc::new(IdentityKeyPair::from_seed(actor_identity_seed))),
         )
+    }
+
+    fn refresh_stored_device_profile(
+        store: &MessagingStore,
+        ptid: &str,
+        actor_identity_seed: &[u8; 32],
+        actor_profile_version: u64,
+    ) -> Result<(), String> {
+        let Some(enrollment) = store.device_enrollment()? else {
+            return Ok(());
+        };
+        if enrollment.certificate.observed_profile_version >= actor_profile_version {
+            return Ok(());
+        }
+        let device_id = enrollment
+            .certificate
+            .device
+            .as_ref()
+            .map(|device| device.device_id.as_str())
+            .filter(|device_id| !device_id.is_empty())
+            .ok_or_else(|| "messaging device identity has no endpoint".to_string())?;
+        let (device_signing_seed, signing_key_id) = store
+            .device_signing_seed()?
+            .ok_or_else(|| "messaging device signing key is unavailable".to_string())?;
+        if enrollment.certificate.signing_key_id != signing_key_id {
+            return Err("messaging device signing key identity is inconsistent".to_string());
+        }
+        let device_signing_seed: [u8; 32] = device_signing_seed
+            .as_slice()
+            .try_into()
+            .map_err(|_| "messaging device signing seed must be 32 bytes".to_string())?;
+        let refreshed = generate_device_identity_for_device_from_parts(
+            ptid,
+            device_id,
+            actor_identity_seed,
+            actor_profile_version,
+            Some(&device_signing_seed),
+        )?;
+        store.refresh_device_identity_profile(&refreshed)
     }
 
     pub fn open(
@@ -5022,6 +5068,7 @@ mod tests {
         assert!(!device_id.is_empty());
         let pending = store.pending_device_enrollment().unwrap().unwrap();
         let pending_device = pending.certificate.device.as_ref().unwrap();
+        let signing_key_id = pending.certificate.signing_key_id.clone();
         assert_eq!(actor_device_ptid(pending_device).unwrap(), "ptid:alice");
         assert_eq!(pending_device.device_id, device_id);
         assert_eq!(pending.certificate.observed_profile_version, 3);
@@ -5039,6 +5086,21 @@ mod tests {
         assert_eq!(reopened.endpoint().device_id, device_id);
         drop(reopened);
 
+        let refreshed = MessagingEngine::from_profile_store(
+            StationClient::testing_unavailable(),
+            "alice-profile".to_string(),
+            "ptid:alice".to_string(),
+            &[17; 32],
+            4,
+            store.clone(),
+        )
+        .unwrap();
+        assert_eq!(refreshed.endpoint().device_id, device_id);
+        let pending = store.pending_device_enrollment().unwrap().unwrap();
+        assert_eq!(pending.certificate.observed_profile_version, 4);
+        assert_eq!(pending.certificate.signing_key_id, signing_key_id);
+        drop(refreshed);
+
         assert!(MessagingEngine::from_profile_store(
             StationClient::testing_unavailable(),
             "alice-profile".to_string(),
@@ -5053,7 +5115,7 @@ mod tests {
             "alice-profile".to_string(),
             "ptid:alice".to_string(),
             &[17; 32],
-            4,
+            3,
             store,
         )
         .is_err());

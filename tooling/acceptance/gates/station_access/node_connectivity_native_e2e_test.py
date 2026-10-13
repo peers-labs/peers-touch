@@ -264,6 +264,11 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
                             "storageRoot": f"/state/{actor}",
                             "storageLifecycle": "persistent",
                             "devicePolicy": "persistent-acceptance",
+                            "endpoint": {
+                                "active": True,
+                                "profileRevision": 7,
+                            },
+                            "profile": {"profile_revision": 7},
                         }
                         for actor in ("alice", "bob")
                     },
@@ -409,6 +414,7 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
         )
         for assertion in (
             "native_direct_only_route",
+            "native_device_enrollment_profile_revision",
             "native_relay_only_route",
             "native_auto_route_ordered_failover",
             "native_route_failures_typed",
