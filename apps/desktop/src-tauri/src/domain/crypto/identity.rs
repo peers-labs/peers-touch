@@ -295,11 +295,10 @@ pub fn get_or_migrate_identity(
         .map_err(|_| CryptoError::InternalError("identity migration lock poisoned".to_string()))?;
     let canonical_seed =
         load_identity_key(canonical_identity_key_ref)?.map(|identity| identity.seed_bytes());
-    if let Some(canonical_seed) = canonical_seed {
-        if expected_fingerprint
-            .map(|expected| identity_seed_fingerprint(&canonical_seed) == *expected)
-            .unwrap_or(true)
-        {
+    if let (Some(canonical_seed), Some(expected_fingerprint)) =
+        (canonical_seed, expected_fingerprint)
+    {
+        if identity_seed_fingerprint(&canonical_seed) == *expected_fingerprint {
             return Ok(IdentityKeyPair::from_seed(&canonical_seed));
         }
     }
