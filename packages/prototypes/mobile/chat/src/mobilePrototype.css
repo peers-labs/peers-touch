@@ -1166,7 +1166,7 @@
      Desktop's single inline "Failed, click to retry" (no block button). */
   .mp-meta-action {
     display: inline-flex; align-items: center; gap: 3px;
-    border: 0; background: transparent; padding: 2px 4px;
+    border: 0; background: transparent; padding: 0 4px;
     font: inherit; font-size: 11px; line-height: 1.4; font-weight: 600;
     cursor: pointer; -webkit-tap-highlight-color: transparent;
   }
