@@ -136,7 +136,7 @@ def _window_session_identity(client: TauriSession) -> dict[str, str]:
             "acceptance_window_session_identity returned invalid JSON"
         ) from error
     expected = {
-        "account_id",
+        "account_scope_sha256",
         "actor_ptid",
         "session_binding_sha256",
         "session_id_sha256",
@@ -148,6 +148,7 @@ def _window_session_identity(client: TauriSession) -> dict[str, str]:
             not isinstance(payload.get(key), str) or not payload[key]
             for key in expected
         )
+        or len(payload["account_scope_sha256"]) != 64
         or len(payload["session_binding_sha256"]) != 64
         or len(payload["session_id_sha256"]) != 64
     ):
@@ -449,7 +450,8 @@ class NodeConnectivityClusterNativeGate(
             and device.get("active") is True
             and session_before["actor_ptid"] == actor_before
             and session_after["actor_ptid"] == actor_before
-            and session_after["account_id"] == session_before["account_id"]
+            and session_after["account_scope_sha256"]
+            == session_before["account_scope_sha256"]
             and session_after["session_binding_sha256"]
             == session_before["session_binding_sha256"]
             and session_after["session_id_sha256"]

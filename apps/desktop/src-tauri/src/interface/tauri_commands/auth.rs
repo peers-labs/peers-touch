@@ -364,7 +364,7 @@ pub fn acceptance_window_session_identity(
         command: "acceptance_window_session_identity".to_string(),
         status: serde_json::json!({
             "actor_ptid": session.actor.ptid,
-            "account_id": session.account_id,
+            "account_scope_sha256": hex::encode(Sha256::digest(session.account_id.as_bytes())),
             "session_id_sha256": hex::encode(Sha256::digest(session_id.as_bytes())),
             "session_binding_sha256": hex::encode(Sha256::digest(session.jwt.as_bytes())),
         })

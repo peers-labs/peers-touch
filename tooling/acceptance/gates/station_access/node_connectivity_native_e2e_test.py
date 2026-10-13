@@ -365,10 +365,12 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
                                 "lifecycleGeneration": 1,
                             },
                             "sessionBefore": {
+                                "account_scope_sha256": "e" * 64,
                                 "session_id_sha256": "c" * 64,
                                 "session_binding_sha256": "d" * 64,
                             },
                             "sessionAfter": {
+                                "account_scope_sha256": "e" * 64,
                                 "session_id_sha256": "c" * 64,
                                 "session_binding_sha256": "d" * 64,
                             },
@@ -404,7 +406,19 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
             }
         }
 
-        validate_ncp_report(redact_value(report))
+        redacted_report = redact_value(report)
+        validate_ncp_report(redacted_report)
+        redacted_detail = redact_value(
+            {
+                "detail": json.dumps(
+                    redacted_report["runtime"]["nodeConnectivity"][
+                        "routePolicy"
+                    ]["auto"],
+                    sort_keys=True,
+                )
+            }
+        )["detail"]
+        self.assertIsInstance(json.loads(redacted_detail), dict)
         report["runtime"]["nodeConnectivity"]["attachment"][
             "receiverSha256"
         ] = "b" * 64
