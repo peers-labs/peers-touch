@@ -149,10 +149,11 @@ pub(crate) fn prepare_messaging_profile(
     let actor_devices = state
         .station
         .client()
-        .request_peers_proto_no_body::<ListActorDevicesResponse>(
+        .request_proto_for_actor::<(), ListActorDevicesResponse>(
             reqwest::Method::GET,
             "/device/list",
             token,
+            None,
             None,
         )
         .map_err(|error| format!("messaging actor identity continuity unavailable: {error}"))?;
