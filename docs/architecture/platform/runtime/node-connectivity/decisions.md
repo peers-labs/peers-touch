@@ -395,3 +395,43 @@ and WebView-readable projections through Direct and Circuit routes. Any
 resource metadata cache keyed as `self` must additionally include logical
 Station identity and lifecycle generation so Station replacement cannot reuse
 the prior scope's metadata.
+
+## NCP-D19: Request Route Policy Constrains But Never Selects
+
+**Status**: accepted
+**Date**: 2026-10-14
+
+### Context
+
+Native Acceptance and policy-sensitive callers must distinguish Direct-only,
+Relay-only and automatic route behavior without reviving composition-root
+route policy or allowing a request to rewrite Station Access state.
+
+### Decision
+
+`StationRequest` carries the closed policy `AUTO | DIRECT_ONLY | RELAY_ONLY`.
+Station Access remains the sole route-selection owner and publishes one
+immutable `RouteLease`. Closed policies validate that lease and return typed
+`station_no_route` or `station_route_policy_conflict`; they never switch it.
+Only `AUTO` may fail over after an observed Direct transport failure. A
+same-Station failover preserves lifecycle generation and Session identity,
+advances route revision, and cancels the previous lease before replay.
+
+### Rationale
+
+Request semantics need an explicit, testable contract, while route commitment,
+health and candidate selection remain one authority. This prevents callers
+from manufacturing topology or mutating global binding state.
+
+### Alternatives Considered
+
+Composition-root environment flags create hidden process policy. Request-owned
+route selection creates split-brain with Station Access. Synthetic Relay
+success without a real Direct fault does not prove ordered failover.
+
+### Consequences
+
+Diagnostics record bounded, monotonic attempts and transitions without request
+bodies or credentials. Native Acceptance proves Direct-only and Relay-only
+canonical requests, both typed failures, and ordered Direct-to-Circuit `AUTO`
+failover through a transparent fault proxy.

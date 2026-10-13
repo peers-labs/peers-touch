@@ -366,6 +366,7 @@ impl StationResourceHandle {
             admission_timeout: Duration::from_secs(30),
             traffic_class: TrafficClass::Bulk,
             route_security: StationRouteSecurity::VerifiedRoute,
+            route_policy: super::client::StationRoutePolicy::Auto,
             replay_policy: ReplayPolicy::SafeRead,
             cancellation: CancellationToken::new(),
             expected_scope: Some(scope),

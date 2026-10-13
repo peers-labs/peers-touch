@@ -170,9 +170,13 @@ operators cannot correlate one installation through a global PeerID.
 Desktop business callers submit typed requests directly to a Direct or Circuit
 adapter. There is no loopback Desktop HTTP proxy, raw HTTP/1 parser or
 process-global transport singleton. Each request declares a traffic class and
-replay policy. A `RouteLease` binds Station lifecycle generation, route
-revision, destination PeerID, signed SPKI and cancellation. Revoking the lease
-prevents stale callbacks from committing after route or Station replacement.
+replay policy plus a closed `AUTO | DIRECT_ONLY | RELAY_ONLY` route constraint.
+The constraint validates the Access-selected lease and cannot select or mutate
+a route. A `RouteLease` binds Station lifecycle generation, route revision,
+destination PeerID, signed SPKI and cancellation. Revoking the lease prevents
+stale callbacks from committing after route or Station replacement. Only
+`AUTO` may replay a safe request after a real transport failure commits a
+verified same-Station replacement lease.
 
 Station-owned relative media, object and bundle paths are represented as
 `StationResourceRef`, never as a transport origin. Native consumers fetch or

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import http.server
 import json
+import threading
 import unittest
+import urllib.error
+import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,6 +20,22 @@ from tooling.acceptance.gates.station_access.node_connectivity_native_e2e import
     NodeConnectivityNativeGate,
     validate_ncp_report,
 )
+from tooling.acceptance.node_connectivity_native_support import (
+    DirectRouteFaultProxy,
+)
+
+
+class _VersionHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        body = b'{"version":"test"}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, _format: str, *_args: object) -> None:
+        return
 
 
 class NodeConnectivityNativeGateTest(unittest.TestCase):
@@ -77,6 +97,26 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
                 relative,
             )
 
+    def test_acceptance_binary_exposes_read_only_route_diagnostics(self) -> None:
+        command_source = (
+            REPO_ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/station.rs"
+        ).read_text(encoding="utf-8")
+        main_source = (
+            REPO_ROOT / "apps/desktop/src-tauri/src/main.rs"
+        ).read_text(encoding="utf-8")
+
+        for command in (
+            "acceptance_station_route_probe",
+            "acceptance_station_transport_diagnostics",
+        ):
+            self.assertIn(f"pub fn {command}", command_source)
+            self.assertIn(f"station::{command}", main_source)
+        self.assertIn(
+            '#[cfg(feature = "acceptance-webdriver")]',
+            command_source,
+        )
+
     def test_gate_separates_circuit_locator_from_station_identity_url(
         self,
     ) -> None:
@@ -113,7 +153,11 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
                     "required_service_roles": ["station"],
                     "service_bindings": {
                         "station": {
-                            "service_id": "station-via-relay",
+                            "service_id": (
+                                "station"
+                                if actor == "alice"
+                                else "station-via-relay"
+                            ),
                             "required_kind": "station",
                         }
                     },
@@ -148,7 +192,7 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
 
         self.assertEqual(
             gate.station_url,
-            "https://relay.example:18081",
+            "http://station.example",
         )
         self.assertEqual(
             gate.station_identity_url,
@@ -157,6 +201,48 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
         self.assertEqual(gate.report.station_url, "http://station.example")
         self.assertEqual(gate.journey_id, JOURNEY_ID)
         self.assertTrue(gate.verify_fixture_ready())
+
+    def test_direct_route_fault_proxy_drops_only_armed_version_probe(
+        self,
+    ) -> None:
+        upstream = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0),
+            _VersionHandler,
+        )
+        upstream_thread = threading.Thread(
+            target=upstream.serve_forever,
+            daemon=True,
+        )
+        upstream_thread.start()
+        host, port = upstream.server_address
+        proxy = DirectRouteFaultProxy(f"http://{host}:{port}")
+        proxy.start()
+        try:
+            with urllib.request.urlopen(
+                f"{proxy.url}/app-meta/version",
+                timeout=2,
+            ) as response:
+                self.assertEqual(response.status, 200)
+            proxy.arm()
+            with self.assertRaises(
+                (urllib.error.URLError, ConnectionError),
+            ):
+                urllib.request.urlopen(
+                    f"{proxy.url}/app-meta/version",
+                    timeout=2,
+                )
+            proxy.disarm()
+            with urllib.request.urlopen(
+                f"{proxy.url}/app-meta/version",
+                timeout=2,
+            ) as response:
+                self.assertEqual(response.status, 200)
+            self.assertEqual(proxy.evidence()["failureCount"], 1)
+        finally:
+            proxy.stop()
+            upstream.shutdown()
+            upstream.server_close()
+            upstream_thread.join(timeout=2)
 
     def test_validator_requires_routes_read_and_exact_attachment(self) -> None:
         report = {
@@ -195,6 +281,87 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
                         }
                         for actor in ("alice", "bob")
                     },
+                    "routePolicy": {
+                        "directOnly": {
+                            "policy": "direct_only",
+                            "attempt": {
+                                "sequence": 1,
+                                "routeType": "direct",
+                                "requestPath": "/app-meta/version",
+                                "outcome": "connected",
+                            },
+                            "mutation": {
+                                "receiverVisible": True,
+                                "readbackMatches": True,
+                            },
+                        },
+                        "relayOnly": {
+                            "policy": "relay_only",
+                            "attempt": {
+                                "sequence": 2,
+                                "routeType": "relay",
+                                "requestPath": "/app-meta/version",
+                                "outcome": "connected",
+                            },
+                            "mutation": {
+                                "receiverVisible": True,
+                                "readbackMatches": True,
+                            },
+                        },
+                        "noRoute": {"code": "station_no_route"},
+                        "policyConflict": {
+                            "code": "station_route_policy_conflict"
+                        },
+                        "auto": {
+                            "policy": "auto",
+                            "attempts": [
+                                {
+                                    "sequence": 3,
+                                    "routeType": "direct",
+                                    "requestPath": "/app-meta/version",
+                                    "outcome": "failed",
+                                },
+                                {
+                                    "sequence": 4,
+                                    "routeType": "relay",
+                                    "requestPath": "/app-meta/version",
+                                    "outcome": "connected",
+                                },
+                            ],
+                            "before": {
+                                "stationPeerId": "station-peer",
+                                "activeRouteId": "direct-route",
+                                "routeRevision": 1,
+                                "lifecycleGeneration": 1,
+                            },
+                            "after": {
+                                "stationPeerId": "station-peer",
+                                "activeRouteId": "relay-route",
+                                "routeRevision": 2,
+                                "lifecycleGeneration": 1,
+                            },
+                            "sessionBefore": {
+                                "session_id_sha256": "c" * 64,
+                                "token_fingerprint": "d" * 64,
+                            },
+                            "sessionAfter": {
+                                "session_id_sha256": "c" * 64,
+                                "token_fingerprint": "d" * 64,
+                            },
+                            "transition": {
+                                "previousLeaseCancelled": True,
+                                "previousRouteId": "direct-route",
+                                "nextRouteId": "relay-route",
+                                "previousRouteRevision": 1,
+                                "nextRouteRevision": 2,
+                                "lifecycleGeneration": 1,
+                            },
+                            "proxy": {
+                                "failureCount": 2,
+                                "autoFailureDelta": 1,
+                            },
+                        },
+                    },
                     "read": {
                         "sender": {
                             "messageUlid": "message-1",
@@ -222,6 +389,17 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
             "attachment evidence is incomplete",
         ):
             validate_ncp_report(report)
+        report["runtime"]["nodeConnectivity"]["attachment"][
+            "receiverSha256"
+        ] = "a" * 64
+        del report["runtime"]["nodeConnectivity"]["routePolicy"][
+            "policyConflict"
+        ]
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "route-policy evidence is incomplete",
+        ):
+            validate_ncp_report(report)
 
     def test_proof_contract_requires_native_receiver_closure(self) -> None:
         self.assertTrue(NCP_ASSERTIONS <= NCP_REQUIRED_ASSERTIONS)
@@ -229,9 +407,24 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
             "native_actor_identity_state_persistent",
             NCP_REQUIRED_ASSERTIONS,
         )
+        for assertion in (
+            "native_direct_only_route",
+            "native_relay_only_route",
+            "native_auto_route_ordered_failover",
+            "native_route_failures_typed",
+            "native_route_switch_preserves_session",
+            "native_route_lease_fenced",
+            "native_profile_mutation_readback",
+        ):
+            self.assertIn(assertion, NCP_REQUIRED_ASSERTIONS)
         self.assertIn("fixture.existing", NCP_REQUIRED_STEPS)
         self.assertNotIn("fixture.reset", NCP_REQUIRED_STEPS)
         for step in (
+            "route.direct-only",
+            "route.no-route",
+            "route.relay-only",
+            "route.policy-conflict",
+            "route.auto-failover",
             "route.circuit",
             "receipt.read",
             "attachment.upload",

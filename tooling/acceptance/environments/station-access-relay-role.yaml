@@ -52,7 +52,7 @@
       "required_service_roles": ["station"],
       "service_bindings": {
         "station": {
-          "service_id": "station-via-relay",
+          "service_id": "station",
           "required_kind": "station"
         }
       }

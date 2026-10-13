@@ -885,8 +885,12 @@ fn classify_command_transport_error(
         },
         StationClientErrorKind::Overloaded
         | StationClientErrorKind::Cancelled
-        | StationClientErrorKind::StaleRoute => CommandSubmitFailure::Retryable {
+        | StationClientErrorKind::StaleRoute
+        | StationClientErrorKind::NoRoute => CommandSubmitFailure::Retryable {
             code: "station_unavailable".to_string(),
+        },
+        StationClientErrorKind::RoutePolicyConflict => CommandSubmitFailure::Terminal {
+            code: "station_route_policy_conflict".to_string(),
         },
         StationClientErrorKind::AmbiguousOutcome => CommandSubmitFailure::Ambiguous,
         StationClientErrorKind::Decode | StationClientErrorKind::InvalidResponse => {

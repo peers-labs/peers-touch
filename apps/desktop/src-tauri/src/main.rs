@@ -1083,6 +1083,10 @@ fn main() {
             notification::notification_preferences,
             notification::notification_preferences_update,
             host_events::desktop_native_event_emit,
+            #[cfg(feature = "acceptance-webdriver")]
+            station::acceptance_station_route_probe,
+            #[cfg(feature = "acceptance-webdriver")]
+            station::acceptance_station_transport_diagnostics,
             station::station_list,
             station::station_set_active,
             station::station_binding_complete,

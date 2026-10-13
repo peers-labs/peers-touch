@@ -95,7 +95,7 @@ one prepared runtime and never build, deploy or create accounts.
 |---|---|---|
 | NCP-G01 | two node keys, one root; forged delegation/route/Relay/SPKI | distinct PeerIDs and one Station scope; all forgeries rejected before credentials |
 | NCP-G02 | one-node direct/circuit HTTP2 with real handlers | same Login/Access result, router inventory, protobuf errors, SSE Flush and upload/download digest |
-| NCP-G03 | two native Desktop actors exchange texts/receipt and 32 MiB attachment via Circuit | receiver renders once, receipt/readback exists, attachment decrypts to original digest |
+| NCP-G03 | two native Desktop actors exercise Direct-only, Relay-only and a real Direct-fault `AUTO` transition, then exchange text/read receipt and a 32 MiB attachment via Circuit | typed no-route/policy-conflict, ordered Direct-failed then Relay-connected diagnostics, stable Session/lifecycle, fenced old lease, canonical Profile mutation/readback, receiver render and attachment digest |
 | NCP-G04 | two Station nodes, shared DB/object backend; send on A, subscribe on B; kill A | committed ordered events reach B, device-only events stay private, cursor resumes within 30 s |
 | NCP-G05 | Access attempt on A, acknowledge/use Session on B; concurrent same-class activation | one class winner, prior same-class revoked, other classes preserved, same logical Station |
 | NCP-G06-AGENT | healthy Agent lease on A; boot B, expire/take over, then resume A | healthy work survives B boot, takeover advances the token, stale A cannot commit, one terminal domain record |

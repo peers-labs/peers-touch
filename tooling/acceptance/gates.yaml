@@ -379,7 +379,7 @@
         "desktop-macos-native"
       ],
       "tier": "env-evidence",
-      "description": "Run two exact-source Native Desktop actors through the standard Circuit route and prove receiver-visible text, DELIVERED and READ receipts, plus receiver-opened 32 MiB attachment byte identity."
+      "description": "Run two exact-source Native Desktop actors through Direct-only and Relay-only canonical requests, prove typed closed-policy failures and ordered Auto failover after a real Direct fault with Session/lease fencing, then prove canonical Profile readback, receiver-visible text, READ receipt, and receiver-opened 32 MiB Circuit attachment byte identity."
     },
     "NCP-G04": {
       "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-durable-events --gate NCP-G04",

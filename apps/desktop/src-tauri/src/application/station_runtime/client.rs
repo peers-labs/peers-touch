@@ -4,7 +4,7 @@ use prost::Message;
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::Method;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
@@ -96,6 +96,15 @@ impl StationRouteSecurity {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StationRoutePolicy {
+    #[default]
+    Auto,
+    DirectOnly,
+    RelayOnly,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReplayPolicy {
     SafeRead,
@@ -153,6 +162,7 @@ pub struct StationRequest {
     pub admission_timeout: Duration,
     pub traffic_class: TrafficClass,
     pub route_security: StationRouteSecurity,
+    pub route_policy: StationRoutePolicy,
     pub replay_policy: ReplayPolicy,
     pub cancellation: CancellationToken,
     pub expected_scope: Option<StationRequestScope>,
@@ -175,6 +185,7 @@ impl StationRequest {
             admission_timeout: self.admission_timeout,
             traffic_class: self.traffic_class,
             route_security: self.route_security,
+            route_policy: self.route_policy,
             replay_policy: self.replay_policy.clone(),
             cancellation: self.cancellation.clone(),
             expected_scope: self.expected_scope.clone(),
@@ -190,6 +201,8 @@ pub enum StationTransportErrorKind {
     Unavailable,
     StaleRoute,
     InvalidRoute,
+    NoRoute,
+    RoutePolicyConflict,
     Protocol,
     Shutdown,
 }
@@ -252,6 +265,8 @@ pub enum StationClientErrorKind {
     AmbiguousOutcome,
     Cancelled,
     StaleRoute,
+    NoRoute,
+    RoutePolicyConflict,
 }
 
 #[derive(Debug, Clone)]
@@ -321,7 +336,9 @@ impl StationClientError {
             }
             StationClientErrorKind::Overloaded
             | StationClientErrorKind::AmbiguousOutcome
-            | StationClientErrorKind::StaleRoute => ErrorCode::Conflict,
+            | StationClientErrorKind::StaleRoute
+            | StationClientErrorKind::RoutePolicyConflict => ErrorCode::Conflict,
+            StationClientErrorKind::NoRoute => ErrorCode::NotFound,
             _ => ErrorCode::InternalError,
         };
         AppResult::fail(code, context.into(), self.details)
@@ -519,6 +536,7 @@ impl StationClient {
             admission_timeout: Duration::from_secs(30).min(timeout),
             traffic_class: TrafficClass::Realtime,
             route_security: StationRouteSecurity::VerifiedRoute,
+            route_policy: StationRoutePolicy::Auto,
             replay_policy,
             cancellation,
             expected_scope: None,
@@ -1242,6 +1260,7 @@ impl StationClient {
             admission_timeout: policy.timeout(),
             traffic_class,
             route_security: StationRouteSecurity::VerifiedRoute,
+            route_policy: StationRoutePolicy::Auto,
             replay_policy: replay_policy.clone(),
             cancellation: CancellationToken::new(),
             expected_scope: None,
@@ -1359,6 +1378,11 @@ fn map_transport_error(
         StationTransportErrorKind::StaleRoute => {
             (StationClientErrorKind::StaleRoute, "station_stale_route")
         }
+        StationTransportErrorKind::NoRoute => (StationClientErrorKind::NoRoute, "station_no_route"),
+        StationTransportErrorKind::RoutePolicyConflict => (
+            StationClientErrorKind::RoutePolicyConflict,
+            "station_route_policy_conflict",
+        ),
         _ => (StationClientErrorKind::Network, "station_transport_failed"),
     };
     StationClientError::new(
@@ -1814,6 +1838,64 @@ mod tests {
     }
 
     #[test]
+    fn route_policy_is_closed_over_direct_relay_and_auto() {
+        assert_eq!(
+            serde_json::to_string(&StationRoutePolicy::Auto).unwrap(),
+            "\"auto\""
+        );
+        assert_eq!(
+            serde_json::to_string(&StationRoutePolicy::DirectOnly).unwrap(),
+            "\"direct_only\""
+        );
+        assert_eq!(
+            serde_json::to_string(&StationRoutePolicy::RelayOnly).unwrap(),
+            "\"relay_only\""
+        );
+    }
+
+    #[test]
+    fn route_selection_failures_preserve_closed_typed_codes() {
+        let no_route = map_transport_error(
+            StationTransportError::new(
+                StationTransportErrorKind::NoRoute,
+                "no verified route",
+                false,
+            ),
+            ReplayPolicy::SafeRead,
+        );
+        let policy_conflict = map_transport_error(
+            StationTransportError::new(
+                StationTransportErrorKind::RoutePolicyConflict,
+                "active route conflicts with request policy",
+                false,
+            ),
+            ReplayPolicy::SafeRead,
+        );
+
+        assert!(matches!(no_route.kind, StationClientErrorKind::NoRoute));
+        assert!(matches!(
+            policy_conflict.kind,
+            StationClientErrorKind::RoutePolicyConflict
+        ));
+        assert_eq!(
+            no_route
+                .details
+                .as_ref()
+                .and_then(|details| details.get("code"))
+                .and_then(Value::as_str),
+            Some("station_no_route")
+        );
+        assert_eq!(
+            policy_conflict
+                .details
+                .as_ref()
+                .and_then(|details| details.get("code"))
+                .and_then(Value::as_str),
+            Some("station_route_policy_conflict")
+        );
+    }
+
+    #[test]
     fn replay_copy_retains_caller_cancellation() {
         let cancellation = CancellationToken::new();
         let request = StationRequest {
@@ -1825,6 +1907,7 @@ mod tests {
             admission_timeout: Duration::from_secs(5),
             traffic_class: TrafficClass::Interactive,
             route_security: StationRouteSecurity::VerifiedRoute,
+            route_policy: StationRoutePolicy::Auto,
             replay_policy: ReplayPolicy::SafeRead,
             cancellation: cancellation.clone(),
             expected_scope: Some(StationRequestScope {

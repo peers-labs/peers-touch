@@ -90,8 +90,8 @@ apps/desktop/src-tauri/src/
 | Agent owner | existing lease fencing and expired-owner recovery | global healthy-task settlement |
 | OSS owner | shared backend and fenced existing worker lock | second scheduler service |
 | Rust StationTransport | route/revision-bound dial, HTTP and cancellation | Session truth or foreign-Station business bypass |
-| Desktop composition root | construct/start/stop one app-scoped StationRuntime | route policy or hidden network startup |
-| Desktop typed StationClient | request encoding, traffic class and replay contract | mutable route selection or business retry invention |
+| Desktop composition root | construct/start/stop one app-scoped StationRuntime | request route policy or hidden network startup |
+| Desktop typed StationClient | request encoding, traffic class, closed route constraint and replay contract | mutable route selection or business retry invention |
 | Desktop resource port | transport-independent StationResourceRef and local projection contract | active route origin as resource identity |
 | Desktop transport owner | driver, bounded admission, route sessions, cancellation and join | Station binding mutation or Session state |
 | Desktop transport identity adapter | endpoint-scoped libp2p keys in platform secure storage | Actor, Session, logical Station identity or cross-Relay global identity |
