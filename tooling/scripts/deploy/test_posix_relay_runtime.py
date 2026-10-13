@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from tooling.acceptance.provisioners.posix_service_runtime import (
     PosixServiceRuntimeConfig,
@@ -16,6 +16,7 @@ from tooling.acceptance.provisioners.posix_service_runtime import (
 from tooling.scripts.deploy.posix_relay_runtime import (
     _remote_prepare_script,
     prepare,
+    probe_public_health,
 )
 
 
@@ -241,6 +242,71 @@ class PosixRelayRuntimeTest(unittest.TestCase):
         argv = transport.run_argv.call_args.args[0]
         self.assertEqual(argv[:2], ["python3", "-"])
         self.assertIn('"runtimePath": ".peers-touch/runtime/relay-1"', argv[2])
+
+    def test_public_probe_uses_reviewed_ca_and_exact_profile_url(self) -> None:
+        certificate = (
+            "-----BEGIN CERTIFICATE-----\n"
+            "MIIB\n"
+            "-----END CERTIFICATE-----\n"
+        ).encode("ascii")
+        resolver = MagicMock(
+            return_value=(certificate, "sha256:" + ("a" * 64))
+        )
+        runner = MagicMock(
+            return_value=subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "peer_id": "12D3KooWRelay",
+                        "role": "relay",
+                        "status": "ready",
+                    }
+                ),
+                stderr="",
+            )
+        )
+
+        with patch(
+            "tooling.scripts.deploy.posix_relay_runtime.ssl.PEM_cert_to_DER_cert",
+            return_value=b"der",
+        ):
+            result = probe_public_health(
+                _config(),
+                expected_base_url="https://10.37.118.48:18081",
+                trust_anchor_resolver=resolver,
+                runner=runner,
+            )
+
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["peerId"], "12D3KooWRelay")
+        resolver.assert_called_once_with("relay-1")
+        argv = runner.call_args.args[0]
+        self.assertIn("--cacert", argv)
+        self.assertNotIn("-k", argv)
+        self.assertEqual(
+            argv[-1],
+            "https://10.37.118.48:18081/healthz",
+        )
+        self.assertEqual(
+            Path(argv[argv.index("--cacert") + 1]).name,
+            "relay-ca.pem",
+        )
+
+    def test_public_probe_rejects_profile_url_drift_before_tls(self) -> None:
+        resolver = MagicMock()
+
+        with self.assertRaisesRegex(
+            Exception,
+            "does not match the reviewed deploy environment",
+        ):
+            probe_public_health(
+                _config(),
+                expected_base_url="https://relay.example.com",
+                trust_anchor_resolver=resolver,
+            )
+
+        resolver.assert_not_called()
 
 
 if __name__ == "__main__":
