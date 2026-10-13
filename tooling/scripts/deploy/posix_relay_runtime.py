@@ -5,9 +5,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import ssl
+import subprocess
 import sys
+import tempfile
 import textwrap
 from pathlib import Path
+from typing import Callable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -16,6 +20,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from tooling.acceptance.core.errors import ProvisioningError
 from tooling.acceptance.provisioners.posix_service_runtime import (
     PosixServiceRuntimeConfig,
+    resolve_posix_relay_trust_anchor,
 )
 
 
@@ -332,11 +337,97 @@ def prepare(
     return result
 
 
+def probe_public_health(
+    config: PosixServiceRuntimeConfig,
+    *,
+    expected_base_url: str = "",
+    trust_anchor_resolver: Callable[[str], tuple[bytes, str]] = (
+        resolve_posix_relay_trust_anchor
+    ),
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> dict[str, object]:
+    if config.role != "relay":
+        raise ProvisioningError("POSIX Relay health probe requires relay role")
+    expected = expected_base_url.rstrip("/")
+    if expected and expected != config.public_base_url:
+        raise ProvisioningError(
+            "active profile Relay URL does not match the reviewed deploy environment"
+        )
+    certificate, certificate_digest = trust_anchor_resolver(
+        config.environment_name
+    )
+    try:
+        ssl.PEM_cert_to_DER_cert(certificate.decode("ascii"))
+    except (UnicodeError, ValueError) as error:
+        raise ProvisioningError(
+            "reviewed Relay trust anchor is not a valid PEM certificate"
+        ) from error
+    endpoint = config.public_base_url + "/healthz"
+    with tempfile.TemporaryDirectory(
+        prefix="peers-touch-relay-health-",
+    ) as directory:
+        ca_path = Path(directory) / "relay-ca.pem"
+        ca_path.write_bytes(certificate)
+        ca_path.chmod(0o600)
+        try:
+            completed = runner(
+                [
+                    "curl",
+                    "--fail",
+                    "--silent",
+                    "--show-error",
+                    "--max-time",
+                    "5",
+                    "--cacert",
+                    str(ca_path),
+                    endpoint,
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError as error:
+            raise ProvisioningError(
+                f"reviewed Relay HTTPS health probe failed: {error}"
+            ) from error
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or "curl failed"
+        raise ProvisioningError(
+            f"reviewed Relay HTTPS health probe failed: {detail[-1000:]}"
+        )
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise ProvisioningError(
+            "reviewed Relay HTTPS health response is not JSON"
+        ) from error
+    if (
+        not isinstance(payload, dict)
+        or payload.get("status") != "ready"
+        or payload.get("role") != "relay"
+        or not isinstance(payload.get("peer_id"), str)
+        or not payload["peer_id"]
+    ):
+        raise ProvisioningError(
+            "reviewed Relay HTTPS health response is invalid"
+        )
+    return {
+        "artifactKind": "posix-relay-public-health",
+        "environmentName": config.environment_name,
+        "endpoint": endpoint,
+        "peerId": payload["peer_id"],
+        "status": "ready",
+        "trustAnchorSha256": certificate_digest,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Prepare a reviewed Linux/POSIX Relay runtime"
     )
     parser.add_argument("environment")
+    parser.add_argument("--check", action="store_true")
+    parser.add_argument("--expected-base-url", default="")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     try:
@@ -344,12 +435,24 @@ def main() -> int:
             args.environment,
             expected_role="relay",
         )
-        result = prepare(config)
+        result = (
+            probe_public_health(
+                config,
+                expected_base_url=args.expected_base_url,
+            )
+            if args.check
+            else prepare(config)
+        )
     except (OSError, ValueError, ProvisioningError, RuntimeError) as error:
         sys.stderr.write(f"[ERROR] {error}\n")
         return 1
     if args.json:
         print(json.dumps(result, sort_keys=True))
+    elif args.check:
+        print(
+            "[OK] Relay public TLS health: "
+            f"{args.environment} ({result['peerId']})"
+        )
     else:
         print(
             "[OK] POSIX Relay runtime prepared: "
