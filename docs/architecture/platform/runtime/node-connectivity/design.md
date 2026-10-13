@@ -182,6 +182,8 @@ Station-owned relative media, object and bundle paths are represented as
 `StationResourceRef`, never as a transport origin. Native consumers fetch or
 stream them through the typed Station client. WebView consumers receive only an
 app-owned local asset/custom-protocol projection after scope validation.
+Bounded base64 image data remains explicit `InlineResourceData`; it requires no
+network transport and is materialized locally for native cache consumers.
 Externally issued absolute or presigned URLs remain a distinct
 `ExternalResourceUrl` and are never rewritten through Station transport.
 

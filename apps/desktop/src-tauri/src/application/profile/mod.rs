@@ -800,6 +800,7 @@ pub fn sync_avatar_with_download(
     let identity = match &reference {
         ResourceReference::Station(resource) => resource.path_and_query(),
         ResourceReference::External(url) => url.as_str(),
+        ResourceReference::Inline(data) => data.as_str(),
     };
     crate::infrastructure::auth_identity::update_active_avatar(identity)?;
 
@@ -881,6 +882,11 @@ fn materialize_avatar_reference(
         }
         ResourceReference::External(url) => {
             avatar_cache::ensure_external(url.as_str()).map_err(|error| error.to_string())?
+        }
+        ResourceReference::Inline(data) => {
+            let bytes = data.decoded_bytes().map_err(|error| error.to_string())?;
+            avatar_cache::store_bytes(&data.cache_identity(), &bytes)
+                .map_err(|error| error.to_string())?
         }
     };
     Ok(Some(path.to_string_lossy().to_string()))
@@ -982,5 +988,19 @@ mod tests {
             .as_str()
             .is_some_and(|value| value.starts_with("station-resource://local/")));
         assert_eq!(projected["header"], "https://cdn.example.test/header.png");
+    }
+
+    #[test]
+    fn profile_preserves_valid_inline_image_data() {
+        let resources = StationResourceHandle::new(StationClient::testing_scoped("station", 7));
+        let avatar = "data:image/svg+xml;base64,PHN2Zy8+";
+        let profile = ActorProfile {
+            avatar: avatar.to_string(),
+            ..ActorProfile::default()
+        };
+
+        let projected = actor_profile_to_value(&resources, &profile).unwrap();
+
+        assert_eq!(projected["avatar"], avatar);
     }
 }

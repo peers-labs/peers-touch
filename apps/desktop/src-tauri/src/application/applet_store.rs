@@ -228,6 +228,11 @@ fn download_asset(
                     )
                 })
         }
+        ResourceReference::Inline(_) => Err((
+            ErrorCode::InvalidArgument,
+            "inline applet package assets are not supported".to_string(),
+            json!({ "reason": "inline_resource_not_supported" }),
+        )),
     }
 }
 
