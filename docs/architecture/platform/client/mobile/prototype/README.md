@@ -32,6 +32,14 @@ confirmed surface.
     (7 assertions, no Portal required);
   - L2/L3 rendered evidence: the scenario shows projected list previews and a
     thread whose machine strings are replaced, with zero console/page errors.
+- Desktop↔Mobile chat parity (both portals must run, mobile 3210 + desktop 3211
+  or override with `MOBILE_URL`/`DESKTOP_URL`):
+  `node packages/prototypes/mobile/chat/scripts/check-chat-parity.mjs` loads
+  both surfaces with their own platform-appropriate probe and compares the
+  semantic chat contract — 32px square identity top-aligned per cluster, 4px
+  tail on the same top corner, full 12px inner corners, inline-only failed
+  retry, and one soft-gray composer dock (12px radius, 8px send, equal four-
+  sided frame, send/emoji inside the dock, no exterior attach).
 
 This is prototype interaction intent. Production implements the same boundary
 as a presenter between projection store and page and adds a data-hygiene
