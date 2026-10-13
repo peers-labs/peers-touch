@@ -181,14 +181,14 @@ try {
     await next.scrollIntoViewIfNeeded();
     const retained = messages().locator('[data-scroll-anchor-id="long-message-200"]');
     const retainedOffset = await offset(retained);
-    await device.getByPlaceholder('Message', { exact: true }).fill('local-long-list-check');
+    await device.locator('.mp-composer-dock textarea.mp-composer-input').fill('local-long-list-check');
     await device.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(messages()).toHaveAttribute('data-window-total', '481');
     await expect(messages()).toHaveAttribute('data-window-start', '0');
     await expect.poll(async () => Math.abs(await offset(retained) - retainedOffset)).toBeLessThanOrEqual(2);
     await messages().getByRole('button', { name: copy['mobile.chat.latestMessage'], exact: true }).click();
     await atTail();
-    await device.getByPlaceholder('Message', { exact: true }).fill('local-live-tail-check');
+    await device.locator('.mp-composer-dock textarea.mp-composer-input').fill('local-live-tail-check');
     await device.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(messages()).toHaveAttribute('data-window-start', '282');
     await atTail();

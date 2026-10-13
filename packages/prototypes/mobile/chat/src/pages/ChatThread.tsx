@@ -4,8 +4,8 @@ import {
   AlertCircle, ArrowLeft, Check, CheckCheck, ChevronRight, Clock,
   Copy, CornerUpLeft, EyeOff, File, Flag as FlagIcon, Forward,
   Image as ImageIcon, Laugh, ListChecks, LockKeyhole,
-  MessageSquare, MoreVertical, Pencil, Phone, Pin, Plus,
-  RefreshCw, RotateCcw, Send, ShieldX, Video, X,
+  MessageSquare, MoreVertical, Pencil, Phone, Pin,
+  RefreshCw, RotateCcw, Send, ShieldX, Smile, Video, X,
 } from 'lucide-react';
 import type { Conversation, Message, MessageStatus, MobileUiEvidence, ReactionKind } from '../types';
 import { REACTION_EMOJI, REACTION_EMOJI_EXTENDED, FULL_EMOJI_GRID } from '../types';
@@ -45,6 +45,21 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [inputValue, setInputValue] = useState('');
+  const [composerEmojiOpen, setComposerEmojiOpen] = useState(false);
+  const composerInputRef = useRef<{ resizableTextArea?: { textArea: HTMLTextAreaElement } } | null>(null);
+
+  function insertComposerEmoji(emoji: string) {
+    const textarea = composerInputRef.current?.resizableTextArea?.textArea;
+    const start = textarea?.selectionStart ?? inputValue.length;
+    const end = textarea?.selectionEnd ?? inputValue.length;
+    setInputValue(`${inputValue.slice(0, start)}${emoji}${inputValue.slice(end)}`);
+    requestAnimationFrame(() => {
+      if (!textarea) return;
+      const position = start + emoji.length;
+      textarea.focus();
+      textarea.setSelectionRange(position, position);
+    });
+  }
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [actionSheetMessage, setActionSheetMessage] = useState<Message | null>(null);
   const [isTyping] = useState(
@@ -74,7 +89,6 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
     ? 'en'
     : resolveChatJourneyLocale(window.location.search, window.navigator.language);
   const journeyCopy = CHAT_JOURNEY_COPY[locale];
-  const failedMessages = messages.filter((message) => message.status === 'failed');
 
   const clusterPositions = useMemo(() => {
     const positions = new Map<string, { start: boolean; end: boolean }>();
@@ -302,7 +316,6 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
   }
 
   function renderReceipt(status?: MessageStatus) {
-    if (status === 'failed') return <AlertCircle size={14} className="mp-receipt mp-receipt--failed" aria-label={journeyCopy.deliveryFailed} />;
     if (status === 'unknown') return <AlertCircle size={14} className="mp-receipt mp-receipt--unknown" aria-label="Delivery outcome unknown" />;
     if (status === 'sending') return <RefreshCw size={13} className="mp-receipt mp-receipt--pending" aria-label={journeyCopy.retrying} />;
     if (status === 'read') return <CheckCheck size={14} className="mp-receipt mp-receipt--read" />;
@@ -361,14 +374,6 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
           <MoreVertical size={19} />
         </button>
       </header>
-
-      {failedMessages.length > 1 && (
-        <InlineSurfaceNotice
-          tone="error"
-          title={`${failedMessages.length} messages need attention`}
-          detail="Each failed message keeps its own retry action."
-        />
-      )}
 
       {pinnedMessage && threadState !== 'route-error' && (
         <button type="button" className="mp-pinned-banner" onClick={() => setShowPinnedMessages(true)}>
@@ -446,13 +451,13 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
                       data-scroll-anchor-id={msg.id}>
                       {!msg.mine && (
                         <span className="mp-message-avatar-slot">
-                          {cluster.end && (
+                          {cluster.start && (
                             <IdentityAvatar
                               name={conversation.name}
                               initials={conversation.avatar}
                               src={conversation.avatarUrl}
                               kind={conversation.isGroup ? 'group' : 'person'}
-                              size={34}
+                              size={32}
                               renderState={uiEvidence.avatarState}
                             />
                           )}
@@ -531,29 +536,34 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
                         {(cluster.end || msg.status === 'failed' || msg.status === 'unknown') && (
                           <div className={`mp-message-meta ${msg.mine ? 'mine' : 'peer'}`}>
                             <span className="mp-message-time">{msg.time}</span>
-                            {msg.mine && renderReceipt(msg.status)}
+                            {msg.mine && msg.status === 'failed' && (
+                              <button
+                                type="button"
+                                className="mp-meta-action mp-meta-action--retry"
+                                data-chat-inline-retry
+                                aria-label={locale === 'zh' ? '失败，点击重试' : 'Failed, click to retry'}
+                                onClick={() => handleRetry(msg.id)}
+                              >
+                                <RotateCcw size={11} />
+                                {locale === 'zh' ? '失败，点击重试' : 'Failed, click to retry'}
+                              </button>
+                            )}
+                            {msg.mine && msg.status === 'unknown' && (
+                              <button
+                                type="button"
+                                className="mp-meta-action mp-meta-action--check"
+                                data-chat-inline-check
+                                disabled={checking}
+                                onClick={() => handleCheckStatus(msg.id)}
+                              >
+                                <RefreshCw size={11} />
+                                {checking ? 'Checking status…' : 'Check status'}
+                              </button>
+                            )}
+                            {msg.mine && msg.status !== 'failed' && msg.status !== 'unknown'
+                              ? renderReceipt(msg.status)
+                              : null}
                           </div>
-                        )}
-                        {msg.status === 'failed' && (
-                          <button
-                            type="button"
-                            className="mp-message-retry"
-                            onClick={() => handleRetry(msg.id)}
-                          >
-                            <RotateCcw size={12} />
-                            {journeyCopy.retry}
-                          </button>
-                        )}
-                        {msg.status === 'unknown' && (
-                          <button
-                            type="button"
-                            className="mp-message-retry unknown"
-                            disabled={checking}
-                            onClick={() => handleCheckStatus(msg.id)}
-                          >
-                            <RefreshCw size={12} />
-                            {checking ? 'Checking status...' : 'Check status'}
-                          </button>
                         )}
                       </div>
                     </div>
@@ -569,7 +579,7 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
                         initials={conversation.avatar}
                         src={conversation.avatarUrl}
                         kind={conversation.isGroup ? 'group' : 'person'}
-                        size={34}
+                        size={32}
                         renderState={uiEvidence.avatarState}
                       />
                     </span>
@@ -609,18 +619,52 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
           )}
 
           <div className="mp-composer" data-thread-state={threadState}>
-            <button type="button" className="mp-composer-attach" aria-label="Attach"><Plus size={22} /></button>
-            <Input.TextArea
-              className="mp-composer-input"
-              value={inputValue}
-              placeholder="Message"
-              autoSize={{ minRows: 1, maxRows: 4 }}
-              onChange={(e) => setInputValue(e.target.value)}
-              onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            />
-            <button type="button" className={`mp-composer-send ${inputValue.trim() ? 'active' : ''}`} onClick={handleSend} aria-label="Send">
-              <Send size={18} />
-            </button>
+            <div className={`mp-composer-dock${composerEmojiOpen ? ' is-focused' : ''}`}>
+              {composerEmojiOpen && (
+                <div className="mp-composer-emoji" role="dialog" aria-label="Emoji picker">
+                  {FULL_EMOJI_GRID.map((emoji, index) => (
+                    <button
+                      key={`${emoji}-${index}`}
+                      type="button"
+                      className="mp-composer-emoji-btn"
+                      aria-label={`Insert ${emoji}`}
+                      onClick={() => insertComposerEmoji(emoji)}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <Input.TextArea
+                ref={composerInputRef}
+                className="mp-composer-input"
+                value={inputValue}
+                placeholder={conversation.isGroup ? 'Message the group...' : 'Send a message...'}
+                autoSize={{ minRows: 1, maxRows: 4 }}
+                onChange={(e) => setInputValue(e.target.value)}
+                onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); handleSend(); } }}
+              />
+              <div className="mp-composer-tools">
+                <button
+                  type="button"
+                  className="mp-composer-tool"
+                  aria-label="Emoji"
+                  aria-pressed={composerEmojiOpen}
+                  onClick={() => setComposerEmojiOpen((open) => !open)}
+                >
+                  <Smile size={20} />
+                </button>
+                <button
+                  type="button"
+                  className={`mp-composer-send ${inputValue.trim() ? 'active' : ''}`}
+                  aria-label="Send"
+                  disabled={!inputValue.trim()}
+                  onClick={handleSend}
+                >
+                  <Send size={18} />
+                </button>
+              </div>
+            </div>
           </div>
         </>
       )}

@@ -216,6 +216,84 @@ try {
         `search input must use md radius 8 and never be a pill, got radius ${field.radius} / height ${field.height}`);
     }
 
+    // ── Desktop↔Mobile chat parity (measured on the delivery-recovery thread) ──
+    await open('chat-delivery-recovery');
+    await device.locator('.mp-thread-messages').waitFor();
+
+    // 1. Identity anchors the cluster at the TOP, aligned with the sender name;
+    //    the bubble tail is the 4px corner at the same TOP edge as Desktop.
+    const clusterRows = await device.locator('.mp-message-row.peer.cluster-start').evaluateAll(
+      (rows) => rows.map((row) => {
+        const avatar = row.querySelector('.mp-message-avatar-slot .mp-identity-avatar');
+        const name = row.querySelector('.mp-message-sender');
+        const bubble = row.querySelector('.mp-bubble');
+        const file = row.querySelector('.mp-message-file');
+        const cornerEl = bubble ?? file;
+        const avatarRect = avatar?.getBoundingClientRect();
+        const nameRect = name?.getBoundingClientRect();
+        const style = cornerEl ? getComputedStyle(cornerEl) : null;
+        return {
+          hasAvatar: Boolean(avatarRect),
+          avatarNameDelta: avatarRect && nameRect ? Math.round(avatarRect.top - nameRect.top) : null,
+          topLeft: style ? Math.round(Number.parseFloat(style.borderTopLeftRadius)) : null,
+          topRight: style ? Math.round(Number.parseFloat(style.borderTopRightRadius)) : null,
+        };
+      }),
+    );
+    assert(clusterRows.length > 0, 'expected at least one peer cluster-start row');
+    for (const row of clusterRows) {
+      assert(row.hasAvatar, 'peer cluster-start row must carry the identity avatar');
+      assert(row.avatarNameDelta === null || Math.abs(row.avatarNameDelta) <= 8,
+        `cluster identity must top-align with the sender name, delta ${row.avatarNameDelta}px`);
+      assert(row.topLeft === 4 && row.topRight === 12,
+        `peer cluster bubble tail must be top-left 4px, got ${row.topLeft}/${row.topRight}`);
+    }
+
+    // 2. Failed delivery retries inline in the meta row (Desktop parity):
+    //    no block-level retry button may exist.
+    assert.equal(await device.locator('.mp-message-retry').count(), 0,
+      'block-level message retry button must not exist');
+    const inlineRetry = device.locator('[data-chat-inline-retry]');
+    assert(await inlineRetry.count() >= 1, 'expected an inline failed-message retry');
+    const retryBox = await inlineRetry.first().evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      return { inMeta: Boolean(el.closest('.mp-message-meta')), height: Math.round(rect.height) };
+    });
+    assert(retryBox.inMeta, 'inline retry must live inside the message meta row');
+    assert(retryBox.height <= 28, `inline retry must be a compact inline action, height ${retryBox.height}px`);
+
+    // 3. Composer is one grounded soft-gray dock: no exterior attach button,
+    //    send/emoji live inside the dock, whose frame inside the bar is equal.
+    assert.equal(await device.locator('.mp-composer-attach').count(), 0,
+      'exterior composer attach button must not exist');
+    const dock = device.locator('.mp-composer-dock').first();
+    await dock.waitFor();
+    const composer = await device.locator('.mp-composer').first().evaluate((bar) => {
+      const dockEl = bar.querySelector('.mp-composer-dock');
+      const send = bar.querySelector('.mp-composer-send');
+      const emoji = bar.querySelector('.mp-composer-tool[aria-label="Emoji"]');
+      const barRect = bar.getBoundingClientRect();
+      const dockRect = dockEl.getBoundingClientRect();
+      const insets = {
+        top: Math.round(dockRect.top - barRect.top),
+        right: Math.round(barRect.right - dockRect.right),
+        bottom: Math.round(barRect.bottom - dockRect.bottom),
+        left: Math.round(dockRect.left - barRect.left),
+      };
+      const radius = Math.round(Number.parseFloat(getComputedStyle(dockEl).borderTopLeftRadius));
+      return {
+        insets,
+        radius,
+        sendInside: dockEl.contains(send),
+        emojiInside: dockEl.contains(emoji),
+      };
+    });
+    const insetValues = Object.values(composer.insets);
+    assert(composer.radius === 12, `composer dock radius must be 12, got ${composer.radius}`);
+    assert(composer.sendInside && composer.emojiInside, 'send and emoji must live inside the dock');
+    assert(Math.max(...insetValues) - Math.min(...insetValues) <= 2,
+      `composer dock frame must be equal on all four sides, got ${JSON.stringify(composer.insets)}`);
+
     assert.deepEqual(errors, []);
     await page.close();
   }
