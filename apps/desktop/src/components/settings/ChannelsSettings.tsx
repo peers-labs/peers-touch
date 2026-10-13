@@ -54,9 +54,14 @@ type TFunc = (key: string, opts?: Record<string, unknown>) => string;
 
 // Older/local-stub channels may carry no parseable created date; render a
 // neutral dash instead of the raw "Invalid Date" Date.toString fallback.
-function formatChannelDate(value: string | undefined | null, withTime: boolean): string {
-  if (!value) return '—';
-  const date = new Date(value);
+function formatChannelDate(value: string | number | undefined | null, withTime: boolean): string {
+  if (value === undefined || value === null || value === '') return '—';
+  // The local channels stub emits epoch millis as a string; Date() rejects
+  // bare numeric strings even though it accepts the same value as a number.
+  const numeric = typeof value === 'string' && /^\d+$/.test(value)
+    ? Number(value)
+    : value;
+  const date = new Date(numeric);
   if (Number.isNaN(date.getTime())) return '—';
   return withTime ? date.toLocaleString() : date.toLocaleDateString();
 }
