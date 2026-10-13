@@ -1543,17 +1543,21 @@ function restoreDesktopApplication(target) {
   execFileSync('open', ['-a', target.name], { encoding: 'utf8' });
 }
 
-async function waitForDesktopActivationRestore(target) {
+async function waitForDesktopActivationRelease(owner, target) {
   const deadline = Date.now() + desktopActivationTimeoutMs;
   let application = null;
   while (Date.now() < deadline) {
     application = frontmostDesktopApplication();
-    if (desktopActivationTargetMatches(target, application)) return application;
+    if (
+      desktopActivationReleaseAction(owner, target, application) !== 'restore'
+    ) {
+      return application;
+    }
     await sleep(100);
   }
   throw new JourneyContractError(
     'DESKTOP_ACTIVATION_RELEASE_FAILED',
-    `Desktop activation restored ${application?.name || 'unknown'} instead of ${target.name || target.bundleId || target.pid}`,
+    `Desktop activation release left ${application?.name || 'unknown'} in the foreground`,
   );
 }
 
@@ -1623,7 +1627,7 @@ async function releaseForegroundClient(clientId, client) {
       verifyRestore = false;
     }
   }
-  if (verifyRestore) await waitForDesktopActivationRestore(target);
+  if (verifyRestore) await waitForDesktopActivationRelease(owner, target);
 }
 
 async function holdDesktopForeground(clientId, client) {
