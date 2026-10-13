@@ -29,17 +29,18 @@ describe('MobileAvatar', () => {
     };
   });
 
-  it('uses circular geometry for people', () => {
+  it('uses size-derived rounded-square geometry for people', () => {
     const markup = renderToStaticMarkup(
       <MobileAvatar identityKey="ptid:bob" name="Bob" size={28} />,
     );
 
-    expect(markup).toContain('ant-avatar-circle');
+    expect(markup).toContain('ant-avatar-square');
+    expect(markup).not.toContain('ant-avatar-circle');
     expect(markup).toContain('mobile-user-avatar');
     expect(markup).toContain('mobile-user-avatar-person');
     expect(markup).toContain('data-identity-role="person"');
-    expect(markup).toContain('--mobile-user-avatar-radius:14px');
-    expect(mobileUserAvatarRadius(28)).toBe(14);
+    expect(markup).toContain('--mobile-user-avatar-radius:8px');
+    expect(mobileUserAvatarRadius(28)).toBe(8);
   });
 
   it('uses rounded-square geometry for groups', () => {
@@ -48,11 +49,12 @@ describe('MobileAvatar', () => {
     );
 
     expect(markup).toContain('ant-avatar-square');
+    expect(markup).not.toContain('ant-avatar-circle');
     expect(markup).toContain('mobile-user-avatar-group');
     expect(markup).toContain('data-identity-role="group"');
     expect(markup).toContain('--mobile-user-avatar-radius:10px');
-    expect(mobileUserAvatarRadius(42, 'group')).toBe(10);
-    expect(mobileUserAvatarRadius(72, 'group')).toBe(18);
+    expect(mobileUserAvatarRadius(42)).toBe(10);
+    expect(mobileUserAvatarRadius(72)).toBe(18);
   });
 
   it('reserves avatar geometry while the source is loading', () => {

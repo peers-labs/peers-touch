@@ -68,8 +68,8 @@ Rules:
 - Related controls inside one surface should use adjacent radius levels.
 - Do not put sharp controls inside soft containers unless the sharpness signals data table or code.
 - Feed and chat surfaces should prefer `radius.lg` or lighter boundary models, not thick nested boxes.
-- Person avatars use circular geometry through the shared avatar primitive.
-- Group and collective avatars use rounded-square geometry derived from their size.
+- Person, group, collective, and agent avatars all use rounded-square geometry through the shared avatar primitive; the corner radius is derived from size (`max(8, floor(size * 0.25))`, i.e. `radius.lg` at list scale).
+- Avatars never use `radius.full`; presence dots, unread badges, and compact reaction/count chips are the only circular elements.
 - Interactive inputs and icon buttons never use circular or pill geometry. Use `radius.sm` or `radius.md`.
 - `radius.full` is reserved for non-container indicators and compact metadata, not the product's primary visual language.
 

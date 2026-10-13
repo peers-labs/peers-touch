@@ -63,9 +63,9 @@ prototype:
 - one shared semantic token source drives Mobile CSS variables and the antd
   adapter; `#667eea` is the authoritative light-theme action accent;
 - light and dark review modes are available beside the evidence selector;
-- people use circular image/fallback avatars and groups use rounded-square
-  deterministic initials; loading and failed-source states keep stable
-  geometry;
+- people and groups use rounded-square image/fallback avatars with a
+  size-derived corner radius (never circular); loading and failed-source
+  states keep stable geometry;
 - the clean default journey contains no synthetic delivery failure;
 - conversation first-load, cached-refresh, cached-error, empty, long-content,
   avatar-loading, avatar-fallback, thread first-load, older-history, route

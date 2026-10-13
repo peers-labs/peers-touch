@@ -40,10 +40,15 @@ export function IdentityAvatar({
   const visibleState = renderState === 'ready' ? assetState : renderState;
   const canRenderImage = Boolean(src) && renderState !== 'failed';
 
+  // Rounded-square is the only avatar geometry; radius is size-derived and
+  // never circular. Groups inherit the lg token from CSS; people use the
+  // tighter size-derived corner, matching the shared SquareAvatar contract.
+  const personRadius = kind === 'person' ? Math.max(8, Math.round(size / 4)) : undefined;
+
   return (
     <span
       className={`mp-identity-avatar ${kind} tone-${tone} ${className}`.trim()}
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, ...(personRadius === undefined ? {} : { borderRadius: personRadius }) }}
       role="img"
       aria-label={name}
       data-avatar-state={visibleState}

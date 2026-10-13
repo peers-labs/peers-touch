@@ -14,7 +14,7 @@ vi.mock('../../app/mobileI18n', () => ({
 }));
 
 describe('SettingsAcceptanceSurface', () => {
-  it('uses the shared circular person avatar on the Me summary', () => {
+  it('uses the shared rounded-square person avatar on the Me summary', () => {
     const html = renderToStaticMarkup(
       <SettingsAcceptanceSurface surfaceId="settings.summary" />,
     );
@@ -22,7 +22,8 @@ describe('SettingsAcceptanceSurface', () => {
     expect(html).toContain('settings-fixture-avatar');
     expect(html).toContain('mobile-user-avatar-person');
     expect(html).toContain('data-identity-role="person"');
-    expect(html).toContain('--mobile-user-avatar-radius:32px');
+    expect(html).toContain('--mobile-user-avatar-radius:16px');
+    expect(html).not.toContain('ant-avatar-circle');
   });
 
   it.each(SETTINGS_SURFACE_FIXTURE_IDS)(

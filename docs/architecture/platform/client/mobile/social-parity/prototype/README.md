@@ -130,10 +130,10 @@ the exact-source OPPO run completes.
 
 ## 2026-10-09 Avatar And Composer Density Correction
 
-> Historical evidence only. The Owner-confirmed 2026-10-12 Mobile Shell
-> interaction baseline supersedes the all-rounded-square avatar rule with
-> circular people and rounded-square groups. The canonical production contract
-> is `MobileAvatar` plus
+> Historical evidence only. The short-lived 2026-10-12 circular-person
+> interaction baseline was reverted on 2026-10-13; every actor identity again
+> follows one rounded-square avatar rule (`max(8px, floor(size * 0.25))`),
+> never circular. The canonical production contract is `MobileAvatar` plus
 > `docs/knowledge/invariants/mobile-user-identity-visual-consistency.md`.
 
 Owner review identified two prototype defects:
