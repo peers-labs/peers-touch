@@ -6766,9 +6766,10 @@ impl MessagingStore {
         transaction.commit().map_err(|error| error.to_string())
     }
 
-    pub(super) fn refresh_device_identity_profile(
+    pub(super) fn refresh_device_identity(
         &self,
         state: &FreshDeviceIdentityState,
+        station_identity_continuity_verified: bool,
     ) -> Result<(), String> {
         let enrollment = &state.enrollment;
         let certificate = &enrollment.certificate;
@@ -6800,27 +6801,31 @@ impl MessagingStore {
                 },
             )
             .map_err(|error| error.to_string())?;
-        if current.0 != ptid
-            || current.1 != device.device_id
-            || current.2 != certificate.actor_identity_public_key
-            || current.3 != certificate.actor_identity_key_fingerprint
-            || next_version < current.4
-        {
+        if current.0 != ptid || current.1 != device.device_id || next_version < current.4 {
             return Err("refreshed messaging device identity continuity mismatch".to_string());
         }
-        if next_version == current.4 {
+        let actor_identity_matches = current.2 == certificate.actor_identity_public_key
+            && current.3 == certificate.actor_identity_key_fingerprint;
+        if !actor_identity_matches && !station_identity_continuity_verified {
+            return Err("refreshed messaging device identity continuity mismatch".to_string());
+        }
+        if actor_identity_matches && next_version == current.4 {
             return Ok(());
         }
         let changed = transaction
             .execute(
                 "UPDATE messaging_device_identity
-                 SET device_signing_seed = ?1,
-                     device_signing_public_key = ?2,
-                     actor_cross_signature = ?3,
-                     signing_key_id = ?4,
-                     profile_version = ?5
-                 WHERE id = 1 AND profile_version = ?6",
+                 SET actor_identity_public_key = ?1,
+                     actor_identity_key_fingerprint = ?2,
+                     device_signing_seed = ?3,
+                     device_signing_public_key = ?4,
+                     actor_cross_signature = ?5,
+                     signing_key_id = ?6,
+                     profile_version = ?7
+                 WHERE id = 1 AND profile_version = ?8",
                 params![
+                    certificate.actor_identity_public_key,
+                    certificate.actor_identity_key_fingerprint,
                     state.device_signing_seed.as_slice(),
                     certificate.device_signing_public_key,
                     enrollment.actor_cross_signature.as_slice(),
@@ -14326,7 +14331,9 @@ mod tests {
     use crate::messaging::attachment_transfer;
     use crate::messaging::private_content::test_attachment_metadata;
     use crate::model::chat::{AttachmentTransferErrorCode, ReactionIntent};
-    use messaging_core::identity::generate_fresh_device_identity;
+    use messaging_core::identity::{
+        generate_device_identity_for_device_from_parts, generate_fresh_device_identity,
+    };
 
     fn reaction_command(command_id: &str, reaction: &str) -> Vec<u8> {
         ChatCommand {
@@ -14770,6 +14777,61 @@ mod tests {
         drop(connection);
         assert_eq!(store.next_one_time_prekey_id().unwrap(), 5);
         assert_eq!(store.load_signed_prekey(7).unwrap(), [7; 32]);
+    }
+
+    #[test]
+    fn actor_identity_scope_rebind_preserves_device_and_signing_key() {
+        let store = MessagingStore::in_memory().unwrap();
+        let old_identity = IdentityKeyPair::from_seed(&[9; 32]);
+        let installed =
+            generate_fresh_device_identity("ptid:alice", old_identity.seed_bytes(), 3).unwrap();
+        let device_id = installed
+            .enrollment
+            .certificate
+            .device
+            .as_ref()
+            .unwrap()
+            .device_id
+            .clone();
+        let signing_public_key = installed
+            .enrollment
+            .certificate
+            .device_signing_public_key
+            .clone();
+        let signing_key_id = installed.enrollment.certificate.signing_key_id.clone();
+        store.install_fresh_device_identity(&installed).unwrap();
+        store.complete_device_enrollment(&device_id).unwrap();
+
+        let signing_seed = store.device_signing_seed().unwrap().unwrap().0;
+        let rebound = generate_device_identity_for_device_from_parts(
+            "ptid:alice",
+            &device_id,
+            &[7; 32],
+            3,
+            Some(&signing_seed),
+        )
+        .unwrap();
+        store
+            .refresh_device_identity(&rebound, true)
+            .expect("Station-anchored actor identity must rebind in place");
+
+        let enrollment = store.device_enrollment().unwrap().unwrap();
+        assert_eq!(
+            enrollment.certificate.device.as_ref().unwrap().device_id,
+            device_id,
+        );
+        assert_eq!(
+            enrollment.certificate.device_signing_public_key,
+            signing_public_key,
+        );
+        assert_eq!(enrollment.certificate.signing_key_id, signing_key_id);
+        assert_eq!(
+            enrollment.certificate.actor_identity_public_key,
+            IdentityKeyPair::from_seed(&[7; 32])
+                .verifying_key()
+                .as_bytes(),
+        );
+        assert!(store.pending_device_enrollment().unwrap().is_some());
     }
 
     #[test]

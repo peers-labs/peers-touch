@@ -514,6 +514,7 @@ impl MessagingEngine {
         ptid: String,
         actor_identity_seed: &[u8; 32],
         actor_profile_version: u64,
+        station_identity_continuity_verified: bool,
     ) -> Result<Self, String> {
         if profile_id.trim().is_empty() || ptid.trim().is_empty() || actor_profile_version == 0 {
             return Err(
@@ -527,6 +528,7 @@ impl MessagingEngine {
             ptid,
             actor_identity_seed,
             actor_profile_version,
+            station_identity_continuity_verified,
             store,
         )
     }
@@ -537,13 +539,15 @@ impl MessagingEngine {
         ptid: String,
         actor_identity_seed: &[u8; 32],
         actor_profile_version: u64,
+        station_identity_continuity_verified: bool,
         store: Arc<MessagingStore>,
     ) -> Result<Self, String> {
-        Self::refresh_stored_device_profile(
+        Self::refresh_stored_device_identity(
             store.as_ref(),
             &ptid,
             actor_identity_seed,
             actor_profile_version,
+            station_identity_continuity_verified,
         )?;
         let enrollment = load_or_create_device_identity_from_seed(
             store.as_ref(),
@@ -569,17 +573,31 @@ impl MessagingEngine {
         )
     }
 
-    fn refresh_stored_device_profile(
+    fn refresh_stored_device_identity(
         store: &MessagingStore,
         ptid: &str,
         actor_identity_seed: &[u8; 32],
         actor_profile_version: u64,
+        station_identity_continuity_verified: bool,
     ) -> Result<(), String> {
         let Some(enrollment) = store.device_enrollment()? else {
             return Ok(());
         };
-        if enrollment.certificate.observed_profile_version >= actor_profile_version {
+        let actor_identity = IdentityKeyPair::from_seed(actor_identity_seed);
+        let actor_identity_matches = enrollment.certificate.actor_identity_public_key
+            == actor_identity.verifying_key().as_bytes()
+            && enrollment.certificate.actor_identity_key_fingerprint
+                == Sha256::digest(actor_identity.verifying_key().as_bytes()).as_slice();
+        if enrollment.certificate.observed_profile_version > actor_profile_version {
+            return Err("messaging device identity profile version regressed".to_string());
+        }
+        if actor_identity_matches
+            && enrollment.certificate.observed_profile_version == actor_profile_version
+        {
             return Ok(());
+        }
+        if !actor_identity_matches && !station_identity_continuity_verified {
+            return Err("messaging device identity continuity mismatch".to_string());
         }
         let device_id = enrollment
             .certificate
@@ -605,7 +623,7 @@ impl MessagingEngine {
             actor_profile_version,
             Some(&device_signing_seed),
         )?;
-        store.refresh_device_identity_profile(&refreshed)
+        store.refresh_device_identity(&refreshed, station_identity_continuity_verified)
     }
 
     pub fn open(
@@ -3520,6 +3538,7 @@ impl EngineRegistry {
         ptid: String,
         actor_identity_seed: &[u8; 32],
         actor_profile_version: u64,
+        station_identity_continuity_verified: bool,
     ) -> Result<Arc<MessagingEngine>, String> {
         let notifier = self
             .projection_notifier
@@ -3542,6 +3561,7 @@ impl EngineRegistry {
             ptid,
             actor_identity_seed,
             actor_profile_version,
+            station_identity_continuity_verified,
         )?);
         engine.set_projection_notifier(notifier)?;
         engines.insert(profile_id, engine.clone());
@@ -3827,6 +3847,7 @@ impl EngineRegistry {
                     archive.ptid.clone(),
                     &archive.actor_identity_seed,
                     archive.actor_profile_version,
+                    false,
                 )?);
                 self.install_profile_runtime(profile_id, engine, worker_token)?;
                 Ok(enrollment)
@@ -3838,6 +3859,7 @@ impl EngineRegistry {
                     previous_ptid,
                     &previous_seed,
                     previous_profile_version,
+                    false,
                 )
                 .and_then(|engine| {
                     self.install_profile_runtime(profile_id, Arc::new(engine), worker_token)
@@ -5061,6 +5083,7 @@ mod tests {
             "ptid:alice".to_string(),
             &[17; 32],
             3,
+            false,
             store.clone(),
         )
         .unwrap();
@@ -5080,6 +5103,7 @@ mod tests {
             "ptid:alice".to_string(),
             &[17; 32],
             3,
+            false,
             store.clone(),
         )
         .unwrap();
@@ -5092,6 +5116,7 @@ mod tests {
             "ptid:alice".to_string(),
             &[17; 32],
             4,
+            false,
             store.clone(),
         )
         .unwrap();
@@ -5107,6 +5132,7 @@ mod tests {
             "ptid:alice".to_string(),
             &[18; 32],
             3,
+            false,
             store.clone(),
         )
         .is_err());
@@ -5116,6 +5142,7 @@ mod tests {
             "ptid:alice".to_string(),
             &[17; 32],
             3,
+            false,
             store,
         )
         .is_err());
@@ -5131,6 +5158,7 @@ mod tests {
                 "ptid:alice".to_string(),
                 &[17; 32],
                 3,
+                false,
                 Arc::new(MessagingStore::in_memory().unwrap()),
             )
             .unwrap(),
@@ -5179,6 +5207,7 @@ mod tests {
                 "ptid:alice".to_string(),
                 &[17; 32],
                 3,
+                false,
                 Arc::new(MessagingStore::in_memory().unwrap()),
             )
             .unwrap(),
@@ -5228,6 +5257,7 @@ mod tests {
                 "ptid:alice".to_string(),
                 &[17; 32],
                 3,
+                false,
                 Arc::new(MessagingStore::in_memory().unwrap()),
             )
             .unwrap(),

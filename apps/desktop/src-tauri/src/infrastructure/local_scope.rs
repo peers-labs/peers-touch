@@ -71,6 +71,55 @@ pub(crate) fn user_scope_for_actor_at_station(
     .user_scope()
 }
 
+pub(crate) fn legacy_identity_key_ref_for_actor_at_station(
+    actor_ptid: &str,
+    station_peer_id: Option<&str>,
+    station_url: &str,
+) -> String {
+    LocalScope {
+        station_scope: station_scope_for_identity(station_peer_id, station_url),
+        actor_scope: storage::resolve_user_scope(actor_ptid),
+    }
+    .identity_key_ref()
+}
+
 pub fn account_id_for_password_ptid(actor_ptid: &str) -> String {
     LocalScope::from_actor_ptid(actor_ptid).account_id("password", actor_ptid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn actor_home_identity_scope_is_station_independent() {
+        let actor_ptid = "ptid:v1:person:alice";
+        let canonical = LocalScope::from_actor_ptid(actor_ptid).identity_key_ref();
+        let legacy_one = legacy_identity_key_ref_for_actor_at_station(
+            actor_ptid,
+            Some("station-one"),
+            "https://station-one.example",
+        );
+        let legacy_two = legacy_identity_key_ref_for_actor_at_station(
+            actor_ptid,
+            Some("station-two"),
+            "https://station-two.example",
+        );
+
+        assert!(canonical.starts_with("actor_home_"));
+        assert_ne!(canonical, legacy_one);
+        assert_ne!(canonical, legacy_two);
+        assert_ne!(legacy_one, legacy_two);
+    }
+
+    #[test]
+    fn legacy_identity_scope_prefers_verified_station_peer_id() {
+        let legacy = legacy_identity_key_ref_for_actor_at_station(
+            "ptid:v1:person:alice",
+            Some(" 12D3KooWStation "),
+            "https://ignored.example",
+        );
+
+        assert!(legacy.starts_with("station_peer_12D3KooWStation/"));
+    }
 }

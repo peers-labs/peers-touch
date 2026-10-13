@@ -14,6 +14,8 @@ pub enum CryptoError {
     KeyringAccess(String),
     /// Identity key not found for the given reference.
     IdentityNotFound(String),
+    /// Local identity candidates cannot be reconciled with established continuity.
+    IdentityContinuityConflict(String),
     /// Stored key material has an invalid format (corrupt or tampered).
     InvalidKeyFormat(String),
     /// Ed25519 signature verification failed.
@@ -77,6 +79,9 @@ impl fmt::Display for CryptoError {
         match self {
             Self::KeyringAccess(ctx) => write!(f, "keyring access failed: {ctx}"),
             Self::IdentityNotFound(r) => write!(f, "identity not found for ref: {r}"),
+            Self::IdentityContinuityConflict(ctx) => {
+                write!(f, "identity continuity conflict: {ctx}")
+            }
             Self::InvalidKeyFormat(d) => write!(f, "invalid key format: {d}"),
             Self::SignatureVerification(d) => write!(f, "signature verification failed: {d}"),
             Self::KeyConversion(d) => write!(f, "key conversion failed: {d}"),

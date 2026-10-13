@@ -17,7 +17,7 @@ use crate::model::access_gate::{
     GetAccessDecisionRequest, GetAccessDecisionResponse, StartAccessAttemptRequest,
     StartAccessAttemptResponse, SubmitAccessGateRequest, SubmitAccessGateResponse,
 };
-use crate::model::actor::ActorProfile;
+use crate::model::actor::{ActorProfile, ListActorDevicesResponse};
 use crate::model::auth::{LoginRequest, LoginResponse};
 use crate::state::AppState;
 use serde_json::json;
@@ -135,12 +135,6 @@ pub(crate) fn prepare_messaging_profile(
     if !actor_ptid.starts_with("ptid:") {
         return Err("messaging activation requires canonical actor PTID".to_string());
     }
-    let identity_key_ref =
-        crate::infrastructure::local_scope::LocalScope::from_actor_ptid(actor_ptid)
-            .identity_key_ref();
-    let actor_identity = crate::domain::crypto::get_or_create_identity(&identity_key_ref)
-        .map_err(|error| format!("messaging actor identity unavailable: {error}"))?;
-    let actor_identity_seed = Zeroizing::new(actor_identity.seed_bytes());
     let actor_profile = state
         .station
         .client()
@@ -152,11 +146,48 @@ pub(crate) fn prepare_messaging_profile(
         )
         .map_err(|error| format!("messaging actor profile unavailable: {error}"))?;
     let actor_profile_version = canonical_actor_profile_version(&actor_profile, actor_ptid)?;
+    let actor_devices = state
+        .station
+        .client()
+        .request_peers_proto_no_body::<ListActorDevicesResponse>(
+            reqwest::Method::GET,
+            "/device/list",
+            token,
+            None,
+        )
+        .map_err(|error| format!("messaging actor identity continuity unavailable: {error}"))?;
+    let expected_identity_fingerprint =
+        canonical_actor_identity_fingerprint(&actor_devices, actor_ptid)?;
+    let station_identity_continuity_verified = expected_identity_fingerprint.is_some();
+    let canonical_identity_key_ref =
+        crate::infrastructure::local_scope::LocalScope::from_actor_ptid(actor_ptid)
+            .identity_key_ref();
+    let station_peer_id = state.station.active_station_peer_id();
+    let station_origin = state.station.active_endpoint_origin();
+    let legacy_identity_key_refs = if station_peer_id.is_some() || station_origin.is_some() {
+        vec![
+            crate::infrastructure::local_scope::legacy_identity_key_ref_for_actor_at_station(
+                actor_ptid,
+                station_peer_id.as_deref(),
+                station_origin.as_deref().unwrap_or_default(),
+            ),
+        ]
+    } else {
+        Vec::new()
+    };
+    let actor_identity = crate::domain::crypto::get_or_migrate_identity(
+        &canonical_identity_key_ref,
+        &legacy_identity_key_refs,
+        expected_identity_fingerprint.as_ref(),
+    )
+    .map_err(|error| format!("messaging actor identity unavailable: {error}"))?;
+    let actor_identity_seed = Zeroizing::new(actor_identity.seed_bytes());
     state.messaging_engines.activate_profile(
         account_id.to_string(),
         actor_ptid.to_string(),
         &actor_identity_seed,
         actor_profile_version,
+        station_identity_continuity_verified,
     )?;
     Ok(())
 }
@@ -190,6 +221,35 @@ fn canonical_actor_profile_version(
         return Err("messaging actor profile revision is unavailable".to_string());
     }
     Ok(profile.profile_revision)
+}
+
+fn canonical_actor_identity_fingerprint(
+    devices: &ListActorDevicesResponse,
+    expected_actor_ptid: &str,
+) -> Result<Option<[u8; 32]>, String> {
+    let mut canonical = None;
+    for device in &devices.devices {
+        let device_actor_ptid = device
+            .r#ref
+            .as_ref()
+            .and_then(|device_ref| device_ref.actor.as_ref())
+            .map(|actor| actor.ptid.as_str())
+            .filter(|ptid| !ptid.is_empty())
+            .ok_or_else(|| "messaging actor device identity is incomplete".to_string())?;
+        if device_actor_ptid != expected_actor_ptid {
+            return Err("messaging actor device identity mismatch".to_string());
+        }
+        let fingerprint: [u8; 32] = device
+            .actor_identity_key_fingerprint
+            .as_slice()
+            .try_into()
+            .map_err(|_| "messaging actor identity fingerprint is invalid".to_string())?;
+        if canonical.is_some_and(|current| current != fingerprint) {
+            return Err("messaging actor identity continuity is inconsistent".to_string());
+        }
+        canonical = Some(fingerprint);
+    }
+    Ok(canonical)
 }
 
 pub(crate) fn activate_messaging_profile_worker(
@@ -1529,14 +1589,17 @@ fn station_verification_rejects_session(error: &station_client::StationClientErr
 #[cfg(test)]
 mod tests {
     use super::{
-        canonical_actor_profile_version, run_required_logout_cleanup, should_resume_access_binding,
+        canonical_actor_identity_fingerprint, canonical_actor_profile_version,
+        run_required_logout_cleanup, should_resume_access_binding,
         station_verification_rejects_session, DESKTOP_SESSION_CLASS,
     };
     use crate::application::station_binding::StationBindingPhase;
     use crate::application::station_runtime::client::{StationClientError, StationClientErrorKind};
     use crate::contracts::AuthSessionPayload;
     use crate::error::ErrorCode;
-    use crate::model::actor::ActorProfile;
+    use crate::model::actor::{
+        ActorDevice, ActorDeviceRef, ActorProfile, ActorRef, ListActorDevicesResponse,
+    };
     use std::cell::Cell;
 
     #[test]
@@ -1561,6 +1624,43 @@ mod tests {
             &ActorProfile {
                 id: "ptid:alice".to_string(),
                 ..ActorProfile::default()
+            },
+            "ptid:alice",
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn messaging_identity_migration_uses_one_station_continuity_fingerprint() {
+        let device = |ptid: &str, fingerprint: u8| ActorDevice {
+            r#ref: Some(ActorDeviceRef {
+                actor: Some(ActorRef {
+                    ptid: ptid.to_string(),
+                    ..ActorRef::default()
+                }),
+                device_id: format!("device-{fingerprint}"),
+            }),
+            actor_identity_key_fingerprint: vec![fingerprint; 32],
+            ..ActorDevice::default()
+        };
+        let devices = ListActorDevicesResponse {
+            devices: vec![device("ptid:alice", 7), device("ptid:alice", 7)],
+        };
+
+        assert_eq!(
+            canonical_actor_identity_fingerprint(&devices, "ptid:alice").unwrap(),
+            Some([7; 32]),
+        );
+        assert!(canonical_actor_identity_fingerprint(
+            &ListActorDevicesResponse {
+                devices: vec![device("ptid:alice", 7), device("ptid:alice", 9)],
+            },
+            "ptid:alice",
+        )
+        .is_err());
+        assert!(canonical_actor_identity_fingerprint(
+            &ListActorDevicesResponse {
+                devices: vec![device("ptid:bob", 7)],
             },
             "ptid:alice",
         )
