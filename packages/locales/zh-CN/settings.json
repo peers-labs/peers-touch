@@ -303,7 +303,7 @@
   "settings.bots.copyFailed": "复制失败",
   "settings.bots.colBot": "机器人",
   "settings.bots.colState": "状态",
-  "settings.bots.colRate": "次数/分钟",
+  "settings.bots.colRateLimit": "限流/分钟",
   "settings.bots.colActions": "操作",
   "settings.bots.stateActive": "活跃",
   "settings.bots.stateDisabled": "已停用",

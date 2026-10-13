@@ -303,7 +303,7 @@
   "settings.bots.copyFailed": "Copy failed",
   "settings.bots.colBot": "Bot",
   "settings.bots.colState": "State",
-  "settings.bots.colRate": "Rate/min",
+  "settings.bots.colRateLimit": "Rate limit/min",
   "settings.bots.colActions": "Actions",
   "settings.bots.stateActive": "Active",
   "settings.bots.stateDisabled": "Disabled",

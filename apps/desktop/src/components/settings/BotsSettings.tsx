@@ -266,9 +266,10 @@ export function BotsSettings() {
     },
     { title: tt('settings.bots.colState', 'State'), dataIndex: 'state', render: (s: number) => stateTag(s) },
     {
-      title: tt('settings.bots.colRate', 'Rate/min'),
+      // This is the enforced webhook rate-limit ceiling, not observed traffic.
+      title: tt('settings.bots.colRateLimit', 'Rate limit/min'),
       dataIndex: 'rateLimitPerMinute',
-      width: 90,
+      width: 120,
     },
     {
       title: tt('settings.bots.colActions', 'Actions'),
@@ -338,7 +339,7 @@ export function BotsSettings() {
   ];
 
   return (
-    <SettingsContainer>
+    <SettingsContainer fullHeight maxWidth={1100}>
       <SettingsPanelHeader
         icon={<Bot size={20} />}
         title={tt('settings.bots.title', 'Bots')}
