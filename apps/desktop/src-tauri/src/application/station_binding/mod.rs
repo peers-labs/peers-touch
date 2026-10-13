@@ -604,7 +604,10 @@ fn registry_switch_error(error: std::io::Error) -> StationBindingError {
 }
 
 fn failover_candidate_error(error: std::io::Error) -> StationBindingError {
-    if error.kind() == std::io::ErrorKind::NotFound {
+    if matches!(
+        error.kind(),
+        std::io::ErrorKind::NotFound | std::io::ErrorKind::NotConnected
+    ) {
         StationBindingError::new(
             "station_no_route",
             "The Station has no eligible verified failover route",
