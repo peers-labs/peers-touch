@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ConfigProvider } from 'antd';
 import { SocialChatPrototype } from './SocialChatPrototype';
+import '../../../shared/focus.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

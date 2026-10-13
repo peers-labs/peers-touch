@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  Avatar,
   Button,
   InputNumber,
   Select,
@@ -10,8 +9,9 @@ import {
 } from 'antd';
 import { ArrowLeft } from 'lucide-react';
 import type { SettingEntry } from '../types';
-import { GRADIENTS } from '../types';
+import { demoAvatarUrls } from '../data';
 import copy from '../../../../../locales/en/common.json';
+import { IdentityAvatar } from './IdentityAvatar';
 
 const { Text } = Typography;
 
@@ -45,7 +45,7 @@ export function SettingDetailView({ setting, onBack }: { setting: SettingEntry; 
       return (
         <div className="mp-setting-detail-content">
           <div className="mp-setting-detail-card" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <Avatar size={56} style={{ background: GRADIENTS[0], borderRadius: 16 }}>AC</Avatar>
+            <IdentityAvatar name="Alice Chen" initials="AC" src={demoAvatarUrls.alice} size={56} />
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
               <Text strong style={{ fontSize: 16 }}>Alice Chen</Text>
               <Text type="secondary" style={{ fontSize: 13 }}>alice@peers.social</Text>
@@ -206,9 +206,7 @@ export function SettingDetailView({ setting, onBack }: { setting: SettingEntry; 
               </div>
             ) : blockedUsers.map((user) => (
               <div className="mp-setting-detail-row mp-blocked-user-row" key={user.ptid}>
-                <Avatar size={40} style={{ background: GRADIENTS[1] }}>
-                  {user.initials}
-                </Avatar>
+                <IdentityAvatar name={user.name} initials={user.initials} size={40} />
                 <div className="mp-blocked-user-copy">
                   <div className="mp-setting-detail-label">{user.name}</div>
                   <div className="mp-setting-detail-value">{user.ptid}</div>
@@ -235,7 +233,7 @@ export function SettingDetailView({ setting, onBack }: { setting: SettingEntry; 
     return (
       <div className="mp-setting-detail-content">
         <div className="mp-setting-detail-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: 28 }}>
-          <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: 16, background: `${setting.tint}14`, color: setting.tint }}>
+          <span className={`mp-setting-detail-icon tone-${setting.tint}`}>
             <SettingIcon size={28} />
           </span>
           <Text strong style={{ fontSize: 16 }}>{setting.label}</Text>

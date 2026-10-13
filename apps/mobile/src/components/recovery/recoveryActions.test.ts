@@ -22,6 +22,10 @@ describe('Mobile reliability recovery surfaces', () => {
     new URL('./RecoveryOverlayHost.tsx', import.meta.url),
     'utf8',
   );
+  const stylesSource = readFileSync(
+    new URL('../../styles.css', import.meta.url),
+    'utf8',
+  );
 
   it('fences Rust draft admission before deciding whether scope drafts exist', () => {
     expect(appSource).toMatch(
@@ -88,5 +92,60 @@ describe('Mobile reliability recovery surfaces', () => {
       'access-gate-chain',
     )).toEqual([offline]);
     expect(visibleRecoveryStates([expired], 'shell')).toEqual([expired]);
+  });
+
+  it('keeps routine resume write fencing out of the visible recovery layer', () => {
+    const routinePause = {
+      kind: 'write-revocation',
+      admission: {
+        open: false,
+        reason: 'runtime_suspended',
+        closedAt: 1,
+      },
+    } as const;
+    const controlLoss = {
+      kind: 'write-revocation',
+      admission: {
+        open: false,
+        reason: 'control_event_lost',
+        closedAt: 2,
+      },
+    } as const;
+
+    expect(visibleRecoveryStates([routinePause], 'resume')).toEqual([]);
+    expect(visibleRecoveryStates([routinePause], 'shell')).toEqual([]);
+    expect(visibleRecoveryStates([controlLoss], 'shell')).toEqual([
+      controlLoss,
+    ]);
+  });
+
+  it('keeps background synchronization and route failures out of global overlays', () => {
+    const overflow = {
+      kind: 'event-overflow-reconcile',
+      staleDomains: [],
+    } as const;
+    const unavailable = {
+      kind: 'deferred-capability',
+      unavailableRuntimes: [],
+    } as const;
+    const commandRecovery = {
+      kind: 'command-recovery',
+      commands: [],
+    } as const;
+
+    expect(visibleRecoveryStates(
+      [overflow, unavailable, commandRecovery],
+      'shell',
+    )).toEqual([commandRecovery]);
+  });
+
+  it('reserves tab-bar clearance only when navigation keeps the tab bar visible', () => {
+    expect(hostSource).toContain('data-tabbar-visible={tabBarVisible}');
+    expect(stylesSource).toContain(
+      ".recovery-overlay-host[data-launch-state='shell'][data-tabbar-visible='true']",
+    );
+    expect(stylesSource).not.toContain(
+      ".recovery-overlay-host[data-launch-state='shell'] {",
+    );
   });
 });
