@@ -10947,11 +10947,16 @@ function selfTest(matrix) {
     'utf8',
   );
   assertContract(
-    /fn acceptance_request_activation\([\s\S]*?window\.show\(\)[\s\S]*?window\.unminimize\(\)[\s\S]*?NSRunningApplication::currentApplication\(\)[\s\S]*?activateWithOptions\([\s\S]*?window\.set_focus\(\)/.test(
+    /fn acceptance_request_activation\([\s\S]*?window\.show\(\)[\s\S]*?window\.unminimize\(\)[\s\S]*?NSRunningApplication::currentApplication\(\)[\s\S]*?NSApplication::sharedApplication\(main_thread\)\.activateIgnoringOtherApps\(true\)[\s\S]*?window\.set_focus\(\)/.test(
       desktopMainSource,
     ),
     'SELF_TEST_DESKTOP_ACTIVATION_VISIBILITY',
-    'Desktop activation must target its exact native process before focusing it',
+    'Desktop activation must use its process-owned NSApplication before focusing it',
+  );
+  assertContract(
+    !desktopMainSource.includes('activateWithOptions('),
+    'SELF_TEST_DESKTOP_ACTIVATION_DUPLICATE_BUNDLE',
+    'Desktop activation must not use duplicate-bundle-sensitive NSRunningApplication activation',
   );
   const activationFunctionSource = journeySource.match(
     /async function activateForegroundClient[\s\S]*?\n}\n\nfunction desktopProcessAttribute/,

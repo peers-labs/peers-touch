@@ -85,9 +85,9 @@ fn acceptance_request_activation(
     window: tauri::WebviewWindow,
 ) -> error::AppResult<serde_json::Value> {
     use objc2::MainThreadMarker;
-    use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication};
+    use objc2_app_kit::{NSApplication, NSRunningApplication};
 
-    let Some(_main_thread) = MainThreadMarker::new() else {
+    let Some(main_thread) = MainThreadMarker::new() else {
         return error::AppResult::fail(
             error::ErrorCode::InternalError,
             "acceptance activation request must run on the AppKit main thread",
@@ -109,18 +109,8 @@ fn acceptance_request_activation(
             None,
         );
     }
-    let current = NSRunningApplication::currentApplication();
-    let process_id = current.processIdentifier();
-    if !current.activateWithOptions(
-        NSApplicationActivationOptions::ActivateAllWindows
-            | NSApplicationActivationOptions::ActivateIgnoringOtherApps,
-    ) {
-        return error::AppResult::fail(
-            error::ErrorCode::InternalError,
-            "acceptance application activation request was rejected",
-            Some(serde_json::json!({ "processId": process_id })),
-        );
-    }
+    let process_id = NSRunningApplication::currentApplication().processIdentifier();
+    NSApplication::sharedApplication(main_thread).activateIgnoringOtherApps(true);
     if let Err(error) = window.set_focus() {
         return error::AppResult::fail(
             error::ErrorCode::InternalError,
