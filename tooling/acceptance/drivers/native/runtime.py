@@ -240,7 +240,23 @@ class NativeDesktopRuntimeBinding(ABC):
             "PT_STATION_URL": station_url,
             "PT_STATION_HEALTH_URL": f"{station_url}/sub-oss/healthz",
         }
-        trust_anchor = self._relay_tls_trust_anchor(station_service_id)
+        relay_trust_service_id = station_service_id
+        if station_service_id != "station-via-relay":
+            services = self._runtime_manifest.get("services")
+            relay_route = (
+                services.get("station-via-relay")
+                if isinstance(services, dict)
+                else None
+            )
+            if (
+                isinstance(relay_route, dict)
+                and relay_route.get("runtimeIdentity")
+                == station_service.get("runtimeIdentity")
+            ):
+                relay_trust_service_id = "station-via-relay"
+        trust_anchor = self._relay_tls_trust_anchor(
+            relay_trust_service_id
+        )
         if trust_anchor is not None:
             source_path, expected_sha256 = trust_anchor
             staged_path = self.stage_native_file(client_id, source_path)
