@@ -1,10 +1,10 @@
 ---
-name: "pt-product-design-methodology"
-description: "Turns a product goal and benchmarks into accepted journeys, states, capability scope, prototype requirements, and acceptance contracts. Invoke before architecture for non-trivial product work."
-stage: "PRODUCT"
+name: pt-product-design-methodology
+description: Turns a product goal and benchmarks into accepted journeys, states, scope, craft requirements, prototypes, and acceptance contracts. Use before architecture for non-trivial product work.
+stage: PRODUCT
 requires: ["user goal or product problem", "available product and benchmark evidence"]
 produces: ["accepted product contract", "benchmark disposition", "experience and state contracts", "product acceptance matrix"]
-next: "pt-architecture-design-methodology"
+next: pt-architecture-design-methodology
 ---
 
 # Product Design Methodology
@@ -49,7 +49,7 @@ It does **not**:
 Invoke for:
 
 - A new product, module, major capability, or workflow redesign.
-- Benchmark-driven work using products such as LobeHub or another external reference.
+- Benchmark-driven work using products such as LobeHub or Peers-Touch.
 - Requests phrased as "product-ready", "complete experience", "what should we
   build", or "is this enough for users".
 - Existing architecture that lacks user journeys, visible states, capability
@@ -92,7 +92,8 @@ Read before designing:
 - Existing research, feedback, support incidents, and acceptance evidence.
 - The actual source/runtime of named benchmark products when locally available.
 - For client UI: `docs/client/common/ux-design-methodology.md`, shared UI
-  Identity, and the closest module/platform contracts.
+  Identity, `docs/client/common/ui-identity/craft-quality.md`, and the closest
+  module/platform contracts.
 
 External products provide evidence, not authority. Record exact observed
 behavior and preserve Peers-Touch ownership, privacy, federation, and
@@ -148,6 +149,30 @@ Rules:
 - `defer` states the missing prerequisite and does not count as completion.
 
 No relevant benchmark capability may remain implicit.
+
+### Step 2A. Define The Experience Craft Contract
+
+For material UI, translate benchmark evidence into one Peers-owned craft
+contract. Do not add an award target or a numeric self-score.
+
+Record:
+
+- Surface type and expression strength.
+- Main subject, reading path, and primary action.
+- Inherited UI Identity rules and the module's one allowed signature feature.
+- Positive calibration: exact behaviors worth preserving and why they improve
+  the product thesis.
+- Negative calibration: copied identity, decorative motion, generic card
+  grids, screenshot-only polish, inaccessible interaction, or other rejected
+  patterns.
+- Required keyboard, touch, assistive-technology, localization-expansion,
+  reduced-motion, state, and performance evidence.
+- Exact `UNPROVEN` cells where the real runtime or platform is unavailable.
+
+The authoritative craft dimensions and evidence levels are defined in
+`docs/client/common/ui-identity/craft-quality.md`. External award programs and
+benchmark brands provide evidence vocabulary only; they never establish
+readiness.
 
 ### Step 3. Freeze The Product Capability Profile
 
@@ -219,7 +244,10 @@ The prototype must:
 - Trace surfaces and states to product capability/journey IDs.
 - Cover critical success, waiting, error, recovery, and degraded states.
 - Use Peers-Touch UI Identity and the production component system.
-- Produce L1 static, L2 visual, and required L3 dynamic evidence.
+- Implement the accepted craft contract, including positive and negative
+  calibration.
+- Produce L1 contract, L2 visual, required L3 dynamic, and applicable L4
+  accessibility/performance evidence.
 - Reach `confirmed` before it becomes an implementation reference.
 
 Prototype confirmation proves the intended experience, not backend correctness
@@ -281,6 +309,8 @@ Return `PRODUCT_READY_FOR_ARCHITECTURE` only when:
 - End-to-end journeys have no missing state or recovery path.
 - Desktop/Mobile/browser product differences are explicit.
 - Material UI has a confirmed or explicitly review-blocked prototype.
+- Material UI has an evidence-backed craft contract with no award guarantee,
+  numeric self-score, or unresolved blocking accessibility/recovery defect.
 - Every required capability has a repository-backed feasibility closure and
   executable proof.
 - Every required capability maps to receiver-perspective acceptance.
@@ -336,10 +366,13 @@ agent or a separate findings-first review pass to evaluate:
 4. Whether visible states cover waiting, failure, recovery, and degradation.
 5. Whether Desktop, Mobile, and browser claims are honest.
 6. Whether prototype evidence resolves material UX uncertainty.
-7. Whether acceptance is receiver-perspective and objectively provable.
-8. Whether every required capability has tangible actions, repository-backed
+7. Whether positive and negative craft calibration are evidence-backed and
+   whether keyboard, touch, assistive technology, reduced motion,
+   localization, state, and performance cells are explicit.
+8. Whether acceptance is receiver-perspective and objectively provable.
+9. Whether every required capability has tangible actions, repository-backed
    feasibility, a smallest viable loop, and executable proof.
-9. Whether any architecture or implementation decision is disguised as
+10. Whether any architecture or implementation decision is disguised as
    product design.
 
 The reviewer returns `passed`, `conditionally passed`, or `changes required`.
@@ -354,9 +387,13 @@ Never:
 
 - Start from a feature checklist without users, jobs, and outcomes.
 - Enumerate capabilities without concrete actions and feasibility evidence.
-- Copy LobeHub or another benchmark without a disposition ledger.
+- Copy LobeHub, Peers-Touch, or another benchmark without a disposition ledger.
 - Use a benchmark brand as the canonical Peers product/prototype identity.
 - Call a happy-path wireframe a complete experience.
+- Claim "award-ready", "FWA-level", or product quality from a self-assigned
+  score.
+- Copy a benchmark's visual identity instead of recording positive and
+  negative Peers-specific calibration.
 - Leave loading, approval, cancellation, failure, recovery, or degraded states
   to implementation.
 - Define runtime ownership, APIs, storage, or task order in this skill.

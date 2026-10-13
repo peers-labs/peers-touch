@@ -11,41 +11,56 @@ import {
   LogOut,
   Users,
   ChevronRight,
-  Shield,
   Crown,
   ShieldCheck,
   UserMinus,
-  VolumeX,
   Volume2,
+  VolumeX,
   UserCog,
   Upload,
   Search,
   UserPlus,
+  ChevronDown,
+  FileText,
+  Paperclip,
+  Globe,
+  Check,
 } from 'lucide-react';
 import { T } from '../theme';
 import { Avatar } from './Avatar';
-import { USERS, type MockConversation, type MockGroupMember, type MockGroupRole, type MockUser } from '../mock';
+import { GroupAvatar, type GroupAvatarTile } from './GroupAvatar';
+import {
+  USERS,
+  type MockConversation,
+  type MockGroupMember,
+  type MockGroupRole,
+  type MockMessage,
+  type MockUser,
+} from '../mock';
 
 interface DetailPanelProps {
   conversation: MockConversation;
   currentUserId: string;
   groupMembers: MockGroupMember[];
+  messages: MockMessage[];
   onClose: () => void;
   onDeleteConversation: (conversationId: string) => void;
   onClearHistory: (conversationId: string) => void;
   onSelectBackgroundImage: (conversationId: string, file: File) => void;
   onRemoveMember: (conversationId: string, userId: string) => void;
+  onAddMembers: (conversationId: string, userIds: string[]) => void;
   onRenameGroup: (conversationId: string, name: string) => void;
   onSetMemberRole: (conversationId: string, userId: string, role: MockGroupRole) => void;
   onToggleMemberMute: (conversationId: string, userId: string) => void;
   onTransferOwnership: (conversationId: string, nextOwnerId: string) => void;
+  onSearchMessages: () => void;
 }
 
 /**
  * DetailSection — unified section container component.
  * Establishes consistent spacing, radius, and visual rhythm.
  */
-function DetailSection({ children, title }: { children: React.ReactNode; title?: string }) {
+function DetailSection({ children, title, bare }: { children: React.ReactNode; title?: string; bare?: boolean }) {
   return (
     <div style={{ padding: `0 ${T.space4}px`, marginBottom: T.space3 }}>
       {title && (
@@ -53,15 +68,39 @@ function DetailSection({ children, title }: { children: React.ReactNode; title?:
           {title}
         </div>
       )}
-      <div
-        style={{
-          background: T.bgSubtle,
-          borderRadius: T.radiusLg,
-          overflow: 'hidden',
-        }}
-      >
-        {children}
-      </div>
+      {bare ? (
+        children
+      ) : (
+        <div
+          style={{
+            background: T.bgSubtle,
+            borderRadius: T.radiusLg,
+            overflow: 'hidden',
+          }}
+        >
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Quiet empty-state line: plain muted text aligned with section content — no
+// nested dashed box (a box-in-box crowds the section edge and reads as noise).
+function EmptyDetailHint({ icon, text }: { icon: React.ReactNode; text: string }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '2px 2px',
+        color: T.textTertiary,
+        fontSize: T.fontSm,
+      }}
+    >
+      <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
+      {text}
     </div>
   );
 }
@@ -69,8 +108,8 @@ function DetailSection({ children, title }: { children: React.ReactNode; title?:
 function DetailActionRow({
   icon,
   label,
-  trailing,
   danger,
+  trailing,
   onClick,
 }: {
   icon: React.ReactNode;
@@ -146,14 +185,10 @@ function roleColor(role: MockGroupRole) {
   return T.textTertiary;
 }
 
-function permissionSummary(role: MockGroupRole) {
-  if (role === 'owner') {
-    return 'Owner can rename the group, update avatar, mute members, set admins, transfer ownership, kick members, and dissolve the group.';
-  }
-  if (role === 'admin') {
-    return 'Admin can update group profile/avatar, mute ordinary members, and kick ordinary members. Admin cannot manage owner/admin roles.';
-  }
-  return 'Member can view group info, set personal chat background, and leave the group. Member cannot edit group profile or manage other members.';
+function roleRank(role: MockGroupRole) {
+  if (role === 'owner') return 0;
+  if (role === 'admin') return 1;
+  return 2;
 }
 
 function ConfirmSheet({
@@ -237,22 +272,47 @@ function ConfirmSheet({
   );
 }
 
+// Bounded inline previews; the rest opens the browser which loads incrementally,
+// so the panel stays light even with 100/1000+ attachments.
+const MEDIA_PREVIEW_COUNT = 6;
+const FILE_PREVIEW_COUNT = 3;
+const BROWSE_MEDIA_STEP = 60;
+const BROWSE_FILES_STEP = 40;
+
 export function DetailPanel({
   conversation,
   currentUserId,
   groupMembers,
+  messages,
   onClose,
   onDeleteConversation,
   onClearHistory,
   onSelectBackgroundImage,
   onRemoveMember,
+  onAddMembers,
   onRenameGroup,
   onSetMemberRole,
   onToggleMemberMute,
   onTransferOwnership,
+  onSearchMessages,
 }: DetailPanelProps) {
   const [muted, setMuted] = useState(conversation.muted);
   const [pinned, setPinned] = useState(conversation.pinned);
+  const [technicalOpen, setTechnicalOpen] = useState(false);
+  const [safetyOpen, setSafetyOpen] = useState(false);
+  const [safetyVerified, setSafetyVerified] = useState(conversation.trustTone === 'verified');
+  useEffect(() => {
+    setSafetyVerified(conversation.trustTone === 'verified');
+    setSafetyOpen(false);
+  }, [conversation.id, conversation.trustTone]);
+  const mediaAttachments = useMemo(
+    () => messages.filter((message) => message.type === 'image'),
+    [messages],
+  );
+  const fileAttachments = useMemo(
+    () => messages.filter((message) => message.type === 'file'),
+    [messages],
+  );
   const [editingName, setEditingName] = useState(false);
   const [groupName, setGroupName] = useState(conversation.name);
   const [memberManagerOpen, setMemberManagerOpen] = useState(false);
@@ -266,6 +326,12 @@ export function DetailPanel({
   const [backgroundFileName, setBackgroundFileName] = useState('');
   const [avatarFileName, setAvatarFileName] = useState('');
   const [memberSearch, setMemberSearch] = useState('');
+  // Media/files browser. Inline previews stay bounded; the full browser renders
+  // incrementally so a conversation with hundreds/thousands of attachments does
+  // not dump the whole set into the DOM at once.
+  const [browse, setBrowse] = useState<null | 'media' | 'files'>(null);
+  const [mediaVisible, setMediaVisible] = useState(BROWSE_MEDIA_STEP);
+  const [filesVisible, setFilesVisible] = useState(BROWSE_FILES_STEP);
 
   useEffect(() => {
     setMuted(conversation.muted);
@@ -274,9 +340,14 @@ export function DetailPanel({
     setGroupName(conversation.name);
     setMemberManagerOpen(false);
     setConfirmAction(null);
+    setTechnicalOpen(false);
     setBackgroundFileName('');
     setAvatarFileName('');
     setMemberSearch('');
+    setBrowse(null);
+    setMediaVisible(BROWSE_MEDIA_STEP);
+    setFilesVisible(BROWSE_FILES_STEP);
+    setJustAdded(new Set());
   }, [conversation.id, conversation.muted, conversation.name, conversation.pinned]);
 
   const isGroup = conversation.type === 'group';
@@ -289,9 +360,23 @@ export function DetailPanel({
   const members = useMemo(
     () => groupMembers
       .map((member) => ({ member, user: USERS[member.userId] }))
-      .filter((entry): entry is { member: MockGroupMember; user: MockUser } => Boolean(entry.user)),
+      .filter((entry): entry is { member: MockGroupMember; user: MockUser } => Boolean(entry.user))
+      // Owner pinned first, then admins, then members; ties by join time.
+      .sort((a, b) => roleRank(a.member.role) - roleRank(b.member.role) || a.member.joinedAt - b.member.joinedAt),
     [groupMembers],
   );
+  // Local people who can be invited. Federated contacts are excluded here:
+  // cross-station peers can't join an encrypted group in this prototype.
+  const inviteCandidates = useMemo(() => {
+    const inGroup = new Set(groupMembers.map((member) => member.userId));
+    return Object.values(USERS)
+      .filter((user) => user.id !== currentUserId && !inGroup.has(user.id) && !user.federated);
+  }, [groupMembers, currentUserId]);
+  const [justAdded, setJustAdded] = useState<Set<string>>(() => new Set());
+  const addMember = (userId: string) => {
+    onAddMembers(conversation.id, [userId]);
+    setJustAdded((prev) => new Set(prev).add(userId));
+  };
   const filteredMembers = useMemo(() => {
     const query = memberSearch.trim().toLowerCase();
     if (!query) return members;
@@ -331,6 +416,11 @@ export function DetailPanel({
 
   return (
     <div
+      data-chat-detail-panel="open"
+      data-chat-detail-conversation={conversation.id}
+      data-chat-detail-muted={muted ? 'true' : 'false'}
+      data-chat-detail-pinned={pinned ? 'true' : 'false'}
+      data-chat-detail-background={conversation.background ?? 'default'}
       style={{
         width: T.detailPanelWidth,
         height: '100%',
@@ -380,7 +470,18 @@ export function DetailPanel({
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: T.space6, padding: `0 ${T.space4}px` }}>
           {/* Avatar with edit overlay */}
           <div style={{ position: 'relative', marginBottom: T.space3 }}>
-            <Avatar name={conversation.name} size={72} groupIcon={isGroup} />
+            {isGroup ? (
+              <GroupAvatar
+                size={72}
+                members={members.slice(0, 9).map(({ member, user }) => ({
+                  key: member.userId,
+                  name: user.name,
+                  src: user.avatar || undefined,
+                }))}
+              />
+            ) : (
+              <Avatar name={conversation.name} size={72} />
+            )}
             {isGroup && canEditGroupProfile && (
               <label title="Upload local avatar">
                 <input
@@ -456,72 +557,56 @@ export function DetailPanel({
             </span>
           )}
           {!isGroup && (
-            <span
-              style={{
-                fontSize: T.fontSm,
-                color: conversation.online === true ? T.success : T.textTertiary,
-                marginTop: T.space1,
-              }}
-            >
-              {conversation.online === undefined
-                ? 'Presence unavailable'
-                : conversation.online ? 'Online' : 'Offline'}
-            </span>
-          )}
-        </div>
-
-        {!isGroup && (
-          <DetailSection title="Private chat">
-            <div style={{ padding: T.space4, display: 'flex', flexDirection: 'column', gap: T.space3 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: T.space3 }}>
-                <ShieldCheck size={18} color={conversation.trustTone === 'attention' ? T.warning : T.success} />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: T.fontBase, fontWeight: 700, color: T.text }}>{conversation.trustLabel}</div>
-                  <div style={{ fontSize: T.fontSm, color: T.textSecondary, lineHeight: 1.5 }}>
-                    Safety details are shown only for direct chats where identity verification changes trust.
-                  </div>
-                </div>
-              </div>
-              <button style={managerButtonStyle()}>
-                <Shield size={13} />
-                {conversation.trustTone === 'attention' ? 'Verify identity' : 'View safety number'}
-              </button>
-            </div>
-          </DetailSection>
-        )}
-
-        {/* === Members Section (group only) === */}
-        {isGroup && (
-          <DetailSection title="Permission">
-            <div style={{ padding: T.space4 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: T.space2, marginBottom: T.space2 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, marginTop: T.space2, width: '100%' }}>
+              {conversation.federated ? (
                 <span
+                  data-chat-federation-cue
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: T.space1,
-                    padding: `${T.space1}px ${T.space2}px`,
-                    borderRadius: T.radiusFull,
-                    background: canManageMembers ? 'rgba(107,91,214,0.1)' : T.bg,
-                    color: roleColor(currentRole),
-                    fontSize: T.fontXs,
-                    fontWeight: 800,
+                    gap: 5,
+                    fontSize: T.fontSm,
+                    fontWeight: 600,
+                    color: T.federated,
                   }}
                 >
-                  {isOwner ? <Crown size={12} /> : isAdmin ? <ShieldCheck size={12} /> : <Users size={12} />}
-                  You are {roleLabel(currentRole)}
+                  <Globe size={13} />
+                  From another network
                 </span>
-                <span style={{ fontSize: T.fontXs, color: T.textTertiary }}>
-                  Try Engineering Team = owner, Design Review = admin, Peers Touch = member.
-                </span>
-              </div>
-              <div style={{ fontSize: T.fontSm, color: T.textSecondary, lineHeight: 1.5 }}>
-                {permissionSummary(currentRole)}
-              </div>
+              ) : null}
+              <span
+                style={{
+                  fontSize: T.fontSm, fontWeight: 700,
+                  color: conversation.online === false ? T.warning : T.success,
+                  marginTop: 2,
+                }}
+              >
+                {conversation.online === undefined
+                  ? 'Presence unavailable'
+                  : conversation.online ? 'Online' : 'Offline'}
+              </span>
+              <span style={{ fontSize: T.fontSm, fontWeight: 700, color: '#b7791f' }}>
+                {conversation.chatKindLabel ?? 'Standard chat'}
+              </span>
+              {conversation.stats ? (
+                <div style={{ display: 'flex', gap: T.space5, marginTop: T.space2 }}>
+                  {([
+                    ['Posts', conversation.stats.posts],
+                    ['Followers', conversation.stats.followers],
+                    ['Following', conversation.stats.following],
+                  ] as const).map(([label, value]) => (
+                    <div key={label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 48 }}>
+                      <strong style={{ fontSize: T.fontBase, color: T.text }}>{value}</strong>
+                      <span style={{ fontSize: T.fontXs, color: T.textTertiary }}>{label}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
-          </DetailSection>
-        )}
+          )}
+        </div>
 
+        {/* === Members Section (group only): owner pinned first with a badge === */}
         {isGroup && (
           <DetailSection title="Members">
             <div style={{ padding: `${T.space2}px ${T.space3}px` }}>
@@ -544,7 +629,7 @@ export function DetailPanel({
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            border: `2px solid ${T.bgSubtle}`,
+                            border: `2px solid ${T.bg}`,
                           }}
                         >
                           {member.role === 'owner' ? <Crown size={9} /> : <ShieldCheck size={9} />}
@@ -554,55 +639,47 @@ export function DetailPanel({
                     <span style={{ fontSize: T.fontXs, color: T.textTertiary, marginTop: 2, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>
                       {user.name.split(' ')[0]}
                     </span>
+                    {member.role !== 'member' ? (
+                      <span style={{ fontSize: 9, fontWeight: 800, lineHeight: 1.2, color: roleColor(member.role) }}>
+                        {roleLabel(member.role)}
+                      </span>
+                    ) : null}
                   </div>
                 ))}
-                {/* Add member button */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 48 }}>
+                {canManageMembers ? (
                   <button
                     type="button"
-                    disabled={!canManageMembers}
-                    onClick={() => {
-                      if (canManageMembers) setMemberManagerOpen(true);
-                    }}
-                    aria-label={canManageMembers ? 'Invite member' : 'Only owner or admin can invite members'}
+                    data-chat-add-member-tile
+                    aria-label="Add member"
+                    onClick={() => setMemberManagerOpen(true)}
                     style={{
-                      width: 36, height: 36, borderRadius: T.radiusFull,
-                      border: `1.5px dashed ${canManageMembers ? T.textQuaternary : T.border}`,
+                      width: 36, height: 36, borderRadius: T.radiusLg,
+                      border: `1.5px dashed ${T.textQuaternary}`,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      color: canManageMembers ? T.textTertiary : T.textQuaternary,
-                      cursor: canManageMembers ? 'pointer' : 'not-allowed',
-                      background: canManageMembers ? 'transparent' : T.bgMuted,
+                      color: T.textTertiary,
+                      cursor: 'pointer',
+                      background: 'transparent',
+                      alignSelf: 'flex-start',
                     }}
-                    title={canManageMembers ? 'Invite member' : 'Only owner/admin can invite members'}
+                    title="Add member"
                   >
                     <UserPlus size={16} />
                   </button>
-                  <span style={{ fontSize: T.fontXs, color: T.textTertiary, marginTop: 2 }}>
-                    {canManageMembers ? 'Add' : 'Locked'}
-                  </span>
-                </div>
+                ) : null}
               </div>
-              <div
+              <button
+                type="button"
                 onClick={() => setMemberManagerOpen(true)}
                 style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: '100%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
                   padding: `${T.space2}px 0`, marginTop: T.space2,
                   fontSize: T.fontSm, color: T.primary, cursor: 'pointer',
+                  border: 'none', background: 'transparent',
                 }}
               >
                 {canManageMembers ? 'Manage' : 'View'} all {members.length} members <ChevronRight size={14} />
-              </div>
-              {members.length > 8 && (
-                <div
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    padding: `${T.space2}px 0`, marginTop: T.space2,
-                    fontSize: T.fontSm, color: T.primary, cursor: 'pointer',
-                  }}
-                >
-                  View compact grid <ChevronRight size={14} />
-                </div>
-              )}
+              </button>
             </div>
           </DetailSection>
         )}
@@ -629,6 +706,7 @@ export function DetailPanel({
             icon={<Search size={18} />}
             label="Search messages"
             trailing={<ChevronRight size={16} />}
+            onClick={onSearchMessages}
           />
           <input
             id="prototype-background-upload"
@@ -643,49 +721,237 @@ export function DetailPanel({
           />
         </DetailSection>
 
-        {/* === Security Section === */}
-        {!isGroup && (
-          <DetailSection title="Security">
-            <DetailActionRow
-              icon={<Shield size={18} />}
-              label="End-to-end encrypted"
-              trailing={<span style={{ fontSize: T.fontSm, color: T.success }}>Active</span>}
-            />
+        {/* === Shared Content === */}
+        <DetailSection title={`Media (${mediaAttachments.length})`} bare>
+          {mediaAttachments.length === 0 ? (
+            <EmptyDetailHint icon={<Image size={14} />} text="No shared media yet." />
+          ) : (
+            <div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                  gap: 6,
+                }}
+              >
+                {mediaAttachments
+                  .slice(0, mediaAttachments.length > MEDIA_PREVIEW_COUNT ? MEDIA_PREVIEW_COUNT - 1 : MEDIA_PREVIEW_COUNT)
+                  .map((message) => (
+                    <button
+                      type="button"
+                      key={message.id}
+                      data-chat-detail-media={message.id}
+                      title={message.attachmentName ?? 'media'}
+                      onClick={() => setBrowse('media')}
+                      style={{
+                        aspectRatio: '1 / 1', borderRadius: T.radiusMd,
+                        border: `1px solid ${T.border}`,
+                        background: T.bg, cursor: 'pointer', padding: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: T.textTertiary,
+                      }}
+                    >
+                      <Image size={18} />
+                    </button>
+                  ))}
+                {mediaAttachments.length > MEDIA_PREVIEW_COUNT ? (
+                  <button
+                    type="button"
+                    data-chat-detail-media-overflow
+                    aria-label={`View all ${mediaAttachments.length} media items`}
+                    onClick={() => setBrowse('media')}
+                    style={{
+                      aspectRatio: '1 / 1', borderRadius: T.radiusMd,
+                      border: `1px solid ${T.border}`, background: T.bgSubtle,
+                      cursor: 'pointer', color: T.textSecondary, padding: 0,
+                      display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', justifyContent: 'center', gap: 2,
+                      fontSize: 14, fontWeight: 700,
+                    }}
+                  >
+                    +{mediaAttachments.length - (MEDIA_PREVIEW_COUNT - 1)}
+                    <span style={{ fontSize: 9, fontWeight: 500, color: T.textTertiary }}>View all</span>
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          )}
+        </DetailSection>
+
+        <DetailSection title={`Files (${fileAttachments.length})`} bare>
+          {fileAttachments.length === 0 ? (
+            <EmptyDetailHint icon={<Paperclip size={14} />} text="No shared files yet." />
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {fileAttachments.slice(0, FILE_PREVIEW_COUNT).map((message) => (
+                <button
+                  type="button"
+                  key={message.id}
+                  data-chat-detail-file={message.id}
+                  onClick={() => setBrowse('files')}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 9,
+                    padding: '7px 9px', borderRadius: T.radiusMd,
+                    border: `1px solid ${T.border}`, background: T.bg,
+                    cursor: 'pointer', textAlign: 'left', width: '100%',
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 30, height: 30, flexShrink: 0, borderRadius: 9,
+                      background: T.bgMuted, color: T.primary,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    <FileText size={15} />
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <strong style={{ display: 'block', fontSize: 12, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {message.attachmentName ?? 'file'}
+                    </strong>
+                    <span style={{ fontSize: 11, color: T.textTertiary }}>
+                      {message.attachmentMeta ?? 'File'}
+                    </span>
+                  </span>
+                </button>
+              ))}
+              {fileAttachments.length > FILE_PREVIEW_COUNT ? (
+                <button
+                  type="button"
+                  data-chat-detail-files-view-all
+                  onClick={() => setBrowse('files')}
+                  style={{
+                    border: 'none', background: 'transparent', cursor: 'pointer',
+                    color: T.primary, fontSize: T.fontSm, fontWeight: 600,
+                    padding: `${T.space1}px 0`, textAlign: 'left',
+                  }}
+                >
+                  View all {fileAttachments.length} files
+                </button>
+              ) : null}
+            </div>
+          )}
+        </DetailSection>
+
+        {/* === Identity & trust: technical, low-frequency, sits after shared content === */}
+        {!isGroup ? (
+          <DetailSection title="Identity & trust">
+            <div style={{ padding: `${T.space2}px 0` }}>
+              <DetailActionRow
+                icon={<ShieldCheck size={18} color={conversation.trustTone === 'attention' ? T.warning : T.success} />}
+                label={conversation.trustLabel}
+              />
+              <DetailActionRow
+                icon={<ShieldCheck size={18} color={T.success} />}
+                label="End-to-end encrypted"
+                trailing={(
+                  <button
+                    type="button"
+                    data-chat-open-safety
+                    onClick={() => setSafetyOpen(true)}
+                    style={{
+                      border: 'none', background: 'transparent', cursor: 'pointer',
+                      color: T.primary, fontSize: T.fontSm, fontWeight: 600, padding: `${T.space1}px ${T.space2}px`,
+                    }}
+                  >
+                    {conversation.trustTone === 'attention' ? 'Verify' : 'Safety number'}
+                  </button>
+                )}
+              />
+              {(conversation.handle || conversation.station || conversation.peerPtid || conversation.federationId) ? (
+                <DetailActionRow
+                  icon={<Globe size={18} />}
+                  label="Network details"
+                  trailing={(
+                    <button
+                      type="button"
+                      aria-expanded={technicalOpen}
+                      data-chat-network-details-toggle
+                      onClick={() => setTechnicalOpen((value) => !value)}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 2,
+                        border: 'none', background: 'transparent', cursor: 'pointer',
+                        color: T.textSecondary, fontSize: T.fontSm, fontWeight: 600,
+                        padding: `${T.space1}px ${T.space2}px`,
+                      }}
+                    >
+                      <ChevronDown
+                        size={14}
+                        style={{ transform: technicalOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.15s' }}
+                      />
+                    </button>
+                  )}
+                />
+              ) : null}
+              {technicalOpen ? (
+                <div
+                  data-chat-network-details
+                  style={{
+                    margin: `${T.space1}px ${T.space4}px 0`, padding: T.space3,
+                    border: `1px solid ${T.borderSubtle}`, borderRadius: T.radiusMd,
+                    background: T.bgSubtle,
+                    display: 'flex', flexDirection: 'column', gap: 6,
+                    fontSize: T.fontXs, color: T.textSecondary,
+                  }}
+                >
+                  {conversation.handle ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <span style={{ color: T.textTertiary }}>Federated handle</span>
+                      <span style={{ textAlign: 'right', overflowWrap: 'anywhere' }}>{conversation.handle}</span>
+                    </div>
+                  ) : null}
+                  {conversation.station ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <span style={{ color: T.textTertiary }}>Home station</span>
+                      <span style={{ textAlign: 'right', overflowWrap: 'anywhere' }}>{conversation.station}</span>
+                    </div>
+                  ) : null}
+                  {conversation.peerPtid ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <span style={{ color: T.textTertiary }}>Actor PTID</span>
+                      <span style={{ fontFamily: 'monospace', textAlign: 'right', overflowWrap: 'anywhere' }}>{conversation.peerPtid}</span>
+                    </div>
+                  ) : null}
+                  {conversation.federationId ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <span style={{ color: T.textTertiary }}>Federation</span>
+                      <span style={{ textAlign: 'right', overflowWrap: 'anywhere' }}>{conversation.federationId}</span>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           </DetailSection>
-        )}
+        ) : null}
 
         {/* === Danger Section === */}
         <DetailSection title="Danger zone">
-          <div style={{ padding: T.space4, borderBottom: `1px solid ${T.borderSubtle}` }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: T.space3 }}>
-              <span style={{ display: 'flex', color: T.textDanger, marginTop: 2 }}>
-                <Trash2 size={18} />
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: T.fontBase, fontWeight: 700, color: T.text }}>
-                  Clear local chat data
-                </div>
-                <div style={{ fontSize: T.fontSm, color: T.textSecondary, lineHeight: 1.5, marginTop: T.space1 }}>
-                  Permanently removes local messages, search entries, and unreferenced media from this device.
-                </div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: T.space2, marginTop: T.space3 }}>
+          <DetailActionRow
+            icon={<Trash2 size={18} />}
+            label="Clear local chat data"
+            danger
+            trailing={(
               <button
+                type="button"
+                data-chat-clear-local
+                aria-label="Clear local chat data"
                 onClick={() => requestConfirm({
                   title: 'Clear local chat data?',
-                  body: 'This permanently removes local data from this device. Other devices and participants are not affected.',
+                  body: 'This permanently removes local messages, search entries, and unreferenced media from this device. Other devices and participants are not affected.',
                   confirmLabel: 'Clear local data',
                   danger: true,
                   run: () => onClearHistory(conversation.id),
                 })}
-                style={historyActionButtonStyle(true)}
+                style={{
+                  border: 'none', background: 'transparent', cursor: 'pointer',
+                  color: T.textDanger, fontSize: T.fontSm, fontWeight: 700,
+                  padding: `${T.space1}px ${T.space2}px`,
+                }}
               >
-                <Trash2 size={13} />
                 Clear
               </button>
-            </div>
-          </div>
+            )}
+          />
           {isGroup ? (
             <DetailActionRow
               icon={isOwner ? <Trash2 size={18} /> : <LogOut size={18} />}
@@ -742,25 +1008,10 @@ export function DetailPanel({
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: T.fontLg, fontWeight: 800, color: T.text, lineHeight: 1.2 }}>Manage Members</div>
               <div style={{ fontSize: T.fontXs, color: T.textTertiary }}>
-                {roleLabel(currentRole)} permissions · {members.length} members
+                {members.length} members
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: T.space2 }}>
-              {canManageMembers && (
-                <button
-                  title="Invite members"
-                  onClick={() => requestConfirm({
-                    title: 'Invite members?',
-                    body: 'Production should open a contact picker, then show selected people and role impact before sending invites.',
-                    confirmLabel: 'Open picker',
-                    run: () => {},
-                  })}
-                  style={managerToolbarButtonStyle()}
-                >
-                  <UserPlus size={15} />
-                  Invite
-                </button>
-              )}
               <button
                 title="Close member manager"
                 onClick={() => setMemberManagerOpen(false)}
@@ -782,6 +1033,66 @@ export function DetailPanel({
             </div>
           </div>
           <div style={{ padding: T.space4, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: T.space2 }}>
+            {canManageMembers ? (
+              <div
+                style={{
+                  border: `1px solid ${T.borderSubtle}`,
+                  borderRadius: T.radiusLg,
+                  background: T.bgSubtle,
+                  padding: T.space3,
+                }}
+              >
+                <div style={{ fontSize: T.fontXs, fontWeight: 800, color: T.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: T.space2 }}>
+                  Add members
+                </div>
+                {inviteCandidates.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {inviteCandidates.map((user) => {
+                    const added = justAdded.has(user.id);
+                    return (
+                      <div
+                        key={user.id}
+                        data-chat-invite-candidate={user.id}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '34px minmax(0, 1fr) auto',
+                          alignItems: 'center',
+                          gap: T.space2,
+                          padding: `3px ${T.space2}px`,
+                          borderRadius: T.radiusMd,
+                        }}
+                      >
+                        <Avatar name={user.name} size={34} online={user.online} />
+                        <span style={{ fontSize: T.fontSm, fontWeight: 700, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {user.name}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={added}
+                          aria-label={added ? `${user.name} added` : `Add ${user.name}`}
+                          onClick={() => addMember(user.id)}
+                          style={{
+                            width: 30, height: 30, borderRadius: T.radiusMd,
+                            border: added ? 'none' : `1px solid ${T.border}`,
+                            background: added ? T.success : T.bg,
+                            color: added ? T.textOnPrimary : T.primary,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            cursor: added ? 'default' : 'pointer', flexShrink: 0,
+                          }}
+                        >
+                          {added ? <Check size={15} /> : <UserPlus size={14} />}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                ) : (
+                  <div style={{ fontSize: T.fontSm, color: T.textTertiary, padding: `${T.space1}px 0` }}>
+                    Everyone you can invite is already in this group.
+                  </div>
+                )}
+              </div>
+            ) : null}
             <div
               style={{
                 border: `1px solid ${T.borderSubtle}`,
@@ -806,14 +1117,9 @@ export function DetailPanel({
                 >
                   {isOwner ? <Crown size={13} /> : isAdmin ? <ShieldCheck size={13} /> : <Users size={13} />}
                 </span>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: T.fontSm, fontWeight: 800, color: T.text }}>
-                    {canManageMembers ? 'Management mode' : 'View-only mode'}
-                  </div>
-                  <div style={{ fontSize: T.fontXs, color: T.textSecondary, lineHeight: 1.45 }}>
-                    {permissionSummary(currentRole)}
-                  </div>
-                </div>
+                <span style={{ fontSize: T.fontSm, fontWeight: 800, color: T.text }}>
+                  You are {roleLabel(currentRole).toLowerCase()}
+                </span>
               </div>
               <div
                 style={{
@@ -926,15 +1232,7 @@ export function DetailPanel({
                           <UserMinus size={15} />
                         </button>
                       </>
-                    ) : (
-                      <span style={{ fontSize: T.fontXs, color: T.textTertiary }}>
-                        {member.userId === currentUserId
-                          ? 'Self actions live in Danger Zone.'
-                          : canManageMembers
-                            ? 'Higher role; no management action.'
-                            : 'View only. Ask an owner/admin to manage members.'}
-                      </span>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               );
@@ -994,6 +1292,156 @@ export function DetailPanel({
           </div>
         </div>
       )}
+      {browse && (
+        <div
+          data-chat-attachment-browser={browse}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: T.bg,
+            zIndex: 12,
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <div
+            style={{
+              minHeight: T.headerHeight,
+              padding: `0 ${T.space4}px`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              borderBottom: `1px solid ${T.border}`,
+              gap: T.space3,
+              flexShrink: 0,
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: T.fontLg, fontWeight: 800, color: T.text, lineHeight: 1.2 }}>
+                {browse === 'media' ? 'Shared media' : 'Shared files'}
+              </div>
+              <div style={{ fontSize: T.fontXs, color: T.textTertiary }}>
+                {browse === 'media' ? mediaAttachments.length : fileAttachments.length}
+                {' '}item{browse === 'media' && mediaAttachments.length === 1
+                  ? ''
+                  : browse === 'files' && fileAttachments.length === 1
+                    ? ''
+                    : 's'}
+              </div>
+            </div>
+            <button
+              type="button"
+              aria-label="Close attachment browser"
+              onClick={() => setBrowse(null)}
+              style={{
+                width: 34, height: 34,
+                border: `1px solid ${T.border}`, borderRadius: T.radiusMd,
+                background: T.bg, cursor: 'pointer', color: T.textSecondary,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <X size={18} />
+            </button>
+          </div>
+          <div style={{ flex: 1, overflow: 'auto', padding: T.space4 }}>
+            {browse === 'media' ? (
+              <>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))',
+                    gap: 8,
+                  }}
+                >
+                  {mediaAttachments.slice(0, mediaVisible).map((message) => (
+                    <button
+                      type="button"
+                      key={message.id}
+                      data-chat-browser-media={message.id}
+                      title={message.attachmentName ?? 'media'}
+                      style={{
+                        aspectRatio: '1 / 1', borderRadius: T.radiusMd,
+                        border: `1px solid ${T.border}`, background: T.bg,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: T.textTertiary, cursor: 'pointer', padding: 0,
+                      }}
+                    >
+                      <Image size={20} />
+                    </button>
+                  ))}
+                </div>
+                {mediaVisible < mediaAttachments.length ? (
+                  <button
+                    type="button"
+                    data-chat-browser-load-more="media"
+                    onClick={() => setMediaVisible((value) => value + BROWSE_MEDIA_STEP)}
+                    style={{
+                      width: '100%', marginTop: T.space3, height: 36,
+                      border: `1px solid ${T.border}`, borderRadius: T.radiusMd,
+                      background: T.bgSubtle, color: T.textSecondary,
+                      cursor: 'pointer', fontSize: T.fontSm, fontWeight: 600,
+                    }}
+                  >
+                    Load more ({Math.min(BROWSE_MEDIA_STEP, mediaAttachments.length - mediaVisible)} of{' '}
+                    {mediaAttachments.length - mediaVisible})
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {fileAttachments.slice(0, filesVisible).map((message) => (
+                    <div
+                      key={message.id}
+                      data-chat-browser-file={message.id}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '8px 10px', borderRadius: T.radiusMd,
+                        border: `1px solid ${T.border}`, background: T.bg,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 34, height: 34, flexShrink: 0, borderRadius: 9,
+                          background: T.bgMuted, color: T.primary,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >
+                        <FileText size={16} />
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <strong style={{ display: 'block', fontSize: 13, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {message.attachmentName ?? 'file'}
+                        </strong>
+                        <span style={{ fontSize: 11, color: T.textTertiary }}>
+                          {message.attachmentMeta ?? 'File'}
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {filesVisible < fileAttachments.length ? (
+                  <button
+                    type="button"
+                    data-chat-browser-load-more="files"
+                    onClick={() => setFilesVisible((value) => value + BROWSE_FILES_STEP)}
+                    style={{
+                      width: '100%', marginTop: T.space3, height: 36,
+                      border: `1px solid ${T.border}`, borderRadius: T.radiusMd,
+                      background: T.bgSubtle, color: T.textSecondary,
+                      cursor: 'pointer', fontSize: T.fontSm, fontWeight: 600,
+                    }}
+                  >
+                    Load more ({Math.min(BROWSE_FILES_STEP, fileAttachments.length - filesVisible)} of{' '}
+                    {fileAttachments.length - filesVisible})
+                  </button>
+                ) : null}
+              </>
+            )}
+          </div>
+        </div>
+      )}
       {confirmAction && (
         <ConfirmSheet
           title={confirmAction.title}
@@ -1003,6 +1451,87 @@ export function DetailPanel({
           onCancel={() => setConfirmAction(null)}
           onConfirm={runConfirmedAction}
         />
+      )}
+      {safetyOpen && (
+        <div
+          role="presentation"
+          onClick={() => setSafetyOpen(false)}
+          style={{
+            position: 'absolute', inset: 0, zIndex: 40,
+            background: 'rgba(15,23,42,0.34)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Safety number"
+            data-chat-safety-dialog
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: 320, maxWidth: '100%',
+              background: T.bg, borderRadius: 14, border: `1px solid ${T.border}`,
+              boxShadow: '0 20px 52px rgba(15,23,42,0.28)', padding: 20,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <strong style={{ fontSize: 15, color: T.text }}>Verify safety number</strong>
+              <button
+                type="button"
+                aria-label="Close safety number"
+                onClick={() => setSafetyOpen(false)}
+                style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: T.textTertiary }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div
+              aria-label="Safety QR code"
+              style={{
+                width: 132, height: 132, margin: '0 auto 12px', borderRadius: 12,
+                border: `1px solid ${T.border}`, background: T.bgSubtle,
+                display: 'grid', gridTemplateColumns: 'repeat(10,1fr)', gap: 2, padding: 10,
+              }}
+            >
+              {Array.from({ length: 64 }).map((_, index) => (
+                <span
+                  key={index}
+                  style={{
+                    borderRadius: 2,
+                    background: (index * 7 + conversation.id.length * 3 + (index % 5)) % 3 === 0 ? T.text : 'transparent',
+                  }}
+                />
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: T.textSecondary, lineHeight: 1.6, marginBottom: 10, textAlign: 'center' }}>
+              Compare this code and QR with {conversation.name} on another trusted channel. If they match, your messages are end-to-end encrypted.
+            </div>
+            <code
+              style={{
+                display: 'block', fontSize: 11, fontFamily: 'monospace', color: T.text,
+                background: T.bgSubtle, borderRadius: 8, padding: '8px 10px', marginBottom: 14,
+                wordBreak: 'break-all', lineHeight: 1.7,
+              }}
+            >
+              44 812 · 73 009 · 58 441 · 02 917 · 31 660 · 19 284 · 70 552 · 06 138
+            </code>
+            <button
+              type="button"
+              data-chat-safety-toggle
+
+              onClick={() => setSafetyVerified((value) => !value)}
+              style={{
+                width: '100%', height: 38, borderRadius: 10, cursor: 'pointer',
+                border: 'none', font: 'inherit', fontSize: 13, fontWeight: 700,
+                background: safetyVerified ? T.success : T.primary, color: '#fff',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              }}
+            >
+              <ShieldCheck size={15} />
+              {safetyVerified ? 'Marked as verified' : 'Mark as verified'}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1025,23 +1554,6 @@ function managerButtonStyle(danger?: boolean): React.CSSProperties {
   };
 }
 
-function managerToolbarButtonStyle(): React.CSSProperties {
-  return {
-    height: 34,
-    border: `1px solid ${T.border}`,
-    borderRadius: T.radiusMd,
-    background: T.bg,
-    color: T.text,
-    cursor: 'pointer',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: T.space1,
-    padding: `0 ${T.space3}px`,
-    fontSize: T.fontSm,
-    fontWeight: 800,
-  };
-}
-
 function managerIconButtonStyle(danger?: boolean): React.CSSProperties {
   return {
     width: 30,
@@ -1055,22 +1567,5 @@ function managerIconButtonStyle(danger?: boolean): React.CSSProperties {
     alignItems: 'center',
     justifyContent: 'center',
     padding: 0,
-  };
-}
-
-function historyActionButtonStyle(danger?: boolean): React.CSSProperties {
-  return {
-    height: 30,
-    border: `1px solid ${danger ? 'rgba(229,62,62,0.22)' : T.border}`,
-    borderRadius: T.radiusMd,
-    background: danger ? T.dangerBg : T.bg,
-    color: danger ? T.textDanger : T.text,
-    cursor: 'pointer',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: T.space1,
-    padding: `0 ${T.space3}px`,
-    fontSize: T.fontXs,
-    fontWeight: 800,
   };
 }

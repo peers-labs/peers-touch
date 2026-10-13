@@ -10,7 +10,7 @@ const manifest = {
   module: 'mobile-shell',
   path: 'packages/prototypes/mobile/chat/',
   docs: 'docs/architecture/platform/client/mobile/prototype/README.md',
-  description: 'Mobile Shell product flow with Station trust, Chat, complete Social parity surfaces, Contacts, Me, and recovery-state evidence.',
+  description: 'Mobile Shell product flow with Station trust, Chat identity and recovery, complete Social parity, Calls, Contacts, Me, and cross-module continuity.',
   order: 10,
   previewExport: 'MobilePrototype',
   entry: () => import('./src/MobilePrototype'),

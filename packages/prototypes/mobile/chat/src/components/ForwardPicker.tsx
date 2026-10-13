@@ -1,5 +1,5 @@
-import { Avatar } from 'antd';
 import { demoConversations } from '../data';
+import { IdentityAvatar } from './IdentityAvatar';
 
 export function ForwardPicker({ onSelect, onClose }: { onSelect: (name: string) => void; onClose: () => void }) {
   return (
@@ -16,13 +16,14 @@ export function ForwardPicker({ onSelect, onClose }: { onSelect: (name: string) 
               onClick={() => onSelect(conv.name)}
               style={{ display: 'flex', alignItems: 'center', gap: 10 }}
             >
-              <Avatar size={32} style={{ background: conv.avatarGradient, borderRadius: 10 }}>{conv.avatar}</Avatar>
+              <IdentityAvatar name={conv.name} initials={conv.avatar} src={conv.avatarUrl}
+                kind={conv.isGroup ? 'group' : 'person'} size={32} />
               <span>{conv.name}</span>
             </button>
           ))}
         </div>
         <div style={{ padding: '8px 16px' }}>
-          <button type="button" className="mp-action-item" onClick={onClose} style={{ justifyContent: 'center', color: '#9ca0ab' }}>
+          <button type="button" className="mp-action-item mp-action-cancel" onClick={onClose}>
             <span>Cancel</span>
           </button>
         </div>

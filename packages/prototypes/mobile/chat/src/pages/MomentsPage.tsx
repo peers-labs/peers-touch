@@ -48,7 +48,7 @@ import {
   GRADIENTS,
   MOMENT_REACTION_EMOJI,
 } from '../types';
-import { demoMoments } from '../data';
+import { demoAvatarUrls, demoMoments } from '../data';
 import { UserSquareAvatar } from '../components/UserSquareAvatar';
 
 const { Text } = Typography;
@@ -314,6 +314,7 @@ export function MomentsPage({
       id: `c-${Date.now()}`,
       name: 'Alice Chen',
       avatar: 'AC',
+      avatarUrl: demoAvatarUrls.alice,
       avatarGradient: GRADIENTS[0],
       text,
       time: 'Just now',

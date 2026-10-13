@@ -40,6 +40,34 @@ Rules:
 - Icon-only buttons need accessible labels and clear hover/focus states.
 - Disabled buttons must explain why when the disabled state blocks task completion.
 - User-facing icon buttons use rounded-square geometry. Circular icon buttons are not part of the Peers Touch product language.
+- Buttons come from one canonical size scale, never bespoke per-surface
+  numbers: 24 (inline icon), 28 (compact text), 30 (relationship decision
+  icon pair), 32 (standard text), 34 (chat chrome), 36 (header icon),
+  40 (hero CTA). Corner radius is 6/8/10/12 only.
+- Action groups inside a row share one horizontal center line and one
+  trailing edge (button bottoms and centers align); an action that floats
+  off the shared line is a defect.
+- Across repeated rows, metadata and actions follow the list's shared
+  tracks ([layout.md §3.1](./layout.md#31-symmetry-and-repeated-row-tracks)).
+  Different action counts do not move time labels or primary content.
+  Validate the visible control edge as well as its wrapper rectangle.
+
+### 3.1 One entity, one component
+
+A product entity has exactly one visual component across every surface.
+"Friend request in Contacts" and "friend request in Notifications" are the
+same entity — they must render the same row/item and the same decision
+controls, not two hand-built look-alikes.
+
+- Recurring entities (relationship request, contact row, session row,
+  identity block, decision pair, status tag) live in one shared component;
+  surfaces compose it, never restyle it.
+- Entity components carry a stable `data-entity` contract marker and their
+  controls carry stable `data-decision-action` / role markers, so the
+  geometry gate can prove cross-surface identity (same size, radius, control
+  set) instead of eyeballing each surface.
+- A surface-specific wrapper may change layout context around the entity,
+  never its internal control geometry or colors.
 
 ## 4. Cards And Surfaces
 
@@ -56,6 +84,13 @@ Rules:
 - Detail surfaces should not duplicate the same border hierarchy as list surfaces.
 - Nested cards are allowed only when each level has a separate user intent.
 - Card internal actions must align to the same action row model.
+- Foreground identity elements that overlap a cover keep their separation
+  contour visible on every edge and rounded corner. The cover, clipping, and
+  transient menus must not erase it or hide the face. A separation ring is
+  structural, not a trust or selection cue.
+- Validate overlapping boundaries in the browser's painted output and hit
+  testing; declared borders, rectangles, and `z-index` alone do not establish
+  visibility.
 
 ## 5. Tabs And Segmented Controls
 
@@ -99,9 +134,16 @@ Rules:
 Rules:
 
 - Floating surfaces must visually attach to the source control.
+- A side-anchored popover declares its aligned edge against the source
+  button's live rectangle. Bottom-aligned popovers share the source button's
+  bottom edge across resize and content changes; fixed viewport offsets alone
+  cannot establish this relationship.
 - Popovers must not cover the content the user is acting on unless no safe position exists.
 - Reaction pickers must remain compact and reversible.
 - Menus need keyboard access and focus restoration.
+- Expanding a compact preview into a complete viewer replaces the preview
+  with one dialog and retains the same data and row components. Search and
+  pagination preserve the dialog's bounds; closing restores source focus.
 
 ## 10. Empty, Loading, And Error States
 
@@ -111,6 +153,37 @@ Rules:
 - Loading states should preserve layout geometry when possible.
 - Error states must include context, recovery, and stable localized text.
 - Trust-related empty states must distinguish "no data" from "hidden by policy".
+
+## 10. Network Settings Ownership
+
+The desktop **Settings → Network** group is a user surface for account-level
+choices only. It contains exactly three sections: **Your Station**,
+**Discovery**, **Federation**. Operator capabilities live in the Station
+Dashboard, never behind a control in ordinary user Settings.
+
+User-owned (Settings):
+
+- **Your Station**: bound station identity and connection state, authorized
+  device list/revoke, and **Switch station**, which is sign-out: return to
+  onboarding to pick another station and account, keeping local conversations.
+  Relay mounts, seeds, locator sequence, and transport telemetry are operator
+  concepts and must not appear here.
+- **Discovery**: account discoverability. A master switch (hidden ↔ federated),
+  per-federation visibility choices whose previous values are remembered while
+  hidden and restored on re-show, the exact handle, and a separate reachability
+  policy (who can send requests). Discoverability and reachability are distinct.
+- **Federation**: the federations this station has joined — join by endpoint,
+  leave (local conversations/contacts are kept; routing and discoverability in
+  that federation stop), member/operator role, and member-station count.
+  Creating/governing federations is an operator action; users with the operator
+  role get a "Manage in Station Dashboard" affordance, not inline governance.
+
+Designed-but-unshipped capabilities (per-federation visibility matrix,
+inbound request policy enforcement, cross-station directory) MUST render a
+visible **Pending backend** marker and be read-only/disabled — never a live
+control that silently does nothing. Fabricated operational numbers (peer/seed
+counts, per-federation degraded/unreachable health, visible-actor totals) are
+forbidden on user cards unless backed by a real endpoint.
 
 ## 11. Covered UX Dimensions
 

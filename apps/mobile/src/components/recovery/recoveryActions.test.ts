@@ -25,10 +25,6 @@ describe('Mobile reliability recovery surfaces', () => {
     new URL('./RecoveryOverlayHost.tsx', import.meta.url),
     'utf8',
   );
-  const deferredSource = readFileSync(
-    new URL('./DeferredCapabilityNotice.tsx', import.meta.url),
-    'utf8',
-  );
   const stylesSource = readFileSync(
     new URL('../../styles.css', import.meta.url),
     'utf8',
@@ -101,28 +97,6 @@ describe('Mobile reliability recovery surfaces', () => {
     expect(visibleRecoveryStates([expired], 'shell')).toEqual([expired]);
   });
 
-  it('hides only runtime degradation while an explicit domain fixture is under review', () => {
-    const degraded = {
-      kind: 'deferred-capability',
-      unavailableRuntimes: [],
-    } as const;
-    const offline = {
-      kind: 'device-local-flag',
-      reason: 'no-network',
-      since: 2,
-    } as const;
-
-    expect(visibleRecoveryStates(
-      [degraded, offline],
-      'shell',
-      true,
-    )).toEqual([offline]);
-    expect(visibleRecoveryStates(
-      [degraded],
-      'shell',
-    )).toEqual([degraded]);
-  });
-
   it('renders actor identity recovery as the only blocking recovery surface', () => {
     const identity = {
       kind: 'actor-identity-recovery',
@@ -162,17 +136,6 @@ describe('Mobile reliability recovery surfaces', () => {
     expect(listener).toBeNull();
   });
 
-  it('keeps shell degradation compact and explicitly non-blocking', () => {
-    expect(hostSource).toContain('bindDeferredCapabilityProjection');
-    expect(deferredSource).toContain('data-blocks-unrelated-content="false"');
-    expect(stylesSource).toMatch(
-      /\.recovery-overlay-host:is\(\s*\[data-launch-state='shell'\],\s*\[data-launch-state='resume'\]\s*\)\s*\{[^}]*padding-bottom:\s*calc\(var\(--tabbar-height\)/s,
-    );
-    expect(stylesSource).toMatch(
-      /\.recovery-overlay-host:is\(\s*\[data-launch-state='shell'\],\s*\[data-launch-state='resume'\]\s*\)\s*\.recovery-deferred-capability/s,
-    );
-  });
-
   it('keeps shared shell controls at the 44px mobile touch minimum', () => {
     expect(stylesSource).toMatch(
       /\.header-action\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/s,
@@ -188,6 +151,61 @@ describe('Mobile reliability recovery surfaces', () => {
     );
     expect(stylesSource).toMatch(
       /\.header-title\s*\{[^}]*letter-spacing:\s*0;/s,
+    );
+  });
+
+  it('keeps routine resume write fencing out of the visible recovery layer', () => {
+    const routinePause = {
+      kind: 'write-revocation',
+      admission: {
+        open: false,
+        reason: 'runtime_suspended',
+        closedAt: 1,
+      },
+    } as const;
+    const controlLoss = {
+      kind: 'write-revocation',
+      admission: {
+        open: false,
+        reason: 'control_event_lost',
+        closedAt: 2,
+      },
+    } as const;
+
+    expect(visibleRecoveryStates([routinePause], 'resume')).toEqual([]);
+    expect(visibleRecoveryStates([routinePause], 'shell')).toEqual([]);
+    expect(visibleRecoveryStates([controlLoss], 'shell')).toEqual([
+      controlLoss,
+    ]);
+  });
+
+  it('keeps background synchronization and route failures out of global overlays', () => {
+    const overflow = {
+      kind: 'event-overflow-reconcile',
+      staleDomains: [],
+    } as const;
+    const unavailable = {
+      kind: 'deferred-capability',
+      unavailableRuntimes: [],
+    } as const;
+    const commandRecovery = {
+      kind: 'command-recovery',
+      commands: [],
+    } as const;
+
+    expect(visibleRecoveryStates(
+      [overflow, unavailable, commandRecovery],
+      'shell',
+    )).toEqual([commandRecovery]);
+  });
+
+  it('reserves tab-bar clearance only when navigation keeps the tab bar visible', () => {
+    expect(hostSource).toContain('data-tabbar-visible={tabBarVisible}');
+    expect(stylesSource).toContain(
+      ".recovery-overlay-host[data-launch-state='shell'][data-tabbar-visible='true']",
+    );
+    expect(stylesSource).not.toContain(
+      ".recovery-overlay-host[data-launch-state='shell'] {",
     );
   });
 });

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "qa:geometry": "python3 qa/geometry_checks.py"
   },
   "dependencies": {
     "@lobehub/icons": "^5.0.1",

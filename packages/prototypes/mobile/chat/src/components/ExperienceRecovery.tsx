@@ -1,9 +1,10 @@
 import { Button, Spin, Typography } from 'antd';
 import {
+  AlertCircle,
   AlertTriangle,
+  ArrowLeft,
   FileClock,
   KeyRound,
-  LoaderCircle,
   RefreshCw,
   ShieldAlert,
 } from 'lucide-react';
@@ -12,50 +13,59 @@ import type { DemoFriendRequest, SocialDemoState } from '../socialDemo';
 
 const { Text, Title } = Typography;
 
-export function SocialUnavailablePage({ title, runtime }: {
+export function SocialUnavailablePage({ title, runtime, onRetry, onBack }: {
   title: string;
   runtime: SocialDemoState['runtime'];
-}) {
-  const retrying = runtime === 'retrying';
-  return (
-    <div className="mp-page" data-demo-runtime={runtime}>
-      <header className="mp-header"><h1 className="mp-header-title">{title}</h1></header>
-      <section className="mp-route-state" role="status" aria-busy={retrying}>
-        {retrying
-          ? <Spin aria-label={copy['mobile.recovery.deferredCapability.title']} />
-          : <Text type="secondary">{copy['mobile.launch.unavailable']}</Text>}
-      </section>
-    </div>
-  );
-}
-
-export function SocialRuntimeNotice({ runtime, onRetry }: {
-  runtime: SocialDemoState['runtime'];
   onRetry: () => void;
+  onBack?: () => void;
 }) {
-  if (runtime === 'ready') return null;
   const retrying = runtime === 'retrying';
   return (
-    <section className="mp-runtime-notice" role="status" aria-busy={retrying}
-      data-demo-recovery-owner="lifecycle" data-blocks-unrelated-content="false">
-      <span className="mp-runtime-notice-icon" aria-hidden="true">
-        {retrying ? <LoaderCircle size={18} className="mp-spin" /> : <AlertTriangle size={18} />}
-      </span>
-      <div className="mp-runtime-notice-content">
-        <Text strong>{copy[retrying
-          ? 'mobile.recovery.deferredCapability.title'
-          : 'mobile.recovery.deferredCapability.failedTitle']}</Text>
-        <Text className="mp-recovery-description">
-          {copy[retrying
-            ? 'mobile.recovery.deferredCapability.body'
-            : 'mobile.recovery.deferredCapability.failedBody'].replace('{{count}}', '2')}
+    <div className={`mp-page${onBack ? ' mp-page--detail' : ''}`} data-demo-runtime={runtime}>
+      <header className="mp-header">
+        {onBack ? (
+          <button type="button" className="mp-header-action" onClick={onBack} aria-label="Back">
+            <ArrowLeft size={20} />
+          </button>
+        ) : null}
+        <h1 className="mp-header-title">{title}</h1>
+      </header>
+      <section
+        className="mp-route-state"
+        role={retrying ? 'status' : 'alert'}
+        aria-live="polite"
+        aria-busy={retrying}
+        data-demo-recovery-owner="lifecycle"
+        data-demo-route-state={retrying ? 'preparing' : 'unavailable'}
+      >
+        <span className="mp-route-state-icon" aria-hidden="true">
+          {retrying ? <Spin size="small" /> : <AlertCircle size={22} />}
+        </span>
+        <Text strong className="mp-route-state-title">
+          {copy[
+            retrying
+              ? 'mobile.route.preparingTitle'
+              : 'mobile.route.unavailableTitle'
+          ].replace('{{feature}}', title)}
         </Text>
-        <Button type="primary" loading={retrying} disabled={retrying} onClick={onRetry}
-          icon={<RefreshCw size={16} />}>
+        <Text type="secondary" className="mp-route-state-copy">
+          {copy[
+            retrying
+              ? 'mobile.route.preparingBody'
+              : 'mobile.route.unavailableBody'
+          ]}
+        </Text>
+        <Button
+          type="primary"
+          loading={retrying}
+          disabled={retrying}
+          icon={<RefreshCw size={16} />}
+          onClick={onRetry}
+        >
           {copy['common.action.retry']}
         </Button>
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }
 

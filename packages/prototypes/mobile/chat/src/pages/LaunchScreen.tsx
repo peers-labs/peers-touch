@@ -13,7 +13,7 @@ export function LaunchScreen({
   activeUrl: string;
   onSelectStation: (url: string) => void;
   onRemoveStation: (url: string) => void;
-  onAddStation: () => void;
+  onAddStation: (url: string) => void;
   onContinue: () => void;
   showRemovalConfirmation?: boolean;
   offline?: boolean;

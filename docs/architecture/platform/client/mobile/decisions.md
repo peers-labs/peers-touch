@@ -1,8 +1,8 @@
 # Mobile Shell — 设计决策
 
-> **Status**: active; whole-product foreground usability amendment accepted
+> **Status**: active; whole-product usability and Mobile call amendments accepted
 > **Version**: v1.5
-> **Created**: 2026-08-27 | **Updated**: 2026-10-08
+> **Created**: 2026-08-27 | **Updated**: 2026-10-12
 > **Owner**: Mobile Architecture Team
 
 ---
@@ -42,6 +42,7 @@
 | MS-D26 | Required Mobile proof uses isolated iOS Simulator cells | accepted |
 | MS-D27 | Current Mobile product proof uses one Station; cross-Station and Relay proof is deferred | accepted |
 | MS-D28 | Whole-product readiness requires a complete foreground iOS surface walkthrough | accepted |
+| MS-D29 | Mobile one-to-one calls inherit Chat lifecycle semantics and remain independently proven | accepted |
 
 W2-E2 physical-proof refinements are isolated in
 [`native-oauth-proof/decisions.md`](./native-oauth-proof/decisions.md).
@@ -1632,3 +1633,46 @@ accessibility, or recovery states elsewhere in the app.
   claim even when feature-specific business assertions pass.
 - Historical MICU-03 evidence remains valid only for its declared Session
   scope and cannot be relabeled as Mobile product readiness.
+
+## MS-D29: Mobile One-To-One Calls Inherit Chat Lifecycle Semantics
+
+**Status**: accepted
+**Date**: 2026-10-12
+
+### Context
+
+The Mobile product documents still classified `MS-C12` as deferred after the
+governing Chat lifecycle accepted `CHAT-C10`, `CHAT-D05`, and `CHAT-D06`.
+Current source also contains the Mobile call manager, Direct-conversation
+actions, shell-owned call surface, sealed signaling, WebRTC/TURN setup, and
+mixed-client call-resolution acceptance actions. The stale downstream contract
+made a required product capability appear intentionally disabled.
+
+### Decision
+
+`MS-C12` is a required one-to-one audio/video capability. It inherits the
+shared Chat lifecycle and Realtime call-resolution authority. Mobile owns
+platform presentation, native media permission/use, local peer connection,
+and teardown through a shell-level OverlayHost that survives Chat page
+navigation.
+
+The state contract is outgoing, ringing-all-devices/incoming, active-here,
+reconnecting, handled-elsewhere, and ended. The first accepted terminal action
+for one call identity wins. A losing sibling releases timers and media and
+cannot enter a second media session.
+
+### Evidence Boundary
+
+Existing source, unit tests, and prototype states are foundation evidence only.
+They do not prove native audio/video, direct/TURN routing, permission and device
+selection, reconnect, cleanup, cross-Station behavior, or exact-source
+Desktop/Mobile arbitration. `MS-PA30` and `MS-PA31` stay `UNPROVEN` until their
+required runtime Gates pass.
+
+### Rejected
+
+- Keeping Mobile calls deferred while enabling production call actions.
+- Treating Desktop call evidence as Mobile completion.
+- Keeping the call overlay inside a Chat page that can unmount.
+- Letting each device create an independent call identity or retain media after
+  another device wins.

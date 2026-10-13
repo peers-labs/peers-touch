@@ -5,7 +5,17 @@
 // ── Types ──────────────────────────────────────────────────────
 export type LaunchState = 'station-selection' | 'access-gate-chain' | 'shell';
 export type TabId = 'chat' | 'moments' | 'contacts' | 'profile';
-export type MessageStatus = 'sent' | 'delivered' | 'read';
+export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | 'unknown';
+export type AvatarRenderState = 'ready' | 'loading' | 'failed';
+export type ChatListEvidenceState = 'ready' | 'initial-loading' | 'refreshing' | 'empty' | 'cached-error';
+export type ChatThreadEvidenceState = 'ready' | 'initial-loading' | 'history-loading' | 'route-error' | 'unknown-outcome';
+
+export interface MobileUiEvidence {
+  avatarState: AvatarRenderState;
+  chatListState: ChatListEvidenceState;
+  chatThreadState: ChatThreadEvidenceState;
+  longContent: boolean;
+}
 
 export interface StationEntry {
   url: string;
@@ -17,6 +27,7 @@ export interface Conversation {
   key: string;
   name: string;
   avatar: string;
+  avatarUrl?: string;
   avatarGradient: string;
   lastMessage: string;
   time: string;
@@ -67,6 +78,7 @@ export interface MomentComment {
   id: string;
   name: string;
   avatar: string;
+  avatarUrl?: string;
   avatarGradient: string;
   text: string;
   time: string;
@@ -77,6 +89,7 @@ export interface Moment {
   id: string;
   name: string;
   avatar: string;
+  avatarUrl?: string;
   avatarGradient: string;
   time: string;
   text: string;
@@ -102,6 +115,7 @@ export interface Contact {
   key: string;
   name: string;
   avatar: string;
+  avatarUrl?: string;
   avatarGradient: string;
   note: string;
   online?: boolean;
@@ -133,7 +147,7 @@ export interface SettingEntry {
   label: string;
   value?: string;
   icon: React.ComponentType<{ size?: number }>;
-  tint: string;
+  tint: 'primary' | 'success' | 'warning' | 'danger' | 'neutral';
 }
 
 export interface SettingGroup {

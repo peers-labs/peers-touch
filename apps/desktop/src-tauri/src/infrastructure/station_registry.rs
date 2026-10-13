@@ -46,7 +46,7 @@ pub struct StationRouteCandidate {
     pub health: StationRouteHealth,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StationEntry {
     pub station_peer_id: String,
     pub display_name: Option<String>,

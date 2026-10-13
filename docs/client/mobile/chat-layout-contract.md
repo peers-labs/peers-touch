@@ -53,6 +53,9 @@ Implementation requirements:
 - Keyboard open/close transitions MUST update the same bottom clearance model, not a separate one-off style.
 - The Home Indicator area MUST be treated as an occlusion rectangle.
 - The last message bottom edge MUST remain at least `chat.scroll.bottomClearance` above the composer or active panel.
+- App-level recovery surfaces MUST derive bottom clearance from the active
+  navigation descriptor. A detail route with a hidden tab bar must not reserve
+  phantom tab-bar space.
 
 ## 4. Composer States
 
@@ -73,6 +76,17 @@ State rules:
 - Multiline input expands to the platform token maximum, then scrolls internally.
 - Emoji panel, attachment panel, voice panel, and system keyboard are mutually exclusive visible input surfaces.
 - Reply/edit preview uses a reserved row above the input; it MUST NOT consume message list padding directly.
+- Sender typing publication is best-effort ephemeral presence. Its progress or
+  transport failure MUST NOT add a status row, retry action, or height change to
+  the composer, and MUST NOT block durable message submission.
+- A routine `runtime_suspended` write fence during lifecycle resume is not a
+  user-recoverable error. It MUST NOT render a floating recovery card over the
+  thread or composer; mutation admission remains closed until reconciliation
+  succeeds.
+- When the active Chat route owner cannot recover, the route boundary MUST own
+  one centered unavailable state with Retry and preserved back navigation.
+  Dependency failures and background reconciliation MUST NOT add duplicate
+  global cards or expose internal runtime/domain counts.
 
 ## 5. Message Actions
 
@@ -157,6 +171,9 @@ Every Mobile Chat UI change should be checked in these states:
 | Long image near bottom | Fallback action surface does not collide with composer. |
 | Conversation action sheet open | Sheet uses bottom placement, safe-area padding, internal scroll, and separated danger group. |
 | Failed send | Retry is visible in `MetaRow` or reserved status row. |
+| Sender typing transport failure | No sender-side error or retry row appears; composer geometry and durable send remain unchanged. |
+| App resume reconciliation | Routine write fencing creates no floating card over the thread or composer. |
+| Chat runtime unavailable | One route-local recovery state preserves Back and Retry; no global recovery cards stack over it. |
 | Home Indicator device | Bottom content clears system safe area. |
 | Android gesture navigation | Bottom content clears system safe area. |
 

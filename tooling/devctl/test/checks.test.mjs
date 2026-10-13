@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
+  checkMobileSocialWire,
   checkSocialRuntimeBoundaries,
   checkSocialWire,
   runChecks,
@@ -27,6 +28,7 @@ function fixtureRoot(t) {
     'apps/desktop/src/components',
     'apps/mobile/src/pages',
     'apps/mobile/src/components',
+    'apps/mobile/src/features/chat',
     'apps/mobile/src/features/social',
     'apps/mobile/src-tauri/src',
   ]) {
@@ -55,12 +57,26 @@ function fixtureRoot(t) {
   return root;
 }
 
-test('accepts generated social wire decoding and runtime-owned UI', (t) => {
+test('accepts canonical mobile feature layout and generated social wire decoding', (t) => {
   const root = fixtureRoot(t);
 
   assert.deepEqual(checkSocialWire(root), []);
+  assert.deepEqual(checkMobileSocialWire(root), []);
   assert.deepEqual(checkSocialRuntimeBoundaries(root), []);
   assert.equal(runChecks(root).length, 3);
+});
+
+test('rejects hand-written wire decoding from any mobile feature', (t) => {
+  const root = fixtureRoot(t);
+  write(
+    root,
+    'apps/mobile/src/features/chat/unsafe.ts',
+    'const reader = new ProtoReader(bytes);\n',
+  );
+
+  const violations = checkMobileSocialWire(root);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].rule, 'mobile-social-wire-generated-proto-only');
 });
 
 test('reports exact source line for hand-written wire decoding', (t) => {

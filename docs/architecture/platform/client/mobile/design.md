@@ -1,8 +1,8 @@
 # Mobile Shell — 架构设计
 
-> **Status**: active; whole-product foreground usability amendment accepted
+> **Status**: active; whole-product usability and Mobile call amendments accepted
 > **Version**: v1.5
-> **Created**: 2026-08-27 | **Updated**: 2026-10-08
+> **Created**: 2026-08-27 | **Updated**: 2026-10-12
 > **Owner**: Mobile Architecture Team
 > **Module**: `apps/mobile/`
 
@@ -512,7 +512,7 @@ Forbidden:
 
 ## 11. Architecture Quality Gates
 
-`acceptance-matrix.md` defines normative MS-AG01..MS-AG12 runtime cells,
+`acceptance-matrix.md` defines normative MS-AG01..MS-AG14 runtime cells,
 workloads, thresholds, attribution metrics, and evidence paths. Execution
 planning must register the concrete Acceptance plan; missing native evidence
 remains `UNPROVEN`.
@@ -550,10 +550,16 @@ If MS-D15 is accepted, MS-AG04/MS-AG09/MS-AG10 must additionally prove:
 
 ### 12.1 Scope Boundary
 
-This amendment preserves required `MS-C01..MS-C10` and degraded `MS-C14`.
-WeChat OAuth (`MS-C11`), voice/video calls (`MS-C12`), and Chat Docs
-(`MS-C13`) remain excluded. A broader Chat architecture cannot activate those
-Mobile capabilities without a separate PRODUCT amendment.
+This amendment originally preserved required `MS-C01..MS-C10`, degraded
+`MS-C14`, and excluded `MS-C11..MS-C13`. The later `MS-D29` product/architecture
+amendment activates one-to-one voice/video calls (`MS-C12`) under the accepted
+Chat lifecycle and Realtime resolution contracts. WeChat OAuth (`MS-C11`) and
+Chat Docs (`MS-C13`) remain excluded.
+
+`MS-C12` uses a shell-owned call overlay and a Mobile call runtime that survives
+Chat page navigation. Source presence is not readiness: native media,
+direct/TURN, reconnect, teardown, cross-Station behavior, and mixed-client
+resolution remain `UNPROVEN` until `MS-PA30` and `MS-PA31` pass.
 
 The target state has one owner for each business fact and one authenticated
 native transport boundary. Mobile may cache, render, schedule, and recover, but

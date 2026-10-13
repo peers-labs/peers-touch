@@ -124,10 +124,12 @@ Mobile Shell work as one review unit. It covers:
   Group/Chat-owned Social trees, and a repository-wide semantic reference
   audit.
 
-The amendment preserves the accepted product scope `MS-C01..MS-C10` plus
-degraded `MS-C14`. `MS-C11` WeChat OAuth, `MS-C12` voice/video calls, and
-`MS-C13` Chat Docs remain excluded. Cross-client Chat scope does not implicitly
-expand Mobile scope.
+The amendment preserves required `MS-C01..MS-C10`, degraded `MS-C14`, and the
+original exclusions. `MS-D29` later activates required one-to-one voice/video
+calls (`MS-C12`) under the governing Chat lifecycle and independent Mobile
+proof boundary. `MS-C11` WeChat OAuth and `MS-C13` Chat Docs remain excluded.
+Current call source and prototype coverage are not readiness evidence;
+`MS-PA30` and `MS-PA31` remain `UNPROVEN`.
 
 The Owner accepted `MS-D16..MS-D24` on 2026-09-18 and accepted `MS-D22A` on
 2026-09-19. Those approvals authorize execution planning; they do not
