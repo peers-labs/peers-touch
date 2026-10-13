@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ThemeProvider } from '@lobehub/ui';
 import { DesktopShell } from './Shell';
+import '../../shared/focus.css';
 
 const antdTheme = {
   token: {
