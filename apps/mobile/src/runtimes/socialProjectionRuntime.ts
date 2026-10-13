@@ -234,7 +234,7 @@ export function createSocialProjectionRuntime(
   ): Promise<void> {
     if (torn) return;
     const uniqueDomains = [...new Set(domains)];
-    const results = await Promise.all(uniqueDomains.map(async (domain) => {
+    await Promise.all(uniqueDomains.map(async (domain) => {
       try {
         if (!await reconcileDomain(domain)) return false;
         if (!torn) ingress.repairCursor(domain, checkpointCursor);
@@ -263,7 +263,11 @@ export function createSocialProjectionRuntime(
         dependencies.reportError(`reconcile:messaging:${reason}`, error);
       }
     }
-    if (!torn && messagingReady && results.every(Boolean)) {
+    if (
+      !torn
+      && messagingReady
+      && !ingress.state().writeAdmission.open
+    ) {
       ingress.reopenAdmission();
     }
     if (!torn) recovery.reportIngressState(ingress.state());
