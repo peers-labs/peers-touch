@@ -882,7 +882,8 @@
   .mp-call-avatar {
     position: relative; display: grid; place-items: center;
     width: 132px; height: 132px; margin: auto 0 20px;
-    border: 1px solid rgba(255,255,255,0.18); border-radius: var(--mp-r-pill);
+    /* Actor avatars stay rounded-square at every surface: max(8, size/4). */
+    border: 1px solid rgba(255,255,255,0.18); border-radius: 33px;
     background: var(--mp-primary); color: #fff;
     font-size: 36px; font-weight: 700;
     box-shadow: 0 18px 48px rgba(0,0,0,0.28);
@@ -890,7 +891,7 @@
 
   .mp-call-avatar-ring {
     position: absolute; inset: -12px; border: 1px solid rgba(255,255,255,0.16);
-    border-radius: var(--mp-r-pill);
+    border-radius: 45px;
   }
 
   .mp-call-surface.outgoing .mp-call-avatar-ring,
@@ -918,7 +919,7 @@
 
   .mp-call-video-initials {
     display: grid; place-items: center; width: 104px; height: 104px;
-    border-radius: var(--mp-r-pill); background: var(--mp-primary);
+    border-radius: 26px; background: var(--mp-primary);
     color: #fff; font-size: 30px; font-weight: 700;
   }
 
@@ -982,7 +983,8 @@
 
   @media (max-height: 650px) {
     .mp-call-surface { padding-top: 12px; padding-bottom: 14px; }
-    .mp-call-avatar { width: 104px; height: 104px; margin-bottom: 10px; }
+    .mp-call-avatar { width: 104px; height: 104px; margin-bottom: 10px; border-radius: 26px; }
+    .mp-call-avatar-ring { border-radius: 38px; }
     .mp-call-video-stage { margin: 10px 0; }
     .mp-call-copy { min-height: 62px; }
     .mp-call-copy > strong { font-size: 20px; }
@@ -2210,7 +2212,9 @@
     place-items: center;
     flex: 0 0 auto;
     overflow: visible;
-    border-radius: var(--pt-radius-full);
+    /* Avatars are rounded-square only, never circular; people tighten the
+       corner inline from size, groups/collectives stay at the lg token. */
+    border-radius: var(--pt-radius-lg);
     background: color-mix(in srgb, var(--pt-action-primary) 12%, var(--pt-surface-subtle));
     color: var(--pt-action-primary);
     font-size: clamp(11px, 0.36em, 16px);
@@ -2218,7 +2222,6 @@
     line-height: 1;
     isolation: isolate;
   }
-  .mp-identity-avatar.group { border-radius: var(--pt-radius-lg); }
   .mp-identity-avatar.tone-1 {
     background: color-mix(in srgb, var(--pt-trust-success) 13%, var(--pt-surface-subtle));
     color: var(--pt-trust-success);
@@ -2308,7 +2311,7 @@
   .mp-skeleton-avatar {
     width: 44px;
     height: 44px;
-    border-radius: var(--pt-radius-full);
+    border-radius: var(--pt-radius-lg);
   }
   .mp-conversation-skeleton-copy {
     display: flex;

@@ -31,11 +31,9 @@ const MOBILE_AVATAR_COLORS = [
 
 export function mobileUserAvatarRadius(
   size: AvatarProps['size'],
-  identityRole: MobileAvatarRole = 'person',
 ): number {
-  if (identityRole === 'person') {
-    return typeof size === 'number' ? Math.ceil(size / 2) : 999;
-  }
+  // All actor identities share one rounded-square geometry; avatars are
+  // never circular, matching the shared SquareAvatar contract.
   return typeof size === 'number' ? Math.max(8, Math.floor(size * 0.25)) : 8;
 }
 
@@ -73,7 +71,7 @@ export function MobileAvatar({
     avatar.src && failedUrl !== avatar.source ? avatar.src : undefined;
   const fallbackKey = identityKey.trim() || name.trim();
   const avatarStyle: MobileAvatarStyle = {
-    '--mobile-user-avatar-radius': `${mobileUserAvatarRadius(size, identityRole)}px`,
+    '--mobile-user-avatar-radius': `${mobileUserAvatarRadius(size)}px`,
     ...(fallbackKey && !style?.background
       ? { background: mobileUserAvatarFallbackColor(fallbackKey) }
       : {}),
@@ -91,7 +89,7 @@ export function MobileAvatar({
       ].filter(Boolean).join(' ')}
       data-avatar-state={avatar.status}
       data-identity-role={identityRole}
-      shape={identityRole === 'person' ? 'circle' : 'square'}
+      shape="square"
       size={size}
       src={avatarSrc}
       style={avatarStyle}

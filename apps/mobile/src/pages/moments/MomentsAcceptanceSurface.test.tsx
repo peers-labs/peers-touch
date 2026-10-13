@@ -27,7 +27,7 @@ describe('MomentsAcceptanceSurface', () => {
     },
   );
 
-  it('uses the shared circular person identity in feed and comments', () => {
+  it('uses the shared rounded-square person identity in feed and comments', () => {
     const feed = renderToStaticMarkup(
       <MomentsAcceptanceSurface surfaceId="moments.feed" />,
     );

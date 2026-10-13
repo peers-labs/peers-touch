@@ -39,7 +39,7 @@ describe('Settings functional surface contract', () => {
     expect(pageSource).not.toContain('const momentsCount = 0');
   });
 
-  it('renders the Me identity through the shared circular person avatar', () => {
+  it('renders the Me identity through the shared rounded-square person avatar', () => {
     expect(pageSource).toContain("import { MobileAvatar }");
     expect(pageSource).toContain('identityKey={authSession?.actorRef.ptid ?? displayName}');
     expect(pageSource).toContain('identityRole="person"');

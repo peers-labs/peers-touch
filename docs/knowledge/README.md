@@ -175,7 +175,7 @@ Pick one based on intent:
 - [`invariants/desktop-vite-entry-readiness.md`](invariants/desktop-vite-entry-readiness.md) — Desktop startup and reuse require the Vite renderer entry module to respond successfully.
 - [`invariants/acceptance-suite-runtime-reuse.md`](invariants/acceptance-suite-runtime-reuse.md) — multi-scenario Acceptance provisions expensive resources once at Suite scope and keeps Scenarios attach-only.
 - [`invariants/desktop-sqlite-path-budget.md`](invariants/desktop-sqlite-path-budget.md) — Desktop database paths compact oversized identity-derived scopes without changing encryption identity or existing short paths.
-- [`invariants/mobile-user-identity-visual-consistency.md`](invariants/mobile-user-identity-visual-consistency.md) — Mobile identities use one role-aware avatar primitive: circular people, rounded-square groups, and one canonical actor projection across Social surfaces.
+- [`invariants/mobile-user-identity-visual-consistency.md`](invariants/mobile-user-identity-visual-consistency.md) — Mobile identities use one role-aware avatar primitive: rounded-square people and groups (never circular), and one canonical actor projection across Social surfaces.
 
 ### Pitfalls
 

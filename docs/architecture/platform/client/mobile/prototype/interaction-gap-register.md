@@ -88,8 +88,8 @@ Observed:
 
 Required interaction contract:
 
-- person identity uses a circular avatar; group identity uses a rounded-square
-  avatar;
+- person and group identities use rounded-square avatars with a size-derived
+  corner radius; avatars are never circular;
 - source image is preferred; deterministic initials are the fallback;
 - loading reserves the final geometry; asset failure falls back in place;
 - online state appears only where presence changes a decision;
@@ -282,8 +282,8 @@ The next prototype revision must be reviewed in this order:
 The revised prototype must make the following decisions explicit for Owner
 confirmation:
 
-1. People are circular; groups are rounded-square; deterministic initials are
-   fallback only.
+1. People and groups are rounded-square (size-derived corner radius), never
+   circular; deterministic initials are fallback only.
 2. Default Chat contains no error. Failure is entered through a dedicated
    scenario or real action.
 3. A single failed message has one message-local recovery owner. Aggregate

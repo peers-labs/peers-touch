@@ -1707,7 +1707,7 @@ select,
   position: relative;
   flex: 0 0 auto;
   overflow: hidden;
-  border-radius: var(--mobile-user-avatar-radius, 999px) !important;
+  border-radius: var(--mobile-user-avatar-radius, 12px) !important;
   font-weight: 600;
 }
 
@@ -3749,7 +3749,8 @@ select,
   width: 44px;
   height: 44px;
   place-items: center;
-  border-radius: 999px;
+  /* Identity fixtures mirror the rounded-square avatar contract, never circle. */
+  border-radius: 12px;
   background: #e9eef9;
   color: #3156a3;
   font-weight: 700;
@@ -3801,7 +3802,7 @@ select,
 .contacts-fixture-profile-avatar {
   width: 76px;
   height: 76px;
-  border-radius: 999px;
+  border-radius: 19px;
   font-size: 28px;
 }
 
