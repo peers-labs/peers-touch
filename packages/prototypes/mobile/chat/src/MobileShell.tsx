@@ -218,8 +218,6 @@ export function MobileShell({
       />;
     }
     if (activeTab === 'chat' && selectedConversation) {
-      // Content-projection evidence: thread bodies run through the same
-      // presenter as the list so machine/seed strings never render verbatim.
       const projectedThreadMessages = contentProjection
         ? contentProjectionMessages.map((message) => {
             if (!message.text) return message;

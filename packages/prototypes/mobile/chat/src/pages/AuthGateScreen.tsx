@@ -126,16 +126,14 @@ export function AuthGateScreen({
       <Card className="mp-auth-card" variant="borderless">
         <section className="mp-auth-brand">
           <img src={logo} alt="Peers" className="mp-auth-logo" />
-          <div className="mp-auth-brand-copy">
-            <Title level={1} className="mp-auth-title">
-              {expiredSession ? 'Welcome back' : 'Sign In'}
-            </Title>
-            <Text type="secondary" className="mp-auth-subtitle">
-              {expiredSession
-                ? 'Sign in again to continue where you left off.'
-                : 'Log in before entering this Station'}
-            </Text>
-          </div>
+          <Title level={1} className="mp-auth-title">
+            {expiredSession ? 'Welcome back' : 'Sign In'}
+          </Title>
+          <Text type="secondary" className="mp-auth-subtitle">
+            {expiredSession
+              ? 'Sign in again to continue where you left off.'
+              : 'Log in before entering this Station'}
+          </Text>
         </section>
 
         {expiredSession && (
@@ -171,7 +169,7 @@ export function AuthGateScreen({
           >Email Login</button>
         </div>
 
-        {/* Keep both states reachable while only the selected panel affects layout. */}
+        {/* Tab content — both rendered, overlaid via grid to lock height */}
         <div className="mp-auth-tab-content">
           <div className={`mp-auth-oauth ${loginTab === 'quick' ? 'active' : ''}`}>
             <Button
