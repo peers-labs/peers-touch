@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import type { AvatarRenderState } from '../types';
 
 function toneForIdentity(identity: string): number {
@@ -19,6 +19,7 @@ export function IdentityAvatar({
   showPresence = false,
   renderState = 'ready',
   className = '',
+  onClick,
 }: {
   name: string;
   initials: string;
@@ -29,6 +30,7 @@ export function IdentityAvatar({
   showPresence?: boolean;
   renderState?: AvatarRenderState;
   className?: string;
+  onClick?: () => void;
 }) {
   const [assetState, setAssetState] = useState<AvatarRenderState>(src ? 'loading' : 'failed');
   const tone = useMemo(() => toneForIdentity(name), [name]);
@@ -45,13 +47,24 @@ export function IdentityAvatar({
   // tighter size-derived corner, matching the shared SquareAvatar contract.
   const personRadius = kind === 'person' ? Math.max(8, Math.round(size / 4)) : undefined;
 
+  function handleKeyDown(event: KeyboardEvent<HTMLSpanElement>) {
+    if (!onClick) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onClick();
+    }
+  }
+
   return (
     <span
-      className={`mp-identity-avatar ${kind} tone-${tone} ${className}`.trim()}
+      className={`mp-identity-avatar ${kind} tone-${tone}${onClick ? ' is-interactive' : ''} ${className}`.trim()}
       style={{ width: size, height: size, ...(personRadius === undefined ? {} : { borderRadius: personRadius }) }}
-      role="img"
+      role={onClick ? 'button' : 'img'}
+      tabIndex={onClick ? 0 : undefined}
       aria-label={name}
       data-avatar-state={visibleState}
+      onClick={onClick}
+      onKeyDown={handleKeyDown}
     >
       <span className="mp-identity-fallback" aria-hidden="true">{initials}</span>
       {canRenderImage && (

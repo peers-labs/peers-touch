@@ -5,6 +5,8 @@ import type { TabId, Conversation, Contact, GroupItem, MobileUiEvidence, Setting
 import {
   deliveryRecoveryMessages,
   demoConversations,
+  demoContacts,
+  demoGroups,
   directDemoMessages,
   unknownOutcomeMessages,
   contentProjectionConversations,
@@ -99,6 +101,9 @@ export function MobileShell({
   ));
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<GroupItem | null>(null);
+  const [momentAuthor, setMomentAuthor] = useState<
+    { kind: 'contact'; contact: Contact } | { kind: 'group'; group: GroupItem } | null
+  >(null);
   const [selectedSetting, setSelectedSetting] = useState<SettingEntry | null>(null);
   const [shellToast, setShellToast] = useState<string | null>(null);
   const [shellToastKey, setShellToastKey] = useState(0);
@@ -171,6 +176,22 @@ export function MobileShell({
 
   function handleGroupClick(group: GroupItem) {
     setSelectedGroup(group);
+  }
+
+  // Moments authors resolve to the same Contact/Group detail surfaces used in
+  // Contacts, opened cross-tab; Back returns to the Moments feed.
+  function openMomentAuthor(name: string) {
+    const contact = demoContacts.find((entry) => entry.name === name);
+    if (contact) {
+      setMomentAuthor({ kind: 'contact', contact });
+      return;
+    }
+    const group = demoGroups.find((entry) => entry.name === name);
+    if (group) setMomentAuthor({ kind: 'group', group });
+  }
+
+  function openMomentAuthorContact(contact: Contact) {
+    setMomentAuthor({ kind: 'contact', contact });
   }
 
   function handleSettingClick(setting: SettingEntry) {
@@ -266,13 +287,31 @@ export function MobileShell({
         sampleOnly={longLists} onMemberClick={longLists ? handleContactClick : undefined}
         onBack={() => setSelectedGroup(null)} />;
     }
+    if (activeTab === 'moments' && momentAuthor) {
+      if (momentAuthor.kind === 'group') {
+        return <GroupDetailView key={momentAuthor.group.key} group={momentAuthor.group}
+          listMemory={listMemory}
+          onMemberClick={openMomentAuthorContact}
+          onBack={() => setMomentAuthor(null)} />;
+      }
+      const { contact } = momentAuthor;
+      return <ContactDetailView contact={contact}
+        canMessage={!longLists && socialDemo.federations.length > 0}
+        messageUnavailableText={longLists ? copy['mobile.launch.unavailable'] : undefined}
+        onBack={() => setMomentAuthor(null)}
+        onMessage={(target) => {
+          setMomentAuthor(null);
+          setActiveTab('contacts');
+          handleContactClick(target);
+        }} />;
+    }
     if (activeTab === 'profile' && selectedSetting) {
       return <SettingDetailView setting={selectedSetting} onBack={() => setSelectedSetting(null)} />;
     }
     switch (activeTab) {
       case 'chat': return <ChatPage conversations={conversations}
         listMemory={listMemory} uiEvidence={uiEvidence} onConversationClick={handleConversationClick} />;
-      case 'moments': return <MomentsPage avatarState={uiEvidence.avatarState} />;
+      case 'moments': return <MomentsPage avatarState={uiEvidence.avatarState} onOpenAuthor={openMomentAuthor} />;
       case 'contacts': return <ContactsPage contacts={longLists ? longListContacts : socialDemo.contacts}
         groups={longLists ? longListGroups : undefined} requests={longLists ? longListRequests : undefined}
         listMemory={listMemory} request={socialDemo.request}
@@ -285,6 +324,7 @@ export function MobileShell({
 
   const showTabBar = !(activeTab === 'chat' && selectedConversation)
     && !(activeTab === 'contacts' && (selectedContact || selectedGroup))
+    && !(activeTab === 'moments' && momentAuthor)
     && !(activeTab === 'profile' && selectedSetting);
   const overlayOpen = findPeopleOpen || Boolean(callSnapshot);
 
@@ -308,7 +348,7 @@ export function MobileShell({
                 className={`mp-tabbar-item ${isActive ? 'active' : ''}`}
                 aria-label={unread > 0 ? `${tab.label}, ${unread} unread` : tab.label}
                 aria-current={isActive ? 'page' : undefined}
-                onClick={() => { dispatchSocialDemo({ type: 'close-direct' }); setFindPeopleOpen(false); setActiveTab(tab.id); setSelectedConversation(null); setSelectedContact(null); setSelectedGroup(null); setSelectedSetting(null); }}
+                onClick={() => { dispatchSocialDemo({ type: 'close-direct' }); setFindPeopleOpen(false); setActiveTab(tab.id); setSelectedConversation(null); setSelectedContact(null); setSelectedGroup(null); setMomentAuthor(null); setSelectedSetting(null); }}
               >
                 <Badge count={unread} size="small" offset={[4, -2]}>
                   <Icon size={24} strokeWidth={isActive ? 2.2 : 1.7} />

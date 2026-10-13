@@ -1393,9 +1393,26 @@
   }
 
   .mp-moment-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-  .mp-moment-author { display: flex; flex-direction: column; gap: 1px; }
-  .mp-moment-name { font-size: 14px !important; font-weight: 600 !important; color: var(--mp-gray-800); }
+  .mp-moment-author { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .mp-moment-meta-row { display: flex; align-items: center; gap: 6px; }
   .mp-moment-time { font-size: 11px !important; }
+  .mp-moment-audience {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 10px; font-weight: 600; color: var(--mp-gray-500);
+  }
+  .mp-actor-link {
+    border: none; background: none; padding: 0; margin: 0;
+    font: inherit; text-align: left; cursor: pointer; color: inherit;
+    -webkit-tap-highlight-color: transparent;
+    &:active { opacity: 0.6; }
+  }
+  .mp-moment-author .mp-actor-link { font-size: 14px; font-weight: 600; color: var(--mp-gray-800); }
+  .mp-moment-comment-body .mp-actor-link { font-size: 12px; color: var(--mp-primary); }
+  .mp-identity-avatar.is-interactive { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .mp-identity-avatar.is-interactive:active { opacity: 0.7; }
+  .mp-identity-avatar.is-interactive:focus-visible {
+    outline: 2px solid var(--mp-primary); outline-offset: 2px;
+  }
   .mp-moment-text { margin: 0 0 10px; font-size: 14px; line-height: 1.5; color: var(--mp-gray-700); }
   .mp-moment-image { border-radius: var(--mp-r-md); overflow: hidden; aspect-ratio: 1; }
   .mp-moment-image--single { width: 240px; max-width: 100%; aspect-ratio: 4 / 3; }
@@ -1467,7 +1484,6 @@
     display: flex; gap: 8px; align-items: flex-start;
   }
   .mp-moment-comment-body { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
-  .mp-moment-comment-name { font-size: 12px !important; color: var(--mp-primary) !important; }
   .mp-moment-comment-text { font-size: 13px; color: var(--mp-gray-700); line-height: 1.4; }
   .mp-moment-comment-time { font-size: 10px !important; }
   .mp-moment-comment-more {
@@ -2122,51 +2138,137 @@
     color: var(--mp-success) !important; font-weight: 600;
   }
 
-  /* ── New Post Card (Moments) ── */
-  .mp-new-post-card {
-    margin: 0 12px 8px;
-    background: #ffffff;
-    border-radius: 14px;
-    padding: 14px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  }
-  .mp-new-post-textarea {
-    width: 100%;
-    border: 1px solid var(--mp-gray-200);
-    border-radius: 10px;
-    padding: 10px 12px;
-    font-size: 14px;
-    resize: none;
-    font-family: inherit;
-    outline: none;
-    &:focus { border-color: var(--mp-primary); }
-  }
-  .mp-new-post-actions {
+  /* ── New Moment Composer (bottom sheet) ── */
+  .mp-moment-composer-sheet {
     display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 10px;
+    flex-direction: column;
+    gap: 14px;
+    padding: 0 16px calc(16px + env(safe-area-inset-bottom, 0));
   }
-  .mp-new-post-cancel {
-    border: none;
-    background: var(--mp-gray-100);
-    color: var(--mp-gray-500);
-    padding: 6px 14px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
+  .mp-moment-composer-header {
+    display: grid;
+    grid-template-columns: 64px 1fr 64px;
+    align-items: center;
+    min-height: 44px;
   }
-  .mp-new-post-submit {
+  .mp-moment-composer-title {
+    margin: 0;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--mp-gray-900);
+  }
+  .mp-moment-composer-cancel,
+  .mp-moment-composer-submit {
+    min-height: 36px;
+    padding: 0 12px;
     border: none;
-    background: var(--mp-primary);
-    color: #ffffff;
-    padding: 6px 16px;
-    border-radius: 8px;
-    font-size: 13px;
+    border-radius: var(--mp-r-md);
+    font: inherit;
+    font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    &:disabled { opacity: 0.5; cursor: not-allowed; }
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mp-moment-composer-cancel {
+    justify-self: start;
+    background: var(--mp-gray-100);
+    color: var(--mp-gray-600);
+  }
+  .mp-moment-composer-submit {
+    justify-self: end;
+    background: var(--mp-primary);
+    color: #fff;
+    &:disabled { opacity: 0.45; cursor: not-allowed; }
+  }
+  .mp-moment-composer-author {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .mp-moment-composer-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+  .mp-moment-composer-name { font-size: 14px; font-weight: 700; color: var(--mp-gray-900); }
+  .mp-audience-segment {
+    display: inline-flex;
+    align-self: flex-start;
+    gap: 2px;
+    padding: 2px;
+    background: var(--mp-gray-100);
+    border-radius: var(--mp-r-md);
+  }
+  .mp-audience-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 28px;
+    padding: 0 10px;
+    border: none;
+    border-radius: var(--mp-r-sm);
+    background: transparent;
+    color: var(--mp-gray-500);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    &.active { background: #fff; color: var(--mp-primary); box-shadow: 0 1px 2px rgba(15,23,42,0.12); }
+  }
+  .mp-moment-composer-textarea {
+    width: 100%;
+    border: 1px solid var(--mp-gray-200);
+    border-radius: var(--mp-r-md);
+    padding: 12px;
+    font-size: 15px;
+    line-height: 1.5;
+    font-family: inherit;
+    resize: none;
+    outline: none;
+    background: var(--mp-gray-50);
+    &:focus { border-color: var(--mp-primary); background: #fff; }
+  }
+  .mp-moment-composer-media {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .mp-moment-composer-thumb {
+    position: relative;
+    width: 72px;
+    height: 72px;
+    border-radius: var(--mp-r-md);
+    overflow: hidden;
+  }
+  .mp-moment-composer-thumb-img { position: absolute; inset: 0; }
+  .mp-moment-composer-thumb-remove {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: var(--mp-r-sm);
+    background: rgba(15, 23, 42, 0.55);
+    color: #fff;
+    cursor: pointer;
+  }
+  .mp-moment-composer-add-image {
+    display: grid;
+    place-items: center;
+    width: 72px;
+    height: 72px;
+    border: 1px dashed var(--mp-gray-300);
+    border-radius: var(--mp-r-md);
+    background: var(--mp-gray-50);
+    color: var(--mp-gray-500);
+    cursor: pointer;
+    &:active { background: var(--mp-gray-100); }
   }
 
   /* ── Inline Comment Input (Moments) ── */
@@ -2707,7 +2809,7 @@
   .mp-details-search-box,
   .mp-details-search-results,
   .mp-confirm-dialog,
-  .mp-new-post-card {
+  .mp-moment-composer-sheet {
     background: var(--pt-surface-base);
   }
   .mp-tabbar {
@@ -2740,7 +2842,7 @@
   }
   .mp-action-sheet-backdrop,
   .mp-confirm-backdrop { background: rgba(0, 0, 0, 0.52); }
-  .mp-new-post-textarea,
+  .mp-moment-composer-textarea,
   .mp-moment-comment-input,
   .mp-details-search-input {
     background: var(--pt-surface-subtle);
@@ -2752,7 +2854,7 @@
   .ant-input-affix-wrapper,
   .ant-select-selector { color: var(--pt-text-primary); }
   .ant-input::placeholder,
-  .mp-new-post-textarea::placeholder,
+  .mp-moment-composer-textarea::placeholder,
   .mp-moment-comment-input::placeholder { color: var(--pt-text-muted); }
 
   @media (prefers-reduced-motion: reduce) {

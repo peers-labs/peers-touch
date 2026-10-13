@@ -1,19 +1,35 @@
 import { useState } from 'react';
 import { Typography } from 'antd';
-import { Heart, ImagePlus, MessageCircle, Send, Share2 } from 'lucide-react';
-import type { AvatarRenderState, Moment, MomentComment, ReactionKind } from '../types';
+import { Globe, Heart, ImagePlus, MessageCircle, Send, Share2, UserCheck, Users } from 'lucide-react';
+import type { AvatarRenderState, Moment, MomentAudience, MomentComment, ReactionKind } from '../types';
 import { GRADIENTS, REACTION_EMOJI } from '../types';
-import { demoAvatarUrls, demoMoments } from '../data';
+import { demoAvatarUrls, demoGroups, demoMoments } from '../data';
 import { IdentityAvatar } from '../components/IdentityAvatar';
+import { NewMomentSheet, type NewMomentPayload } from '../components/NewMomentSheet';
 
 const { Text } = Typography;
 
-export function MomentsPage({ avatarState }: { avatarState: AvatarRenderState }) {
+const groupNames = new Set(demoGroups.map((group) => group.name));
+const authorKind = (name: string): 'person' | 'group' => (groupNames.has(name) ? 'group' : 'person');
+
+const AUDIENCE_META: Record<MomentAudience, { label: string; Icon: typeof Globe }> = {
+  public: { label: 'Public', Icon: Globe },
+  followers: { label: 'Followers', Icon: UserCheck },
+  circles: { label: 'Circles', Icon: Users },
+};
+
+export function MomentsPage({
+  avatarState,
+  onOpenAuthor,
+}: {
+  avatarState: AvatarRenderState;
+  onOpenAuthor: (name: string) => void;
+}) {
   const [moments, setMoments] = useState<Moment[]>(demoMoments);
   const [reactionPickerId, setReactionPickerId] = useState<string | null>(null);
   const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
-  const [showNewPost, setShowNewPost] = useState(false);
-  const [newPostText, setNewPostText] = useState('');
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
+  const [composerOpen, setComposerOpen] = useState(false);
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
 
   function toggleReaction(id: string, kind: ReactionKind) {
@@ -44,9 +60,13 @@ export function MomentsPage({ avatarState }: { avatarState: AvatarRenderState })
     });
   }
 
-  function handleNewPost() {
-    const text = newPostText.trim();
-    if (!text) return;
+  // The comment composer stays hidden until the comment action is tapped.
+  function activateComment(id: string) {
+    setExpandedComments((prev) => new Set(prev).add(id));
+    setActiveCommentId((current) => (current === id ? null : id));
+  }
+
+  function handleNewPost(payload: NewMomentPayload) {
     const newMoment: Moment = {
       id: `mo-${Date.now()}`,
       name: 'Alice Chen',
@@ -54,14 +74,15 @@ export function MomentsPage({ avatarState }: { avatarState: AvatarRenderState })
       avatarUrl: demoAvatarUrls.alice,
       avatarGradient: GRADIENTS[0],
       time: 'Just now',
-      text,
+      text: payload.text,
+      images: payload.images.length ? payload.images : undefined,
+      audience: payload.audience,
       likes: 0,
       reactionCounts: {},
       comments: [],
     };
     setMoments((prev) => [newMoment, ...prev]);
-    setNewPostText('');
-    setShowNewPost(false);
+    setComposerOpen(false);
   }
 
   function handleAddComment(momentId: string) {
@@ -107,40 +128,36 @@ export function MomentsPage({ avatarState }: { avatarState: AvatarRenderState })
     <div className="mp-page">
       <header className="mp-header">
         <h1 className="mp-header-title">Moments</h1>
-        <button type="button" className="mp-header-action" aria-label="New post" onClick={() => setShowNewPost(!showNewPost)}>
+        <button type="button" className="mp-header-action" aria-label="New post" aria-haspopup="dialog" onClick={() => setComposerOpen(true)}>
           <ImagePlus size={20} />
         </button>
       </header>
-
-      {showNewPost && (
-        <div className="mp-new-post-card">
-          <textarea
-            className="mp-new-post-textarea"
-            placeholder="What's on your mind?"
-            value={newPostText}
-            onChange={(e) => setNewPostText(e.target.value)}
-            rows={3}
-          />
-          <div className="mp-new-post-actions">
-            <button type="button" className="mp-new-post-cancel" onClick={() => { setShowNewPost(false); setNewPostText(''); }}>Cancel</button>
-            <button type="button" className="mp-new-post-submit" onClick={handleNewPost} disabled={!newPostText.trim()}>Post</button>
-          </div>
-        </div>
-      )}
 
       <div className="mp-moments-feed">
         {moments.map((moment) => {
           const showComments = expandedComments.has(moment.id) || moment.comments.length <= 2;
           const visibleComments = showComments ? moment.comments : moment.comments.slice(0, 2);
           const totalReactions = Object.values(moment.reactionCounts ?? {}).reduce((a, b) => a + (b ?? 0), 0);
+          const Audience = moment.audience ? AUDIENCE_META[moment.audience] : null;
           return (
             <article key={moment.id} className="mp-moment-card">
               <div className="mp-moment-header">
                 <IdentityAvatar name={moment.name} initials={moment.avatar}
-                  src={moment.avatarUrl} size={42} renderState={avatarState} />
+                  src={moment.avatarUrl} kind={authorKind(moment.name)} size={42}
+                  renderState={avatarState} onClick={() => onOpenAuthor(moment.name)} />
                 <div className="mp-moment-author">
-                  <Text strong className="mp-moment-name">{moment.name}</Text>
-                  <Text type="secondary" className="mp-moment-time">{moment.time}</Text>
+                  <button type="button" className="mp-actor-link" onClick={() => onOpenAuthor(moment.name)}>
+                    {moment.name}
+                  </button>
+                  <div className="mp-moment-meta-row">
+                    <Text type="secondary" className="mp-moment-time">{moment.time}</Text>
+                    {Audience && (
+                      <span className="mp-moment-audience">
+                        <Audience.Icon size={11} />
+                        {Audience.label}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
               <p className="mp-moment-text">{moment.text}</p>
@@ -170,7 +187,9 @@ export function MomentsPage({ avatarState }: { avatarState: AvatarRenderState })
                   >
                     <Heart size={18} fill={moment.myReaction ? 'currentColor' : 'none'} />
                   </button>
-                  <button type="button" className="mp-moment-action" aria-label="Show comments" onClick={() => toggleComments(moment.id)}>
+                  <button type="button" className="mp-moment-action"
+                    aria-label="Comment on post" aria-expanded={activeCommentId === moment.id}
+                    onClick={() => activateComment(moment.id)}>
                     <MessageCircle size={18} />
                     {moment.comments.length > 0 && <span>{moment.comments.length}</span>}
                   </button>
@@ -202,9 +221,11 @@ export function MomentsPage({ avatarState }: { avatarState: AvatarRenderState })
                   {visibleComments.map((c) => (
                     <div key={c.id} className="mp-moment-comment">
                       <IdentityAvatar name={c.name} initials={c.avatar} src={c.avatarUrl}
-                        size={28} renderState={avatarState} />
+                        size={28} renderState={avatarState} onClick={() => onOpenAuthor(c.name)} />
                       <div className="mp-moment-comment-body">
-                        <Text strong className="mp-moment-comment-name">{c.name}</Text>
+                        <button type="button" className="mp-actor-link" onClick={() => onOpenAuthor(c.name)}>
+                          {c.name}
+                        </button>
                         <span className="mp-moment-comment-text">{c.text}</span>
                         <Text type="secondary" className="mp-moment-comment-time">{c.time}</Text>
                       </div>
@@ -218,29 +239,36 @@ export function MomentsPage({ avatarState }: { avatarState: AvatarRenderState })
                 </div>
               )}
 
-              {/* Inline comment input */}
-              <div className="mp-moment-comment-input-row">
-                <input
-                  type="text"
-                  className="mp-moment-comment-input"
-                  placeholder="Add a comment..."
-                  value={commentInputs[moment.id] ?? ''}
-                  onChange={(e) => setCommentInputs((prev) => ({ ...prev, [moment.id]: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddComment(moment.id); } }}
-                />
-                <button
-                  type="button"
-                  className={`mp-moment-comment-send ${(commentInputs[moment.id] ?? '').trim() ? 'active' : ''}`}
-                  aria-label="Send comment"
-                  onClick={() => handleAddComment(moment.id)}
-                >
-                  <Send size={14} />
-                </button>
-              </div>
+              {/* Comment composer: hidden until the comment action is tapped. */}
+              {activeCommentId === moment.id && (
+                <div className="mp-moment-comment-input-row">
+                  <input
+                    type="text"
+                    autoFocus
+                    className="mp-moment-comment-input"
+                    placeholder="Add a comment..."
+                    value={commentInputs[moment.id] ?? ''}
+                    onChange={(e) => setCommentInputs((prev) => ({ ...prev, [moment.id]: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddComment(moment.id); } }}
+                  />
+                  <button
+                    type="button"
+                    className={`mp-moment-comment-send ${(commentInputs[moment.id] ?? '').trim() ? 'active' : ''}`}
+                    aria-label="Send comment"
+                    onClick={() => handleAddComment(moment.id)}
+                  >
+                    <Send size={14} />
+                  </button>
+                </div>
+              )}
             </article>
           );
         })}
       </div>
+
+      {composerOpen && (
+        <NewMomentSheet onClose={() => setComposerOpen(false)} onSubmit={handleNewPost} />
+      )}
     </div>
   );
 }
