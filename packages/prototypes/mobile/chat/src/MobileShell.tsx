@@ -100,10 +100,14 @@ export function MobileShell({
       : null
   ));
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [blockedContactKeys, setBlockedContactKeys] = useState<Set<string>>(new Set());
+  const [removedContactKeys, setRemovedContactKeys] = useState<Set<string>>(new Set());
   const [selectedGroup, setSelectedGroup] = useState<GroupItem | null>(null);
+  const [removedGroupKeys, setRemovedGroupKeys] = useState<Set<string>>(new Set());
   const [momentAuthor, setMomentAuthor] = useState<
     { kind: 'contact'; contact: Contact } | { kind: 'group'; group: GroupItem } | null
   >(null);
+  const [socialDetailOpen, setSocialDetailOpen] = useState(false);
   const [selectedSetting, setSelectedSetting] = useState<SettingEntry | null>(null);
   const [shellToast, setShellToast] = useState<string | null>(null);
   const [shellToastKey, setShellToastKey] = useState(0);
@@ -181,6 +185,7 @@ export function MobileShell({
   // Moments authors resolve to the same Contact/Group detail surfaces used in
   // Contacts, opened cross-tab; Back returns to the Moments feed.
   function openMomentAuthor(name: string) {
+    setSocialDetailOpen(false);
     const contact = demoContacts.find((entry) => entry.name === name);
     if (contact) {
       setMomentAuthor({ kind: 'contact', contact });
@@ -200,6 +205,47 @@ export function MobileShell({
 
   function handleContactMessage(contact: Contact) {
     dispatchSocialDemo({ type: 'open-direct', contactKey: contact.key });
+  }
+
+  function handleRemoveContact(contact: Contact) {
+    setRemovedContactKeys((current) => new Set(current).add(contact.key));
+  }
+
+  function handleBlockedChange(contactKey: string, blocked: boolean) {
+    setBlockedContactKeys((current) => {
+      const next = new Set(current);
+      if (blocked) next.add(contactKey);
+      else next.delete(contactKey);
+      return next;
+    });
+  }
+
+  function handleExitGroup(group: GroupItem) {
+    setRemovedGroupKeys((current) => new Set(current).add(group.key));
+  }
+
+  function handleContactCall(contact: Contact, mediaKind: PrototypeCallMediaKind) {
+    handleStartCall({
+      key: contact.key,
+      name: contact.name,
+      avatar: contact.avatar,
+      avatarUrl: contact.avatarUrl,
+      avatarGradient: contact.avatarGradient,
+      lastMessage: '',
+      time: '',
+      unread: 0,
+      online: contact.online,
+    }, mediaKind);
+  }
+
+  function handleGroupMessage(group: GroupItem) {
+    const conversation = conversations.find((entry) => entry.key === group.key)
+      ?? demoConversations.find((entry) => entry.key === group.key);
+    if (!conversation) return;
+    setSelectedGroup(null);
+    setMomentAuthor(null);
+    setActiveTab('chat');
+    setSelectedConversation(conversation);
   }
 
   function handleAddContact() {
@@ -225,14 +271,17 @@ export function MobileShell({
   }
 
   function renderPage(): ReactNode {
-    if ((activeTab === 'chat' || activeTab === 'contacts') && socialDemo.runtime !== 'ready') {
+    if ((activeTab === 'chat' || activeTab === 'contacts' || activeTab === 'moments')
+      && socialDemo.runtime !== 'ready') {
       const conversationUnavailable = activeTab === 'chat' && selectedConversation;
       return <SocialUnavailablePage
         title={copy[conversationUnavailable
           ? 'mobile.nav.chatConversation'
           : activeTab === 'chat'
             ? 'mobile.chat.title'
-            : 'mobile.contacts.title']}
+            : activeTab === 'contacts'
+              ? 'mobile.contacts.title'
+              : 'mobile.moments.title']}
         runtime={socialDemo.runtime}
         onRetry={() => dispatchSocialDemo({ type: 'retry-runtime' })}
         onBack={conversationUnavailable ? handleBackToList : undefined}
@@ -262,6 +311,8 @@ export function MobileShell({
       return <ChatThread key={selectedConversation.key} conversation={selectedConversation}
         initialMessages={initialMessages}
         listMemory={listMemory} searchDemo={searchDemo} uiEvidence={uiEvidence}
+        blocked={blockedContactKeys.has(selectedConversation.key)}
+        onBlockedChange={(blocked) => handleBlockedChange(selectedConversation.key, blocked)}
         onStartCall={(mediaKind) => handleStartCall(selectedConversation, mediaKind)}
         onBack={handleBackToList} />;
     }
@@ -271,6 +322,8 @@ export function MobileShell({
         return <ChatThread key={direct.conversation.key} conversation={direct.conversation}
           initialMessages={direct.conversation.key.startsWith('demo-direct-') ? [] : undefined}
           listMemory={listMemory} uiEvidence={uiEvidence}
+          blocked={blockedContactKeys.has(selectedContact.key)}
+          onBlockedChange={(blocked) => handleBlockedChange(selectedContact.key, blocked)}
           onStartCall={(mediaKind) => handleStartCall(direct.conversation!, mediaKind)}
           onBack={() => dispatchSocialDemo({ type: 'close-direct' })} />;
       }
@@ -278,13 +331,19 @@ export function MobileShell({
         directStatus={direct?.status}
         canMessage={!longLists && socialDemo.federations.length > 0}
         messageUnavailableText={longLists ? copy['mobile.launch.unavailable'] : undefined}
+        blocked={blockedContactKeys.has(selectedContact.key)}
+        onBlockedChange={(blocked) => handleBlockedChange(selectedContact.key, blocked)}
         onBack={() => { dispatchSocialDemo({ type: 'close-direct' }); setSelectedContact(null); }}
-        onMessage={handleContactMessage} />;
+        onMessage={handleContactMessage}
+        onStartCall={handleContactCall}
+        onRemove={longLists ? undefined : handleRemoveContact} />;
     }
     if (activeTab === 'contacts' && selectedGroup) {
       return <GroupDetailView key={selectedGroup.key} group={selectedGroup}
         members={longLists ? longListMembers : undefined} listMemory={listMemory}
         sampleOnly={longLists} onMemberClick={longLists ? handleContactClick : undefined}
+        onOpenChat={handleGroupMessage}
+        onExit={longLists ? undefined : handleExitGroup}
         onBack={() => setSelectedGroup(null)} />;
     }
     if (activeTab === 'moments' && momentAuthor) {
@@ -292,13 +351,19 @@ export function MobileShell({
         return <GroupDetailView key={momentAuthor.group.key} group={momentAuthor.group}
           listMemory={listMemory}
           onMemberClick={openMomentAuthorContact}
+          onOpenChat={handleGroupMessage}
+          onExit={longLists ? undefined : handleExitGroup}
           onBack={() => setMomentAuthor(null)} />;
       }
       const { contact } = momentAuthor;
       return <ContactDetailView contact={contact}
         canMessage={!longLists && socialDemo.federations.length > 0}
         messageUnavailableText={longLists ? copy['mobile.launch.unavailable'] : undefined}
+        blocked={blockedContactKeys.has(contact.key)}
+        onBlockedChange={(blocked) => handleBlockedChange(contact.key, blocked)}
         onBack={() => setMomentAuthor(null)}
+        onStartCall={handleContactCall}
+        onRemove={longLists ? undefined : handleRemoveContact}
         onMessage={(target) => {
           setMomentAuthor(null);
           setActiveTab('contacts');
@@ -306,14 +371,25 @@ export function MobileShell({
         }} />;
     }
     if (activeTab === 'profile' && selectedSetting) {
-      return <SettingDetailView setting={selectedSetting} onBack={() => setSelectedSetting(null)} />;
+      return <SettingDetailView
+        setting={selectedSetting}
+        onBack={() => setSelectedSetting(null)}
+        onChangeStation={onChangeStation}
+      />;
     }
     switch (activeTab) {
       case 'chat': return <ChatPage conversations={conversations}
         listMemory={listMemory} uiEvidence={uiEvidence} onConversationClick={handleConversationClick} />;
-      case 'moments': return <MomentsPage avatarState={uiEvidence.avatarState} onOpenAuthor={openMomentAuthor} />;
-      case 'contacts': return <ContactsPage contacts={longLists ? longListContacts : socialDemo.contacts}
-        groups={longLists ? longListGroups : undefined} requests={longLists ? longListRequests : undefined}
+      case 'moments': return <MomentsPage
+        avatarState={uiEvidence.avatarState}
+        onOpenAuthor={openMomentAuthor}
+        onDetailChange={setSocialDetailOpen}
+      />;
+      case 'contacts': return <ContactsPage contacts={(longLists ? longListContacts : socialDemo.contacts)
+        .filter((contact) => !removedContactKeys.has(contact.key))}
+        groups={(longLists ? longListGroups : demoGroups)
+          .filter((group) => !removedGroupKeys.has(group.key))}
+        requests={longLists ? longListRequests : undefined}
         listMemory={listMemory} request={socialDemo.request}
         avatarState={uiEvidence.avatarState}
         onContactClick={handleContactClick} onGroupClick={handleGroupClick} onAddContact={handleAddContact} />;
@@ -325,6 +401,7 @@ export function MobileShell({
   const showTabBar = !(activeTab === 'chat' && selectedConversation)
     && !(activeTab === 'contacts' && (selectedContact || selectedGroup))
     && !(activeTab === 'moments' && momentAuthor)
+    && !(activeTab === 'moments' && socialDetailOpen)
     && !(activeTab === 'profile' && selectedSetting);
   const overlayOpen = findPeopleOpen || Boolean(callSnapshot);
 
@@ -348,7 +425,17 @@ export function MobileShell({
                 className={`mp-tabbar-item ${isActive ? 'active' : ''}`}
                 aria-label={unread > 0 ? `${tab.label}, ${unread} unread` : tab.label}
                 aria-current={isActive ? 'page' : undefined}
-                onClick={() => { dispatchSocialDemo({ type: 'close-direct' }); setFindPeopleOpen(false); setActiveTab(tab.id); setSelectedConversation(null); setSelectedContact(null); setSelectedGroup(null); setMomentAuthor(null); setSelectedSetting(null); }}
+                onClick={() => {
+                  dispatchSocialDemo({ type: 'close-direct' });
+                  setFindPeopleOpen(false);
+                  setActiveTab(tab.id);
+                  setSelectedConversation(null);
+                  setSelectedContact(null);
+                  setSelectedGroup(null);
+                  setMomentAuthor(null);
+                  setSocialDetailOpen(false);
+                  setSelectedSetting(null);
+                }}
               >
                 <Badge count={unread} size="small" offset={[4, -2]}>
                   <Icon size={24} strokeWidth={isActive ? 2.2 : 1.7} />

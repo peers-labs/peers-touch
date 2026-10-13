@@ -107,6 +107,7 @@ export const demoMoments: Moment[] = [
   {
     id: 'mo1', name: 'Carol Li', avatar: 'CL', avatarUrl: demoAvatarUrls.carol, avatarGradient: GRADIENTS[3], time: '2 hours ago',
     text: 'Just shipped the new onboarding flow. The team did an amazing job tightening up every interaction.',
+    audience: 'followers',
     likes: 24, myReaction: 'like',
     reactionCounts: { like: 20, love: 3, celebrate: 1 },
     comments: [
@@ -116,7 +117,7 @@ export const demoMoments: Moment[] = [
   },
   {
     id: 'mo2', name: 'Bob Zhang', avatar: 'BZ', avatarUrl: demoAvatarUrls.bob, avatarGradient: GRADIENTS[2], time: '5 hours ago',
-    text: 'Sunset from the office rooftop today. Never gets old.', likes: 56,
+    text: 'Sunset from the office rooftop today. Never gets old.', audience: 'public', likes: 56,
     reactionCounts: { like: 30, love: 22, wow: 4 },
     comments: [
       { id: 'c3', name: 'Emma Liu', avatar: 'EL', avatarUrl: demoAvatarUrls.emma, avatarGradient: GRADIENTS[7], text: 'Stunning view!', time: '4h' },
@@ -125,7 +126,7 @@ export const demoMoments: Moment[] = [
   },
   {
     id: 'mo3', name: 'Emma Liu', avatar: 'EL', avatarUrl: demoAvatarUrls.emma, avatarGradient: GRADIENTS[7], time: 'Yesterday',
-    text: 'Exploring color palettes for the next release. Leaning warm and muted.', likes: 31,
+    text: 'Exploring color palettes for the next release. Leaning warm and muted.', audience: 'followers', likes: 31,
     reactionCounts: { like: 25, love: 6 },
     comments: [
       { id: 'c5', name: 'Carol Li', avatar: 'CL', avatarUrl: demoAvatarUrls.carol, avatarGradient: GRADIENTS[3], text: 'The middle one is gorgeous', time: '20h' },
@@ -133,13 +134,14 @@ export const demoMoments: Moment[] = [
   },
   {
     id: 'mo4', name: 'David Wu', avatar: 'DW', avatarUrl: demoAvatarUrls.david, avatarGradient: GRADIENTS[5], time: '2 days ago',
-    text: 'New blog post: Building resilient federated networks. Link in bio.', likes: 18,
+    text: 'New blog post: Building resilient federated networks. Link in bio.', audience: 'public', likes: 18,
     reactionCounts: { like: 18 },
     comments: [],
   },
   {
     id: 'mo5', name: 'Design Systems', avatar: 'DS', avatarGradient: GRADIENTS[6], time: '3 days ago',
     text: 'Token documentation is live. Components are now fully themeable through the new token pipeline.',
+    audience: 'circles',
     likes: 42, myReaction: 'celebrate',
     reactionCounts: { like: 30, love: 8, celebrate: 4 },
     comments: [
@@ -183,7 +185,7 @@ export const demoContacts: Contact[] = [
 ];
 
 export const demoGroups: GroupItem[] = [
-  { key: 'dev-team', name: 'Dev Team', avatar: 'DT', avatarGradient: GRADIENTS[1], memberCount: 12 },
-  { key: 'product', name: 'Product Design', avatar: 'PD', avatarGradient: GRADIENTS[4], memberCount: 8 },
+  { key: 'dev-team', name: 'Dev Team', avatar: 'DT', avatarGradient: GRADIENTS[1], memberCount: 12, canModerate: true, isOwner: true },
+  { key: 'product', name: 'Product Design', avatar: 'PD', avatarGradient: GRADIENTS[4], memberCount: 8, canModerate: true },
   { key: 'design-systems', name: 'Design Systems', avatar: 'DS', avatarGradient: GRADIENTS[6], memberCount: 15 },
 ];

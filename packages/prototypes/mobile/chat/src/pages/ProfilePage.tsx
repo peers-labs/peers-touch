@@ -1,111 +1,104 @@
 import { Typography } from 'antd';
-import {
-  Ban, Bell, ChevronRight, Fingerprint, Globe,
-  Image as ImageIcon, MessageCircle, Server,
-  Settings as SettingsIcon, Shield, ShieldCheck, User,
-} from 'lucide-react';
-import type { SettingEntry, SettingGroup } from '../types';
-import type { AvatarRenderState } from '../types';
+import { ChevronRight, Settings as SettingsIcon } from 'lucide-react';
+import type { AvatarRenderState, SettingEntry } from '../types';
 import { demoAvatarUrls } from '../data';
 import { IdentityAvatar } from '../components/IdentityAvatar';
+import { accountSetting, mobileSettingGroups } from '../settingsModel';
 
 const { Text } = Typography;
 
-export function ProfilePage({ avatarState, onChangeStation, onSettingClick }: {
+export function ProfilePage({
+  avatarState,
+  onChangeStation,
+  onSettingClick,
+}: {
   avatarState: AvatarRenderState;
   onChangeStation: () => void;
-  onSettingClick: (s: SettingEntry) => void;
+  onSettingClick: (setting: SettingEntry) => void;
 }) {
-  const settingGroups: SettingGroup[] = [
-    {
-      title: 'Account',
-      items: [
-        { label: 'Account Info', icon: User, tint: 'primary' },
-        { label: 'Notifications', value: 'In-app', icon: Bell, tint: 'warning' },
-        { label: 'Privacy & Security', icon: Shield, tint: 'success' },
-        { label: 'Safety Number', icon: Fingerprint, tint: 'primary' },
-        { label: 'Blocked Users', value: '2', icon: Ban, tint: 'danger' },
-      ],
-    },
-    {
-      title: 'Chat',
-      items: [
-        { label: 'Chat Settings', icon: MessageCircle, tint: 'primary' },
-        { label: 'Chat Background', icon: ImageIcon, tint: 'neutral' },
-      ],
-    },
-    {
-      title: 'Network',
-      items: [
-        { label: 'Station Connection', value: 'Local Station', icon: Server, tint: 'success' },
-        { label: 'Encryption', value: 'Active', icon: ShieldCheck, tint: 'primary' },
-        { label: 'Language', value: 'English', icon: Globe, tint: 'neutral' },
-      ],
-    },
-    {
-      title: 'About',
-      items: [
-        { label: 'About Peers Touch', value: 'v1.0.0', icon: ShieldCheck, tint: 'neutral' },
-      ],
-    },
-  ];
-
   return (
-    <div className="mp-page">
+    <div className="mp-page" data-prototype-page="settings">
       <header className="mp-header">
         <h1 className="mp-header-title">Me</h1>
-        <button type="button" className="mp-header-action" aria-label="Settings" onClick={() => onSettingClick({ label: 'Account Info', icon: User, tint: 'primary' })}>
+        <button
+          type="button"
+          className="mp-header-action"
+          aria-label="Open account settings"
+          onClick={() => onSettingClick(accountSetting)}
+        >
           <SettingsIcon size={20} />
         </button>
       </header>
 
       <div className="mp-profile-body">
-        <section className="mp-profile-header-card">
+        <button
+          type="button"
+          className="mp-profile-header-card"
+          onClick={() => onSettingClick(accountSetting)}
+        >
+          <div className="mp-profile-cover" aria-hidden="true" />
           <div className="mp-profile-header">
-            <IdentityAvatar name="Alice Chen" initials="AC" src={demoAvatarUrls.alice}
-              size={64} renderState={avatarState} />
+            <IdentityAvatar
+              name="Alice Chen"
+              initials="AC"
+              src={demoAvatarUrls.alice}
+              size={64}
+              renderState={avatarState}
+            />
             <div className="mp-profile-info">
               <Text strong className="mp-profile-name">Alice Chen</Text>
-              <Text type="secondary" className="mp-profile-did">Local identity · Local Station</Text>
+              <Text type="secondary" className="mp-profile-handle">@alice@alpha.peers.social</Text>
+              <Text type="secondary" className="mp-profile-did">Local Station · 3 federations</Text>
             </div>
             <ChevronRight size={20} className="mp-row-chevron" />
           </div>
           <div className="mp-profile-stats">
-            <div className="mp-stat"><Text strong className="mp-stat-value">128</Text><Text type="secondary" className="mp-stat-label">Friends</Text></div>
+            <div className="mp-stat"><Text strong className="mp-stat-value">34</Text><Text type="secondary" className="mp-stat-label">Posts</Text></div>
             <div className="mp-stat-divider" />
-            <div className="mp-stat"><Text strong className="mp-stat-value">12</Text><Text type="secondary" className="mp-stat-label">Groups</Text></div>
+            <div className="mp-stat"><Text strong className="mp-stat-value">128</Text><Text type="secondary" className="mp-stat-label">Followers</Text></div>
             <div className="mp-stat-divider" />
-            <div className="mp-stat"><Text strong className="mp-stat-value">34</Text><Text type="secondary" className="mp-stat-label">Moments</Text></div>
+            <div className="mp-stat"><Text strong className="mp-stat-value">96</Text><Text type="secondary" className="mp-stat-label">Following</Text></div>
           </div>
-        </section>
+        </button>
 
-        {settingGroups.map((group) => (
-          <div key={group.title} className="mp-settings-group">
+        <div className="mp-settings-intro">
+          <Text strong>Settings</Text>
+          <Text type="secondary">Account, network, AI, and device controls</Text>
+        </div>
+
+        {mobileSettingGroups.map((group) => (
+          <section key={group.title} className="mp-settings-group" data-settings-group={group.title.toLowerCase()}>
             <div className="mp-settings-group-title">{group.title}</div>
             <div className="mp-settings-card">
-              {group.items.map((item, idx) => {
+              {group.items.map((item, index) => {
                 const Icon = item.icon;
                 return (
                   <button
-                    key={item.label}
+                    key={item.id}
                     type="button"
-                    className={`mp-setting-row ${idx > 0 ? 'mp-setting-row--border' : ''}`}
+                    className={`mp-setting-row ${index > 0 ? 'mp-setting-row--border' : ''}`}
+                    data-setting-id={item.id}
                     onClick={() => onSettingClick(item)}
                   >
                     <span className={`mp-setting-icon tone-${item.tint}`}>
                       <Icon size={17} />
                     </span>
-                    <Text className="mp-setting-label">{item.label}</Text>
+                    <span className="mp-setting-copy">
+                      <Text className="mp-setting-label">{item.label}</Text>
+                      <Text type="secondary" className="mp-setting-description">{item.description}</Text>
+                    </span>
                     {item.value && <Text type="secondary" className="mp-setting-value">{item.value}</Text>}
                     <ChevronRight size={17} className="mp-row-chevron" />
                   </button>
                 );
               })}
             </div>
-          </div>
+          </section>
         ))}
 
-        <button type="button" className="mp-sign-out" onClick={onChangeStation}>Sign Out</button>
+        <button type="button" className="mp-sign-out" onClick={onChangeStation}>
+          Sign out and switch Station
+        </button>
       </div>
     </div>
   );

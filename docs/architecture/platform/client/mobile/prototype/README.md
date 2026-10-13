@@ -2,9 +2,43 @@
 
 > **Status**: confirmed
 > **Version**: v1.0
-> **Created**: 2026-07-08 | **Updated**: 2026-10-12
+> **Created**: 2026-07-08 | **Updated**: 2026-10-14
 > **Owner**: Mobile Product Team
 > **Module**: `packages/prototypes/mobile/chat/`
+
+## 2026-10-14 Whole-Product Desktop Master Alignment
+
+The Mobile prototype now preserves Desktop master's product anatomy while
+using Mobile-native full-screen pages, bottom navigation, sheets, and 44px
+touch targets:
+
+- Station selection validates one complete HTTP(S) URL and enables Continue
+  only after the selected Station reaches a current-process verified state;
+  Login uses one focused card with Station trust context, OAuth,
+  remembered-account PIN unlock, account switching, and cancellable in-place
+  provider states.
+- Chat includes compose, search, Direct/Group detail, audio/video entry,
+  reactions, reply/forward/edit/delete, threads, pins, media/files, safety,
+  role-aware Group moderation, ownership transfer, leave, and dissolve.
+- Social owns `Home / Public / Search / Circles`, continuous feed rows, post
+  detail/comments, actor profiles, follow state, composer, and circle member
+  management.
+- Settings owns the exact Desktop groups and sections: General (4), Network
+  (3), AI (5), and Advanced (8). Every row opens meaningful controls; generic
+  placeholder detail pages are prohibited.
+
+Verification against the live exact-master Desktop portal:
+
+```bash
+PROTOTYPE_URL=http://localhost:3210 node packages/prototypes/mobile/chat/scripts/check-layout.mjs
+MOBILE_URL=http://localhost:3210 DESKTOP_URL=http://localhost:3212 \
+  node packages/prototypes/mobile/chat/scripts/check-chat-parity.mjs
+MOBILE_URL=http://localhost:3210 DESKTOP_URL=http://localhost:3212 \
+  node packages/prototypes/mobile/chat/scripts/check-product-parity.mjs
+```
+
+The checks prove prototype semantics and rendered geometry, not native runtime
+or backend behavior.
 
 ## 2026-10-13 Human Content & Trust Slots
 

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Input, Typography } from 'antd';
+import type { TextAreaRef } from 'antd/es/input/TextArea';
 import {
   AlertCircle, ArrowLeft, Check, CheckCheck, ChevronRight, Clock,
   Copy, CornerUpLeft, EyeOff, File, Flag as FlagIcon, Forward,
@@ -34,7 +35,17 @@ import {
 const { Text } = Typography;
 const messageKey = (message: Message) => message.id;
 
-export function ChatThread({ conversation, onBack, onStartCall, initialMessages = demoMessages, listMemory, searchDemo, uiEvidence }: {
+export function ChatThread({
+  conversation,
+  onBack,
+  onStartCall,
+  initialMessages = demoMessages,
+  listMemory,
+  searchDemo,
+  uiEvidence,
+  blocked,
+  onBlockedChange,
+}: {
   conversation: Conversation;
   onBack: () => void;
   onStartCall?: (mediaKind: PrototypeCallMediaKind) => void;
@@ -42,11 +53,13 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
   listMemory: PrototypeListMemory;
   searchDemo?: SearchDemoControl;
   uiEvidence: MobileUiEvidence;
+  blocked: boolean;
+  onBlockedChange: (blocked: boolean) => void;
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [inputValue, setInputValue] = useState('');
   const [composerEmojiOpen, setComposerEmojiOpen] = useState(false);
-  const composerInputRef = useRef<{ resizableTextArea?: { textArea: HTMLTextAreaElement } } | null>(null);
+  const composerInputRef = useRef<TextAreaRef | null>(null);
 
   function insertComposerEmoji(emoji: string) {
     const textarea = composerInputRef.current?.resizableTextArea?.textArea;
@@ -72,14 +85,13 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastKey, setToastKey] = useState(0);
   const [showChatDetails, setShowChatDetails] = useState(false);
-  const [detailsView, setDetailsView] = useState<'main' | 'search' | 'media'>('main');
+  const [detailsView, setDetailsView] = useState<'main' | 'search' | 'media' | 'files'>('main');
   const [targetMessageId, setTargetMessageId] = useState<string | null>(null);
   const [targetUnavailable, setTargetUnavailable] = useState(false);
   const messageWindow = useRef<PrototypeListHandle>(null);
   const retryTimers = useRef<Set<number>>(new Set());
   const [isMuted, setIsMuted] = useState(conversation.muted ?? false);
   const [isStickyTop, setIsStickyTop] = useState(conversation.pinned ?? false);
-  const [isBlocked, setIsBlocked] = useState(false);
   const [confirmAction, setConfirmAction] = useState<'clear' | 'block' | 'report' | null>(null);
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
@@ -841,6 +853,7 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
               {detailsView === 'main' && 'Details'}
               {detailsView === 'search' && 'Search Chat'}
               {detailsView === 'media' && 'Shared Media'}
+              {detailsView === 'files' && 'Shared Files'}
             </span>
           </header>
 
@@ -878,11 +891,15 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
               </div>
 
               <div className="mp-chat-details-section">
-              <button type="button" className="mp-chat-details-item" onClick={() => setDetailsView('media')}>
-                <span>Shared Media</span>
-                <ChevronRight size={16} className="mp-row-chevron" />
-              </button>
-            </div>
+                <button type="button" className="mp-chat-details-item" onClick={() => setDetailsView('media')}>
+                  <span>Shared Media</span>
+                  <ChevronRight size={16} className="mp-row-chevron" />
+                </button>
+                <button type="button" className="mp-chat-details-item" onClick={() => setDetailsView('files')}>
+                  <span>Shared Files</span>
+                  <ChevronRight size={16} className="mp-row-chevron" />
+                </button>
+              </div>
 
               <div className="mp-chat-details-section">
                 <div className="mp-chat-details-item">
@@ -906,7 +923,7 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
               <div className="mp-chat-details-section">
                 <div className="mp-chat-details-section-label">Safety</div>
                 <button type="button" className="mp-chat-details-item danger" onClick={() => setConfirmAction('block')}>
-                  <span>{isBlocked ? 'Unblock Contact' : 'Block Contact'}</span>
+                  <span>{blocked ? 'Unblock Contact' : 'Block Contact'}</span>
                 </button>
                 <button type="button" className="mp-chat-details-item report-danger" onClick={() => setConfirmAction('report')}>
                   <span>Report</span>
@@ -941,18 +958,39 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
             </div>
           )}
 
+          {detailsView === 'files' && (
+            <div className="mp-chat-details-body">
+              <div className="mp-details-file-list">
+                {messages.filter((message) => message.file && !message.recalled && !message.moderated).length > 0 ? (
+                  messages.filter((message) => message.file && !message.recalled && !message.moderated).map((message) => (
+                    <button key={message.id} type="button" className="mp-details-file-item"
+                      onClick={() => showToast(`${message.file?.name} ready to open`)}>
+                      <span className="mp-file-icon"><File size={20} /></span>
+                      <span className="mp-file-info">
+                        <Text strong className="mp-file-name">{message.file?.name}</Text>
+                        <Text type="secondary" className="mp-file-size">{message.file?.size} · {message.time}</Text>
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="mp-details-empty">No shared files yet</div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Confirm Dialog */}
           {confirmAction && (
             <div className="mp-confirm-backdrop" onClick={() => setConfirmAction(null)}>
               <div className="mp-confirm-dialog" onClick={(e) => e.stopPropagation()}>
                 <div className="mp-confirm-title">
                   {confirmAction === 'clear' && 'Clear Local Chat Data?'}
-                  {confirmAction === 'block' && (isBlocked ? 'Unblock Contact?' : 'Block Contact?')}
+                  {confirmAction === 'block' && (blocked ? 'Unblock Contact?' : 'Block Contact?')}
                   {confirmAction === 'report' && 'Report this contact?'}
                 </div>
                 <div className="mp-confirm-desc">
                   {confirmAction === 'clear' && 'Permanently removes messages, search entries, and unreferenced media from this device. Other devices and participants are not affected.'}
-                  {confirmAction === 'block' && (isBlocked ? `${conversation.name} will be able to message you again.` : `${conversation.name} will no longer be able to send you messages.`)}
+                  {confirmAction === 'block' && (blocked ? `${conversation.name} will be able to message you again.` : `${conversation.name} will no longer be able to send you messages.`)}
                   {confirmAction === 'report' && 'This will be reported to our safety team for review.'}
                 </div>
                 <div className="mp-confirm-actions">
@@ -962,15 +1000,15 @@ export function ChatThread({ conversation, onBack, onStartCall, initialMessages 
                       setMessages([]);
                       showToast('Local chat data cleared');
                     } else if (confirmAction === 'block') {
-                      setIsBlocked(!isBlocked);
-                      showToast(isBlocked ? 'Contact unblocked' : 'Contact blocked');
+                      onBlockedChange(!blocked);
+                      showToast(blocked ? 'Contact unblocked' : 'Contact blocked');
                     } else if (confirmAction === 'report') {
                       showToast('Report submitted');
                     }
                     setConfirmAction(null);
                   }}>
                     {confirmAction === 'clear' && 'Clear Local Data'}
-                    {confirmAction === 'block' && (isBlocked ? 'Unblock' : 'Block')}
+                    {confirmAction === 'block' && (blocked ? 'Unblock' : 'Block')}
                     {confirmAction === 'report' && 'Report'}
                   </button>
                 </div>

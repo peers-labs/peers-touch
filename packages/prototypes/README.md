@@ -71,7 +71,11 @@ Prototype Portal 内部提供 `desktop` / `mobile` / `dashboard` 站点切换。
 The Portal stacks its navigation and wraps worktree controls on narrow screens
 so Mobile previews keep their usable width. The Mobile render regression is
 `mobile/chat/scripts/check-layout.mjs`; run it against the Make-started Portal
-with `PROTOTYPE_URL`. See the Mobile prototype README for evidence and limits.
+with `PROTOTYPE_URL`. Live Desktop/Mobile alignment is guarded by
+`mobile/chat/scripts/check-chat-parity.mjs` and
+`mobile/chat/scripts/check-product-parity.mjs`; set `MOBILE_URL` and
+`DESKTOP_URL` to the two running Portals. See the Mobile prototype README for
+evidence and limits.
 
 跨 worktree / branch 预览：
 

@@ -1266,6 +1266,8 @@
           "apps/mobile/scripts/check-mobile-shell-contracts.py",
           "apps/mobile/scripts/check_mobile_shell_contracts_test.py",
           "packages/prototypes/mobile/chat/src/pages/AuthGateScreen.tsx",
+          "packages/prototypes/mobile/chat/src/pages/LaunchScreen.tsx",
+          "packages/prototypes/mobile/chat/src/components/StationSelector.tsx",
           "packages/prototypes/mobile/chat/src/MobilePrototype.tsx",
           "packages/prototypes/mobile/chat/src/components/ExperienceRecovery.tsx",
           "packages/prototypes/mobile/chat/src/mobilePrototype.css",
@@ -1376,6 +1378,10 @@
         "paths": [
           "tooling/acceptance/gates/mobile/whole_product_surface_inventory.json",
           "apps/mobile/scripts/review-mobile-surfaces.mjs",
+          "packages/prototypes/mobile/chat/src/**",
+          "packages/prototypes/mobile/chat/scripts/check-layout.mjs",
+          "packages/prototypes/mobile/chat/scripts/check-chat-parity.mjs",
+          "packages/prototypes/mobile/chat/scripts/check-product-parity.mjs",
           "tooling/acceptance/gates/mobile/simulator_whole_product_usability_e2e.py",
           "tooling/acceptance/gates/mobile/simulator_whole_product_usability_e2e_test.py"
         ]
