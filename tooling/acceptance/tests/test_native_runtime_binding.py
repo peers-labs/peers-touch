@@ -1033,6 +1033,54 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             "/workspace/run/actors/alice/relay-ca.pem",
         )
 
+    def test_direct_binding_stages_same_station_relay_anchor(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle(
+            "/workspace/run/actors/alice/relay-ca.pem"
+        )
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+        manifest = self.runtime_manifest()
+        manifest["services"]["station-via-relay"] = {
+            "kind": "station",
+            "endpoint": "https://relay.example:18081",
+            "runtimeIdentity": "station-peer-four",
+        }
+        binding.set_runtime_manifest(manifest)
+
+        with (
+            patch.object(
+                binding,
+                "_relay_tls_trust_anchor",
+                return_value=(Path("/evidence/relay-ca.pem"), "b" * 64),
+            ) as trust_anchor,
+            patch.object(TauriSession, "start"),
+            patch.object(TauriSession, "wait_for_acceptance_harness"),
+            patch.object(binding, "_configure_session_station"),
+            patch.object(
+                binding,
+                "_observe_live_service_identity",
+                return_value="station-peer-four",
+            ),
+            patch(
+                "tooling.acceptance.drivers.native.runtime."
+                "persist_client_binding_observation",
+                return_value=(object(), {}),
+            ),
+        ):
+            binding.create_bound_session("alice")
+
+        trust_anchor.assert_called_once_with("station-via-relay")
+        launch_call = next(
+            item for item in lifecycle.calls if item[0] == "launch_actor"
+        )
+        self.assertEqual(
+            launch_call[1][2]["PT_ACCEPTANCE_RELAY_TLS_CA_FILE"],
+            "/workspace/run/actors/alice/relay-ca.pem",
+        )
+
     def test_relay_tls_anchor_resolves_only_from_bound_attestations(
         self,
     ) -> None:
