@@ -35,7 +35,7 @@ pnpm dev            # Vite，浏览器打开 localhost:3105
   - `topActions`：Search / 聊天 / Agent / Notes 等内核页入口 + **applet pins**（Blocks 图标，active 态对应 `page === 'applet:<id>'`）。
   - `bottomActions`：通知 / 命令面板 / 设置。
 - **内容区（页面路由）**：按 `page` 切换。Agent Chat、Agent Profile、Orchestration 和 Settings 使用已细化原型；其他未覆盖页面使用轻量占位。
-- **Settings → Network**：用户/站主分层。普通用户面为 Your Station / Discovery / Federation；目标形态中后端未就绪的能力显示 Pending backend。各标记对应的 Station/proto 差距见 `docs/architecture/domains/federation/network-settings-backend-gaps.md`，设计合同见 `docs/client/common/ui-identity/components.md §10`。
+- **Settings → Network**：用户/站主分层。普通用户面为 Your Station / Discovery / Federation；目标形态中后端未就绪的能力显示 Pending backend。新桌面原型与真实平台的全量差距（含 Network N1–N12）统一登记在 [`../desktop-alignment-gaps.md`](../desktop-alignment-gaps.md)，设计合同见 `docs/client/common/ui-identity/components.md §10`。
 - **命令面板**（`⌘⇧P`）：mock 命令列表，可跳转各页/applet（对齐真实 AppSideNav 的 Command Palette）。
 
 ## Agent 模块集成
