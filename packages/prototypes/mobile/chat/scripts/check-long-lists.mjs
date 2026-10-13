@@ -132,7 +132,7 @@ try {
       device.getByRole('button', { name: 'Back', exact: true }).click());
     await returnAnchor(conversations,
       () => device.getByRole('button', { name: 'Me', exact: true }).click(),
-      () => device.locator('.mp-tabbar-item').filter({ hasText: copy['mobile.chat.title'] }).click());
+      () => device.getByRole('button', { name: new RegExp(`^${copy['mobile.chat.title']}(?:,|$)`) }).click());
 
     const chatSearch = device.getByPlaceholder('Search conversations', { exact: true });
     await chatSearch.fill(copy['mobile.chat.thread']);
