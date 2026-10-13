@@ -107,6 +107,9 @@ The goal is to catch "functionally correct but visually assembled" UI before it 
 
 - [ ] Keyboard users can reach primary and secondary actions.
 - [ ] Focus ring belongs to the correct semantic owner.
+- [ ] No control shows the browser-default focus outline (blue `auto`):
+      pointer interaction leaves no ring; keyboard focus shows the single 2px
+      brand ring (accessibility.md §3).
 - [ ] Popovers/menus restore focus to the source.
 - [ ] Contrast is sufficient for text, metadata, and states.
 - [ ] Icon-only actions have accessible labels.

@@ -819,8 +819,13 @@ def assert_notifications(base_url: str, page, shot_dir, collected):
           and page.locator("[data-shell-notification]").count() == 0)
     page.keyboard.press("Escape")
     page.wait_for_timeout(300)
-    page.get_by_role("button", name="通知", exact=True).click()
-    check("[notifications] empty preview focuses enabled More control",
+    # Keyboard-opened empty preview moves focus to the enabled More control;
+    # pointer openers keep focus on the bell (covered by the focus gate).
+    bell = page.get_by_role("button", name="通知", exact=True)
+    bell.evaluate("el => el.focus()")
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(200)
+    check("[notifications] empty keyboard preview focuses enabled More control",
           page.get_by_role("button", name="More notifications").evaluate("el => el === document.activeElement"))
     assert_visual_system("[notifications-empty-preview]", page)
     if shot_dir:
@@ -1112,6 +1117,158 @@ def assert_settings(base_url: str, page, shot_dir: Path | None = None):
           f"chips={dn['sectionChips']}")
 
 
+FOCUS_STATE_PROBE = r"""
+() => {
+  const el = document.activeElement;
+  if (!el || el === document.body) return null;
+  const cs = getComputedStyle(el);
+  const cls = typeof el.className === 'string' ? el.className : '';
+  return {tag: el.tagName, cls, aria: el.getAttribute('aria-label'),
+          fv: el.matches(':focus-visible'), ostyle: cs.outlineStyle,
+          ow: cs.outlineWidth, ocolor: cs.outlineColor};
+}
+"""
+
+UA_FOCUS_BLUE = {"rgb(0, 95, 204)", "rgb(22, 119, 255)", "rgb(16, 113, 232)"}
+BRAND_RING = "rgb(107, 91, 214)"
+
+
+def _focus_state(page):
+    return page.evaluate(FOCUS_STATE_PROBE)
+
+
+def _tab_until(page, wanted_aria: str, limit: int = 25) -> dict | None:
+    for _ in range(limit):
+        state = _focus_state(page)
+        if state and state.get("aria") == wanted_aria:
+            return state
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(40)
+    return _focus_state(page)
+
+
+def assert_focus_normalization(base_url: str, page):
+    """Class invariant: the browser's thick blue UA focus outline is forbidden.
+
+    Pointer interaction leaves no ring; keyboard focus shows exactly one 2px
+    brand ring on plain controls; antd composites keep their token ring;
+    composite text fields show one parent boundary ring.
+    """
+    tag = "[focus]"
+    page.set_viewport_size({"width": 1280, "height": 860})
+    page.goto(base_url, wait_until="networkidle")
+    page.wait_for_timeout(400)
+
+    # Keyboard: first rail target through the bell must carry the brand ring.
+    bell = _tab_until(page, "通知")
+    check(f"{tag} keyboard reaches bell via tab", bell is not None and bell["aria"] == "通知",
+          json.dumps(bell, ensure_ascii=False))
+    check(f"{tag} keyboard focus shows 2px brand ring (no UA blue)",
+          bool(bell and bell["fv"] and bell["ostyle"] == "solid"
+               and int(float(bell["ow"].replace('px',''))) == 2 and bell["ocolor"] == BRAND_RING),
+          json.dumps(bell, ensure_ascii=False))
+
+    # Pointer: clicking the bell leaves no ring and no :focus-visible state.
+    page.get_by_role("button", name="通知", exact=True).click()
+    page.wait_for_timeout(200)
+    bell_after = _focus_state(page)
+    check(f"{tag} pointer click leaves no focus ring",
+          bool(bell_after is None
+               or (bell_after.get("aria") == "通知"
+                   and not bell_after["fv"] and bell_after["ostyle"] == "none")),
+          json.dumps(bell_after, ensure_ascii=False))
+
+    # Full keyboard traversal: no UA 'auto' outline and no UA blue anywhere.
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(150)
+    blue_stops: list[dict] = []
+    auto_stops: list[dict] = []
+    visited: set[str] = set()
+    for _ in range(70):
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(30)
+        state = _focus_state(page)
+        if not state:
+            break
+        key = state["tag"] + "|" + state["cls"] + "|" + str(state["aria"])
+        if key in visited:
+            break
+        visited.add(key)
+        if state["fv"] and state["ocolor"] in UA_FOCUS_BLUE:
+            blue_stops.append(state)
+        if state["fv"] and state["ostyle"] == "auto":
+            auto_stops.append(state)
+    check(f"{tag} no UA blue focus color across tab order", not blue_stops,
+          json.dumps(blue_stops[:5], ensure_ascii=False))
+    check(f"{tag} no UA auto focus outline across tab order", not auto_stops,
+          json.dumps(auto_stops[:5], ensure_ascii=False))
+
+    # Notifications viewer: plain reject button gets brand ring; antd close
+    # keeps its token ring, neither is UA blue.
+    page.get_by_role("button", name="通知", exact=True).click()
+    page.wait_for_timeout(200)
+    page.get_by_role("button", name="More notifications", exact=True).click()
+    page.wait_for_timeout(400)
+    page.keyboard.press("Shift+Tab")  # search -> close
+    page.wait_for_timeout(100)
+    close_state = _focus_state(page)
+    check(f"{tag} antd modal close focus is not UA blue",
+          bool(close_state and close_state["fv"]
+               and close_state["ostyle"] in ("solid", "none")
+               and close_state["ocolor"] not in UA_FOCUS_BLUE),
+          json.dumps(close_state, ensure_ascii=False))
+    # Forward through the trap: search -> mark-all -> row actions lands on the
+    # first reject button.
+    reject_state = _tab_until(page, "Reject Sarah Kim", limit=20)
+    check(f"{tag} reject action keyboard ring is 2px brand",
+          bool(reject_state and reject_state["fv"] and reject_state["ostyle"] == "solid"
+               and int(float(reject_state["ow"].replace('px', ''))) == 2
+               and reject_state["ocolor"] == BRAND_RING),
+          json.dumps(reject_state, ensure_ascii=False))
+
+    # Negative control: a UA-blue override must be detected, then removal
+    # must restore the brand ring — the gate cannot pass a native blue ring.
+    neg_style = page.add_style_tag(
+        content="button:focus-visible{outline:1px solid rgb(0,95,204)!important}")
+    page.wait_for_timeout(100)
+    neg_state = _focus_state(page)
+    check(f"{tag} negative control detects UA-blue regression",
+          bool(neg_state and neg_state["ocolor"] in UA_FOCUS_BLUE),
+          json.dumps(neg_state, ensure_ascii=False))
+    neg_style.evaluate("el=>el.remove()")
+    page.wait_for_timeout(100)
+    restored = _focus_state(page)
+    check(f"{tag} brand ring restored after removing bad override",
+          bool(restored and restored["ostyle"] == "solid" and restored["ocolor"] == BRAND_RING),
+          json.dumps(restored, ensure_ascii=False))
+
+    # Composite search field: one parent boundary ring, child has no outline.
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(200)
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(200)
+    boundary = page.evaluate(r"""() => {
+      const input = document.querySelector('[data-chat-session-search]');
+      if (!input) return null;
+      const box = input.closest('[data-focus-boundary]');
+      if (!box) return {present:false};
+      input.focus();
+      const bs = getComputedStyle(box);
+      const is = getComputedStyle(input);
+      return {present:true, childOutline:is.outlineStyle,
+              boundaryShadow:bs.boxShadow,
+              shadowBrand:bs.boxShadow.includes('107, 91, 214')};
+    }""")
+    check(f"{tag} session search declares one focus boundary",
+          bool(boundary and boundary.get("present")), json.dumps(boundary, ensure_ascii=False))
+    check(f"{tag} composite child shows no own outline",
+          bool(boundary and boundary.get("childOutline") == "none"),
+          json.dumps(boundary, ensure_ascii=False))
+    check(f"{tag} focus boundary carries brand ring",
+          bool(boundary and boundary.get("shadowBrand")),
+          json.dumps(boundary, ensure_ascii=False))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-url", default="http://localhost:3107")
@@ -1143,6 +1300,7 @@ def main():
         assert_contacts_entity_controls(args.base_url, page, collected)
         assert_notifications(args.base_url, page, shot_dir, collected)
         assert_cross_surface_entities(collected)
+        assert_focus_normalization(args.base_url, page)
         assert_settings(args.base_url, page, shot_dir)
         assert_technical_identity(args.base_url, page, shot_dir)
 

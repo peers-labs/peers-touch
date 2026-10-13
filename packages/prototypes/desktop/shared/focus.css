@@ -1,0 +1,55 @@
+/*
+ * Canonical focus normalization for desktop prototypes.
+ *
+ * Contract (docs/client/common/ui-identity/accessibility.md §3):
+ * - The browser's thick blue UA focus outline is forbidden everywhere
+ *   (see docs/knowledge/pitfalls/desktop-installed-runtime-drift.md).
+ * - Pointer / touch interaction never leaves a focus ring on the clicked
+ *   control after release (:focus without :focus-visible).
+ * - Keyboard navigation always shows exactly one 2px brand ring that
+ *   follows the control radius; focus ownership stays on the semantic
+ *   element, never on an inner decorative node.
+ * - antd composites already render a token-based box-shadow ring, so they
+ *   opt out of this outline to avoid a double indicator.
+ * - Composite text fields that own one parent focus boundary (composer
+ *   dock, search fields marked data-focus-boundary) show the parent ring
+ *   instead of an outline on the inner input.
+ *
+ * Import once at every desktop prototype entry point.
+ */
+
+:root {
+  --pt-focus-ring: #6b5bd6;
+}
+
+:focus {
+  outline: none;
+}
+
+button:focus-visible,
+[role='button']:focus-visible,
+a[href]:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--pt-focus-ring);
+  outline-offset: 2px;
+}
+
+/* antd owns keyboard focus through primary-tinted box-shadow tokens. */
+[class^='ant-']:focus-visible,
+[class*=' ant-']:focus-visible {
+  outline: none;
+}
+
+/* One semantic field = one parent focus boundary, never a ring per child. */
+[data-focus-boundary]:focus-within {
+  box-shadow: 0 0 0 2px rgba(107, 91, 214, 0.35);
+}
+
+[data-focus-boundary] :focus-visible,
+[data-chat-composer-field] textarea:focus-visible {
+  outline: none;
+}
