@@ -76,7 +76,6 @@ Node Connectivity 提供无业务 authority 的共享传输能力，但不属于
 | [module-layout.md](./module-layout.md) | Federation 业务 owner、contract 和 transport port |
 | [wire-protocol.md](./wire-protocol.md) | Wire Protocol：hash/签名规范、RPC 定义、payload schema、sync 协议 |
 | [integration.md](./integration.md) | 与 Station、Catalog、Resolver、ActivityPub、Client projection 的映射 |
-| [network-settings-backend-gaps.md](./network-settings-backend-gaps.md) | Network 设置后端差距（已并入 Desktop 合集登记册，本文件为指针） |
 | [execution-plans/phase-1-federation-ledger.md](./execution-plans/phase-1-federation-ledger.md) | Federation Ledger 最小闭环落地计划 |
 | [Node Connectivity](../../platform/runtime/node-connectivity/README.md) | 当前 Relay/route/transport 真源 |
 | [Historical Federated IM](../../../context/architecture/chat/federated-im/README.md) | 已 supersede 的跨 Station 群/私聊、group authority 与事件日志设计 |
