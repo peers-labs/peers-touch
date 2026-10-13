@@ -62,16 +62,19 @@ fn to_json(account: &auth_identity::AccountIdentity) -> serde_json::Value {
 }
 
 pub fn account_list() -> AppResult<StubPayload> {
-    let mut state = try_cmd!(auth_identity::read_state().map_err(internal_error));
+    let state = try_cmd!(auth_identity::read_state().map_err(internal_error));
     session_vault::purge_raw_sessions_for_pin_accounts(&state.accounts);
-    state
-        .accounts
-        .sort_by(|a, b| b.last_login_at.cmp(&a.last_login_at));
+    let mut accounts = auth_identity::canonical_accounts(&state.accounts);
+    accounts.sort_by(|a, b| b.last_login_at.cmp(&a.last_login_at));
+    let active_account_id = state
+        .active_account_id
+        .as_deref()
+        .and_then(|id| auth_identity::canonical_account_id(&state.accounts, id));
     success_payload(
         "account_list",
         json!({
-            "accounts": state.accounts.iter().map(to_json).collect::<Vec<_>>(),
-            "active_account_id": state.active_account_id,
+            "accounts": accounts.iter().map(to_json).collect::<Vec<_>>(),
+            "active_account_id": active_account_id,
         }),
     )
 }
@@ -79,10 +82,12 @@ pub fn account_list() -> AppResult<StubPayload> {
 pub fn account_get_active() -> AppResult<StubPayload> {
     let state = try_cmd!(auth_identity::read_state().map_err(internal_error));
     session_vault::purge_raw_sessions_for_pin_accounts(&state.accounts);
-    let active = match state.active_account_id {
-        Some(active_id) => state.accounts.into_iter().find(|item| item.id == active_id),
-        None => None,
-    };
+    let accounts = auth_identity::canonical_accounts(&state.accounts);
+    let active = state
+        .active_account_id
+        .as_deref()
+        .and_then(|id| auth_identity::canonical_account_id(&state.accounts, id))
+        .and_then(|canonical_id| accounts.into_iter().find(|item| item.id == canonical_id));
     success_payload(
         "account_get_active",
         json!({
@@ -96,10 +101,11 @@ pub fn account_switch(input: AccountIdInput) -> AppResult<StubPayload> {
         return invalid_argument("id is required");
     }
     let mut state = try_cmd!(auth_identity::read_state().map_err(internal_error));
-    if !state.accounts.iter().any(|item| item.id == input.id) {
-        return AppResult::fail(ErrorCode::NotFound, "Account not found", None);
-    }
-    state.active_account_id = Some(input.id);
+    let canonical_id = match auth_identity::canonical_account_id(&state.accounts, input.id.trim()) {
+        Some(id) => id,
+        None => return AppResult::fail(ErrorCode::NotFound, "Account not found", None),
+    };
+    state.active_account_id = Some(canonical_id);
     try_cmd!(auth_identity::write_state(&state).map_err(internal_error));
     success_payload("account_switch", json!({ "ok": true }))
 }
@@ -270,9 +276,12 @@ pub fn account_relink_pin(
 /// List accounts that have restorable sessions (for the login account picker).
 pub fn account_list_restorable() -> AppResult<StubPayload> {
     let state = try_cmd!(auth_identity::read_state().map_err(internal_error));
-    let active_account_id = state.active_account_id.clone();
-    let mut accounts = state.accounts;
-    session_vault::purge_raw_sessions_for_pin_accounts(&accounts);
+    let active_account_id = state
+        .active_account_id
+        .as_deref()
+        .and_then(|id| auth_identity::canonical_account_id(&state.accounts, id));
+    session_vault::purge_raw_sessions_for_pin_accounts(&state.accounts);
+    let mut accounts = auth_identity::canonical_accounts(&state.accounts);
     accounts.sort_by(|a, b| {
         let a_active = active_account_id.as_deref() == Some(a.id.as_str());
         let b_active = active_account_id.as_deref() == Some(b.id.as_str());

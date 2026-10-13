@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from 'react';
 import {
-  Avatar,
   Button,
   Empty,
   Input,
@@ -26,8 +25,9 @@ import {
 } from 'lucide-react';
 
 import type { SettingEntry } from '../types';
-import { GRADIENTS } from '../types';
+import { demoAvatarUrls } from '../data';
 import copy from '../../../../../locales/en/common.json';
+import { IdentityAvatar } from './IdentityAvatar';
 
 const { Text } = Typography;
 
@@ -77,7 +77,12 @@ export function SettingDetailView({
         return (
           <SettingCard icon={<User size={16} />} title={copy['mobile.settings.section.profile']}>
             <div className="mp-setting-profile-summary">
-              <Avatar size={56} style={{ background: GRADIENTS[0], borderRadius: 16 }}>AC</Avatar>
+              <IdentityAvatar
+                name="Alice Chen"
+                initials="AC"
+                src={demoAvatarUrls.alice}
+                size={56}
+              />
               <span>
                 <Text strong>Alice Chen</Text>
                 <Text type="secondary">@alice@product.peers</Text>
@@ -225,7 +230,7 @@ export function SettingDetailView({
               />
             ) : blockedUsers.map((user) => (
               <div className="mp-setting-detail-row mp-blocked-user-row" key={user.handle}>
-                <Avatar size={40} style={{ background: GRADIENTS[1] }}>{user.initials}</Avatar>
+                <IdentityAvatar name={user.name} initials={user.initials} size={40} />
                 <div className="mp-blocked-user-copy">
                   <div className="mp-setting-detail-label">{user.name}</div>
                   <div className="mp-setting-detail-value">{user.handle}</div>

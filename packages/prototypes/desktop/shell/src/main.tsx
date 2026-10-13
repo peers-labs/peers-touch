@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ThemeProvider } from '@lobehub/ui';
 import { DesktopShell } from './Shell';
+import '../../shared/focus.css';
 
 const antdTheme = {
   token: {
@@ -23,7 +24,7 @@ createRoot(document.getElementById('root')!).render(
       theme={antdTheme}
       style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column' }}
     >
-      <DesktopShell initialPage="agent" />
+      <DesktopShell />
     </ThemeProvider>
   </StrictMode>,
 );

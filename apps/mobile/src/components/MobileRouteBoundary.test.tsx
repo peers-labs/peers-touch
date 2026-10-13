@@ -11,11 +11,14 @@ import { setMomentsSurfaceFixture } from '../acceptance/momentsSurfaceFixture';
 
 const lifecycle = vi.hoisted(() => ({
   launchState: 'shell' as MobileLaunchState,
+  phase: 'ACTIVE' as const,
   runtimes: new Map<string, RuntimeEntry>(),
 }));
+const restartRuntimeGraph = vi.hoisted(() => vi.fn());
 
 vi.mock('../app/lifecycle', async () => ({
   ...await import('../app/lifecycle/runtimeAvailability'),
+  getMobileLifecycleKernel: () => ({ restartRuntimeGraph }),
   useLifecycleKernel: () => lifecycle,
 }));
 vi.mock('../app/mobileI18n', () => ({
@@ -74,7 +77,10 @@ describe('Mobile route owner readiness', () => {
     const html = render('failed');
     expect(html).toContain('mobile-route-unavailable');
     expect(html).toContain('mobile.tab.chat');
-    expect(html).toContain('mobile.launch.unavailable');
+    expect(html).toContain('mobile.route.unavailableTitle');
+    expect(html).toContain('mobile.route.unavailableBody');
+    expect(html).toContain('mobile-route-retry');
+    expect(html).toContain('data-route-state="unavailable"');
     expect(html).not.toContain('domain-content');
     expect(html).not.toContain('aria-busy="true"');
   });
@@ -93,6 +99,10 @@ describe('Mobile route owner readiness', () => {
   it('shows preparation without mounting domain content', () => {
     const html = render('bootstrapping');
     expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('mobile.route.preparingTitle');
+    expect(html).toContain('mobile.route.preparingBody');
+    expect(html).toContain('data-route-state="preparing"');
+    expect(html).not.toContain('mobile-route-retry');
     expect(html).not.toContain('domain-content');
   });
 
@@ -121,6 +131,8 @@ describe('Mobile route owner readiness', () => {
   it('fails closed for an absent runtime or unknown route', () => {
     expect(render(null)).not.toContain('domain-content');
     expect(render('ready', 'tab:unknown')).not.toContain('domain-content');
+    expect(render(null)).not.toContain('mobile-route-retry');
+    expect(render('ready', 'tab:unknown')).not.toContain('mobile-route-retry');
   });
 
   it.each(['pending', 'failed'] as const)(

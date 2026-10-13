@@ -74,9 +74,6 @@ export function CommandRecoveryPanel({
         </span>
         <ul className="recovery-command__items">
           {state.commands.map((command) => {
-            const relationship = command.envelope.payload.case === 'socialRelationship'
-              ? command.envelope.payload.value
-              : null;
             return (
               <li
                 key={command.commandId}
@@ -86,7 +83,7 @@ export function CommandRecoveryPanel({
               >
                 <strong>
                   {t(
-                    relationship
+                    command.envelope.payload.case === 'socialRelationship'
                       ? 'mobile.recovery.command.relationship'
                       : 'mobile.recovery.command.friendRequest',
                   )}

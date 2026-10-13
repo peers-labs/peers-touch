@@ -6,7 +6,7 @@
  * This component does not own persistence or retry logic.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   discardReliabilityDrafts,
@@ -41,6 +41,10 @@ export function DraftRestoreOverlay({
   const primaryActionRef = useRef<HTMLButtonElement>(null);
   const [pendingAction, setPendingAction] = useState<'restore' | 'discard' | null>(null);
   const [actionFailed, setActionFailed] = useState(forceActionFailed);
+  const draftCounts = useMemo(() => ({
+    chat: state.drafts.filter((draft) => draft.kind === 'chat').length,
+    moments: state.drafts.filter((draft) => draft.kind === 'moments').length,
+  }), [state.drafts]);
 
   useEffect(() => {
     primaryActionRef.current?.focus();
@@ -84,17 +88,20 @@ export function DraftRestoreOverlay({
           {t('mobile.recovery.draftRestore.body', { count: state.drafts.length })}
         </p>
         <ul className="recovery-draft-list" role="list">
-          {state.drafts.map((draft) => (
-            <li key={draft.key} className="recovery-draft-list__item">
-              <span className="recovery-draft-list__kind">
-                {t(
-                  draft.kind === 'chat'
-                    ? 'mobile.recovery.draftRestore.chatDraft'
-                    : 'mobile.recovery.draftRestore.momentDraft',
-                )}
-              </span>
+          {draftCounts.chat > 0 ? (
+            <li className="recovery-draft-list__item">
+              {t('mobile.recovery.draftRestore.chatCount', {
+                count: draftCounts.chat,
+              })}
             </li>
-          ))}
+          ) : null}
+          {draftCounts.moments > 0 ? (
+            <li className="recovery-draft-list__item">
+              {t('mobile.recovery.draftRestore.momentsCount', {
+                count: draftCounts.moments,
+              })}
+            </li>
+          ) : null}
         </ul>
         <div className="recovery-overlay__actions">
           <button

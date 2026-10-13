@@ -1,4 +1,5 @@
-> **Status**: draft
+> **Status**: accepted direction source; normative rules live in `README.md`,
+> `foundations.md`, and `craft-quality.md`
 > **Version**: v1.0
 > **Created**: 2026-06-24 | **Updated**: 2026-06-24
 > **Owner**: Client Design / Client Engineering

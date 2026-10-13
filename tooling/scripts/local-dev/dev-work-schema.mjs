@@ -40,7 +40,7 @@ export const DECLARATION_STATES = new Set([
   'STALE',
 ]);
 
-const DECLARATION_BASE_KEYS = [
+const LEGACY_DECLARATION_KEYS = new Set([
   'declarationId',
   'workItemId',
   'sessionId',
@@ -57,19 +57,24 @@ const DECLARATION_BASE_KEYS = [
   'sourceClaims',
   'runtimeClaims',
   'declarationDigest',
+]);
+const PRIOR_PLAN_DECLARATION_KEYS = new Set([
+  ...LEGACY_DECLARATION_KEYS,
   'planPath',
   'planId',
+  'taskId',
+]);
+const DECLARATION_KEYS = new Set([
+  ...PRIOR_PLAN_DECLARATION_KEYS,
+  'planDigest',
   'mountId',
   'runId',
-  'taskId',
-];
-const DECLARATION_KEYS = new Set([
-  ...DECLARATION_BASE_KEYS,
-  'planDigest',
 ]);
-const LEGACY_DECLARATION_KEYS = new Set([
-  ...DECLARATION_BASE_KEYS,
+const LEGACY_VERSION_DECLARATION_KEYS = new Set([
+  ...PRIOR_PLAN_DECLARATION_KEYS,
   'planVersionDigest',
+  'mountId',
+  'runId',
 ]);
 const DECLARATION_OPTIONAL_KEYS = new Set(['workflowOwner']);
 const SOURCE_CLAIM_KEYS = new Set(['pathPrefix', 'mode']);
@@ -371,45 +376,73 @@ function validIsoTimestamp(value) {
 }
 
 export function declarationPlanSchema(declaration) {
-  const stable =
-    isObject(declaration) && Object.hasOwn(declaration, 'planDigest');
-  const legacy =
-    isObject(declaration) &&
-    Object.hasOwn(declaration, 'planVersionDigest');
-  if (stable === legacy) {
-    fail(
-      'MACHINE_WORK_LEDGER_INVALID',
-      'declaration must contain exactly one Plan digest field',
-    );
+  if (!isObject(declaration)) {
+    fail('MACHINE_WORK_LEDGER_INVALID', 'declaration fields are invalid');
   }
-  return legacy ? 'legacy' : 'stable';
+  if (Object.hasOwn(declaration, 'planVersionDigest')) return 'legacy';
+  if (Object.hasOwn(declaration, 'planDigest')) return 'stable';
+  if (Object.hasOwn(declaration, 'planPath')) return 'prior-plan';
+  return 'pre-plan';
 }
 
 export function validateCoordinationDeclaration(declaration) {
   const schema = declarationPlanSchema(declaration);
+  if (schema === 'stable') {
+    return validateDeclarationShape(
+      declaration,
+      DECLARATION_KEYS,
+      ['planPath', 'planId', 'planDigest', 'mountId', 'runId', 'taskId'],
+      'planDigest',
+    );
+  }
+  if (schema === 'legacy') {
+    return validateDeclarationShape(
+      declaration,
+      LEGACY_VERSION_DECLARATION_KEYS,
+      ['planPath', 'planId', 'planVersionDigest', 'mountId', 'runId', 'taskId'],
+      'planVersionDigest',
+    );
+  }
+  if (schema === 'prior-plan') {
+    return validateDeclarationShape(
+      declaration,
+      PRIOR_PLAN_DECLARATION_KEYS,
+      ['planPath', 'planId', 'taskId'],
+      null,
+    );
+  }
   return validateDeclarationShape(
     declaration,
-    schema === 'legacy' ? 'planVersionDigest' : 'planDigest',
-    schema === 'legacy' ? LEGACY_DECLARATION_KEYS : DECLARATION_KEYS,
+    LEGACY_DECLARATION_KEYS,
+    [],
+    null,
   );
 }
 
 export function validateDeclaration(declaration) {
-  if (declarationPlanSchema(declaration) === 'legacy') {
+  if (declarationPlanSchema(declaration) !== 'stable') {
     fail(
       'PLAN_STATE_MIGRATION_REQUIRED',
-      'the current workspace declaration uses the retired Plan Version schema; close its live work and run plan-state-migrate',
+      'the current workspace declaration uses a retired schema; close its live work and run plan-state-migrate',
     );
   }
-  return validateDeclarationShape(declaration, 'planDigest', DECLARATION_KEYS);
+  return validateDeclarationShape(
+    declaration,
+    DECLARATION_KEYS,
+    ['planPath', 'planId', 'planDigest', 'mountId', 'runId', 'taskId'],
+    'planDigest',
+  );
 }
 
-function validateDeclarationShape(declaration, planDigestField, keys) {
+function validateDeclarationShape(
+  declaration,
+  keys,
+  locatorFields,
+  planDigestField,
+) {
   if (
     !isObject(declaration) ||
-    [...keys].some(
-      (key) => !Object.hasOwn(declaration, key),
-    ) ||
+    [...keys].some((key) => !Object.hasOwn(declaration, key)) ||
     Object.keys(declaration).some(
       (key) =>
         !keys.has(key) &&
@@ -451,51 +484,50 @@ function validateDeclarationShape(declaration, planDigestField, keys) {
       fail('MACHINE_WORK_LEDGER_INVALID', `${field} is not canonical`);
     }
   }
-  const locatorFields = [
-    'planPath',
-    'planId',
-    planDigestField,
-    'mountId',
-    'runId',
-    'taskId',
-  ];
-  const locatorValues = locatorFields.map((field) => declaration[field]);
-  const allNull = locatorValues.every((value) => value === null);
-  const allPresent = locatorValues.every(
-    (value) => typeof value === 'string' && value.length > 0,
-  );
-  if (!allNull && !allPresent) {
-    fail(
-      'MACHINE_WORK_LEDGER_INVALID',
-      'Plan locator fields must be all null or all present',
+  if (locatorFields.length > 0) {
+    const locatorValues = locatorFields.map((field) => declaration[field]);
+    const allNull = locatorValues.every((value) => value === null);
+    const allPresent = locatorValues.every(
+      (value) => typeof value === 'string' && value.length > 0,
     );
-  }
-  if (allPresent) {
-    let normalizedPath;
-    try {
-      normalizedPath = normalizePlanPath(declaration.planPath);
-    } catch {
-      fail('MACHINE_WORK_LEDGER_INVALID', 'planPath is invalid');
-    }
-    if (normalizedPath !== declaration.planPath) {
-      fail('MACHINE_WORK_LEDGER_INVALID', 'planPath is not canonical');
-    }
-    for (const field of ['planId', 'mountId', 'runId', 'taskId']) {
-      let normalized;
-      try {
-        normalized = requiredIdentifier(declaration[field], field);
-      } catch {
-        fail('MACHINE_WORK_LEDGER_INVALID', `${field} is invalid`);
-      }
-      if (normalized !== declaration[field]) {
-        fail('MACHINE_WORK_LEDGER_INVALID', `${field} is not canonical`);
-      }
-    }
-    if (!/^[0-9a-f]{64}$/.test(declaration[planDigestField])) {
+    if (!allNull && !allPresent) {
       fail(
         'MACHINE_WORK_LEDGER_INVALID',
-        `${planDigestField} is invalid`,
+        'Plan locator fields must be all null or all present',
       );
+    }
+    if (allPresent) {
+      let normalizedPath;
+      try {
+        normalizedPath = normalizePlanPath(declaration.planPath);
+      } catch {
+        fail('MACHINE_WORK_LEDGER_INVALID', 'planPath is invalid');
+      }
+      if (normalizedPath !== declaration.planPath) {
+        fail('MACHINE_WORK_LEDGER_INVALID', 'planPath is not canonical');
+      }
+      for (const field of locatorFields.filter(
+        (field) => !['planPath', planDigestField].includes(field),
+      )) {
+        let normalized;
+        try {
+          normalized = requiredIdentifier(declaration[field], field);
+        } catch {
+          fail('MACHINE_WORK_LEDGER_INVALID', `${field} is invalid`);
+        }
+        if (normalized !== declaration[field]) {
+          fail('MACHINE_WORK_LEDGER_INVALID', `${field} is not canonical`);
+        }
+      }
+      if (
+        planDigestField !== null &&
+        !/^[0-9a-f]{64}$/.test(declaration[planDigestField])
+      ) {
+        fail(
+          'MACHINE_WORK_LEDGER_INVALID',
+          `${planDigestField} is invalid`,
+        );
+      }
     }
   }
   if (!/^[0-9a-f]{16}$/.test(declaration.workspaceId)) {

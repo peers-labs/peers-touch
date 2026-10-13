@@ -33,6 +33,29 @@ Rules:
 - A blank side gutter wider than the active content gap is a layout defect unless owned by a split-pane or rail contract.
 - Detail pages should preserve relationship to the list surface; do not create a detached mini-page inside the same rail.
 
+### 3.1 Symmetry And Repeated Row Tracks
+
+- Same-purpose opposed insets are equal. Centered subjects and controls sit
+  on the declared center axis; side-anchored surfaces inherit their source
+  edge. Deliberate asymmetry requires a named content or platform reason.
+- A repeated list owns the tracks for avatar, primary content, metadata and
+  actions. Corresponding slots share start/end/center axes across all rows;
+  metadata width and action count must not independently resize each row.
+- Single and multiple actions occupy the same reserved action track. Absent
+  actions leave an empty structural slot without adding fake or disabled
+  controls. Resolve the widest allowed action form before row rendering so
+  a decision or refresh cannot move the reading axes.
+- Within a row, vertically centered slots share its center; metadata may
+  instead follow a declared title baseline. Multiline content must preserve
+  that chosen rule and balanced block padding.
+- Metadata uses readable intrinsic or bounded shared tracks. Narrow layouts
+  may move metadata to a secondary line when the contract declares the
+  change; they must not compress primary text into one-character columns.
+- Verification compares corresponding axes and opposed spacing within
+  1 CSS pixel across wide/narrow, mixed action sets, multiline content,
+  metadata expansion and state transitions. Also inspect real screenshots
+  for optical balance; do not encode literal screenshot coordinates.
+
 ## 4. Header And CTA
 
 Page header layout must make title, navigation, and CTA feel like one system.

@@ -425,6 +425,8 @@ try {
     await capture('auth-expired-email');
     await open('social-unavailable');
     const initial = await device.boundingBox();
+    assert.equal(await device.locator('[data-demo-recovery-owner="lifecycle"]').count(), 1);
+    assert.equal(await device.locator('.mp-runtime-notice').count(), 0);
     await capture('unavailable');
     await device.getByRole('button', { name: 'Me', exact: true }).click();
     const me = await device.boundingBox();
@@ -438,6 +440,14 @@ try {
       .getByRole('button', { name: 'Retry fails', exact: true })
       .click();
     await capture('retry-failed');
+
+    await open('social-detail-unavailable');
+    assert(await device.getByRole('heading', { name: 'Conversation', exact: true }).isVisible());
+    assert(await device.getByText('Conversation unavailable', { exact: true }).isVisible());
+    assert(await device.getByRole('button', { name: 'Back', exact: true }).isVisible());
+    assert.equal(await device.locator('[data-demo-recovery-owner="lifecycle"]').count(), 1);
+    assert.equal(await device.locator('.mp-runtime-notice').count(), 0);
+    await capture('conversation-unavailable');
 
     await open('find-people-no-membership');
     const noMembership = page.getByRole('dialog', {

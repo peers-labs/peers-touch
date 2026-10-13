@@ -402,6 +402,52 @@ test('a Plan-bound workspace cannot publish untracked work', () => {
   }
 });
 
+test('reads prior declaration shapes while emitting only the current schema', () => {
+  const scope = fixture();
+  try {
+    const created = startOrUpdateDeclaration(options(scope));
+    const ledgerFile = path.join(scope.home, '.peers-touch', 'dev', 'work.json');
+    const ledger = JSON.parse(readFileSync(ledgerFile, 'utf8'));
+    const priorPlan = ledger.declarations[created.declarationId];
+    for (const field of ['planDigest', 'mountId', 'runId', 'workflowOwner']) {
+      delete priorPlan[field];
+    }
+    priorPlan.declarationDigest = digestDeclaration(priorPlan);
+    writeFileSync(ledgerFile, `${JSON.stringify(ledger)}\n`);
+
+    assert.equal(
+      statusAll({ home: scope.home, clock: clock() }).declarations.length,
+      1,
+    );
+
+    for (const field of ['planPath', 'planId', 'taskId']) {
+      delete priorPlan[field];
+    }
+    priorPlan.declarationDigest = digestDeclaration(priorPlan);
+    writeFileSync(ledgerFile, `${JSON.stringify(ledger)}\n`);
+
+    assert.equal(
+      statusAll({ home: scope.home, clock: clock() }).declarations.length,
+      1,
+    );
+
+    const current = startOrUpdateDeclaration(
+      options(scope, {
+        workspaceRoot: scope.workspaceB,
+        workItemId: 'current-shape',
+        sessionId: 'session-b',
+        branch: 'independent-branch',
+      }),
+    );
+    for (const field of ['planDigest', 'mountId', 'runId']) {
+      assert.equal(Object.hasOwn(current, field), true);
+    }
+    assert.deepEqual(current.workflowOwner, workflowOwner());
+  } finally {
+    scope.close();
+  }
+});
+
 test('accepts project runtime intent without granting physical leases', () => {
   assert.deepEqual(
     parseRuntimeClaims(

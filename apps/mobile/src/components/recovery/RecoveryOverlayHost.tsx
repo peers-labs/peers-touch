@@ -1,10 +1,9 @@
 /**
  * RecoveryOverlayHost — W6D root component for recovery overlays.
  *
- * Subscribes to the RecoveryProjection and renders the appropriate
- * overlay components based on active recovery states. Each overlay
- * dispatches actions to the owning runtime — no overlay creates
- * a second retry, persistence, or lifecycle owner.
+ * Subscribes to the RecoveryProjection and renders app-level recovery
+ * surfaces. Route-owned runtime failures and background reconciliation remain
+ * local instead of stacking global notices.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -16,6 +15,7 @@ import {
   type MobileLaunchState,
 } from '../../app/lifecycle';
 import { useMobileI18n } from '../../app/mobileI18n';
+import { useMobileNavigationStore } from '../../app/navigation';
 import { useChatSurfaceFixture } from '../../acceptance/chatSurfaceFixture';
 import { useContactsSurfaceFixture } from '../../acceptance/contactsSurfaceFixture';
 import { useMomentsSurfaceFixture } from '../../acceptance/momentsSurfaceFixture';
@@ -52,8 +52,6 @@ import {
 import { ReliabilityResetRecoveryOverlay } from './ReliabilityResetRecoveryOverlay';
 import { CapacityWarning } from './CapacityWarning';
 import { SessionMismatchOverlay } from './SessionMismatchOverlay';
-import { OverflowReconcileBar } from './OverflowReconcileBar';
-import { DeferredCapabilityNotice } from './DeferredCapabilityNotice';
 import { DeviceLocalBar } from './DeviceLocalBar';
 import { WriteRevocationNotice } from './WriteRevocationNotice';
 import { SessionRestoreNotice } from './SessionRestoreNotice';
@@ -71,22 +69,28 @@ interface RecoveryOverlayHostProps {
 export function visibleRecoveryStates(
   states: readonly RecoveryState[],
   launchState: MobileLaunchState,
-  domainFixtureActive = false,
+  _domainFixtureActive = false,
 ): readonly RecoveryState[] {
   const actorIdentityRecovery = states.find(
     (state) => state.kind === 'actor-identity-recovery',
   );
   if (actorIdentityRecovery) return [actorIdentityRecovery];
-  return states.filter((state) => {
-    if (domainFixtureActive && state.kind === 'deferred-capability') {
-      return false;
-    }
-    return !(
-      launchState === 'access-gate-chain'
-      && state.kind === 'device-local-flag'
-      && state.reason === 'session-expired'
-    );
-  });
+  const appLevelStates = states.filter((state) => !(
+    state.kind === 'event-overflow-reconcile'
+    || state.kind === 'deferred-capability'
+    || (
+      state.kind === 'write-revocation'
+      && !state.admission.open
+      && state.admission.reason === 'runtime_suspended'
+    )
+  ));
+  const eligibleStates = launchState !== 'access-gate-chain'
+    ? appLevelStates
+    : appLevelStates.filter((state) => !(
+        state.kind === 'device-local-flag'
+        && state.reason === 'session-expired'
+      ));
+  return eligibleStates;
 }
 
 export function bindDeferredCapabilityProjection(
@@ -116,6 +120,9 @@ export function RecoveryOverlayHost({
     || contactsFixture.surfaceId
     || momentsFixture.surfaceId
     || settingsFixture.surfaceId,
+  );
+  const tabBarVisible = useMobileNavigationStore(
+    (state) => state.detailStack.length === 0,
   );
   const recoveryRuntimeStatus =
     lifecycle.runtimes.get('recovery-projection')?.status;
@@ -183,14 +190,6 @@ export function RecoveryOverlayHost({
     },
     [],
   );
-
-  const retryDeferredCapabilities = useCallback(async () => {
-    const kernel = getMobileLifecycleKernel();
-    if (kernel.getPhase() !== 'ACTIVE') {
-      throw new Error('mobile.recovery.actionFailed');
-    }
-    await kernel.restartRuntimeGraph('app-resume');
-  }, []);
 
   const recoverActorIdentity = useCallback(async () => {
     await recoverActiveMessagingIdentity();
@@ -262,19 +261,6 @@ export function RecoveryOverlayHost({
               onSwitchStation={onSwitchStation}
             />
           );
-        case 'event-overflow-reconcile':
-          return <OverflowReconcileBar key={key} state={state} t={t} />;
-        case 'deferred-capability':
-          return (
-            <DeferredCapabilityNotice
-              key={key}
-              state={state}
-              t={t}
-              canRetry={lifecycle.phase === 'ACTIVE'}
-              compact={lifecycle.launchState === 'shell' || lifecycle.launchState === 'resume'}
-              onRetry={retryDeferredCapabilities}
-            />
-          );
         case 'device-local-flag':
           return (
             <DeviceLocalBar
@@ -296,13 +282,11 @@ export function RecoveryOverlayHost({
       handleCommandRecoveryAction,
       fixture.revision,
       fixture.surfaceId,
-      lifecycle.phase,
       onReAuthenticate,
       onRetryDeviceLocal,
       onSwitchStation,
       retryInterruptedReliabilityReset,
       recoverActorIdentity,
-      retryDeferredCapabilities,
       t,
     ],
   );
@@ -312,6 +296,7 @@ export function RecoveryOverlayHost({
       <div
         className="recovery-overlay-host"
         data-launch-state={lifecycle.launchState}
+        data-tabbar-visible={tabBarVisible}
       >
         <SessionRestoreNotice
           t={t}
@@ -335,6 +320,7 @@ export function RecoveryOverlayHost({
     <div
       className="recovery-overlay-host"
       data-launch-state={lifecycle.launchState}
+      data-tabbar-visible={tabBarVisible}
     >
       {visibleStates.map(renderState)}
     </div>
