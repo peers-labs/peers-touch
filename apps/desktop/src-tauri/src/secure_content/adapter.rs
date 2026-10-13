@@ -522,6 +522,7 @@ fn execute_station_request<'a>(
         admission_timeout: SECURE_CONTENT_ADMISSION_TIMEOUT,
         traffic_class,
         route_security: StationRouteSecurity::TlsOrLoopback,
+        route_policy: crate::application::station_runtime::client::StationRoutePolicy::Auto,
         replay_policy,
         cancellation: session.request_cancellation(),
         expected_scope: Some(session.station_scope()),

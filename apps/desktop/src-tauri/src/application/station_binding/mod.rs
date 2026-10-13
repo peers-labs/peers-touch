@@ -225,7 +225,7 @@ impl StationBindingService {
         }
         let target = registry
             .failover_candidate(&lease.station_peer_id, &lease.route_id)
-            .map_err(registry_switch_error)?;
+            .map_err(failover_candidate_error)?;
         hooks.verify_route(&target)?;
         let previous = self.committed_entry();
         hooks.teardown_transport(previous.as_ref(), &target)?;
@@ -603,6 +603,18 @@ fn registry_switch_error(error: std::io::Error) -> StationBindingError {
     )
 }
 
+fn failover_candidate_error(error: std::io::Error) -> StationBindingError {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        StationBindingError::new(
+            "station_no_route",
+            "The Station has no eligible verified failover route",
+            true,
+        )
+    } else {
+        registry_switch_error(error)
+    }
+}
+
 fn unix_ms() -> i64 {
     i64::try_from(time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000)
         .unwrap_or(i64::MAX)
@@ -888,6 +900,21 @@ mod tests {
         assert!(hooks.transport_teardown_called.load(Ordering::SeqCst));
         assert!(!hooks.scope_teardown_called.load(Ordering::SeqCst));
         assert!(lease.is_cancelled());
+    }
+
+    #[test]
+    fn failover_without_an_eligible_route_is_typed_no_route() {
+        let registry = registry_with(&[("peer-a", "route-a", "https://a.example")]);
+        let service = bound_service(&registry, "peer-a", Some("route-a"));
+        let lease = service.route_lease(TrafficClass::Interactive).unwrap();
+
+        let error = service
+            .failover(&registry, &lease, &TestHooks::success())
+            .expect_err("a single-route Station cannot fail over");
+
+        assert_eq!(error.code, "station_no_route");
+        assert!(error.retryable);
+        assert!(!lease.is_cancelled());
     }
 
     #[test]

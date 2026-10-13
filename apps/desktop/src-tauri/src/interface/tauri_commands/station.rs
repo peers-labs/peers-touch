@@ -5,6 +5,11 @@ use tauri::{State, Window};
 use crate::application::auth::service as auth_service;
 use crate::application::session_resolver;
 use crate::application::station_binding::{self, StationBindingError};
+#[cfg(feature = "acceptance-webdriver")]
+use crate::application::station_runtime::client::{
+    ReplayPolicy, StationRequest, StationRequestBody, StationRoutePolicy, StationRouteSecurity,
+    TrafficClass,
+};
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_discovery::{self, StationDiscoveryError};
@@ -26,6 +31,87 @@ pub struct StationSelectionInput {
 #[derive(Debug, Deserialize)]
 pub struct StationIdentityInput {
     pub station_peer_id: String,
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[derive(Debug, Deserialize)]
+pub struct AcceptanceStationRouteProbeInput {
+    pub route_policy: StationRoutePolicy,
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
+pub fn acceptance_station_route_probe(
+    input: AcceptanceStationRouteProbeInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    use std::io::Read;
+    use std::time::Duration;
+    use tokio_util::sync::CancellationToken;
+
+    let mut response = match state.station.client().execute_raw(StationRequest {
+        method: reqwest::Method::GET,
+        path_and_query: "/app-meta/version".to_string(),
+        headers: Default::default(),
+        body: StationRequestBody::Empty,
+        timeout: Duration::from_secs(15),
+        admission_timeout: Duration::from_secs(15),
+        traffic_class: TrafficClass::Interactive,
+        route_security: StationRouteSecurity::VerifiedRoute,
+        route_policy: input.route_policy,
+        replay_policy: ReplayPolicy::SafeRead,
+        cancellation: CancellationToken::new(),
+        expected_scope: None,
+    }) {
+        Ok(response) => response,
+        Err(error) => {
+            return error.into_app_result("Acceptance Station route probe failed");
+        }
+    };
+    let status = response.status;
+    let mut body = Vec::new();
+    if let Err(error) = response.body.read_to_end(&mut body) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            "Acceptance Station route probe body read failed",
+            Some(serde_json::json!({
+                "code": "station_body_read_failed",
+                "reason": error.to_string(),
+            })),
+        );
+    }
+    if !(200..300).contains(&status) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Acceptance Station route probe returned HTTP {status}"),
+            Some(serde_json::json!({
+                "code": "station_probe_http_status",
+                "status": status,
+            })),
+        );
+    }
+    let version = serde_json::from_slice::<serde_json::Value>(&body).unwrap_or_default();
+    AppResult::success(StubPayload {
+        command: "acceptance_station_route_probe".to_string(),
+        status: serde_json::json!({
+            "routePolicy": input.route_policy,
+            "httpStatus": status,
+            "bodyByteLength": body.len(),
+            "version": version,
+        })
+        .to_string(),
+    })
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
+pub fn acceptance_station_transport_diagnostics(
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    AppResult::success(StubPayload {
+        command: "acceptance_station_transport_diagnostics".to_string(),
+        status: serde_json::to_string(&state.station.diagnostics()).unwrap_or_default(),
+    })
 }
 
 #[tauri::command]

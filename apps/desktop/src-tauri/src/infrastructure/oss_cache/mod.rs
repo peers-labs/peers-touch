@@ -665,6 +665,7 @@ fn station_get_bytes(
             admission_timeout: Duration::from_secs(30),
             traffic_class: TrafficClass::Bulk,
             route_security: StationRouteSecurity::VerifiedRoute,
+            route_policy: crate::application::station_runtime::client::StationRoutePolicy::Auto,
             replay_policy: ReplayPolicy::SafeRead,
             cancellation: CancellationToken::new(),
             expected_scope: Some(expected_scope),

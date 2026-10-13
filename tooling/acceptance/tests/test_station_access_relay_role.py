@@ -451,10 +451,13 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         )
         self.assertEqual(
             {
-                client.service_bindings["station"].service_id
+                client.id: client.service_bindings["station"].service_id
                 for client in manifest.clients
             },
-            {"station-via-relay"},
+            {
+                "alice": "station",
+                "bob": "station-via-relay",
+            },
         )
         self.assertEqual(
             len({client.storage_root for client in manifest.clients}),

@@ -585,6 +585,8 @@ fn station_error_kind_name(value: &StationClientErrorKind) -> &'static str {
         StationClientErrorKind::AmbiguousOutcome => "ambiguousOutcome",
         StationClientErrorKind::Cancelled => "cancelled",
         StationClientErrorKind::StaleRoute => "staleRoute",
+        StationClientErrorKind::NoRoute => "noRoute",
+        StationClientErrorKind::RoutePolicyConflict => "routePolicyConflict",
     }
 }
 

@@ -84,6 +84,7 @@ impl StationAttachmentTransferTransport {
                 admission_timeout: Duration::from_secs(30),
                 traffic_class: TrafficClass::Bulk,
                 route_security: StationRouteSecurity::VerifiedRoute,
+                route_policy: crate::application::station_runtime::client::StationRoutePolicy::Auto,
                 replay_policy,
                 cancellation: CancellationToken::new(),
                 expected_scope: None,

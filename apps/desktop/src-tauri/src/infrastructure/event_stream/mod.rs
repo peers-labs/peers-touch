@@ -370,6 +370,7 @@ fn run_once(
             admission_timeout: Duration::from_secs(30),
             traffic_class: TrafficClass::Realtime,
             route_security: StationRouteSecurity::VerifiedRoute,
+            route_policy: crate::application::station_runtime::client::StationRoutePolicy::Auto,
             replay_policy: ReplayPolicy::SafeRead,
             cancellation: cancel.cancellation.clone(),
             expected_scope: None,

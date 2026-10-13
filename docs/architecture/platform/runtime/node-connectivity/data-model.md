@@ -208,6 +208,7 @@ StationRequest
   admission_deadline
   body_deadline
   traffic_class
+  route_policy: AUTO | DIRECT_ONLY | RELAY_ONLY
   replay_policy: SAFE_READ | IDEMPOTENT(key) | NEVER
 
 StationResourceRef
@@ -232,6 +233,15 @@ caller. Different Relay PeerIDs receive different transport keys. A provisional
 endpoint-origin scope can be promoted only after the signed endpoint role and
 PeerID verify. A direct endpoint may then switch to Station-scoped identity;
 private connection material selects Relay scope before discovery.
+
+`route_policy` is a closed request constraint, not a route selector. Station
+Access remains the only owner that commits an active route and publishes its
+immutable `RouteLease`. `DIRECT_ONLY` and `RELAY_ONLY` reject a conflicting
+active lease without mutating binding state; an unavailable permitted route
+returns `station_no_route`. Only `AUTO` may consume a verified failover
+candidate after a real transport failure. The replacement lease preserves the
+logical Station and lifecycle generation, advances route revision, and cancels
+the prior lease before replay.
 
 Station Access is the sole producer of `RouteLease`. Transport may reject or
 cancel a lease but cannot select or persist another route. A lifecycle-generation
