@@ -192,6 +192,13 @@ export function ChatMessageArea({
   const reactionTimeoutsRef = useRef<Map<string, number>>(new Map());
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
+  // Bot direct conversations are Station-resident plaintext: no E2EE lock,
+  // no calls, and a one-way composer. Classified from the peer actor's kind
+  // (AGENT) in the profile projection. This hook MUST stay above every early
+  // return — the empty/error panes render fewer children, not fewer hooks.
+  const isBotConversation = useSocialChatStore((s) => (
+    activeTab === 'friend' && activeUlid ? s.isBotConversation(activeUlid) : false
+  ));
   const directSecurityState = useCryptoStore((state) => (
     activeUlid ? state.conversationSecurity[activeUlid]?.aggregateLevel ?? 'idle' : 'idle'
   ));
@@ -902,14 +909,6 @@ export function ChatMessageArea({
   const conversationEncrypted = activeTab === 'friend'
     ? directSecurityState === 'ready'
     : groupSecurityState[activeUlid] === 'ready';
-  // Bot direct conversations are Station-resident plaintext: no E2EE lock,
-  // no calls, and a one-way composer. The peer actor's kind (AGENT) read from
-  // the profile projection is the source; subscribed so it flips once the
-  // peer profile loads or changes.
-  const isBotConversation = useSocialChatStore((s) => (
-    activeTab === 'friend' && activeUlid ? s.isBotConversation(activeUlid) : false
-  ));
-
   return (
     <Flexbox
       data-chat-conversation-pane={activeUlid}
@@ -989,6 +988,11 @@ export function ChatMessageArea({
                     </Tooltip>
                   )
                 )}
+                {/* Bot conversations are always Station-resident: the amber
+                    shield + managed subtitle already state that, so the
+                    authority-station chip (which reads as an "unavailable"
+                    error when the id is empty) is hidden. */}
+                {!isBotConversation && (
                 <span
                   data-chat-station="authority"
                   data-chat-station-id={authorityStationId}
@@ -1024,6 +1028,7 @@ export function ChatMessageArea({
                       : t('chat.social.detail.authorityStationUnavailable')}
                   </span>
                 </span>
+                )}
               </Flexbox>
               {(headerSubtitle || isBotConversation) && (
                 <Text type="secondary" style={{ fontSize: 12 }}>

@@ -53,6 +53,7 @@ import {
   useActiveChatFederationSlice,
   useActiveSocialChatSlice,
 } from './useActiveSocialChatStore';
+import { useSocialChatStore } from '../../store/socialChat';
 import {
   messagingCommands,
 } from '../../messaging/runtime';
@@ -659,6 +660,11 @@ export function ChatDetailPanel() {
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const isGroup = activeTab === 'group';
+  // Bots are Station-resident actors; the authority-station availability row
+  // is meaningless (and renders as an error) for their conversations.
+  const isBotConversation = useSocialChatStore((s) => (
+    activeTab === 'friend' && activeUlid ? s.isBotConversation(activeUlid) : false
+  ));
   const activeConversation = activeUlid
     ? getIMConversations().find((conversation) => conversation.kind === activeTab && conversation.id === activeUlid)
     : undefined;
@@ -1398,6 +1404,7 @@ export function ChatDetailPanel() {
                 groupMemberCount,
                 peerPresenceKnown,
                 peerIsOnline,
+                isBotConversation,
                 encryptionEnabled,
                 cachedPeerProfile,
                 authorityStationId,
@@ -1409,6 +1416,7 @@ export function ChatDetailPanel() {
           </Flexbox>
         )}
 
+        {!isBotConversation && (
         <Flexbox
           data-chat-station="authority"
           data-chat-station-id={authorityStationId}
@@ -1429,6 +1437,7 @@ export function ChatDetailPanel() {
               : t('chat.social.detail.authorityStationUnavailable')}
           </Text>
         </Flexbox>
+        )}
 
         {isGroup ? (
           <DetailSection title={t('chat.social.detail.permissionLabel')} gap={10}>
@@ -1817,6 +1826,7 @@ interface BuildChatDetailProfileArgs {
   groupMemberCount: number;
   peerPresenceKnown: boolean;
   peerIsOnline: boolean | null | undefined;
+  isBotConversation: boolean;
   encryptionEnabled: boolean;
   cachedPeerProfile: AccountProfile | null | undefined;
   authorityStationId: string;
@@ -1839,6 +1849,7 @@ function buildChatDetailProfile({
   groupMemberCount,
   peerPresenceKnown,
   peerIsOnline,
+  isBotConversation,
   encryptionEnabled,
   cachedPeerProfile,
   authorityStationId,
@@ -1846,13 +1857,17 @@ function buildChatDetailProfile({
   federationId,
   t,
 }: BuildChatDetailProfileArgs): PublicProfileModel {
+  // Bots have no presence concept; show the Station-managed relation instead
+  // of an "Offline" state derived from missing presence.
   const presenceLabel = isGroup
     ? t('chat.social.detail.membersCount', { count: groupMemberCount })
-    : peerPresenceKnown
-      ? peerIsOnline
-        ? t('chat.social.detail.online')
-        : t('chat.social.detail.offline')
-      : t('chat.social.detail.presenceUnavailable');
+    : isBotConversation
+      ? t('chat.bot.stationManaged', { defaultValue: 'Automated bot · Station resident' })
+      : peerPresenceKnown
+        ? peerIsOnline
+          ? t('chat.social.detail.online')
+          : t('chat.social.detail.offline')
+        : t('chat.social.detail.presenceUnavailable');
   const encryptionBadge = {
     label: encryptionEnabled
       ? t('chat.social.detail.encrypted')
