@@ -2,6 +2,7 @@ package infrastructure
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -140,8 +141,18 @@ func TestConsumeInviteAndCreateEnrollmentIsAtomic(t *testing.T) {
 		invite.ID,
 		enrollment,
 		1,
-	); err == nil {
-		t.Fatal("consumed invite won a second enrollment")
+	); !errors.Is(err, domain.ErrInviteAlreadyConsumed) {
+		t.Fatalf("consumed invite replay error = %v", err)
+	}
+
+	restartedRepo := NewGormRepo(db)
+	if _, err := restartedRepo.ConsumeInviteAndCreateEnrollment(
+		context.Background(),
+		invite.ID,
+		enrollment,
+		1,
+	); !errors.Is(err, domain.ErrInviteAlreadyConsumed) {
+		t.Fatalf("consumed invite replay after restart error = %v", err)
 	}
 }
 

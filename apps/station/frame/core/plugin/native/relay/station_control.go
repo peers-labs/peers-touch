@@ -77,6 +77,7 @@ type StationControl struct {
 	lock        sync.Mutex
 	credentials map[string]relayCredential
 	clients     map[string]*http.Client
+	persist     func(string, relayCredential) error
 }
 
 func NewStationControl(
@@ -100,6 +101,7 @@ func NewStationControl(
 		liveRoutes:  liveRoutes,
 		credentials: make(map[string]relayCredential, len(pool.Targets)),
 		clients:     make(map[string]*http.Client, len(pool.Targets)),
+		persist:     persistRelayCredential,
 	}, nil
 }
 
@@ -329,6 +331,10 @@ func (c *StationControl) ensureCredentialLocked(
 	target Target,
 ) (relayCredential, error) {
 	key := target.RelayPeerID.String()
+	persist := c.persist
+	if persist == nil {
+		persist = persistRelayCredential
+	}
 	credential, ok := c.credentials[key]
 	if !ok {
 		loaded, err := loadRelayCredential(target.CredentialFile)
@@ -351,10 +357,10 @@ func (c *StationControl) ensureCredentialLocked(
 		if credential.Token != "" && credential.RelayPeerID == key {
 			rotated, err := c.rotateCredentialLocked(ctx, target, credential)
 			if err == nil {
-				c.credentials[key] = rotated
-				if err := persistRelayCredential(target.CredentialFile, rotated); err != nil {
+				if err := persist(target.CredentialFile, rotated); err != nil {
 					return relayCredential{}, err
 				}
+				c.credentials[key] = rotated
 				return rotated, nil
 			}
 		}
@@ -369,10 +375,10 @@ func (c *StationControl) ensureCredentialLocked(
 	if err != nil {
 		return relayCredential{}, err
 	}
-	c.credentials[key] = enrolled
-	if err := persistRelayCredential(target.CredentialFile, enrolled); err != nil {
+	if err := persist(target.CredentialFile, enrolled); err != nil {
 		return relayCredential{}, err
 	}
+	c.credentials[key] = enrolled
 	return enrolled, nil
 }
 
