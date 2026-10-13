@@ -108,12 +108,21 @@ pub fn native_notification_show(input: NativeNotificationInput) -> AppResult<Stu
 
 /// Restrict deep-link targets to the in-app conversation family so a
 /// notification can never launch an external scheme (BOT-A34).
+///
+/// Conversation ids are single route segments carrying an optional kind
+/// prefix (`direct-<hex>` for one-to-one, `group-<hex>` for groups, or a bare
+/// Crockford/ULID token), so only ASCII alphanumerics, `-`, and `_` are
+/// admitted. This still rejects schemes (`:`), path traversal (`.`/`/`),
+/// queries (`?`/`#`), spaces, and control bytes.
 fn is_safe_in_app_target(target: &str) -> bool {
     let Some(rest) = target.strip_prefix("chat/") else {
         return false;
     };
     let len = rest.len();
-    (1..=64).contains(&len) && rest.bytes().all(|byte| byte.is_ascii_alphanumeric())
+    (1..=64).contains(&len)
+        && rest
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
 fn clean_optional(value: Option<String>) -> Option<String> {
@@ -140,11 +149,28 @@ mod tests {
     }
 
     #[test]
+    fn accepts_prefixed_conversation_routes() {
+        // One-to-one conversation id produced for a bot DM.
+        assert!(is_safe_in_app_target(
+            "chat/direct-2b9a05a818bba583907a0d0d6566956e"
+        ));
+        // Group conversation id.
+        assert!(is_safe_in_app_target(
+            "chat/group-01J61Z9Q0G8T9M0E9Y4W5KDP7H"
+        ));
+        assert!(is_safe_in_app_target("chat/legacy_1"));
+    }
+
+    #[test]
     fn rejects_external_schemes_and_malformed_routes() {
         assert!(!is_safe_in_app_target("https://evil.example/x"));
         assert!(!is_safe_in_app_target("javascript:alert(1)"));
         assert!(!is_safe_in_app_target("peers-touch://x"));
         assert!(!is_safe_in_app_target("chat/../secret"));
+        assert!(!is_safe_in_app_target("chat/a/b"));
+        assert!(!is_safe_in_app_target("chat/a:b"));
+        assert!(!is_safe_in_app_target("chat/a.b"));
+        assert!(!is_safe_in_app_target("chat/a?x=1"));
         assert!(!is_safe_in_app_target("chat/"));
         assert!(!is_safe_in_app_target("other/abc"));
     }
