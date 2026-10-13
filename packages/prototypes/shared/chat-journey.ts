@@ -17,8 +17,8 @@ export const CHAT_JOURNEY = {
   traceId: 'msg-7F3A · relay-eu-02',
   messages: {
     inbound: {
-      en: 'Station Delta dropped from the relay again. Do we still ship?',
-      zh: 'Station Delta 又从中继掉线了。我们还继续发布吗？',
+      en: 'The connection dropped on their side again. Do we still ship?',
+      zh: '对方那边连接又断了。我们还继续发布吗？',
     },
     outbound: {
       en: 'Hold the release until reconnect recovery is verified.',

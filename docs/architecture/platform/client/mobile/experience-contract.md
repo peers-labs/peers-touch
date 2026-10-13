@@ -1,8 +1,8 @@
 # Mobile Shell — 体验合同
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-27 | **Updated**: 2026-09-19
+> **Version**: v1.2
+> **Created**: 2026-08-27 | **Updated**: 2026-10-12
 > **Owner**: Mobile Product Team
 > **Module**: `apps/mobile/`
 
@@ -14,11 +14,11 @@
 |---|---|---|
 | MS-J01 | First Station entry | MS-C01, MS-C02, MS-C03 |
 | MS-J02 | Returning session restore | MS-C01, MS-C02, MS-C10 |
-| MS-J03 | Conversation work | MS-C04, MS-C05, MS-C06 |
+| MS-J03 | Conversation work | MS-C04, MS-C05, MS-C06, MS-C12 |
 | MS-J04 | Contact and group work | MS-C04, MS-C07 |
 | MS-J05 | Moments participation | MS-C04, MS-C08 |
 | MS-J06 | Profile, settings, and Station change | MS-C04, MS-C09, MS-C10 |
-| MS-J07 | Interrupted work and degraded recovery | MS-C05, MS-C08, MS-C10, MS-C14 |
+| MS-J07 | Interrupted work and degraded recovery | MS-C05, MS-C08, MS-C10, MS-C12, MS-C14 |
 
 ## 2. MS-J01 First Station Entry
 
@@ -68,11 +68,20 @@ the restore decision is pending.
 8. Back returns to the prior list context.
 9. Attachment upload, typing, search, delete, and conversation settings expose
    their own waiting, success, failure, and recovery state.
+10. In a Direct conversation, the user starts or receives an audio/video call.
+11. The shell-level call surface preserves the conversation beneath it and
+    exposes outgoing, incoming, active, reconnecting, handled-on-another-device,
+    and ended states.
+12. Accept/reject, mute, camera toggle, reconnect, and hangup affect one call
+    identity; only the winning device may retain media resources.
 
 Message actions must preserve readable content and provide local recovery.
 Non-idempotent writes with unknown outcomes are never silently replayed.
 Conversation drafts survive tab changes and background/resume; process restart
 restores the latest safely persisted draft without presenting it as sent.
+Call setup or media failure ends visibly, releases resources, and never disables
+text messaging. A sibling device that loses resolution stops ringing and shows
+`handled_elsewhere`; it cannot establish a second media session.
 
 ## 5. MS-J04 Contact And Group Work
 
@@ -133,6 +142,9 @@ discard, or a new explicit save after reconciliation.
    replacement.
 6. A device-local message flag is explicitly labeled as local to this device;
    another device is not expected to show it.
+7. A suspended or partitioned call enters reconnecting, reconciles the
+   authoritative resolution before retaining media, and ends visibly if it
+   cannot recover.
 
 ## 9. Platform Adaptation
 
@@ -141,6 +153,7 @@ discard, or a new explicit save after reconciliation.
 | Primary navigation | Bottom tabs with same-frame visible feedback |
 | Detail navigation | Stack semantics; tab bar hidden for immersive detail |
 | Context actions | Bottom sheet or dedicated page |
+| Live call | Shell-owned full-screen overlay; Direct conversation remains the context owner |
 | Secure credentials | Tauri/native secure storage |
 | OAuth callback | Native deep link returns to the same Station/access attempt |
 | Foreground freshness | Event stream plus reconcile |

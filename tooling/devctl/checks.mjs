@@ -151,17 +151,15 @@ export function checkSocialRuntimeBoundaries(root) {
 
 export function checkMobileSocialWire(root) {
   const mobileRoot = path.join(root, 'apps', 'mobile');
+  const featuresRoot = path.join(mobileRoot, 'src', 'features');
   const socialRoot = path.join(mobileRoot, 'src', 'features', 'social');
-  const groupRoot = path.join(mobileRoot, 'src', 'features', 'group');
   const forbiddenDecoder =
     /ProtoReader|STREAM_EVENT_[A-Z_]+_FIELD|reader\.varint|reader\.bytes|field-number/u;
-  const violations = [socialRoot, groupRoot].flatMap((scanRoot) =>
-    walkSourceFiles(scanRoot).flatMap((filePath) =>
-      sourceMatches(filePath, forbiddenDecoder).map((match) => ({
-        rule: 'mobile-social-wire-generated-proto-only',
-        ...match,
-      })),
-    ),
+  const violations = walkSourceFiles(featuresRoot).flatMap((filePath) =>
+    sourceMatches(filePath, forbiddenDecoder).map((match) => ({
+      rule: 'mobile-social-wire-generated-proto-only',
+      ...match,
+    })),
   );
 
   const socialWire = path.join(socialRoot, 'socialWire.ts');

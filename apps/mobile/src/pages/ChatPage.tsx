@@ -83,11 +83,8 @@ import {
   type MessageDeliveryDisplayState,
 } from '../features/chat/messageProjection';
 import {
-  IDLE_SENDER_TYPING_FEEDBACK,
-  beginSenderTypingFeedback,
   dispatchSenderTypingRequest,
-  settleSenderTypingFeedback,
-} from '../features/chat/typingFeedbackState';
+} from '../features/chat/typingDispatch';
 import { useMessageFlagState } from '../features/chat/messageFlagState';
 import { useChatHistorySearch } from '../features/chat/useChatHistorySearch';
 import { useMobileChatVoiceRecorder } from '../features/chat/useMobileChatVoiceRecorder';
@@ -166,7 +163,6 @@ import {
   chatInputPanelState,
   useChatBottomOcclusion,
 } from './chat/chatBottomOcclusion';
-import { SenderTypingFeedback } from './chat/SenderTypingFeedback';
 
 const { Text } = Typography;
 const TYPING_TRUE_INTERVAL_MS = 3000;
@@ -282,9 +278,6 @@ function ChatPageInner({
   const [forwardMessageSource, setForwardMessageSource] = useState<ForwardMessageSource | null>(null);
   const [forwardPendingDestinationId, setForwardPendingDestinationId] = useState('');
   const [localActionError, setLocalActionError] = useState('');
-  const [senderTypingFeedback, setSenderTypingFeedback] = useState(
-    IDLE_SENDER_TYPING_FEEDBACK,
-  );
   const messageWindow = useRef<BoundedListHandle>(null);
 
   // --- Narrow store selectors (batched via useShallow to prevent torn-read cascades) ---
@@ -510,8 +503,6 @@ function ChatPageInner({
   const lastCompositionEndRef = useRef(0);
   const lastTypingPulseRef = useRef(0);
   const typingIdleTimerRef = useRef<number | null>(null);
-  const typingConversationRef = useRef('');
-  const typingAttemptRef = useRef(0);
 
   const enqueueDraftPersistence = useCallback((
     targetId: string,
@@ -737,71 +728,37 @@ function ChatPageInner({
     setGroupDescriptionDraft(activeGroupConversation.projection.description ?? '');
   }, [activeGroupConversation]);
 
-  // --- Sender typing feedback ---
-  const publishTypingState = useCallback(async (
+  // --- Sender typing publication ---
+  const publishTypingState = useCallback((
     conversationId: string,
     typing: boolean,
-    retry: boolean = false,
   ) => {
-    if (!conversationId) return;
-    const request = {
-      attempt: typingAttemptRef.current + 1,
-      conversationId,
-      typing,
-    };
-    typingAttemptRef.current = request.attempt;
-    if (typingConversationRef.current === conversationId) {
-      setSenderTypingFeedback(beginSenderTypingFeedback(request, retry));
-    }
-
-    const result = await dispatchSenderTypingRequest(request, sendTypingState);
-    if (typingConversationRef.current !== conversationId) return;
-    setSenderTypingFeedback((current) => (
-      settleSenderTypingFeedback(current, result)
-    ));
+    if (!conversationId) return Promise.resolve();
+    return dispatchSenderTypingRequest(
+      { conversationId, typing },
+      sendTypingState,
+    );
   }, [sendTypingState]);
 
   const emitTypingState = useCallback((
     typing: boolean,
-    retry: boolean = false,
-  ) => publishTypingState(activeConversationId, typing, retry), [
+  ) => publishTypingState(activeConversationId, typing), [
     activeConversationId,
     publishTypingState,
   ]);
 
   useEffect(() => {
-    typingConversationRef.current = activeConversationId;
-    typingAttemptRef.current += 1;
-    setSenderTypingFeedback(IDLE_SENDER_TYPING_FEEDBACK);
     return () => {
       if (typingIdleTimerRef.current) { window.clearTimeout(typingIdleTimerRef.current); typingIdleTimerRef.current = null; }
-      if (lastTypingPulseRef.current > 0 && typingConversationRef.current) {
-        const request = {
-          attempt: typingAttemptRef.current + 1,
-          conversationId: typingConversationRef.current,
-          typing: false,
-        };
-        typingAttemptRef.current = request.attempt;
-        void dispatchSenderTypingRequest(request, sendTypingState);
+      if (lastTypingPulseRef.current > 0 && activeConversationId) {
+        void dispatchSenderTypingRequest(
+          { conversationId: activeConversationId, typing: false },
+          sendTypingState,
+        );
       }
       lastTypingPulseRef.current = 0;
-      typingConversationRef.current = '';
     };
   }, [activeConversationId, sendTypingState]);
-
-  const retryTypingState = useCallback(() => {
-    if (
-      senderTypingFeedback.phase !== 'failed'
-      || senderTypingFeedback.request.conversationId !== activeConversationId
-    ) {
-      return;
-    }
-    void publishTypingState(
-      senderTypingFeedback.request.conversationId,
-      senderTypingFeedback.request.typing,
-      true,
-    );
-  }, [activeConversationId, publishTypingState, senderTypingFeedback]);
 
   // --- Command dispatch wrappers ---
   const runChatOperation = useCallback(async (operation: () => Promise<unknown>, failureKey: string) => {
@@ -948,7 +905,7 @@ function ChatPageInner({
     ) {
       throw new Error(t('mobile.chat.blockedComposer'));
     }
-    await emitTypingState(false);
+    void emitTypingState(false);
 
     const activeKind = activeGroupConversation ? 'group' : 'friend';
     if (editingMessage?.kind === activeKind) {
@@ -1926,10 +1883,6 @@ function ChatPageInner({
                   <button type="button" className="message-action-button light" onClick={() => updateReplyContext('')} aria-label={t('common.action.cancel')}><X size={13} /></button>
                 </div>
               ) : null}
-              <SenderTypingFeedback
-                feedback={senderTypingFeedback}
-                onRetry={retryTypingState}
-              />
               <input ref={fileInputRef} className="visually-hidden-file-input" type="file" multiple onChange={(e) => { void handleMobileFilesSelected(e.target.files); }} />
               <div className="message-composer-row">
                 {MOBILE_THREAD_COMPOSER_CAPABILITIES.emoji ? (

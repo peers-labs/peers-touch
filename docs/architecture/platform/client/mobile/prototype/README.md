@@ -1,10 +1,102 @@
 # Mobile Prototype
 
-> **Status**: pending-review
+> **Status**: confirmed
 > **Version**: v1.0
-> **Created**: 2026-07-08 | **Updated**: 2026-10-11
+> **Created**: 2026-07-08 | **Updated**: 2026-10-12
 > **Owner**: Mobile Product Team
 > **Module**: `packages/prototypes/mobile/chat/`
+
+## 2026-10-12 Interaction Review Reset
+
+Current rendered review found blocking inconsistencies in avatar identity,
+Chat loading, message anatomy, error ownership, touch geometry, Design Tokens,
+and cross-module visual continuity. The prototype has therefore returned to
+`drafting`; prior `pending-review` evidence remains historical and does not
+authorize further production implementation.
+
+The active gap register and proposed confirmation decisions are:
+
+- [interaction-gap-register.md](./interaction-gap-register.md)
+
+The Owner confirmed the revised executable prototype on 2026-10-12
+(`USER-DECISION-20261012-MOBILE-PROTOTYPE-CONFIRMED`). Production
+implementation must still run through the mounted production Plan and its
+declared worktree; this confirmation does not authorize cross-worktree writes.
+
+## 2026-10-12 Confirmed Interaction Revision
+
+The accepted interaction baseline is now implemented in the executable
+prototype:
+
+- one shared semantic token source drives Mobile CSS variables and the antd
+  adapter; `#667eea` is the authoritative light-theme action accent;
+- light and dark review modes are available beside the evidence selector;
+- people use circular image/fallback avatars and groups use rounded-square
+  deterministic initials; loading and failed-source states keep stable
+  geometry;
+- the clean default journey contains no synthetic delivery failure;
+- conversation first-load, cached-refresh, cached-error, empty, long-content,
+  avatar-loading, avatar-fallback, thread first-load, older-history, route
+  unavailable, failed delivery, and unknown-outcome states are directly
+  addressable;
+- one failed message owns one local Retry action; unknown delivery owns
+  `Check status` and never offers blind Retry;
+- incoming messages use sender clusters, one final `MetaRow`, and one avatar
+  per cluster;
+- pinned content uses one compact thread banner and a dedicated pinned-message
+  page;
+- Chat, Moments, Contacts, and Me now share the same header, row, avatar,
+  surface, separator, and touch-target language.
+
+Rendered evidence is under:
+
+`docs/architecture/platform/client/mobile/prototype/evidence/20261012-interaction-revision/`
+
+The evidence set contains 23 device captures and `visual-check.json`.
+The agent opened and inspected the list/theme/loading/error contact sheet, the
+thread/loading/history/unknown/pinned contact sheet, Moments, Contacts, Me,
+conversation details, and both completed recovery captures.
+
+Observed evidence:
+
+- device geometry is 390 x 844 in every capture;
+- visible prototype actions in the covered Chat paths meet the 44 px Mobile
+  target; the machine output only reports antd's hidden 12 px input-clear
+  implementation detail;
+- default and recovery states contain zero legacy page-level delivery banners;
+- failed delivery has exactly one message-local Retry owner;
+- unknown delivery has exactly one message-local `Check status` owner;
+- Retry and Check status both converge to delivered state and append the peer
+  acknowledgement;
+- light uses `#667eea`; dark uses the shared dark token projection;
+- first-load skeletons preserve seven conversation rows; cached refresh/error
+  retain all projected rows;
+- the evidence run produced no page or console errors.
+
+Frontend tree review:
+
+- Surface: Mobile primary tabs, descriptor detail, message list, sheets.
+- Alive policy: unchanged from the registry: primary tabs and details are
+  `on-visit + none`; large content remains bounded/virtualized.
+- Store/runtime ownership: unchanged; prototype evidence state is scaffolding
+  outside the product tree.
+- Registry update: not required because no lifetime, cache, or runtime owner
+  changed.
+
+The Owner accepted the interaction baseline with the remaining evidence cells
+explicitly deferred:
+
+- full-shell Chinese localization and one additional expansion locale;
+- 200% dynamic type and VoiceOver/TalkBack order;
+- real software keyboard, emoji/attachment/voice panel clearance and focus
+  restoration;
+- attachment/media failure recovery;
+- native iOS/Android and production runtime evidence;
+- the separate Call gaps recorded in MUX-12.
+
+This confirmation establishes the production interaction reference. It does
+not replace production implementation, exact-source runtime proof, or the
+mounted Plan's execution controls.
 
 ## Scope
 
@@ -17,6 +109,9 @@ The prototype covers:
   Google OAuth progress.
 - Chat list projection for Friend and Group conversations.
 - Chat thread mode where the bottom tabbar is hidden and the composer owns the bottom safe area.
+- Direct-conversation audio/video actions and a shell-owned call surface for
+  outgoing, incoming, active audio/video, reconnecting, handled-elsewhere, and
+  ended states.
 - Contacts toolbar actions: create group and find people, matching `ContactsPage`.
 - Group creation with initial members and friend request search/send affordances.
 - Moments feed/composer/reaction/comment surfaces.
@@ -40,7 +135,8 @@ The prototype covers:
 | Moments feed and composer | MS-C08 / MS-J05 / MS-PA11 / MS-PA20 / MS-PA23 |
 | Me and settings details | MS-C09 / MS-J06 / MS-PA12 / MS-PA21 |
 | Runtime recovery sheets | MS-C10 / MS-J07 / MS-PA08 / MS-PA23 / MS-PA26 |
-| Deferred/local-only affordances | MS-C11..MS-C14 / MS-PA22 / MS-PA27 |
+| One-to-one call surface | MS-C12 / MS-J03 / MS-PA28 / MS-PA29 |
+| Deferred/local-only affordances | MS-C11, MS-C13, MS-C14 / MS-PA22 / MS-PA27 |
 
 ## Run
 
@@ -71,13 +167,58 @@ The out-of-device `Evidence scenario` selector exposes:
 - unknown write outcome;
 - command ledger full;
 - restored draft.
+- one-to-one call states: outgoing audio, incoming video, active audio/video,
+  reconnecting, handled elsewhere, and ended.
 
 These controls are Prototype Portal scaffolding. Each selected state renders a
 realistic product recovery surface inside the device frame.
 Each state is also directly reproducible from the standalone prototype with
 `?scenario=<scenario-id>`.
-The default journey also includes Station removal confirmation, disabled
-WeChat/call affordances, and device-only message flag copy.
+The default journey also includes Station removal confirmation, enabled Direct
+audio/video call actions, disabled WeChat, and device-only message flag copy.
+
+### 2026-10-12 One-To-One Call Contract Sync
+
+Mobile Call is no longer represented as a disabled future affordance. Direct
+conversation headers expose separate labeled audio and video actions. The call
+surface is mounted by `MobileShell`, outside the Chat page tree, so navigation
+cannot silently destroy its state. The underlying conversation remains the
+context owner while the modal call surface owns focus and controls.
+
+State evidence is directly addressable:
+
+- `?scenario=call-outgoing-audio`
+- `?scenario=call-incoming-video`
+- `?scenario=call-active-audio`
+- `?scenario=call-active-video`
+- `?scenario=call-reconnecting`
+- `?scenario=call-handled-elsewhere`
+- `?scenario=call-ended`
+
+Verification:
+
+- TypeScript `--noEmit` passes for the Mobile prototype package.
+- `scripts/check-call-states.py` passes all seven states at 430px, the active
+  video state at 1440px, and four L3 paths: cancel, accept/control/end,
+  handled-elsewhere dismissal, and Default journey -> Direct -> audio call.
+- Ten screenshots and the machine-readable result are under
+  `apps/mobile/src-tauri/target/prototype-call-states/`; the agent opened and
+  inspected outgoing, incoming, active video, reconnecting,
+  handled-elsewhere, ended, and Direct-entry captures.
+- Prototype Portal at `http://localhost:3200/` discovered the current
+  `pending-review` manifest, rendered `call-active-video` inside Mobile Shell,
+  kept the call surface inside the device bounds, and accepted the Mute
+  interaction without horizontal overflow.
+- The existing Portal layout regression produced 54 captures across 1440px,
+  554px, and 390px with zero geometry defects.
+- Call controls meet the prototype's 44px target check, the overlay remains
+  inside the device shell, no horizontal overflow or new page/console error is
+  present. The existing antd `List` deprecation warning is recorded separately.
+
+This amendment is `pending-review`. It proves browser interaction intent only.
+Native iOS media, production styling/i18n, permission and device selection,
+direct/TURN routing, reconnect/cleanup, cross-Station behavior, and exact-source
+Desktop/Mobile arbitration remain `UNPROVEN` under MS-PA28/MS-PA29.
 
 ### 2026-10-11 Chat Delivery Recovery
 
@@ -151,7 +292,7 @@ Evidence captured on 2026-08-27 at the Portal mobile preview:
 | L2 | Draft restored | `tmp/evidence/mobile-shell/prototype/20260827/draft-restored.jpg` |
 | L2 | Station removal confirmation | `tmp/evidence/mobile-shell/prototype/20260827/station-removal.jpg` |
 | L3 | Recovery actions | Scenario selector reached every state; Station/OAuth recovery returned to the correct pre-shell surface; unknown/ledger actions returned to readable Shell; Continue editing opened the conversation thread |
-| L3 | Deferred/local-only actions | Chat thread contains Chat/Pinned only; call and WeChat are disabled; message action reads “Flag on this device” |
+| L3 | Deferred/local-only actions | Chat thread contains Chat/Pinned only; Direct call is enabled, WeChat/Docs remain disabled or absent, and message action reads “Flag on this device” |
 
 ### 2026-09-12 Social And Recovery Samples
 
@@ -162,6 +303,7 @@ not newly confirmed or landed by this source update.
 | Scenario ID | Sample |
 |---|---|
 | `social-unavailable` | Unavailable Chat/Contacts, lifecycle Retry with explicit pending and failure outcomes, and independently accessible Me |
+| `social-detail-unavailable` | Conversation route keeps Back and one centered lifecycle Retry without stacked global notices |
 | `find-people-no-membership` | Separate handle and Federation fields; no active membership disables Send Request |
 | `find-people-member` | Request admission, pending/unknown outcome, and accepted contact without implicit conversation creation |
 | `contact-direct` | Contact-to-Message preparation, failure/Retry, and explicit Direct readiness opening an empty thread |
@@ -181,6 +323,9 @@ Integrator verification:
   failure and Me navigation, no-membership Send suppression, a single request
   progressing through unknown/Check Status/pending/accepted, Friends rather than
   Sent after acceptance, and Message/preparing/failure/Retry/ready/empty thread.
+- Unavailable Chat/Contacts now own one centered route recovery surface. The
+  lifecycle Retry moved into that surface; unrelated tabs and background
+  reconciliation no longer receive a second stacked global notice.
 - The IDE screenshot tool remained unavailable. Local Playwright subsequently
   captured the actual Portal and removed that tooling blocker.
 - Inspected screenshots exposed compressed preview width, clipped Contact Info

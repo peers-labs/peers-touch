@@ -89,8 +89,8 @@ function MiniMessageBubble({ msg, highlight }: { msg: MiniMessage; highlight?: b
         maxWidth: '85%', padding: '4px 7px', borderRadius: 8,
         fontSize: 10, lineHeight: 1.4,
         color: msg.mine ? '#fff' : '#1f2330',
-        backgroundColor: msg.mine ? '#6366f1' : '#f0f1f4',
-        border: highlight ? '1px solid #6366f1' : 'none',
+        backgroundColor: msg.mine ? 'var(--pt-action-primary)' : 'var(--pt-surface-subtle)',
+        border: highlight ? '1px solid var(--pt-action-primary)' : 'none',
       }}>
         <div>{msg.text}</div>
         <div style={{
@@ -176,7 +176,7 @@ function CompanionDemo() {
         backgroundColor: '#f7f8fa', border: '1px solid #e4e6eb',
         fontSize: 11, color: '#6b7080', lineHeight: 1.5, textAlign: 'center',
       }}>
-        §11.1 Sender Companion Projection — event_id: <code style={{ fontSize: 10, color: '#6366f1' }}>evt-004</code>
+        §11.1 Sender Companion Projection — event_id: <code style={{ fontSize: 10, color: 'var(--pt-action-primary)' }}>evt-004</code>
         <br />
         Message sent on Device A appears on Device B via <code style={{ fontSize: 10 }}>upsert(event_id)</code>, not page refresh.
       </div>

@@ -9,7 +9,6 @@ import {
   FolderOpen,
   Forward,
   Image as ImageIcon,
-  Lock,
   Maximize2,
   MessagesSquare,
   Mic,
@@ -26,7 +25,6 @@ import {
   Scissors,
   Search,
   Send,
-  Server,
   ShieldCheck,
   Smile,
   RotateCcw,
@@ -44,7 +42,6 @@ import { T } from '../theme';
 import { Avatar } from './Avatar';
 import { USERS, type MockMessage, type MockConversation } from '../mock';
 import {
-  CHAT_JOURNEY,
   CHAT_JOURNEY_COPY,
   resolveChatJourneyLocale,
 } from '../../../../../shared/chat-journey';
@@ -78,6 +75,15 @@ const REACTION_PICKER_EMOJIS = [
   '🤝', '🥳', '😍', '😊', '😅', '🤯', '😎', '💡',
 ];
 const MESSAGE_MUTATION_WINDOW_MS = 4 * 60_000 + 30_000;
+// Composer is one grounded soft-gray band under a hairline: no white gutter
+// around the input. MIN_HEIGHT is the comfortable single-line text region
+// (line-height 21.7 + vertical padding ≈ 32px content box). Expanding gives
+// an immediate multi-line writing surface (not just a taller maxHeight that
+// does nothing while the box is empty).
+const COMPOSER_MIN_HEIGHT = 44;
+const COMPOSER_EXPANDED_MIN_HEIGHT = 132;
+const COMPOSER_MAX_HEIGHT = 180;
+const COMPOSER_EXPANDED_MAX_HEIGHT = 320;
 const COMPOSER_EMOJI_RECENT_KEY = 'peers-touch:prototype:composer:recent-emojis';
 const COMPOSER_EMOJI_GROUPS = [
   ['😀', '😁', '😂', '🤣', '😊', '😍', '😘', '😎', '😭', '😡'],
@@ -599,7 +605,18 @@ function MessageRow({
   highlighted?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
+  const [dropUp, setDropUp] = useState(true);
   const withinMutationWindow = Date.now() - message.timestamp < MESSAGE_MUTATION_WINDOW_MS;
+  const popoverOpen = activeMenu || reactionOpen;
+
+  // Open the popover above the toolbar (toward earlier messages) unless there is
+  // not enough room above; it must never cover the message it acts on.
+  useEffect(() => {
+    if (!popoverOpen || !toolbarRef.current) return;
+    const rect = toolbarRef.current.getBoundingClientRect();
+    setDropUp(rect.top > 230);
+  }, [popoverOpen]);
 
   if (recalled) {
     // Keep the persistent row wrapper so message identity (id/own/highlight)
@@ -633,7 +650,7 @@ function MessageRow({
 
   // System event rows (member joined, etc.) carry no user actions. The More
   // menu already filters them, but the hover quick-actions bar must hide too.
-  const showToolbar = message.type !== 'system' && (hovered || activeMenu || reactionOpen);
+  const showToolbar = message.type !== 'system' && (hovered || popoverOpen);
 
   return (
     <div
@@ -651,6 +668,7 @@ function MessageRow({
     >
       {showToolbar ? (
         <div
+          ref={toolbarRef}
           style={{
             position: 'absolute',
             top: -8,
@@ -684,7 +702,7 @@ function MessageRow({
               aria-label="All emojis"
               style={{
                 position: 'absolute',
-                top: 30,
+                [dropUp ? 'bottom' : 'top']: 38,
                 [isOwn ? 'right' : 'left']: 0,
                 zIndex: 14,
                 display: 'grid',
@@ -718,7 +736,7 @@ function MessageRow({
             <div
               style={{
                 position: 'absolute',
-                top: 30,
+                [dropUp ? 'bottom' : 'top']: 38,
                 right: 0,
                 minWidth: 168,
                 padding: 4,
@@ -866,10 +884,13 @@ function ToolbarIconButton({ title, children, onClick, ...rest }: {
   );
 }
 
-function ComposerToolButton({ label, active = false, ariaPressed, onClick, children }: {
+function ComposerToolButton({ label, active = false, ariaPressed, tone = 'secondary', onClick, children }: {
   label: string;
   active?: boolean;
   ariaPressed?: boolean;
+  // tertiary = quiet chrome action (expand/collapse): present but never louder
+  // than the send affordance.
+  tone?: 'secondary' | 'tertiary';
   onClick: () => void;
   children: React.ReactNode;
 }) {
@@ -883,20 +904,13 @@ function ComposerToolButton({ label, active = false, ariaPressed, onClick, child
       style={{
         width: 34, height: 34, border: 'none', borderRadius: 8,
         background: 'transparent', cursor: 'pointer',
-        color: active ? T.primary : T.textSecondary,
+        color: active ? T.primary : tone === 'tertiary' ? T.textTertiary : T.textSecondary,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}
     >
       {children}
     </button>
   );
-}
-
-function trustColor(tone: MockConversation['trustTone']) {
-  if (tone === 'verified') return T.success;
-  if (tone === 'attention') return T.warning;
-  if (tone === 'remote') return T.textTertiary;
-  return T.primary;
 }
 
 function fmtDuration(sec: number): string {
@@ -1511,8 +1525,13 @@ export function ChatArea({
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const highlightTimer = useRef<number | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
-  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
-  const [reactionPickerId, setReactionPickerId] = useState<string | null>(null);
+  // One transient message popover at a time across the whole thread: opening the
+  // menu closes the reaction picker and vice versa, so two floating panels can
+  // never stack and cover messages.
+  const [overlay, setOverlay] = useState<{ id: string; kind: 'menu' | 'reactions' } | null>(null);
+  const toggleOverlay = (id: string, kind: 'menu' | 'reactions') => {
+    setOverlay((current) => (current?.id === id && current.kind === kind ? null : { id, kind }));
+  };
   const [replyTo, setReplyTo] = useState<MockMessage | null>(null);
   const [forwardMessage, setForwardMessage] = useState<MockMessage | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MockMessage | null>(null);
@@ -1523,6 +1542,7 @@ export function ChatArea({
   const typingTimer = useRef<number | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [inputExpanded, setInputExpanded] = useState(false);
+  const [composerFocused, setComposerFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
   const [recentEmojis, setRecentEmojis] = useState<string[]>(() => {
@@ -1540,8 +1560,9 @@ export function ChatArea({
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    const max = inputExpanded ? 320 : 180;
-    el.style.height = `${Math.min(Math.max(el.scrollHeight, 74), max)}px`;
+    const min = inputExpanded ? COMPOSER_EXPANDED_MIN_HEIGHT : COMPOSER_MIN_HEIGHT;
+    const max = inputExpanded ? COMPOSER_EXPANDED_MAX_HEIGHT : COMPOSER_MAX_HEIGHT;
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, min), max)}px`;
   };
 
   useEffect(() => {
@@ -1601,11 +1622,11 @@ export function ChatArea({
       const next = current.includes(emoji) ? current.filter((value) => value !== emoji) : [...current, emoji];
       return { ...prev, [messageId]: next };
     });
-    setReactionPickerId(null);
+    setOverlay(null);
   };
 
   const handleMessageAction = (message: MockMessage, action: MessageActionKey) => {
-    setActiveMenuId(null);
+    setOverlay(null);
     if (action === 'reply') {
       setReplyTo(message);
       return;
@@ -1702,8 +1723,7 @@ export function ChatArea({
   const callTimer = useRef<number | null>(null);
   // Reset prototype-local message interaction state on conversation switch.
   useEffect(() => {
-    setActiveMenuId(null);
-    setReactionPickerId(null);
+    setOverlay(null);
     setReplyTo(null);
     setForwardMessage(null);
     setDeleteTarget(null);
@@ -1726,6 +1746,30 @@ export function ChatArea({
       highlightTimer.current = null;
     }
   }, [conversation?.id]);
+
+  // Dismiss the single message popover on outside press, Escape, or thread
+  // scroll, so a transient menu/picker never stays open and covers messages.
+  useEffect(() => {
+    if (!overlay) return undefined;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target instanceof Element && target.closest(`[data-chat-message-id="${overlay.id}"]`)) return;
+      setOverlay(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOverlay(null);
+    };
+    const scroller = messagesScrollRef.current;
+    const onScroll = () => setOverlay(null);
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('keydown', onKeyDown);
+    scroller?.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKeyDown);
+      scroller?.removeEventListener('scroll', onScroll);
+    };
+  }, [overlay]);
 
   useEffect(() => () => {
     if (typingTimer.current) window.clearTimeout(typingTimer.current);
@@ -1855,8 +1899,6 @@ export function ChatArea({
       : 'Unknown';
   const presenceColor = presenceState === 'online' ? T.success : T.textQuaternary;
   const presenceBackground = presenceState === 'online' ? 'rgba(22,163,74,0.12)' : T.bgMuted;
-  // Authority Station pill (production resolves the federation station name).
-  const authorityStationName = conversation.station?.trim() || CHAT_JOURNEY.station;
   const callChip =
     callState === 'outgoing'
       ? 'Ringing'
@@ -1865,6 +1907,8 @@ export function ChatArea({
         : callState === 'active' || callState === 'active_here' || callState === 'reconnecting'
           ? `${callState === 'reconnecting' ? 'Reconnecting' : 'In call'} · ${fmtDuration(duration)}`
           : null;
+
+  const canSend = editingId ? Boolean(inputValue.trim()) : Boolean(inputValue.trim() || pendingAttachment);
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: compact ? 240 : T.chatReadableMinWidth, position: 'relative' }}>
@@ -1907,57 +1951,6 @@ export function ChatArea({
                 {presenceLabel}
               </span>
             )}
-            <Lock
-              size={13}
-              aria-label="End-to-end encrypted"
-              style={{ color: T.textTertiary, flexShrink: 0 }}
-            />
-            {!compact && (
-              <span
-                data-chat-station="authority"
-                data-chat-station-name={authorityStationName}
-                data-chat-station-state="available"
-                title={`Station · ${authorityStationName}`}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  minWidth: 0,
-                  maxWidth: 'min(180px, 24vw)',
-                  padding: '1px 6px',
-                  borderRadius: 999,
-                  background: T.bgMuted,
-                  color: T.textTertiary,
-                  fontSize: 10,
-                  lineHeight: '16px',
-                  flexShrink: 1,
-                }}
-              >
-                <Server size={11} style={{ flexShrink: 0 }} />
-                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  Station · {authorityStationName}
-                </span>
-              </span>
-            )}
-            {!compact && (
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  padding: '2px 7px',
-                  borderRadius: T.radiusFull,
-                  background: 'rgba(0,0,0,0.035)',
-                  color: trustColor(conversation.trustTone),
-                  fontSize: T.fontXs,
-                  fontWeight: 700,
-                  flexShrink: 0,
-                }}
-              >
-                {conversation.trustTone === 'verified' ? <ShieldCheck size={11} /> : <Lock size={11} />}
-                {conversation.trustLabel}
-              </span>
-            )}
             {callChip && (
               <span
                 style={{
@@ -1982,8 +1975,8 @@ export function ChatArea({
             {peerTyping
               ? 'typing…'
               : conversation.type === 'group'
-                ? `${conversation.memberCount} members · ${conversation.detailHint}`
-                : `${conversation.online === undefined ? 'Presence unavailable' : conversation.online ? 'Online' : 'Offline'} · ${conversation.detailHint}`}
+                ? `${conversation.memberCount} members`
+                : ''}
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: T.space1, position: 'relative' }}>
@@ -2095,13 +2088,13 @@ export function ChatArea({
             compact={compact}
             reactions={reactionsByMessage[msg.id] ?? []}
             recalled={recalledIds.has(msg.id)}
-            activeMenu={activeMenuId === msg.id}
-            reactionOpen={reactionPickerId === msg.id}
+            activeMenu={overlay?.id === msg.id && overlay.kind === 'menu'}
+            reactionOpen={overlay?.id === msg.id && overlay.kind === 'reactions'}
             onRetry={msg.status === 'failed'
               ? () => onRetryMessage(conversation.id, msg.id)
               : undefined}
-            onToggleMenu={() => setActiveMenuId((current) => (current === msg.id ? null : msg.id))}
-            onToggleReactions={() => setReactionPickerId((current) => (current === msg.id ? null : msg.id))}
+            onToggleMenu={() => toggleOverlay(msg.id, 'menu')}
+            onToggleReactions={() => toggleOverlay(msg.id, 'reactions')}
             onReact={(emoji) => toggleReaction(msg.id, emoji)}
             onAction={(action) => handleMessageAction(msg, action)}
             replyTarget={msg.replyTo ? (visibleMessages.find((candidate) => candidate.id === msg.replyTo) ?? null) : null}
@@ -2116,12 +2109,19 @@ export function ChatArea({
         ) : null}
       </div>
 
-      {/* Input */}
+      {/* Grounded composer: white bar (hairline top, flush to the column and
+          window bottom) holding one soft-gray writing dock inset by an EQUAL
+          frame on all four sides, so the boundary is closed and symmetric. */}
       <div
+        data-chat-composer-bar
         style={{
-          padding: compact ? `${T.space2}px ${T.space3}px ${T.space3}px` : `${T.space3}px ${T.space5}px ${T.space4}px`,
           borderTop: `1px solid ${T.border}`,
+          background: T.bg,
+          // Equal hair-thin frame on all four sides of the gray dock: 4px
+          // compact / 6px regular (one third of the former card margin).
+          padding: compact ? 4 : 6,
           position: 'relative',
+          flexShrink: 0,
         }}
       >
         {editingId ? (
@@ -2129,9 +2129,9 @@ export function ChatArea({
             data-chat-edit-banner
             style={{
               display: 'flex', alignItems: 'center', gap: 8,
-              marginBottom: 6, padding: '6px 10px',
+              margin: '0 0 6px', padding: '6px 10px',
               borderLeft: `3px solid ${T.warning}`,
-              background: T.bgSubtle, borderRadius: T.radiusSm,
+              background: T.bg, borderRadius: T.radiusSm,
             }}
           >
             <Pencil size={14} color={T.warning} />
@@ -2159,9 +2159,9 @@ export function ChatArea({
             data-chat-reply-banner
             style={{
               display: 'flex', alignItems: 'center', gap: 8,
-              marginBottom: 6, padding: '6px 10px',
+              margin: '0 0 6px', padding: '6px 10px',
               borderLeft: `3px solid ${T.primary}`,
-              background: T.bgSubtle, borderRadius: T.radiusSm,
+              background: T.bg, borderRadius: T.radiusSm,
             }}
           >
             <CornerUpLeft size={14} color={T.primary} />
@@ -2184,13 +2184,19 @@ export function ChatArea({
           </div>
         ) : null}
         <div
+          data-chat-composer-field
+          data-focused={composerFocused ? 'true' : 'false'}
           style={{
             position: 'relative',
-            background: T.bg,
-            border: '1px solid transparent',
-            borderRadius: 14,
-            boxShadow: '0 1px 3px rgba(15,23,42,0.08), 0 4px 16px rgba(15,23,42,0.06)',
+            background: T.bgMuted,
+            borderColor: composerFocused ? 'rgba(107,91,214,0.35)' : T.borderSubtle,
+            borderWidth: 1,
+            borderStyle: 'solid',
+            borderRadius: T.radiusLg,
+            boxShadow: composerFocused ? '0 0 0 3px rgba(107,91,214,0.10)' : 'none',
+            padding: '6px 6px 4px',
             overflow: 'visible',
+            transition: 'border-color 0.12s ease, box-shadow 0.12s ease',
           }}
         >
           {emojiOpen ? (
@@ -2199,7 +2205,7 @@ export function ChatArea({
               style={{
                 position: 'absolute',
                 left: 0,
-                bottom: 46,
+                bottom: 44,
                 width: 420,
                 maxWidth: '70vw',
                 padding: 14,
@@ -2263,7 +2269,7 @@ export function ChatArea({
             <div
               data-chat-pending-attachment
               style={{
-                margin: '8px 12px 0',
+                margin: '2px 2px 4px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
@@ -2297,11 +2303,13 @@ export function ChatArea({
           <textarea
             ref={textareaRef}
             value={inputValue}
-            rows={3}
+            rows={1}
             onChange={(event) => setInputValue(event.target.value)}
             onInput={resizeTextarea}
             onCompositionStart={() => { composingRef.current = true; }}
             onCompositionEnd={() => { composingRef.current = false; }}
+            onFocus={() => setComposerFocused(true)}
+            onBlur={() => setComposerFocused(false)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey && !composingRef.current) {
                 event.preventDefault();
@@ -2316,13 +2324,14 @@ export function ChatArea({
             style={{
               display: 'block',
               width: '100%',
-              minHeight: 74,
-              maxHeight: inputExpanded ? 320 : 180,
+              minHeight: inputExpanded ? COMPOSER_EXPANDED_MIN_HEIGHT : COMPOSER_MIN_HEIGHT,
+              maxHeight: inputExpanded ? COMPOSER_EXPANDED_MAX_HEIGHT : COMPOSER_MAX_HEIGHT,
               resize: 'none',
+              boxSizing: 'border-box',
               border: 'none',
               outline: 'none',
               boxShadow: 'none',
-              padding: '12px 14px 6px',
+              padding: '9px 8px 2px',
               background: 'transparent',
               color: T.text,
               caretColor: T.primary,
@@ -2337,9 +2346,9 @@ export function ChatArea({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              height: 40,
-              padding: '0 8px 6px',
-              background: T.bg,
+              height: 34,
+              padding: 0,
+              background: 'transparent',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -2371,11 +2380,16 @@ export function ChatArea({
                 <Mic size={20} />
               </ComposerToolButton>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span
+                aria-hidden
+                style={{ width: 1, height: 18, background: T.border, marginRight: 2, flexShrink: 0 }}
+              />
               <ComposerToolButton
                 label={inputExpanded ? 'Collapse input' : 'Expand input'}
                 active={inputExpanded}
                 ariaPressed={inputExpanded}
+                tone="tertiary"
                 onClick={() => setInputExpanded((value) => !value)}
               >
                 {inputExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
@@ -2395,9 +2409,9 @@ export function ChatArea({
                   height: 34,
                   border: 0,
                   borderRadius: 8,
-                  background: inputValue.trim() || (!editingId && pendingAttachment) ? T.primary : T.bgActive,
-                  color: inputValue.trim() || (!editingId && pendingAttachment) ? '#fff' : T.textQuaternary,
-                  cursor: inputValue.trim() || (!editingId && pendingAttachment) ? 'pointer' : 'not-allowed',
+                  background: canSend ? T.primary : 'transparent',
+                  color: canSend ? '#fff' : T.textQuaternary,
+                  cursor: canSend ? 'pointer' : 'default',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',

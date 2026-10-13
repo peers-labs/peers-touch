@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import { Avatar, Input, Typography } from 'antd';
+import { Input, Typography } from 'antd';
 import { ArrowLeft, Calendar, LogOut, MessageCircle, Search, ShieldCheck, Volume2, VolumeX } from 'lucide-react';
 import type { Contact, GroupItem } from '../types';
 import { demoContacts } from '../data';
 import copy from '../../../../../locales/en/common.json';
 import type { PrototypeListMemory } from '../listPresentation';
 import { PrototypeListWindow } from './PrototypeListWindow';
+import { IdentityAvatar } from './IdentityAvatar';
 
 const { Text } = Typography;
 const defaultMembers = demoContacts.slice(0, 4);
@@ -40,7 +41,7 @@ export function GroupDetailView({
       </header>
 
       <div className="mp-detail-hero">
-        <Avatar size={80} style={{ background: group.avatarGradient, borderRadius: 20 }}>{group.avatar}</Avatar>
+        <IdentityAvatar name={group.name} initials={group.avatar} kind="group" size={80} />
         <Text className="mp-detail-hero-name">{group.name}</Text>
         <Text className="mp-detail-hero-sub">{copy['mobile.group.memberCount'].replace('{{count}}', String(group.memberCount))}</Text>
       </div>
@@ -55,7 +56,7 @@ export function GroupDetailView({
           <span className="mp-detail-action-label">{copy[isMuted ? 'mobile.group.unmuteMember' : 'mobile.chat.quickMute']}</span>
         </button>
         <button type="button" className="mp-detail-action-btn" disabled={sampleOnly} onClick={() => setShowLeaveConfirm(true)}>
-          <span className="mp-detail-action-icon" style={{ background: '#ef4444', boxShadow: '0 4px 14px rgba(239,68,68,0.25)' }}><LogOut size={22} /></span>
+          <span className="mp-detail-action-icon danger"><LogOut size={22} /></span>
           <span className="mp-detail-action-label">{copy['mobile.group.leaveGroup']}</span>
         </button>
       </div>
@@ -97,10 +98,8 @@ export function GroupDetailView({
                 onMemberClick(m);
               }
             }}>
-            <span className="mp-avatar-frame">
-              <Avatar size={38} style={{ background: m.avatarGradient, borderRadius: 12 }}>{m.avatar}</Avatar>
-              {m.online && <span className="mp-online-dot" />}
-            </span>
+            <IdentityAvatar name={m.name} initials={m.avatar} src={m.avatarUrl}
+              size={38} online={m.online} showPresence />
             <div className="mp-member-info">
               <Text strong style={{ fontSize: 14 }}>{m.name}</Text>
               <Text type="secondary" style={{ fontSize: 12 }}>{m.note}</Text>
@@ -116,14 +115,14 @@ export function GroupDetailView({
       <div className="mp-detail-section">
         <div className="mp-detail-section-title">Group Info</div>
         <div className="mp-detail-row">
-          <span className="mp-detail-row-icon" style={{ background: 'rgba(245,158,11,0.1)', color: '#f59e0b' }}><Calendar size={16} /></span>
+          <span className="mp-detail-row-icon tone-warning"><Calendar size={16} /></span>
           <div className="mp-detail-row-content">
             <span className="mp-detail-row-label">Created</span>
             <span className="mp-detail-row-value">January 2025</span>
           </div>
         </div>
         <div className="mp-detail-row">
-          <span className="mp-detail-row-icon" style={{ background: 'rgba(34,197,94,0.1)', color: '#22c55e' }}><ShieldCheck size={16} /></span>
+          <span className="mp-detail-row-icon tone-success"><ShieldCheck size={16} /></span>
           <div className="mp-detail-row-content">
             <span className="mp-detail-row-label">Encryption</span>
             <span className="mp-detail-row-value">End-to-end encrypted</span>
