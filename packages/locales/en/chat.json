@@ -921,5 +921,6 @@
   "chat.bot.stationManaged": "Automated bot · Station resident",
   "chat.bot.oneWayComposer": "One-way webhook channel — replies are not supported",
   "chat.bot.notificationFallbackTitle": "Bot update",
-  "chat.bot.notificationFallbackBody": "A bot posted a new event in your conversation"
+  "chat.bot.notificationFallbackBody": "A bot posted a new event in your conversation",
+  "chat.bot.foldedEvents": "×{{count}} merged"
 }

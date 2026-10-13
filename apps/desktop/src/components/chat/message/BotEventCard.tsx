@@ -27,9 +27,12 @@ const SEVERITY_ERROR = 3;
 
 interface BotEventCardProps {
   event: DesktopBotServiceEvent;
+  // Number of consecutive same-group bot events this card represents
+  // (>1 only; supplied by the timeline's presentation-only fold).
+  foldCount?: number;
 }
 
-export function BotEventCard({ event }: BotEventCardProps) {
+export function BotEventCard({ event, foldCount = 1 }: BotEventCardProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
 
@@ -78,6 +81,7 @@ export function BotEventCard({ event }: BotEventCardProps) {
     <div
       data-bot-event-card="true"
       data-bot-event-type={event.eventType}
+      data-bot-event-fold-count={foldCount}
       data-bot-ptid={event.botPtid}
       style={{
         width: 280,
@@ -95,6 +99,27 @@ export function BotEventCard({ event }: BotEventCardProps) {
           <Text strong style={{ fontSize: 13, lineHeight: '20px' }}>
             {kindLabel}
           </Text>
+          {foldCount > 1 && (
+            <Text
+              data-bot-event-fold-badge="true"
+              strong
+              style={{
+                marginLeft: 'auto',
+                flex: '0 0 auto',
+                fontSize: 11,
+                lineHeight: '18px',
+                padding: '0 8px',
+                borderRadius: 999,
+                color: token.colorPrimary,
+                border: `1px solid ${token.colorPrimaryBorder}`,
+              }}
+            >
+              {t('chat.bot.foldedEvents', {
+                count: foldCount,
+                defaultValue: `×${foldCount} merged`,
+              })}
+            </Text>
+          )}
         </Flexbox>
         {event.fallbackText && (
           <Text style={{ fontSize: 13, color: token.colorTextSecondary, whiteSpace: 'pre-wrap' }}>

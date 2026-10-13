@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { theme, Typography } from 'antd';
@@ -16,6 +16,7 @@ import {
   type MessageActionTarget,
 } from './ChatMessageActionOverlay';
 import { ChatMessageRow, ChatMessageRowInteractionStyle } from './ChatMessageRow';
+import { foldAdjacentBotEvents } from './botEventFold';
 import { blocksMessageActionOverlay } from './messageReactionState';
 import {
   chatMessageTimelineContainerStyle,
@@ -134,8 +135,24 @@ export function ChatMessageTimeline({
   resolveThreadStats,
   scrollContainerRef,
 }: ChatMessageTimelineProps) {
+  // Presentation-only collapse of consecutive same-group bot events into one
+  // card. Unread/paging/search read the full store list; the timeline renders
+  // one representative row per run plus a fold count.
+  const foldedRows = useMemo(() => foldAdjacentBotEvents(messages), [messages]);
+  const surfaceMessages = useMemo(
+    () => foldedRows.map((row) => row.message),
+    [foldedRows],
+  );
+  const botEventFoldCountByUlid = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const { message, foldCount } of foldedRows) {
+      if (foldCount > 1) counts.set(message.ulid, foldCount);
+    }
+    return counts;
+  }, [foldedRows]);
+
   const surfaceItems = buildChatMessageSurfaceItems({
-    messages,
+    messages: surfaceMessages,
     resolveTimestampMs: messageTimestampMs,
   });
 
@@ -292,6 +309,7 @@ export function ChatMessageTimeline({
               <ChatMessageRow
                 activeConversationId={activeConversationId}
                 activeKind={activeKind}
+                botEventFoldCount={botEventFoldCountByUlid.get(message.ulid)}
                 currentUserPtid={currentUserPtid}
                 getSenderProfile={getSenderProfile}
                 highlighted={highlightedMessageUlid === message.ulid}

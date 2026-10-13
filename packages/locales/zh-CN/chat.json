@@ -919,5 +919,6 @@
   "chat.bot.stationManaged": "自动化机器人 · Station 托管",
   "chat.bot.oneWayComposer": "单向 Webhook 通道，暂不支持回复",
   "chat.bot.notificationFallbackTitle": "机器人更新",
-  "chat.bot.notificationFallbackBody": "机器人在你的会话中发送了一条新事件"
+  "chat.bot.notificationFallbackBody": "机器人在你的会话中发送了一条新事件",
+  "chat.bot.foldedEvents": "×{{count}} 合并"
 }

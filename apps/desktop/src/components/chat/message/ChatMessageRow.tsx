@@ -42,6 +42,7 @@ const { Text } = Typography;
 interface ChatMessageRowProps {
   activeConversationId: string;
   activeKind: ChatSurfaceKind;
+  botEventFoldCount?: number;
   currentUserPtid: string | null;
   density?: 'regular' | 'compact';
   getSenderProfile: (
@@ -383,6 +384,7 @@ export function ChatMessageRowInteractionStyle() {
 export const ChatMessageRow = memo(function ChatMessageRow({
   activeConversationId,
   activeKind,
+  botEventFoldCount,
   currentUserPtid,
   density = 'regular',
   getSenderProfile,
@@ -596,6 +598,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           <ChatMessageContent
             message={message}
             isOwn={isOwn}
+            botEventFoldCount={botEventFoldCount}
             replyBlock={replyToUlid && !isRecalled ? (
               <ReplyBlock
                 replyToUlid={replyToUlid}

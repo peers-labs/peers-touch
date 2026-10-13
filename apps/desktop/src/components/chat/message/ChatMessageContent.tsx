@@ -28,6 +28,7 @@ interface ChatMessageContentProps {
   isOwn: boolean;
   replyBlock?: ReactNode;
   attachmentGap?: number;
+  botEventFoldCount?: number;
 }
 
 export function ChatMessageContent({
@@ -35,6 +36,7 @@ export function ChatMessageContent({
   isOwn,
   replyBlock,
   attachmentGap = 6,
+  botEventFoldCount,
 }: ChatMessageContentProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
@@ -65,7 +67,7 @@ export function ChatMessageContent({
           </Text>
         </Flexbox>
       ) : botEvent ? (
-        <BotEventCard event={botEvent} />
+        <BotEventCard event={botEvent} foldCount={botEventFoldCount} />
       ) : (
         <span
           data-message-text={message.ulid}
