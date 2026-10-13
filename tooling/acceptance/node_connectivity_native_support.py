@@ -15,7 +15,7 @@ from typing import Any
 from tooling.acceptance.core import GateError
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.gates.chat.native_file_picker import select_native_file
-from tooling.acceptance.gates.chat.native_support import wait_until
+from tooling.acceptance.gates.chat.native_support import async_harness, wait_until
 from tooling.acceptance.gates.chat.native_two_client_runner import (
     message_snapshot,
     send_text,
@@ -484,6 +484,12 @@ class NodeConnectivityNativeJourneyMixin:
                 "devicePolicy": str(
                     self.actor_specs[actor].get("devicePolicy") or ""
                 ),
+                "endpoint": async_harness(
+                    self.clients[actor],
+                    "getRealtimeDevice",
+                    {},
+                ),
+                "profile": profile_snapshot(self.clients[actor]),
             }
             for actor in ("alice", "bob")
         }
@@ -499,6 +505,17 @@ class NodeConnectivityNativeJourneyMixin:
                 and root.is_dir()
                 and not root.is_symlink()
                 for item, root in zip(evidence.values(), roots)
+            ),
+            json.dumps(evidence, sort_keys=True),
+        )
+        self.assert_condition(
+            "native_device_enrollment_profile_revision",
+            all(
+                item["endpoint"].get("active") is True
+                and int(item["endpoint"].get("profileRevision") or 0)
+                == int(item["profile"].get("profile_revision") or 0)
+                > 0
+                for item in evidence.values()
             ),
             json.dumps(evidence, sort_keys=True),
         )

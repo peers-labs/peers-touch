@@ -1279,9 +1279,21 @@ pub fn messaging_acceptance_current_endpoint(
             Some(json!({ "reason": "messaging_endpoint_actor_mismatch" })),
         );
     }
+    let profile_revision = match engine.store().device_enrollment() {
+        Ok(Some(enrollment)) => enrollment.certificate.observed_profile_version,
+        Ok(None) => 0,
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("read messaging device enrollment for acceptance: {error}"),
+                Some(json!({ "reason": "messaging_enrollment_lookup_failed" })),
+            )
+        }
+    };
     AppResult::success(json!({
         "actor_ptid": actor_ptid,
         "device_id": engine.endpoint().device_id.as_str(),
+        "profile_revision": profile_revision,
     }))
 }
 
