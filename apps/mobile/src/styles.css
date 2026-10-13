@@ -218,7 +218,8 @@ select,
 .root-error-secondary {
   height: 46px;
   border: 0;
-  border-radius: 999px;
+  /* CTA buttons use the control radius, never a full pill. */
+  border-radius: 12px;
   font-size: 15px;
   font-weight: 800;
 }
@@ -3486,7 +3487,8 @@ select,
   height: 44px;
   place-items: center;
   border: 0;
-  border-radius: 999px;
+  /* Icon remove button uses the control radius, never a circle. */
+  border-radius: 12px;
   color: rgba(15, 23, 42, 0.62);
   background: rgba(15, 23, 42, 0.06);
 }

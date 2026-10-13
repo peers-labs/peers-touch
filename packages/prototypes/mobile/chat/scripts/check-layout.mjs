@@ -198,6 +198,24 @@ try {
         `group avatar must use lg radius 12 and never be circular, got ${shape.radius} / size ${shape.size}`);
     }
 
+    // Interactive controls are never circular/pill: the chat search input
+    // keeps a compact md corner, not a full pill.
+    const searchFields = await device.locator('.mp-search-bar .ant-input-affix-wrapper').evaluateAll(
+      (elements) => elements.map((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+          height: Math.round(rect.height),
+          radius: Math.round(Number.parseFloat(style.borderTopLeftRadius)),
+        };
+      }),
+    );
+    assert(searchFields.length > 0, 'expected the chat search input on the default list');
+    for (const field of searchFields) {
+      assert(field.radius === 8 && field.radius < field.height / 2 - 1,
+        `search input must use md radius 8 and never be a pill, got radius ${field.radius} / height ${field.height}`);
+    }
+
     assert.deepEqual(errors, []);
     await page.close();
   }
