@@ -20,7 +20,7 @@ class _Session:
             "data": {
                 "status": json.dumps(
                     {
-                        "account_id": "account-a",
+                        "account_scope_sha256": "c" * 64,
                         "actor_ptid": "ptid:actor-a",
                         "session_binding_sha256": "b" * 64,
                         "session_id_sha256": "a" * 64,
@@ -45,6 +45,7 @@ class NodeConnectivityClusterNativeGateTest(unittest.TestCase):
         identity = _window_session_identity(_Session())  # type: ignore[arg-type]
 
         self.assertEqual(identity["actor_ptid"], "ptid:actor-a")
+        self.assertEqual(identity["account_scope_sha256"], "c" * 64)
         self.assertEqual(identity["session_binding_sha256"], "b" * 64)
         self.assertEqual(identity["session_id_sha256"], "a" * 64)
 
