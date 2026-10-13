@@ -10,8 +10,44 @@ import {
   MemberStatus,
 } from '../gen/proto/domain/chat/conversation_pb';
 import { MessageType } from '../gen/proto/domain/chat/chat_pb';
+import { ActorKind } from '../gen/proto/domain/actor/actor_pb';
 import { resolveMessageSearchTargets, useSocialChatStore } from './socialChat';
+import { useSessionStore } from './session';
+import type { AccountProfile } from '../services/desktop_api';
 import type { SocialMessage } from './socialProjection';
+
+function peerProfile(kind: ActorKind): AccountProfile {
+  return {
+    id: 'ptid:peer:bob',
+    profile_revision: 1,
+    username: 'bob',
+    acct: 'bob',
+    display_name: 'Bob',
+    note: '',
+    url: '',
+    avatar: '',
+    header: '',
+    locked: false,
+    created_at: '',
+    statuses_count: 0,
+    following_count: 0,
+    followers_count: 0,
+    region: '',
+    timezone: '',
+    tags: [],
+    links: [],
+    default_visibility: '',
+    manually_approves_followers: false,
+    message_permission: '',
+    auto_expire_days: 0,
+    federated_handle: '',
+    home_station_peer_id: '',
+    home_station_domain: '',
+    discoverability: 'hidden',
+    kind,
+    peers_touch: { network_id: 'ptid:peer:bob' },
+  };
+}
 
 describe('social chat conversation projection', () => {
   beforeEach(() => {
@@ -91,6 +127,25 @@ describe('social chat conversation projection', () => {
       { conversationId: 'direct-conversation', scope: 'friend' },
       { conversationId: 'group-conversation', scope: 'group' },
     ]);
+  });
+
+  it('classifies a direct conversation as a bot from the peer actor kind', () => {
+    useSessionStore.setState({
+      authenticated: true,
+      currentUser: { actorPtid: 'ptid:peer:alice' },
+    });
+
+    expect(useSocialChatStore.getState().isBotConversation('direct-conversation')).toBe(false);
+
+    useSocialChatStore.setState({
+      peerProfiles: { 'ptid:peer:bob': peerProfile(ActorKind.PERSON) },
+    });
+    expect(useSocialChatStore.getState().isBotConversation('direct-conversation')).toBe(false);
+
+    useSocialChatStore.setState({
+      peerProfiles: { 'ptid:peer:bob': peerProfile(ActorKind.AGENT) },
+    });
+    expect(useSocialChatStore.getState().isBotConversation('direct-conversation')).toBe(true);
   });
 
   it('keeps an immediate background preview ephemeral and conversation-scoped', () => {

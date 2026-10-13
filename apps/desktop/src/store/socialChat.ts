@@ -568,6 +568,13 @@ interface SocialChatState {
    * known to have invalidated the cached row).
    */
   loadPeerProfile: (peerPtid: string, force?: boolean) => Promise<void>;
+  /**
+   * Handle an `actor_profile_changed` realtime wake: refetch the authoritative
+   * profile for the changed actor. Routes the authenticated self actor to the
+   * current-user loader and every other actor (including owned bots) to the
+   * peer loader with cache bypass.
+   */
+  refreshChangedActorProfile: (actorPtid: string) => Promise<void>;
 
   loadFriendRequests: (status?: number, limit?: number, offset?: number) => Promise<void>;
   sendFriendRequest: (
@@ -1909,6 +1916,17 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }
   },
 
+  refreshChangedActorProfile: async (actorPtid) => {
+    const did = (actorPtid || '').trim();
+    if (!did) return;
+    const selfPtid = currentAuthenticatedActorPtid();
+    if (selfPtid && did === selfPtid) {
+      await get().loadCurrentUserProfile();
+      return;
+    }
+    await get().loadPeerProfile(did, true);
+  },
+
   loadFriendRequests: async (status, limit, offset) => {
     if (!hasAuthenticatedActor()) return;
     set({
@@ -2354,15 +2372,15 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   isBotConversation: (conversationUlid) => {
     const state = get();
-    const members = state.conversationMembers[conversationUlid] || [];
-    const actorPtid = currentAuthenticatedActorPtid();
-    // Bot direct conversations carry a non-self member projected as
-    // ACTOR_KIND_AGENT (7). Kind is the source of truth; messages alone are
-    // not consulted so the header is correct before history loads.
-    return members.some(
-      (member) =>
-        member.ptid && member.ptid !== actorPtid && member.actorKind === ActorKind.AGENT,
-    );
+    const selfPtid = currentAuthenticatedActorPtid();
+    // The bot is an AGENT actor (ActorKind 7). Actor kind is an intrinsic
+    // actor attribute, so it is read from the peer's authoritative profile
+    // projection (same source as its avatar), not duplicated per membership.
+    const peerPtid = (state.conversationMembers[conversationUlid] || [])
+      .find((member) => member.ptid && member.ptid !== selfPtid)
+      ?.ptid;
+    if (!peerPtid) return false;
+    return state.peerProfiles[peerPtid]?.kind === ActorKind.AGENT;
   },
 
   getIMThreadMessages: (kind, conversationUlid, rootUlid) => {

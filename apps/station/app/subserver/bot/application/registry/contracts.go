@@ -26,3 +26,21 @@ type ActorMinter interface {
 	// empty clears it) without any federation publish.
 	SetAgentAvatar(ctx context.Context, botPtid, avatarURL string) error
 }
+
+// ProfileChangeWake describes a committed bot actor profile mutation that the
+// owning human's live devices should observe immediately. The wake is fanned
+// out to the owner's actor stream while carrying the bot PTID as the changed
+// subject, so clients invalidate the bot (not the owner) profile cache.
+type ProfileChangeWake struct {
+	OwnerPtid       string
+	BotPtid         string
+	ChangedAtUnixMs int64
+}
+
+// ProfileChangePublisher emits the post-commit actor_profile_changed realtime
+// wake onto the owner's device streams. It is implemented by infrastructure
+// over the process EventBus; the application layer treats it as a best-effort
+// projection (the actor row is already durable truth).
+type ProfileChangePublisher interface {
+	PublishActorProfileChanged(ctx context.Context, wake ProfileChangeWake) error
+}

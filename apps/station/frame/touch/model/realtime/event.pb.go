@@ -470,6 +470,7 @@ type StreamEvent struct {
 	//	*StreamEvent_LedgerEventDelivered
 	//	*StreamEvent_SocialGraphEvent
 	//	*StreamEvent_BotNotification
+	//	*StreamEvent_ActorProfileChanged
 	Kind          isStreamEvent_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -679,6 +680,15 @@ func (x *StreamEvent) GetBotNotification() *BotNotificationDelivered {
 	return nil
 }
 
+func (x *StreamEvent) GetActorProfileChanged() *ActorProfileChanged {
+	if x != nil {
+		if x, ok := x.Kind.(*StreamEvent_ActorProfileChanged); ok {
+			return x.ActorProfileChanged
+		}
+	}
+	return nil
+}
+
 type isStreamEvent_Kind interface {
 	isStreamEvent_Kind()
 }
@@ -751,6 +761,10 @@ type StreamEvent_BotNotification struct {
 	BotNotification *BotNotificationDelivered `protobuf:"bytes,26,opt,name=bot_notification,json=botNotification,proto3,oneof"`
 }
 
+type StreamEvent_ActorProfileChanged struct {
+	ActorProfileChanged *ActorProfileChanged `protobuf:"bytes,27,opt,name=actor_profile_changed,json=actorProfileChanged,proto3,oneof"`
+}
+
 func (*StreamEvent_Hb) isStreamEvent_Kind() {}
 
 func (*StreamEvent_Message) isStreamEvent_Kind() {}
@@ -784,6 +798,8 @@ func (*StreamEvent_LedgerEventDelivered) isStreamEvent_Kind() {}
 func (*StreamEvent_SocialGraphEvent) isStreamEvent_Kind() {}
 
 func (*StreamEvent_BotNotification) isStreamEvent_Kind() {}
+
+func (*StreamEvent_ActorProfileChanged) isStreamEvent_Kind() {}
 
 // Heartbeat is emitted by the server every 15 seconds (default,
 // operator-tunable) so the client can detect a silent connection even
@@ -2543,11 +2559,76 @@ func (x *SocialGraphEvent) GetActorDisplayName() string {
 	return ""
 }
 
+// ActorProfileChanged notifies an actor's own authenticated devices that the
+// authoritative actor profile changed (display name, avatar/icon, or any
+// future profile field). It is emitted after the profile mutation committed.
+//
+// Like MomentEvent and BotNotificationDelivered it carries identifiers only:
+// clients invalidate any cached profile for actor_ptid and refetch the
+// authoritative projection through the profile API, so Station remains the
+// source of truth and caches converge without waiting for the periodic
+// reconcile. Ordering uses the enclosing StreamEvent.event_id (monotonic per
+// actor); no separate revision is carried here. v1 fans out to the changed
+// actor's own stream only; social-fanout (contacts seeing a peer's new
+// avatar) is a future extension.
+type ActorProfileChanged struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Actor whose profile changed (a human actor or an owned bot actor).
+	ActorPtid       string `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
+	ChangedTsUnixMs int64  `protobuf:"varint,2,opt,name=changed_ts_unix_ms,json=changedTsUnixMs,proto3" json:"changed_ts_unix_ms,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ActorProfileChanged) Reset() {
+	*x = ActorProfileChanged{}
+	mi := &file_domain_realtime_event_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActorProfileChanged) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActorProfileChanged) ProtoMessage() {}
+
+func (x *ActorProfileChanged) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_realtime_event_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActorProfileChanged.ProtoReflect.Descriptor instead.
+func (*ActorProfileChanged) Descriptor() ([]byte, []int) {
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ActorProfileChanged) GetActorPtid() string {
+	if x != nil {
+		return x.ActorPtid
+	}
+	return ""
+}
+
+func (x *ActorProfileChanged) GetChangedTsUnixMs() int64 {
+	if x != nil {
+		return x.ChangedTsUnixMs
+	}
+	return 0
+}
+
 var File_domain_realtime_event_proto protoreflect.FileDescriptor
 
 const file_domain_realtime_event_proto_rawDesc = "" +
 	"\n" +
-	"\x1bdomain/realtime/event.proto\x12\x1dpeers_touch.model.realtime.v1\"\xc9\f\n" +
+	"\x1bdomain/realtime/event.proto\x12\x1dpeers_touch.model.realtime.v1\"\xb3\r\n" +
 	"\vStreamEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1c\n" +
 	"\n" +
@@ -2569,7 +2650,8 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\x12envelope_delivered\x18\x17 \x01(\v20.peers_touch.model.realtime.v1.EnvelopeDeliveredH\x00R\x11envelopeDelivered\x12k\n" +
 	"\x16ledger_event_delivered\x18\x18 \x01(\v23.peers_touch.model.realtime.v1.LedgerEventDeliveredH\x00R\x14ledgerEventDelivered\x12_\n" +
 	"\x12social_graph_event\x18\x19 \x01(\v2/.peers_touch.model.realtime.v1.SocialGraphEventH\x00R\x10socialGraphEvent\x12d\n" +
-	"\x10bot_notification\x18\x1a \x01(\v27.peers_touch.model.realtime.v1.BotNotificationDeliveredH\x00R\x0fbotNotificationB\x06\n" +
+	"\x10bot_notification\x18\x1a \x01(\v27.peers_touch.model.realtime.v1.BotNotificationDeliveredH\x00R\x0fbotNotification\x12h\n" +
+	"\x15actor_profile_changed\x18\x1b \x01(\v22.peers_touch.model.realtime.v1.ActorProfileChangedH\x00R\x13actorProfileChangedB\x06\n" +
 	"\x04kind\"1\n" +
 	"\tHeartbeat\x12$\n" +
 	"\x0efloor_event_id\x18\x01 \x01(\tR\ffloorEventId\"\xed\x01\n" +
@@ -2796,7 +2878,11 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\n" +
 	"UNFRIENDED\x10\x05\x12\x18\n" +
 	"\x14RELATIONSHIP_BLOCKED\x10\x06\x12\x1a\n" +
-	"\x16RELATIONSHIP_UNBLOCKED\x10\aBOZMgithub.com/peers-labs/peers-touch/station/frame/touch/model/realtime;realtimeb\x06proto3"
+	"\x16RELATIONSHIP_UNBLOCKED\x10\a\"a\n" +
+	"\x13ActorProfileChanged\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12+\n" +
+	"\x12changed_ts_unix_ms\x18\x02 \x01(\x03R\x0fchangedTsUnixMsBOZMgithub.com/peers-labs/peers-touch/station/frame/touch/model/realtime;realtimeb\x06proto3"
 
 var (
 	file_domain_realtime_event_proto_rawDescOnce sync.Once
@@ -2811,7 +2897,7 @@ func file_domain_realtime_event_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_realtime_event_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_domain_realtime_event_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_domain_realtime_event_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_domain_realtime_event_proto_goTypes = []any{
 	(MessageReceipt_Kind)(0),                   // 0: peers_touch.model.realtime.v1.MessageReceipt.Kind
 	(CallSignal_Kind)(0),                       // 1: peers_touch.model.realtime.v1.CallSignal.Kind
@@ -2840,6 +2926,7 @@ var file_domain_realtime_event_proto_goTypes = []any{
 	(*LedgerEventDelivered)(nil),               // 24: peers_touch.model.realtime.v1.LedgerEventDelivered
 	(*BotNotificationDelivered)(nil),           // 25: peers_touch.model.realtime.v1.BotNotificationDelivered
 	(*SocialGraphEvent)(nil),                   // 26: peers_touch.model.realtime.v1.SocialGraphEvent
+	(*ActorProfileChanged)(nil),                // 27: peers_touch.model.realtime.v1.ActorProfileChanged
 }
 var file_domain_realtime_event_proto_depIdxs = []int32{
 	8,  // 0: peers_touch.model.realtime.v1.StreamEvent.hb:type_name -> peers_touch.model.realtime.v1.Heartbeat
@@ -2859,18 +2946,19 @@ var file_domain_realtime_event_proto_depIdxs = []int32{
 	24, // 14: peers_touch.model.realtime.v1.StreamEvent.ledger_event_delivered:type_name -> peers_touch.model.realtime.v1.LedgerEventDelivered
 	26, // 15: peers_touch.model.realtime.v1.StreamEvent.social_graph_event:type_name -> peers_touch.model.realtime.v1.SocialGraphEvent
 	25, // 16: peers_touch.model.realtime.v1.StreamEvent.bot_notification:type_name -> peers_touch.model.realtime.v1.BotNotificationDelivered
-	0,  // 17: peers_touch.model.realtime.v1.MessageReceipt.kind:type_name -> peers_touch.model.realtime.v1.MessageReceipt.Kind
-	1,  // 18: peers_touch.model.realtime.v1.CallSignal.kind:type_name -> peers_touch.model.realtime.v1.CallSignal.Kind
-	2,  // 19: peers_touch.model.realtime.v1.MessageMutation.kind:type_name -> peers_touch.model.realtime.v1.MessageMutation.Kind
-	3,  // 20: peers_touch.model.realtime.v1.GroupMembershipChange.kind:type_name -> peers_touch.model.realtime.v1.GroupMembershipChange.Kind
-	4,  // 21: peers_touch.model.realtime.v1.ConversationSettingsChanged.kind:type_name -> peers_touch.model.realtime.v1.ConversationSettingsChanged.Kind
-	5,  // 22: peers_touch.model.realtime.v1.MomentEvent.kind:type_name -> peers_touch.model.realtime.v1.MomentEvent.Kind
-	6,  // 23: peers_touch.model.realtime.v1.SocialGraphEvent.kind:type_name -> peers_touch.model.realtime.v1.SocialGraphEvent.Kind
-	24, // [24:24] is the sub-list for method output_type
-	24, // [24:24] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	27, // 17: peers_touch.model.realtime.v1.StreamEvent.actor_profile_changed:type_name -> peers_touch.model.realtime.v1.ActorProfileChanged
+	0,  // 18: peers_touch.model.realtime.v1.MessageReceipt.kind:type_name -> peers_touch.model.realtime.v1.MessageReceipt.Kind
+	1,  // 19: peers_touch.model.realtime.v1.CallSignal.kind:type_name -> peers_touch.model.realtime.v1.CallSignal.Kind
+	2,  // 20: peers_touch.model.realtime.v1.MessageMutation.kind:type_name -> peers_touch.model.realtime.v1.MessageMutation.Kind
+	3,  // 21: peers_touch.model.realtime.v1.GroupMembershipChange.kind:type_name -> peers_touch.model.realtime.v1.GroupMembershipChange.Kind
+	4,  // 22: peers_touch.model.realtime.v1.ConversationSettingsChanged.kind:type_name -> peers_touch.model.realtime.v1.ConversationSettingsChanged.Kind
+	5,  // 23: peers_touch.model.realtime.v1.MomentEvent.kind:type_name -> peers_touch.model.realtime.v1.MomentEvent.Kind
+	6,  // 24: peers_touch.model.realtime.v1.SocialGraphEvent.kind:type_name -> peers_touch.model.realtime.v1.SocialGraphEvent.Kind
+	25, // [25:25] is the sub-list for method output_type
+	25, // [25:25] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_domain_realtime_event_proto_init() }
@@ -2896,6 +2984,7 @@ func file_domain_realtime_event_proto_init() {
 		(*StreamEvent_LedgerEventDelivered)(nil),
 		(*StreamEvent_SocialGraphEvent)(nil),
 		(*StreamEvent_BotNotification)(nil),
+		(*StreamEvent_ActorProfileChanged)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2903,7 +2992,7 @@ func file_domain_realtime_event_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_realtime_event_proto_rawDesc), len(file_domain_realtime_event_proto_rawDesc)),
 			NumEnums:      7,
-			NumMessages:   20,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

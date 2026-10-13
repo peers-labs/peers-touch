@@ -17,6 +17,7 @@ import {
 import { Bot, Copy, KeyRound, Pause, Play, Plus, RefreshCw, Trash2, Upload } from 'lucide-react';
 
 import { api, type RegistryBot, type BotCreateResponse } from '../../services/desktop_api';
+import { useSocialChatStore } from '../../store/socialChat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import {
   SettingsContainer,
@@ -37,26 +38,18 @@ const tr = (t: (k: string, o?: Record<string, unknown>) => string) =>
   (k: string, fallback: string, o?: Record<string, unknown>) =>
     t(k, { defaultValue: fallback, ...(o ?? {}) });
 
-function BotAvatar({ bot, avatarToken }: { bot: RegistryBot; avatarToken: number }) {
-  const [remoteUrl, setRemoteUrl] = useState('');
+function BotAvatar({ bot }: { bot: RegistryBot }) {
+  // Single source of truth: the bot avatar lives on the AGENT actor and is
+  // projected into the social profile store. The realtime actor_profile_changed
+  // wake force-refreshes it, so an owner editing the avatar converges here and
+  // in chat immediately without a component-local fetch or bust counter.
+  const profile = useSocialChatStore((s) => s.peerProfiles[bot.botPtid] ?? null);
+  const loadPeerProfile = useSocialChatStore((s) => s.loadPeerProfile);
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        // Bot avatar lives on the AGENT actor; resolve via the public peer profile.
-        const profile = await api.peerProfileGet(bot.botPtid);
-        if (alive) setRemoteUrl((profile as { avatar?: string })?.avatar || '');
-      } catch {
-        if (alive) setRemoteUrl('');
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-    // avatarToken forces a refetch after an avatar change.
-  }, [bot.botPtid, avatarToken]);
+    void loadPeerProfile(bot.botPtid);
+  }, [bot.botPtid, loadPeerProfile]);
 
-  return <UserSquareAvatar remoteUrl={remoteUrl || undefined} name={bot.name} size={36} />;
+  return <UserSquareAvatar remoteUrl={profile?.avatar || undefined} name={bot.name} size={36} />;
 }
 
 function CredentialReveal({
@@ -153,7 +146,6 @@ export function BotsSettings() {
 
   const [bots, setBots] = useState<RegistryBot[]>([]);
   const [loading, setLoading] = useState(true);
-  const [avatarToken, setAvatarToken] = useState(0);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
@@ -200,7 +192,6 @@ export function BotsSettings() {
       setCreateOpen(false);
       setName('');
       setAvatarPath('');
-      setAvatarToken((n) => n + 1);
       await refresh();
     } catch (error) {
       message.error((error as Error)?.message || 'bot_create failed');
@@ -242,7 +233,8 @@ export function BotsSettings() {
     try {
       const uploaded = await api.botUploadAvatar(path);
       await api.botSetProfile(bot.botPtid, uploaded.url);
-      setAvatarToken((n) => n + 1);
+      // The post-commit actor_profile_changed wake refreshes the single
+      // peerProfiles projection (here and in chat); no local cache busting.
       message.success(tt('settings.bots.avatarUpdated', 'Avatar updated'));
     } catch (error) {
       message.error((error as Error)?.message || 'bot_set_profile failed');
@@ -264,7 +256,7 @@ export function BotsSettings() {
       dataIndex: 'name',
       render: (_: unknown, bot: RegistryBot) => (
         <Space>
-          <BotAvatar bot={bot} avatarToken={avatarToken} />
+          <BotAvatar bot={bot} />
           <Space direction="vertical" size={0}>
             <Text strong>{bot.name}</Text>
             <Text type="secondary" style={{ fontSize: 11 }}>{bot.webhookId}</Text>

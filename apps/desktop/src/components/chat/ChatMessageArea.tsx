@@ -12,6 +12,7 @@ import {
 } from '@peers-touch/client-chat-core';
 import {
   socialThreadKey,
+  useSocialChatStore,
 } from '../../store/socialChat';
 import { useCryptoStore } from '../../store/cryptoStore';
 import {
@@ -121,7 +122,6 @@ export function ChatMessageArea({
     pinnedMessages,
     reactToMessage,
     pinMessage,
-    isBotConversation: isBotConversationSelector,
   } = useActiveSocialChatSlice((s) => ({
     activeTab: s.activeTab,
     activeSessionUlid: s.activeSessionUlid,
@@ -160,7 +160,6 @@ export function ChatMessageArea({
     pinnedMessages: s.pinnedMessages,
     reactToMessage: s.reactToMessage,
     pinMessage: s.pinMessage,
-    isBotConversation: s.isBotConversation,
   }));
   const actorStationEntries = useActiveChatFederationSlice(
     (state) => state.actorStationEntries,
@@ -904,9 +903,12 @@ export function ChatMessageArea({
     ? directSecurityState === 'ready'
     : groupSecurityState[activeUlid] === 'ready';
   // Bot direct conversations are Station-resident plaintext: no E2EE lock,
-  // no calls, and a one-way composer. Member actor_kind is the source.
-  const isBotConversation =
-    activeTab === 'friend' && activeUlid ? isBotConversationSelector(activeUlid) : false;
+  // no calls, and a one-way composer. The peer actor's kind (AGENT) read from
+  // the profile projection is the source; subscribed so it flips once the
+  // peer profile loads or changes.
+  const isBotConversation = useSocialChatStore((s) => (
+    activeTab === 'friend' && activeUlid ? s.isBotConversation(activeUlid) : false
+  ));
 
   return (
     <Flexbox

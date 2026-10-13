@@ -376,6 +376,21 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
       });
       return;
     }
+    case 'actorProfileChanged': {
+      const p = kind.value;
+      if (!p.actorPtid) {
+        log.warn('eventStream', 'actorProfileChanged missing actorPtid, dropping', { eventId });
+        return;
+      }
+      // Identifiers-only wake: subscribers invalidate the cached profile and
+      // refetch the authoritative projection for this actor.
+      eventBus.publish(EVENT.REALTIME_ACTOR_PROFILE_CHANGED, {
+        eventId,
+        actorPtid: p.actorPtid,
+        changedTsUnixMs: Number(p.changedTsUnixMs),
+      });
+      return;
+    }
     case 'moment':
       dispatchMomentEvent(eventId, kind.value);
       return;

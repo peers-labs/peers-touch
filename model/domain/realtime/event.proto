@@ -46,6 +46,7 @@ message StreamEvent {
     LedgerEventDelivered      ledger_event_delivered           = 24;
     SocialGraphEvent          social_graph_event               = 25;
     BotNotificationDelivered  bot_notification                 = 26;
+    ActorProfileChanged       actor_profile_changed            = 27;
   }
 }
 
@@ -427,4 +428,22 @@ message SocialGraphEvent {
   string request_id = 4;
   string conversation_id = 5;
   string actor_display_name = 6;
+}
+
+// ActorProfileChanged notifies an actor's own authenticated devices that the
+// authoritative actor profile changed (display name, avatar/icon, or any
+// future profile field). It is emitted after the profile mutation committed.
+//
+// Like MomentEvent and BotNotificationDelivered it carries identifiers only:
+// clients invalidate any cached profile for actor_ptid and refetch the
+// authoritative projection through the profile API, so Station remains the
+// source of truth and caches converge without waiting for the periodic
+// reconcile. Ordering uses the enclosing StreamEvent.event_id (monotonic per
+// actor); no separate revision is carried here. v1 fans out to the changed
+// actor's own stream only; social-fanout (contacts seeing a peer's new
+// avatar) is a future extension.
+message ActorProfileChanged {
+  // Actor whose profile changed (a human actor or an owned bot actor).
+  string actor_ptid = 1;
+  int64  changed_ts_unix_ms = 2;
 }

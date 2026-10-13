@@ -2370,6 +2370,11 @@ export interface AccountProfile {
   home_station_peer_id: string;
   home_station_domain: string;
   discoverability: 'hidden' | 'by_handle' | 'indexed';
+  /**
+   * Intrinsic ActorKind (1 = person, 7 = agent/bot). Drives one-way,
+   * non-E2EE conversation UX for bot peers.
+   */
+  kind: number;
   peers_touch: {
     network_id: string;
   };

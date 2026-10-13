@@ -202,3 +202,48 @@ func TestSetProfileAvatar(t *testing.T) {
 		t.Fatalf("non-owner attempt mutated avatar: %q", got)
 	}
 }
+
+type recordingPublisher struct {
+	wakes chan ProfileChangeWake
+}
+
+func (p *recordingPublisher) PublishActorProfileChanged(_ context.Context, wake ProfileChangeWake) error {
+	p.wakes <- wake
+	return nil
+}
+
+// SetProfile emits a post-commit actor_profile_changed wake addressed to the
+// owner but carrying the bot actor as the changed subject.
+func TestSetProfilePublishesOwnerWake(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	repo := persistence.NewGormRepo(db)
+	if err := repo.AutoMigrate(); err != nil {
+		t.Fatalf("automigrate: %v", err)
+	}
+	publisher := &recordingPublisher{wakes: make(chan ProfileChangeWake, 1)}
+	svc := NewService(repo, &fakeMinter{}, WithProfileChangePublisher(publisher))
+	ctx := context.Background()
+	created, _ := svc.Create(ctx, owner, "Wake Bot", "peers", "")
+	ptid := created.Bot.BotPtid
+
+	if _, err := svc.SetProfile(ctx, owner, ptid, "/sub-oss/file?key=wake"); err != nil {
+		t.Fatalf("set profile: %v", err)
+	}
+	select {
+	case wake := <-publisher.wakes:
+		if wake.OwnerPtid != owner {
+			t.Fatalf("wake owner = %q, want %q", wake.OwnerPtid, owner)
+		}
+		if wake.BotPtid != ptid {
+			t.Fatalf("wake bot = %q, want %q", wake.BotPtid, ptid)
+		}
+		if wake.ChangedAtUnixMs == 0 {
+			t.Fatal("wake changed timestamp must be set")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected actor profile changed wake after SetProfile")
+	}
+}

@@ -88,6 +88,7 @@ export function accountProfileFromFederationResolve(
     home_station_peer_id: view.homeStationPeerId,
     home_station_domain: view.homeStationDomain,
     discoverability: actorVisibilityLabel(profile.discoverability),
+    kind: Number(profile.kind ?? 0),
     peers_touch: {
       network_id: actorPtid,
     },

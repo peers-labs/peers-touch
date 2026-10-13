@@ -327,6 +327,13 @@ fn actor_profile_to_value(p: &ActorProfile) -> Value {
         "home_station_peer_id": p.home_station_peer_id,
         "home_station_domain": p.home_station_domain,
         "discoverability": discoverability_label(p.discoverability),
+        // Intrinsic actor type (ActorKind enum, e.g. 7 = AGENT/bot). Drives
+        // one-way, non-E2EE conversation UX; -1 is the prost default for an
+        // unset enum, normalize it to 0 (UNSPECIFIED).
+        "kind": match i32::from(p.kind) {
+            v if v < 0 => 0,
+            v => v,
+        },
         "peers_touch": {
             "network_id": p.peers_touch
                 .as_ref()

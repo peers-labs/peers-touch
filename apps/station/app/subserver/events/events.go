@@ -17,8 +17,40 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
 )
+
+var installActorProfileHookOnce sync.Once
+
+// installActorProfileChangeHook bridges the frame actor write path into this
+// subserver's EventBus. It runs once per process; the frame layer invokes the
+// callback after a human actor's own profile mutation commits so all of that
+// actor's live device streams receive an ActorProfileChanged wake.
+func installActorProfileChangeHook() {
+	installActorProfileHookOnce.Do(func() {
+		actor.RegisterProfileChangedHook(func(actorPtid string, changedAtUnixMs int64) {
+			bus := GetBus()
+			if bus == nil {
+				return
+			}
+			ev := &realtime.StreamEvent{
+				Kind: &realtime.StreamEvent_ActorProfileChanged{
+					ActorProfileChanged: &realtime.ActorProfileChanged{
+						ActorPtid:       actorPtid,
+						ChangedTsUnixMs: changedAtUnixMs,
+					},
+				},
+			}
+			if _, err := bus.Publish(actorPtid, ev); err != nil {
+				logger.DefaultHelper.Warnf(
+					"events: actor profile change publish failed actor_ptid=%s: %v",
+					actorPtid, err,
+				)
+			}
+		})
+	})
+}
 
 const callResolutionSweepInterval = time.Second
 
@@ -52,6 +84,7 @@ func (s *eventsSubServer) Init(ctx context.Context, opts ...option.Option) error
 	s.bus = NewEventBus(WithDurableStore(eventStore))
 	s.callResolution = callResolution
 	setGlobalBus(s.bus)
+	installActorProfileChangeHook()
 	return nil
 }
 

@@ -1790,8 +1790,12 @@ type ActorProfile struct {
 	HomeStationPeerId         string                 `protobuf:"bytes,31,opt,name=home_station_peer_id,proto3" json:"home_station_peer_id,omitempty"`
 	HomeStationDomain         string                 `protobuf:"bytes,32,opt,name=home_station_domain,proto3" json:"home_station_domain,omitempty"`
 	Discoverability           ActorVisibility        `protobuf:"varint,33,opt,name=discoverability,proto3,enum=peers_touch.model.actor.v1.ActorVisibility" json:"discoverability,omitempty"`
-	unknownFields             protoimpl.UnknownFields
-	sizeCache                 protoimpl.SizeCache
+	// Intrinsic actor type (person, agent/bot, ...). Clients use it to adapt UX
+	// for non-human peers, e.g. rendering a bot direct conversation as one-way,
+	// non-E2EE. Mirrors ActorRef.kind as a first-class profile attribute.
+	Kind          ActorKind `protobuf:"varint,34,opt,name=kind,proto3,enum=peers_touch.model.actor.v1.ActorKind" json:"kind,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ActorProfile) Reset() {
@@ -2053,6 +2057,13 @@ func (x *ActorProfile) GetDiscoverability() ActorVisibility {
 		return x.Discoverability
 	}
 	return ActorVisibility_ACTOR_VISIBILITY_UNSPECIFIED
+}
+
+func (x *ActorProfile) GetKind() ActorKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ActorKind_ACTOR_KIND_UNSPECIFIED
 }
 
 type UpdateProfileRequest struct {
@@ -2517,7 +2528,7 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x0ePeersTouchInfo\x12\x1e\n" +
 	"\n" +
 	"network_id\x18\x01 \x01(\tR\n" +
-	"network_id\"\x9b\n" +
+	"network_id\"\xd6\n" +
 	"\n" +
 	"\fActorProfile\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\"\n" +
@@ -2555,7 +2566,8 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x10federated_handle\x18\x1e \x01(\tR\x10federated_handle\x122\n" +
 	"\x14home_station_peer_id\x18\x1f \x01(\tR\x14home_station_peer_id\x120\n" +
 	"\x13home_station_domain\x18  \x01(\tR\x13home_station_domain\x12U\n" +
-	"\x0fdiscoverability\x18! \x01(\x0e2+.peers_touch.model.actor.v1.ActorVisibilityR\x0fdiscoverability\"\xcb\x06\n" +
+	"\x0fdiscoverability\x18! \x01(\x0e2+.peers_touch.model.actor.v1.ActorVisibilityR\x0fdiscoverability\x129\n" +
+	"\x04kind\x18\" \x01(\x0e2%.peers_touch.model.actor.v1.ActorKindR\x04kind\"\xcb\x06\n" +
 	"\x14UpdateProfileRequest\x12'\n" +
 	"\fdisplay_name\x18\x01 \x01(\tH\x00R\fdisplay_name\x88\x01\x01\x12\x17\n" +
 	"\x04note\x18\x02 \x01(\tH\x01R\x04note\x88\x01\x01\x12\x1b\n" +
@@ -2710,16 +2722,17 @@ var file_domain_actor_actor_proto_depIdxs = []int32{
 	24, // 29: peers_touch.model.actor.v1.ActorProfile.peers_touch:type_name -> peers_touch.model.actor.v1.PeersTouchInfo
 	6,  // 30: peers_touch.model.actor.v1.ActorProfile.ref:type_name -> peers_touch.model.actor.v1.ActorRef
 	2,  // 31: peers_touch.model.actor.v1.ActorProfile.discoverability:type_name -> peers_touch.model.actor.v1.ActorVisibility
-	23, // 32: peers_touch.model.actor.v1.UpdateProfileRequest.links:type_name -> peers_touch.model.actor.v1.UserLink
-	2,  // 33: peers_touch.model.actor.v1.UpdateProfileRequest.discoverability:type_name -> peers_touch.model.actor.v1.ActorVisibility
-	5,  // 34: peers_touch.model.actor.v1.UpdateProfileResponse.outcome:type_name -> peers_touch.model.actor.v1.ProfileUpdateOutcome
-	25, // 35: peers_touch.model.actor.v1.UpdateProfileResponse.profile:type_name -> peers_touch.model.actor.v1.ActorProfile
-	21, // 36: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
-	37, // [37:37] is the sub-list for method output_type
-	37, // [37:37] is the sub-list for method input_type
-	37, // [37:37] is the sub-list for extension type_name
-	37, // [37:37] is the sub-list for extension extendee
-	0,  // [0:37] is the sub-list for field type_name
+	0,  // 32: peers_touch.model.actor.v1.ActorProfile.kind:type_name -> peers_touch.model.actor.v1.ActorKind
+	23, // 33: peers_touch.model.actor.v1.UpdateProfileRequest.links:type_name -> peers_touch.model.actor.v1.UserLink
+	2,  // 34: peers_touch.model.actor.v1.UpdateProfileRequest.discoverability:type_name -> peers_touch.model.actor.v1.ActorVisibility
+	5,  // 35: peers_touch.model.actor.v1.UpdateProfileResponse.outcome:type_name -> peers_touch.model.actor.v1.ProfileUpdateOutcome
+	25, // 36: peers_touch.model.actor.v1.UpdateProfileResponse.profile:type_name -> peers_touch.model.actor.v1.ActorProfile
+	21, // 37: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
+	38, // [38:38] is the sub-list for method output_type
+	38, // [38:38] is the sub-list for method input_type
+	38, // [38:38] is the sub-list for extension type_name
+	38, // [38:38] is the sub-list for extension extendee
+	0,  // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_domain_actor_actor_proto_init() }

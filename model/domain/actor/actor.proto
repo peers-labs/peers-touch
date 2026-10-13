@@ -261,6 +261,10 @@ message ActorProfile {
   string home_station_peer_id = 31 [json_name = "home_station_peer_id"];
   string home_station_domain = 32 [json_name = "home_station_domain"];
   ActorVisibility discoverability = 33;
+  // Intrinsic actor type (person, agent/bot, ...). Clients use it to adapt UX
+  // for non-human peers, e.g. rendering a bot direct conversation as one-way,
+  // non-E2EE. Mirrors ActorRef.kind as a first-class profile attribute.
+  ActorKind kind = 34;
 }
 
 message UpdateProfileRequest {

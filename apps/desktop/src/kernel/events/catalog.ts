@@ -25,6 +25,7 @@ export const EVENT = {
   REALTIME_BOT_NOTIFICATION: 'realtime.bot_notification',
   REALTIME_CONVERSATION_SETTINGS_CHANGED: 'realtime.conversation_settings_changed',
   REALTIME_SOCIAL_GRAPH_EVENT: 'realtime.social_graph_event',
+  REALTIME_ACTOR_PROFILE_CHANGED: 'realtime.actor_profile_changed',
   MOMENT_CREATED: 'moment.created',
   MOMENT_DELETED: 'moment.deleted',
   MOMENT_COMMENTED: 'moment.commented',

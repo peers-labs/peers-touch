@@ -15,13 +15,29 @@ type CreatedBot struct {
 
 // Service implements owner-scoped registry management.
 type Service struct {
-	repo   Repository
-	minter ActorMinter
-	now    func() time.Time
+	repo             Repository
+	minter           ActorMinter
+	profilePublisher ProfileChangePublisher
+	now              func() time.Time
 }
 
-func NewService(repo Repository, minter ActorMinter) *Service {
-	return &Service{repo: repo, minter: minter, now: func() time.Time { return time.Now().UTC() }}
+// Option configures optional Service collaborators.
+type Option func(*Service)
+
+// WithProfileChangePublisher installs the post-commit realtime wake publisher
+// used to refresh the owner's live devices after a bot profile mutation.
+func WithProfileChangePublisher(publisher ProfileChangePublisher) Option {
+	return func(s *Service) { s.profilePublisher = publisher }
+}
+
+func NewService(repo Repository, minter ActorMinter, opts ...Option) *Service {
+	s := &Service{repo: repo, minter: minter, now: func() time.Time { return time.Now().UTC() }}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(s)
+		}
+	}
+	return s
 }
 
 // Create mints a HIDDEN AGENT actor and registers an active bot. The returned
@@ -92,7 +108,27 @@ func (s *Service) SetProfile(ctx context.Context, ownerPtid, botPtid, avatar str
 	if err := s.minter.SetAgentAvatar(ctx, botPtid, avatar); err != nil {
 		return nil, domain.NewError(domain.CodeInvalidArgument, "invalid avatar: %v", err)
 	}
+	// Best-effort post-commit wake: the avatar is already durable; a publish
+	// failure must not surface as a failed profile update. The publisher logs.
+	s.notifyProfileChanged(ownerPtid, botPtid)
 	return bot, nil
+}
+
+// notifyProfileChanged fans the post-commit wake to the owner's live devices.
+// It never blocks the caller and is a no-op when no publisher is wired.
+func (s *Service) notifyProfileChanged(ownerPtid, botPtid string) {
+	publisher := s.profilePublisher
+	if publisher == nil {
+		return
+	}
+	wake := ProfileChangeWake{
+		OwnerPtid:       ownerPtid,
+		BotPtid:         botPtid,
+		ChangedAtUnixMs: s.now().UnixMilli(),
+	}
+	go func() {
+		_ = publisher.PublishActorProfileChanged(context.Background(), wake)
+	}()
 }
 
 // RotateSecret issues a new secret, invalidating the old one immediately.

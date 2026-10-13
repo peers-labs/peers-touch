@@ -6,6 +6,7 @@ import {
 
 import { EVENT, eventBus } from '../kernel/events';
 import type {
+  RealtimeActorProfileChangedPayload,
   RealtimeConnectionStatePayload,
   RealtimePresenceFlipPayload,
   RealtimeSocialGraphEventPayload,
@@ -357,6 +358,12 @@ function onSocialGraphEvent(payload: RealtimeSocialGraphEventPayload): void {
   }
 }
 
+function onActorProfileChanged(payload: RealtimeActorProfileChangedPayload): void {
+  runDetached('actor profile changed refresh', () => (
+    useSocialChatStore.getState().refreshChangedActorProfile(payload.actorPtid)
+  ));
+}
+
 function onRelationshipChanged(_payload: RelationshipChangedPayload): void {
   runDetached('relationship friendship projection refresh', () => (
     refreshFriendshipProjection(true)
@@ -387,6 +394,7 @@ export function installSocialRealtimeBridge(): void {
     eventBus.subscribe(EVENT.REALTIME_PRESENCE_FLIP, onPresenceFlip),
     eventBus.subscribe(EVENT.REALTIME_CONNECTION_STATE, onRealtimeConnectionState),
     eventBus.subscribe(EVENT.REALTIME_SOCIAL_GRAPH_EVENT, onSocialGraphEvent),
+    eventBus.subscribe(EVENT.REALTIME_ACTOR_PROFILE_CHANGED, onActorProfileChanged),
     eventBus.subscribe(EVENT.RELATIONSHIP_CHANGED, onRelationshipChanged),
     useNotificationStore.subscribe(onNotificationProjectionChanged),
   ];
