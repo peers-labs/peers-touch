@@ -67,7 +67,7 @@
 | [data-model.md](./data-model.md) | Federation、ledger、membership、role、scope、sync 的概念数据模型 |
 | [wire-protocol.md](./wire-protocol.md) | Wire Protocol：hash/签名规范、RPC 定义、payload schema、sync 协议 |
 | [integration.md](./integration.md) | 与 Station、Catalog、Resolver、ActivityPub、Client projection 的映射 |
-| [network-settings-backend-gaps.md](./network-settings-backend-gaps.md) | Desktop Network 设置目标形态对应的 Station/Desktop 后端差距清单与排序 |
+| [network-settings-backend-gaps.md](./network-settings-backend-gaps.md) | Network 设置后端差距（已并入 Desktop 合集登记册，本文件为指针） |
 | [execution-plans/phase-1-federation-ledger.md](./execution-plans/phase-1-federation-ledger.md) | Federation Ledger 最小闭环落地计划 |
 | [Historical Federated IM](../../../context/architecture/chat/federated-im/README.md) | 已 supersede 的跨 Station 群/私聊、group authority 与事件日志设计 |
 
