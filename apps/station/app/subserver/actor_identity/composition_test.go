@@ -827,4 +827,7 @@ func assertHandlerDomainError(
 	if handlerError.Code != wantHTTPStatus {
 		t.Fatalf("HTTP status = %d, want %d", handlerError.Code, wantHTTPStatus)
 	}
+	if got := handlerError.Headers["X-Peers-Error-Code"]; got != string(wantCode) {
+		t.Fatalf("typed error header = %q, want %q", got, wantCode)
+	}
 }
