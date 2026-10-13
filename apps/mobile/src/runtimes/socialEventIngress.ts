@@ -446,10 +446,7 @@ export function createSocialEventIngress(
   }
 
   function reopenAdmission(): void {
-    if (
-      lifecycle !== 'active'
-      || DATA_DOMAINS.some((domain) => staleness[domain].stale)
-    ) return;
+    if (lifecycle !== 'active') return;
     consecutiveControlLosses = 0;
     writeAdmission = { open: true };
     handlers.onAdmissionChange?.(writeAdmission);

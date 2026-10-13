@@ -437,6 +437,66 @@ describe('social projection runtime', () => {
     await runtime.teardown();
   });
 
+  it('reopens Chat writes when an optional projection remains stale', async () => {
+    const socialStore = {
+      error: null,
+      currentUserPtid: 'ptid:alice',
+      reconcile: vi.fn(async () => undefined),
+      refreshNotifications: vi.fn(async () => undefined),
+      drainProfileCacheWrites: vi.fn(async () => undefined),
+      loadCurrentUserProfile: vi.fn(async () => undefined),
+    };
+    const reportError = vi.fn();
+    const runtime = createSocialProjectionRuntime(
+      session,
+      () => socialStore,
+      {
+        wakeMessaging: vi.fn(async () => undefined),
+        revalidateSession: vi.fn(async () => undefined),
+        ingestCallSignal: vi.fn(),
+        reportError,
+      },
+    );
+    await runtime.bootstrap();
+    await runtime.suspend();
+    gatewayMocks.getNotificationPreferences.mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: 'NOT_FOUND',
+        message: 'notification preferences unavailable',
+        method: 'GET',
+        path: '/notification/preferences',
+      },
+    });
+
+    await runtime.resume();
+
+    expect(readActiveSocialIngressState()).toMatchObject({
+      lifecycle: 'active',
+      writeAdmission: { open: true },
+      staleness: {
+        notification: {
+          stale: true,
+          reason: 'runtime_resume:reconcile_failed',
+        },
+      },
+    });
+    expect(() => requireMobileMutationAdmission(
+      mobileAuthScopeKey(session),
+    )).not.toThrow();
+    expect(() => requireMobileMutationAdmission(
+      mobileAuthScopeKey(session),
+      'notification',
+    )).toThrowError(expect.objectContaining({
+      reason: 'notification:runtime_resume:reconcile_failed',
+    }));
+    expect(reportError).toHaveBeenCalledWith(
+      'reconcile:notification:runtime_resume',
+      expect.any(Error),
+    );
+    await runtime.teardown();
+  });
+
   it('does not make Profile unavailable when Notification preferences fail', async () => {
     gatewayMocks.getNotificationPreferences.mockResolvedValueOnce({
       ok: false,

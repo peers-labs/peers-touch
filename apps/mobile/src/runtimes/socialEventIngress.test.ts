@@ -78,7 +78,7 @@ describe('social event ingress', () => {
     await ingress.drain();
   });
 
-  it('keeps writes closed across suspend until every projection is repaired', async () => {
+  it('reopens global writes while an unrepaired domain stays stale', async () => {
     const reconcile = vi.fn();
     const admission = vi.fn();
     const ingress = createSocialEventIngress({
@@ -97,13 +97,17 @@ describe('social event ingress', () => {
       reason: 'runtime_resume',
       checkpointCursor: '',
     });
-    for (const domain of ['social', 'moments', 'notification', 'profile'] as const) {
+    for (const domain of ['social', 'moments', 'profile'] as const) {
       ingress.repairCursor(domain, '');
     }
     ingress.reopenAdmission();
 
     expect(ingress.state().lifecycle).toBe('active');
     expect(ingress.state().writeAdmission).toEqual({ open: true });
+    expect(ingress.state().staleness.notification).toMatchObject({
+      stale: true,
+      reason: 'runtime_suspended',
+    });
     expect(admission).toHaveBeenLastCalledWith({ open: true });
   });
 
