@@ -1082,3 +1082,203 @@ func TestReceiptRecorderPreservesAcknowledgedState(t *testing.T) {
 		t.Fatalf("acknowledged receipt state = %+v", persisted)
 	}
 }
+
+// Bot/service-plaintext events are authored by the reserved keyless
+// station-system device, which structurally never receives an originator
+// synchronization delivery. The owner's consumption receipt must therefore
+// record without demanding an originator route (regression: every bot-event
+// receipt was permanently 409 "does not contain an originator synchronization
+// route" and retried forever).
+func TestReceiptRecorderAcceptsSystemSenderWithoutOriginatorRoute(t *testing.T) {
+	fixture := newDeliveryFixture(t, standardLimits(), standardPolicy())
+	if err := fixture.db.AutoMigrate(
+		&persistence.ConversationModel{},
+		&persistence.ConversationEventModel{},
+		&persistence.ConversationMemberDeviceModel{},
+		&persistence.ConversationReadCursorModel{},
+		&deliveryinfra.AuthorityDeliveryCommitmentModel{},
+		&deliveryinfra.AuthorityDeliveryReceiptModel{},
+	); err != nil {
+		t.Fatalf("migrate receipt dependencies: %v", err)
+	}
+
+	eventID := valueobject.EventID(digest("system-receipt:event"))
+	sender := valueobject.Endpoint{
+		Actor:  "ptid:bot:1",
+		Device: valueobject.SystemStationDeviceID,
+	}
+	prepared, err := valueobject.NewPreparedDelivery(
+		fixture.recipient,
+		"station:local",
+		valueobject.DeliveryKindDirectServicePlaintext,
+		[]byte("system-plaintext-marker"),
+	)
+	if err != nil {
+		t.Fatalf("prepare system delivery: %v", err)
+	}
+	commitments, err := domainservice.BuildDeliveryCommitments(
+		"conversation-1",
+		eventID,
+		[]valueobject.PreparedDelivery{prepared},
+	)
+	if err != nil || len(commitments) != 1 {
+		t.Fatalf("build system delivery commitment: count=%d err=%v", len(commitments), err)
+	}
+	event, err := conversationhttp.ProtobufEventSealer{}.Seal(domainevent.RecordInput{
+		ID:               eventID,
+		ConversationID:   "conversation-1",
+		Sequence:         1,
+		CommandID:        "system-command-1",
+		Actor:            sender,
+		CommittedAt:      fixture.clock.now.Add(-time.Hour),
+		MembershipEpoch:  1,
+		MLSEpoch:         1,
+		AuthorityStation: "station:local",
+		DeliveryCommitments: []valueobject.Hash{
+			commitments[0].Hash,
+		},
+		Fact: domainevent.NewCommandCommittedFact(
+			domainevent.KindMessageCommitted,
+			"system-message-1",
+			systemSealCommandBytes(t),
+		),
+	})
+	if err != nil {
+		t.Fatalf("seal system event: %v", err)
+	}
+	commitmentByEndpoint := map[string]valueobject.Hash{
+		commitments[0].Recipient.Key(): commitments[0].Hash,
+	}
+	opaquePayload, err := conversationhttp.ProtobufDeviceEventEncoder{}.EncodeDeviceEvent(
+		event,
+		prepared,
+		commitmentByEndpoint[prepared.Recipient.Key()],
+		make([]byte, ed25519.PublicKeySize),
+	)
+	if err != nil {
+		t.Fatalf("encode system delivery: %v", err)
+	}
+	item, err := fixture.repository.Enqueue(
+		context.Background(),
+		delivery.EnqueueRequest{
+			ItemID:         digest("system-receipt:item"),
+			Recipient:      fixture.recipient,
+			EventID:        event.ID,
+			EventSequence:  event.Sequence,
+			ConversationID: event.ConversationID,
+			IdempotencyKey: digest("system-receipt:idempotency"),
+			PayloadType:    delivery.PayloadTypeConversationEvent,
+			OpaquePayload:  opaquePayload,
+			PayloadHash:    valueobject.HashBytes(opaquePayload),
+			CreatedAt:      event.CommittedAt,
+		},
+	)
+	if err != nil {
+		t.Fatalf("enqueue system item: %v", err)
+	}
+	if _, err := fixture.service.Claim(
+		context.Background(),
+		fixture.recipient,
+		"consumer-system",
+		0,
+		0,
+		1,
+	); err != nil {
+		t.Fatalf("claim system item: %v", err)
+	}
+	if err := persistReceiptEvent(t, fixture.db, event); err != nil {
+		t.Fatal(err)
+	}
+	if err := persistReceiptConversation(
+		fixture.db,
+		event,
+		valueobject.ConversationKindDirect,
+	); err != nil {
+		t.Fatal(err)
+	}
+	ledger, err := deliveryinfra.NewAuthorityLedgerWriter(fixture.db)
+	if err != nil {
+		t.Fatalf("new authority ledger: %v", err)
+	}
+	if err := ledger.RecordCommitments(
+		context.Background(),
+		[]ports.AuthorityDeliveryCommitment{
+			{
+				ConversationID:      event.ConversationID,
+				EventID:             event.ID,
+				EventSequence:       event.Sequence,
+				Originator:          event.Actor.Actor,
+				Recipient:           item.Recipient,
+				HomeStation:         "station:local",
+				PayloadKind:         prepared.Kind,
+				EndpointPayloadHash: prepared.PayloadHash,
+				Commitment:          commitmentByEndpoint[item.Recipient.Key()],
+				QueueItemID:         item.ItemID,
+				QueuePayloadHash:    item.PayloadHash,
+				RequiredRecipient:   true,
+				CreatedAt:           event.CommittedAt,
+			},
+		},
+	); err != nil {
+		t.Fatalf("seed system ledger commitment: %v", err)
+	}
+	if err := fixture.db.Create(&persistence.ConversationMemberDeviceModel{
+		ConversationID: string(item.ConversationID),
+		PTID:           string(item.Recipient.Actor),
+		DeviceID:       string(item.Recipient.Device),
+		HomeStation:    "station:local",
+		Active:         true,
+		JoinedSequence: 1,
+	}).Error; err != nil {
+		t.Fatalf("seed owner member device: %v", err)
+	}
+
+	recorder, err := deliveryinfra.NewReceiptRecorder(fixture.db)
+	if err != nil {
+		t.Fatalf("new receipt recorder: %v", err)
+	}
+	receipt := interaction.DeliveryReceipt{
+		ReceiptID:      "device-consumed:" + item.ItemID,
+		ConversationID: item.ConversationID,
+		EventID:        item.EventID,
+		Consumer:       item.Recipient,
+		EventSequence:  item.EventSequence,
+		LaneSequence:   item.LaneSequence,
+		PayloadHash:    item.PayloadHash,
+		ConsumedAt:     fixture.clock.now.Add(time.Second),
+	}
+	result, err := recorder.Record(context.Background(), receipt)
+	if err != nil {
+		t.Fatalf("system-sender receipt must record without originator route: %v", err)
+	}
+	if len(result.OriginatorRoutes) != 0 {
+		t.Fatalf("system-sender routes = %+v, want empty", result.OriginatorRoutes)
+	}
+	if result.Originator != event.Actor.Actor {
+		t.Fatalf("originator = %q, want %q", result.Originator, event.Actor.Actor)
+	}
+}
+
+func systemSealCommandBytes(t *testing.T) []byte {
+	t.Helper()
+	commandBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		&chat.ChatCommand{
+			CommandId:      "system-command-1",
+			ConversationId: "conversation-1",
+			Sender: &chat.CryptoEndpoint{
+				Ptid:     "ptid:bot:1",
+				DeviceId: string(valueobject.SystemStationDeviceID),
+			},
+			Payload: &chat.ChatCommand_SendMessage{
+				SendMessage: &chat.SendMessageIntent{
+					MessageId:   "system-message-1",
+					ContentKind: chat.MessagingContentKind_MESSAGING_CONTENT_KIND_TEXT,
+				},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("encode system source command: %v", err)
+	}
+	return commandBytes
+}
