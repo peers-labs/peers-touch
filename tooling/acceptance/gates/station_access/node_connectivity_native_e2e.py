@@ -648,7 +648,7 @@ def validate_ncp_report(report: dict[str, Any]) -> None:
         and all(
             re.fullmatch(r"[0-9a-f]{64}", str(session_before.get(field) or ""))
             is not None
-            for field in ("session_id_sha256", "token_fingerprint")
+            for field in ("session_id_sha256", "session_binding_sha256")
         )
         and isinstance(transition, dict)
         and transition.get("previousLeaseCancelled") is True
