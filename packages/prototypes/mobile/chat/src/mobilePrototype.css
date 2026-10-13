@@ -695,6 +695,15 @@
     }
   }
 
+  /* The expired-session card carries a session notice, station summary, auth
+     tabs, inputs and actions in addition to brand. Compact its inner rhythm
+     (never the 72px brand logo, which is a layout-gate invariant) so it fits
+     the 390px device height without the auth screen scrolling. */
+  .mp-auth-screen[data-session-expired='true'] .mp-auth-card > .ant-card-body {
+    gap: 9px; padding: 20px 24px !important;
+  }
+  .mp-auth-screen[data-session-expired='true'] .mp-auth-tab-content { min-height: 98px; }
+
   /* ── Shell ── */
   .mp-shell { display: flex; flex-direction: column; height: 100%; width: 100%; background: var(--mp-gray-50); overflow: hidden; }
   .mp-shell-content { flex: 1; min-height: 0; overflow: hidden; position: relative; }

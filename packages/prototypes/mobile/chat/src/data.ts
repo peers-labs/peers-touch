@@ -13,37 +13,33 @@ const chatJourneyLocale = typeof window === 'undefined'
   ? 'en'
   : resolveChatJourneyLocale(window.location.search, window.navigator.language);
 
-function generatedAvatar(prompt: string): string {
-  return `https://copilot-cn.bytedance.net/api/ide/v1/text_to_image?prompt=${encodeURIComponent(
-    `Realistic head-and-shoulders portrait photograph of a ${prompt}. Centered face, calm natural expression, soft neutral daylight, plain cool gray studio background, square crop. No interface, no icon, no frame, no placeholder graphic, no text.`,
-  )}&image_size=square`;
-}
-
-function generatedMedia(prompt: string): string {
-  const url = `https://copilot-cn.bytedance.net/api/ide/v1/text_to_image?prompt=${encodeURIComponent(
-    `${prompt}. Realistic editorial photograph, natural lighting, inspectable subject, no interface chrome, no icon, no text, no watermark.`,
-  )}&image_size=square`;
-  return `url("${url}") center / cover no-repeat`;
-}
-
+/**
+ * Avatars are deliberately not remote URLs: the prototype must render fully
+ * offline (residual-parity gate blocks every cross-origin request) and must
+ * stay consistent with the Desktop prototype, which uses deterministic
+ * initial/tone avatars. IdentityAvatar renders the hashed-tone initials
+ * fallback whenever the source is empty.
+ */
 export const demoAvatarUrls = {
-  alice: generatedAvatar('Chinese woman in her early thirties, product designer, shoulder-length dark hair'),
-  bob: generatedAvatar('Chinese man in his early thirties, backend engineer, short dark hair'),
-  carol: generatedAvatar('Chinese woman in her late twenties, mobile developer, short dark hair'),
-  david: generatedAvatar('Chinese man in his mid thirties, DevOps engineer, glasses'),
-  emma: generatedAvatar('East Asian woman in her early thirties, design lead, long dark hair'),
-  frank: generatedAvatar('Chinese man in his late twenties, frontend engineer'),
-  grace: generatedAvatar('Korean woman in her early thirties, QA engineer'),
-  henry: generatedAvatar('Chinese man in his mid thirties, product manager'),
+  alice: '',
+  bob: '',
+  carol: '',
+  david: '',
+  emma: '',
+  frank: '',
+  grace: '',
+  henry: '',
 } as const;
 
+// Media backgrounds are neutral local CSS gradients so no external image is
+// fetched. Surfaces that need photography use the image fallback state.
 export const demoMediaBackgrounds = {
-  waterfront: generatedMedia('A calm urban waterfront park at golden hour, walking path, modern office skyline reflected in water'),
-  rooftopSunset: generatedMedia('Sunset viewed from a modern office rooftop, warm sky over a dense city skyline'),
-  colorSwatches: generatedMedia('A product designer desk with carefully arranged muted color swatches and material samples'),
-  componentStudy: generatedMedia('A close-up design system component study printed on paper beside a laptop and ruler'),
-  tokenNotebook: generatedMedia('An open design token notebook with neutral color chips and spacing studies on a clean desk'),
-  teamReview: generatedMedia('A design team reviewing a component library on a large monitor in a quiet studio'),
+  waterfront: 'linear-gradient(135deg, #dbe4f0, #b9c6da)',
+  rooftopSunset: 'linear-gradient(135deg, #f3d9c2, #c98f6b)',
+  colorSwatches: 'linear-gradient(135deg, #e7e2f2, #b6aede)',
+  componentStudy: 'linear-gradient(135deg, #e2ece8, #9fb8ac)',
+  tokenNotebook: 'linear-gradient(135deg, #eef0f4, #b9c0cc)',
+  teamReview: 'linear-gradient(135deg, #e4e8f2, #aab4c6)',
 } as const;
 
 export const demoStations: StationEntry[] = [
