@@ -10,7 +10,7 @@
  *
  * Standalone web prototype: mock-data only, no real store / kernel / tauri.
  */
-import { useState } from 'react';
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   Settings,
   Sparkles,
@@ -61,20 +61,34 @@ import {
   Copy,
   Command,
   FolderOpen,
+  Bell,
+  Image as ImageIcon,
+  Upload,
+  Wifi,
+  Wrench,
+  History,
+  MonitorSmartphone,
   type LucideIcon,
 } from 'lucide-react';
 import { T } from './theme';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// UI ATOMS
+// DESIGN SYSTEM (canonical atoms — ui-identity components.md §3 scale)
+//
+// Every Settings surface composes these atoms. Heights come from one scale
+// (24/28/30/32/34/36/40), radius from {6,8,10,12}. Interactive atoms are real
+// controls with roles/keyboard; legacy sections inherit the design language by
+// using them, without changing their own logic.
 // ═══════════════════════════════════════════════════════════════════════════════
 
+const CARD_RADIUS = 12;
 const inputStyle: React.CSSProperties = {
   boxSizing: 'border-box',
-  border: `1px solid ${T.border}`,
+  border: `1px solid ${T.borderSoft}`,
   borderRadius: 8,
   padding: '8px 12px',
   fontSize: 13,
+  lineHeight: 1.4,
   outline: 'none',
   color: T.text,
   backgroundColor: T.bg,
@@ -86,23 +100,26 @@ function Select({
   options,
   onChange,
   width,
+  ariaLabel,
 }: {
   value: string;
   options: { id: string; label: string }[];
   onChange: (v: string) => void;
   width?: number | string;
+  ariaLabel?: string;
 }) {
   return (
     <select
+      aria-label={ariaLabel}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       style={{
         width,
-        height: 36,
+        height: 32,
         boxSizing: 'border-box',
-        border: `1px solid ${T.border}`,
+        border: `1px solid ${T.borderSoft}`,
         borderRadius: 8,
-        padding: '0 10px',
+        padding: '0 28px 0 10px',
         fontSize: 13,
         color: T.text,
         backgroundColor: T.bg,
@@ -117,24 +134,30 @@ function Select({
   );
 }
 
-function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+/** Canonical switch — real button, switch role, keyboard operable. */
+function Toggle({ on, onToggle, label }: { on: boolean; onToggle: () => void; label?: string }) {
   return (
-    <div
-      onClick={onToggle}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      onClick={(e) => { e.stopPropagation(); onToggle(); }}
       style={{
-        width: 40, height: 22, borderRadius: 11,
-        backgroundColor: on ? T.primary : T.fillTertiary,
-        position: 'relative', cursor: 'pointer',
-        transition: 'background-color 0.15s ease', flexShrink: 0,
+        width: 40, height: 22, borderRadius: 11, padding: 0,
+        border: 'none',
+        backgroundColor: on ? T.primary : '#d9d9d9',
+        position: 'relative', cursor: 'pointer', flexShrink: 0,
+        transition: 'background-color 0.15s ease',
       }}
     >
-      <div style={{
+      <span style={{
         position: 'absolute', top: 2, left: on ? 20 : 2,
         width: 18, height: 18, borderRadius: '50%',
         backgroundColor: T.white, transition: 'left 0.15s ease',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.2)', display: 'block',
       }} />
-    </div>
+    </button>
   );
 }
 
@@ -143,7 +166,7 @@ function Tag({ text, color }: { text: string; color: string }) {
     <span style={{
       display: 'inline-flex', alignItems: 'center',
       fontSize: 11, lineHeight: '18px', padding: '0 7px',
-      borderRadius: 5, color, backgroundColor: `${color}14`,
+      borderRadius: 6, color, backgroundColor: `${color}14`,
       border: `1px solid ${color}33`,
     }}>
       {text}
@@ -156,12 +179,13 @@ function GhostBtn({ icon: Icon, label, onClick, danger }: {
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
         height: 32, padding: '0 12px', borderRadius: 8,
-        border: `1px solid ${T.border}`,
-        backgroundColor: T.bg, color: danger ? '#d4380d' : T.textSecondary,
+        border: `1px solid ${T.borderSoft}`,
+        backgroundColor: T.bg, color: danger ? T.danger : T.textSecondary,
         fontSize: 13, fontWeight: 500, cursor: 'pointer',
       }}
     >
@@ -176,6 +200,7 @@ function PrimaryBtn({ icon: Icon, label, onClick }: {
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -190,15 +215,81 @@ function PrimaryBtn({ icon: Icon, label, onClick }: {
   );
 }
 
+/** Segmented single-choice group (radio semantics, keyboard native). */
+function Segmented<T extends string>({ value, options, onChange, ariaLabel }: {
+  value: T;
+  options: { id: T; label: string }[];
+  onChange: (v: T) => void;
+  ariaLabel?: string;
+}) {
+  return (
+    <div role="radiogroup" aria-label={ariaLabel}
+      style={{ display: 'inline-flex', gap: 2, padding: 2, borderRadius: 8, backgroundColor: '#f0f0f0' }}>
+      {options.map((o) => {
+        const active = o.id === value;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(o.id)}
+            style={{
+              border: 'none', borderRadius: 6, padding: '6px 14px',
+              fontSize: 12, fontWeight: active ? 600 : 500, cursor: 'pointer',
+              color: active ? T.primary : T.textSecondary,
+              backgroundColor: active ? T.white : 'transparent',
+              boxShadow: active ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
-// LAYOUT ATOMS (production mirror)
+// LAYOUT ATOMS
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function SettingsContainer({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ padding: '16px 20px', maxWidth: 720, display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{
+      padding: '20px 24px 40px',
+      width: '100%', maxWidth: 760, boxSizing: 'border-box',
+      display: 'flex', flexDirection: 'column', gap: 14,
+    }}>
       {children}
     </div>
+  );
+}
+
+/** A section whose whole header collapses its technical/advanced body. */
+function CollapsibleSection({ icon: Icon, title, subtitle, children, defaultOpen = false }: {
+  icon: LucideIcon; title: string; subtitle?: string; defaultOpen?: boolean; children: React.ReactNode;
+}) {
+  return (
+    <section style={{
+      backgroundColor: T.white, borderRadius: CARD_RADIUS, padding: '4px 18px',
+      border: `1px solid ${T.borderSoft}`,
+    }}>
+      <details open={defaultOpen} style={{ width: '100%' }}>
+        <summary style={{
+          listStyle: 'none', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0',
+        }}>
+          <Icon size={16} color={T.textSecondary} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: T.text }}>{title}</span>
+            {subtitle ? <span style={{ display: 'block', fontSize: 12, color: T.textTertiary, marginTop: 2 }}>{subtitle}</span> : null}
+          </span>
+          <ChevronDown size={16} color={T.textTertiary} />
+        </summary>
+        <div style={{ paddingBottom: 16 }}>{children}</div>
+      </details>
+    </section>
   );
 }
 
@@ -207,22 +298,20 @@ function SettingsSection({ icon: Icon, title, subtitle, action, children }: {
   action?: React.ReactNode; children: React.ReactNode;
 }) {
   return (
-    <div style={{
-      backgroundColor: T.white, borderRadius: 10, padding: '14px 16px',
-      border: `1px solid ${T.border}`,
+    <section style={{
+      backgroundColor: T.white, borderRadius: CARD_RADIUS, padding: '16px 18px',
+      border: `1px solid ${T.borderSoft}`,
     }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1 }}>
-          <Icon size={15} color={T.primary} style={{ marginTop: 2, flexShrink: 0 }} />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{title}</div>
-            {subtitle ? <div style={{ fontSize: 11, color: T.textTertiary, marginTop: 1 }}>{subtitle}</div> : null}
-          </div>
+      <header style={{ display: 'flex', alignItems: 'flex-start', marginBottom: children ? 12 : 0, gap: 10 }}>
+        <Icon size={16} color={T.textSecondary} style={{ marginTop: 2, flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: T.text }}>{title}</h3>
+          {subtitle ? <p style={{ margin: '2px 0 0', fontSize: 12, color: T.textTertiary, lineHeight: 1.45 }}>{subtitle}</p> : null}
         </div>
-        {action}
-      </div>
+        {action ? <div style={{ flexShrink: 0 }}>{action}</div> : null}
+      </header>
       {children}
-    </div>
+    </section>
   );
 }
 
@@ -232,14 +321,47 @@ function SettingsRow({ label, desc, children }: {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      gap: 12, padding: '8px 0',
+      gap: 16, padding: '9px 0',
     }}>
-      <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 500, color: T.text }}>{label}</div>
-        {desc ? <div style={{ fontSize: 11, color: T.textTertiary, marginTop: 1 }}>{desc}</div> : null}
+        {desc ? <div style={{ fontSize: 12, color: T.textTertiary, marginTop: 2, lineHeight: 1.4 }}>{desc}</div> : null}
       </div>
       <div style={{ flexShrink: 0 }}>{children}</div>
     </div>
+  );
+}
+
+/** A labelled vertical field (label above control). */
+function Field({ label, hint, children }: {
+  label: string; hint?: string; children: React.ReactNode;
+}) {
+  return (
+    <label style={{ display: 'block' }}>
+      <span style={{ display: 'block', fontSize: 13, fontWeight: 500, color: T.text, marginBottom: 6 }}>{label}</span>
+      {children}
+      {hint ? <span style={{ display: 'block', fontSize: 11, color: T.textTertiary, marginTop: 5 }}>{hint}</span> : null}
+    </label>
+  );
+}
+
+function DangerZone({ title = 'Danger zone', desc, children }: {
+  title?: string; desc?: string; children: React.ReactNode;
+}) {
+  return (
+    <section style={{
+      backgroundColor: T.white, borderRadius: CARD_RADIUS, padding: '16px 18px',
+      border: '1px solid #ffa39e',
+    }}>
+      <header style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: children ? 12 : 0 }}>
+        <AlertTriangle size={16} color={T.danger} />
+        <div>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: T.danger }}>{title}</h3>
+          {desc ? <p style={{ margin: '2px 0 0', fontSize: 12, color: T.textTertiary }}>{desc}</p> : null}
+        </div>
+      </header>
+      {children}
+    </section>
   );
 }
 
@@ -247,13 +369,15 @@ function SettingsItemCard({ children, onClick, active }: {
   children: React.ReactNode; onClick?: () => void; active?: boolean;
 }) {
   return (
-    <div onClick={onClick} style={{
-      padding: 12, borderRadius: 8,
-      backgroundColor: active ? T.primaryWash : T.fillQuaternary,
-      border: `1px solid ${active ? T.primary : T.border}`,
-      cursor: onClick ? 'pointer' : 'default',
-      transition: 'border-color 0.15s ease, background-color 0.15s ease',
-    }}>
+    <div onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+      style={{
+        padding: 12, borderRadius: 10,
+        backgroundColor: active ? T.primaryWash : T.surface,
+        border: `1px solid ${active ? T.primary : T.borderSoft}`,
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'border-color 0.15s ease, background-color 0.15s ease',
+      }}>
       {children}
     </div>
   );
@@ -263,98 +387,433 @@ function SettingsItemCard({ children, onClick, active }: {
 // SECTION: ACCOUNT (General group)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function AccountSection() {
+// ── General · Account ────────────────────────────────────────────────────────
+const COVER_KEY = 'pt.profile.cover';
+const COVER_HISTORY_KEY = 'pt.profile.cover.history';
+const DEFAULT_COVER = 'linear-gradient(120deg,#6b5bd6 0%,#8b7df0 55%,#b794f6 100%)';
+const COVER_HISTORY_LIMIT = 8;
+const ACCOUNT_IDENTITY = {
+  ptid: 'ptid:01HQX7K3M9VDGF2N8PWJRST6YZ',
+  station: 'alpha.peers.social',
+} as const;
+
+function readCover(): string {
+  if (typeof window === 'undefined') return DEFAULT_COVER;
+  return window.localStorage.getItem(COVER_KEY) || DEFAULT_COVER;
+}
+function readCoverHistory(): string[] {
+  if (typeof window === 'undefined') return [DEFAULT_COVER];
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(COVER_HISTORY_KEY) || '[]') as string[];
+    const list = raw.filter(Boolean);
+    return list.includes(DEFAULT_COVER) ? list : [DEFAULT_COVER, ...list];
+  } catch {
+    return [DEFAULT_COVER];
+  }
+}
+
+function CopyableIdentityRow({ label, value, copyLabel = `Copy ${label}` }: {
+  label: string; value: string; copyLabel?: string;
+}) {
+  const [copyState, setCopyState] = useState<'idle' | 'pending' | 'copied' | 'failed'>('idle');
+  useEffect(() => {
+    if (copyState !== 'copied') return;
+    const timer = window.setTimeout(() => setCopyState('idle'), 1500);
+    return () => window.clearTimeout(timer);
+  }, [copyState]);
+
+  async function copy() {
+    setCopyState('pending');
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyState('copied');
+    } catch {
+      setCopyState('failed');
+    }
+  }
+
+  return (
+    <div data-identity-field={label} style={{ minWidth: 0 }}>
+      <dt style={{ fontSize: 11, color: T.textTertiary }}>{label}</dt>
+      <dd style={{ margin: '2px 0 0', display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <code data-identity-value style={{
+          flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.5, color: T.textSecondary,
+          fontFamily: 'ui-monospace, Menlo, monospace', overflowWrap: 'anywhere', userSelect: 'text',
+        }}>{value}</code>
+        <button
+          type="button"
+          aria-label={copyLabel}
+          title={copyState === 'copied' ? 'Copied' : copyLabel}
+          data-copy-state={copyState}
+          disabled={copyState === 'pending'}
+          onClick={copy}
+          style={{
+            width: 28, height: 28, flexShrink: 0, borderRadius: 8,
+            border: `1px solid ${T.borderSoft}`, background: T.white,
+            color: copyState === 'copied' ? T.success : T.textSecondary,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            cursor: copyState === 'pending' ? 'wait' : 'pointer',
+          }}
+        >
+          {copyState === 'copied' ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+        </button>
+      </dd>
+      {copyState === 'copied' ? (
+        <div role="status" style={{ marginTop: 2, fontSize: 11, color: T.success }}>Copied</div>
+      ) : copyState === 'failed' ? (
+        <div role="alert" style={{ marginTop: 2, fontSize: 11, color: T.danger }}>Copy failed. Try again.</div>
+      ) : null}
+    </div>
+  );
+}
+
+function AccountSection({ federations }: { federations: JoinedFederation[] }) {
   const [displayName, setDisplayName] = useState('Alice Chen');
   const [bio, setBio] = useState('Building decentralized social networks. Open-source advocate.');
   const [region, setRegion] = useState('asia-east');
   const [timezone, setTimezone] = useState('Asia/Shanghai');
+  const [cover, setCover] = useState<string>(readCover);
+  const [coverHistory, setCoverHistory] = useState<string[]>(readCoverHistory);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [coverName, setCoverName] = useState('');
+  const [blockedOpen, setBlockedOpen] = useState(false);
+
+  const applyCover = (value: string, name = '') => {
+    window.localStorage.setItem(COVER_KEY, value === DEFAULT_COVER ? '' : value);
+    if (value === DEFAULT_COVER) window.localStorage.removeItem(COVER_KEY);
+    setCover(value);
+    setCoverName(name);
+    setCoverHistory((prev) => {
+      const next = [value, ...prev.filter((v) => v !== value)].slice(0, COVER_HISTORY_LIMIT);
+      window.localStorage.setItem(COVER_HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const pickCover = (file?: File) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => applyCover(String(reader.result), file.name);
+    reader.readAsDataURL(file);
+  };
+
+  const coverBackground = cover.startsWith('linear-gradient')
+    ? cover
+    : `center / cover url("${cover}")`;
 
   return (
     <SettingsContainer>
-      {/* Identity Card */}
-      <SettingsSection icon={User} title="Identity" subtitle="Your account identity in the Peers-Touch network.">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div style={{
-            width: 64, height: 64, borderRadius: '50%',
-            background: 'linear-gradient(135deg, #6b5bd6 0%, #a78bfa 100%)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 24, fontWeight: 700, color: T.white, flexShrink: 0,
-          }}>
-            AC
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: T.text }}>Alice Chen</div>
-            <div style={{ fontSize: 13, color: T.textSecondary, marginTop: 2 }}>@alice</div>
-            <div style={{ fontSize: 12, color: T.textTertiary, marginTop: 4, fontFamily: 'ui-monospace, Menlo, monospace' }}>
-              ptid:01HQX7K3M9VDGF2N8PWJRST6YZ
-            </div>
+      {/* Identity: cover banner + avatar seated on its lower edge. The avatar
+          overlaps by exactly its 4px ring, so the face is never cropped. */}
+      <section
+        data-profile-identity
+        style={{
+          background: T.white, border: `1px solid ${T.borderSoft}`,
+          borderRadius: CARD_RADIUS, overflow: 'hidden',
+        }}
+      >
+        <div style={{ position: 'relative' }}>
+          <div
+            data-profile-cover-preview
+            style={{ height: 124, background: coverBackground }}
+          />
+          {/* Change: upload new or pick a past background */}
+          <div style={{ position: 'absolute', right: 10, bottom: 10 }}>
+            <button
+              type="button"
+              data-profile-cover-change
+              aria-haspopup="menu"
+              aria-expanded={historyOpen}
+              onClick={() => setHistoryOpen((v) => !v)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                height: 28, padding: '0 10px', borderRadius: 8,
+                border: 'none', background: 'rgba(255,255,255,0.92)',
+                color: T.text, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              <ImageIcon size={13} /> Change
+              <ChevronDown size={12} style={{ transform: historyOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+            </button>
+            {historyOpen ? (
+              <>
+                <div onClick={() => setHistoryOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                <div
+                  role="menu"
+                  data-profile-cover-menu
+                  style={{
+                    position: 'absolute', right: 0, top: 34, zIndex: 41, width: 248,
+                    background: T.white, border: `1px solid ${T.borderSoft}`, borderRadius: 10,
+                    boxShadow: '0 10px 32px rgba(15,23,42,0.16)', padding: 8,
+                  }}
+                >
+                  <label
+                    role="menuitem"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                      padding: '8px 10px', borderRadius: 8, fontSize: 13, color: T.text,
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = T.surface)}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <Upload size={14} /> Upload new
+                    <input type="file" accept="image/*" hidden onChange={(e) => {
+                      setHistoryOpen(false);
+                      pickCover(e.target.files?.[0]);
+                      e.currentTarget.value = '';
+                    }} />
+                  </label>
+                  {coverHistory.length > 1 ? (
+                    <div style={{ borderTop: `1px solid ${T.borderSoft}`, marginTop: 6, paddingTop: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px 6px', fontSize: 11, color: T.textTertiary, fontWeight: 600 }}>
+                        <History size={12} /> Recent
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, padding: '0 6px 4px' }}>
+                        {coverHistory.map((value, i) => {
+                          const active = value === cover;
+                          return (
+                            <button
+                              key={i}
+                              type="button"
+                              role="menuitemradio"
+                              aria-checked={active}
+                              aria-label={`Use background ${i + 1}`}
+                              onClick={() => { applyCover(value, value.startsWith('linear-gradient') ? '' : coverName); setHistoryOpen(false); }}
+                              style={{
+                                height: 40, borderRadius: 8, padding: 0, cursor: 'pointer',
+                                background: value.startsWith('linear-gradient') ? value : `center / cover url("${value}")`,
+                                border: active ? `2px solid ${T.primary}` : `1px solid ${T.borderSoft}`,
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
           </div>
         </div>
 
-        {/* Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginTop: 20 }}>
-          {[
-            { label: 'Posts', value: '1,247' },
-            { label: 'Following', value: '328' },
-            { label: 'Followers', value: '1,892' },
-            { label: 'Created', value: '2025-03-14' },
-          ].map((s) => (
-            <div key={s.label} style={{
-              textAlign: 'center', padding: '12px 8px', borderRadius: 8,
-              backgroundColor: T.fillQuaternary,
+        <div style={{ padding: '0 20px 18px' }}>
+          {/* 72px avatar on a 124px banner; 4px overlap == ring width, face fully visible */}
+          <div style={{ marginTop: -4 }}>
+            <div style={{
+              // The separation ring must paint above the positioned cover.
+              position: 'relative', zIndex: 1,
+              width: 72, height: 72, borderRadius: 14,
+              background: 'linear-gradient(135deg, #6b5bd6 0%, #a78bfa 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 26, fontWeight: 700, color: T.white,
+              border: `4px solid ${T.white}`,
+              boxShadow: '0 4px 14px rgba(15,23,42,0.16)',
             }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>{s.value}</div>
-              <div style={{ fontSize: 11, color: T.textTertiary, marginTop: 4 }}>{s.label}</div>
+              AC
             </div>
-          ))}
-        </div>
-      </SettingsSection>
-
-      {/* Public Profile */}
-      <SettingsSection icon={Pencil} title="Public Profile" subtitle="Information visible to other users in the network.">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 500, color: T.text, marginBottom: 6 }}>Display Name</div>
-            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} style={inputStyle} />
           </div>
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: T.text }}>Bio</span>
-              <span style={{ fontSize: 11, color: T.textTertiary }}>{bio.length}/280</span>
-            </div>
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 19, fontWeight: 700, color: T.text, letterSpacing: '-0.01em' }}>Alice Chen</div>
+            <div style={{ fontSize: 13.5, color: T.textSecondary, marginTop: 2 }}>@alice</div>
+            <details data-profile-technical style={{ marginTop: 6 }}>
+              <summary style={{ fontSize: 12, color: T.primary, cursor: 'pointer' }}>
+                Technical identity
+              </summary>
+              <dl style={{
+                margin: '12px 0 0', paddingTop: 12, borderTop: `1px solid ${T.borderSoft}`,
+                display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0,
+              }}>
+                <CopyableIdentityRow label="PTID" value={ACCOUNT_IDENTITY.ptid} />
+                <CopyableIdentityRow label="Home Station" value={ACCOUNT_IDENTITY.station} />
+                <div>
+                  <dt style={{ fontSize: 11, color: T.textTertiary }}>Federations</dt>
+                  <dd style={{ margin: '6px 0 0' }}>
+                    {federations.length ? (
+                      <dl style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {federations.map((f) => (
+                          <CopyableIdentityRow
+                            key={f.id} label={f.name} value={f.endpoint}
+                            copyLabel={`Copy federation ${f.name}`}
+                          />
+                        ))}
+                      </dl>
+                    ) : (
+                      <span style={{ fontSize: 12, color: T.textSecondary }}>No joined federations</span>
+                    )}
+                  </dd>
+                </div>
+              </dl>
+            </details>
+          </div>
+        </div>
+        {coverName ? (
+          <div style={{ padding: '0 18px 14px', fontSize: 12, color: T.textTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {coverName}
+          </div>
+        ) : null}
+      </section>
+
+      <SettingsSection icon={Pencil} title="Public profile" subtitle="Shown on your profile and in mutual conversations.">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <Field label="Display name">
+            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} style={inputStyle} />
+          </Field>
+          <Field label="Bio" hint={`${bio.length}/280`}>
             <textarea
               value={bio}
               onChange={(e) => setBio(e.target.value.slice(0, 280))}
               rows={3}
               style={{ ...inputStyle, resize: 'vertical' }}
             />
-          </div>
+          </Field>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: T.text, marginBottom: 6 }}>Region</div>
-              <Select value={region} width="100%" options={[
+            <Field label="Region">
+              <Select value={region} ariaLabel="Region" width="100%" options={[
                 { id: 'asia-east', label: 'Asia East' },
                 { id: 'asia-southeast', label: 'Asia Southeast' },
                 { id: 'us-west', label: 'US West' },
                 { id: 'eu-west', label: 'EU West' },
               ]} onChange={setRegion} />
-            </div>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: T.text, marginBottom: 6 }}>Timezone</div>
-              <Select value={timezone} width="100%" options={[
+            </Field>
+            <Field label="Timezone">
+              <Select value={timezone} ariaLabel="Timezone" width="100%" options={[
                 { id: 'Asia/Shanghai', label: 'Asia/Shanghai (UTC+8)' },
                 { id: 'Asia/Tokyo', label: 'Asia/Tokyo (UTC+9)' },
                 { id: 'America/Los_Angeles', label: 'America/Los_Angeles (UTC-7)' },
                 { id: 'Europe/London', label: 'Europe/London (UTC+1)' },
               ]} onChange={setTimezone} />
-            </div>
+            </Field>
           </div>
         </div>
       </SettingsSection>
 
-      {/* Relationships */}
-      <SettingsSection icon={Users} title="Relationships" subtitle="Manage blocked users and relationships.">
-        <SettingsRow label="Blocked Users" desc="3 users currently blocked" />
+      <SettingsSection icon={Users} title="Relationships" subtitle="People you have blocked across all networks.">
+        <button
+          type="button"
+          onClick={() => setBlockedOpen((v) => !v)}
+          style={{
+            width: '100%', textAlign: 'left', border: 'none', background: 'transparent',
+            padding: '4px 0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
+          }}
+        >
+          <span style={{ fontSize: 13, fontWeight: 500, color: T.text, flex: 1 }}>Blocked users</span>
+          <span style={{ fontSize: 12, color: T.textTertiary }}>3</span>
+          {blockedOpen ? <ChevronDown size={15} color={T.textTertiary} /> : <ChevronRight size={15} color={T.textTertiary} />}
+        </button>
+        {blockedOpen ? (
+          <div style={{ marginTop: 4, borderTop: `1px solid ${T.border}` }}>
+            {['Spam Bot', 'Old Contact', 'Noise Account'].map((name) => (
+              <SettingsRow key={name} label={name}>
+                <GhostBtn label="Unblock" onClick={() => {}} />
+              </SettingsRow>
+            ))}
+          </div>
+        ) : null}
+      </SettingsSection>
+    </SettingsContainer>
+  );
+}
+
+// ── General · Notifications ──────────────────────────────────────────────────
+function NotificationsSettingsSection() {
+  const [prefs, setPrefs] = useState({
+    mentions: true, invites: true, friendRequests: true, reactions: false, network: true,
+    inApp: true, sound: false,
+  });
+  const flip = (k: keyof typeof prefs) => setPrefs((p) => ({ ...p, [k]: !p[k] }));
+  const rows: { k: keyof typeof prefs; label: string; desc: string }[] = [
+    { k: 'mentions', label: 'Mentions & replies', desc: 'When someone replies to you or uses your handle.' },
+    { k: 'invites', label: 'Group invites', desc: 'Invitations to join a group or channel.' },
+    { k: 'friendRequests', label: 'Friend requests', desc: 'New people asking to connect with you.' },
+    { k: 'reactions', label: 'Reactions', desc: 'Emoji reactions on your messages.' },
+    { k: 'network', label: 'Network events', desc: 'Station connectivity and federation changes.' },
+  ];
+  return (
+    <SettingsContainer>
+      <SettingsSection icon={Bell} title="What to notify me about" subtitle="Choose which events reach your notification center.">
+        {rows.map((r) => (
+          <SettingsRow key={r.k} label={r.label} desc={r.desc}>
+            <Toggle label={r.label} on={prefs[r.k]} onToggle={() => flip(r.k)} />
+          </SettingsRow>
+        ))}
+      </SettingsSection>
+      <SettingsSection icon={Bell} title="Delivery" subtitle="How notifications are delivered on this device.">
+        <SettingsRow label="In-app notifications" desc="Show the bell badge and the notification panel.">
+          <Toggle label="In-app notifications" on={prefs.inApp} onToggle={() => flip('inApp')} />
+        </SettingsRow>
+        <SettingsRow label="Sound" desc="Play a short sound for new notifications.">
+          <Toggle label="Sound" on={prefs.sound} onToggle={() => flip('sound')} />
+        </SettingsRow>
+      </SettingsSection>
+    </SettingsContainer>
+  );
+}
+
+// ── General · Privacy & Security ─────────────────────────────────────────────
+function PrivacySection() {
+  const [pinLock, setPinLock] = useState(false);
+  const [hideOnline, setHideOnline] = useState(false);
+  const [hideRead, setHideRead] = useState(false);
+  return (
+    <SettingsContainer>
+      <SettingsSection icon={Lock} title="App access" subtitle="Protect Peers Touch on this device.">
+        <SettingsRow label="PIN lock" desc="Ask for a PIN to open the app.">
+          <Toggle label="PIN lock" on={pinLock} onToggle={() => setPinLock(!pinLock)} />
+        </SettingsRow>
+        {pinLock ? (
+          <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
+            <GhostBtn label="Change PIN" onClick={() => {}} />
+            <GhostBtn label="Remove PIN" danger onClick={() => setPinLock(false)} />
+          </div>
+        ) : null}
+        <SettingsRow label="Auto lock" desc="Lock automatically after inactivity.">
+          <Select value="5m" ariaLabel="Auto lock" width={140} options={[
+            { id: '1m', label: 'After 1 minute' },
+            { id: '5m', label: 'After 5 minutes' },
+            { id: '15m', label: 'After 15 minutes' },
+            { id: 'never', label: 'Never' },
+          ]} onChange={() => {}} />
+        </SettingsRow>
+      </SettingsSection>
+      <SettingsSection icon={Eye} title="What others can see" subtitle="These defaults only affect new conversations.">
+        <SettingsRow label="Online status" desc="Let people you talk to see when you are online.">
+          <Toggle label="Online status visible" on={!hideOnline} onToggle={() => setHideOnline(!hideOnline)} />
+        </SettingsRow>
+        <SettingsRow label="Read receipts" desc="Show when you have read a message.">
+          <Toggle label="Read receipts" on={!hideRead} onToggle={() => setHideRead(!hideRead)} />
+        </SettingsRow>
+      </SettingsSection>
+    </SettingsContainer>
+  );
+}
+
+// ── General · Appearance & Language ──────────────────────────────────────────
+function AppearanceSection() {
+  const [theme, setTheme] = useState<'system' | 'light' | 'dark'>('system');
+  const [language, setLanguage] = useState('zh-CN');
+  const [density, setDensity] = useState<'comfortable' | 'compact'>('comfortable');
+  return (
+    <SettingsContainer>
+      <SettingsSection icon={Eye} title="Appearance" subtitle="Make Peers Touch feel right on this screen.">
+        <SettingsRow label="Theme" desc="Match system, or choose light or dark.">
+          <Segmented value={theme} ariaLabel="Theme"
+            options={[{ id: 'system', label: 'System' }, { id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }]}
+            onChange={setTheme} />
+        </SettingsRow>
+        <SettingsRow label="Message density" desc="Compact fits more messages on screen.">
+          <Segmented value={density} ariaLabel="Message density"
+            options={[{ id: 'comfortable', label: 'Comfortable' }, { id: 'compact', label: 'Compact' }]}
+            onChange={setDensity} />
+        </SettingsRow>
+      </SettingsSection>
+      <SettingsSection icon={Globe} title="Language" subtitle="Interface language.">
+        <SettingsRow label="Display language">
+          <Select value={language} ariaLabel="Display language" width={200} options={[
+            { id: 'zh-CN', label: '简体中文' },
+            { id: 'en', label: 'English' },
+            { id: 'ja', label: '日本語' },
+          ]} onChange={setLanguage} />
+        </SettingsRow>
       </SettingsSection>
     </SettingsContainer>
   );
@@ -391,26 +850,158 @@ const STATUS_CONFIG: Record<FederationStatus, { label: string; color: string }> 
   unreachable: { label: 'Unreachable', color: '#cf1322' },
 };
 
-function FederationSection() {
-  const [visibility, setVisibility] = useState('by_handle');
-  const [federations, setFederations] = useState<JoinedFederation[]>(MOCK_FEDERATIONS);
+// ── Network · Your Station ──────────────────────────────────────────────────
+function StationSection() {
+  const online = true;
+  return (
+    <SettingsContainer>
+      <SettingsSection icon={Wifi} title="Your station" subtitle="The personal center that holds your account and routes your messages.">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+            background: T.primaryWash, color: T.primary,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Server size={22} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{ACCOUNT_IDENTITY.station}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: online ? T.success : T.textQuaternary }} />
+              <span style={{ fontSize: 12, fontWeight: 600, color: online ? T.success : T.textTertiary }}>
+                {online ? 'Online · working normally' : 'Offline'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 16 }}>
+          {[
+            { label: 'Connected peers', value: '24' },
+            { label: 'Seed nodes', value: '3 / 4' },
+            { label: 'Last sync', value: 'just now' },
+          ].map((s) => (
+            <div key={s.label} style={{ background: T.surface, borderRadius: 10, padding: '12px 10px', textAlign: 'center' }}>
+              <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>{s.value}</div>
+              <div style={{ fontSize: 11, color: T.textTertiary, marginTop: 3 }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </SettingsSection>
+
+      <SettingsSection icon={MonitorSmartphone} title="Authorized devices" subtitle="Devices allowed to run this station.">
+        {[
+          { name: 'This Mac', meta: 'macOS · current session', current: true },
+          { name: 'iPhone 15', meta: 'last seen 2h ago', current: false },
+        ].map((d) => (
+          <SettingsRow key={d.name} label={d.name} desc={d.meta}>
+            {d.current
+              ? <Tag text="This device" color={T.primary} />
+              : <GhostBtn label="Remove" danger onClick={() => {}} />}
+          </SettingsRow>
+        ))}
+      </SettingsSection>
+
+      <CollapsibleSection icon={Shield} title="Technical details" subtitle="Routing identifiers for advanced troubleshooting.">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
+          <div>
+            <div style={{ fontSize: 11, color: T.textTertiary }}>Actor ID</div>
+            <div style={{ fontSize: 12, fontFamily: 'ui-monospace, Menlo, monospace', color: T.textSecondary }}>{ACCOUNT_IDENTITY.ptid}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: T.textTertiary }}>Locator sequence</div>
+            <div style={{ fontSize: 12, fontFamily: 'ui-monospace, Menlo, monospace', color: T.textSecondary }}>seq:00000142</div>
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div style={{ fontSize: 11, color: T.textTertiary, marginBottom: 4 }}>Relay mounts</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <Tag text="relay:east" color="#5b8def" />
+              <Tag text="relay:lab" color="#13a8a8" />
+              <Tag text="mount:social" color="#722ed1" />
+            </div>
+          </div>
+        </div>
+      </CollapsibleSection>
+    </SettingsContainer>
+  );
+}
+
+// ── Network · Discovery ─────────────────────────────────────────────────────
+type DiscoveryMode = 'hidden' | 'by_handle' | 'indexed';
+function DiscoverySection() {
+  const [mode, setMode] = useState<DiscoveryMode>('by_handle');
+  const [inbound, setInbound] = useState<'networks' | 'anyone' | 'nobody'>('networks');
+  const modeDesc: Record<DiscoveryMode, string> = {
+    hidden: 'Invisible unless someone already has your exact handle.',
+    by_handle: 'Found only by your exact handle — not listed in any directory.',
+    indexed: 'Appears in the public directory and keyword search.',
+  };
+  return (
+    <SettingsContainer>
+      <SettingsSection icon={Globe} title="How people find you" subtitle="You stay in control of who can discover and reach you.">
+        <Field label="Discoverable as">
+          <Segmented<DiscoveryMode> value={mode} ariaLabel="Discoverable as"
+            options={[
+              { id: 'hidden', label: 'Hidden' },
+              { id: 'by_handle', label: 'By handle' },
+              { id: 'indexed', label: 'In directory' },
+            ]}
+            onChange={setMode} />
+        </Field>
+        <p style={{ margin: '8px 0 0', fontSize: 12, color: T.textTertiary, lineHeight: 1.5 }}>{modeDesc[mode]}</p>
+
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${T.borderSoft}` }}>
+          <SettingsRow label="Your handle" desc="Share this so others can reach you.">
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500 }}>
+              @alice@alpha.peers.social
+              <button type="button" aria-label="Copy handle" title="Copy"
+                onClick={() => navigator.clipboard?.writeText('@alice@alpha.peers.social')}
+                style={{ width: 28, height: 28, border: 'none', borderRadius: 8, background: 'transparent', color: T.textTertiary, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Copy size={14} />
+              </button>
+            </span>
+          </SettingsRow>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection icon={Users} title="Who can contact you" subtitle="Incoming friend and group requests.">
+        <Field label="Accept requests from">
+          <Segmented value={inbound} ariaLabel="Accept requests from"
+            options={[
+              { id: 'anyone', label: 'Anyone' },
+              { id: 'networks', label: 'My networks' },
+              { id: 'nobody', label: 'Nobody' },
+            ]}
+            onChange={setInbound} />
+        </Field>
+      </SettingsSection>
+    </SettingsContainer>
+  );
+}
+
+// ── Network · Federations ───────────────────────────────────────────────────
+function FederationSection({ federations, setFederations }: {
+  federations: JoinedFederation[];
+  setFederations: Dispatch<SetStateAction<JoinedFederation[]>>;
+}) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addUrl, setAddUrl] = useState('');
-
+  const [addError, setAddError] = useState('');
   const [confirmLeaveId, setConfirmLeaveId] = useState<string | null>(null);
 
   const handleAdd = () => {
-    if (!addUrl.trim()) return;
+    const url = addUrl.trim();
+    if (!url) { setAddError('Enter a federation endpoint.'); return; }
+    if (!/^(https?:\/\/|[\w-]+(\.[\w-]+)+)/.test(url)) { setAddError('That does not look like a valid endpoint.'); return; }
     const id = `fed-${Date.now()}`;
     setFederations((prev) => [...prev, {
-      id, name: addUrl.trim(), description: '',
+      id, name: url.replace(/^https?:\/\//, '').split('/')[0], description: 'Joined federation',
       status: 'active' as FederationStatus, stationCount: 1, visibleActors: 0,
       joinedAt: new Date().toISOString().slice(0, 10),
-      adminPtid: CURRENT_ACTOR_PTID, endpoint: addUrl.startsWith('http') ? addUrl : `https://${addUrl}`,
+      adminPtid: CURRENT_ACTOR_PTID, endpoint: url.startsWith('http') ? url : `https://${url}`,
     }]);
-    setAddUrl('');
-    setAddOpen(false);
+    setAddUrl(''); setAddError(''); setAddOpen(false);
   };
 
   const handleLeave = (id: string) => {
@@ -419,71 +1010,29 @@ function FederationSection() {
     if (expandedId === id) setExpandedId(null);
   };
 
-  const visibilityDesc: Record<string, string> = {
-    hidden: 'Your profile is invisible to all federation nodes. Others must have your exact handle to contact you.',
-    by_handle: 'Others can find you only when they search your exact handle. Not listed in any directory.',
-    indexed: 'Your profile appears in the federation public directory. Anyone can discover you by keyword search.',
-  };
-
   return (
     <SettingsContainer>
-      {/* Basic Info — identity + health + discovery merged */}
-      <SettingsSection icon={Globe} title="Basic Info" subtitle="Your federation identity, routing status, and discovery settings.">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 20px', fontSize: 13 }}>
-          <div>
-            <span style={{ color: T.textTertiary, fontSize: 11 }}>Handle</span>
-            <div style={{ fontWeight: 500, color: T.text, display: 'flex', alignItems: 'center', gap: 6 }}>
-              @alice@alpha.peers.social
-              <Copy size={12} color={T.textTertiary} style={{ cursor: 'pointer' }} onClick={() => navigator.clipboard?.writeText('@alice@alpha.peers.social')} />
-            </div>
-          </div>
-          <div><span style={{ color: T.textTertiary, fontSize: 11 }}>Home Station</span><div style={{ fontWeight: 500, color: T.text }}>alpha.peers.social <Tag text="primary" color={T.primary} /></div></div>
-          <div><span style={{ color: T.textTertiary, fontSize: 11 }}>Locator Seq</span><div style={{ fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12, color: T.textSecondary }}>seq:00000142</div></div>
-          <div><span style={{ color: T.textTertiary, fontSize: 11 }}>Relay Mounts</span><div style={{ display: 'flex', gap: 4, marginTop: 2 }}><Tag text="relay:east" color="#1677ff" /><Tag text="relay:lab" color="#13a8a8" /><Tag text="mount:social" color="#722ed1" /></div></div>
-        </div>
-
-        <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.borderSoft}`, display: 'flex', alignItems: 'center', gap: 20, fontSize: 13 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <CheckCircle2 size={14} color="#10b981" />
-            <span style={{ fontWeight: 600, color: '#10b981' }}>Ready</span>
-          </div>
-          <span style={{ color: T.textTertiary }}>·</span>
-          <span style={{ color: T.textSecondary }}><strong style={{ color: T.text }}>24</strong> peers in routing table</span>
-          <span style={{ color: T.textTertiary }}>·</span>
-          <span style={{ color: T.textSecondary }}>Seeds <strong style={{ color: T.text }}>3</strong>/4 connected</span>
-        </div>
-
-        <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.borderSoft}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <span style={{ fontSize: 13, fontWeight: 500, color: T.text }}>Discoverable as</span>
-            <div style={{ fontSize: 11, color: T.textTertiary, marginTop: 1 }}>{visibilityDesc[visibility]}</div>
-          </div>
-          <select
-            value={visibility}
-            onChange={(e) => setVisibility(e.target.value)}
-            style={{ height: 30, padding: '0 28px 0 10px', borderRadius: 6, border: `1px solid ${T.border}`, backgroundColor: T.bg, fontSize: 12, color: T.text, cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
-          >
-            <option value="hidden">Hidden</option>
-            <option value="by_handle">By Handle</option>
-            <option value="indexed">Indexed</option>
-          </select>
-        </div>
-      </SettingsSection>
-
-      {/* Joined Federations — correct hierarchy: Federation > Station > Actor */}
       <SettingsSection
         icon={Network}
-        title="Joined Federations"
-        subtitle="Federations this Station participates in. To create a new federation, use the Station Dashboard."
-        action={<div onClick={() => setAddOpen(true)} style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: T.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Plus size={14} color={T.white} /></div>}
+        title="Joined networks"
+        subtitle="Networks your station participates in. Create a new one from the Station Dashboard."
+        action={<button type="button" aria-label="Join a network" title="Join a network"
+          onClick={() => setAddOpen((v) => !v)}
+          style={{ width: 30, height: 30, borderRadius: 8, border: 'none', backgroundColor: T.primary, color: T.white, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <Plus size={15} />
+        </button>}
       >
         {addOpen ? (
-          <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: 12, marginBottom: 12, backgroundColor: T.fillQuaternary }}>
-            <div style={{ fontSize: 12, color: T.textTertiary, marginBottom: 6 }}>Enter federation endpoint URL</div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input value={addUrl} onChange={(e) => setAddUrl(e.target.value)} placeholder="https://federation.example.com" style={{ ...inputStyle, flex: 1 }} onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') setAddOpen(false); }} />
-              <div onClick={handleAdd} style={{ height: 32, padding: '0 12px', borderRadius: 6, backgroundColor: T.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, fontSize: 12, fontWeight: 500, color: T.white, gap: 4 }}><Network size={13} /> Join</div>
-              <div onClick={() => { setAddOpen(false); setAddUrl(''); }} style={{ height: 32, padding: '0 10px', borderRadius: 6, border: `1px solid ${T.border}`, backgroundColor: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, fontSize: 12, color: T.textSecondary }}>Cancel</div>
+          <div style={{ border: `1px solid ${T.borderSoft}`, borderRadius: 10, padding: 12, marginBottom: 12, background: T.surface }}>
+            <Field label="Network endpoint">
+              <input autoFocus value={addUrl} onChange={(e) => { setAddUrl(e.target.value); setAddError(''); }}
+                placeholder="https://federation.example.com" style={inputStyle}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') setAddOpen(false); }} />
+            </Field>
+            {addError ? <div style={{ color: T.danger, fontSize: 12, margin: '6px 0 0' }}>{addError}</div> : null}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+              <GhostBtn label="Cancel" onClick={() => { setAddOpen(false); setAddUrl(''); setAddError(''); }} />
+              <PrimaryBtn icon={Network} label="Join" onClick={handleAdd} />
             </div>
           </div>
         ) : null}
@@ -502,38 +1051,43 @@ function FederationSection() {
                       <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: sc.color, flexShrink: 0 }} title={sc.label} />
                       {admin ? <Shield size={12} color={T.primary} /> : null}
                     </div>
-                    {f.description ? <div style={{ fontSize: 11, color: T.textTertiary, marginTop: 2 }}>{f.description}</div> : null}
+                    {f.description ? <div style={{ fontSize: 12, color: T.textTertiary, marginTop: 2 }}>{f.description}</div> : null}
                   </div>
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
                     <div style={{ textAlign: 'center' }}>
                       <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{f.stationCount}</div>
                       <div style={{ fontSize: 10, color: T.textTertiary }}>Stations</div>
                     </div>
-                    <div style={{ width: 1, height: 24, backgroundColor: T.border }} />
+                    <div style={{ width: 1, height: 24, backgroundColor: T.borderSoft }} />
                     <div style={{ textAlign: 'center' }}>
                       <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{f.visibleActors.toLocaleString()}</div>
-                      <div style={{ fontSize: 10, color: T.textTertiary }}>Actors</div>
+                      <div style={{ fontSize: 10, color: T.textTertiary }}>People</div>
                     </div>
                   </div>
                 </div>
                 {expanded ? (
                   <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.borderSoft}` }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px 16px', fontSize: 12, color: T.textSecondary, marginBottom: admin ? 12 : 0 }}>
-                      <div><span style={{ color: T.textTertiary }}>Endpoint</span><div>{f.endpoint}</div></div>
-                      <div><span style={{ color: T.textTertiary }}>Joined</span><div>{f.joinedAt}</div></div>
-                      <div><span style={{ color: T.textTertiary }}>Admin</span><div>{f.adminPtid}</div></div>
-                    </div>
+                    <details>
+                      <summary style={{ fontSize: 12, color: T.primary, cursor: 'pointer' }}>Technical details</summary>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', fontSize: 12, color: T.textSecondary, marginTop: 8, marginBottom: admin ? 12 : 0 }}>
+                        <div><span style={{ color: T.textTertiary }}>Endpoint</span><div style={{ wordBreak: 'break-all' }}>{f.endpoint}</div></div>
+                        <div><span style={{ color: T.textTertiary }}>Joined</span><div>{f.joinedAt}</div></div>
+                      </div>
+                    </details>
                     {admin ? (
                       confirmLeaveId === f.id ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 6, backgroundColor: '#fff2f0', border: '1px solid #ffccc7' }}>
-                          <span style={{ fontSize: 12, color: '#cf1322', flex: 1 }}>Confirm leaving this federation? This cannot be undone.</span>
-                          <div onClick={() => handleLeave(f.id)} style={{ height: 26, padding: '0 10px', borderRadius: 4, backgroundColor: '#cf1322', color: T.white, fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Leave</div>
-                          <div onClick={() => setConfirmLeaveId(null)} style={{ height: 26, padding: '0 10px', borderRadius: 4, border: `1px solid ${T.border}`, backgroundColor: T.bg, color: T.textSecondary, fontSize: 11, display: 'flex', alignItems: 'center', cursor: 'pointer' }}>Cancel</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', marginTop: 10, borderRadius: 8, backgroundColor: '#fff2f0', border: '1px solid #ffccc7' }}>
+                          <span style={{ fontSize: 12, color: T.danger, flex: 1 }}>Leave this network? Your station will stop syncing its content.</span>
+                          <button type="button" onClick={(e) => { e.stopPropagation(); handleLeave(f.id); }}
+                            style={{ height: 28, padding: '0 12px', borderRadius: 8, border: 'none', backgroundColor: T.danger, color: T.white, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Leave</button>
+                          <button type="button" onClick={(e) => { e.stopPropagation(); setConfirmLeaveId(null); }}
+                            style={{ height: 28, padding: '0 12px', borderRadius: 8, border: `1px solid ${T.borderSoft}`, backgroundColor: T.bg, color: T.textSecondary, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
                         </div>
                       ) : (
-                        <div onClick={() => setConfirmLeaveId(f.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#cf1322', cursor: 'pointer' }}>
-                          <LogOut size={12} /> Leave this federation
-                        </div>
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setConfirmLeaveId(f.id); }}
+                          style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 5, height: 28, padding: '0 4px', border: 'none', background: 'transparent', color: T.danger, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
+                          <LogOut size={13} /> Leave this network
+                        </button>
                       )
                     ) : null}
                   </div>
@@ -551,62 +1105,7 @@ function FederationSection() {
 // SECTION: GENERAL (General group)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function GeneralSection() {
-  const [language, setLanguage] = useState('zh-CN');
-  const [defProvider, setDefProvider] = useState('openai');
-  const [defModel, setDefModel] = useState('gpt-5.4');
-  const [effort, setEffort] = useState('Medium');
-  const [pinLock, setPinLock] = useState(false);
-
-  return (
-    <SettingsContainer>
-      <SettingsSection icon={Globe} title="Language" subtitle="Interface language preference.">
-        <SettingsRow label="Display Language" desc="Change requires page reload.">
-          <Select value={language} width={180} options={[
-            { id: 'zh-CN', label: '\u7B80\u4F53\u4E2D\u6587' },
-            { id: 'en', label: 'English' },
-            { id: 'ja', label: '\u65E5\u672C\u8A9E' },
-          ]} onChange={setLanguage} />
-        </SettingsRow>
-      </SettingsSection>
-
-      <SettingsSection icon={Sparkles} title="Agent Defaults" subtitle="Default LLM configuration for new conversations and agents.">
-        <SettingsRow label="Default Provider">
-          <Select value={defProvider} width={180} options={[
-            { id: 'openai', label: 'OpenAI-compatible' },
-            { id: 'anthropic', label: 'Anthropic' },
-            { id: 'ollama', label: 'Ollama (local)' },
-          ]} onChange={setDefProvider} />
-        </SettingsRow>
-        <SettingsRow label="Default Model">
-          <Select value={defModel} width={180} options={[
-            { id: 'gpt-5.4', label: 'gpt-5.4' },
-            { id: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
-            { id: 'claude-sonnet', label: 'claude-sonnet' },
-          ]} onChange={setDefModel} />
-        </SettingsRow>
-        <SettingsRow label="Effort Level" desc="Controls reasoning depth and token usage.">
-          <Select value={effort} width={120} options={[
-            { id: 'Low', label: 'Low' },
-            { id: 'Medium', label: 'Medium' },
-            { id: 'High', label: 'High' },
-          ]} onChange={setEffort} />
-        </SettingsRow>
-      </SettingsSection>
-
-      <SettingsSection icon={Lock} title="Security" subtitle="PIN lock and authentication settings.">
-        <SettingsRow label="PIN Lock" desc="Require PIN to unlock the application.">
-          <Toggle on={pinLock} onToggle={() => setPinLock(!pinLock)} />
-        </SettingsRow>
-        {pinLock ? (
-          <div style={{ display: 'flex', gap: 8, paddingTop: 8 }}>
-            <GhostBtn label="Remove PIN" danger onClick={() => setPinLock(false)} />
-          </div>
-        ) : null}
-      </SettingsSection>
-    </SettingsContainer>
-  );
-}
+// legacy GeneralSection removed: language/theme -> General>Appearance, PIN -> General>Privacy, model defaults -> AI>Providers
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION: PROVIDERS (AI group)
@@ -1206,7 +1705,8 @@ function StatisticsSection() {
   ];
 
   // Simplified activity heatmap (7 columns x 4 rows)
-  const heatmapData = Array.from({ length: 28 }, () => Math.random());
+  // Fixed demo series (never random — a settings screen must not change on render).
+  const heatmapData = [0.2,0.5,0.8,0.6,0.3,0.1,0.4,0.7,0.9,0.5,0.2,0.3,0.6,0.8,0.4,0.2,0.5,0.7,0.6,0.3,0.1,0.4,0.6,0.8,0.5,0.3,0.2,0.4];
 
   const rankModels = [
     { name: 'gpt-5.4', count: 8420 },
@@ -1364,50 +1864,105 @@ function LogsSection() {
 // SECTION: HELP (Help group)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function HelpSection() {
-  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
-
-  const featureGroups = [
-    { id: 'messaging', label: 'Messaging', items: ['End-to-end encrypted DMs', 'Group chats with federation', 'Rich media attachments', 'Message reactions and threads'] },
-    { id: 'ai', label: 'AI Features', items: ['Multi-provider LLM support', 'Custom skill packages', 'MCP server integration', 'Long-term memory'] },
-    { id: 'federation', label: 'Federation', items: ['Multi-station network', 'Cross-station messaging', 'Decentralized identity', 'Relay routing'] },
-    { id: 'applets', label: 'Applets', items: ['Note taking', 'Calendar management', 'Task boards', 'Extensible plugin system'] },
+// ── Advanced · Data & Storage ──────────────────────────────────────────────
+function DataStorageSection() {
+  const [cacheCleared, setCacheCleared] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const buckets = [
+    { label: 'Messages & media', value: '384 MB', pct: 62 },
+    { label: 'AI memory index', value: '128 MB', pct: 21 },
+    { label: 'Applets & skills', value: '64 MB', pct: 11 },
+    { label: 'Cache', value: '40 MB', pct: 6 },
   ];
-
   return (
     <SettingsContainer>
-      {/* About Card */}
-      <SettingsSection icon={Info} title="About Peers-Touch" subtitle="Decentralized federated social network framework.">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px' }}>
-          <SettingsRow label="Version" desc="v0.9.2-beta"><span /></SettingsRow>
-          <SettingsRow label="Build" desc="20260721.1432"><span /></SettingsRow>
-          <SettingsRow label="Platform" desc="macOS arm64 (Tauri 2.x)"><span /></SettingsRow>
-          <SettingsRow label="Runtime" desc="WebKit + Rust"><span /></SettingsRow>
+      <SettingsSection icon={HardDrive} title="Local storage" subtitle="Everything lives on this device and your station.">
+        {buckets.map((b) => (
+          <div key={b.label} style={{ margin: '10px 0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
+              <span style={{ color: T.text }}>{b.label}</span>
+              <span style={{ color: T.textTertiary }}>{b.value}</span>
+            </div>
+            <div style={{ height: 6, borderRadius: 3, background: '#f0f0f0', overflow: 'hidden' }}>
+              <div style={{ width: `${b.pct}%`, height: '100%', background: T.primary, borderRadius: 3 }} />
+            </div>
+          </div>
+        ))}
+      </SettingsSection>
+
+      <SettingsSection icon={Database} title="Backup & files" subtitle="Take your data with you.">
+        <SettingsRow label="My files" desc="2 files · 4.2 MB">
+          <GhostBtn label="Manage files" onClick={() => {}} />
+        </SettingsRow>
+        <SettingsRow label="Export local data" desc="Download a copy of your messages and settings.">
+          <GhostBtn label="Export" onClick={() => {}} />
+        </SettingsRow>
+        <SettingsRow label="Clear cache" desc={cacheCleared ? 'Cache cleared.' : 'Frees space without deleting your messages.'}>
+          <GhostBtn label={cacheCleared ? 'Cleared' : 'Clear'} onClick={() => setCacheCleared(true)} />
+        </SettingsRow>
+      </SettingsSection>
+
+      <DangerZone title="Reset" desc="Start the first-run setup again on the next launch. Your station data on disk is not deleted.">
+        {confirmReset ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: T.danger, flex: 1, minWidth: 200 }}>Re-show onboarding and reset local preferences?</span>
+            <button type="button"
+              onClick={() => { setConfirmReset(false); }}
+              style={{ height: 28, padding: '0 12px', borderRadius: 8, border: `1px solid ${T.borderSoft}`, background: T.bg, color: T.textSecondary, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+            <button type="button"
+              onClick={() => setConfirmReset(false)}
+              style={{ height: 28, padding: '0 12px', borderRadius: 8, border: 'none', background: T.danger, color: T.white, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Reset onboarding</button>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setConfirmReset(true)}
+            style={{ height: 32, padding: '0 14px', borderRadius: 8, border: 'none', background: T.danger, color: T.white, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            Reset onboarding
+          </button>
+        )}
+      </DangerZone>
+    </SettingsContainer>
+  );
+}
+
+// ── Advanced · About ────────────────────────────────────────────────────────
+function AboutSection() {
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+  const featureGroups = [
+    { id: 'messaging', label: 'Messaging', items: ['End-to-end encrypted DMs', 'Group chats across networks', 'Rich media attachments', 'Reactions and threads'] },
+    { id: 'ai', label: 'AI features', items: ['Multi-provider models', 'Custom skill packages', 'MCP server integration', 'Long-term memory'] },
+    { id: 'network', label: 'Your network', items: ['Your own station', 'Cross-station messaging', 'Decentralized identity', 'Relay routing'] },
+    { id: 'applets', label: 'Applets', items: ['Notes', 'Calendar', 'Task boards', 'Extensible plugins'] },
+  ];
+  return (
+    <SettingsContainer>
+      <SettingsSection icon={Info} title="About Peers Touch" subtitle="Your social world, held in your own center.">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+          <SettingsRow label="Version" desc="v0.9.2-beta" />
+          <SettingsRow label="Build" desc="20261012.1012" />
+          <SettingsRow label="Platform" desc="macOS arm64 · Tauri 2.x" />
+          <SettingsRow label="Runtime" desc="WebKit + Rust" />
         </div>
       </SettingsSection>
 
-      {/* Feature Sections */}
-      <SettingsSection icon={HelpCircle} title="Features" subtitle="Explore available features in Peers-Touch Desktop.">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <SettingsSection icon={HelpCircle} title="What's inside" subtitle="A quick tour of the capabilities in this build.">
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
           {featureGroups.map((fg) => {
             const expanded = expandedGroup === fg.id;
             return (
               <div key={fg.id}>
-                <div onClick={() => setExpandedGroup(expanded ? null : fg.id)} style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px',
-                  borderRadius: 8, cursor: 'pointer',
-                  backgroundColor: expanded ? T.fillQuaternary : 'transparent',
-                }}>
-                  {expanded ? <ChevronDown size={14} color={T.textSecondary} /> : <ChevronRight size={14} color={T.textSecondary} />}
-                  <span style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{fg.label}</span>
-                  <span style={{ fontSize: 12, color: T.textTertiary, marginLeft: 'auto' }}>{fg.items.length} items</span>
-                </div>
+                <button type="button" aria-expanded={expanded} onClick={() => setExpandedGroup(expanded ? null : fg.id)}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 4px',
+                    borderRadius: 8, cursor: 'pointer', border: 'none', background: 'transparent', textAlign: 'left',
+                  }}>
+                  {expanded ? <ChevronDown size={15} color={T.textSecondary} /> : <ChevronRight size={15} color={T.textSecondary} />}
+                  <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{fg.label}</span>
+                  <span style={{ fontSize: 12, color: T.textTertiary, marginLeft: 'auto' }}>{fg.items.length}</span>
+                </button>
                 {expanded ? (
-                  <div style={{ paddingLeft: 34, paddingBottom: 8 }}>
+                  <div style={{ paddingLeft: 30, paddingBottom: 8 }}>
                     {fg.items.map((item) => (
-                      <div key={item} style={{ fontSize: 13, color: T.textSecondary, padding: '4px 0' }}>
-                        {item}
-                      </div>
+                      <div key={item} style={{ fontSize: 13, color: T.textSecondary, padding: '4px 0' }}>{item}</div>
                     ))}
                   </div>
                 ) : null}
@@ -1416,21 +1971,6 @@ function HelpSection() {
           })}
         </div>
       </SettingsSection>
-
-      {/* Danger Zone */}
-      <div style={{
-        backgroundColor: T.white, borderRadius: 12, padding: 24,
-        border: '1px solid #ffa39e',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-          <AlertTriangle size={18} color="#cf1322" />
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#cf1322' }}>Danger Zone</div>
-            <div style={{ fontSize: 12, color: T.textTertiary, marginTop: 2 }}>Irreversible actions that reset application state.</div>
-          </div>
-        </div>
-        <SettingsRow label="Reset Onboarding" desc="Re-show the first-run setup wizard on next launch." />
-      </div>
     </SettingsContainer>
   );
 }
@@ -1456,7 +1996,7 @@ function CommandPaletteSection({ onOpen }: { onOpen: () => void }) {
       <SettingsSection
         icon={Command}
         title="Command Palette"
-        action={<PrimaryButton label="Open Command Palette" icon={Command} onClick={onOpen} />}
+        action={<PrimaryBtn label="Open Command Palette" icon={Command} onClick={onOpen} />}
       >
         <span />
       </SettingsSection>
@@ -1464,27 +2004,16 @@ function CommandPaletteSection({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-function MyFilesSection() {
-  return (
-    <SettingsContainer>
-      <SettingsSection icon={FolderOpen} title="My Files">
-        <SettingsRow label="product-brief.pdf" desc="2.4 MB · Private">
-          <span style={{ color: T.textTertiary, fontSize: 12 }}>PDF</span>
-        </SettingsRow>
-        <SettingsRow label="team-photo.jpg" desc="1.8 MB · Shared in Chat">
-          <span style={{ color: T.textTertiary, fontSize: 12 }}>Image</span>
-        </SettingsRow>
-      </SettingsSection>
-    </SettingsContainer>
-  );
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
-// PAGE SHELL: Three-level navigation
+// IA + PAGE SHELL (4 groups; non-technical content first)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-type GroupId = 'general' | 'federation' | 'ai' | 'tools' | 'channels' | 'applets' | 'data' | 'help';
-type SectionId = 'account' | 'federation' | 'general' | 'providers' | 'models' | 'memory' | 'skills' | 'mcp' | 'cron' | 'command-menu' | 'channels' | 'applets' | 'statistics' | 'oss' | 'logs' | 'help';
+type GroupId = 'general' | 'network' | 'ai' | 'advanced';
+type SectionId =
+  | 'account' | 'notifications' | 'privacy' | 'appearance'
+  | 'station' | 'discovery' | 'federation'
+  | 'providers' | 'models' | 'memory' | 'skills' | 'mcp'
+  | 'storage' | 'channels' | 'applets' | 'statistics' | 'cron' | 'command-menu' | 'logs' | 'about';
 
 interface SectionDef { id: SectionId; label: string; icon: LucideIcon; }
 interface GroupDef { id: GroupId; label: string; icon: LucideIcon; sections: SectionDef[]; }
@@ -1494,13 +2023,17 @@ const GROUPS: GroupDef[] = [
     id: 'general', label: 'General', icon: Settings,
     sections: [
       { id: 'account', label: 'Account', icon: User },
-      { id: 'general', label: 'General', icon: Sliders },
+      { id: 'notifications', label: 'Notifications', icon: Bell },
+      { id: 'privacy', label: 'Privacy & Security', icon: Lock },
+      { id: 'appearance', label: 'Appearance & Language', icon: Sliders },
     ],
   },
   {
-    id: 'federation', label: 'Federation', icon: Globe,
+    id: 'network', label: 'Network', icon: Globe,
     sections: [
-      { id: 'federation', label: 'Federation', icon: Globe },
+      { id: 'station', label: 'Your Station', icon: Server },
+      { id: 'discovery', label: 'Discovery', icon: Globe },
+      { id: 'federation', label: 'Networks', icon: Network },
     ],
   },
   {
@@ -1514,58 +2047,43 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    id: 'tools', label: 'Tools', icon: Sliders,
+    id: 'advanced', label: 'Advanced', icon: Wrench,
     sections: [
-      { id: 'cron', label: 'Cron Jobs', icon: Clock },
-      { id: 'command-menu', label: 'Command Palette', icon: Command },
-    ],
-  },
-  {
-    id: 'channels', label: 'Channels', icon: Send,
-    sections: [
+      { id: 'storage', label: 'Data & Storage', icon: Database },
       { id: 'channels', label: 'Channels', icon: Send },
-    ],
-  },
-  {
-    id: 'applets', label: 'Applets', icon: Puzzle,
-    sections: [
       { id: 'applets', label: 'Applets', icon: Puzzle },
-    ],
-  },
-  {
-    id: 'data', label: 'Data', icon: Database,
-    sections: [
       { id: 'statistics', label: 'Statistics', icon: BarChart3 },
-      { id: 'oss', label: 'My Files', icon: FolderOpen },
-      { id: 'logs', label: 'Logs', icon: ScrollText },
-    ],
-  },
-  {
-    id: 'help', label: 'Help', icon: HelpCircle,
-    sections: [
-      { id: 'help', label: 'Help', icon: HelpCircle },
+      { id: 'logs', label: 'Diagnostics & Logs', icon: ScrollText },
+      { id: 'cron', label: 'Scheduled Tasks', icon: Clock },
+      { id: 'command-menu', label: 'Command Palette', icon: Command },
+      { id: 'about', label: 'About', icon: Info },
     ],
   },
 ];
 
-function renderSection(sectionId: SectionId, onOpenCommandPalette: () => void) {
+function renderSection(sectionId: SectionId, onOpenCommandPalette: () => void,
+  federations: JoinedFederation[], setFederations: Dispatch<SetStateAction<JoinedFederation[]>>) {
   switch (sectionId) {
-    case 'account': return <AccountSection />;
-    case 'federation': return <FederationSection />;
-    case 'general': return <GeneralSection />;
+    case 'account': return <AccountSection federations={federations} />;
+    case 'notifications': return <NotificationsSettingsSection />;
+    case 'privacy': return <PrivacySection />;
+    case 'appearance': return <AppearanceSection />;
+    case 'station': return <StationSection />;
+    case 'discovery': return <DiscoverySection />;
+    case 'federation': return <FederationSection federations={federations} setFederations={setFederations} />;
     case 'providers': return <ProvidersSection />;
     case 'models': return <ModelsSection />;
     case 'memory': return <MemorySection />;
     case 'skills': return <SkillsSection />;
     case 'mcp': return <MCPSection />;
-    case 'cron': return <CronJobsSection />;
-    case 'command-menu': return <CommandPaletteSection onOpen={onOpenCommandPalette} />;
+    case 'storage': return <DataStorageSection />;
     case 'channels': return <ChannelsSection />;
     case 'applets': return <AppletsSection />;
     case 'statistics': return <StatisticsSection />;
-    case 'oss': return <MyFilesSection />;
     case 'logs': return <LogsSection />;
-    case 'help': return <HelpSection />;
+    case 'cron': return <CronJobsSection />;
+    case 'command-menu': return <CommandPaletteSection onOpen={onOpenCommandPalette} />;
+    case 'about': return <AboutSection />;
     default: return null;
   }
 }
@@ -1573,9 +2091,12 @@ function renderSection(sectionId: SectionId, onOpenCommandPalette: () => void) {
 export function SettingsPage({ onOpenCommandPalette }: { onOpenCommandPalette: () => void }) {
   const [activeGroup, setActiveGroup] = useState<GroupId>('general');
   const [activeSection, setActiveSection] = useState<SectionId>('account');
+  const [federations, setFederations] = useState<JoinedFederation[]>(MOCK_FEDERATIONS);
 
   const group = GROUPS.find((g) => g.id === activeGroup) ?? GROUPS[0];
   const current = group.sections.find((s) => s.id === activeSection) ?? group.sections[0];
+  // Level-2 navigation is always a vertical section rail (never a second
+  // horizontal tab strip). All groups currently have >1 section.
   const showSidebar = group.sections.length > 1;
 
   const onGroupChange = (gid: GroupId) => {
@@ -1585,82 +2106,82 @@ export function SettingsPage({ onOpenCommandPalette }: { onOpenCommandPalette: (
   };
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', backgroundColor: T.bg }}>
-      {/* Level 1: Horizontal Group Tab Bar */}
-      <div style={{
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', backgroundColor: T.surface }}>
+      {/* Level 1: group tab bar */}
+      <div role="tablist" aria-label="Settings groups" style={{
         height: 48, flexShrink: 0,
         display: 'flex', alignItems: 'center', gap: 0,
-        padding: '0 24px',
-        borderBottom: `1px solid ${T.border}`,
-        backgroundColor: T.white,
+        padding: '0 16px',
+        borderBottom: `1px solid ${T.borderSoft}`,
+        backgroundColor: T.white, overflowX: 'auto',
       }}>
         {GROUPS.map((g) => {
           const active = g.id === activeGroup;
           const Icon = g.icon;
           return (
-            <div
+            <button
               key={g.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
               onClick={() => onGroupChange(g.id)}
               style={{
                 position: 'relative',
-                display: 'flex', alignItems: 'center', gap: 6,
-                height: 48, padding: '0 16px',
+                display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
+                height: 48, padding: '0 14px',
                 fontSize: 13, fontWeight: active ? 600 : 500,
                 color: active ? T.primary : T.textSecondary,
-                cursor: 'pointer', transition: 'color 0.15s ease',
+                background: 'transparent', border: 'none', cursor: 'pointer',
               }}
             >
               <Icon size={15} />
               {g.label}
               {active ? (
-                <div style={{
-                  position: 'absolute', bottom: 0, left: 16, right: 16,
-                  height: 2, borderRadius: 1, backgroundColor: T.primary,
-                }} />
+                <span style={{ position: 'absolute', bottom: 0, left: 14, right: 14, height: 2, borderRadius: 1, backgroundColor: T.primary }} />
               ) : null}
-            </div>
+            </button>
           );
         })}
       </div>
 
-      {/* Level 2 + 3: Sidebar + Content */}
+      {/* Level 2 + 3 */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-        {/* Level 2: Section Sidebar (180px, only when group has >1 section) */}
         {showSidebar ? (
-          <div style={{
-            width: 180, flexShrink: 0,
-            borderRight: `1px solid ${T.border}`,
+          <nav aria-label="Settings sections" style={{
+            width: 190, flexShrink: 0,
+            borderRight: `1px solid ${T.borderSoft}`,
             backgroundColor: T.navBg,
-            display: 'flex', flexDirection: 'column',
-            padding: '16px 8px', overflow: 'auto',
+            display: 'flex', flexDirection: 'column', gap: 2,
+            padding: '14px 8px', overflowY: 'auto',
           }}>
             {group.sections.map((s) => {
               const active = s.id === activeSection;
               const Icon = s.icon;
               return (
-                <div
+                <button
                   key={s.id}
+                  type="button"
+                  aria-current={active ? 'page' : undefined}
                   onClick={() => setActiveSection(s.id)}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+                    padding: '9px 10px', borderRadius: 8, cursor: 'pointer',
+                    border: 'none',
                     color: active ? T.primary : T.textSecondary,
                     backgroundColor: active ? T.primaryWash : 'transparent',
                     fontSize: 13, fontWeight: active ? 600 : 500,
-                    transition: 'background-color 0.12s ease',
                   }}
                 >
                   <Icon size={15} />
                   <span>{s.label}</span>
-                </div>
+                </button>
               );
             })}
-          </div>
+          </nav>
         ) : null}
 
-        {/* Level 3: Section Content */}
-        <div style={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
-          {renderSection(current.id, onOpenCommandPalette)}
+        <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
+          {renderSection(current.id, onOpenCommandPalette, federations, setFederations)}
         </div>
       </div>
     </div>

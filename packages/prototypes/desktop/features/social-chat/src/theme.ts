@@ -7,6 +7,8 @@ export const T = {
   primary: '#6b5bd6',
   primaryHover: '#5a4bc5',
   primaryActive: '#4a3cb4',
+  // Canonical quiet fill behind primary icon actions (decision ✓ etc).
+  primaryWash: '#f3f1fb',
 
   // Federated (cross-station) deviation cue. Quiet marker for a peer who lives
   // on another station: distinct from both the selection/brand purple and from
