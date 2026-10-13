@@ -1,4 +1,4 @@
-use crate::infrastructure::{station_client, storage};
+use crate::infrastructure::storage;
 use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,7 +10,7 @@ pub struct LocalScope {
 impl LocalScope {
     pub fn from_actor_ptid(actor_ptid: &str) -> Self {
         Self {
-            station_scope: active_station_scope(),
+            station_scope: actor_station_scope(actor_ptid),
             actor_scope: storage::resolve_user_scope(actor_ptid),
         }
     }
@@ -33,12 +33,9 @@ impl LocalScope {
     }
 }
 
-pub fn active_station_scope() -> String {
-    let station_url = station_client::station_base_url();
-    station_scope_for_identity(
-        station_client::active_station_peer_id().as_deref(),
-        &station_url,
-    )
+fn actor_station_scope(actor_ptid: &str) -> String {
+    let digest = Sha256::digest(actor_ptid.trim().as_bytes());
+    format!("actor_home_{}", hex::encode(&digest[..12]))
 }
 
 pub(crate) fn station_scope_for_identity(

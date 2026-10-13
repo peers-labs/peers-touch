@@ -1,8 +1,8 @@
 // Social (Moments) Tauri commands — thin BFF wrappers around the
 // station's `/api/v1/social/*` HTTP surface.
 //
-// Pattern: each command performs a single proto-over-HTTP round-trip via
-// `station_client::request_proto`, returns the response as raw protobuf
+// Pattern: each command performs a single proto-over-HTTP round-trip via the
+// injected `StationClient`, returns the response as raw protobuf
 // bytes (`Vec<u8>`), and lets the TS layer deserialize through
 // `invokeRustProto` / `fromBinary` against the matching schema.
 //
@@ -23,6 +23,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::application::session_resolver;
+use crate::application::station_runtime::client::{self as station_client, StationClient};
 use crate::contracts::{
     SocialCircleAddMembersInput, SocialCircleCreateInput, SocialCircleDeleteInput,
     SocialCircleListMembersInput, SocialCircleRemoveMembersInput, SocialCircleRenameInput,
@@ -36,7 +37,6 @@ use crate::contracts::{
     SocialSyncMomentsProjectionInput, SocialUnreactInput,
 };
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::model;
 use crate::state::AppState;
 
@@ -112,6 +112,7 @@ pub(crate) struct FriendRequestCommandInput {
 }
 
 pub(crate) fn sign_friend_request_command(
+    station_client: &StationClient,
     state: &AppState,
     account_id: &str,
     authenticated_ptid: &str,
@@ -129,7 +130,8 @@ pub(crate) fn sign_friend_request_command(
     {
         return Err("friend request command identity is incomplete".to_string());
     }
-    let local_station_peer_id = station_client::active_station_peer_id()
+    let local_station_peer_id = station_client
+        .active_station_peer_id()
         .ok_or_else(|| "friend request command requires the active Station peer ID".to_string())?;
     let expected_author = match input.action {
         model::social::FriendRequestAction::Send => {
@@ -241,6 +243,7 @@ pub(crate) fn friend_request_command_device_id(
 }
 
 fn sign_social_relationship_command(
+    station_client: &StationClient,
     state: &AppState,
     account_id: &str,
     authenticated_ptid: &str,
@@ -261,7 +264,8 @@ fn sign_social_relationship_command(
     {
         return Err("Social relationship command identity is incomplete".to_string());
     }
-    let actor_home_station_peer_id = station_client::active_station_peer_id()
+    let actor_home_station_peer_id = station_client
+        .active_station_peer_id()
         .ok_or_else(|| "Social relationship command requires the active Station".to_string())?;
     let engine = state.messaging_engines.get(account_id)?.ok_or_else(|| {
         "Social relationship command requires an active messaging engine".to_string()
@@ -345,42 +349,47 @@ fn person_actor_ref(ptid: String) -> model::actor::ActorRef {
 /// indirectly through the request_proto Req bound; using `()` plus an
 /// explicit turbofish keeps the call sites short.
 fn get_proto<Resp: Message + Default>(
+    station_client: &StationClient,
     path: &str,
     token: &str,
     query: Option<&[(&str, String)]>,
 ) -> Result<Resp, station_client::StationClientError> {
-    station_client::request_proto::<(), Resp>(Method::GET, path, token, query, None)
+    station_client.request_proto::<(), Resp>(Method::GET, path, token, query, None)
 }
 
 fn get_proto_optional_auth<Resp: Message + Default>(
+    station_client: &StationClient,
     path: &str,
     token: Option<&str>,
     query: Option<&[(&str, String)]>,
 ) -> Result<Resp, station_client::StationClientError> {
-    station_client::request_proto_optional_auth::<(), Resp>(Method::GET, path, token, query, None)
+    station_client.request_proto_optional_auth::<(), Resp>(Method::GET, path, token, query, None)
 }
 
 fn post_proto<Req: Message, Resp: Message + Default>(
+    station_client: &StationClient,
     path: &str,
     token: &str,
     body: &Req,
 ) -> Result<Resp, station_client::StationClientError> {
-    station_client::request_proto::<Req, Resp>(Method::POST, path, token, None, Some(body))
+    station_client.request_proto::<Req, Resp>(Method::POST, path, token, None, Some(body))
 }
 
 fn delete_proto<Resp: Message + Default>(
+    station_client: &StationClient,
     path: &str,
     token: &str,
 ) -> Result<Resp, station_client::StationClientError> {
-    station_client::request_proto::<(), Resp>(Method::DELETE, path, token, None, None)
+    station_client.request_proto::<(), Resp>(Method::DELETE, path, token, None, None)
 }
 
 fn delete_proto_with_query<Resp: Message + Default>(
+    station_client: &StationClient,
     path: &str,
     token: &str,
     query: Option<&[(&str, String)]>,
 ) -> Result<Resp, station_client::StationClientError> {
-    station_client::request_proto::<(), Resp>(Method::DELETE, path, token, query, None)
+    station_client.request_proto::<(), Resp>(Method::DELETE, path, token, query, None)
 }
 
 /// Translate the JS-side string id (always a stringified u64 to keep
@@ -441,11 +450,15 @@ pub fn social_create_moment(
             )
         }
     };
-    let resp: model::social::CreatePostResponse =
-        match post_proto("/api/v1/social/moments", &token, &req) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "create moment failed"),
-        };
+    let resp: model::social::CreatePostResponse = match post_proto(
+        state.station.client(),
+        "/api/v1/social/moments",
+        &token,
+        &req,
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "create moment failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -461,7 +474,7 @@ pub fn social_get_moment(
     }
     let path = format!("/api/v1/social/moments/{}", input.id);
     let resp: model::social::GetMomentResourceResponse =
-        match get_proto_optional_auth(&path, token.as_deref(), None) {
+        match get_proto_optional_auth(state.station.client(), &path, token.as_deref(), None) {
             Ok(r) => r,
             Err(e) => return station_error_proto(e, "get moment failed"),
         };
@@ -482,10 +495,11 @@ pub fn social_delete_moment(
         return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
     }
     let path = format!("/api/v1/social/moments/{}", input.id);
-    let resp: model::social::DeletePostResponse = match delete_proto(&path, &token) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "delete moment failed"),
-    };
+    let resp: model::social::DeletePostResponse =
+        match delete_proto(state.station.client(), &path, &token) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "delete moment failed"),
+        };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -531,11 +545,15 @@ pub fn social_get_timeline(
     if let Some(s) = input.sort {
         query.push(("sort", s));
     }
-    let resp: model::social::GetTimelineResponse =
-        match get_proto_optional_auth("/api/v1/social/timeline", token.as_deref(), Some(&query)) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "get timeline failed"),
-        };
+    let resp: model::social::GetTimelineResponse = match get_proto_optional_auth(
+        state.station.client(),
+        "/api/v1/social/timeline",
+        token.as_deref(),
+        Some(&query),
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "get timeline failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -557,11 +575,15 @@ pub fn social_sync_moments_projection(
         public_sort: input.public_sort.unwrap_or(0),
         reason: input.reason.unwrap_or_default(),
     };
-    let resp: model::social::SyncMomentsProjectionResponse =
-        match post_proto("/api/v1/social/moments/sync", &token, &req) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "sync moments projection failed"),
-        };
+    let resp: model::social::SyncMomentsProjectionResponse = match post_proto(
+        state.station.client(),
+        "/api/v1/social/moments/sync",
+        &token,
+        &req,
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "sync moments projection failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -602,11 +624,15 @@ pub fn social_station_moderation_upsert(
             ..Default::default()
         }),
     };
-    let resp: model::social::UpsertStationModerationPolicyResponse =
-        match post_proto("/api/v1/social/moderation/stations", &token, &req) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "upsert station moderation failed"),
-        };
+    let resp: model::social::UpsertStationModerationPolicyResponse = match post_proto(
+        state.station.client(),
+        "/api/v1/social/moderation/stations",
+        &token,
+        &req,
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "upsert station moderation failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -634,11 +660,15 @@ pub fn social_station_moderation_delete(
         ("station_peer_id", station_peer_id),
         ("kind", input.kind.unwrap_or(1).to_string()),
     ];
-    let resp: model::social::DeleteStationModerationPolicyResponse =
-        match delete_proto_with_query("/api/v1/social/moderation/stations", &token, Some(&query)) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "delete station moderation failed"),
-        };
+    let resp: model::social::DeleteStationModerationPolicyResponse = match delete_proto_with_query(
+        state.station.client(),
+        "/api/v1/social/moderation/stations",
+        &token,
+        Some(&query),
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "delete station moderation failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -661,11 +691,15 @@ pub fn social_station_moderation_list(
     if let Some(l) = input.limit {
         query.push(("limit", l.to_string()));
     }
-    let resp: model::social::ListStationModerationPoliciesResponse =
-        match get_proto("/api/v1/social/moderation/stations", &token, Some(&query)) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "list station moderation failed"),
-        };
+    let resp: model::social::ListStationModerationPoliciesResponse = match get_proto(
+        state.station.client(),
+        "/api/v1/social/moderation/stations",
+        &token,
+        Some(&query),
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "list station moderation failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -691,11 +725,15 @@ pub fn social_list_by_author(
     if let Some(l) = input.limit {
         query.push(("limit", l.to_string()));
     }
-    let resp: model::social::ListPostsResponse =
-        match get_proto_optional_auth("/api/v1/social/timeline", token.as_deref(), Some(&query)) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "list by author failed"),
-        };
+    let resp: model::social::ListPostsResponse = match get_proto_optional_auth(
+        state.station.client(),
+        "/api/v1/social/timeline",
+        token.as_deref(),
+        Some(&query),
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "list by author failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -732,10 +770,11 @@ pub fn social_react(
         actor_device_signature: Vec::new(),
     };
     let path = format!("/api/v1/social/moments/{}/react", input.post_id);
-    let resp: model::social::ReactToPostResponse = match post_proto(&path, &token, &req) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "react failed"),
-    };
+    let resp: model::social::ReactToPostResponse =
+        match post_proto(state.station.client(), &path, &token, &req) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "react failed"),
+        };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -760,10 +799,11 @@ pub fn social_unreact(
         actor_device_signature: Vec::new(),
     };
     let path = format!("/api/v1/social/moments/{}/unreact", input.post_id);
-    let resp: model::social::UnreactToPostResponse = match post_proto(&path, &token, &req) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "unreact failed"),
-    };
+    let resp: model::social::UnreactToPostResponse =
+        match post_proto(state.station.client(), &path, &token, &req) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "unreact failed"),
+        };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -797,11 +837,15 @@ pub fn social_get_comments(
     }
     query.push(("limit", limit.to_string()));
     let path = format!("/api/v1/social/moments/{}/comments", input.post_id);
-    let resp: model::social::ListMomentCommentsResponse =
-        match get_proto_optional_auth(&path, token.as_deref(), Some(&query)) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "get comments failed"),
-        };
+    let resp: model::social::ListMomentCommentsResponse = match get_proto_optional_auth(
+        state.station.client(),
+        &path,
+        token.as_deref(),
+        Some(&query),
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "get comments failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -827,10 +871,11 @@ pub fn social_create_comment(
         reply_to_comment_id: input.reply_to_comment_id.unwrap_or_default(),
     };
     let path = format!("/api/v1/social/moments/{}/comments", input.post_id);
-    let resp: model::social::CreateCommentResponse = match post_proto(&path, &token, &req) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "create comment failed"),
-    };
+    let resp: model::social::CreateCommentResponse =
+        match post_proto(state.station.client(), &path, &token, &req) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "create comment failed"),
+        };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -848,10 +893,11 @@ pub fn social_delete_comment(
         return AppResult::fail(ErrorCode::InvalidArgument, "comment_id is required", None);
     }
     let path = format!("/api/v1/social/comments/{}", input.comment_id);
-    let resp: model::social::DeleteCommentResponse = match delete_proto(&path, &token) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "delete comment failed"),
-    };
+    let resp: model::social::DeleteCommentResponse =
+        match delete_proto(state.station.client(), &path, &token) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "delete comment failed"),
+        };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -879,11 +925,15 @@ pub fn social_follow(
     let req = model::social::FollowRequest {
         target_actor_ptid: input.target_actor_ptid,
     };
-    let resp: model::social::FollowResponse =
-        match post_proto("/api/v1/social/relationships/follow", &token, &req) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "follow failed"),
-        };
+    let resp: model::social::FollowResponse = match post_proto(
+        state.station.client(),
+        "/api/v1/social/relationships/follow",
+        &token,
+        &req,
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "follow failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -907,11 +957,15 @@ pub fn social_unfollow(
     let req = model::social::UnfollowRequest {
         target_actor_ptid: input.target_actor_ptid,
     };
-    let resp: model::social::UnfollowResponse =
-        match post_proto("/api/v1/social/relationships/unfollow", &token, &req) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "unfollow failed"),
-        };
+    let resp: model::social::UnfollowResponse = match post_proto(
+        state.station.client(),
+        "/api/v1/social/relationships/unfollow",
+        &token,
+        &req,
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "unfollow failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -940,6 +994,7 @@ pub fn social_get_followers(
         query.push(("limit", l.to_string()));
     }
     let resp: model::social::GetFollowersResponse = match get_proto(
+        state.station.client(),
         "/api/v1/social/relationships/followers",
         &token,
         Some(&query),
@@ -975,6 +1030,7 @@ pub fn social_get_following(
         query.push(("limit", l.to_string()));
     }
     let resp: model::social::GetFollowingResponse = match get_proto(
+        state.station.client(),
         "/api/v1/social/relationships/following",
         &token,
         Some(&query),
@@ -1003,11 +1059,15 @@ pub fn social_get_relationship(
         );
     }
     let query = vec![("target_actor_ptid", input.target_actor_ptid)];
-    let resp: model::social::GetRelationshipResponse =
-        match get_proto("/api/v1/social/relationships", &token, Some(&query)) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "get relationship failed"),
-        };
+    let resp: model::social::GetRelationshipResponse = match get_proto(
+        state.station.client(),
+        "/api/v1/social/relationships",
+        &token,
+        Some(&query),
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "get relationship failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -1032,6 +1092,7 @@ pub fn social_block_actor(
         );
     }
     let command = match sign_social_relationship_command(
+        state.station.client(),
         state.inner(),
         &account_id,
         &actor_ptid,
@@ -1049,7 +1110,7 @@ pub fn social_block_actor(
         command: Some(command),
     };
     let response: model::social::BlockSocialActorResponse =
-        match station_client::request_proto_for_device(
+        match state.station.client().request_proto_for_device(
             Method::POST,
             "/api/v1/social/relationships/block",
             &token,
@@ -1084,6 +1145,7 @@ pub fn social_unblock_actor(
         );
     }
     let command = match sign_social_relationship_command(
+        state.station.client(),
         state.inner(),
         &account_id,
         &actor_ptid,
@@ -1101,7 +1163,7 @@ pub fn social_unblock_actor(
         command: Some(command),
     };
     let response: model::social::UnblockSocialActorResponse =
-        match station_client::request_proto_for_device(
+        match state.station.client().request_proto_for_device(
             Method::POST,
             "/api/v1/social/relationships/unblock",
             &token,
@@ -1137,11 +1199,15 @@ pub fn social_circle_create(
         description: input.description.unwrap_or_default(),
         member_ptids: input.member_ptids.unwrap_or_default(),
     };
-    let resp: model::social::CreateCircleResponse =
-        match post_proto("/api/v1/social/circles", &token, &req) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "create circle failed"),
-        };
+    let resp: model::social::CreateCircleResponse = match post_proto(
+        state.station.client(),
+        "/api/v1/social/circles",
+        &token,
+        &req,
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "create circle failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -1168,17 +1234,19 @@ pub fn social_circle_rename(
         description: input.description,
     };
     let path = format!("/api/v1/social/circles/{}", input.circle_id);
-    let resp: model::social::RenameCircleResponse =
-        match station_client::request_proto::<_, model::social::RenameCircleResponse>(
-            Method::PUT,
-            &path,
-            &token,
-            None,
-            Some(&req),
-        ) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "rename circle failed"),
-        };
+    let resp: model::social::RenameCircleResponse = match state
+        .station
+        .client()
+        .request_proto::<_, model::social::RenameCircleResponse>(
+        Method::PUT,
+        &path,
+        &token,
+        None,
+        Some(&req),
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "rename circle failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -1196,10 +1264,11 @@ pub fn social_circle_delete(
         return AppResult::fail(ErrorCode::InvalidArgument, "circle_id is required", None);
     }
     let path = format!("/api/v1/social/circles/{}", input.circle_id);
-    let resp: model::social::DeleteCircleResponse = match delete_proto(&path, &token) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "delete circle failed"),
-    };
+    let resp: model::social::DeleteCircleResponse =
+        match delete_proto(state.station.client(), &path, &token) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "delete circle failed"),
+        };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -1212,11 +1281,15 @@ pub fn social_circle_list_mine(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let resp: model::social::ListMyCirclesResponse =
-        match get_proto("/api/v1/social/circles", &token, None) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "list circles failed"),
-        };
+    let resp: model::social::ListMyCirclesResponse = match get_proto(
+        state.station.client(),
+        "/api/v1/social/circles",
+        &token,
+        None,
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "list circles failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -1245,10 +1318,11 @@ pub fn social_circle_add_members(
         member_ptids: input.member_ptids,
     };
     let path = format!("/api/v1/social/circles/{}/members", input.circle_id);
-    let resp: model::social::AddCircleMemberResponse = match post_proto(&path, &token, &req) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "add circle members failed"),
-    };
+    let resp: model::social::AddCircleMemberResponse =
+        match post_proto(state.station.client(), &path, &token, &req) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "add circle members failed"),
+        };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -1278,13 +1352,16 @@ pub fn social_circle_remove_members(
     };
     let path = format!("/api/v1/social/circles/{}/members", input.circle_id);
     let resp: model::social::RemoveCircleMemberResponse =
-        match station_client::request_proto::<_, model::social::RemoveCircleMemberResponse>(
-            Method::DELETE,
-            &path,
-            &token,
-            None,
-            Some(&req),
-        ) {
+        match state
+            .station
+            .client()
+            .request_proto::<_, model::social::RemoveCircleMemberResponse>(
+                Method::DELETE,
+                &path,
+                &token,
+                None,
+                Some(&req),
+            ) {
             Ok(r) => r,
             Err(e) => return station_error_proto(e, "remove circle members failed"),
         };
@@ -1301,11 +1378,15 @@ pub fn social_get_my_stats(state: State<'_, Arc<AppState>>, window: Window) -> A
         Ok(t) => t,
         Err(e) => return e,
     };
-    let resp: model::social::GetMyMomentsStatsResponse =
-        match get_proto("/api/v1/social/me/stats", &token, None) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "get my moments stats failed"),
-        };
+    let resp: model::social::GetMyMomentsStatsResponse = match get_proto(
+        state.station.client(),
+        "/api/v1/social/me/stats",
+        &token,
+        None,
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "get my moments stats failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -1323,10 +1404,11 @@ pub fn social_circle_list_members(
         return AppResult::fail(ErrorCode::InvalidArgument, "circle_id is required", None);
     }
     let path = format!("/api/v1/social/circles/{}/members", input.circle_id);
-    let resp: model::social::ListCircleMembersResponse = match get_proto(&path, &token, None) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "list circle members failed"),
-    };
+    let resp: model::social::ListCircleMembersResponse =
+        match get_proto(state.station.client(), &path, &token, None) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "list circle members failed"),
+        };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -1336,6 +1418,7 @@ pub fn social_friend_request_send(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Vec<u8>> {
+    let station_client = state.station.client();
     let (account_id, actor_ptid, token) = match friend_request_session(&state, &window) {
         Ok(session) => session,
         Err(e) => return e,
@@ -1350,7 +1433,7 @@ pub fn social_friend_request_send(
             None,
         );
     }
-    let sender_home_station_peer_id = match station_client::active_station_peer_id() {
+    let sender_home_station_peer_id = match station_client.active_station_peer_id() {
         Some(peer_id) => peer_id,
         None => {
             return AppResult::fail(
@@ -1362,6 +1445,7 @@ pub fn social_friend_request_send(
     };
     let request_id = Ulid::new().to_string();
     let command = match sign_friend_request_command(
+        station_client,
         state.inner(),
         &account_id,
         &actor_ptid,
@@ -1387,7 +1471,7 @@ pub fn social_friend_request_send(
         command: Some(command),
     };
     let resp: model::social::SendSocialFriendRequestResponse =
-        match station_client::request_proto_for_device(
+        match state.station.client().request_proto_for_device(
             Method::POST,
             "/api/v1/social/friend-request/send",
             &token,
@@ -1407,6 +1491,7 @@ pub fn social_friend_request_accept(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Vec<u8>> {
+    let station_client = state.station.client();
     let (account_id, actor_ptid, token) = match friend_request_session(&state, &window) {
         Ok(session) => session,
         Err(e) => return e,
@@ -1422,7 +1507,7 @@ pub fn social_friend_request_accept(
             None,
         );
     }
-    let receiver_home_station_peer_id = match station_client::active_station_peer_id() {
+    let receiver_home_station_peer_id = match station_client.active_station_peer_id() {
         Some(peer_id) => peer_id,
         None => {
             return AppResult::fail(
@@ -1433,6 +1518,7 @@ pub fn social_friend_request_accept(
         }
     };
     let command = match sign_friend_request_command(
+        station_client,
         state.inner(),
         &account_id,
         &actor_ptid,
@@ -1458,7 +1544,7 @@ pub fn social_friend_request_accept(
         command: Some(command),
     };
     let resp: model::social::AcceptSocialFriendRequestResponse =
-        match station_client::request_proto_for_device(
+        match state.station.client().request_proto_for_device(
             Method::POST,
             "/api/v1/social/friend-request/accept",
             &token,
@@ -1478,6 +1564,7 @@ pub fn social_friend_request_reject(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Vec<u8>> {
+    let station_client = state.station.client();
     let (account_id, actor_ptid, token) = match friend_request_session(&state, &window) {
         Ok(session) => session,
         Err(e) => return e,
@@ -1493,7 +1580,7 @@ pub fn social_friend_request_reject(
             None,
         );
     }
-    let receiver_home_station_peer_id = match station_client::active_station_peer_id() {
+    let receiver_home_station_peer_id = match station_client.active_station_peer_id() {
         Some(peer_id) => peer_id,
         None => {
             return AppResult::fail(
@@ -1504,6 +1591,7 @@ pub fn social_friend_request_reject(
         }
     };
     let command = match sign_friend_request_command(
+        station_client,
         state.inner(),
         &account_id,
         &actor_ptid,
@@ -1529,7 +1617,7 @@ pub fn social_friend_request_reject(
         command: Some(command),
     };
     let resp: model::social::RejectSocialFriendRequestResponse =
-        match station_client::request_proto_for_device(
+        match state.station.client().request_proto_for_device(
             Method::POST,
             "/api/v1/social/friend-request/reject",
             &token,
@@ -1559,10 +1647,14 @@ pub fn social_friend_request_list(
     }
     query.push(("limit", input.limit.unwrap_or(50).clamp(1, 200).to_string()));
     query.push(("offset", input.offset.unwrap_or(0).to_string()));
-    let resp: model::social::ListSocialFriendRequestsResponse =
-        match get_proto("/api/v1/social/friend-requests", &token, Some(&query)) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "list friend requests failed"),
-        };
+    let resp: model::social::ListSocialFriendRequestsResponse = match get_proto(
+        state.station.client(),
+        "/api/v1/social/friend-requests",
+        &token,
+        Some(&query),
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "list friend requests failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }

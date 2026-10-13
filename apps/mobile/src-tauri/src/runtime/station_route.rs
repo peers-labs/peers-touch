@@ -18,7 +18,9 @@ use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use station_libp2p_http::{
-    Response as StandardResponse, Route as StandardRoute, Transport as StandardTransport,
+    Request as StandardRequest, RequestBody as StandardRequestBody,
+    Response as StandardResponse, Route as StandardRoute, TrafficClass,
+    TransportHandle as StandardTransportHandle, TransportOwner as StandardTransportOwner,
 };
 use station_trust::{verify_node_authorization_bytes, verify_station_route_attestation_bytes};
 use tauri::State;
@@ -174,7 +176,12 @@ struct RouteRuntime {
     discovered: RwLock<HashMap<(String, String), CachedRoute>>,
     active: RwLock<Option<ActiveRoute>>,
     proxy_origin: Mutex<Option<String>>,
-    standard_transport: Mutex<Option<StandardTransport>>,
+    standard_transport: Mutex<Option<StandardTransportRuntime>>,
+}
+
+struct StandardTransportRuntime {
+    _owner: StandardTransportOwner,
+    handle: StandardTransportHandle,
 }
 
 impl RouteRuntime {
@@ -322,18 +329,22 @@ impl RouteRuntime {
         Ok(value)
     }
 
-    fn standard_transport(&self) -> MobileResult<StandardTransport> {
+    fn standard_transport(&self) -> MobileResult<StandardTransportHandle> {
         let mut transport = self
             .standard_transport
             .lock()
             .map_err(|_| route_error("runtimeLock"))?;
         if let Some(transport) = transport.as_ref() {
-            return Ok(transport.clone());
+            return Ok(transport.handle.clone());
         }
-        let started =
-            StandardTransport::start().map_err(|_| route_error("standardTransportStart"))?;
-        *transport = Some(started.clone());
-        Ok(started)
+        let owner = StandardTransportOwner::start()
+            .map_err(|_| route_error("standardTransportStart"))?;
+        let handle = owner.handle();
+        *transport = Some(StandardTransportRuntime {
+            _owner: owner,
+            handle: handle.clone(),
+        });
+        Ok(handle)
     }
 
     fn remove(&self, station_peer_id: &str, route_id: &str) -> MobileResult<()> {
@@ -979,14 +990,35 @@ fn standard_route(route: &ActiveRoute) -> MobileResult<StandardRoute> {
         node_peer_id: route.candidate.node_peer_id.clone(),
         dial_multiaddr,
         inner_tls_spki_sha256,
+        route_generation: route.candidate.route_generation,
     })
 }
 
 fn open_standard_response(route: &ActiveRoute, request: &[u8]) -> MobileResult<StandardResponse> {
     let route_spec = standard_route(route)?;
     let transport = ROUTES.standard_transport()?;
+    let parsed = parse_proxy_request(request)?;
+    let mut standard_request = StandardRequest::new(
+        parsed.method,
+        parsed
+            .target
+            .parse()
+            .map_err(|_| route_error("requestInvalid"))?,
+    );
+    for (name, value) in parsed.headers {
+        standard_request.headers.append(name, value);
+    }
+    standard_request.body = StandardRequestBody::Bytes(parsed.body);
+    if standard_request
+        .headers
+        .get(reqwest::header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        == Some("text/event-stream")
+    {
+        standard_request.traffic_class = TrafficClass::Realtime;
+    }
     transport
-        .round_trip(&route_spec, request)
+        .round_trip(&route_spec, standard_request)
         .map_err(|_| route_error("standardRoundTrip"))
 }
 

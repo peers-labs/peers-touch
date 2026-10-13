@@ -10,6 +10,7 @@ use super::station_transport::{
     CapabilityNegativeControl, CapabilityNegativeControlStationFact, CapabilityStationTransport,
 };
 use crate::application::oauth2;
+use crate::application::station_runtime::client::StationClient;
 use crate::domain::identity::ActiveSession;
 use crate::model::agent::{
     CapabilityAcceptanceScenarioFamily, CapabilityConstraints, CapabilityPermissionKind,
@@ -344,7 +345,7 @@ impl CapabilityWorkerSupervisor {
             .into_iter()
             .find(|session| session.actor.ptid == actor_ptid)
             .ok_or_else(|| "authenticated actor session is unavailable".to_string())?;
-        worker_context(&self.state, session)
+        worker_context(self.state.station.client(), &self.state, session)
     }
 
     pub fn emit_negative_control(
@@ -377,6 +378,7 @@ impl CapabilityWorkerSupervisor {
 }
 
 struct WorkerContext {
+    station_client: StationClient,
     account_id: String,
     station_url: String,
     actor_ptid: String,
@@ -389,7 +391,7 @@ struct WorkerContext {
 impl WorkerContext {
     fn transport(&self) -> Result<CapabilityStationTransport<'_>, String> {
         CapabilityStationTransport::new(
-            &self.station_url,
+            &self.station_client,
             &self.actor_ptid,
             &self.device_id,
             &self.token,
@@ -427,7 +429,7 @@ impl ActiveWorker {
             (None, None, None)
         };
         let transport = CapabilityStationTransport::new(
-            &context.station_url,
+            &context.station_client,
             &context.actor_ptid,
             &context.device_id,
             &context.token,
@@ -561,7 +563,7 @@ impl ActiveWorker {
 
     fn transport(&self) -> Result<CapabilityStationTransport<'_>, String> {
         CapabilityStationTransport::new(
-            &self.context.station_url,
+            &self.context.station_client,
             &self.context.actor_ptid,
             &self.context.device_id,
             &self.context.token,
@@ -1086,7 +1088,7 @@ fn reconcile_workers(
         tracing::info!("capability supervisor: no window sessions registered");
     }
     for session in all_sessions {
-        match worker_context(state, session) {
+        match worker_context(state.station.client(), state, session) {
             Ok(context) => {
                 desired.insert(context.account_id.clone(), context);
             }
@@ -1199,7 +1201,11 @@ fn stop_all(
     }
 }
 
-fn worker_context(state: &AppState, session: ActiveSession) -> Result<WorkerContext, String> {
+fn worker_context(
+    station_client: &StationClient,
+    state: &AppState,
+    session: ActiveSession,
+) -> Result<WorkerContext, String> {
     if session.account_id.trim().is_empty()
         || session.jwt.trim().is_empty()
         || !session.actor.ptid.starts_with("ptid:")
@@ -1229,8 +1235,9 @@ fn worker_context(state: &AppState, session: ActiveSession) -> Result<WorkerCont
         .device_signing_identity()?
         .ok_or_else(|| "device signing identity not yet enrolled".to_string())?;
     Ok(WorkerContext {
+        station_client: station_client.clone(),
         account_id: session.account_id,
-        station_url: crate::infrastructure::station_client::station_base_url(),
+        station_url: station_client.active_endpoint_origin().unwrap_or_default(),
         actor_ptid: session.actor.ptid,
         device_id: engine.endpoint().device_id.clone(),
         token: session.jwt,
@@ -1415,7 +1422,7 @@ fn recover_persisted_receipts(
             revoked: true,
         };
         let transport = CapabilityStationTransport::new(
-            &record.station_url,
+            &context.station_client,
             &context.actor_ptid,
             &context.device_id,
             &context.token,
@@ -1625,7 +1632,7 @@ mod tests {
                 == (cfg!(feature = "acceptance-webdriver")
                     && contract.capability_id == "clipboard.read")
         }));
-        assert_eq!(contracts.len(), 6);
+        assert_eq!(contracts.len(), 5);
     }
 
     #[test]

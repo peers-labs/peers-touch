@@ -16,9 +16,9 @@ use tauri::{State, Window};
 
 use crate::application::federation;
 use crate::application::session_resolver;
+use crate::application::station_runtime::client as station_client;
 use crate::contracts::{FederationCatalogSearchInput, FederationResolveInput};
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::state::AppState;
 
 fn token_or_unauthorized(
@@ -46,7 +46,12 @@ pub fn federation_resolve(
         Ok(t) => t,
         Err(err) => return err,
     };
-    match federation::resolve(&token, &input.federation_id, &input.handle) {
+    match federation::resolve(
+        state.station.client(),
+        &token,
+        &input.federation_id,
+        &input.handle,
+    ) {
         Ok(view) => AppResult::success(federation::encode_resolve(&view)),
         Err(e) => e.into_app_result_proto("federation_resolve failed"),
     }
@@ -67,6 +72,7 @@ pub fn federation_catalog_search(
         Err(err) => return err,
     };
     match federation::catalog_search(
+        state.station.client(),
         &token,
         &input.federation_id,
         &input.prefix,
@@ -87,7 +93,7 @@ pub fn federation_list_contexts(
         Ok(t) => t,
         Err(err) => return err,
     };
-    match federation::list_contexts(&token) {
+    match federation::list_contexts(state.station.client(), &token) {
         Ok(view) => AppResult::success(federation::encode_list_contexts(&view)),
         Err(e) => map_station_error(e, "federation_list_contexts failed"),
     }

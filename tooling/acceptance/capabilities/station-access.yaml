@@ -336,7 +336,8 @@
         "apps/station/frame/core/plugin/native/transport/securehttp/client.go",
         "apps/station/frame/core/plugin/native/relay/admission.go",
         "packages/station-libp2p-http/tests/go_interop.rs",
-        "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
+        "apps/desktop/src-tauri/src/application/station_runtime/mod.rs",
+        "apps/desktop/src-tauri/src/infrastructure/station/transport/mod.rs",
         "apps/mobile/src-tauri/src/runtime/station_route.rs",
         "apps/station/frame/core/plugin/server/hertz/secure_stream_test.go",
         "apps/station/frame/touch/model/peer/station_trust.go",
@@ -487,7 +488,8 @@
         "apps/station/app/subserver/oss/oss.go",
         "apps/station/app/subserver/social/subserver.go",
         "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
-        "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
+        "apps/desktop/src-tauri/src/application/station_runtime/mod.rs",
+        "apps/desktop/src-tauri/src/infrastructure/station/transport/mod.rs",
         "tooling/acceptance/gates/station_access/node_connectivity_cluster_native_e2e.py",
         "tooling/acceptance/provisioners/node_connectivity_cluster.py"
       ],
@@ -534,9 +536,10 @@
       ],
       "synthetic_paths": [
         "apps/desktop/src-tauri/src/application/station_binding/mod.rs",
+        "apps/desktop/src-tauri/src/application/station_runtime/mod.rs",
         "apps/desktop/src-tauri/src/infrastructure/station_discovery.rs",
         "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
-        "apps/desktop/src-tauri/src/infrastructure/station_transport.rs",
+        "apps/desktop/src-tauri/src/infrastructure/station/transport/mod.rs",
         "apps/desktop/src-tauri/src/interface/tauri_commands/station.rs",
         "apps/desktop/src/components/common/StationPicker.tsx"
       ],

@@ -33,7 +33,7 @@ pub fn profile_get(state: State<'_, Arc<AppState>>, window: Window) -> AppResult
         Ok(t) => t,
         Err(e) => return e,
     };
-    application_profile::profile_get(&token)
+    application_profile::profile_get(state.station.resources(), &token)
 }
 
 /// Fetch a peer actor's public profile by PTID. Used by Contacts and Chat
@@ -48,7 +48,7 @@ pub fn peer_profile_get(
         Ok(t) => t,
         Err(e) => return e,
     };
-    application_profile::peer_profile_get(&token, &input.actor_ptid)
+    application_profile::peer_profile_get(state.station.resources(), &token, &input.actor_ptid)
 }
 
 #[tauri::command]
@@ -61,7 +61,7 @@ pub fn profile_update(
         Ok(t) => t,
         Err(e) => return e,
     };
-    application_profile::profile_update(input, &token)
+    application_profile::profile_update(state.station.resources(), input, &token)
 }
 
 #[tauri::command]
@@ -75,7 +75,12 @@ pub fn profile_upload_avatar(
         Err(e) => return e,
     };
     let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
-    application_profile::profile_upload_avatar(&actor_ptid, input, &token)
+    application_profile::profile_upload_avatar(
+        state.station.resources(),
+        &actor_ptid,
+        input,
+        &token,
+    )
 }
 
 #[tauri::command]
@@ -89,7 +94,12 @@ pub fn profile_upload_header(
         Err(e) => return e,
     };
     let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
-    application_profile::profile_upload_header(&actor_ptid, input, &token)
+    application_profile::profile_upload_header(
+        state.station.resources(),
+        &actor_ptid,
+        input,
+        &token,
+    )
 }
 
 // 2026-04-25: Changed from sync to async with spawn_blocking.
@@ -109,8 +119,9 @@ pub async fn profile_upload_avatar_oss(
         Ok(t) => t,
         Err(e) => return e,
     };
+    let resources = state.station.resources().clone();
     tokio::task::spawn_blocking(move || {
-        application_profile::profile_upload_avatar_oss(input, &token)
+        application_profile::profile_upload_avatar_oss(&resources, input, &token)
     })
     .await
     .unwrap_or_else(|e| {
@@ -134,8 +145,9 @@ pub async fn profile_upload_header_oss(
         Ok(t) => t,
         Err(e) => return e,
     };
+    let resources = state.station.resources().clone();
     tokio::task::spawn_blocking(move || {
-        application_profile::profile_upload_header_oss(input, &token)
+        application_profile::profile_upload_header_oss(&resources, input, &token)
     })
     .await
     .unwrap_or_else(|e| {
@@ -205,7 +217,7 @@ pub fn account_sync_avatar(
         Ok(t) => t,
         Err(e) => return e,
     };
-    application_profile::account_sync_avatar(&input, &token)
+    application_profile::account_sync_avatar(state.station.resources(), &input, &token)
 }
 
 /// Fetch profile from Station and sync all user data (metadata + avatar) to local storage.
@@ -241,7 +253,11 @@ pub fn sync_user_profile(
             None,
         );
     }
-    application_profile::sync_user_profile(&session.jwt, &session.actor.ptid)
+    application_profile::sync_user_profile(
+        state.station.resources(),
+        &session.jwt,
+        &session.actor.ptid,
+    )
 }
 
 /// Resolve a remote avatar URL to a local cache file, downloading it on miss.
@@ -252,17 +268,21 @@ pub fn sync_user_profile(
 #[tauri::command]
 pub async fn avatar_resolve_local(
     input: AvatarResolveLocalInput,
+    app: tauri::AppHandle,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let _ = window;
+    let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
+    let token = session_resolver::token_for_window(&state, &window);
     let url = input.url.unwrap_or_default();
-    let resolved =
-        tokio::task::spawn_blocking(move || application_profile::avatar_resolve_local(&url))
-            .await
-            .unwrap_or_else(|e| {
-                tracing::error!(error = %e, "avatar_resolve_local task panicked");
-                None
-            });
+    let resources = state.station.resources().clone();
+    let resolved = tokio::task::spawn_blocking(move || {
+        application_profile::avatar_resolve_local(&resources, token.as_deref(), &url)
+    })
+    .await
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "avatar_resolve_local task panicked");
+        None
+    });
 
     let payload = serde_json::json!({ "local_path": resolved });
     AppResult::success(StubPayload {

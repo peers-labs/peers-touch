@@ -2,8 +2,8 @@ use prost::Message;
 use reqwest::Method;
 use serde::Deserialize;
 
+use crate::application::station_runtime::client::StationClient;
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::model::agent;
 
 #[derive(Debug, Deserialize)]
@@ -90,13 +90,14 @@ impl EvaluationOperation {
 }
 
 pub fn forward(
+    station_client: &StationClient,
     input: EncodedRequestInput,
     token: &str,
     operation: EvaluationOperation,
 ) -> AppResult<Vec<u8>> {
     macro_rules! request {
         ($request:ty, $response:ty) => {
-            request_encoded::<$request, $response>(input, token, operation)
+            request_encoded::<$request, $response>(station_client, input, token, operation)
         };
     }
 
@@ -185,6 +186,7 @@ pub fn forward(
 }
 
 fn request_encoded<Req, Resp>(
+    station_client: &StationClient,
     input: EncodedRequestInput,
     token: &str,
     operation: EvaluationOperation,
@@ -203,7 +205,7 @@ where
             )
         }
     };
-    match station_client::request_proto::<Req, Resp>(
+    match station_client.request_proto::<Req, Resp>(
         Method::POST,
         operation.path(),
         token,
@@ -264,8 +266,11 @@ mod tests {
 
     #[test]
     fn malformed_evaluation_request_is_rejected_before_transport() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let result =
             request_encoded::<agent::GetEvaluationRunRequest, agent::GetEvaluationRunResponse>(
+                station_client,
                 EncodedRequestInput {
                     request_bytes: vec![0xff],
                 },

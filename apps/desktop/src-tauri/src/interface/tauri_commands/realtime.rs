@@ -27,7 +27,6 @@ use crate::application::session_resolver;
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::event_stream;
-use crate::infrastructure::station_client;
 use crate::state::AppState;
 
 fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
@@ -81,6 +80,7 @@ pub fn realtime_stream_start(
     };
     let device_id = device_id_from(&window);
     event_stream::start(
+        state.station.client().clone(),
         app,
         actor_ptid.clone(),
         input.session_epoch,
@@ -127,7 +127,7 @@ pub fn group_call_join(
     if input.group_ulid.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "group_ulid is required", None);
     }
-    let response = match station_client::request_json_auth(
+    let response = match state.station.client().request_json_auth(
         Method::POST,
         "/group-call/join",
         &token,
@@ -228,7 +228,7 @@ pub fn realtime_signal_send(
         input.device_id = device_id_from(&window);
     }
     let body = signal_request_body(input);
-    let resp = match station_client::request_json(
+    let resp = match state.station.client().request_json(
         Method::POST,
         "/realtime/signal",
         &token,
@@ -263,7 +263,7 @@ pub fn realtime_call_resolution_get(
             None,
         );
     }
-    match station_client::request_json(
+    match state.station.client().request_json(
         Method::GET,
         "/realtime/call-resolution",
         &token,

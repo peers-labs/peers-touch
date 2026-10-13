@@ -1,8 +1,8 @@
 # Station 接入生命周期 - 设计决策
 
 > **Status**: active
-> **Version**: v2.2
-> **Created**: 2026-09-26 | **Updated**: 2026-10-11
+> **Version**: v2.4
+> **Created**: 2026-09-26 | **Updated**: 2026-10-13
 > **Owner**: Identity and Access
 
 ---
@@ -24,9 +24,78 @@
 | SAL-D11 | Relay 使用显式最小运行角色 | superseded by NCP-D02 |
 | SAL-D12 | 一个 actor 每个 canonical client class 只保留一个 active Session | accepted |
 | SAL-D13 | Relay 服务宿主仅支持 Linux/POSIX | superseded by NCP-D11 |
+| SAL-D14 | Desktop binding 通过 AppState-owned coordinator 发布 RouteLease | accepted |
+| SAL-D15 | Station-owned resource identity 独立于 active route origin | accepted |
 
 Superseded 条目只保留历史上下文。当前逻辑 Station / Node delegation、Circuit v2、
 Frame ingress、renewal/revocation 和集群目标统一由 Node Connectivity 定义。
+
+## SAL-D14：Desktop Binding 发布不可变 RouteLease
+
+**Status**: accepted
+**Date**: 2026-10-12
+
+### Context
+
+Desktop registry、binding 和 transport 当前由多个 process-global accessor
+间接连接。Transport 在请求过程中读取并修改 active route，使 binding 转换和
+网络失败处理缺少一个明确 application owner。
+
+### Decision
+
+Desktop Tauri `AppState` 持有一个 `StationRuntime`。其中
+`StationBindingCoordinator` 是 active Station、route revision 和 lifecycle
+generation 的唯一 mutation owner，并向 Node Connectivity transport 发布不可变
+`RouteLease`。Transport 只执行 lease，不修改 registry。
+
+### Rationale
+
+接入生命周期与传输执行保持不同 owner，同时通过一个 app-scoped composition
+boundary 协同，避免 route 状态、线程生命周期和业务 scope 互相反向依赖。
+
+### Alternatives Considered
+
+- transport 在失败时直接 CAS registry：拒绝，会让 adapter 成为 binding owner。
+- registry/binding 继续使用全局 singleton：拒绝，关闭、测试和多实例隔离不可证明。
+
+### Consequences
+
+所有 Desktop Station consumer 必须从注入的 runtime/client 获取 route lease。
+同 Station failover 只撤销旧 lease；Station replacement 先完成 scope teardown
+再提交新 lifecycle generation。
+
+## SAL-D15：Station Resource Identity 独立于 Active Route
+
+**Status**: accepted
+**Date**: 2026-10-13
+
+### Context
+
+头像、OSS、Profile 与 Applet Bundle 当前把 Station-relative path 拼到
+`station_base_url()`。Relay 下该值是 Desktop localhost proxy，既不是资源身份，
+也不能在删除 proxy 后继续供 WebView 使用。
+
+### Decision
+
+客户端以 `StationResourceRef` 保存 Station-owned relative path，并绑定逻辑
+Station 与 lifecycle generation。Native loader 通过 typed Station client 获取；
+WebView 只消费 app-owned local URI。外部 absolute/presigned URL 使用独立类型。
+
+### Rationale
+
+资源身份不随 Direct/Circuit route 变化，也不要求保留通用 localhost proxy。
+
+### Alternatives Considered
+
+- 把当前 route origin 写入缓存或业务模型：拒绝，会污染 scope 并在 failover 后失效。
+- 把 private Relay path 改写为公开 URL：拒绝，会泄漏拓扑并绕过 typed transport。
+
+### Consequences
+
+Avatar、OSS cache、Profile media、Attachment 和 Applet Bundle consumer 必须纳入
+同一迁移 inventory，并通过 Direct/Circuit resource projection Gate。任何以
+`self` 表示的资源 metadata cache 必须同时按逻辑 Station 与 lifecycle
+generation 隔离，切换 Station 后不得复用旧 scope 的 metadata。
 
 ## SAL-D01：双端统一按语义和结果衡量
 

@@ -1,10 +1,10 @@
+use crate::application::station_runtime::client::{self as station_client, StationClient};
 use crate::contracts::{
     AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentSearchInput, AgentSelectInput,
     AgentUpdateInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::actor_bucket::actor_bucket_id;
-use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
@@ -330,8 +330,12 @@ fn station_agent_body(data: &Value, agent_id: Option<&str>) -> Value {
     body
 }
 
-fn station_agent(token: &str, agent_id: &str) -> Result<Value, station_client::StationClientError> {
-    let result = station_client::request_json_auth(
+fn station_agent(
+    station_client: &StationClient,
+    token: &str,
+    agent_id: &str,
+) -> Result<Value, station_client::StationClientError> {
+    let result = station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/get",
         token,
@@ -344,12 +348,13 @@ fn station_agent(token: &str, agent_id: &str) -> Result<Value, station_client::S
 }
 
 fn create_station_agent(
+    station_client: &StationClient,
     actor_ptid: &str,
     token: &str,
     data: Value,
     command: &str,
 ) -> AppResult<StubPayload> {
-    match station_client::request_json_auth(
+    match station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/create",
         token,
@@ -358,7 +363,7 @@ fn create_station_agent(
     ) {
         Ok(result) => {
             let agent = station_agent_to_desktop(result.get("agent").cloned().unwrap_or(result));
-            let _ = agents_list(actor_ptid, token);
+            let _ = agents_list(station_client, actor_ptid, token);
             success_payload(command, agent)
         }
         Err(error) => station_failure(error, "Failed to create Agent"),
@@ -598,11 +603,15 @@ fn set_default_agent(store: &mut AgentStore, name: String) {
     mark_default_agent(&mut store.agents, &name);
 }
 
-pub fn agents_list(actor_ptid: &str, token: &str) -> AppResult<StubPayload> {
+pub fn agents_list(
+    station_client: &StationClient,
+    actor_ptid: &str,
+    token: &str,
+) -> AppResult<StubPayload> {
     if let Err(error) = require_token(token) {
         return error;
     }
-    let result = match station_client::request_json_auth(
+    let result = match station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/list",
         token,
@@ -692,20 +701,26 @@ pub fn agents_set_default(actor_ptid: &str, input: AgentIdInput) -> AppResult<St
     })
 }
 
-pub fn agents_get(_actor_ptid: &str, token: &str, input: AgentIdInput) -> AppResult<StubPayload> {
+pub fn agents_get(
+    station_client: &StationClient,
+    _actor_ptid: &str,
+    token: &str,
+    input: AgentIdInput,
+) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
     if let Err(error) = require_token(token) {
         return error;
     }
-    match station_agent(token, &input.id) {
+    match station_agent(station_client, token, &input.id) {
         Ok(agent) => success_payload("agents_get", agent),
         Err(error) => station_failure(error, "Failed to get Agent"),
     }
 }
 
 pub fn agents_create(
+    station_client: &StationClient,
     actor_ptid: &str,
     token: &str,
     input: AgentCreateInput,
@@ -713,10 +728,17 @@ pub fn agents_create(
     if let Err(error) = require_token(token) {
         return error;
     }
-    create_station_agent(actor_ptid, token, input.data, "agents_create")
+    create_station_agent(
+        station_client,
+        actor_ptid,
+        token,
+        input.data,
+        "agents_create",
+    )
 }
 
 pub fn agents_update(
+    station_client: &StationClient,
     actor_ptid: &str,
     token: &str,
     input: AgentUpdateInput,
@@ -728,7 +750,7 @@ pub fn agents_update(
     if let Err(error) = require_token(token) {
         return error;
     }
-    let current = match station_agent(token, &input.id) {
+    let current = match station_agent(station_client, token, &input.id) {
         Ok(agent) => agent,
         Err(error) => return station_failure(error, "Failed to load Agent before update"),
     };
@@ -739,7 +761,7 @@ pub fn agents_update(
         }
     }
     let data = normalize_agent_value(data);
-    match station_client::request_json_auth(
+    match station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/update",
         token,
@@ -748,14 +770,19 @@ pub fn agents_update(
     ) {
         Ok(result) => {
             let updated = station_agent_to_desktop(result.get("agent").cloned().unwrap_or(result));
-            let _ = agents_list(actor_ptid, token);
+            let _ = agents_list(station_client, actor_ptid, token);
             success_payload("agents_update", updated)
         }
         Err(error) => station_failure(error, "Failed to update Agent"),
     }
 }
 
-pub fn agents_delete(actor_ptid: &str, token: &str, input: AgentIdInput) -> AppResult<StubPayload> {
+pub fn agents_delete(
+    station_client: &StationClient,
+    actor_ptid: &str,
+    token: &str,
+    input: AgentIdInput,
+) -> AppResult<StubPayload> {
     tracing::info!(command = "agents_delete", agent_id = %input.id, "Deleting agent");
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
@@ -763,7 +790,7 @@ pub fn agents_delete(actor_ptid: &str, token: &str, input: AgentIdInput) -> AppR
     if let Err(error) = require_token(token) {
         return error;
     }
-    match station_client::request_json_auth(
+    match station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/delete",
         token,
@@ -771,7 +798,7 @@ pub fn agents_delete(actor_ptid: &str, token: &str, input: AgentIdInput) -> AppR
         Some(&json!({"agent_id": input.id})),
     ) {
         Ok(_) => {
-            let _ = agents_list(actor_ptid, token);
+            let _ = agents_list(station_client, actor_ptid, token);
             success_payload("agents_delete", json!({"ok": true}))
         }
         Err(error) => station_failure(error, "Failed to delete Agent"),
@@ -779,6 +806,7 @@ pub fn agents_delete(actor_ptid: &str, token: &str, input: AgentIdInput) -> AppR
 }
 
 pub fn agents_duplicate(
+    station_client: &StationClient,
     actor_ptid: &str,
     token: &str,
     input: AgentDuplicateInput,
@@ -789,7 +817,7 @@ pub fn agents_duplicate(
     if let Err(error) = require_token(token) {
         return error;
     }
-    let mut data = match station_agent(token, &input.id) {
+    let mut data = match station_agent(station_client, token, &input.id) {
         Ok(agent) => agent,
         Err(error) => return station_failure(error, "Failed to load Agent before duplicate"),
     };
@@ -801,7 +829,7 @@ pub fn agents_duplicate(
         obj.remove("createdAt");
         obj.remove("updatedAt");
     }
-    create_station_agent(actor_ptid, token, data, "agents_duplicate")
+    create_station_agent(station_client, actor_ptid, token, data, "agents_duplicate")
 }
 
 pub fn agents_search(actor_ptid: &str, input: AgentSearchInput) -> AppResult<StubPayload> {
@@ -837,8 +865,6 @@ mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    static TEST_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-
     fn reset_agent_stores_for_test() {
         if let Ok(mut stores) = agent_stores().lock() {
             stores.buckets.clear();
@@ -846,10 +872,7 @@ mod tests {
     }
 
     fn with_temp_storage_root(f: impl FnOnce()) {
-        let _guard = TEST_ENV_LOCK
-            .get_or_init(|| Mutex::new(()))
-            .lock()
-            .expect("test env lock");
+        let _guard = storage::test_storage_env_lock();
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time")
@@ -1032,6 +1055,8 @@ mod tests {
 
     #[test]
     fn agent_stores_isolate_actors() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         with_temp_storage_root(|| {
             let a = "ptid:person:agent-a";
             let b = "ptid:person:agent-b";
@@ -1065,6 +1090,8 @@ mod tests {
 
     #[test]
     fn agent_store_survives_cache_reset() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         with_temp_storage_root(|| {
             let actor = "ptid:person:agent-persist";
             let created = agents_create(
@@ -1121,6 +1148,8 @@ mod tests {
 
     #[test]
     fn default_agent_is_visible_configurable_and_persistent() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         with_temp_storage_root(|| {
             let actor = "ptid:person:agent-default";
             let created = agents_create(
@@ -1192,6 +1221,8 @@ mod tests {
 
     #[test]
     fn deleting_default_agent_falls_back_without_clone_stealing_default() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         with_temp_storage_root(|| {
             let actor = "ptid:person:agent-default-delete";
             let created = agents_create(
@@ -1256,6 +1287,8 @@ mod tests {
 
     #[test]
     fn pinned_favorite_and_order_survive_restart_with_partial_updates() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         with_temp_storage_root(|| {
             let actor = "ptid:person:agent-order";
             let beta = agents_create(
@@ -1331,6 +1364,8 @@ mod tests {
 
     #[test]
     fn agent_duplicate_creates_distinct_identity() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         with_temp_storage_root(|| {
             let actor = "ptid:person:agent-clone";
             let list = agents_list(actor);

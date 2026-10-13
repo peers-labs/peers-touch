@@ -19,8 +19,8 @@
 use prost::Message;
 use reqwest::Method;
 
+use crate::application::station_runtime::client::{self as station_client, StationClient};
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::model::federation::v1::{
     FederationCatalogSearchRequest, FederationCatalogSearchResponse, FederationResolveView,
     ListFederationContextsResponse,
@@ -32,6 +32,7 @@ const ROUTE_LIST_CONTEXTS: &str = "/sub-federation/contexts";
 
 /// GET /actor/federation/resolve?federation_id=…&handle=… — authenticated.
 pub fn resolve(
+    station_client: &StationClient,
     token: &str,
     federation_id: &str,
     handle: &str,
@@ -52,14 +53,15 @@ pub fn resolve(
         ("federation_id", federation_id.to_string()),
         ("handle", trimmed.to_string()),
     ];
-    station_client::request_proto::<(), FederationResolveView>(
-        Method::GET,
-        ROUTE_RESOLVE,
-        token,
-        Some(&query),
-        None,
-    )
-    .map_err(FederationGatewayError::Station)
+    station_client
+        .request_proto::<(), FederationResolveView>(
+            Method::GET,
+            ROUTE_RESOLVE,
+            token,
+            Some(&query),
+            None,
+        )
+        .map_err(FederationGatewayError::Station)
 }
 
 /// Errors that can arise on the federation gateway. Wraps station-side
@@ -93,6 +95,7 @@ pub fn encode_resolve(view: &FederationResolveView) -> Vec<u8> {
 
 /// POST /sub-federation/catalog/search — authenticated.
 pub fn catalog_search(
+    station_client: &StationClient,
     token: &str,
     federation_id: &str,
     prefix: &str,
@@ -116,11 +119,15 @@ pub fn catalog_search(
         page_size: page_size.unwrap_or(20),
         ..Default::default()
     };
-    station_client::request_proto::<
-        FederationCatalogSearchRequest,
-        FederationCatalogSearchResponse,
-    >(Method::POST, ROUTE_CATALOG_SEARCH, token, None, Some(&body))
-    .map_err(FederationGatewayError::Station)
+    station_client
+        .request_proto::<FederationCatalogSearchRequest, FederationCatalogSearchResponse>(
+            Method::POST,
+            ROUTE_CATALOG_SEARCH,
+            token,
+            None,
+            Some(&body),
+        )
+        .map_err(FederationGatewayError::Station)
 }
 
 pub fn encode_catalog_search(view: &FederationCatalogSearchResponse) -> Vec<u8> {
@@ -129,9 +136,10 @@ pub fn encode_catalog_search(view: &FederationCatalogSearchResponse) -> Vec<u8> 
 
 /// GET /sub-federation/contexts — list actor-visible Federation contexts.
 pub fn list_contexts(
+    station_client: &StationClient,
     token: &str,
 ) -> Result<ListFederationContextsResponse, station_client::StationClientError> {
-    station_client::request_proto::<(), ListFederationContextsResponse>(
+    station_client.request_proto::<(), ListFederationContextsResponse>(
         Method::GET,
         ROUTE_LIST_CONTEXTS,
         token,

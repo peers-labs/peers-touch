@@ -283,6 +283,7 @@ pub fn oss_upload_local_file(
         Err(error) => return error,
     };
     application_oss::upload_attachment(
+        state.station.resources(),
         &input.file_path,
         &token,
         "local_file",
@@ -317,6 +318,7 @@ fn upload_agent_attachment_bytes_impl(
 
     let mime_override = input.mime_type.trim();
     let result = application_oss::upload_agent_attachment(
+        state.station.resources(),
         temp_path.to_string_lossy().as_ref(),
         &token,
         &input.conversation_id,
@@ -525,7 +527,15 @@ pub fn oss_upload_attachment_social(
     } else {
         input.bucket.trim()
     };
-    application_oss::upload_attachment(&input.file_path, &token, "social", bucket, "public", None)
+    application_oss::upload_attachment(
+        state.station.resources(),
+        &input.file_path,
+        &token,
+        "social",
+        bucket,
+        "public",
+        None,
+    )
 }
 
 fn guess_mime_for_encrypted(file_path: &str) -> String {
@@ -555,6 +565,7 @@ fn guess_mime_for_encrypted(file_path: &str) -> String {
 }
 
 fn upload_encrypted_attachment(
+    resources: &crate::application::station_runtime::resource::StationResourceHandle,
     input: OssUploadAttachmentInput,
     token: &str,
     consumer: &str,
@@ -697,6 +708,7 @@ fn upload_encrypted_attachment(
     let ciphertext_sha = B64.encode(ciphertext_hasher.finalize());
 
     let upload = application_oss::upload_attachment_with_mime(
+        resources,
         temp_path.to_string_lossy().as_ref(),
         token,
         consumer,
@@ -894,6 +906,7 @@ pub fn oss_upload_encrypted_attachment_social(
         input.bucket.trim()
     };
     let upload = application_oss::upload_attachment_with_mime(
+        state.station.resources(),
         temp_path.to_string_lossy().as_ref(),
         &token,
         "social",
@@ -961,7 +974,12 @@ pub fn oss_resolve_url(
     // best-effort and let the application layer decide whether the
     // current request actually needs it.
     let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    application_oss::oss_resolve_url(&input.uri, &token, &input.actor_ptid)
+    application_oss::oss_resolve_url(
+        state.station.resources(),
+        &input.uri,
+        &token,
+        &input.actor_ptid,
+    )
 }
 
 #[tauri::command]
@@ -982,7 +1000,7 @@ pub fn oss_list_my_files(
         page: input.page,
         page_size: input.page_size,
     };
-    application_oss::oss_list_my_files(&token, &query)
+    application_oss::oss_list_my_files(state.station.client(), &token, &query)
 }
 
 #[tauri::command]
@@ -995,7 +1013,7 @@ pub fn oss_delete_file(
         Ok(t) => t,
         Err(e) => return e,
     };
-    application_oss::oss_delete_file(&token, &input.key)
+    application_oss::oss_delete_file(state.station.client(), &token, &input.key)
 }
 
 #[tauri::command]
@@ -1008,7 +1026,7 @@ pub fn oss_restore_file(
         Ok(t) => t,
         Err(e) => return e,
     };
-    application_oss::oss_restore_file(&token, &input.key)
+    application_oss::oss_restore_file(state.station.client(), &token, &input.key)
 }
 
 #[tauri::command]
@@ -1029,7 +1047,7 @@ pub fn oss_patch_file(
         expires_at: input.expires_at,
         clear_expires_at: input.clear_expires_at,
     };
-    application_oss::oss_patch_file(&token, &input.key, &body)
+    application_oss::oss_patch_file(state.station.client(), &token, &input.key, &body)
 }
 
 #[tauri::command]

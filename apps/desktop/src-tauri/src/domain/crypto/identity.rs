@@ -83,9 +83,10 @@ fn identity_file(identity_key_ref: &str) -> Option<PathBuf> {
     if let Some(path) = scoped_identity_file(identity_key_ref) {
         return Some(path);
     }
-    identity_file_root()
-        .get()
-        .map(|root| root.join("identity-keys").join(identity_key_file_name(identity_key_ref)))
+    identity_file_root().get().map(|root| {
+        root.join("identity-keys")
+            .join(identity_key_file_name(identity_key_ref))
+    })
 }
 
 fn keyring_entry(identity_key_ref: &str) -> Result<keyring::Entry, CryptoError> {

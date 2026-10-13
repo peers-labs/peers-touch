@@ -1,6 +1,6 @@
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use station_libp2p_http::{Route, Transport};
+use station_libp2p_http::{Request, RequestBody, Route, TrafficClass, TransportOwner};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -25,58 +25,62 @@ impl Drop for Fixture {
 #[test]
 fn rust_client_reaches_go_station_over_standard_circuit() {
     let fixture = start_fixture();
-    let transport = Transport::start().expect("start Rust transport");
+    let transport = TransportOwner::start().expect("start Rust transport");
+    let handle = transport.handle();
 
-    let mut ping = transport
-        .round_trip(
-            &fixture.route,
-            b"GET /ping HTTP/1.1\r\nHost: station\r\nContent-Length: 0\r\n\r\n",
-        )
+    let mut ping = handle
+        .round_trip(&fixture.route, request(http::Method::GET, "/ping"))
         .expect("round trip ping");
     assert_eq!(ping.status.as_u16(), 200);
     assert_eq!(read_body(&mut ping.body), b"pong");
 
     let mut wrong_route = fixture.route.clone();
     wrong_route.inner_tls_spki_sha256[0] ^= 0xff;
-    assert!(transport
+    assert!(handle
         .round_trip(
             &wrong_route,
-            b"POST /side-effect HTTP/1.1\r\nHost: station\r\nContent-Length: 4\r\n\r\nboom",
+            request_with_body(http::Method::POST, "/side-effect", b"boom".to_vec()),
         )
         .is_err());
-    let mut count = transport
+    let mut count = handle
         .round_trip(
             &fixture.route,
-            b"GET /side-effect-count HTTP/1.1\r\nHost: station\r\nContent-Length: 0\r\n\r\n",
+            request(http::Method::GET, "/side-effect-count"),
         )
         .expect("read side-effect count");
     assert_eq!(read_body(&mut count.body), b"0");
 
-    let mut events = transport
-        .round_trip(
-            &fixture.route,
-            b"GET /events HTTP/1.1\r\nHost: station\r\nAccept: text/event-stream\r\nContent-Length: 0\r\n\r\n",
-        )
+    let mut events_request = request(http::Method::GET, "/events");
+    events_request.traffic_class = TrafficClass::Realtime;
+    events_request.headers.insert(
+        http::header::ACCEPT,
+        http::HeaderValue::from_static("text/event-stream"),
+    );
+    let mut events = handle
+        .round_trip(&fixture.route, events_request)
         .expect("open SSE");
     assert_eq!(read_body(&mut events.body), b"data: one\n\ndata: two\n\n");
 
-    let _blocked_event_one = transport
-        .round_trip(
-            &fixture.route,
-            b"GET /events-blocking HTTP/1.1\r\nHost: station\r\nAccept: text/event-stream\r\nContent-Length: 0\r\n\r\n",
-        )
+    let mut blocked_request_one = request(http::Method::GET, "/events-blocking");
+    blocked_request_one.traffic_class = TrafficClass::Realtime;
+    let _blocked_event_one = handle
+        .round_trip(&fixture.route, blocked_request_one)
         .expect("open first unread SSE");
-    let _blocked_event_two = transport
-        .round_trip(
-            &fixture.route,
-            b"GET /events-blocking HTTP/1.1\r\nHost: station\r\nAccept: text/event-stream\r\nContent-Length: 0\r\n\r\n",
-        )
+    let mut blocked_request_two = request(http::Method::GET, "/events-blocking");
+    blocked_request_two.traffic_class = TrafficClass::Realtime;
+    let _blocked_event_two = handle
+        .round_trip(&fixture.route, blocked_request_two)
         .expect("open second unread SSE");
 
     let upload = vec![0x5a; 32 * 1024 * 1024];
-    let request = upload_request(&upload);
-    let mut response = transport
-        .round_trip(&fixture.route, &request)
+    let mut upload_request = request_with_body(http::Method::POST, "/upload", upload.clone());
+    upload_request.traffic_class = TrafficClass::Bulk;
+    upload_request.headers.insert(
+        http::header::CONTENT_TYPE,
+        http::HeaderValue::from_static("application/octet-stream"),
+    );
+    let mut response = handle
+        .round_trip(&fixture.route, upload_request)
         .expect("upload 32 MiB");
     assert_eq!(read_body(&mut response.body), b"33554432");
     let expected = hex(Sha256::digest(&upload).as_slice());
@@ -88,11 +92,10 @@ fn rust_client_reaches_go_station_over_standard_circuit() {
         Some(expected.as_str())
     );
 
-    let mut download = transport
-        .round_trip(
-            &fixture.route,
-            b"GET /download HTTP/1.1\r\nHost: station\r\nContent-Length: 0\r\n\r\n",
-        )
+    let mut download_request = request(http::Method::GET, "/download");
+    download_request.traffic_class = TrafficClass::Bulk;
+    let mut download = handle
+        .round_trip(&fixture.route, download_request)
         .expect("download 1 MiB attachment chunk");
     let body = read_body(&mut download.body);
     assert_eq!(body.len(), (1 << 20) + 16);
@@ -100,6 +103,12 @@ fn rust_client_reaches_go_station_over_standard_circuit() {
         .iter()
         .enumerate()
         .all(|(index, byte)| *byte == (index % 251) as u8));
+
+    drop(_blocked_event_one);
+    drop(_blocked_event_two);
+    transport
+        .shutdown(Duration::from_secs(5))
+        .expect("join Rust transport");
 }
 
 fn start_fixture() -> Fixture {
@@ -141,17 +150,20 @@ fn start_fixture() -> Fixture {
                 .expect("route projection")
                 .to_string(),
             inner_tls_spki_sha256: spki,
+            route_generation: 1,
         },
     }
 }
 
-fn upload_request(body: &[u8]) -> Vec<u8> {
-    let mut request = format!(
-        "POST /upload HTTP/1.1\r\nHost: station\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
-        body.len()
-    )
-    .into_bytes();
-    request.extend_from_slice(body);
+fn request(method: http::Method, path: &str) -> Request {
+    let mut request = Request::new(method, path.parse().expect("request URI"));
+    request.timeout = Duration::from_secs(30);
+    request
+}
+
+fn request_with_body(method: http::Method, path: &str, body: Vec<u8>) -> Request {
+    let mut request = request(method, path);
+    request.body = RequestBody::Bytes(body);
     request
 }
 

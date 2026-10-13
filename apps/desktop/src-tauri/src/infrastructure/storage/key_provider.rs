@@ -159,7 +159,11 @@ impl PlatformKeyProvider {
             storage::app_file_path(
                 "desktop",
                 storage::StorageKind::Data,
-                &["secure-store", "storage-keys", &Self::key_file_name(key_ref)],
+                &[
+                    "secure-store",
+                    "storage-keys",
+                    &Self::key_file_name(key_ref),
+                ],
             )
             .ok()
         }

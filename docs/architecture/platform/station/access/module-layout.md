@@ -1,8 +1,8 @@
 # Station 统一接入生命周期 - 模块目录结构
 
 > **Status**: active
-> **Version**: v2.1
-> **Created**: 2026-09-27 | **Updated**: 2026-10-10
+> **Version**: v2.3
+> **Created**: 2026-09-27 | **Updated**: 2026-10-13
 > **Owner**: Identity and Access
 
 ---
@@ -21,7 +21,9 @@ apps/station/
 └── app/subserver/federation/       # Federation context/operator API
 
 apps/desktop/
+├── src-tauri/src/state/mod.rs
 ├── src-tauri/src/application/station_binding/
+├── src-tauri/src/application/station_runtime/
 ├── src-tauri/src/infrastructure/station_registry.rs
 ├── src/components/common/StationPicker.tsx
 └── src/runtimes/
@@ -47,6 +49,8 @@ not appear as Station Access implementation owners.
 | `touch/actor/` | Actor/Device Session truth | route selection |
 | Desktop `station_binding/` | station-keyed binding lifecycle | Station business truth |
 | Desktop `station_registry.rs` | durable Station selection | Relay credential |
+| Desktop `AppState.station` | app-scoped binding/transport composition and lifecycle | binding policy or transport wire |
+| Desktop `station_runtime/resource` | StationResourceRef and scope-checked local projection | route origin as durable resource identity |
 | Mobile `features/station/` | Station selection/presentation | transport protocol |
 | Client runtimes | scope lifecycle and stale-result fencing | shared business truth |
 | Federation app | context and governance projection | client Session |
@@ -55,7 +59,8 @@ not appear as Station Access implementation owners.
 
 ```text
 Node Connectivity verified target/route
-  -> Station binding
+  -> AppState-owned Station binding coordinator
+  -> immutable RouteLease
   -> Access Gate
   -> Session/Actor/Device scope
   -> client runtime projections

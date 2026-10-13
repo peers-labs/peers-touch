@@ -200,8 +200,8 @@ fn secure_content_teardown_failure(error: String) -> AppResult<AuthSessionPayloa
 /// decision. This is a pre-login step in the gate chain — no session is
 /// produced, so no window binding or identity broadcast is performed.
 #[tauri::command]
-pub fn access_start() -> AppResult<AccessDecisionPayload> {
-    auth_service::access_start()
+pub fn access_start(state: State<'_, Arc<AppState>>) -> AppResult<AccessDecisionPayload> {
+    auth_service::access_start(&state.station)
 }
 
 /// Redeem a self-service invite code against a live attempt and return the
@@ -210,18 +210,25 @@ pub fn access_start() -> AppResult<AccessDecisionPayload> {
 #[tauri::command]
 pub fn access_submit_invite_code(
     input: AccessSubmitInviteInput,
+    state: State<'_, Arc<AppState>>,
 ) -> AppResult<AccessDecisionPayload> {
-    auth_service::access_submit_invite_code(input)
+    auth_service::access_submit_invite_code(&state.station, input)
 }
 
 #[tauri::command]
-pub fn access_decision(input: AccessDecisionInput) -> AppResult<AccessDecisionPayload> {
-    auth_service::access_decision(input)
+pub fn access_decision(
+    input: AccessDecisionInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<AccessDecisionPayload> {
+    auth_service::access_decision(&state.station, input)
 }
 
 #[tauri::command]
-pub fn access_cancel(input: AccessDecisionInput) -> AppResult<AccessDecisionPayload> {
-    auth_service::access_cancel(input)
+pub fn access_cancel(
+    input: AccessDecisionInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<AccessDecisionPayload> {
+    auth_service::access_cancel(&state.station, input)
 }
 
 /// Submit the login credential gate for a live attempt. On grant this lands
@@ -237,7 +244,7 @@ pub fn access_submit_login(
         state.inner(),
         &app,
         &window,
-        auth_service::access_submit_login(input, state.inner()),
+        auth_service::access_submit_login(&state.station, input, state.inner()),
     );
     broadcast_identity(&app, IdentityChangeReason::Login, &result);
     result
@@ -375,7 +382,7 @@ pub fn auth_restore_session(
         state.inner(),
         &app,
         &window,
-        auth_service::auth_restore_session(state.inner()),
+        auth_service::auth_restore_session(state.station.client(), state.inner()),
     )
 }
 
@@ -398,7 +405,7 @@ pub fn auth_validate_token(
         state.inner(),
         &app,
         &window,
-        auth_service::auth_validate_token(input, state.inner()),
+        auth_service::auth_validate_token(state.station.client(), input, state.inner()),
     )
 }
 
@@ -413,7 +420,7 @@ pub fn ensure_station_session(
         state.inner(),
         &app,
         &window,
-        auth_service::ensure_station_session(state.inner()),
+        auth_service::ensure_station_session(state.station.client(), state.inner()),
     );
     broadcast_identity(&app, IdentityChangeReason::OauthBridge, &result);
     result

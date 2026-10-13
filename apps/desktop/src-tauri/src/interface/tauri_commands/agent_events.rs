@@ -31,8 +31,10 @@ pub fn agent_events_subscribe(
         .unwrap_or_else(|| format!("agent-events-{}", ulid::Ulid::new()));
     let cancel_flag = agent_event_stream::register_stream(&stream_id);
     let stream_id_for_task = stream_id.clone();
+    let station_client = state.station.client().clone();
     tauri::async_runtime::spawn_blocking(move || {
         if let Err(error) = agent_event_stream::stream(
+            &station_client,
             &app,
             AGENT_EVENT_CHANNEL,
             &stream_id_for_task,
@@ -40,7 +42,7 @@ pub fn agent_events_subscribe(
             None,
             0,
             &token,
-            &cancel_flag,
+            cancel_flag,
         ) {
             agent_event_stream::emit_error(
                 &app,

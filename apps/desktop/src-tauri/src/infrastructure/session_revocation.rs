@@ -2,7 +2,7 @@ use serde_json::json;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::infrastructure::station_client::session_revoked_details_from_text;
+use crate::application::station_runtime::client::session_revoked_details_from_text;
 use crate::state::AppState;
 
 pub const SESSION_KICKED_EVENT: &str = "auth:session-kicked";
@@ -88,6 +88,8 @@ mod tests {
                 dirs,
             },
             I18nService::new(&config_dir),
+            crate::application::station_runtime::StationRuntime::start(&config_dir)
+                .expect("test Station runtime"),
         );
         if let Some(token) = token {
             state

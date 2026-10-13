@@ -63,7 +63,9 @@ use crate::application::tools as app_tools;
 use crate::application::tts as app_tts;
 
 // Actor & chat modules use station_client + proto directly
-use crate::infrastructure::station_client;
+use crate::application::station_runtime::client::{
+    ReplayPolicy, StationClient, StationRequest, StationRequestBody, TrafficClass,
+};
 use crate::interface::tauri_commands::actor::actor_profile_to_json;
 use crate::interface::tauri_commands::oss::{
     safe_temp_filename, OssKeyInput, OssListMyFilesInput, OssResolveUrlInput,
@@ -729,44 +731,49 @@ fn handle_agent_stream_proxy(
             }),
         );
     }
-    let client = match reqwest::blocking::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(30))
-        .build()
-    {
-        Ok(client) => client,
-        Err(error) => {
-            let response = tiny_http::Response::from_string(error.to_string())
-                .with_status_code(500)
-                .with_header(cors_origin());
-            let _ = request.respond(response);
-            return;
-        }
-    };
-    let station_url = station_client::station_base_url();
     if fault_request {
-        let route = reqwest::Url::parse(&station_url).ok();
         report_foundation_fault_stream_debug(
             "gateway-stream-started",
             json!({
                 "stationPath": station_path,
-                "stationIsLoopback": route
-                    .as_ref()
-                    .and_then(reqwest::Url::host_str)
-                    == Some("127.0.0.1"),
-                "stationPort": route.as_ref().and_then(reqwest::Url::port_or_known_default),
+                "transport": "station-runtime",
                 "activeWorkersAtEnqueue": diagnostics.active_workers_at_enqueue,
                 "queuedAtEnqueue": diagnostics.queued_at_enqueue,
                 "queueWaitMs": diagnostics.queue_wait_ms,
             }),
         );
     }
-    let upstream = client
-        .post(format!("{station_url}{station_path}"))
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .header(reqwest::header::ACCEPT, "text/event-stream")
-        .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-        .body(body)
-        .send();
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::CONTENT_TYPE,
+        reqwest::header::HeaderValue::from_static("application/json"),
+    );
+    headers.insert(
+        reqwest::header::ACCEPT,
+        reqwest::header::HeaderValue::from_static("text/event-stream"),
+    );
+    let authorization = match reqwest::header::HeaderValue::from_str(&format!("Bearer {token}")) {
+        Ok(value) => value,
+        Err(error) => {
+            let response = tiny_http::Response::from_string(error.to_string())
+                .with_status_code(400)
+                .with_header(cors_origin());
+            let _ = request.respond(response);
+            return;
+        }
+    };
+    headers.insert(reqwest::header::AUTHORIZATION, authorization);
+    let upstream = state.station.client().execute_raw(StationRequest {
+        method: reqwest::Method::POST,
+        path_and_query: station_path.to_string(),
+        headers,
+        body: StationRequestBody::Bytes(body.into_bytes()),
+        timeout: std::time::Duration::from_secs(24 * 60 * 60),
+        traffic_class: TrafficClass::Realtime,
+        replay_policy: ReplayPolicy::Never,
+        cancellation: tokio_util::sync::CancellationToken::new(),
+        expected_scope: None,
+    });
     let upstream = match upstream {
         Ok(response) => response,
         Err(error) => {
@@ -775,8 +782,7 @@ fn handle_agent_stream_proxy(
                     "upstream-error",
                     json!({
                         "elapsedMs": stream_started_at.elapsed().as_millis(),
-                        "isConnect": error.is_connect(),
-                        "isTimeout": error.is_timeout(),
+                        "kind": format!("{:?}", error.kind),
                     }),
                 );
             }
@@ -785,8 +791,7 @@ fn handle_agent_stream_proxy(
                     "gateway-upstream-error",
                     json!({
                         "elapsedMs": stream_started_at.elapsed().as_millis(),
-                        "isConnect": error.is_connect(),
-                        "isTimeout": error.is_timeout(),
+                        "kind": format!("{:?}", error.kind),
                     }),
                 );
             }
@@ -797,7 +802,7 @@ fn handle_agent_stream_proxy(
             return;
         }
     };
-    let status = upstream.status().as_u16();
+    let status = upstream.status;
     if lease_replay_request {
         report_lease_replay_gateway_debug(
             "upstream-admitted",
@@ -808,14 +813,14 @@ fn handle_agent_stream_proxy(
         );
     }
     let turn_id = upstream
-        .headers()
+        .headers
         .get("x-agent-turn-id")
         .and_then(|value| value.to_str().ok())
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned);
-    let forwarded_headers = forwarded_agent_stream_error_headers(upstream.headers());
-    let include_preamble = upstream.status().is_success();
+    let forwarded_headers = forwarded_agent_stream_error_headers(&upstream.headers);
+    let include_preamble = (200..300).contains(&upstream.status);
     if fault_request {
         report_foundation_fault_stream_debug(
             "gateway-upstream-admitted",
@@ -843,7 +848,7 @@ fn handle_agent_stream_proxy(
         status,
         turn_id.as_deref(),
         &forwarded_headers,
-        AgentStreamBody::new(upstream, station_path, include_preamble),
+        AgentStreamBody::new(upstream.body, station_path, include_preamble),
     );
     if lease_replay_request {
         report_lease_replay_gateway_debug(
@@ -1040,7 +1045,7 @@ fn proxy_authenticated_station_json(
         Ok(token) => token,
         Err(error) => return error,
     };
-    match crate::infrastructure::station_client::request_json_auth(
+    match state.station.client().request_json_auth(
         method,
         path,
         &token,
@@ -1243,6 +1248,7 @@ fn dispatch_oss_upload_agent_attachment_bytes(args: Value, state: &AppState) -> 
     let cleanup = app_oss::TempFileCleanup::new(temp_path.clone(), "HTTP Agent attachment");
 
     let result = app_oss::upload_agent_attachment(
+        state.station.resources(),
         temp_path.to_string_lossy().as_ref(),
         &token,
         &input.conversation_id,
@@ -1295,18 +1301,25 @@ fn http_gateway_data_dir(state: &AppState) -> std::path::PathBuf {
 // -------------------------------------------------------------------------
 
 fn station_request_json(
+    station_client: &StationClient,
     method: Method,
     path: &str,
     token: &str,
     query: Option<&[(&str, String)]>,
     body: Option<Value>,
 ) -> Result<Value, Value> {
-    station_client::request_json(method, path, token, query, body).map_err(|e| {
-        to_json(e.into_app_result::<StubPayload>(format!("station request to {} failed", path)))
-    })
+    station_client
+        .request_json(method, path, token, query, body)
+        .map_err(|e| {
+            to_json(e.into_app_result::<StubPayload>(format!("station request to {} failed", path)))
+        })
 }
 
-fn frontend_telemetry_upload_with_token(token: &str, args: Value) -> Value {
+fn frontend_telemetry_upload_with_token(
+    station_client: &StationClient,
+    token: &str,
+    args: Value,
+) -> Value {
     let events = args.get("events").and_then(|value| value.as_array());
     let event_count = match events {
         Some(items) if !items.is_empty() => items.len(),
@@ -1326,6 +1339,7 @@ fn frontend_telemetry_upload_with_token(token: &str, args: Value) -> Value {
         ));
     }
     match station_request_json(
+        station_client,
         Method::POST,
         "/telemetry/frontend/events/batch",
         token,
@@ -1337,8 +1351,13 @@ fn frontend_telemetry_upload_with_token(token: &str, args: Value) -> Value {
     }
 }
 
-fn frontend_telemetry_query_with_token(token: &str, args: Value) -> Value {
+fn frontend_telemetry_query_with_token(
+    station_client: &StationClient,
+    token: &str,
+    args: Value,
+) -> Value {
     match station_request_json(
+        station_client,
         Method::POST,
         "/telemetry/frontend/events/query",
         token,
@@ -1350,8 +1369,13 @@ fn frontend_telemetry_query_with_token(token: &str, args: Value) -> Value {
     }
 }
 
-fn frontend_telemetry_rollup_query_with_token(token: &str, args: Value) -> Value {
+fn frontend_telemetry_rollup_query_with_token(
+    station_client: &StationClient,
+    token: &str,
+    args: Value,
+) -> Value {
     match station_request_json(
+        station_client,
         Method::POST,
         "/telemetry/frontend/rollups/query",
         token,
@@ -1499,7 +1523,12 @@ fn dispatch_evaluation(
         Some(token) => token,
         None => return to_json(unauthorized_error()),
     };
-    to_json(app_evaluation::forward(input, &token, operation))
+    to_json(app_evaluation::forward(
+        state.station.client(),
+        input,
+        &token,
+        operation,
+    ))
 }
 
 /// Dispatch a command by name, returning the result as a JSON Value.
@@ -1581,7 +1610,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     .collect(),
                 supported_wire_versions: vec![1],
             };
-            match station_client::request_proto::<
+            match state.station.client().request_proto::<
                 model::key_exchange::UploadDirectKeyBundleRequest,
                 model::key_exchange::UploadDirectKeyBundleResponse,
             >(
@@ -1628,7 +1657,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 request_id: Ulid::new().to_string(),
                 requester: Some(actor_device_ref(actor_ptid, device_id.clone())),
             };
-            match station_client::request_proto_for_device::<
+            match state.station.client().request_proto_for_device::<
                 model::key_exchange::FetchDirectKeyBundlesRequest,
                 model::key_exchange::FetchDirectKeyBundlesResponse,
             >(
@@ -1859,7 +1888,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ));
                 }
             };
-            let resp = match station_client::request_proto::<
+            let resp = match state.station.client().request_proto::<
                 model::social::CreatePostRequest,
                 model::social::CreatePostResponse,
             >(
@@ -1891,11 +1920,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             let path = format!("/api/v1/social/moments/{}", input.id);
-            let resp = match station_client::request_proto::<
-                (),
-                model::social::GetMomentResourceResponse,
-            >(Method::GET, &path, &token, None, None::<&()>)
-            {
+            let resp = match state
+                .station
+                .client()
+                .request_proto::<(), model::social::GetMomentResourceResponse>(
+                    Method::GET,
+                    &path,
+                    &token,
+                    None,
+                    None::<&()>,
+                ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("get moment failed")),
             };
@@ -1918,13 +1952,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             let path = format!("/api/v1/social/moments/{}", input.id);
-            let resp = match station_client::request_proto::<(), model::social::DeletePostResponse>(
-                Method::DELETE,
-                &path,
-                &token,
-                None,
-                None::<&()>,
-            ) {
+            let resp = match state
+                .station
+                .client()
+                .request_proto::<(), model::social::DeletePostResponse>(
+                    Method::DELETE,
+                    &path,
+                    &token,
+                    None,
+                    None::<&()>,
+                ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("delete moment failed")),
             };
@@ -1949,13 +1986,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             if let Some(sort) = input.sort.filter(|v| !v.is_empty()) {
                 query.push(("sort", sort));
             }
-            let resp = match station_client::request_proto::<(), model::social::GetTimelineResponse>(
-                Method::GET,
-                "/api/v1/social/timeline",
-                &token,
-                Some(&query),
-                None::<&()>,
-            ) {
+            let resp = match state
+                .station
+                .client()
+                .request_proto::<(), model::social::GetTimelineResponse>(
+                    Method::GET,
+                    "/api/v1/social/timeline",
+                    &token,
+                    Some(&query),
+                    None::<&()>,
+                ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("get timeline failed")),
             };
@@ -1977,7 +2017,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 public_sort: input.public_sort.unwrap_or(0),
                 reason: input.reason.unwrap_or_default(),
             };
-            let resp = match station_client::request_proto::<
+            let resp = match state.station.client().request_proto::<
                 model::social::SyncMomentsProjectionRequest,
                 model::social::SyncMomentsProjectionResponse,
             >(
@@ -2018,13 +2058,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 query.push(("limit", limit.to_string()));
             }
             let path = format!("/api/v1/social/users/{}/posts", input.author_ptid);
-            let resp = match station_client::request_proto::<(), model::social::ListPostsResponse>(
-                Method::GET,
-                &path,
-                &token,
-                Some(&query),
-                None::<&()>,
-            ) {
+            let resp = match state
+                .station
+                .client()
+                .request_proto::<(), model::social::ListPostsResponse>(
+                    Method::GET,
+                    &path,
+                    &token,
+                    Some(&query),
+                    None::<&()>,
+                ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("list by author failed")),
             };
@@ -2035,13 +2078,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            let resp = match station_client::request_proto::<(), model::social::ListMyCirclesResponse>(
-                Method::GET,
-                "/api/v1/social/circles",
-                &token,
-                None,
-                None::<&()>,
-            ) {
+            let resp = match state
+                .station
+                .client()
+                .request_proto::<(), model::social::ListMyCirclesResponse>(
+                    Method::GET,
+                    "/api/v1/social/circles",
+                    &token,
+                    None,
+                    None::<&()>,
+                ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("list circles failed")),
             };
@@ -2052,16 +2098,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            let resp = match station_client::request_proto::<
-                (),
-                model::social::GetMyMomentsStatsResponse,
-            >(
-                Method::GET,
-                "/api/v1/social/me/stats",
-                &token,
-                None,
-                None::<&()>,
-            ) {
+            let resp = match state
+                .station
+                .client()
+                .request_proto::<(), model::social::GetMyMomentsStatsResponse>(
+                    Method::GET,
+                    "/api/v1/social/me/stats",
+                    &token,
+                    None,
+                    None::<&()>,
+                ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("get my stats failed")),
             };
@@ -2098,7 +2144,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 actor_device_signature: Vec::new(),
             };
             let path = format!("/api/v1/social/posts/{}/react", input.post_id);
-            let resp = match station_client::request_proto::<
+            let resp = match state.station.client().request_proto::<
                 model::social::ReactToPostRequest,
                 model::social::ReactToPostResponse,
             >(Method::POST, &path, &token, None, Some(&req))
@@ -2132,7 +2178,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 actor_device_signature: Vec::new(),
             };
             let path = format!("/api/v1/social/posts/{}/unreact", input.post_id);
-            let resp = match station_client::request_proto::<
+            let resp = match state.station.client().request_proto::<
                 model::social::UnreactToPostRequest,
                 model::social::UnreactToPostResponse,
             >(Method::POST, &path, &token, None, Some(&req))
@@ -2166,13 +2212,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 query.push(("limit", limit.to_string()));
             }
             let path = format!("/api/v1/social/moments/{}/comments", input.post_id);
-            let resp = match station_client::request_proto::<(), model::social::GetCommentsResponse>(
-                Method::GET,
-                &path,
-                &token,
-                Some(&query),
-                None::<&()>,
-            ) {
+            let resp = match state
+                .station
+                .client()
+                .request_proto::<(), model::social::GetCommentsResponse>(
+                    Method::GET,
+                    &path,
+                    &token,
+                    Some(&query),
+                    None::<&()>,
+                ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("get comments failed")),
             };
@@ -2207,7 +2256,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 reply_to_comment_id: input.reply_to_comment_id.unwrap_or_default(),
             };
             let path = format!("/api/v1/social/moments/{}/comments", input.post_id);
-            let resp = match station_client::request_proto::<
+            let resp = match state.station.client().request_proto::<
                 model::social::CreateCommentRequest,
                 model::social::CreateCommentResponse,
             >(Method::POST, &path, &token, None, Some(&req))
@@ -2234,13 +2283,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             let path = format!("/api/v1/social/comments/{}", input.comment_id);
-            let resp = match station_client::request_proto::<(), model::social::DeleteCommentResponse>(
-                Method::DELETE,
-                &path,
-                &token,
-                None,
-                None::<&()>,
-            ) {
+            let resp = match state
+                .station
+                .client()
+                .request_proto::<(), model::social::DeleteCommentResponse>(
+                    Method::DELETE,
+                    &path,
+                    &token,
+                    None,
+                    None::<&()>,
+                ) {
                 Ok(r) => r,
                 Err(e) => {
                     return to_json(e.into_app_result::<Vec<u8>>("delete comment failed"));
@@ -2280,7 +2332,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ..Default::default()
                 }),
             };
-            let resp = match station_client::request_proto::<
+            let resp = match state.station.client().request_proto::<
                 model::social::UpsertStationModerationPolicyRequest,
                 model::social::UpsertStationModerationPolicyResponse,
             >(
@@ -2318,10 +2370,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             if let Some(limit) = input.limit {
                 query.push(("limit", limit.to_string()));
             }
-            let resp = match station_client::request_proto::<
-                (),
-                model::social::ListStationModerationPoliciesResponse,
-            >(
+            let resp = match state
+                .station
+                .client()
+                .request_proto::<(), model::social::ListStationModerationPoliciesResponse>(
                 Method::GET,
                 "/api/v1/social/moderation/stations",
                 &token,
@@ -2360,10 +2412,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ("station_peer_id", station_peer_id),
                 ("kind", input.kind.unwrap_or(1).to_string()),
             ];
-            let resp = match station_client::request_proto::<
-                (),
-                model::social::DeleteStationModerationPolicyResponse,
-            >(
+            let resp = match state
+                .station
+                .client()
+                .request_proto::<(), model::social::DeleteStationModerationPolicyResponse>(
                 Method::DELETE,
                 "/api/v1/social/moderation/stations",
                 &token,
@@ -2395,7 +2447,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(context) => context,
                 Err(error) => return error,
             };
-            to_json(app_oss::oss_resolve_url(&input.uri, &token, &actor_ptid))
+            to_json(app_oss::oss_resolve_url(
+                state.station.resources(),
+                &input.uri,
+                &token,
+                &actor_ptid,
+            ))
         }
         "oss_list_my_files" => {
             let input = match parse_args::<OssListMyFilesInput>(args) {
@@ -2414,7 +2471,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 page: input.page,
                 page_size: input.page_size,
             };
-            to_json(app_oss::oss_list_my_files(&token, &query))
+            to_json(app_oss::oss_list_my_files(
+                state.station.client(),
+                &token,
+                &query,
+            ))
         }
         "oss_delete_file" => {
             let input = match parse_args::<OssKeyInput>(args) {
@@ -2425,7 +2486,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(token) => token,
                 Err(error) => return error,
             };
-            to_json(app_oss::oss_delete_file(&token, &input.key))
+            to_json(app_oss::oss_delete_file(
+                state.station.client(),
+                &token,
+                &input.key,
+            ))
         }
 
         // =================================================================
@@ -2440,13 +2505,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            let resp = match station_client::request_proto::<(), model::actor::ActorList>(
-                Method::GET,
-                "/api/v1/social/users/search",
-                &token,
-                Some(&[("q", input.q.clone())]),
-                None::<&()>,
-            ) {
+            let resp = match state
+                .station
+                .client()
+                .request_proto::<(), model::actor::ActorList>(
+                    Method::GET,
+                    "/api/v1/social/users/search",
+                    &token,
+                    Some(&[("q", input.q.clone())]),
+                    None::<&()>,
+                ) {
                 Ok(r) => r,
                 Err(e) => {
                     return to_json(e.into_app_result::<StubPayload>("Station request failed"));
@@ -2479,13 +2547,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            let resp = match station_client::request_proto::<(), model::actor::ActorProfile>(
-                Method::GET,
-                "/api/v1/social/users/me",
-                &token,
-                None,
-                None::<&()>,
-            ) {
+            let resp = match state
+                .station
+                .client()
+                .request_proto::<(), model::actor::ActorProfile>(
+                    Method::GET,
+                    "/api/v1/social/users/me",
+                    &token,
+                    None,
+                    None::<&()>,
+                ) {
                 Ok(r) => r,
                 Err(e) => {
                     return to_json(e.into_app_result::<StubPayload>("Station request failed"));
@@ -2500,27 +2571,27 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // =================================================================
         // Auth (state-dependent)
         // =================================================================
-        "access_start" => to_json(app_auth::access_start()),
+        "access_start" => to_json(app_auth::access_start(&state.station)),
         "access_submit_invite_code" => {
             let input = match parse_args::<AccessSubmitInviteInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_auth::access_submit_invite_code(input))
+            to_json(app_auth::access_submit_invite_code(&state.station, input))
         }
         "access_decision" => {
             let input = match parse_args::<AccessDecisionInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_auth::access_decision(input))
+            to_json(app_auth::access_decision(&state.station, input))
         }
         "access_cancel" => {
             let input = match parse_args::<AccessDecisionInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_auth::access_cancel(input))
+            to_json(app_auth::access_cancel(&state.station, input))
         }
         "access_submit_login" => {
             let mut input = match parse_args::<AccessSubmitLoginInput>(args) {
@@ -2530,7 +2601,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             if input.device_type.is_none() {
                 input.device_type = Some(app_auth::DESKTOP_SESSION_CLASS.to_string());
             }
-            bind_gateway_auth_result(state, app_auth::access_submit_login(input, state))
+            bind_gateway_auth_result(
+                state,
+                app_auth::access_submit_login(&state.station, input, state),
+            )
         }
         "auth_logout" => {
             let result = app_auth::auth_logout(state);
@@ -2539,14 +2613,22 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
         "auth_restore_session" => bind_gateway_auth_result(
             state,
-            app_auth::auth_restore_session_for_device(state, app_auth::DESKTOP_SESSION_CLASS),
+            app_auth::auth_restore_session_for_device(
+                state.station.client(),
+                state,
+                app_auth::DESKTOP_SESSION_CLASS,
+            ),
         ),
         "auth_validate_token" => {
             let input = match parse_args::<AuthValidateTokenInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_auth::auth_validate_token(input, state))
+            to_json(app_auth::auth_validate_token(
+                state.station.client(),
+                input,
+                state,
+            ))
         }
         "acceptance_current_session" => {
             let (account_id, actor_ptid, token) = match gateway_access_context(state) {
@@ -2600,19 +2682,21 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ));
             }
             let query = vec![("target_actor_ptid", input.target_actor_ptid)];
-            let response =
-                match station_client::request_proto::<(), model::social::GetRelationshipResponse>(
+            let response = match state
+                .station
+                .client()
+                .request_proto::<(), model::social::GetRelationshipResponse>(
                     Method::GET,
                     "/api/v1/social/relationships",
                     &token,
                     Some(&query),
                     None::<&()>,
                 ) {
-                    Ok(response) => response,
-                    Err(error) => {
-                        return to_json(error.into_app_result::<Vec<u8>>("get relationship failed"))
-                    }
-                };
+                Ok(response) => response,
+                Err(error) => {
+                    return to_json(error.into_app_result::<Vec<u8>>("get relationship failed"))
+                }
+            };
             to_json(AppResult::success(response.encode_to_vec()))
         }
         "acceptance_friend_request_context" => {
@@ -2630,16 +2714,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ("offset", "0".to_string()),
             ];
             let pending =
-                match station_client::request_proto::<
-                    (),
-                    model::social::ListSocialFriendRequestsResponse,
-                >(
-                    Method::GET,
-                    "/api/v1/social/friend-requests",
-                    &token,
-                    Some(&pending_query),
-                    None::<&()>,
-                ) {
+                match state
+                    .station
+                    .client()
+                    .request_proto::<(), model::social::ListSocialFriendRequestsResponse>(
+                        Method::GET,
+                        "/api/v1/social/friend-requests",
+                        &token,
+                        Some(&pending_query),
+                        None::<&()>,
+                    ) {
                     Ok(response) => response,
                     Err(error) => {
                         return to_json(error.into_app_result::<StubPayload>(
@@ -2651,13 +2735,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None
             } else {
                 let query = vec![("target_actor_ptid", target_actor_ptid)];
-                match station_client::request_proto::<(), model::social::GetRelationshipResponse>(
-                    Method::GET,
-                    "/api/v1/social/relationships",
-                    &token,
-                    Some(&query),
-                    None::<&()>,
-                ) {
+                match state
+                    .station
+                    .client()
+                    .request_proto::<(), model::social::GetRelationshipResponse>(
+                        Method::GET,
+                        "/api/v1/social/relationships",
+                        &token,
+                        Some(&query),
+                        None::<&()>,
+                    ) {
                     Ok(response) => response.relationship.as_ref().map(relationship_projection),
                     Err(error) => {
                         return to_json(error.into_app_result::<StubPayload>(
@@ -2678,7 +2765,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 }),
             ))
         }
-        "ensure_station_session" => to_json(app_auth::ensure_station_session(state)),
+        "ensure_station_session" => to_json(app_auth::ensure_station_session(
+            state.station.client(),
+            state,
+        )),
 
         // =================================================================
         // Settings (state-dependent)
@@ -2709,7 +2799,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // Profile (session token via global lock — dev HTTP gateway)
         // =================================================================
         "profile_get" => match http_gateway_bearer_token(state) {
-            Some(t) => to_json(app_profile::profile_get(&t)),
+            Some(t) => to_json(app_profile::profile_get(state.station.resources(), &t)),
             None => to_json(AppResult::<StubPayload>::fail(
                 ErrorCode::Unauthorized,
                 "authentication required",
@@ -2722,7 +2812,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(t) => to_json(app_profile::peer_profile_get(&t, &input.actor_ptid)),
+                Some(t) => to_json(app_profile::peer_profile_get(
+                    state.station.resources(),
+                    &t,
+                    &input.actor_ptid,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -2736,7 +2830,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(t) => to_json(app_profile::profile_update(input, &t)),
+                Some(t) => to_json(app_profile::profile_update(
+                    state.station.resources(),
+                    input,
+                    &t,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -2750,7 +2848,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(t) => to_json(app_profile::profile_upload_avatar("", input, &t)),
+                Some(t) => to_json(app_profile::profile_upload_avatar(
+                    state.station.resources(),
+                    "",
+                    input,
+                    &t,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -2764,7 +2867,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(t) => to_json(app_profile::profile_upload_header("", input, &t)),
+                Some(t) => to_json(app_profile::profile_upload_header(
+                    state.station.resources(),
+                    "",
+                    input,
+                    &t,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -2792,7 +2900,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(t) => to_json(app_profile::profile_upload_avatar_oss(input, &t)),
+                Some(t) => to_json(app_profile::profile_upload_avatar_oss(
+                    state.station.resources(),
+                    input,
+                    &t,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -2806,7 +2918,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(t) => to_json(app_profile::profile_upload_header_oss(input, &t)),
+                Some(t) => to_json(app_profile::profile_upload_header_oss(
+                    state.station.resources(),
+                    input,
+                    &t,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -2824,6 +2940,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             match http_gateway_bearer_token(state) {
                 Some(token) => match station_request_json(
+                    state.station.client(),
                     Method::POST,
                     "/presence/query",
                     &token,
@@ -2869,7 +2986,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ))
             } else {
                 match http_gateway_bearer_token(state) {
-                    Some(t) => to_json(app_profile::account_sync_avatar(&input, &t)),
+                    Some(t) => to_json(app_profile::account_sync_avatar(
+                        state.station.resources(),
+                        &input,
+                        &t,
+                    )),
                     None => to_json(AppResult::<StubPayload>::fail(
                         ErrorCode::Unauthorized,
                         "authentication required",
@@ -2879,9 +3000,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "sync_user_profile" => match gateway_access_context(state) {
-            Ok((_, actor_ptid, token)) => {
-                to_json(app_profile::sync_user_profile(&token, &actor_ptid))
-            }
+            Ok((_, actor_ptid, token)) => to_json(app_profile::sync_user_profile(
+                state.station.resources(),
+                &token,
+                &actor_ptid,
+            )),
             Err(error) => error,
         },
 
@@ -2938,6 +3061,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             to_json(app_provider::provider_list(
+                state.station.client(),
                 scope.as_deref().unwrap_or(""),
                 &token,
             ))
@@ -2956,6 +3080,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             to_json(app_provider::provider_get(
+                state.station.client(),
                 scope.as_deref().unwrap_or(""),
                 &token,
                 input,
@@ -2975,6 +3100,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             to_json(app_provider::provider_update(
+                state.station.client(),
                 scope.as_deref().unwrap_or(""),
                 &token,
                 input,
@@ -3013,6 +3139,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             to_json(app_provider::provider_create(
+                state.station.client(),
                 scope.as_deref().unwrap_or(""),
                 &token,
                 input,
@@ -3032,6 +3159,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             to_json(app_provider::provider_delete(
+                state.station.client(),
                 scope.as_deref().unwrap_or(""),
                 &token,
                 input,
@@ -3062,6 +3190,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             to_json(app_provider::provider_list_available_models(
+                state.station.client(),
                 scope.as_deref().unwrap_or(""),
                 &token,
             ))
@@ -3080,6 +3209,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             to_json(app_provider::model_add(
+                state.station.client(),
                 &token,
                 &input.provider_id,
                 &input.data,
@@ -3095,6 +3225,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             to_json(app_provider::model_update(
+                state.station.client(),
                 &token,
                 &input.provider_id,
                 &input.model_id,
@@ -3111,6 +3242,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             to_json(app_provider::model_delete(
+                state.station.client(),
                 &token,
                 &input.provider_id,
                 &input.model_id,
@@ -3130,6 +3262,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             to_json(app_provider::model_fetch_remote(
+                state.station.client(),
                 scope.as_deref().unwrap_or(""),
                 &token,
                 &input.provider_id,
@@ -3174,7 +3307,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(context) => context,
                 Err(error) => return error,
             };
-            to_json(app_agents::agents_list(&actor_ptid, &token))
+            to_json(app_agents::agents_list(
+                state.station.client(),
+                &actor_ptid,
+                &token,
+            ))
         }
         "agents_get_selected" => {
             let (_, actor_ptid, _) = match gateway_access_context(state) {
@@ -3221,7 +3358,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(context) => context,
                 Err(error) => return error,
             };
-            to_json(app_agents::agents_get(&actor_ptid, &token, input))
+            to_json(app_agents::agents_get(
+                state.station.client(),
+                &actor_ptid,
+                &token,
+                input,
+            ))
         }
         "agents_create" => {
             let input = match parse_args::<AgentCreateInput>(args) {
@@ -3232,7 +3374,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(context) => context,
                 Err(error) => return error,
             };
-            to_json(app_agents::agents_create(&actor_ptid, &token, input))
+            to_json(app_agents::agents_create(
+                state.station.client(),
+                &actor_ptid,
+                &token,
+                input,
+            ))
         }
         "agents_update" => {
             let input = match parse_args::<AgentUpdateInput>(args) {
@@ -3243,7 +3390,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(context) => context,
                 Err(error) => return error,
             };
-            to_json(app_agents::agents_update(&actor_ptid, &token, input))
+            to_json(app_agents::agents_update(
+                state.station.client(),
+                &actor_ptid,
+                &token,
+                input,
+            ))
         }
         "agents_delete" => {
             let input = match parse_args::<AgentIdInput>(args) {
@@ -3254,7 +3406,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(context) => context,
                 Err(error) => return error,
             };
-            to_json(app_agents::agents_delete(&actor_ptid, &token, input))
+            to_json(app_agents::agents_delete(
+                state.station.client(),
+                &actor_ptid,
+                &token,
+                input,
+            ))
         }
         "agents_duplicate" => {
             let input = match parse_args::<AgentDuplicateInput>(args) {
@@ -3265,7 +3422,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(context) => context,
                 Err(error) => return error,
             };
-            to_json(app_agents::agents_duplicate(&actor_ptid, &token, input))
+            to_json(app_agents::agents_duplicate(
+                state.station.client(),
+                &actor_ptid,
+                &token,
+                input,
+            ))
         }
         "agents_search" => {
             let input = match parse_args::<AgentSearchInput>(args) {
@@ -3287,7 +3449,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_conversation_list(input, &token))
+            to_json(app_agent_turn::agent_conversation_list(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_conversation_get" => {
             let input = match parse_args::<AgentConversationGetInput>(args) {
@@ -3298,7 +3464,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_conversation_get(input, &token))
+            to_json(app_agent_turn::agent_conversation_get(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_conversation_create" => {
             let input = match parse_args::<AgentConversationCreateInput>(args) {
@@ -3309,7 +3479,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_conversation_create(input, &token))
+            to_json(app_agent_turn::agent_conversation_create(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_conversation_messages" => {
             let input = match parse_args::<AgentConversationMessagesInput>(args) {
@@ -3320,7 +3494,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_conversation_messages(input, &token))
+            to_json(app_agent_turn::agent_conversation_messages(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_conversation_update" => {
             let input = match parse_args::<AgentConversationUpdateInput>(args) {
@@ -3331,7 +3509,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_conversation_update(input, &token))
+            to_json(app_agent_turn::agent_conversation_update(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_conversation_archive" => {
             let input = match parse_args::<AgentConversationArchiveInput>(args) {
@@ -3342,7 +3524,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_conversation_archive(input, &token))
+            to_json(app_agent_turn::agent_conversation_archive(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_conversation_restore" => {
             let input = match parse_args::<AgentConversationRestoreInput>(args) {
@@ -3353,7 +3539,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_conversation_restore(input, &token))
+            to_json(app_agent_turn::agent_conversation_restore(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_conversation_runtime_reset" => {
             let input = match parse_args::<AgentConversationRuntimeResetInput>(args) {
@@ -3365,7 +3555,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_agent_turn::agent_conversation_runtime_reset(
-                input, &token,
+                state.station.client(),
+                input,
+                &token,
             ))
         }
         "agent_task_create" => {
@@ -3377,7 +3569,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_task_create(input, &token))
+            to_json(app_agent_turn::agent_task_create(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_task_list" => {
             let input = match parse_args::<AgentTaskListInput>(args) {
@@ -3388,7 +3584,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_task_list(input, &token))
+            to_json(app_agent_turn::agent_task_list(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_task_status" => {
             let input = match parse_args::<AgentTaskStatusInput>(args) {
@@ -3399,7 +3599,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_task_status(input, &token))
+            to_json(app_agent_turn::agent_task_status(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_task_delete" => {
             let input = match parse_args::<AgentTaskDeleteInput>(args) {
@@ -3410,7 +3614,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_task_delete(input, &token))
+            to_json(app_agent_turn::agent_task_delete(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_task_subtask_add" => {
             let input = match parse_args::<AgentTaskSubtaskAddInput>(args) {
@@ -3421,7 +3629,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_task_subtask_add(input, &token))
+            to_json(app_agent_turn::agent_task_subtask_add(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_task_subtask_complete" => {
             let input = match parse_args::<AgentTaskSubtaskCompleteInput>(args) {
@@ -3432,7 +3644,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_task_subtask_complete(input, &token))
+            to_json(app_agent_turn::agent_task_subtask_complete(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_retry_turn" => {
             let input = match parse_args::<AgentRetryTurnInput>(args) {
@@ -3443,7 +3659,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_retry_turn(input, &token))
+            to_json(app_agent_turn::agent_retry_turn(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_regenerate_turn" => {
             let input = match parse_args::<AgentRegenerateTurnInput>(args) {
@@ -3454,7 +3674,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_regenerate_turn(input, &token))
+            to_json(app_agent_turn::agent_regenerate_turn(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_edit_and_resend" => {
             let input = match parse_args::<AgentEditAndResendInput>(args) {
@@ -3465,7 +3689,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_edit_and_resend(input, &token))
+            to_json(app_agent_turn::agent_edit_and_resend(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_select_active_branch" => {
             let input = match parse_args::<AgentSelectActiveBranchInput>(args) {
@@ -3476,7 +3704,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_select_active_branch(input, &token))
+            to_json(app_agent_turn::agent_select_active_branch(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_tombstone_message" => {
             let input = match parse_args::<AgentTombstoneMessageInput>(args) {
@@ -3487,7 +3719,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_tombstone_message(input, &token))
+            to_json(app_agent_turn::agent_tombstone_message(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_execute_turn" => {
             let input = match parse_args::<AgentExecuteTurnInput>(args) {
@@ -3498,7 +3734,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_execute_turn(input, &token, ""))
+            to_json(app_agent_turn::agent_execute_turn(
+                state.station.client(),
+                input,
+                &token,
+                "",
+            ))
         }
         "agent_execute_turn_stream" => {
             let input = match parse_args::<AgentExecuteTurnInput>(args) {
@@ -3523,8 +3764,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(app_handle) => app_handle,
                 Err(error) => return error,
             };
+            let station_client = state.station.client().clone();
             tauri::async_runtime::spawn_blocking(move || {
                 app_agent_turn::agent_execute_turn_stream(
+                    &station_client,
                     app_for_task,
                     stream_id_for_task.clone(),
                     input,
@@ -3547,7 +3790,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(token) => token,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::cancel_agent_turn(&input.turn_id, &token))
+            to_json(app_agent_turn::cancel_agent_turn(
+                state.station.client(),
+                &input.turn_id,
+                &token,
+            ))
         }
         "agent_turn_queue_list" => {
             let input = match parse_args::<AgentTurnQueueListInput>(args) {
@@ -3558,7 +3805,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_turn_queue_list(input, &token))
+            to_json(app_agent_turn::agent_turn_queue_list(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_turn_queue_cancel" => {
             let input = match parse_args::<AgentTurnQueueCancelInput>(args) {
@@ -3569,7 +3820,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_turn_queue_cancel(input, &token))
+            to_json(app_agent_turn::agent_turn_queue_cancel(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_submit_tool_decision" => {
             let input = match parse_args::<AgentToolDecisionIntentInput>(args) {
@@ -3580,7 +3835,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::submit_tool_decision(input, &token))
+            to_json(app_agent_turn::submit_tool_decision(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_turn_trace_list" => {
             let input = match parse_args::<AgentTurnTraceListInput>(args) {
@@ -3591,7 +3850,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_turn_trace_list(input, &token))
+            to_json(app_agent_turn::agent_turn_trace_list(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_turn_trace_get" => {
             let input = match parse_args::<AgentTurnTraceGetInput>(args) {
@@ -3602,7 +3865,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_turn_trace_get(input, &token))
+            to_json(app_agent_turn::agent_turn_trace_get(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_turn_diagnostics_export" => {
             let input = match parse_args::<AgentTurnDiagnosticsInput>(args) {
@@ -3613,7 +3880,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::agent_turn_diagnostics_export(input, &token))
+            to_json(app_agent_turn::agent_turn_diagnostics_export(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_submit_feedback" => {
             let input = match parse_args::<app_agent_growth::AgentFeedbackInput>(args) {
@@ -3624,7 +3895,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(token) => token,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_growth::agent_submit_feedback(input, &token))
+            to_json(app_agent_growth::agent_submit_feedback(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_list_turn_feedback" => {
             let input = match parse_args::<app_agent_growth::AgentTurnFeedbackListInput>(args) {
@@ -3635,7 +3910,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(token) => token,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_growth::agent_list_turn_feedback(input, &token))
+            to_json(app_agent_growth::agent_list_turn_feedback(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_runtime_profile_effective" => {
             let input = match parse_args::<AgentRuntimeProfileInput>(args) {
@@ -3647,7 +3926,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_runtime_evidence::effective_runtime_profile(
-                input, &token,
+                state.station.client(),
+                input,
+                &token,
             ))
         }
         "agent_capability_sessions" => {
@@ -3655,7 +3936,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(token) => token,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_runtime_evidence::station_capability_sessions(&token))
+            to_json(app_runtime_evidence::station_capability_sessions(
+                state.station.client(),
+                &token,
+            ))
         }
         "agent_client_executor_supervisor_start" => {
             if http_gateway_bearer_token(state).is_none() {
@@ -3703,7 +3987,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_runtime_evidence::station_runtime_activity(
-                input, &token,
+                state.station.client(),
+                input,
+                &token,
             ))
         }
         "agent_runtime_activity_local" => {
@@ -3715,7 +4001,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(token) => token,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_runtime_evidence::local_runtime_activity(input, &token))
+            to_json(app_runtime_evidence::local_runtime_activity(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_capability_session_snapshot" => {
             if http_gateway_bearer_token(state).is_none() {
@@ -3764,7 +4054,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_capability_authority::list_manifests(input, &token))
+            to_json(app_capability_authority::list_manifests(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_connector_manifest_list" => {
             let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
@@ -3776,7 +4070,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_capability_authority::list_connector_manifests(
-                input, &token,
+                state.station.client(),
+                input,
+                &token,
             ))
         }
         "agent_home_projection_get" => {
@@ -3788,7 +4084,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_home::get_projection(input, &token))
+            to_json(app_home::get_projection(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_home_chat_submit" => {
             let input = match parse_args::<app_home::EncodedRequestInput>(args) {
@@ -3799,7 +4099,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_home::submit_chat(input, &token))
+            to_json(app_home::submit_chat(state.station.client(), input, &token))
         }
         "agent_home_task_submit" => {
             let input = match parse_args::<app_home::EncodedRequestInput>(args) {
@@ -3810,7 +4110,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_home::submit_task(input, &token))
+            to_json(app_home::submit_task(state.station.client(), input, &token))
         }
         "agent_evaluation_benchmark_create" => dispatch_evaluation(
             args,
@@ -3908,7 +4208,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_capability_authority::list_bindings(input, &token))
+            to_json(app_capability_authority::list_bindings(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_capability_binding_upsert" => {
             let input =
@@ -3920,7 +4224,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_capability_authority::upsert_binding(input, &token))
+            to_json(app_capability_authority::upsert_binding(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_capability_binding_delete" => {
             let input =
@@ -3932,7 +4240,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_capability_authority::delete_binding(input, &token))
+            to_json(app_capability_authority::delete_binding(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_capability_readiness" => {
             let input = match parse_args::<app_capability_authority::CapabilityReadinessInput>(args)
@@ -3944,7 +4256,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_capability_authority::readiness(input, &token))
+            to_json(app_capability_authority::readiness(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "agent_package_export" => {
             let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
@@ -3956,7 +4272,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_capability_authority::export_agent_package(
-                input, &token,
+                state.station.client(),
+                input,
+                &token,
             ))
         }
         "agent_package_import" => {
@@ -3969,7 +4287,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_capability_authority::import_agent_package(
-                input, &token,
+                state.station.client(),
+                input,
+                &token,
             ))
         }
         "agent_collaboration_create" => {
@@ -3982,7 +4302,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_agent_orchestration::agent_collaboration_create(
-                input, &token, "",
+                state.station.client(),
+                input,
+                &token,
+                "",
             ))
         }
         "agent_collaboration_get" => {
@@ -3995,7 +4318,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_agent_orchestration::agent_collaboration_get(
-                input, &token,
+                state.station.client(),
+                input,
+                &token,
             ))
         }
         "agent_collaboration_list" => {
@@ -4008,7 +4333,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_agent_orchestration::agent_collaboration_list(
-                input, &token,
+                state.station.client(),
+                input,
+                &token,
             ))
         }
         "agent_collaboration_list_events" => {
@@ -4021,7 +4348,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_agent_orchestration::agent_collaboration_list_events(
-                input, &token,
+                state.station.client(),
+                input,
+                &token,
             ))
         }
         "agent_collaboration_cancel_task" => {
@@ -4034,7 +4363,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_agent_orchestration::agent_collaboration_cancel_task(
-                input, &token,
+                state.station.client(),
+                input,
+                &token,
             ))
         }
         "agent_collaboration_resume_task" => {
@@ -4047,7 +4378,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_agent_orchestration::agent_collaboration_resume_task(
-                input, &token,
+                state.station.client(),
+                input,
+                &token,
             ))
         }
         "agent_collaboration_submit_node_result" => {
@@ -4059,7 +4392,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_orchestration::agent_collaboration_submit_node_result(input, &token))
+            to_json(
+                app_agent_orchestration::agent_collaboration_submit_node_result(
+                    state.station.client(),
+                    input,
+                    &token,
+                ),
+            )
         }
         "agent_collaboration_claim_executor_task" => {
             let input = match parse_args::<AgentCollaborationClaimExecutorInput>(args) {
@@ -4070,7 +4409,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_orchestration::agent_collaboration_claim_executor_task(input, &token))
+            to_json(
+                app_agent_orchestration::agent_collaboration_claim_executor_task(
+                    state.station.client(),
+                    input,
+                    &token,
+                ),
+            )
         }
         "agent_collaboration_heartbeat_executor_lease" => {
             let input = match parse_args::<AgentCollaborationHeartbeatLeaseInput>(args) {
@@ -4083,7 +4428,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(
                 app_agent_orchestration::agent_collaboration_heartbeat_executor_lease(
-                    input, &token,
+                    state.station.client(),
+                    input,
+                    &token,
                 ),
             )
         }
@@ -4097,7 +4444,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(
-                app_agent_orchestration::agent_collaboration_release_executor_lease(input, &token),
+                app_agent_orchestration::agent_collaboration_release_executor_lease(
+                    state.station.client(),
+                    input,
+                    &token,
+                ),
             )
         }
 
@@ -4260,7 +4611,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(token) => to_json(app_skills::skills_list(input, &token)),
+                Some(token) => to_json(app_skills::skills_list(
+                    state.station.client(),
+                    input,
+                    &token,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -4274,7 +4629,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(token) => to_json(app_skills::skills_search(input, &token)),
+                Some(token) => to_json(app_skills::skills_search(
+                    state.station.client(),
+                    input,
+                    &token,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -4288,7 +4647,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(token) => to_json(app_skills::skills_get(input, &token)),
+                Some(token) => to_json(app_skills::skills_get(
+                    state.station.client(),
+                    input,
+                    &token,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -4309,7 +4672,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(token) => to_json(app_skills::skills_create(input, &token)),
+                Some(token) => to_json(app_skills::skills_create(
+                    state.station.client(),
+                    input,
+                    &token,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -4323,7 +4690,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(token) => to_json(app_skills::skills_update(input, &token)),
+                Some(token) => to_json(app_skills::skills_update(
+                    state.station.client(),
+                    input,
+                    &token,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -4337,7 +4708,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(token) => to_json(app_skills::skills_delete(input, &token)),
+                Some(token) => to_json(app_skills::skills_delete(
+                    state.station.client(),
+                    input,
+                    &token,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -4351,7 +4726,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(token) => to_json(app_skills::skills_toggle(input, &token)),
+                Some(token) => to_json(app_skills::skills_toggle(
+                    state.station.client(),
+                    input,
+                    &token,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -4365,7 +4744,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(token) => to_json(app_skills::skills_versions(input, &token)),
+                Some(token) => to_json(app_skills::skills_versions(
+                    state.station.client(),
+                    input,
+                    &token,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -4379,7 +4762,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(token) => to_json(app_skills::skills_rollback(input, &token)),
+                Some(token) => to_json(app_skills::skills_rollback(
+                    state.station.client(),
+                    input,
+                    &token,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -4397,7 +4784,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(token) => to_json(app_skills_market::skills_import_url(input, &token)),
+                Some(token) => to_json(app_skills_market::skills_import_url(
+                    state.station.client(),
+                    input,
+                    &token,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -4411,7 +4802,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(token) => to_json(app_skills_market::skills_import_github(input, &token)),
+                Some(token) => to_json(app_skills_market::skills_import_github(
+                    state.station.client(),
+                    input,
+                    &token,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -4425,7 +4820,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_bearer_token(state) {
-                Some(token) => to_json(app_skills_market::skills_import_zip(input, &token)),
+                Some(token) => to_json(app_skills_market::skills_import_zip(
+                    state.station.client(),
+                    input,
+                    &token,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -4463,7 +4862,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             let token = http_gateway_bearer_token(state).unwrap_or_default();
-            to_json(app_skills_market::skills_market_sync(input, &token))
+            to_json(app_skills_market::skills_market_sync(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "skills_market_list_skills" => {
             let input = match parse_args::<SkillMarketListInput>(args) {
@@ -4488,6 +4891,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(token) => {
                     let actor_ptid = actor_ptid_from_state(state).unwrap_or_default();
                     to_json(app_skills_market::skills_market_install(
+                        state.station.client(),
                         &actor_ptid,
                         input,
                         &token,
@@ -4509,6 +4913,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(token) => {
                     let actor_ptid = actor_ptid_from_state(state).unwrap_or_default();
                     to_json(app_skills_market::skills_market_uninstall(
+                        state.station.client(),
                         &actor_ptid,
                         input,
                         &token,
@@ -4692,7 +5097,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                         .get(&crate::infrastructure::storage::StorageKind::Data)
                         .cloned()
                         .unwrap_or_else(|| std::path::PathBuf::from("."));
-                    to_json(app_applets::applets_invoke(ctx, input, &data_dir))
+                    to_json(app_applets::applets_invoke(
+                        state.station.client(),
+                        ctx,
+                        input,
+                        &data_dir,
+                    ))
                 }
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
@@ -4715,6 +5125,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match app_federation::catalog_search(
+                state.station.client(),
                 &token,
                 &input.federation_id,
                 &input.prefix,
@@ -4738,7 +5149,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             match http_gateway_applet_context(state) {
                 Some(ctx) => {
                     let data_dir = http_gateway_data_dir(state);
-                    to_json(app_applet_store::list_catalog(ctx, input, &data_dir))
+                    to_json(app_applet_store::list_catalog(
+                        state.station.client(),
+                        ctx,
+                        input,
+                        &data_dir,
+                    ))
                 }
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
@@ -4755,7 +5171,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             match http_gateway_applet_context(state) {
                 Some(ctx) => {
                     let data_dir = http_gateway_data_dir(state);
-                    to_json(app_applet_store::list_installed(ctx, input, &data_dir))
+                    to_json(app_applet_store::list_installed(
+                        state.station.client(),
+                        ctx,
+                        input,
+                        &data_dir,
+                    ))
                 }
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
@@ -4770,7 +5191,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_applet_context(state) {
-                Some(ctx) => to_json(app_applet_store::install(ctx, input)),
+                Some(ctx) => to_json(app_applet_store::install(
+                    state.station.client(),
+                    ctx,
+                    input,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -4784,7 +5209,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_applet_context(state) {
-                Some(ctx) => to_json(app_applet_store::uninstall(ctx, input)),
+                Some(ctx) => to_json(app_applet_store::uninstall(
+                    state.station.client(),
+                    ctx,
+                    input,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -4800,7 +5229,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             match http_gateway_applet_context(state) {
                 Some(ctx) => {
                     let data_dir = http_gateway_data_dir(state);
-                    to_json(app_applet_store::get_version(ctx, input, &data_dir))
+                    to_json(app_applet_store::get_version(
+                        state.station.client(),
+                        ctx,
+                        input,
+                        &data_dir,
+                    ))
                 }
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
@@ -4817,7 +5251,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             match http_gateway_applet_context(state) {
                 Some(ctx) => {
                     let data_dir = http_gateway_data_dir(state);
-                    to_json(app_applet_store::materialize_bundle(ctx, input, &data_dir))
+                    to_json(app_applet_store::materialize_bundle(
+                        state.station.resources(),
+                        ctx,
+                        input,
+                        &data_dir,
+                    ))
                 }
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
@@ -4832,7 +5271,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match http_gateway_applet_context(state) {
-                Some(ctx) => to_json(app_applet_store::upload_audit(ctx, input.device_id)),
+                Some(ctx) => to_json(app_applet_store::upload_audit(
+                    state.station.client(),
+                    ctx,
+                    input.device_id,
+                )),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -4845,9 +5288,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // MCP
         // =================================================================
         "mcp_list_servers" => match gateway_mcp_identity(state) {
-            Ok((actor_ptid, token)) => {
-                to_json(app_mcp::mcp_station_list_servers(&actor_ptid, &token))
-            }
+            Ok((actor_ptid, token)) => to_json(app_mcp::mcp_station_list_servers(
+                state.station.client(),
+                &actor_ptid,
+                &token,
+            )),
             Err(error) => error,
         },
         "mcp_get_server" => {
@@ -4856,9 +5301,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match gateway_mcp_identity(state) {
-                Ok((actor_ptid, token)) => {
-                    to_json(app_mcp::mcp_station_get_server(&actor_ptid, &token, input))
-                }
+                Ok((actor_ptid, token)) => to_json(app_mcp::mcp_station_get_server(
+                    state.station.client(),
+                    &actor_ptid,
+                    &token,
+                    input,
+                )),
                 Err(error) => error,
             }
         }
@@ -4872,6 +5320,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(error) => return error,
             };
             to_json(app_mcp::mcp_station_create_server(
+                state.station.client(),
                 &actor_ptid,
                 &token,
                 input,
@@ -4887,6 +5336,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(error) => return error,
             };
             to_json(app_mcp::mcp_station_update_server(
+                state.station.client(),
                 &actor_ptid,
                 &token,
                 input,
@@ -4902,6 +5352,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(error) => return error,
             };
             to_json(app_mcp::mcp_station_delete_server(
+                state.station.client(),
                 &actor_ptid,
                 &token,
                 input,
@@ -4917,6 +5368,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(error) => return error,
             };
             to_json(app_mcp::mcp_station_toggle_server(
+                state.station.client(),
                 &actor_ptid,
                 &token,
                 input,
@@ -4932,6 +5384,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(error) => return error,
             };
             to_json(app_mcp::mcp_station_refresh_server(
+                state.station.client(),
                 &actor_ptid,
                 &token,
                 input,
@@ -4943,7 +5396,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match gateway_mcp_identity(state) {
-                Ok((_, token)) => to_json(app_capability_authority::get_operation(input, &token)),
+                Ok((_, token)) => to_json(app_capability_authority::get_operation(
+                    state.station.client(),
+                    input,
+                    &token,
+                )),
                 Err(error) => error,
             }
         }
@@ -4953,9 +5410,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match gateway_mcp_identity(state) {
-                Ok((_, token)) => {
-                    to_json(app_capability_authority::cancel_operation(input, &token))
-                }
+                Ok((_, token)) => to_json(app_capability_authority::cancel_operation(
+                    state.station.client(),
+                    input,
+                    &token,
+                )),
                 Err(error) => error,
             }
         }
@@ -4965,9 +5424,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match gateway_mcp_identity(state) {
-                Ok((_, token)) => {
-                    to_json(app_capability_authority::reconcile_operation(input, &token))
-                }
+                Ok((_, token)) => to_json(app_capability_authority::reconcile_operation(
+                    state.station.client(),
+                    input,
+                    &token,
+                )),
                 Err(error) => error,
             }
         }
@@ -4977,9 +5438,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match gateway_mcp_identity(state) {
-                Ok((_, token)) => {
-                    to_json(app_capability_authority::take_over_operation(input, &token))
-                }
+                Ok((_, token)) => to_json(app_capability_authority::take_over_operation(
+                    state.station.client(),
+                    input,
+                    &token,
+                )),
                 Err(error) => error,
             }
         }
@@ -4990,7 +5453,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             match gateway_mcp_identity(state) {
                 Ok((_, token)) => to_json(app_capability_authority::take_over_operation_cleanup(
-                    input, &token,
+                    state.station.client(),
+                    input,
+                    &token,
                 )),
                 Err(error) => error,
             }
@@ -5210,9 +5675,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             Err(error) => error,
         },
         "oauth2_sync_connector_manifests" => match gateway_mcp_identity(state) {
-            Ok((actor_ptid, token)) => {
-                to_json(app_oauth2::sync_connector_manifests(&actor_ptid, &token))
-            }
+            Ok((actor_ptid, token)) => to_json(app_oauth2::sync_connector_manifests(
+                state.station.client(),
+                &actor_ptid,
+                &token,
+            )),
             Err(error) => error,
         },
         "oauth2_get_connection" => {
@@ -5233,9 +5700,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match gateway_mcp_identity(state) {
-                Ok((actor_ptid, token)) => {
-                    to_json(app_oauth2::oauth2_disconnect(&actor_ptid, &token, input))
-                }
+                Ok((actor_ptid, token)) => to_json(app_oauth2::oauth2_disconnect(
+                    state.station.client(),
+                    &actor_ptid,
+                    &token,
+                    input,
+                )),
                 Err(error) => error,
             }
         }
@@ -5293,6 +5763,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 }
             };
             to_json(app_oauth2::oauth2_start_loopback(
+                &state.station,
                 input,
                 state.i18n.clone(),
                 connector_authorization,
@@ -5303,21 +5774,30 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_oauth2::oauth2_poll_loopback(input))
+            to_json(app_oauth2::oauth2_poll_loopback(
+                state.station.client(),
+                input,
+            ))
         }
         "oauth2_resume_loopback" => {
             let input = match parse_args::<OAuthLoopbackPollInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_oauth2::oauth2_resume_loopback(input))
+            to_json(app_oauth2::oauth2_resume_loopback(
+                state.station.client(),
+                input,
+            ))
         }
         "oauth2_cancel_loopback" => {
             let input = match parse_args::<OAuthLoopbackPollInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_oauth2::oauth2_cancel_loopback(input))
+            to_json(app_oauth2::oauth2_cancel_loopback(
+                state.station.client(),
+                input,
+            ))
         }
 
         // =================================================================
@@ -5338,7 +5818,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             match device_install::get_or_create_device_id() {
                 Ok(device_id) => {
-                    crate::infrastructure::station_client::set_device_id(device_id.clone());
+                    state.station.client().set_device_id(device_id.clone());
                     to_json(AppResult::success(StubPayload {
                         command: "account_get_device_id".to_string(),
                         status: json!({ "device_id": device_id }).to_string(),
@@ -5395,7 +5875,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(prevalidated) => prevalidated,
                 Err(error) => return to_json(error),
             };
-            let prepared = match app_auth::acquire_account_switch_session(prevalidated) {
+            let prepared = match app_auth::acquire_account_switch_session(
+                state.station.client(),
+                prevalidated,
+            ) {
                 Ok(prepared) => prepared,
                 Err(error) => return to_json(error),
             };
@@ -5560,19 +6043,20 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                         .map(|s| s.to_string())
                 });
             if let Some(t) = token {
-                let token = match app_auth::takeover_station_session_token(&t) {
-                    Ok(token) => token,
-                    Err(err) => {
-                        let _ = crate::infrastructure::auth_identity::clear_account_session(
-                            &input.account_id,
-                        );
-                        return to_json(app_auth::session_takeover_failed::<
-                            crate::contracts::AuthSessionPayload,
-                        >(
-                            err, Some(&input.account_id), None
-                        ));
-                    }
-                };
+                let token =
+                    match app_auth::takeover_station_session_token(state.station.client(), &t) {
+                        Ok(token) => token,
+                        Err(err) => {
+                            let _ = crate::infrastructure::auth_identity::clear_account_session(
+                                &input.account_id,
+                            );
+                            return to_json(app_auth::session_takeover_failed::<
+                                crate::contracts::AuthSessionPayload,
+                            >(
+                                err, Some(&input.account_id), None
+                            ));
+                        }
+                    };
                 let Some(actor_ptid) =
                     crate::infrastructure::session_vault::actor_ptid_for_account(&input.account_id)
                 else {
@@ -5769,7 +6253,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            to_json(app_memory::memory_list(input, &token))
+            to_json(app_memory::memory_list(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "memory_get" => {
             let input = match parse_args::<MemoryIdInput>(args) {
@@ -5780,7 +6268,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            to_json(app_memory::memory_get(input, &token))
+            to_json(app_memory::memory_get(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "memory_delete" => {
             let input = match parse_args::<MemoryIdInput>(args) {
@@ -5791,7 +6283,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            to_json(app_memory::memory_delete(input, &token))
+            to_json(app_memory::memory_delete(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "memory_search" => {
             let input = match parse_args::<MemorySearchInput>(args) {
@@ -5802,7 +6298,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            to_json(app_memory::memory_search(input, &token))
+            to_json(app_memory::memory_search(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "memory_persona" => {
             let input = match parse_args::<MemoryPersonaInput>(args) {
@@ -5813,14 +6313,18 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            to_json(app_memory::memory_persona(input, &token))
+            to_json(app_memory::memory_persona(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "memory_stats" => {
             let token = match token_from_state(state) {
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            to_json(app_memory::memory_stats(&token))
+            to_json(app_memory::memory_stats(state.station.client(), &token))
         }
         "memory_events" => {
             let input = match parse_args::<MemoryEventsInput>(args) {
@@ -5831,7 +6335,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            to_json(app_memory::memory_events(input, &token))
+            to_json(app_memory::memory_events(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "memory_export" => {
             let input = match parse_args::<MemoryExportInput>(args) {
@@ -5842,7 +6350,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            to_json(app_memory::memory_export(input, &token))
+            to_json(app_memory::memory_export(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "memory_import" => {
             let input = match parse_args::<MemoryImportInput>(args) {
@@ -5853,21 +6365,28 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            to_json(app_memory::memory_import(input, &token))
+            to_json(app_memory::memory_import(
+                state.station.client(),
+                input,
+                &token,
+            ))
         }
         "memory_embedding_status" => {
             let token = match token_from_state(state) {
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            to_json(app_memory::memory_embedding_status(&token))
+            to_json(app_memory::memory_embedding_status(
+                state.station.client(),
+                &token,
+            ))
         }
         "memory_reembed" => {
             let token = match token_from_state(state) {
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            to_json(app_memory::memory_reembed(&token))
+            to_json(app_memory::memory_reembed(state.station.client(), &token))
         }
 
         // =================================================================
@@ -5904,7 +6423,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     None,
                 ));
             }
-            let sender_home_station_peer_id = match station_client::active_station_peer_id() {
+            let sender_home_station_peer_id = match state.station.client().active_station_peer_id()
+            {
                 Some(peer_id) => peer_id,
                 None => {
                     return to_json(AppResult::<Vec<u8>>::fail(
@@ -5916,6 +6436,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             let command =
                 match crate::interface::tauri_commands::social::sign_friend_request_command(
+                    state.station.client(),
                     state,
                     &account_id,
                     &actor_ptid,
@@ -5955,7 +6476,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let req = model::social::SendSocialFriendRequestRequest {
                 command: Some(command),
             };
-            let resp = match station_client::request_proto_for_device::<
+            let resp = match state.station.client().request_proto_for_device::<
                 model::social::SendSocialFriendRequestRequest,
                 model::social::SendSocialFriendRequestResponse,
             >(
@@ -5991,18 +6512,20 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     None,
                 ));
             }
-            let receiver_home_station_peer_id = match station_client::active_station_peer_id() {
-                Some(peer_id) => peer_id,
-                None => {
-                    return to_json(AppResult::<Vec<u8>>::fail(
-                        ErrorCode::InternalError,
-                        "active Station peer ID is unavailable",
-                        None,
-                    ));
-                }
-            };
+            let receiver_home_station_peer_id =
+                match state.station.client().active_station_peer_id() {
+                    Some(peer_id) => peer_id,
+                    None => {
+                        return to_json(AppResult::<Vec<u8>>::fail(
+                            ErrorCode::InternalError,
+                            "active Station peer ID is unavailable",
+                            None,
+                        ));
+                    }
+                };
             let command =
                 match crate::interface::tauri_commands::social::sign_friend_request_command(
+                    state.station.client(),
                     state,
                     &account_id,
                     &actor_ptid,
@@ -6042,7 +6565,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let req = model::social::AcceptSocialFriendRequestRequest {
                 command: Some(command),
             };
-            let resp = match station_client::request_proto_for_device::<
+            let resp = match state.station.client().request_proto_for_device::<
                 model::social::AcceptSocialFriendRequestRequest,
                 model::social::AcceptSocialFriendRequestResponse,
             >(
@@ -6078,18 +6601,20 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     None,
                 ));
             }
-            let receiver_home_station_peer_id = match station_client::active_station_peer_id() {
-                Some(peer_id) => peer_id,
-                None => {
-                    return to_json(AppResult::<Vec<u8>>::fail(
-                        ErrorCode::InternalError,
-                        "active Station peer ID is unavailable",
-                        None,
-                    ));
-                }
-            };
+            let receiver_home_station_peer_id =
+                match state.station.client().active_station_peer_id() {
+                    Some(peer_id) => peer_id,
+                    None => {
+                        return to_json(AppResult::<Vec<u8>>::fail(
+                            ErrorCode::InternalError,
+                            "active Station peer ID is unavailable",
+                            None,
+                        ));
+                    }
+                };
             let command =
                 match crate::interface::tauri_commands::social::sign_friend_request_command(
+                    state.station.client(),
                     state,
                     &account_id,
                     &actor_ptid,
@@ -6129,7 +6654,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let req = model::social::RejectSocialFriendRequestRequest {
                 command: Some(command),
             };
-            let resp = match station_client::request_proto_for_device::<
+            let resp = match state.station.client().request_proto_for_device::<
                 model::social::RejectSocialFriendRequestRequest,
                 model::social::RejectSocialFriendRequestResponse,
             >(
@@ -6160,16 +6685,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
             query.push(("limit", input.limit.unwrap_or(50).clamp(1, 200).to_string()));
             query.push(("offset", input.offset.unwrap_or(0).to_string()));
-            let resp = match station_client::request_proto::<
-                (),
-                model::social::ListSocialFriendRequestsResponse,
-            >(
-                Method::GET,
-                "/api/v1/social/friend-requests",
-                &token,
-                Some(&query),
-                None::<&()>,
-            ) {
+            let resp = match state
+                .station
+                .client()
+                .request_proto::<(), model::social::ListSocialFriendRequestsResponse>(
+                    Method::GET,
+                    "/api/v1/social/friend-requests",
+                    &token,
+                    Some(&query),
+                    None::<&()>,
+                ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
             };
@@ -6200,6 +6725,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let limit = input.limit.unwrap_or(20);
             query.push(("limit", limit.to_string()));
             match station_request_json(
+                state.station.client(),
                 Method::GET,
                 "/notification/list",
                 &token,
@@ -6216,6 +6742,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match station_request_json(
+                state.station.client(),
                 Method::GET,
                 "/notification/unread-counts",
                 &token,
@@ -6236,6 +6763,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match station_request_json(
+                state.station.client(),
                 Method::POST,
                 "/notification/mark-read",
                 &token,
@@ -6256,6 +6784,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match station_request_json(
+                state.station.client(),
                 Method::POST,
                 "/notification/mark-all-read",
                 &token,
@@ -6276,6 +6805,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match station_request_json(
+                state.station.client(),
                 Method::POST,
                 "/notification/delete",
                 &token,
@@ -6291,16 +6821,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            match station_client::request_proto::<
-                (),
-                model::notification::GetNotificationPreferencesResponse,
-            >(
-                Method::GET,
-                "/notification/preferences",
-                &token,
-                None,
-                None::<&()>,
-            ) {
+            match state
+                .station
+                .client()
+                .request_proto::<(), model::notification::GetNotificationPreferencesResponse>(
+                    Method::GET,
+                    "/notification/preferences",
+                    &token,
+                    None,
+                    None::<&()>,
+                ) {
                 Ok(response) => match response.snapshot {
                     Some(snapshot) if snapshot.notification_preferences_revision > 0 => {
                         to_json(to_stub(
@@ -6341,7 +6871,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     .collect(),
                 observed_revision: input.observed_revision,
             };
-            match station_client::request_proto::<
+            match state.station.client().request_proto::<
                 model::notification::UpdateNotificationPreferencesRequest,
                 model::notification::UpdateNotificationPreferencesResponse,
             >(
@@ -6394,35 +6924,31 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            frontend_telemetry_upload_with_token(&token, args)
+            frontend_telemetry_upload_with_token(state.station.client(), &token, args)
         }
         "frontend_telemetry_query" => {
             let token = match token_from_state(state) {
                 Ok(token) => token,
                 Err(error) => return error,
             };
-            frontend_telemetry_query_with_token(&token, args)
+            frontend_telemetry_query_with_token(state.station.client(), &token, args)
         }
         "frontend_telemetry_rollup_query" => {
             let token = match token_from_state(state) {
                 Ok(token) => token,
                 Err(error) => return error,
             };
-            frontend_telemetry_rollup_query_with_token(&token, args)
+            frontend_telemetry_rollup_query_with_token(state.station.client(), &token, args)
         }
 
         // =================================================================
         // Station registry (verified Station identity and route picker)
         // =================================================================
         "station_list" => {
-            let reg = crate::infrastructure::station_client::station_registry();
+            let reg = state.station.registry();
             let entries = reg.list();
             let active = reg.active_station_peer_id();
-            let payload = station_list_payload(
-                entries,
-                active,
-                crate::application::station_binding::service().state(),
-            );
+            let payload = station_list_payload(entries, active, state.station.binding().state());
             to_json(AppResult::success(StubPayload {
                 command: "station_list".into(),
                 status: serde_json::to_string(&payload).unwrap_or_default(),
@@ -6442,6 +6968,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
         "station_binding_complete" => to_json(
             crate::interface::tauri_commands::station::station_binding_complete_authenticated(
+                state,
                 http_gateway_bearer_token(state).is_some(),
             ),
         ),
@@ -6449,9 +6976,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             match parse_args::<crate::interface::tauri_commands::station::StationDiscoveryInput>(
                 args,
             ) {
-                Ok(input) => to_json(crate::interface::tauri_commands::station::station_add(
-                    input,
-                )),
+                Ok(input) => to_json(
+                    crate::interface::tauri_commands::station::station_add_with_state(input, state),
+                ),
                 Err(error) => error,
             }
         }
@@ -6471,9 +6998,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             match parse_args::<crate::interface::tauri_commands::station::StationDiscoveryInput>(
                 args,
             ) {
-                Ok(input) => to_json(crate::interface::tauri_commands::station::station_probe(
-                    input,
-                )),
+                Ok(input) => to_json(
+                    crate::interface::tauri_commands::station::station_probe_with_state(
+                        input, state,
+                    ),
+                ),
                 Err(error) => error,
             }
         }
@@ -6492,7 +7021,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(
                 crate::interface::tauri_commands::key_exchange::execute_keypackage_upload(
-                    context, input,
+                    state.station.client(),
+                    context,
+                    input,
                 ),
             )
         }
@@ -6510,7 +7041,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(
                 crate::interface::tauri_commands::key_exchange::execute_keypackage_fetch(
-                    context, input,
+                    state.station.client(),
+                    context,
+                    input,
                 ),
             )
         }
@@ -6520,7 +7053,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(error) => return error,
             };
             to_json(
-                crate::interface::tauri_commands::key_exchange::execute_keypackage_count(context),
+                crate::interface::tauri_commands::key_exchange::execute_keypackage_count(
+                    state.station.client(),
+                    context,
+                ),
             )
         }
         "device_list" => proxy_authenticated_station_json(
@@ -6554,7 +7090,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 "device_id": input.device_id,
                 "observed_profile_version": input.observed_profile_version,
             });
-            match crate::infrastructure::station_client::request_json_auth_with_device_id(
+            match state.station.client().request_json_auth_with_device_id(
                 reqwest::Method::POST,
                 "/device/revoke",
                 &context.token,
@@ -6612,7 +7148,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ("after_seq", after_seq),
                 ("limit", limit),
             ];
-            match crate::infrastructure::station_client::request_json_auth(
+            match state.station.client().request_json_auth(
                 reqwest::Method::GET,
                 "/conversation/events",
                 &token,
@@ -6707,7 +7243,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             let query = vec![("conversation_id", conv_id.to_string())];
-            match crate::infrastructure::station_client::request_json_auth(
+            match state.station.client().request_json_auth(
                 reqwest::Method::GET,
                 "/conversation/members",
                 &token,
@@ -6939,7 +7475,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(
                 crate::interface::tauri_commands::messaging::messaging_get_member_settings_result(
-                    &token, &engine, &input,
+                    state.station.client(),
+                    &token,
+                    &engine,
+                    &input,
                 ),
             )
         }
@@ -6967,7 +7506,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(
                 crate::interface::tauri_commands::messaging::
-                    messaging_update_member_settings_result(&token, &engine, input),
+                    messaging_update_member_settings_result(state.station.client(), &token, &engine, input),
             )
         }
         "messaging_drain" => {
@@ -7676,7 +8215,12 @@ mod tests {
             .get(&StorageKind::Config)
             .cloned()
             .unwrap_or_else(PathBuf::new);
-        let state = AppState::new(layout, I18nService::new(&config_dir));
+        let state = AppState::new(
+            layout,
+            I18nService::new(&config_dir),
+            crate::application::station_runtime::StationRuntime::start(&config_dir)
+                .expect("test Station runtime"),
+        );
         state
             .sessions
             .bind(crate::domain::identity::ActiveSession::new(
@@ -7755,7 +8299,12 @@ mod tests {
             .get(&StorageKind::Config)
             .cloned()
             .unwrap_or_else(PathBuf::new);
-        let state = AppState::new(layout, I18nService::new(&config_dir));
+        let state = AppState::new(
+            layout,
+            I18nService::new(&config_dir),
+            crate::application::station_runtime::StationRuntime::start(&config_dir)
+                .expect("test Station runtime"),
+        );
         let runtime = GatewayRuntime::headless();
 
         let result = dispatch("acceptance_current_session", json!({}), &state, &runtime);
@@ -7836,7 +8385,12 @@ mod tests {
             .get(&StorageKind::Config)
             .cloned()
             .unwrap_or_else(PathBuf::new);
-        let state = AppState::new(layout, I18nService::new(&config_dir));
+        let state = AppState::new(
+            layout,
+            I18nService::new(&config_dir),
+            crate::application::station_runtime::StationRuntime::start(&config_dir)
+                .expect("test Station runtime"),
+        );
         let runtime = GatewayRuntime::headless();
 
         let result = dispatch(
@@ -7910,7 +8464,12 @@ mod tests {
             .get(&StorageKind::Config)
             .cloned()
             .unwrap_or_else(PathBuf::new);
-        let state = AppState::new(layout, I18nService::new(&config_dir));
+        let state = AppState::new(
+            layout,
+            I18nService::new(&config_dir),
+            crate::application::station_runtime::StationRuntime::start(&config_dir)
+                .expect("test Station runtime"),
+        );
         let runtime = GatewayRuntime::headless();
 
         let result = dispatch(

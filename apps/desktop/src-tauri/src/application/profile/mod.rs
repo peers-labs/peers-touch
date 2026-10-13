@@ -3,13 +3,18 @@
 // 2026-04-09: Rewritten to support Station OSS upload, expanded profile fields,
 //             and dual-path (Station API + local store) architecture.
 
+use crate::application::station_runtime::client::{
+    self as station_client, StationClient, StationClientError, StationClientErrorKind,
+};
+use crate::application::station_runtime::resource::{
+    ResourceProjectionError, ResourceReference, StationResourceHandle,
+};
 use crate::contracts::{
     AccountSyncAvatarInput, FileUploadInput, ProfilePrivacyInput, ProfileUpdateInput, StubPayload,
 };
 use crate::domain::profile::{ProfileError, UploadKind};
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
-use crate::infrastructure::{avatar_cache, profile_store, station_client};
+use crate::infrastructure::{avatar_cache, profile_store};
 use crate::model::actor::{
     ActorProfile, ActorVisibility, ProfileUpdateOutcome, UpdateProfileRequest,
     UpdateProfileResponse, UserLink,
@@ -29,14 +34,18 @@ fn map_station_error(
 //
 // `/actor/profile` uses Touch `SuccessResponse` with protobuf `ActorProfile` in `PeersResponse.data`.
 
-pub fn profile_get(token: &str) -> AppResult<StubPayload> {
-    match station_client::request_peers_proto_no_body::<ActorProfile>(
+pub fn profile_get(resources: &StationResourceHandle, token: &str) -> AppResult<StubPayload> {
+    let station_client = resources.client();
+    match station_client.request_peers_proto_no_body::<ActorProfile>(
         Method::GET,
         "/actor/profile",
         token,
         None,
     ) {
-        Ok(p) => success_with_data("profile_get", actor_profile_to_value(&p)),
+        Ok(p) => match actor_profile_to_value(resources, &p) {
+            Ok(profile) => success_with_data("profile_get", profile),
+            Err(error) => map_resource_error("profile_get", error),
+        },
         Err(e) => {
             tracing::error!(error = %e, "Failed to fetch profile");
             map_station_error("profile_get", "fetch profile", e)
@@ -48,7 +57,12 @@ pub fn profile_get(token: &str) -> AppResult<StubPayload> {
 /// chat layer). Mirrors `profile_get` but targets `/actor/actors/:id/profile`.
 /// Token is required because the Station endpoint is JWT-protected to keep
 /// peer-directory access bound to a logged-in actor.
-pub fn peer_profile_get(token: &str, peer_ptid: &str) -> AppResult<StubPayload> {
+pub fn peer_profile_get(
+    resources: &StationResourceHandle,
+    token: &str,
+    peer_ptid: &str,
+) -> AppResult<StubPayload> {
+    let station_client = resources.client();
     let trimmed = peer_ptid.trim();
     if trimmed.is_empty() {
         return AppResult::fail(
@@ -58,13 +72,16 @@ pub fn peer_profile_get(token: &str, peer_ptid: &str) -> AppResult<StubPayload> 
         );
     }
     let path = format!("/actor/actors/{}/profile", trimmed);
-    match station_client::request_peers_proto_no_body::<ActorProfile>(
+    match station_client.request_peers_proto_no_body::<ActorProfile>(
         Method::GET,
         &path,
         token,
         None,
     ) {
-        Ok(p) => success_with_data("peer_profile_get", actor_profile_to_value(&p)),
+        Ok(p) => match actor_profile_to_value(resources, &p) {
+            Ok(profile) => success_with_data("peer_profile_get", profile),
+            Err(error) => map_resource_error("peer_profile_get", error),
+        },
         Err(e) => {
             tracing::warn!(error = %e, peer_ptid = %trimmed, "Failed to fetch peer profile");
             map_station_error("peer_profile_get", "fetch peer profile", e)
@@ -72,7 +89,12 @@ pub fn peer_profile_get(token: &str, peer_ptid: &str) -> AppResult<StubPayload> 
     }
 }
 
-pub fn profile_update(input: ProfileUpdateInput, token: &str) -> AppResult<StubPayload> {
+pub fn profile_update(
+    resources: &StationResourceHandle,
+    input: ProfileUpdateInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let station_client = resources.client();
     if input.observed_revision == 0 {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
@@ -81,8 +103,8 @@ pub fn profile_update(input: ProfileUpdateInput, token: &str) -> AppResult<StubP
         );
     }
     let body = profile_input_to_proto(&input);
-    match execute_profile_update(&input, &body, token) {
-        Ok(response) => profile_update_success("profile_update", response),
+    match execute_profile_update(station_client, &input, &body, token) {
+        Ok(response) => profile_update_success(resources, "profile_update", response),
         Err(e) => {
             tracing::error!(error = %e, "Failed to update profile");
             map_station_error("profile_update", "update profile", e)
@@ -92,22 +114,32 @@ pub fn profile_update(input: ProfileUpdateInput, token: &str) -> AppResult<StubP
 
 // ── Station OSS upload ──
 
-pub fn profile_upload_avatar_oss(input: FileUploadInput, token: &str) -> AppResult<StubPayload> {
-    upload_and_set_profile_image(token, &input.file_path, "avatar")
+pub fn profile_upload_avatar_oss(
+    resources: &StationResourceHandle,
+    input: FileUploadInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    upload_and_set_profile_image(resources, token, &input.file_path, "avatar")
 }
 
-pub fn profile_upload_header_oss(input: FileUploadInput, token: &str) -> AppResult<StubPayload> {
-    upload_and_set_profile_image(token, &input.file_path, "header")
+pub fn profile_upload_header_oss(
+    resources: &StationResourceHandle,
+    input: FileUploadInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    upload_and_set_profile_image(resources, token, &input.file_path, "header")
 }
 
 fn upload_and_set_profile_image(
+    resources: &StationResourceHandle,
     token: &str,
     file_path: &str,
     field: &str,
 ) -> AppResult<StubPayload> {
+    let station_client = resources.client();
     tracing::info!(file_path = %file_path, field = %field, "Starting profile image upload");
 
-    let current_profile = match station_client::request_peers_proto_no_body::<ActorProfile>(
+    let current_profile = match station_client.request_peers_proto_no_body::<ActorProfile>(
         Method::GET,
         "/actor/profile",
         token,
@@ -128,7 +160,7 @@ fn upload_and_set_profile_image(
 
     // Step 1: Upload to OSS
     tracing::info!(file_path = %file_path, "Uploading image to OSS");
-    let oss_resp = match station_client::upload_multipart(
+    let oss_resp = match station_client.upload_multipart(
         "/sub-oss/upload",
         token,
         file_path,
@@ -161,13 +193,6 @@ fn upload_and_set_profile_image(
     }
     tracing::info!(url = %url, field = %field, "OSS URL obtained, updating profile");
 
-    // Resolve relative OSS URL to absolute for local identity sync
-    let absolute_url = if url.starts_with('/') {
-        format!("{}{}", station_client::station_base_url(), url)
-    } else {
-        url.clone()
-    };
-
     // Step 2: Update profile with the relative URL (Station stores relative paths)
     let mut input = ProfileUpdateInput {
         display_name: None,
@@ -194,7 +219,7 @@ fn upload_and_set_profile_image(
     };
     let body = profile_input_to_proto(&input);
 
-    match execute_profile_update(&input, &body, token) {
+    match execute_profile_update(station_client, &input, &body, token) {
         Ok(response) => {
             let outcome = ProfileUpdateOutcome::try_from(response.outcome)
                 .unwrap_or(ProfileUpdateOutcome::Unspecified);
@@ -205,9 +230,13 @@ fn upload_and_set_profile_image(
                     ProfileUpdateOutcome::Applied | ProfileUpdateOutcome::Unchanged
                 )
             {
-                let _ = sync_avatar_with_download(token, &absolute_url);
+                let _ = sync_avatar_with_download(resources, token, &url);
             }
-            profile_update_success(&format!("profile_upload_{}_oss", field), response)
+            profile_update_success(
+                resources,
+                &format!("profile_upload_{}_oss", field),
+                response,
+            )
         }
         Err(e) => {
             tracing::error!(error = %e, "Failed to update profile after image upload");
@@ -219,11 +248,13 @@ fn upload_and_set_profile_image(
 // ── Local profile fallbacks (kept for backward compat) ──
 
 pub fn profile_upload_avatar(
+    resources: &StationResourceHandle,
     actor_ptid: &str,
     input: FileUploadInput,
     token: &str,
 ) -> AppResult<StubPayload> {
     map_upload(
+        resources,
         "profile_upload_avatar",
         UploadKind::Avatar,
         input,
@@ -233,11 +264,13 @@ pub fn profile_upload_avatar(
 }
 
 pub fn profile_upload_header(
+    resources: &StationResourceHandle,
     actor_ptid: &str,
     input: FileUploadInput,
     token: &str,
 ) -> AppResult<StubPayload> {
     map_upload(
+        resources,
         "profile_upload_header",
         UploadKind::Header,
         input,
@@ -264,6 +297,7 @@ pub fn profile_update_privacy(
 }
 
 fn map_upload(
+    resources: &StationResourceHandle,
     command: &str,
     kind: UploadKind,
     input: FileUploadInput,
@@ -281,7 +315,7 @@ fn map_upload(
         ),
         Ok(outcome) => {
             if outcome.field == "avatar" {
-                let _ = sync_avatar_with_download(token, &outcome.value);
+                let _ = sync_avatar_with_download(resources, token, &outcome.value);
             }
             AppResult::success(StubPayload {
                 command: command.to_string(),
@@ -294,7 +328,10 @@ fn map_upload(
 
 // ── Helpers ──
 
-fn actor_profile_to_value(p: &ActorProfile) -> Value {
+fn actor_profile_to_value(
+    resources: &StationResourceHandle,
+    p: &ActorProfile,
+) -> Result<Value, ResourceProjectionError> {
     let links: Vec<Value> = p
         .links
         .iter()
@@ -334,8 +371,8 @@ fn actor_profile_to_value(p: &ActorProfile) -> Value {
                 .unwrap_or_default(),
         },
     });
-    resolve_profile_urls(&mut data);
-    data
+    resolve_profile_urls(resources, &mut data)?;
+    Ok(data)
 }
 
 fn canonical_profile_ptid(profile: &ActorProfile) -> Option<&str> {
@@ -393,11 +430,12 @@ fn profile_input_to_proto(input: &ProfileUpdateInput) -> UpdateProfileRequest {
 }
 
 fn execute_profile_update(
+    station_client: &StationClient,
     input: &ProfileUpdateInput,
     body: &UpdateProfileRequest,
     token: &str,
 ) -> Result<UpdateProfileResponse, StationClientError> {
-    match station_client::request_peers_proto::<UpdateProfileRequest, UpdateProfileResponse>(
+    match station_client.request_peers_proto::<UpdateProfileRequest, UpdateProfileResponse>(
         Method::POST,
         "/actor/profile",
         token,
@@ -405,7 +443,7 @@ fn execute_profile_update(
         Some(body),
     ) {
         Ok(response) if valid_profile_update_response(&response) => Ok(response),
-        Ok(_) => reconcile_profile_update(input, token).ok_or_else(|| {
+        Ok(_) => reconcile_profile_update(station_client, input, token).ok_or_else(|| {
             StationClientError::new(
                 StationClientErrorKind::InvalidResponse,
                 "Station returned an invalid profile update response",
@@ -413,7 +451,7 @@ fn execute_profile_update(
             )
         }),
         Err(error) if ambiguous_profile_update_error(&error) => {
-            reconcile_profile_update(input, token).ok_or(error)
+            reconcile_profile_update(station_client, input, token).ok_or(error)
         }
         Err(error) => Err(error),
     }
@@ -431,16 +469,13 @@ fn valid_profile_update_response(response: &UpdateProfileResponse) -> bool {
 }
 
 fn reconcile_profile_update(
+    station_client: &StationClient,
     input: &ProfileUpdateInput,
     token: &str,
 ) -> Option<UpdateProfileResponse> {
-    let profile = station_client::request_peers_proto_no_body::<ActorProfile>(
-        Method::GET,
-        "/actor/profile",
-        token,
-        None,
-    )
-    .ok()?;
+    let profile = station_client
+        .request_peers_proto_no_body::<ActorProfile>(Method::GET, "/actor/profile", token, None)
+        .ok()?;
     let outcome = if profile_matches_input(&profile, input) {
         if profile.profile_revision == input.observed_revision {
             ProfileUpdateOutcome::Unchanged
@@ -530,6 +565,7 @@ fn discoverability_label(value: i32) -> &'static str {
 }
 
 fn profile_update_success(
+    resources: &StationResourceHandle,
     command: &str,
     response: UpdateProfileResponse,
 ) -> AppResult<StubPayload> {
@@ -549,28 +585,40 @@ fn profile_update_success(
             None,
         );
     }
-    success_with_data(
-        command,
-        json!({
-            "outcome": outcome.as_str_name(),
-            "profile": actor_profile_to_value(&profile),
-        }),
-    )
+    match actor_profile_to_value(resources, &profile) {
+        Ok(profile) => success_with_data(
+            command,
+            json!({
+                "outcome": outcome.as_str_name(),
+                "profile": profile,
+            }),
+        ),
+        Err(error) => map_resource_error(command, error),
+    }
 }
 
-/// Resolve relative avatar/header URLs (e.g. `/sub-oss/file?key=...`) to absolute URLs
-/// by prepending the Station base URL. This ensures the frontend can render images directly.
-fn resolve_profile_urls(data: &mut Value) {
-    let base = station_client::station_base_url();
+fn resolve_profile_urls(
+    resources: &StationResourceHandle,
+    data: &mut Value,
+) -> Result<(), ResourceProjectionError> {
     for field in &["avatar", "header"] {
         if let Some(val) = data.get_mut(*field) {
             if let Some(s) = val.as_str() {
-                if !s.is_empty() && s.starts_with('/') {
-                    *val = Value::String(format!("{}{}", base, s));
+                if !s.is_empty() {
+                    *val = Value::String(resources.project_reference(s, None)?);
                 }
             }
         }
     }
+    Ok(())
+}
+
+fn map_resource_error(command: &str, error: ResourceProjectionError) -> AppResult<StubPayload> {
+    AppResult::fail(
+        ErrorCode::Conflict,
+        format!("{command}: {error}"),
+        Some(json!({ "reason": "station_resource_projection_failed" })),
+    )
 }
 
 fn success_with_data(command: &str, data: Value) -> AppResult<StubPayload> {
@@ -618,7 +666,12 @@ fn map_error(command: &str, error: ProfileError) -> AppResult<StubPayload> {
 /// after PIN unlock, `active_account_id` may lag behind the per-window session
 /// and would cause us to write actor X's profile into actor Y's record (the
 /// "both rows show User B" bug).
-pub fn sync_user_profile(token: &str, actor_ptid: &str) -> AppResult<StubPayload> {
+pub fn sync_user_profile(
+    resources: &StationResourceHandle,
+    token: &str,
+    actor_ptid: &str,
+) -> AppResult<StubPayload> {
+    let station_client = resources.client();
     if actor_ptid.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::Unauthorized,
@@ -628,7 +681,7 @@ pub fn sync_user_profile(token: &str, actor_ptid: &str) -> AppResult<StubPayload
     }
 
     // Fetch full profile from Station.
-    let profile = match station_client::request_peers_proto_no_body::<ActorProfile>(
+    let profile = match station_client.request_peers_proto_no_body::<ActorProfile>(
         Method::GET,
         "/actor/profile",
         token,
@@ -658,11 +711,17 @@ pub fn sync_user_profile(token: &str, actor_ptid: &str) -> AppResult<StubPayload
         );
     }
 
-    // Resolve avatar URL to absolute.
-    let avatar_url = if !profile.avatar.is_empty() && profile.avatar.starts_with('/') {
-        format!("{}{}", station_client::station_base_url(), profile.avatar)
+    let avatar_identity = profile.avatar.clone();
+    let avatar_local_path = materialize_avatar(resources, Some(token), &avatar_identity)
+        .ok()
+        .flatten();
+    let avatar_url = if avatar_identity.is_empty() {
+        String::new()
     } else {
-        profile.avatar.clone()
+        match resources.project_reference(&avatar_identity, None) {
+            Ok(value) => value,
+            Err(error) => return map_resource_error("sync_user_profile", error),
+        }
     };
 
     // Pick the LocalAccount whose `provider_user_id` matches `actor_ptid`. This
@@ -690,11 +749,12 @@ pub fn sync_user_profile(token: &str, actor_ptid: &str) -> AppResult<StubPayload
         &account_id,
         Some(&profile.display_name),
         None, // email is not in ActorProfile
-        if avatar_url.is_empty() {
+        if avatar_identity.is_empty() {
             None
         } else {
-            Some(&avatar_url)
+            Some(&avatar_identity)
         },
+        avatar_local_path.as_deref(),
         if profile.url.is_empty() {
             None
         } else {
@@ -729,10 +789,21 @@ pub fn sync_user_profile(token: &str, actor_ptid: &str) -> AppResult<StubPayload
 /// Sync avatar for the active account: update remote URL and warm the local cache.
 /// Returns the cached file path when the download succeeds, `None` otherwise.
 /// `token` is reserved for future Station-authenticated download paths; callers pass the session access token.
-pub fn sync_avatar_with_download(_token: &str, avatar_url: &str) -> Result<Option<String>, String> {
-    crate::infrastructure::auth_identity::update_active_avatar(avatar_url)?;
+pub fn sync_avatar_with_download(
+    resources: &StationResourceHandle,
+    token: &str,
+    avatar_url: &str,
+) -> Result<Option<String>, String> {
+    let reference = resources
+        .reference(avatar_url, None)
+        .map_err(|error| error.to_string())?;
+    let identity = match &reference {
+        ResourceReference::Station(resource) => resource.path_and_query(),
+        ResourceReference::External(url) => url.as_str(),
+    };
+    crate::infrastructure::auth_identity::update_active_avatar(identity)?;
 
-    let local_path = avatar_cache::try_ensure_local_string(avatar_url);
+    let local_path = materialize_avatar_reference(resources, Some(token), &reference)?;
     if let Some(ref path) = local_path {
         crate::infrastructure::auth_identity::update_active_avatar_local_path(path)?;
     }
@@ -743,13 +814,23 @@ pub fn sync_avatar_with_download(_token: &str, avatar_url: &str) -> Result<Optio
 /// point used by the `UserSquareAvatar` component to honor the project rule
 /// "always render local images". Downloads on cache miss, returns `None` if
 /// the URL is empty or the download cannot complete.
-pub fn avatar_resolve_local(remote_url: &str) -> Option<String> {
-    avatar_cache::try_ensure_local_string(remote_url)
+pub fn avatar_resolve_local(
+    resources: &StationResourceHandle,
+    token: Option<&str>,
+    remote_url: &str,
+) -> Option<String> {
+    materialize_avatar(resources, token, remote_url)
+        .ok()
+        .flatten()
 }
 
 /// Download Station avatar to local cache and link it to the active auth identity.
-pub fn account_sync_avatar(input: &AccountSyncAvatarInput, token: &str) -> AppResult<StubPayload> {
-    match sync_avatar_with_download(token, &input.avatar_url) {
+pub fn account_sync_avatar(
+    resources: &StationResourceHandle,
+    input: &AccountSyncAvatarInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    match sync_avatar_with_download(resources, token, &input.avatar_url) {
         Ok(local_path) => {
             let status = match local_path {
                 Some(p) => format!("synced_local:{}", p),
@@ -771,9 +852,45 @@ pub fn account_sync_avatar(input: &AccountSyncAvatarInput, token: &str) -> AppRe
     }
 }
 
+fn materialize_avatar(
+    resources: &StationResourceHandle,
+    token: Option<&str>,
+    value: &str,
+) -> Result<Option<String>, String> {
+    if value.trim().is_empty() {
+        return Ok(None);
+    }
+    let reference = resources
+        .reference(value, None)
+        .map_err(|error| error.to_string())?;
+    materialize_avatar_reference(resources, token, &reference)
+}
+
+fn materialize_avatar_reference(
+    resources: &StationResourceHandle,
+    token: Option<&str>,
+    reference: &ResourceReference,
+) -> Result<Option<String>, String> {
+    let path = match reference {
+        ResourceReference::Station(resource) => {
+            let (bytes, _) = resources
+                .fetch_bytes(resource, token)
+                .map_err(|error| error.to_string())?;
+            avatar_cache::store_bytes(resource.path_and_query(), &bytes)
+                .map_err(|error| error.to_string())?
+        }
+        ResourceReference::External(url) => {
+            avatar_cache::ensure_external(url.as_str()).map_err(|error| error.to_string())?
+        }
+    };
+    Ok(Some(path.to_string_lossy().to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{actor_profile_to_value, canonical_profile_ptid, profile_matches_actor};
+    use crate::application::station_runtime::client::StationClient;
+    use crate::application::station_runtime::resource::StationResourceHandle;
     use crate::model::actor::{ActorProfile, PeersTouchInfo};
 
     #[test]
@@ -835,6 +952,7 @@ mod tests {
 
     #[test]
     fn account_profile_projection_includes_canonical_ptid() {
+        let resources = StationResourceHandle::new(StationClient::testing_unavailable());
         let profile = ActorProfile {
             id: "350519971299721219".to_string(),
             peers_touch: Some(PeersTouchInfo {
@@ -844,8 +962,25 @@ mod tests {
         };
 
         assert_eq!(
-            actor_profile_to_value(&profile)["peers_touch"]["network_id"],
+            actor_profile_to_value(&resources, &profile).unwrap()["peers_touch"]["network_id"],
             "ptid:v1:actor:peers:p:alice:1220abc"
         );
+    }
+
+    #[test]
+    fn profile_projects_station_paths_without_rewriting_external_urls() {
+        let resources = StationResourceHandle::new(StationClient::testing_scoped("station", 7));
+        let profile = ActorProfile {
+            avatar: "/sub-oss/file?key=avatar.png".to_string(),
+            header: "https://cdn.example.test/header.png".to_string(),
+            ..ActorProfile::default()
+        };
+
+        let projected = actor_profile_to_value(&resources, &profile).unwrap();
+
+        assert!(projected["avatar"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("station-resource://local/")));
+        assert_eq!(projected["header"], "https://cdn.example.test/header.png");
     }
 }

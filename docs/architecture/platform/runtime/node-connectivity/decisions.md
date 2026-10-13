@@ -1,8 +1,8 @@
 # Node Connectivity - Decisions
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-10-10 | **Updated**: 2026-10-11
+> **Version**: v1.3
+> **Created**: 2026-10-10 | **Updated**: 2026-10-13
 > **Owner**: Architecture Team
 
 ## Decision Index
@@ -24,6 +24,9 @@
 | NCP-D13 | Shared state is mandatory for cluster readiness | accepted |
 | NCP-D14 | Durable ordered event replay across nodes | accepted |
 | NCP-D15 | Domain-owned fenced leases and safe recovery | accepted |
+| NCP-D16 | Desktop owns one explicit Station transport runtime | accepted |
+| NCP-D17 | Desktop uses typed route leases and bounded HTTP2 sessions | accepted |
+| NCP-D18 | Station resources are transport-independent references | accepted |
 
 These target decisions passed the architecture review recorded in
 `integration.md`. Implementation and product proof remain outstanding.
@@ -295,3 +298,100 @@ Global RUNNING settlement or node-registry heartbeat alone does not fence stale 
 External side effects still need idempotency or an ambiguous outcome; no exactly-once
 provider guarantee follows from a database lease. OSS claims immutable generations
 transactionally, so stale deletes cannot remove replacement bytes.
+
+## NCP-D16: Desktop Owns One Explicit Station Transport Runtime
+
+**Status**: accepted
+**Date**: 2026-10-12
+
+### Context
+Desktop currently creates a loopback listener and libp2p runtime from a URL
+getter through process-global singletons. Station switching can replace the
+projection without cancelling or joining the previous worker.
+
+### Decision
+The Tauri composition root creates one `StationRuntime` in `AppState`, starts it
+during setup and shuts it down from `ExitRequested`. The runtime owns transport
+identity, driver, route sessions, request admission, cancellation, draining and
+thread join. No getter or request builder may start runtime resources.
+
+### Rationale
+Desktop already owns local runtime orchestration. Explicit ownership makes
+startup, switching, cleanup and failure evidence deterministic.
+
+### Alternatives Considered
+Keeping process globals with an added stop function leaves construction order
+and test isolation implicit. Keeping the loopback proxy preserves duplicate
+HTTP framing and per-connection worker ownership.
+
+### Consequences
+All Station consumers receive the app-owned client or a narrow cloned handle.
+The local proxy, dynamic localhost origin and transport globals are deleted in
+the same completed cut.
+
+## NCP-D17: Typed Route Leases And Bounded HTTP2 Sessions
+
+**Status**: accepted
+**Date**: 2026-10-12
+
+### Context
+Raw HTTP/1 serialization hides traffic class, replay policy and route
+cancellation. A fresh TLS/HTTP2 setup per relayed request also prevents the
+runtime from owning connection capacity as one observable lifecycle.
+
+### Decision
+Station Access publishes immutable `RouteLease` values. Desktop submits typed
+requests carrying deadline, traffic class and replay policy to Direct or Circuit
+adapters. Circuit uses bounded reusable HTTP/2 route sessions keyed by verified
+destination and route contract. Transport identity is persisted per verified
+Direct Station or Relay endpoint scope, independently from Actor and Session
+keys; unrelated Relay endpoints never receive one installation-global PeerID.
+
+### Rationale
+Typed requests expose retry and cancellation semantics, while route sessions
+place pooling, backpressure and cleanup under one owner.
+
+### Alternatives Considered
+A custom reqwest connector couples the architecture to unstable client
+internals. Blind method-based retries cannot distinguish idempotent mutations
+from unknown outcomes.
+
+### Consequences
+Safe reads may retry after verified failover. Mutations require an explicit
+idempotency key or return an ambiguous outcome. Realtime and bulk sessions use
+separate finite budgets. Endpoint-scoped identity requires the active transport
+owner to rebuild its dial-only Host when the verified endpoint scope changes.
+
+## NCP-D18: Transport-Independent Station Resources
+
+**Status**: accepted
+**Date**: 2026-10-13
+
+### Context
+Desktop currently converts Station-relative avatar, OSS and applet bundle paths
+into localhost-proxy URLs. Removing that proxy without another projection makes
+resource identity and WebView delivery depend on a deleted transport origin.
+
+### Decision
+Station-owned relative paths become `StationResourceRef` values scoped by
+logical Station and lifecycle generation. Native loaders use the typed Station
+client. WebView delivery uses an app-owned local asset/custom-protocol
+projection after scope validation. Absolute external or presigned URLs use a
+separate `ExternalResourceUrl` type and bypass Station transport.
+
+### Rationale
+Resource identity remains stable across Direct/Circuit changes without
+reintroducing a general-purpose localhost proxy.
+
+### Alternatives Considered
+Keeping the proxy preserves hidden listener lifecycle. Rewriting relative paths
+to the current public origin fails for private Relay routes and leaks topology
+into persisted resource identity.
+
+### Consequences
+Avatar, OSS cache, profile media, attachment and applet bundle consumers are
+part of the atomic client cut. Acceptance must prove both native materialization
+and WebView-readable projections through Direct and Circuit routes. Any
+resource metadata cache keyed as `self` must additionally include logical
+Station identity and lifecycle generation so Station replacement cannot reuse
+the prior scope's metadata.

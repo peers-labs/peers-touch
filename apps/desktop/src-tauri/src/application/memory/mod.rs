@@ -1,9 +1,9 @@
+use crate::application::station_runtime::client::{self as station_client, StationClient};
 use crate::contracts::{
     MemoryEventsInput, MemoryExportInput, MemoryIdInput, MemoryImportInput, MemoryListInput,
     MemoryPersonaInput, MemorySearchInput, MemoryUpdateInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::model::agent;
 use prost_types::Timestamp;
 use reqwest::Method;
@@ -113,7 +113,11 @@ fn value_i32(v: &Value, key: &str) -> i32 {
     v.get(key).and_then(|v| v.as_i64()).unwrap_or_default() as i32
 }
 
-pub fn memory_list(input: MemoryListInput, token: &str) -> AppResult<StubPayload> {
+pub fn memory_list(
+    station_client: &StationClient,
+    input: MemoryListInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let params = params_value(input.params);
     let req = agent::ListMemoriesRequest {
         agent_id: value_string(&params, "agent_id"),
@@ -126,11 +130,14 @@ pub fn memory_list(input: MemoryListInput, token: &str) -> AppResult<StubPayload
         until: value_string(&params, "until"),
         period: value_string(&params, "period"),
     };
-    match station_client::request_peers_proto::<
-        agent::ListMemoriesRequest,
-        agent::ListMemoriesResponse,
-    >(Method::POST, "/agent/memory/list", token, None, Some(&req))
-    {
+    match station_client
+        .request_peers_proto::<agent::ListMemoriesRequest, agent::ListMemoriesResponse>(
+            Method::POST,
+            "/agent/memory/list",
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => success_payload(
             "memory_list",
             json!({
@@ -142,12 +149,16 @@ pub fn memory_list(input: MemoryListInput, token: &str) -> AppResult<StubPayload
     }
 }
 
-pub fn memory_get(input: MemoryIdInput, token: &str) -> AppResult<StubPayload> {
+pub fn memory_get(
+    station_client: &StationClient,
+    input: MemoryIdInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
     let req = agent::GetMemoryRequest { id: input.id };
-    match station_client::request_peers_proto::<agent::GetMemoryRequest, agent::GetMemoryResponse>(
+    match station_client.request_peers_proto::<agent::GetMemoryRequest, agent::GetMemoryResponse>(
         Method::POST,
         "/agent/memory/get",
         token,
@@ -165,7 +176,11 @@ pub fn memory_get(input: MemoryIdInput, token: &str) -> AppResult<StubPayload> {
     }
 }
 
-pub fn memory_delete(input: MemoryIdInput, token: &str) -> AppResult<StubPayload> {
+pub fn memory_delete(
+    station_client: &StationClient,
+    input: MemoryIdInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
@@ -173,22 +188,24 @@ pub fn memory_delete(input: MemoryIdInput, token: &str) -> AppResult<StubPayload
         id: input.id,
         agent_id: String::new(),
     };
-    match station_client::request_peers_proto::<
-        agent::DeleteMemoryRequest,
-        agent::DeleteMemoryResponse,
-    >(
-        Method::POST,
-        "/agent/memory/delete",
-        token,
-        None,
-        Some(&req),
-    ) {
+    match station_client
+        .request_peers_proto::<agent::DeleteMemoryRequest, agent::DeleteMemoryResponse>(
+            Method::POST,
+            "/agent/memory/delete",
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => success_payload("memory_delete", json!({ "ok": resp.ok })),
         Err(err) => station_error("memory_delete", err),
     }
 }
 
-pub fn memory_update(input: MemoryUpdateInput, token: &str) -> AppResult<StubPayload> {
+pub fn memory_update(
+    station_client: &StationClient,
+    input: MemoryUpdateInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
@@ -201,13 +218,14 @@ pub fn memory_update(input: MemoryUpdateInput, token: &str) -> AppResult<StubPay
         action: "update".to_string(),
         ..Default::default()
     };
-    match station_client::request_peers_proto::<agent::WriteMemoryRequest, agent::WriteMemoryResponse>(
-        Method::POST,
-        "/agent/memory/update",
-        token,
-        None,
-        Some(&req),
-    ) {
+    match station_client
+        .request_peers_proto::<agent::WriteMemoryRequest, agent::WriteMemoryResponse>(
+            Method::POST,
+            "/agent/memory/update",
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => success_payload(
             "memory_update",
             json!({
@@ -219,7 +237,11 @@ pub fn memory_update(input: MemoryUpdateInput, token: &str) -> AppResult<StubPay
     }
 }
 
-pub fn memory_search(input: MemorySearchInput, token: &str) -> AppResult<StubPayload> {
+pub fn memory_search(
+    station_client: &StationClient,
+    input: MemorySearchInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     if input.query.trim().is_empty() {
         return invalid_argument("query is required");
     }
@@ -238,16 +260,14 @@ pub fn memory_search(input: MemorySearchInput, token: &str) -> AppResult<StubPay
         period: input.period.unwrap_or_default(),
         effort: String::new(),
     };
-    match station_client::request_peers_proto::<
-        agent::SearchMemoriesRequest,
-        agent::SearchMemoriesResponse,
-    >(
-        Method::POST,
-        "/agent/memory/search",
-        token,
-        None,
-        Some(&req),
-    ) {
+    match station_client
+        .request_peers_proto::<agent::SearchMemoriesRequest, agent::SearchMemoriesResponse>(
+            Method::POST,
+            "/agent/memory/search",
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => {
             let results: Vec<Value> = resp
                 .results
@@ -278,20 +298,22 @@ pub fn memory_search(input: MemorySearchInput, token: &str) -> AppResult<StubPay
     }
 }
 
-pub fn memory_persona(input: MemoryPersonaInput, token: &str) -> AppResult<StubPayload> {
+pub fn memory_persona(
+    station_client: &StationClient,
+    input: MemoryPersonaInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let req = agent::GetMemoryPersonaRequest {
         agent_id: input.agent_id.unwrap_or_default(),
     };
-    match station_client::request_peers_proto::<
-        agent::GetMemoryPersonaRequest,
-        agent::GetMemoryPersonaResponse,
-    >(
-        Method::POST,
-        "/agent/memory/persona",
-        token,
-        None,
-        Some(&req),
-    ) {
+    match station_client
+        .request_peers_proto::<agent::GetMemoryPersonaRequest, agent::GetMemoryPersonaResponse>(
+            Method::POST,
+            "/agent/memory/persona",
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => success_payload(
             "memory_persona",
             json!({ "persona": persona_json(resp.persona.as_ref()) }),
@@ -300,15 +322,18 @@ pub fn memory_persona(input: MemoryPersonaInput, token: &str) -> AppResult<StubP
     }
 }
 
-pub fn memory_stats(token: &str) -> AppResult<StubPayload> {
+pub fn memory_stats(station_client: &StationClient, token: &str) -> AppResult<StubPayload> {
     let req = agent::GetMemoryStatsRequest {
         agent_id: String::new(),
     };
-    match station_client::request_peers_proto::<
-        agent::GetMemoryStatsRequest,
-        agent::GetMemoryStatsResponse,
-    >(Method::POST, "/agent/memory/stats", token, None, Some(&req))
-    {
+    match station_client
+        .request_peers_proto::<agent::GetMemoryStatsRequest, agent::GetMemoryStatsResponse>(
+            Method::POST,
+            "/agent/memory/stats",
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => success_payload(
             "memory_stats",
             json!({
@@ -321,7 +346,11 @@ pub fn memory_stats(token: &str) -> AppResult<StubPayload> {
     }
 }
 
-pub fn memory_events(input: MemoryEventsInput, token: &str) -> AppResult<StubPayload> {
+pub fn memory_events(
+    station_client: &StationClient,
+    input: MemoryEventsInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let params = params_value(input.params);
     let req = agent::ListMemoryEventsRequest {
         r#type: value_string(&params, "type"),
@@ -332,16 +361,14 @@ pub fn memory_events(input: MemoryEventsInput, token: &str) -> AppResult<StubPay
         until: value_string(&params, "until"),
         period: value_string(&params, "period"),
     };
-    match station_client::request_peers_proto::<
-        agent::ListMemoryEventsRequest,
-        agent::ListMemoryEventsResponse,
-    >(
-        Method::POST,
-        "/agent/memory/events",
-        token,
-        None,
-        Some(&req),
-    ) {
+    match station_client
+        .request_peers_proto::<agent::ListMemoryEventsRequest, agent::ListMemoryEventsResponse>(
+            Method::POST,
+            "/agent/memory/events",
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => {
             let events: Vec<Value> = resp.events.iter().map(|e| json!({
 				"id": e.id,
@@ -360,22 +387,24 @@ pub fn memory_events(input: MemoryEventsInput, token: &str) -> AppResult<StubPay
     }
 }
 
-pub fn memory_export(input: MemoryExportInput, token: &str) -> AppResult<StubPayload> {
+pub fn memory_export(
+    station_client: &StationClient,
+    input: MemoryExportInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let params = params_value(input.params);
     let req = agent::ExportMemoriesRequest {
         agent_id: value_string(&params, "agent_id"),
         layer: value_string(&params, "layer"),
     };
-    match station_client::request_peers_proto::<
-        agent::ExportMemoriesRequest,
-        agent::ExportMemoriesResponse,
-    >(
-        Method::POST,
-        "/agent/memory/export",
-        token,
-        None,
-        Some(&req),
-    ) {
+    match station_client
+        .request_peers_proto::<agent::ExportMemoriesRequest, agent::ExportMemoriesResponse>(
+            Method::POST,
+            "/agent/memory/export",
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => success_payload(
             "memory_export",
             json!({
@@ -389,7 +418,11 @@ pub fn memory_export(input: MemoryExportInput, token: &str) -> AppResult<StubPay
     }
 }
 
-pub fn memory_import(input: MemoryImportInput, token: &str) -> AppResult<StubPayload> {
+pub fn memory_import(
+    station_client: &StationClient,
+    input: MemoryImportInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let memories = input
         .data
         .get("memories")
@@ -416,16 +449,14 @@ pub fn memory_import(input: MemoryImportInput, token: &str) -> AppResult<StubPay
         }),
         skip_duplicates: input.skip_duplicates.unwrap_or(true),
     };
-    match station_client::request_peers_proto::<
-        agent::ImportMemoriesRequest,
-        agent::ImportMemoriesResponse,
-    >(
-        Method::POST,
-        "/agent/memory/import",
-        token,
-        None,
-        Some(&req),
-    ) {
+    match station_client
+        .request_peers_proto::<agent::ImportMemoriesRequest, agent::ImportMemoriesResponse>(
+            Method::POST,
+            "/agent/memory/import",
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => success_payload(
             "memory_import",
             json!({
@@ -481,17 +512,18 @@ fn value_to_memory_item(value: &Value) -> agent::MemoryItem {
     }
 }
 
-pub fn memory_embedding_status(token: &str) -> AppResult<StubPayload> {
-    match station_client::request_peers_proto::<
-        agent::EmbeddingStatusRequest,
-        agent::EmbeddingStatusResponse,
-    >(
-        Method::POST,
-        "/agent/memory/embedding-status",
-        token,
-        None,
-        Some(&agent::EmbeddingStatusRequest {}),
-    ) {
+pub fn memory_embedding_status(
+    station_client: &StationClient,
+    token: &str,
+) -> AppResult<StubPayload> {
+    match station_client
+        .request_peers_proto::<agent::EmbeddingStatusRequest, agent::EmbeddingStatusResponse>(
+            Method::POST,
+            "/agent/memory/embedding-status",
+            token,
+            None,
+            Some(&agent::EmbeddingStatusRequest {}),
+        ) {
         Ok(resp) => success_payload(
             "memory_embedding_status",
             json!({
@@ -505,8 +537,8 @@ pub fn memory_embedding_status(token: &str) -> AppResult<StubPayload> {
     }
 }
 
-pub fn memory_reembed(token: &str) -> AppResult<StubPayload> {
-    match station_client::request_peers_proto::<agent::ReEmbedRequest, agent::ReEmbedResponse>(
+pub fn memory_reembed(station_client: &StationClient, token: &str) -> AppResult<StubPayload> {
+    match station_client.request_peers_proto::<agent::ReEmbedRequest, agent::ReEmbedResponse>(
         Method::POST,
         "/agent/memory/reembed",
         token,

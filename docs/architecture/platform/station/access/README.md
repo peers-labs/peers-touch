@@ -1,8 +1,8 @@
 # Station 统一接入生命周期
 
 > **Status**: active
-> **Version**: v2.2
-> **Created**: 2026-09-26 | **Updated**: 2026-10-10
+> **Version**: v2.4
+> **Created**: 2026-09-26 | **Updated**: 2026-10-13
 > **Owner**: Identity and Access
 > **Module**: `apps/desktop/`, `apps/mobile/`, `apps/station/frame/touch/`
 
@@ -56,6 +56,10 @@
 9. Desktop 与 Mobile 以相同结果、错误、安全条件和持久状态验收。
 10. Relay 服务端实现、部署和 Acceptance 仅使用 Linux/POSIX runtime；Windows
     Desktop 通过 Linux Relay 验收。
+11. Desktop binding 由 `AppState` 内唯一 coordinator 持有，并以不可变
+    `RouteLease` 驱动 transport；adapter 不反向修改 registry。
+12. Station-owned relative resource 以 `StationResourceRef` 绑定逻辑 scope；
+    active Direct/Relay origin 不进入资源身份或业务持久化。
 
 ## 4. 文档导航
 

@@ -12,10 +12,11 @@ use station_trust::{verify_node_authorization_bytes, verify_station_route_attest
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::infrastructure::station_transport;
+use crate::infrastructure::station::TransportIdentityScope;
 use crate::model::peer::{
     AccessEndpointOutcome, AccessEndpointRequest, AccessEndpointResponse, AccessEndpointRole,
-    StationConnectionEnvelope, StationRouteAttestation, StationRouteStatement,
+    StationConnectionEnvelope, StationConnectionGrantStatement, StationRouteAttestation,
+    StationRouteStatement,
 };
 
 const ACCESS_PATH: &str = "/.well-known/peers-touch/access";
@@ -76,7 +77,17 @@ impl StationDiscoveryError {
     }
 }
 
-pub fn discover_station_input(input: &str) -> Result<VerifiedEndpoint, StationDiscoveryError> {
+pub fn discovery_identity_scope(
+    input: &str,
+) -> Result<TransportIdentityScope, StationDiscoveryError> {
+    let parsed = parse_input(input)?;
+    Ok(parsed.identity_scope)
+}
+
+pub fn discover_station_input(
+    input: &str,
+    source_peer_id: String,
+) -> Result<VerifiedEndpoint, StationDiscoveryError> {
     let parsed = parse_input(input)?;
     let mut challenge = [0_u8; DISCOVERY_CHALLENGE_SIZE];
     rand::thread_rng().fill_bytes(&mut challenge);
@@ -84,13 +95,7 @@ pub fn discover_station_input(input: &str) -> Result<VerifiedEndpoint, StationDi
         challenge: challenge.to_vec(),
         connection_grant: parsed.connection_grant.clone().unwrap_or_default(),
         client_protocol_version: ACCESS_PROTOCOL_VERSION,
-        source_peer_id: station_transport::client_peer_id().map_err(|error| {
-            StationDiscoveryError::new(
-                "station_discovery_unavailable",
-                format!("Could not initialize Station transport: {error}"),
-                true,
-            )
-        })?,
+        source_peer_id,
     };
     let endpoint = format!("{}{}", parsed.origin, ACCESS_PATH);
     let response = discovery_client()?
@@ -422,6 +427,7 @@ fn verify_signed_statement(
 struct ParsedInput {
     origin: String,
     connection_grant: Option<Vec<u8>>,
+    identity_scope: TransportIdentityScope,
 }
 
 fn parse_input(input: &str) -> Result<ParsedInput, StationDiscoveryError> {
@@ -447,14 +453,25 @@ fn parse_input(input: &str) -> Result<ParsedInput, StationDiscoveryError> {
         let grant = envelope
             .connection_grant
             .as_ref()
-            .map(Message::encode_to_vec);
+            .ok_or_else(|| invalid_discovery("Private Station connection grant is missing"))?;
+        let grant_statement =
+            StationConnectionGrantStatement::decode(grant.statement_bytes.as_slice())
+                .map_err(|_| invalid_discovery("Private Station connection grant is malformed"))?;
+        if grant_statement.relay_peer_id.trim().is_empty() {
+            return Err(invalid_discovery(
+                "Private Station connection grant has no Relay identity",
+            ));
+        }
         return Ok(ParsedInput {
             origin: normalize_origin(&envelope.relay_origin)?,
-            connection_grant: grant,
+            connection_grant: Some(grant.encode_to_vec()),
+            identity_scope: TransportIdentityScope::Relay(grant_statement.relay_peer_id),
         });
     }
+    let origin = normalize_origin(value)?;
     Ok(ParsedInput {
-        origin: normalize_origin(value)?,
+        identity_scope: TransportIdentityScope::ProvisionalEndpointOrigin(origin.clone()),
+        origin,
         connection_grant: None,
     })
 }
@@ -630,7 +647,11 @@ mod tests {
                 node_authorization: None,
             }),
             connection_grant: Some(crate::model::peer::StationConnectionGrant {
-                statement_bytes: vec![4],
+                statement_bytes: StationConnectionGrantStatement {
+                    relay_peer_id: "relay-test".to_string(),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
                 node_signature: vec![5],
                 node_authorization: None,
             }),

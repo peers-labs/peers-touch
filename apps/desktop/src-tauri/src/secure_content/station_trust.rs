@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use std::net::IpAddr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::infrastructure::station_client;
+use crate::application::station_runtime::client::StationClient;
 use crate::infrastructure::station_registry::StationRegistry;
 use crate::model::actor::{ActorDeviceRef, ActorSigningKeyVerificationSource};
 use crate::model::federation::ActorProfileEnvelope;
@@ -119,6 +119,7 @@ pub fn verify_profile_actor_device_signing_key(
 }
 
 pub fn resolve_station_signing_key(
+    station_client: &StationClient,
     registry: &StationRegistry,
     station_url: &str,
     station_peer_id: &str,
@@ -143,9 +144,8 @@ pub fn resolve_station_signing_key(
     }
 
     let query = [("handle", actor_handle.to_string())];
-    let envelope: ActorProfileEnvelope =
-        station_client::request_proto_for_device_at::<(), ActorProfileEnvelope>(
-            station_url,
+    let envelope: ActorProfileEnvelope = station_client
+        .request_proto_for_device::<(), ActorProfileEnvelope>(
             Method::GET,
             "/actor/federation/profile",
             token,

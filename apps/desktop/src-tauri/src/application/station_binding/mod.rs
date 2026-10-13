@@ -1,9 +1,12 @@
 use serde::Serialize;
-use std::sync::{Mutex, OnceLock, TryLockError};
+use std::sync::{Mutex, TryLockError};
+use tokio_util::sync::CancellationToken;
 
-use crate::infrastructure::event_stream;
-use crate::infrastructure::station_client;
-use crate::infrastructure::station_registry::{StationEntry, StationRegistry, StationRouteHealth};
+use crate::application::station_runtime::client::TrafficClass;
+use crate::application::station_runtime::route_lease::RouteLease;
+use crate::infrastructure::station_registry::{
+    route_attestation_is_current, StationEntry, StationRegistry, StationRouteHealth,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -24,7 +27,7 @@ pub struct StationBindingError {
 }
 
 impl StationBindingError {
-    fn new(code: &str, message: impl Into<String>, retryable: bool) -> Self {
+    pub(crate) fn new(code: &str, message: impl Into<String>, retryable: bool) -> Self {
         Self {
             code: code.to_string(),
             message: message.into(),
@@ -102,57 +105,134 @@ pub trait StationBindingHooks: Send + Sync {
     ) -> Result<(), StationBindingError>;
 }
 
-struct SystemStationBindingHooks;
-
-impl StationBindingHooks for SystemStationBindingHooks {
-    fn verify_route(&self, entry: &StationEntry) -> Result<(), StationBindingError> {
-        if entry.active_route().is_none() {
-            return Err(StationBindingError::new(
-                "station_route_unavailable",
-                "The selected Station has no active verified route",
-                false,
-            ));
-        }
-        Ok(())
-    }
-
-    fn teardown_transport(
-        &self,
-        _previous: Option<&StationEntry>,
-        _target: &StationEntry,
-    ) -> Result<(), StationBindingError> {
-        event_stream::stop_all();
-        Ok(())
-    }
-
-    fn teardown_scope(
-        &self,
-        _previous: Option<&StationEntry>,
-        _target: &StationEntry,
-    ) -> Result<(), StationBindingError> {
-        event_stream::stop_all();
-        Ok(())
-    }
+pub struct StationBindingService {
+    inner: Mutex<BindingInner>,
+    transition: Mutex<()>,
 }
 
-pub struct StationBindingService {
-    state: Mutex<StationBindingState>,
-    transition: Mutex<()>,
+struct BindingInner {
+    state: StationBindingState,
+    route_cancellation: CancellationToken,
 }
 
 impl StationBindingService {
     pub fn new(active_entry: Option<StationEntry>) -> Self {
         Self {
-            state: Mutex::new(StationBindingState::from_persisted_entry(active_entry)),
+            inner: Mutex::new(BindingInner {
+                state: StationBindingState::from_persisted_entry(active_entry),
+                route_cancellation: CancellationToken::new(),
+            }),
             transition: Mutex::new(()),
         }
     }
 
     pub fn state(&self) -> StationBindingState {
-        self.state
+        self.inner
             .lock()
             .expect("StationBindingService state lock poisoned")
+            .state
             .clone()
+    }
+
+    pub fn route_lease(
+        &self,
+        registry: &StationRegistry,
+        traffic_class: TrafficClass,
+    ) -> Result<RouteLease, StationBindingError> {
+        let state = self.state();
+        let (station_peer_id, route_id, route_revision) =
+            state.transport_scope().ok_or_else(|| {
+                StationBindingError::new(
+                    "station_binding_not_ready",
+                    "The Station transport scope is not ready",
+                    true,
+                )
+            })?;
+        let entry = registry.entry(station_peer_id).ok_or_else(|| {
+            StationBindingError::new(
+                "station_selection_changed",
+                "The active Station is no longer registered",
+                false,
+            )
+        })?;
+        if entry.active_route_id != route_id
+            || entry.route_revision != route_revision
+            || entry.lifecycle_generation != state.lifecycle_generation
+        {
+            return Err(StationBindingError::new(
+                "station_route_stale",
+                "The active Station route changed",
+                true,
+            ));
+        }
+        let route = entry.active_route().ok_or_else(|| {
+            StationBindingError::new(
+                "station_route_unavailable",
+                "The active Station route is unavailable",
+                true,
+            )
+        })?;
+        if matches!(
+            route.health,
+            StationRouteHealth::Unavailable | StationRouteHealth::Revoked
+        ) || !route_attestation_is_current(route, unix_ms())
+        {
+            return Err(StationBindingError::new(
+                "station_route_unavailable",
+                "The active Station route is unavailable or expired",
+                true,
+            ));
+        }
+        let cancellation = self
+            .inner
+            .lock()
+            .map_err(|_| {
+                StationBindingError::new(
+                    "station_binding_unavailable",
+                    "The Station route cancellation fence is unavailable",
+                    true,
+                )
+            })?
+            .route_cancellation
+            .clone();
+        RouteLease::from_entry(&entry, traffic_class, cancellation).ok_or_else(|| {
+            StationBindingError::new(
+                "station_route_unavailable",
+                "The active Station route is unavailable",
+                true,
+            )
+        })
+    }
+
+    pub fn failover(
+        &self,
+        registry: &StationRegistry,
+        lease: &RouteLease,
+        hooks: &dyn StationBindingHooks,
+    ) -> Result<StationBindingState, StationBindingError> {
+        let _transition =
+            self.transition_guard("Another Station route transition is already in progress")?;
+        let state = self.state();
+        if state.station_peer_id.as_deref() != Some(lease.station_peer_id.as_str())
+            || state.active_route_id.as_deref() != Some(lease.route_id.as_str())
+            || state.route_revision != lease.route_revision
+            || state.lifecycle_generation != lease.lifecycle_generation
+        {
+            return Err(StationBindingError::new(
+                "station_route_stale",
+                "The failed Station route lease is no longer current",
+                true,
+            ));
+        }
+        let target = registry
+            .failover_route(
+                &lease.station_peer_id,
+                &lease.route_id,
+                lease.route_revision,
+            )
+            .map_err(registry_switch_error)?;
+        hooks.verify_route(&target)?;
+        Ok(self.reconcile_route_revision(&target))
     }
 
     pub fn station_changes(&self, registry: &StationRegistry, station_peer_id: &str) -> bool {
@@ -179,32 +259,12 @@ impl StationBindingService {
             || state.active_route_id.as_deref() != Some(target_route_id)
     }
 
-    pub fn switch(
-        &self,
-        registry: &StationRegistry,
-        station_peer_id: &str,
-        route_id: Option<&str>,
-    ) -> Result<StationBindingState, StationBindingError> {
-        self.switch_with_hooks(
-            registry,
-            station_peer_id,
-            route_id,
-            &SystemStationBindingHooks,
-        )
-    }
-
-    pub fn resume_persisted(
-        &self,
-        registry: &StationRegistry,
-    ) -> Result<StationBindingState, StationBindingError> {
-        self.resume_persisted_with_hooks(registry, &SystemStationBindingHooks)
-    }
-
     pub fn mark_bound(&self) -> Result<StationBindingState, StationBindingError> {
-        let mut state = self
-            .state
+        let mut inner = self
+            .inner
             .lock()
             .expect("StationBindingService state lock poisoned");
+        let state = &mut inner.state;
         if state.phase == StationBindingPhase::Bound && state.transport_scope().is_some() {
             return Ok(state.clone());
         }
@@ -221,24 +281,30 @@ impl StationBindingService {
     }
 
     pub(crate) fn reconcile_route_revision(&self, target: &StationEntry) -> StationBindingState {
-        let mut state = self
-            .state
+        let mut inner = self
+            .inner
             .lock()
             .expect("StationBindingService state lock poisoned");
-        if state.station_peer_id.as_deref() != Some(target.station_peer_id.as_str())
-            || state.lifecycle_generation != target.lifecycle_generation
+        if inner.state.station_peer_id.as_deref() != Some(target.station_peer_id.as_str())
+            || inner.state.lifecycle_generation != target.lifecycle_generation
             || !matches!(
-                state.phase,
+                inner.state.phase,
                 StationBindingPhase::AccessGate | StationBindingPhase::Bound
             )
         {
-            return state.clone();
+            return inner.state.clone();
         }
-        let previous_route_failed = state.active_route_id.as_deref().is_some_and(|route_id| {
-            target.routes.iter().any(|route| {
-                route.route_id == route_id && route.health == StationRouteHealth::Unavailable
-            })
-        });
+        let previous_route_failed =
+            inner
+                .state
+                .active_route_id
+                .as_deref()
+                .is_some_and(|route_id| {
+                    target.routes.iter().any(|route| {
+                        route.route_id == route_id
+                            && route.health == StationRouteHealth::Unavailable
+                    })
+                });
         let replacement_route_ready = target.active_route().is_some_and(|route| {
             matches!(
                 route.health,
@@ -246,10 +312,17 @@ impl StationBindingService {
             )
         });
         let same_route_refresh =
-            state.active_route_id.as_deref() == Some(target.active_route_id.as_str());
+            inner.state.active_route_id.as_deref() == Some(target.active_route_id.as_str());
         if (!previous_route_failed && !same_route_refresh) || !replacement_route_ready {
-            return state.clone();
+            return inner.state.clone();
         }
+        if inner.state.route_revision != target.route_revision
+            || inner.state.active_route_id.as_deref() != Some(target.active_route_id.as_str())
+        {
+            inner.route_cancellation.cancel();
+            inner.route_cancellation = CancellationToken::new();
+        }
+        let state = &mut inner.state;
         state.active_route_id = Some(target.active_route_id.clone());
         state.target_station_peer_id = None;
         state.target_route_id = None;
@@ -275,13 +348,13 @@ impl StationBindingService {
             )
         })?;
         if was_selected {
-            event_stream::stop_all();
+            crate::infrastructure::event_stream::stop_all();
             self.replace_state(StationBindingState::from_persisted_entry(None));
         }
         Ok((self.state(), was_selected))
     }
 
-    fn resume_persisted_with_hooks(
+    pub(crate) fn resume_persisted_with_hooks(
         &self,
         registry: &StationRegistry,
         hooks: &dyn StationBindingHooks,
@@ -352,7 +425,7 @@ impl StationBindingService {
         Ok(self.state())
     }
 
-    fn switch_with_hooks(
+    pub(crate) fn switch_with_hooks(
         &self,
         registry: &StationRegistry,
         station_peer_id: &str,
@@ -428,16 +501,21 @@ impl StationBindingService {
     }
 
     fn commit_target(&self, target: &StationEntry) {
-        self.update_state(|state| {
-            state.phase = StationBindingPhase::AccessGate;
-            state.station_peer_id = Some(target.station_peer_id.clone());
-            state.active_route_id = Some(target.active_route_id.clone());
-            state.target_station_peer_id = None;
-            state.target_route_id = None;
-            state.route_revision = target.route_revision;
-            state.lifecycle_generation = target.lifecycle_generation;
-            state.error = None;
-        });
+        let mut inner = self
+            .inner
+            .lock()
+            .expect("StationBindingService state lock poisoned");
+        inner.route_cancellation.cancel();
+        inner.route_cancellation = CancellationToken::new();
+        let state = &mut inner.state;
+        state.phase = StationBindingPhase::AccessGate;
+        state.station_peer_id = Some(target.station_peer_id.clone());
+        state.active_route_id = Some(target.active_route_id.clone());
+        state.target_station_peer_id = None;
+        state.target_route_id = None;
+        state.route_revision = target.route_revision;
+        state.lifecycle_generation = target.lifecycle_generation;
+        state.error = None;
     }
 
     fn restore_or_fail(&self, previous: StationBindingState, error: StationBindingError) {
@@ -470,18 +548,25 @@ impl StationBindingService {
     }
 
     fn replace_state(&self, next: StationBindingState) {
-        *self
-            .state
+        let mut inner = self
+            .inner
             .lock()
-            .expect("StationBindingService state lock poisoned") = next;
+            .expect("StationBindingService state lock poisoned");
+        let scope_changed = inner.state.transport_scope() != next.transport_scope()
+            || inner.state.lifecycle_generation != next.lifecycle_generation;
+        if scope_changed {
+            inner.route_cancellation.cancel();
+            inner.route_cancellation = CancellationToken::new();
+        }
+        inner.state = next;
     }
 
     fn update_state(&self, update: impl FnOnce(&mut StationBindingState)) {
-        let mut state = self
-            .state
+        let mut inner = self
+            .inner
             .lock()
             .expect("StationBindingService state lock poisoned");
-        update(&mut state);
+        update(&mut inner.state);
     }
 }
 
@@ -493,11 +578,9 @@ fn registry_switch_error(error: std::io::Error) -> StationBindingError {
     )
 }
 
-pub fn service() -> &'static StationBindingService {
-    static SERVICE: OnceLock<StationBindingService> = OnceLock::new();
-    SERVICE.get_or_init(|| {
-        StationBindingService::new(station_client::station_registry().active_entry())
-    })
+fn unix_ms() -> i64 {
+    i64::try_from(time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000)
+        .unwrap_or(i64::MAX)
 }
 
 #[cfg(test)]
@@ -655,6 +738,21 @@ mod tests {
         assert!(state.route_revision > before.route_revision);
         assert!(hooks.transport_teardown_called.load(Ordering::SeqCst));
         assert!(!hooks.scope_teardown_called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn removing_bound_station_revokes_existing_route_lease() {
+        let registry = registry_with(&[("peer-a", "route-a", "https://a.example")]);
+        let service = bound_service(&registry, "peer-a", None);
+        let lease = service
+            .route_lease(&registry, TrafficClass::Interactive)
+            .unwrap();
+
+        let (_, removed) = service.remove_station(&registry, "peer-a").unwrap();
+
+        assert!(removed);
+        assert!(lease.is_cancelled());
+        assert_eq!(service.state().phase, StationBindingPhase::Unbound);
     }
 
     #[test]

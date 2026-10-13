@@ -18,9 +18,8 @@ use sha2::{Digest, Sha256};
 use tauri::{State, Window};
 
 #[cfg(feature = "acceptance-webdriver")]
-use crate::application::station_binding::{self, StationBindingPhase, StationBindingState};
+use crate::application::station_binding::{StationBindingPhase, StationBindingState};
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::model::actor::ActorProfile;
 use crate::secure_content::adapter::jwt_session_id;
 use crate::secure_content::station_trust::resolve_station_signing_key;
@@ -190,12 +189,8 @@ fn private_reaction_mutation(
     state: &AppState,
     window: &Window,
 ) -> AppResult<Value> {
-    let lease = match lease_for_window(
-        state,
-        window,
-        &input.actor_ptid,
-        input.renderer_generation,
-    ) {
+    let lease = match lease_for_window(state, window, &input.actor_ptid, input.renderer_generation)
+    {
         Ok(lease) => lease,
         Err(error) => return native_failure(error, "REACTION_REJECTED"),
     };
@@ -675,8 +670,8 @@ pub fn social_private_moments_acceptance_runtime_identity(
         Ok(digest) => digest,
         Err(error) => return native_failure(error.clone(), "INTEGRITY_FAILURE"),
     };
-    let binding = station_binding::service().state();
-    let station_peer_id = match station_client::active_station_peer_id() {
+    let binding = state.station.binding().state();
+    let station_peer_id = match state.station.active_station_peer_id() {
         Some(value) => value,
         None => {
             return native_failure(
@@ -685,9 +680,9 @@ pub fn social_private_moments_acceptance_runtime_identity(
             )
         }
     };
-    let station_url = station_client::station_base_url();
-    let registry_entry = station_client::station_registry().active_entry();
-    let confirmed_binding = station_binding::service().state();
+    let station_url = state.station.active_endpoint_origin().unwrap_or_default();
+    let registry_entry = state.station.registry().active_entry();
+    let confirmed_binding = state.station.binding().state();
     let (station_runtime_identity_sha256, station_endpoint_sha256) =
         match acceptance_station_binding_digests(
             &station_peer_id,
@@ -785,18 +780,22 @@ fn activate(
     let (signing_key_id, signing_key) = engine
         .device_signing_identity()?
         .ok_or_else(|| "secure content device signing key is unavailable".to_string())?;
-    let station_peer_id = station_client::active_station_peer_id()
+    let station_peer_id = state
+        .station
+        .active_station_peer_id()
         .ok_or_else(|| "secure content active Station peer ID is unavailable".to_string())?;
-    let station_url = station_client::station_base_url();
-    let actor_profile = station_client::request_peers_proto_no_body_for_device_at::<ActorProfile>(
-        &station_url,
-        reqwest::Method::GET,
-        "/actor/profile",
-        &active.jwt,
-        None,
-        &engine.endpoint().device_id,
-    )
-    .map_err(|error| format!("load Secure Content Station identity: {error}"))?;
+    let station_url = state.station.active_endpoint_origin().unwrap_or_default();
+    let actor_profile = state
+        .station
+        .client()
+        .request_peers_proto_no_body_for_device::<ActorProfile>(
+            reqwest::Method::GET,
+            "/actor/profile",
+            &active.jwt,
+            None,
+            &engine.endpoint().device_id,
+        )
+        .map_err(|error| format!("load Secure Content Station identity: {error}"))?;
     if actor_profile.home_station_peer_id != station_peer_id
         || actor_profile
             .r#ref
@@ -808,7 +807,8 @@ fn activate(
         return Err("secure content Actor Profile identity is inconsistent".to_string());
     }
     let trusted_station_signing_key = resolve_station_signing_key(
-        station_client::station_registry(),
+        state.station.client(),
+        state.station.registry(),
         &station_url,
         &station_peer_id,
         &actor_profile.federated_handle,
@@ -843,9 +843,13 @@ fn activate(
     if current.account_id != session.account_id
         || current.actor.ptid != session.key.actor_ptid
         || !session.matches_token(&current.jwt)?
-        || station_client::active_station_peer_id().as_deref()
+        || state.station.active_station_peer_id().as_deref()
             != Some(session.key.station_peer_id.as_str())
-        || station_client::station_base_url().trim_end_matches('/')
+        || state
+            .station
+            .active_endpoint_origin()
+            .unwrap_or_default()
+            .trim_end_matches('/')
             != session.station_url.trim_end_matches('/')
     {
         return Err("secure content authority changed during activation".to_string());

@@ -1,8 +1,8 @@
 # Node Connectivity - Integration
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-10-10 | **Updated**: 2026-10-11
+> **Version**: v1.3
+> **Created**: 2026-10-10 | **Updated**: 2026-10-13
 > **Owner**: Architecture Team
 
 ## 1. Preserved Domain Boundaries
@@ -30,6 +30,9 @@ wrappers and protobuf handlers as direct HTTPS. No second Station command API.
 | Frame server/handler adapters | standard HTTP2 stream ingress with streaming Flush/cancel |
 | `frame/core/federation` and native Federation transport | authenticated logical peer routes, canonical HTTP |
 | Desktop station_client/station_access/event_stream | source-bound standard Rust transport and route continuity |
+| Desktop AppState/composition root | one owned StationRuntime with explicit setup and reverse-order shutdown |
+| Desktop Station consumers | injected typed client; no dynamic localhost Station origin |
+| Desktop media/object/applet consumers | StationResourceRef materialization or scoped local URI; external URLs remain distinct |
 | Mobile Rust transport | dial-only standard Host; shared contracts, separate platform proof |
 | `frame/touch/auth`, session DBStore, OAuth attempt owners | retain shared DB path, verify Station keyring and cross-node class activation |
 | `app/subserver/events` | transactional sequence, durable target and cross-node wakes/replay |
@@ -58,6 +61,12 @@ No runtime compatibility flag or parallel production data plane is permitted.
 Incompatible clients fail explicitly. Rollback reverts the self-contained cut
 and deploys the matching source; it does not select dormant old code.
 Do not copy the candidate worktree or touch unrelated StationPicker edits.
+
+The Desktop refinement is also an atomic consumer cut. Preparation may change
+the internal `station-libp2p-http` owner/handle API without registering another
+production path. The production cut migrates every Desktop caller to the
+app-owned typed client, then deletes process globals, the loopback proxy, raw
+HTTP/1 framing and dynamic localhost origin in the same Plan Version.
 
 ## 4. One Node To Multiple Nodes
 
@@ -94,6 +103,9 @@ one prepared runtime and never build, deploy or create accounts.
 | NCP-G06 | healthy Agent lease on A; start B, pause A, expire/takeover and resume A; concurrent OSS GC | healthy work survives B boot, stale token cannot commit, one domain effect and valid object refcounts |
 | NCP-G07 | forced short test reservation renewal, route refresh, revoke, slow consumer and quota exhaustion | renewal preserves healthy SSE, revoke denies/retires node circuits, finite memory/admission and typed recovery |
 | NCP-G08 | constructor/consumer inventory and final source-bound native proof | one Host/process, no old production data plane, Mobile contract builds; Mobile runtime remains unproven until native check |
+| DSR-G01 | Native Desktop boot, repeated route/Station switches and process exit | one transport owner; zero leaked listeners/workers; bounded drain and joined shutdown |
+| DSR-G02 | Private Relay material, Desktop quit/relaunch and fresh reauthorization | same-Relay PeerID is stable, different Relay scopes expose distinct PeerIDs, consumed material stays replay-protected, fresh material reconnects |
+| DSR-G03 | Direct/Circuit typed request/resource matrix under failover, cancellation and saturation | SSE/files/resources stream, WebView projection works, safe reads retry once, ambiguous mutations do not replay, overload is bounded |
 
 For native product operations, route selection/login/send/attachment use the
 existing native DOM event driver. Frame/server observation, controlled node

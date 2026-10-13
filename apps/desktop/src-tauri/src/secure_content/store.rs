@@ -2156,11 +2156,10 @@ impl SecureContentStore {
         {
             return Err("secure content Reaction failure transition is invalid".to_string());
         }
-        let retry_after_seconds = retry_after_seconds
-            .map(|seconds| seconds.min(MAX_REACTION_RETRY_AFTER_SECONDS));
+        let retry_after_seconds =
+            retry_after_seconds.map(|seconds| seconds.min(MAX_REACTION_RETRY_AFTER_SECONDS));
         let updated_at_unix_ms = now_unix_ms();
-        let retry_not_before_unix_ms =
-            retry_deadline(updated_at_unix_ms, retry_after_seconds)?;
+        let retry_not_before_unix_ms = retry_deadline(updated_at_unix_ms, retry_after_seconds)?;
         self.connection()?
             .execute(
                 "UPDATE secure_content_reaction_commands
@@ -2966,9 +2965,7 @@ fn publication_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredPubli
     })
 }
 
-fn reaction_command_from_row(
-    row: &rusqlite::Row<'_>,
-) -> rusqlite::Result<StoredReactionCommand> {
+fn reaction_command_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredReactionCommand> {
     let result_sha256 = row
         .get::<_, Option<Vec<u8>>>(6)?
         .map(|value| fixed_32(value, "Reaction result hash"))
@@ -2986,8 +2983,7 @@ fn reaction_command_from_row(
         request_bytes: row.get(5)?,
         result_sha256,
         result_bytes: row.get(7)?,
-        state: ReactionCommandState::try_from(row.get::<_, i64>(8)?)
-            .map_err(conversion_error)?,
+        state: ReactionCommandState::try_from(row.get::<_, i64>(8)?).map_err(conversion_error)?,
         session_generation: from_i64(row.get(9)?, "session generation")?,
         lease_generation: from_i64(row.get(10)?, "Reaction lease generation")?,
         attempt_count: u32::try_from(row.get::<_, i64>(11)?)
@@ -4550,7 +4546,9 @@ mod tests {
             retry_not_before_unix_ms: None,
         };
         store.persist_reaction_command(&command).unwrap();
-        let first = store.acquire_reaction_command(&command.command_id, 1).unwrap();
+        let first = store
+            .acquire_reaction_command(&command.command_id, 1)
+            .unwrap();
         assert_eq!(first.request_bytes, request_bytes);
         assert_eq!(first.attempt_count, 1);
         assert!(store
@@ -4564,7 +4562,9 @@ mod tests {
             )
             .unwrap());
 
-        let retry = store.acquire_reaction_command(&command.command_id, 2).unwrap();
+        let retry = store
+            .acquire_reaction_command(&command.command_id, 2)
+            .unwrap();
         assert_eq!(retry.request_bytes, request_bytes);
         assert_eq!(retry.request_sha256, command.request_sha256);
         assert_eq!(retry.attempt_count, 2);
@@ -4581,8 +4581,7 @@ mod tests {
 
         let result_bytes = b"committed-private-reaction".to_vec();
         let result_sha256: [u8; 32] = Sha256::digest(&result_bytes).into();
-        let projection_bytes =
-            br#"{"post_id":"post-1","reaction_revision":"4","reactions":[]}"#;
+        let projection_bytes = br#"{"post_id":"post-1","reaction_revision":"4","reactions":[]}"#;
         assert!(store
             .mark_reaction_committed(
                 &command.command_id,

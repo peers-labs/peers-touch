@@ -1,13 +1,16 @@
-use crate::infrastructure::station_client;
-use reqwest::blocking::Client;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
+use crate::application::station_runtime::client::{
+    ReplayPolicy, StationClient, StationRequest, StationRequestBody, TrafficClass,
+};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE};
+use reqwest::Method;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::Read;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Serialize)]
 struct AgentEventPayload {
@@ -19,17 +22,17 @@ struct AgentEventPayload {
     data: Value,
 }
 
-fn agent_event_cancel_registry() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+fn agent_event_cancel_registry() -> &'static Mutex<HashMap<String, CancellationToken>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<String, CancellationToken>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-pub fn register_stream(stream_id: &str) -> Arc<AtomicBool> {
-    let flag = Arc::new(AtomicBool::new(false));
+pub fn register_stream(stream_id: &str) -> CancellationToken {
+    let cancellation = CancellationToken::new();
     if let Ok(mut registry) = agent_event_cancel_registry().lock() {
-        registry.insert(stream_id.to_string(), Arc::clone(&flag));
+        registry.insert(stream_id.to_string(), cancellation.clone());
     }
-    flag
+    cancellation
 }
 
 pub fn unregister_stream(stream_id: &str) {
@@ -41,12 +44,13 @@ pub fn unregister_stream(stream_id: &str) {
 pub fn cancel_stream(stream_id: &str) {
     if let Ok(registry) = agent_event_cancel_registry().lock() {
         if let Some(flag) = registry.get(stream_id.trim()) {
-            flag.store(true, Ordering::SeqCst);
+            flag.cancel();
         }
     }
 }
 
 pub fn stream(
+    station_client: &StationClient,
     app: &AppHandle,
     event_channel: &str,
     stream_id: &str,
@@ -54,16 +58,8 @@ pub fn stream(
     task_id: Option<&str>,
     after_event_seq: i64,
     token: &str,
-    cancel_flag: &AtomicBool,
+    cancellation: CancellationToken,
 ) -> Result<(), String> {
-    let url = format!(
-        "{}{}",
-        station_client::station_base_url(),
-        "/sub-agent/agent/events/subscribe"
-    );
-    let client = Client::builder()
-        .build()
-        .map_err(|error| format!("failed to create Station event client: {error}"))?;
     let mut body = json!({
         "agent_id": agent_id,
         "after_event_seq": after_event_seq.max(0),
@@ -71,29 +67,44 @@ pub fn stream(
     if let Some(task_id) = task_id.map(str::trim).filter(|value| !value.is_empty()) {
         body["task_id"] = json!(task_id);
     }
-    let mut response = client
-        .post(url)
-        .header(CONTENT_TYPE, "application/json")
-        .header(AUTHORIZATION, format!("Bearer {}", token.trim()))
-        .header("Accept", "text/event-stream")
-        .json(&body)
-        .send()
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(&format!("Bearer {}", token.trim()))
+            .map_err(|error| format!("invalid Station authorization header: {error}"))?,
+    );
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert(ACCEPT, HeaderValue::from_static("text/event-stream"));
+    let body = serde_json::to_vec(&body)
+        .map_err(|error| format!("encode Station agent event request: {error}"))?;
+    let mut response = station_client
+        .execute_raw(StationRequest {
+            method: Method::POST,
+            path_and_query: "/sub-agent/agent/events/subscribe".to_string(),
+            headers,
+            body: StationRequestBody::Bytes(body),
+            timeout: Duration::from_secs(24 * 60 * 60),
+            traffic_class: TrafficClass::Realtime,
+            replay_policy: ReplayPolicy::SafeRead,
+            cancellation: cancellation.clone(),
+            expected_scope: None,
+        })
         .map_err(|error| format!("Station agent event stream request failed: {error}"))?;
-
-    if !response.status().is_success() {
+    if !(200..300).contains(&response.status) {
         return Err(format!(
             "Station agent event stream returned HTTP {}",
-            response.status()
+            response.status
         ));
     }
 
     let mut bytes = [0_u8; 4096];
     let mut buffer = String::new();
     loop {
-        if cancel_flag.load(Ordering::SeqCst) {
+        if cancellation.is_cancelled() {
             return Ok(());
         }
         let read = response
+            .body
             .read(&mut bytes)
             .map_err(|error| format!("failed to read Station agent event stream: {error}"))?;
         if read == 0 {

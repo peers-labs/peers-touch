@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use http::{HeaderMap, HeaderName, HeaderValue, Method, Request, StatusCode, Uri};
+use http::{HeaderMap, Method, Request as HttpRequest, StatusCode, Uri};
 use libp2p::futures::StreamExt;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 use libp2p::{
@@ -16,39 +16,144 @@ use std::fmt;
 use std::future::poll_fn;
 use std::io::{self, Cursor, Read};
 use std::str::FromStr;
-use std::sync::{mpsc, Arc};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread::JoinHandle;
 use std::time::Duration;
 use tokio::sync::mpsc as tokio_mpsc;
+use tokio::sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore};
+use tokio::task::{JoinHandle as AsyncJoinHandle, JoinSet};
 use tokio_rustls::TlsConnector;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tokio_util::sync::CancellationToken;
 use x509_parser::parse_x509_certificate;
 
 const STATION_HTTP_PROTOCOL: &str = "/peers-touch/station-http/1.0.0";
-const MAX_HEADER_BYTES: usize = 32 << 10;
-const MAX_BODY_BYTES: usize = 64 << 20;
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(15);
-const RESPONSE_TIMEOUT: Duration = Duration::from_secs(305);
+const DEFAULT_RESPONSE_TIMEOUT: Duration = Duration::from_secs(305);
+const COMMAND_CAPACITY: usize = 64;
+const MAX_IN_FLIGHT_REQUESTS: usize = 64;
+const MAX_ROUTE_SESSIONS: usize = 24;
+const RESPONSE_BODY_CAPACITY: usize = 8;
+const REQUEST_CHUNK_BYTES: usize = 16 * 1024;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Route {
     pub node_peer_id: String,
     pub dial_multiaddr: String,
     pub inner_tls_spki_sha256: [u8; 32],
+    pub route_generation: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TrafficClass {
+    Interactive,
+    Realtime,
+    Bulk,
+}
+
+pub enum RequestBody {
+    Empty,
+    Bytes(Vec<u8>),
+    Reader {
+        reader: Box<dyn Read + Send>,
+        content_length: u64,
+    },
+}
+
+impl fmt::Debug for RequestBody {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => formatter.write_str("Empty"),
+            Self::Bytes(bytes) => formatter.debug_tuple("Bytes").field(&bytes.len()).finish(),
+            Self::Reader { content_length, .. } => formatter
+                .debug_struct("Reader")
+                .field("content_length", content_length)
+                .finish_non_exhaustive(),
+        }
+    }
+}
+
+impl RequestBody {
+    fn content_length(&self) -> u64 {
+        match self {
+            Self::Empty => 0,
+            Self::Bytes(bytes) => bytes.len() as u64,
+            Self::Reader { content_length, .. } => *content_length,
+        }
+    }
 }
 
 #[derive(Debug)]
-pub struct TransportError(String);
+pub struct Request {
+    pub method: Method,
+    pub uri: Uri,
+    pub headers: HeaderMap,
+    pub body: RequestBody,
+    pub timeout: Duration,
+    pub traffic_class: TrafficClass,
+    pub cancellation: CancellationToken,
+}
+
+impl Request {
+    pub fn new(method: Method, uri: Uri) -> Self {
+        Self {
+            method,
+            uri,
+            headers: HeaderMap::new(),
+            body: RequestBody::Empty,
+            timeout: DEFAULT_RESPONSE_TIMEOUT,
+            traffic_class: TrafficClass::Interactive,
+            cancellation: CancellationToken::new(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransportErrorKind {
+    Overloaded,
+    Cancelled,
+    Timeout,
+    Unavailable,
+    InvalidRoute,
+    Protocol,
+    Shutdown,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FailurePhase {
+    BeforeSubmission,
+    AfterSubmission,
+}
+
+#[derive(Debug)]
+pub struct TransportError {
+    kind: TransportErrorKind,
+    phase: FailurePhase,
+    message: String,
+}
 
 impl TransportError {
-    fn new(message: impl Into<String>) -> Self {
-        Self(message.into())
+    fn new(kind: TransportErrorKind, phase: FailurePhase, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            phase,
+            message: message.into(),
+        }
+    }
+
+    pub fn kind(&self) -> TransportErrorKind {
+        self.kind
+    }
+
+    pub fn phase(&self) -> FailurePhase {
+        self.phase
     }
 }
 
 impl fmt::Display for TransportError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
+        formatter.write_str(&self.message)
     }
 }
 
@@ -98,22 +203,42 @@ impl Drop for BodyReader {
     }
 }
 
-#[derive(Clone)]
-pub struct Transport {
-    client_peer_id: PeerId,
-    commands: tokio_mpsc::UnboundedSender<DriverCommand>,
+struct DriverLifecycle {
+    join: Option<JoinHandle<()>>,
+    stopped: Option<mpsc::Receiver<()>>,
+    complete: bool,
 }
 
-impl Transport {
+struct Shared {
+    client_peer_id: PeerId,
+    commands: tokio_mpsc::Sender<DriverCommand>,
+    accepting: AtomicBool,
+    shutdown: CancellationToken,
+    lifecycle: Mutex<DriverLifecycle>,
+}
+
+pub struct TransportOwner {
+    shared: Arc<Shared>,
+}
+
+#[derive(Clone)]
+pub struct TransportHandle {
+    shared: Arc<Shared>,
+}
+
+impl TransportOwner {
     pub fn start() -> Result<Self, TransportError> {
         Self::start_with_identity(identity::Keypair::generate_ed25519())
     }
 
     pub fn start_with_identity(keypair: identity::Keypair) -> Result<Self, TransportError> {
         let client_peer_id = keypair.public().to_peer_id();
-        let (command_sender, command_receiver) = tokio_mpsc::unbounded_channel();
+        let (command_sender, command_receiver) = tokio_mpsc::channel(COMMAND_CAPACITY);
         let (ready_sender, ready_receiver) = mpsc::sync_channel(1);
-        std::thread::Builder::new()
+        let (stopped_sender, stopped_receiver) = mpsc::sync_channel(1);
+        let shutdown = CancellationToken::new();
+        let driver_shutdown = shutdown.clone();
+        let join = std::thread::Builder::new()
             .name("station-libp2p-http".to_string())
             .spawn(move || {
                 let runtime = match tokio::runtime::Builder::new_multi_thread()
@@ -124,6 +249,7 @@ impl Transport {
                     Ok(runtime) => runtime,
                     Err(error) => {
                         let _ = ready_sender.send(Err(error.to_string()));
+                        let _ = stopped_sender.send(());
                         return;
                     }
                 };
@@ -132,6 +258,7 @@ impl Transport {
                         Ok(swarm) => swarm,
                         Err(error) => {
                             let _ = ready_sender.send(Err(error.to_string()));
+                            let _ = stopped_sender.send(());
                             return;
                         }
                     };
@@ -143,161 +270,233 @@ impl Transport {
                         commands: command_receiver,
                         active: HashSet::new(),
                         pending_dials: HashMap::new(),
+                        requests: JoinSet::new(),
+                        admission: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
+                        sessions: Arc::new(SessionPool::default()),
+                        shutdown: driver_shutdown,
                     }
                     .run()
                     .await;
+                    let _ = stopped_sender.send(());
                 });
             })
             .map_err(|error| {
-                TransportError::new(format!("start Station transport thread: {error}"))
+                TransportError::new(
+                    TransportErrorKind::Unavailable,
+                    FailurePhase::BeforeSubmission,
+                    format!("start Station transport thread: {error}"),
+                )
             })?;
         ready_receiver
             .recv_timeout(CONTROL_TIMEOUT)
-            .map_err(|_| TransportError::new("Station transport did not start"))?
-            .map_err(TransportError::new)?;
+            .map_err(|_| {
+                TransportError::new(
+                    TransportErrorKind::Timeout,
+                    FailurePhase::BeforeSubmission,
+                    "Station transport did not start",
+                )
+            })?
+            .map_err(|message| {
+                TransportError::new(
+                    TransportErrorKind::Unavailable,
+                    FailurePhase::BeforeSubmission,
+                    message,
+                )
+            })?;
         Ok(Self {
-            client_peer_id,
-            commands: command_sender,
+            shared: Arc::new(Shared {
+                client_peer_id,
+                commands: command_sender,
+                accepting: AtomicBool::new(true),
+                shutdown,
+                lifecycle: Mutex::new(DriverLifecycle {
+                    join: Some(join),
+                    stopped: Some(stopped_receiver),
+                    complete: false,
+                }),
+            }),
         })
     }
 
-    pub fn client_peer_id(&self) -> PeerId {
-        self.client_peer_id
+    pub fn handle(&self) -> TransportHandle {
+        TransportHandle {
+            shared: self.shared.clone(),
+        }
     }
 
-    pub fn round_trip(
-        &self,
-        route: &Route,
-        raw_request: &[u8],
-    ) -> Result<Response, TransportError> {
-        let peer = PeerId::from_str(&route.node_peer_id)
-            .map_err(|error| TransportError::new(format!("invalid Node PeerID: {error}")))?;
-        let address = Multiaddr::from_str(&route.dial_multiaddr)
-            .map_err(|error| TransportError::new(format!("invalid Station route: {error}")))?;
-        let request = parse_request(raw_request)?;
+    pub fn client_peer_id(&self) -> PeerId {
+        self.shared.client_peer_id
+    }
+
+    pub fn shutdown(&self, timeout: Duration) -> Result<(), TransportError> {
+        self.shared.accepting.store(false, Ordering::Release);
+        self.shared.shutdown.cancel();
+
+        let stopped = {
+            let mut lifecycle = self.shared.lifecycle.lock().map_err(|_| {
+                TransportError::new(
+                    TransportErrorKind::Shutdown,
+                    FailurePhase::BeforeSubmission,
+                    "Station transport lifecycle lock poisoned",
+                )
+            })?;
+            if lifecycle.complete {
+                return Ok(());
+            }
+            lifecycle.stopped.take()
+        };
+        let Some(stopped) = stopped else {
+            return Err(TransportError::new(
+                TransportErrorKind::Shutdown,
+                FailurePhase::BeforeSubmission,
+                "Station transport shutdown is already in progress",
+            ));
+        };
+        if stopped.recv_timeout(timeout).is_err() {
+            if let Ok(mut lifecycle) = self.shared.lifecycle.lock() {
+                lifecycle.stopped = Some(stopped);
+            }
+            return Err(TransportError::new(
+                TransportErrorKind::Timeout,
+                FailurePhase::BeforeSubmission,
+                "Station transport did not stop before the shutdown deadline",
+            ));
+        }
+        let join = self
+            .shared
+            .lifecycle
+            .lock()
+            .map_err(|_| {
+                TransportError::new(
+                    TransportErrorKind::Shutdown,
+                    FailurePhase::BeforeSubmission,
+                    "Station transport lifecycle lock poisoned",
+                )
+            })?
+            .join
+            .take();
+        if let Some(join) = join {
+            join.join().map_err(|_| {
+                TransportError::new(
+                    TransportErrorKind::Shutdown,
+                    FailurePhase::BeforeSubmission,
+                    "Station transport driver panicked",
+                )
+            })?;
+        }
+        if let Ok(mut lifecycle) = self.shared.lifecycle.lock() {
+            lifecycle.complete = true;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for TransportOwner {
+    fn drop(&mut self) {
+        let _ = self.shutdown(Duration::from_secs(5));
+    }
+}
+
+impl TransportHandle {
+    pub fn client_peer_id(&self) -> PeerId {
+        self.shared.client_peer_id
+    }
+
+    pub fn round_trip(&self, route: &Route, request: Request) -> Result<Response, TransportError> {
+        if !self.shared.accepting.load(Ordering::Acquire) {
+            return Err(TransportError::new(
+                TransportErrorKind::Shutdown,
+                FailurePhase::BeforeSubmission,
+                "Station transport is draining",
+            ));
+        }
+        let peer = PeerId::from_str(&route.node_peer_id).map_err(|error| {
+            TransportError::new(
+                TransportErrorKind::InvalidRoute,
+                FailurePhase::BeforeSubmission,
+                format!("invalid Node PeerID: {error}"),
+            )
+        })?;
+        let address = Multiaddr::from_str(&route.dial_multiaddr).map_err(|error| {
+            TransportError::new(
+                TransportErrorKind::InvalidRoute,
+                FailurePhase::BeforeSubmission,
+                format!("invalid Station route: {error}"),
+            )
+        })?;
+        let timeout = request.timeout;
+        let cancellation = request.cancellation.clone();
         let (dial_sender, dial_receiver) = mpsc::channel();
-        self.commands
-            .send(DriverCommand::Dial {
+        self.shared
+            .commands
+            .try_send(DriverCommand::Dial {
                 peer,
                 address,
                 reply: dial_sender,
             })
-            .map_err(|_| TransportError::new("Station transport is unavailable"))?;
+            .map_err(command_send_error)?;
         dial_receiver
             .recv_timeout(CONTROL_TIMEOUT)
-            .map_err(|_| TransportError::new("Station route dial timed out"))?
-            .map_err(TransportError::new)?;
+            .map_err(|_| {
+                cancellation.cancel();
+                TransportError::new(
+                    TransportErrorKind::Timeout,
+                    FailurePhase::BeforeSubmission,
+                    "Station route dial timed out",
+                )
+            })?
+            .map_err(|message| {
+                TransportError::new(
+                    TransportErrorKind::Unavailable,
+                    FailurePhase::BeforeSubmission,
+                    message,
+                )
+            })?;
 
         let (reply_sender, reply_receiver) = mpsc::channel();
-        let cancellation = CancellationToken::new();
-        self.commands
-            .send(DriverCommand::Request {
+        self.shared
+            .commands
+            .try_send(DriverCommand::Request {
+                route: route.clone(),
                 peer,
-                expected_spki: route.inner_tls_spki_sha256,
                 request,
-                cancellation: cancellation.clone(),
                 reply: reply_sender,
             })
-            .map_err(|_| TransportError::new("Station transport is unavailable"))?;
-        match reply_receiver.recv_timeout(RESPONSE_TIMEOUT) {
-            Ok(result) => result.map_err(TransportError::new),
+            .map_err(command_send_error)?;
+        match reply_receiver.recv_timeout(timeout) {
+            Ok(result) => result,
             Err(_) => {
                 cancellation.cancel();
-                Err(TransportError::new("Station HTTP response timed out"))
+                Err(TransportError::new(
+                    TransportErrorKind::Timeout,
+                    FailurePhase::AfterSubmission,
+                    "Station HTTP response timed out",
+                ))
             }
         }
     }
+
+    pub fn close_route(&self, route: &Route) -> Result<(), TransportError> {
+        self.shared
+            .commands
+            .try_send(DriverCommand::CloseRoute(route.clone()))
+            .map_err(command_send_error)
+    }
 }
 
-struct ParsedRequest {
-    method: Method,
-    uri: Uri,
-    headers: HeaderMap,
-    body: Vec<u8>,
-}
-
-fn parse_request(raw: &[u8]) -> Result<ParsedRequest, TransportError> {
-    let header_end = raw
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .ok_or_else(|| TransportError::new("HTTP request has no header terminator"))?;
-    if header_end > MAX_HEADER_BYTES {
-        return Err(TransportError::new("HTTP request headers exceed 32 KiB"));
+fn command_send_error(error: tokio_mpsc::error::TrySendError<DriverCommand>) -> TransportError {
+    match error {
+        tokio_mpsc::error::TrySendError::Full(_) => TransportError::new(
+            TransportErrorKind::Overloaded,
+            FailurePhase::BeforeSubmission,
+            "Station transport admission queue is full",
+        ),
+        tokio_mpsc::error::TrySendError::Closed(_) => TransportError::new(
+            TransportErrorKind::Shutdown,
+            FailurePhase::BeforeSubmission,
+            "Station transport is unavailable",
+        ),
     }
-    let head = std::str::from_utf8(&raw[..header_end])
-        .map_err(|_| TransportError::new("HTTP request headers are not UTF-8"))?;
-    let mut lines = head.split("\r\n");
-    let request_line = lines
-        .next()
-        .ok_or_else(|| TransportError::new("HTTP request line is missing"))?;
-    let mut parts = request_line.split_whitespace();
-    let method = Method::from_bytes(
-        parts
-            .next()
-            .ok_or_else(|| TransportError::new("HTTP request method is missing"))?
-            .as_bytes(),
-    )
-    .map_err(|_| TransportError::new("HTTP request method is invalid"))?;
-    let uri = Uri::from_str(
-        parts
-            .next()
-            .filter(|value| value.starts_with('/') && !value.starts_with("//"))
-            .ok_or_else(|| TransportError::new("HTTP request target is invalid"))?,
-    )
-    .map_err(|_| TransportError::new("HTTP request target is invalid"))?;
-    if parts.next() != Some("HTTP/1.1") || parts.next().is_some() {
-        return Err(TransportError::new("HTTP request version is invalid"));
-    }
-    let mut headers = HeaderMap::new();
-    let mut content_length = None;
-    for line in lines {
-        let (name, value) = line
-            .split_once(':')
-            .ok_or_else(|| TransportError::new("HTTP request header is invalid"))?;
-        if name.eq_ignore_ascii_case("transfer-encoding") {
-            return Err(TransportError::new(
-                "chunked proxy requests are not supported",
-            ));
-        }
-        if name.eq_ignore_ascii_case("content-length") {
-            if content_length.is_some() {
-                return Err(TransportError::new(
-                    "HTTP request has duplicate Content-Length",
-                ));
-            }
-            content_length = Some(
-                value
-                    .trim()
-                    .parse::<usize>()
-                    .map_err(|_| TransportError::new("Content-Length is invalid"))?,
-            );
-            continue;
-        }
-        if name.eq_ignore_ascii_case("host")
-            || name.eq_ignore_ascii_case("connection")
-            || name.eq_ignore_ascii_case("keep-alive")
-            || name.eq_ignore_ascii_case("proxy-connection")
-            || name.eq_ignore_ascii_case("upgrade")
-        {
-            continue;
-        }
-        headers.append(
-            HeaderName::from_bytes(name.trim().as_bytes())
-                .map_err(|_| TransportError::new("HTTP header name is invalid"))?,
-            HeaderValue::from_str(value.trim())
-                .map_err(|_| TransportError::new("HTTP header value is invalid"))?,
-        );
-    }
-    let body = raw[header_end + 4..].to_vec();
-    if body.len() > MAX_BODY_BYTES || content_length.unwrap_or(0) != body.len() {
-        return Err(TransportError::new("HTTP request body length is invalid"));
-    }
-    Ok(ParsedRequest {
-        method,
-        uri,
-        headers,
-        body,
-    })
 }
 
 #[derive(NetworkBehaviour)]
@@ -315,35 +514,52 @@ enum DriverCommand {
         reply: mpsc::Sender<Result<(), String>>,
     },
     Request {
+        route: Route,
         peer: PeerId,
-        expected_spki: [u8; 32],
-        request: ParsedRequest,
-        cancellation: CancellationToken,
-        reply: mpsc::Sender<Result<Response, String>>,
+        request: Request,
+        reply: mpsc::Sender<Result<Response, TransportError>>,
     },
+    CloseRoute(Route),
 }
 
 struct Driver {
     swarm: Swarm<Behaviour>,
     stream_control: libp2p_stream::Control,
-    commands: tokio_mpsc::UnboundedReceiver<DriverCommand>,
+    commands: tokio_mpsc::Receiver<DriverCommand>,
     active: HashSet<PeerId>,
     pending_dials: HashMap<PeerId, Vec<mpsc::Sender<Result<(), String>>>>,
+    requests: JoinSet<()>,
+    admission: Arc<Semaphore>,
+    sessions: Arc<SessionPool>,
+    shutdown: CancellationToken,
 }
 
 impl Driver {
     async fn run(mut self) {
         loop {
             tokio::select! {
+                _ = self.shutdown.cancelled() => break,
                 command = self.commands.recv() => {
-                    let Some(command) = command else { return };
+                    let Some(command) = command else { break };
                     self.handle_command(command);
                 }
-                event = self.swarm.select_next_some() => {
-                    self.handle_event(event);
+                event = self.swarm.select_next_some() => self.handle_event(event),
+                result = self.requests.join_next(), if !self.requests.is_empty() => {
+                    if result.is_some_and(|result| result.is_err()) {
+                        // The request result is delivered through its reply channel.
+                    }
                 }
             }
         }
+        self.fail_pending();
+        self.shutdown.cancel();
+        while tokio::time::timeout(Duration::from_secs(5), self.requests.join_next())
+            .await
+            .ok()
+            .flatten()
+            .is_some()
+        {}
+        self.sessions.shutdown().await;
     }
 
     fn handle_command(&mut self, command: DriverCommand) {
@@ -367,29 +583,44 @@ impl Driver {
                 }
             }
             DriverCommand::Request {
+                route,
                 peer,
-                expected_spki,
                 request,
-                cancellation,
                 reply,
             } => {
                 if !self.active.contains(&peer) {
-                    let _ = reply.send(Err("Station peer is not connected".to_string()));
+                    let _ = reply.send(Err(TransportError::new(
+                        TransportErrorKind::Unavailable,
+                        FailurePhase::BeforeSubmission,
+                        "Station peer is not connected",
+                    )));
                     return;
                 }
-                let control = self.stream_control.clone();
-                let error_reply = reply.clone();
-                tokio::spawn(async move {
-                    if let Err(error) =
-                        execute_request(control, peer, expected_spki, request, cancellation, reply)
-                            .await
-                    {
-                        // Sending after a response has already been projected is harmless:
-                        // the synchronous caller has dropped this side of the channel.
-                        if error_reply.send(Err(error)).is_err() {
-                            return;
-                        }
+                let permit = match self.admission.clone().try_acquire_owned() {
+                    Ok(permit) => permit,
+                    Err(_) => {
+                        let _ = reply.send(Err(TransportError::new(
+                            TransportErrorKind::Overloaded,
+                            FailurePhase::BeforeSubmission,
+                            "Station transport request capacity is exhausted",
+                        )));
+                        return;
                     }
+                };
+                let control = self.stream_control.clone();
+                let sessions = self.sessions.clone();
+                let shutdown = self.shutdown.clone();
+                self.requests.spawn(async move {
+                    execute_request(
+                        control, sessions, route, peer, request, reply, permit, shutdown,
+                    )
+                    .await;
+                });
+            }
+            DriverCommand::CloseRoute(route) => {
+                let sessions = self.sessions.clone();
+                self.requests.spawn(async move {
+                    sessions.close_route(&route).await;
                 });
             }
         }
@@ -420,147 +651,493 @@ impl Driver {
             }
         }
     }
+
+    fn fail_pending(&mut self) {
+        for (_, waiters) in self.pending_dials.drain() {
+            for waiter in waiters {
+                let _ = waiter.send(Err("Station transport is shutting down".to_string()));
+            }
+        }
+        while let Ok(command) = self.commands.try_recv() {
+            match command {
+                DriverCommand::Dial { reply, .. } => {
+                    let _ = reply.send(Err("Station transport is shutting down".to_string()));
+                }
+                DriverCommand::Request { reply, .. } => {
+                    let _ = reply.send(Err(TransportError::new(
+                        TransportErrorKind::Shutdown,
+                        FailurePhase::BeforeSubmission,
+                        "Station transport is shutting down",
+                    )));
+                }
+                DriverCommand::CloseRoute(_) => {}
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct SessionKey {
+    node_peer_id: String,
+    dial_multiaddr: String,
+    inner_tls_spki_sha256: [u8; 32],
+    route_generation: u64,
+    traffic_class: TrafficClass,
+}
+
+impl SessionKey {
+    fn new(route: &Route, traffic_class: TrafficClass) -> Self {
+        Self {
+            node_peer_id: route.node_peer_id.clone(),
+            dial_multiaddr: route.dial_multiaddr.clone(),
+            inner_tls_spki_sha256: route.inner_tls_spki_sha256,
+            route_generation: route.route_generation,
+            traffic_class,
+        }
+    }
+
+    fn belongs_to(&self, route: &Route) -> bool {
+        self.node_peer_id == route.node_peer_id
+            && self.dial_multiaddr == route.dial_multiaddr
+            && self.inner_tls_spki_sha256 == route.inner_tls_spki_sha256
+            && self.route_generation == route.route_generation
+    }
+}
+
+struct Session {
+    sender: h2::client::SendRequest<Bytes>,
+    cancellation: CancellationToken,
+    connection: Mutex<Option<AsyncJoinHandle<()>>>,
+}
+
+impl Session {
+    async fn close(&self) {
+        self.cancellation.cancel();
+        let connection = self
+            .connection
+            .lock()
+            .ok()
+            .and_then(|mut connection| connection.take());
+        if let Some(connection) = connection {
+            let _ = connection.await;
+        }
+    }
+}
+
+#[derive(Default)]
+struct SessionPool {
+    sessions: AsyncMutex<HashMap<SessionKey, Arc<Session>>>,
+}
+
+impl SessionPool {
+    async fn get_or_open(
+        &self,
+        mut control: libp2p_stream::Control,
+        peer: PeerId,
+        route: &Route,
+        traffic_class: TrafficClass,
+    ) -> Result<(SessionKey, Arc<Session>), TransportError> {
+        let key = SessionKey::new(route, traffic_class);
+        let mut sessions = self.sessions.lock().await;
+        if let Some(session) = sessions.get(&key) {
+            return Ok((key, session.clone()));
+        }
+        if sessions.len() >= MAX_ROUTE_SESSIONS {
+            return Err(TransportError::new(
+                TransportErrorKind::Overloaded,
+                FailurePhase::BeforeSubmission,
+                "Station HTTP/2 route-session capacity is exhausted",
+            ));
+        }
+        let stream = control
+            .open_stream(peer, StreamProtocol::new(STATION_HTTP_PROTOCOL))
+            .await
+            .map_err(|error| {
+                TransportError::new(
+                    TransportErrorKind::Unavailable,
+                    FailurePhase::BeforeSubmission,
+                    error.to_string(),
+                )
+            })?;
+        let tls = tls_connector(route.inner_tls_spki_sha256)
+            .connect(
+                ServerName::try_from("peers-touch-station")
+                    .expect("static Station TLS name")
+                    .to_owned(),
+                stream.compat(),
+            )
+            .await
+            .map_err(|error| {
+                TransportError::new(
+                    TransportErrorKind::Protocol,
+                    FailurePhase::BeforeSubmission,
+                    format!("authenticate Station Node TLS: {error}"),
+                )
+            })?;
+        let (sender, connection) = h2::client::handshake(tls).await.map_err(|error| {
+            TransportError::new(
+                TransportErrorKind::Protocol,
+                FailurePhase::BeforeSubmission,
+                format!("start Station HTTP/2: {error}"),
+            )
+        })?;
+        let cancellation = CancellationToken::new();
+        let connection_cancellation = cancellation.clone();
+        let connection = tokio::spawn(async move {
+            tokio::select! {
+                _ = connection_cancellation.cancelled() => {}
+                _ = connection => {}
+            }
+        });
+        let session = Arc::new(Session {
+            sender,
+            cancellation,
+            connection: Mutex::new(Some(connection)),
+        });
+        sessions.insert(key.clone(), session.clone());
+        Ok((key, session))
+    }
+
+    async fn invalidate(&self, key: &SessionKey) {
+        let session = self.sessions.lock().await.remove(key);
+        if let Some(session) = session {
+            session.close().await;
+        }
+    }
+
+    async fn close_route(&self, route: &Route) {
+        let sessions = {
+            let mut current = self.sessions.lock().await;
+            let keys = current
+                .keys()
+                .filter(|key| key.belongs_to(route))
+                .cloned()
+                .collect::<Vec<_>>();
+            keys.into_iter()
+                .filter_map(|key| current.remove(&key))
+                .collect::<Vec<_>>()
+        };
+        for session in sessions {
+            session.close().await;
+        }
+    }
+
+    async fn shutdown(&self) {
+        let sessions = self
+            .sessions
+            .lock()
+            .await
+            .drain()
+            .map(|(_, session)| session)
+            .collect::<Vec<_>>();
+        for session in sessions {
+            session.close().await;
+        }
+    }
 }
 
 async fn execute_request(
     control: libp2p_stream::Control,
+    sessions: Arc<SessionPool>,
+    route: Route,
     peer: PeerId,
-    expected_spki: [u8; 32],
-    parsed: ParsedRequest,
-    cancellation: CancellationToken,
-    reply: mpsc::Sender<Result<Response, String>>,
-) -> Result<(), String> {
-    let prepared = tokio::select! {
-        _ = cancellation.cancelled() => {
-            return Err("Station HTTP caller was cancelled".to_string());
-        }
+    request: Request,
+    reply: mpsc::Sender<Result<Response, TransportError>>,
+    _permit: OwnedSemaphorePermit,
+    shutdown: CancellationToken,
+) {
+    let timeout = request.timeout;
+    let deadline = tokio::time::Instant::now() + timeout;
+    let request_cancellation = request.cancellation.clone();
+    let result = tokio::select! {
+        _ = shutdown.cancelled() => Err(TransportError::new(
+            TransportErrorKind::Shutdown,
+            FailurePhase::BeforeSubmission,
+            "Station transport is shutting down",
+        )),
+        _ = request_cancellation.cancelled() => Err(TransportError::new(
+            TransportErrorKind::Cancelled,
+            FailurePhase::BeforeSubmission,
+            "Station HTTP caller was cancelled",
+        )),
         result = tokio::time::timeout(
-            RESPONSE_TIMEOUT,
-            prepare_response(control, peer, expected_spki, parsed),
-        ) => {
-            result
-                .map_err(|_| "Station HTTP response timed out".to_string())??
-        }
-    };
-    let (status, headers, mut body) = prepared;
-    let (body_sender, body_receiver) = tokio_mpsc::channel(8);
-    reply
-        .send(Ok(Response {
-            status,
-            headers,
-            body: BodyReader {
-                receiver: body_receiver,
-                current: Cursor::new(Vec::new()),
-                complete: false,
-                cancellation: cancellation.clone(),
+            timeout,
+            execute_request_inner(control, sessions.clone(), &route, peer, request, deadline),
+        ) => match result {
+            Ok(result) => result,
+            Err(_) => {
+                request_cancellation.cancel();
+                Err(TransportError::new(
+                    TransportErrorKind::Timeout,
+                    FailurePhase::AfterSubmission,
+                    "Station HTTP response timed out",
+                ))
             },
-        }))
-        .map_err(|_| "Station HTTP caller was cancelled".to_string())?;
-    loop {
-        let next = tokio::select! {
-            _ = cancellation.cancelled() => return Ok(()),
-            result = tokio::time::timeout(RESPONSE_TIMEOUT, body.data()) => {
-                match result {
-                    Ok(next) => next,
-                    Err(_) => {
-                        let _ = body_sender
-                            .send(Err("Station HTTP response body timed out".to_string()))
-                            .await;
-                        return Ok(());
-                    }
-                }
-            }
-        };
-        match next {
-            Some(Ok(bytes)) => {
-                let length = bytes.len();
-                if body_sender.send(Ok(bytes.to_vec())).await.is_err() {
-                    return Ok(());
-                }
-                let _ = body.flow_control().release_capacity(length);
-            }
-            Some(Err(error)) => {
-                let _ = body_sender.send(Err(error.to_string())).await;
-                return Ok(());
-            }
-            None => return Ok(()),
-        }
-    }
+        },
+    };
+    let _ = reply.send(result);
 }
 
-async fn prepare_response(
-    mut control: libp2p_stream::Control,
+async fn execute_request_inner(
+    control: libp2p_stream::Control,
+    sessions: Arc<SessionPool>,
+    route: &Route,
     peer: PeerId,
-    expected_spki: [u8; 32],
-    parsed: ParsedRequest,
-) -> Result<(StatusCode, HeaderMap, h2::RecvStream), String> {
-    let stream = control
-        .open_stream(peer, StreamProtocol::new(STATION_HTTP_PROTOCOL))
-        .await
-        .map_err(|error| error.to_string())?;
-    let tls = tls_connector(expected_spki)
-        .connect(
-            ServerName::try_from("peers-touch-station")
-                .map_err(|error| error.to_string())?
-                .to_owned(),
-            stream.compat(),
-        )
-        .await
-        .map_err(|error| format!("authenticate Station Node TLS: {error}"))?;
-    let (mut sender, connection) = h2::client::handshake(tls)
-        .await
-        .map_err(|error| format!("start Station HTTP/2: {error}"))?;
-    tokio::spawn(async move {
-        let _ = connection.await;
-    });
-    sender = sender
-        .ready()
-        .await
-        .map_err(|error| format!("Station HTTP/2 is not ready: {error}"))?;
-    let mut builder = Request::builder().method(parsed.method).uri(parsed.uri);
-    for (name, value) in &parsed.headers {
+    request: Request,
+    deadline: tokio::time::Instant,
+) -> Result<Response, TransportError> {
+    let cancellation = request.cancellation.clone();
+    let traffic_class = request.traffic_class;
+    let (key, session) = sessions
+        .get_or_open(control, peer, route, traffic_class)
+        .await?;
+    let result = send_over_session(session, request, cancellation, deadline).await;
+    if result.is_err() {
+        sessions.invalidate(&key).await;
+    }
+    result
+}
+
+async fn send_over_session(
+    session: Arc<Session>,
+    request: Request,
+    cancellation: CancellationToken,
+    deadline: tokio::time::Instant,
+) -> Result<Response, TransportError> {
+    let content_length = request.body.content_length();
+    let mut builder = HttpRequest::builder()
+        .method(request.method)
+        .uri(request.uri);
+    for (name, value) in &request.headers {
         builder = builder.header(name, value);
     }
-    let request = builder
-        .body(())
-        .map_err(|error| format!("build Station HTTP/2 request: {error}"))?;
-    let end_stream = parsed.body.is_empty();
-    let (response_future, mut body_sender) = sender
-        .send_request(request, end_stream)
-        .map_err(|error| format!("send Station HTTP/2 headers: {error}"))?;
-    if !end_stream {
-        send_body(&mut body_sender, parsed.body).await?;
+    if !request.headers.contains_key(http::header::CONTENT_LENGTH) {
+        builder = builder.header(http::header::CONTENT_LENGTH, content_length);
     }
-    let response = response_future
-        .await
-        .map_err(|error| format!("read Station HTTP/2 headers: {error}"))?;
+    let request_head = builder.body(()).map_err(|error| {
+        TransportError::new(
+            TransportErrorKind::Protocol,
+            FailurePhase::BeforeSubmission,
+            format!("build Station HTTP/2 request: {error}"),
+        )
+    })?;
+    let mut sender = session.sender.clone().ready().await.map_err(|error| {
+        TransportError::new(
+            TransportErrorKind::Unavailable,
+            FailurePhase::BeforeSubmission,
+            format!("Station HTTP/2 is not ready: {error}"),
+        )
+    })?;
+    let end_stream = content_length == 0;
+    let (response_future, mut body_sender) = sender
+        .send_request(request_head, end_stream)
+        .map_err(|error| {
+            TransportError::new(
+                TransportErrorKind::Unavailable,
+                FailurePhase::BeforeSubmission,
+                format!("send Station HTTP/2 headers: {error}"),
+            )
+        })?;
+    if !end_stream {
+        send_body(&mut body_sender, request.body, cancellation.clone()).await?;
+    }
+    let response = tokio::select! {
+        _ = cancellation.cancelled() => {
+            return Err(TransportError::new(
+                TransportErrorKind::Cancelled,
+                FailurePhase::AfterSubmission,
+                "Station HTTP caller was cancelled",
+            ));
+        }
+        response = response_future => response.map_err(|error| {
+            TransportError::new(
+                TransportErrorKind::Unavailable,
+                FailurePhase::AfterSubmission,
+                format!("read Station HTTP/2 headers: {error}"),
+            )
+        })?,
+    };
     let status = response.status();
     let headers = response.headers().clone();
-    Ok((status, headers, response.into_body()))
-}
-
-async fn send_body(stream: &mut h2::SendStream<Bytes>, body: Vec<u8>) -> Result<(), String> {
-    let mut offset = 0;
-    while offset < body.len() {
-        let end = (offset + 16 * 1024).min(body.len());
-        let length = end - offset;
-        stream.reserve_capacity(length);
-        while stream.capacity() < length {
-            match poll_fn(|context| stream.poll_capacity(context)).await {
-                Some(Ok(_)) => {}
-                Some(Err(error)) => return Err(error.to_string()),
-                None => return Err("Station HTTP/2 request body closed".to_string()),
+    let mut body = response.into_body();
+    let (body_sender, body_receiver) = tokio_mpsc::channel(RESPONSE_BODY_CAPACITY);
+    let body_cancellation = cancellation.clone();
+    tokio::spawn(async move {
+        loop {
+            let next = tokio::select! {
+                _ = body_cancellation.cancelled() => return,
+                _ = tokio::time::sleep_until(deadline) => {
+                    let _ = body_sender
+                        .send(Err("Station HTTP response body timed out".to_string()))
+                        .await;
+                    body_cancellation.cancel();
+                    return;
+                }
+                next = body.data() => next,
+            };
+            match next {
+                Some(Ok(bytes)) => {
+                    let length = bytes.len();
+                    if body_sender.send(Ok(bytes.to_vec())).await.is_err() {
+                        return;
+                    }
+                    let _ = body.flow_control().release_capacity(length);
+                }
+                Some(Err(error)) => {
+                    let _ = body_sender.send(Err(error.to_string())).await;
+                    return;
+                }
+                None => return,
             }
         }
-        stream
-            .send_data(
-                Bytes::copy_from_slice(&body[offset..end]),
-                end == body.len(),
-            )
-            .map_err(|error| error.to_string())?;
+    });
+    Ok(Response {
+        status,
+        headers,
+        body: BodyReader {
+            receiver: body_receiver,
+            current: Cursor::new(Vec::new()),
+            complete: false,
+            cancellation,
+        },
+    })
+}
+
+async fn send_body(
+    stream: &mut h2::SendStream<Bytes>,
+    body: RequestBody,
+    cancellation: CancellationToken,
+) -> Result<(), TransportError> {
+    match body {
+        RequestBody::Empty => Ok(()),
+        RequestBody::Bytes(bytes) => send_bytes(stream, bytes, cancellation).await,
+        RequestBody::Reader {
+            mut reader,
+            content_length,
+        } => {
+            let mut sent = 0_u64;
+            loop {
+                let read = tokio::task::spawn_blocking(move || {
+                    let mut buffer = vec![0_u8; REQUEST_CHUNK_BYTES];
+                    let result = reader.read(&mut buffer);
+                    (reader, buffer, result)
+                })
+                .await
+                .map_err(|_| {
+                    TransportError::new(
+                        TransportErrorKind::Unavailable,
+                        FailurePhase::AfterSubmission,
+                        "Station request body reader panicked",
+                    )
+                })?;
+                reader = read.0;
+                let mut buffer = read.1;
+                let count = read.2.map_err(|error| {
+                    TransportError::new(
+                        TransportErrorKind::Unavailable,
+                        FailurePhase::AfterSubmission,
+                        format!("read Station request body: {error}"),
+                    )
+                })?;
+                if count == 0 {
+                    if sent != content_length {
+                        return Err(TransportError::new(
+                            TransportErrorKind::Protocol,
+                            FailurePhase::AfterSubmission,
+                            "Station request body ended before Content-Length",
+                        ));
+                    }
+                    return Ok(());
+                }
+                sent = sent.saturating_add(count as u64);
+                if sent > content_length {
+                    return Err(TransportError::new(
+                        TransportErrorKind::Protocol,
+                        FailurePhase::AfterSubmission,
+                        "Station request body exceeds Content-Length",
+                    ));
+                }
+                buffer.truncate(count);
+                send_chunk(
+                    stream,
+                    Bytes::from(buffer),
+                    sent == content_length,
+                    &cancellation,
+                )
+                .await?;
+                if sent == content_length {
+                    return Ok(());
+                }
+            }
+        }
+    }
+}
+
+async fn send_bytes(
+    stream: &mut h2::SendStream<Bytes>,
+    body: Vec<u8>,
+    cancellation: CancellationToken,
+) -> Result<(), TransportError> {
+    let mut offset = 0;
+    while offset < body.len() {
+        let end = (offset + REQUEST_CHUNK_BYTES).min(body.len());
+        send_chunk(
+            stream,
+            Bytes::copy_from_slice(&body[offset..end]),
+            end == body.len(),
+            &cancellation,
+        )
+        .await?;
         offset = end;
     }
     Ok(())
+}
+
+async fn send_chunk(
+    stream: &mut h2::SendStream<Bytes>,
+    chunk: Bytes,
+    end_stream: bool,
+    cancellation: &CancellationToken,
+) -> Result<(), TransportError> {
+    let length = chunk.len();
+    stream.reserve_capacity(length);
+    while stream.capacity() < length {
+        tokio::select! {
+            _ = cancellation.cancelled() => {
+                return Err(TransportError::new(
+                    TransportErrorKind::Cancelled,
+                    FailurePhase::AfterSubmission,
+                    "Station HTTP caller was cancelled",
+                ));
+            }
+            capacity = poll_fn(|context| stream.poll_capacity(context)) => {
+                match capacity {
+                    Some(Ok(_)) => {}
+                    Some(Err(error)) => {
+                        return Err(TransportError::new(
+                            TransportErrorKind::Unavailable,
+                            FailurePhase::AfterSubmission,
+                            error.to_string(),
+                        ));
+                    }
+                    None => {
+                        return Err(TransportError::new(
+                            TransportErrorKind::Unavailable,
+                            FailurePhase::AfterSubmission,
+                            "Station HTTP/2 request body closed",
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    stream.send_data(chunk, end_stream).map_err(|error| {
+        TransportError::new(
+            TransportErrorKind::Unavailable,
+            FailurePhase::AfterSubmission,
+            error.to_string(),
+        )
+    })
 }
 
 fn tls_connector(expected_spki: [u8; 32]) -> TlsConnector {
@@ -648,11 +1225,29 @@ fn build_swarm(keypair: identity::Keypair) -> Result<Swarm<Behaviour>, Transport
             noise::Config::new,
             yamux::Config::default,
         )
-        .map_err(|error| TransportError::new(format!("build TCP transport: {error}")))?
+        .map_err(|error| {
+            TransportError::new(
+                TransportErrorKind::Unavailable,
+                FailurePhase::BeforeSubmission,
+                format!("build TCP transport: {error}"),
+            )
+        })?
         .with_dns()
-        .map_err(|error| TransportError::new(format!("build DNS transport: {error}")))?
+        .map_err(|error| {
+            TransportError::new(
+                TransportErrorKind::Unavailable,
+                FailurePhase::BeforeSubmission,
+                format!("build DNS transport: {error}"),
+            )
+        })?
         .with_relay_client(noise::Config::new, yamux::Config::default)
-        .map_err(|error| TransportError::new(format!("build Relay transport: {error}")))?
+        .map_err(|error| {
+            TransportError::new(
+                TransportErrorKind::Unavailable,
+                FailurePhase::BeforeSubmission,
+                format!("build Relay transport: {error}"),
+            )
+        })?
         .with_behaviour(|key, relay| Behaviour {
             relay,
             streams: libp2p_stream::Behaviour::new(),
@@ -662,7 +1257,13 @@ fn build_swarm(keypair: identity::Keypair) -> Result<Swarm<Behaviour>, Transport
             )),
             ping: ping::Behaviour::default(),
         })
-        .map_err(|error| TransportError::new(format!("build P2P behaviour: {error}")))
+        .map_err(|error| {
+            TransportError::new(
+                TransportErrorKind::Unavailable,
+                FailurePhase::BeforeSubmission,
+                format!("build P2P behaviour: {error}"),
+            )
+        })
         .map(|builder| builder.build())
 }
 
@@ -671,9 +1272,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn response_timeout_covers_long_running_standard_requests() {
+    fn transport_bounds_are_finite() {
         assert_eq!(CONTROL_TIMEOUT, Duration::from_secs(15));
-        assert_eq!(RESPONSE_TIMEOUT, Duration::from_secs(305));
-        assert!(RESPONSE_TIMEOUT > CONTROL_TIMEOUT);
+        assert_eq!(DEFAULT_RESPONSE_TIMEOUT, Duration::from_secs(305));
+        assert!(COMMAND_CAPACITY > 0);
+        assert!(MAX_IN_FLIGHT_REQUESTS > 0);
+        assert!(MAX_ROUTE_SESSIONS > 0);
+    }
+
+    #[test]
+    fn owner_handle_split_is_explicit() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<TransportOwner>();
+        assert_send_sync::<TransportHandle>();
     }
 }
