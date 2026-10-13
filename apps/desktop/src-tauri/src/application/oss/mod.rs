@@ -623,10 +623,10 @@ pub fn oss_resolve_url(
     let station_resource = if bound_station && !caps.skip_local_mirror() {
         match resources.reference(&resource_path, Some(uri.to_uri())) {
             Ok(ResourceReference::Station(resource)) => Some(resource),
-            Ok(ResourceReference::External(_)) => {
+            Ok(ResourceReference::External(_) | ResourceReference::Inline(_)) => {
                 return AppResult::fail(
                     ErrorCode::InternalError,
-                    "bound OSS resource unexpectedly resolved as external",
+                    "bound OSS resource unexpectedly resolved outside Station scope",
                     None,
                 )
             }

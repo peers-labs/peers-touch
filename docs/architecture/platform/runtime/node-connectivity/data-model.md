@@ -220,6 +220,10 @@ StationResourceRef
 ExternalResourceUrl
   absolute_url
 
+InlineResourceData
+  media_type: bounded image allowlist
+  base64_payload
+
 StationTransportState
   CREATED -> RUNNING -> DRAINING -> STOPPED
                      -> FAILED
@@ -261,6 +265,9 @@ active Direct/Relay origin. Native materialization uses `StationRequest`.
 WebView projection creates an app-local opaque URI bound to the same Station and
 lifecycle generation. `ExternalResourceUrl` is never fetched through a
 Station route and retains its own URL/security policy.
+Bounded `data:image/*;base64` values use `InlineResourceData`; they remain
+non-network resources and are never coerced into either route-relative or
+HTTP(S) external identity.
 
 ## 6. Durable Events And Device Isolation
 

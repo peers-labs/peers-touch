@@ -377,7 +377,9 @@ Station-owned relative paths become `StationResourceRef` values scoped by
 logical Station and lifecycle generation. Native loaders use the typed Station
 client. WebView delivery uses an app-owned local asset/custom-protocol
 projection after scope validation. Absolute external or presigned URLs use a
-separate `ExternalResourceUrl` type and bypass Station transport.
+separate `ExternalResourceUrl` type and bypass Station transport. Bounded
+base64 image data uses `InlineResourceData`; it remains a non-network resource
+and cannot be interpreted as either a Station route or an HTTP(S) origin.
 
 ### Rationale
 Resource identity remains stable across Direct/Circuit changes without

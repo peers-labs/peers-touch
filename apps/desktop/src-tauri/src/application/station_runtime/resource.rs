@@ -2,8 +2,10 @@ use super::client::{
     ReplayPolicy, StationClient, StationClientError, StationClientErrorKind, StationRequest,
     StationRequestBody, StationRequestScope, StationResponse, StationRouteSecurity, TrafficClass,
 };
+use base64::Engine;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::Method;
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::io::Read;
@@ -13,6 +15,14 @@ use tokio_util::sync::CancellationToken;
 use ulid::Ulid;
 
 const MAX_PROJECTED_RESOURCES: usize = 4096;
+const MAX_INLINE_IMAGE_LENGTH: usize = 2 * 1024 * 1024;
+const INLINE_IMAGE_MEDIA_TYPES: [&str; 5] = [
+    "image/gif",
+    "image/jpeg",
+    "image/png",
+    "image/svg+xml",
+    "image/webp",
+];
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct StationResourceRef {
@@ -95,6 +105,54 @@ impl ExternalResourceUrl {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InlineResourceData(String);
+
+impl InlineResourceData {
+    pub fn parse(value: impl Into<String>) -> Result<Self, ResourceProjectionError> {
+        let value = value.into();
+        if value.len() > MAX_INLINE_IMAGE_LENGTH {
+            return Err(ResourceProjectionError::InvalidInlineData);
+        }
+        let Some((metadata, payload)) = value.split_once(',') else {
+            return Err(ResourceProjectionError::InvalidInlineData);
+        };
+        let Some(media_type) = metadata.strip_prefix("data:") else {
+            return Err(ResourceProjectionError::InvalidInlineData);
+        };
+        let Some(media_type) = media_type.strip_suffix(";base64") else {
+            return Err(ResourceProjectionError::InvalidInlineData);
+        };
+        if !INLINE_IMAGE_MEDIA_TYPES.contains(&media_type)
+            || payload.is_empty()
+            || !payload
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
+        {
+            return Err(ResourceProjectionError::InvalidInlineData);
+        }
+        Ok(Self(value))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn decoded_bytes(&self) -> Result<Vec<u8>, ResourceProjectionError> {
+        let (_, payload) = self
+            .0
+            .split_once(',')
+            .ok_or(ResourceProjectionError::InvalidInlineData)?;
+        base64::engine::general_purpose::STANDARD
+            .decode(payload)
+            .map_err(|_| ResourceProjectionError::InvalidInlineData)
+    }
+
+    pub fn cache_identity(&self) -> String {
+        format!("inline:{}", hex::encode(Sha256::digest(self.0.as_bytes())))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AppLocalResourceUri(String);
 
 impl AppLocalResourceUri {
@@ -107,6 +165,7 @@ impl AppLocalResourceUri {
 pub enum ResourceReference {
     Station(StationResourceRef),
     External(ExternalResourceUrl),
+    Inline(InlineResourceData),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -114,6 +173,7 @@ pub enum ResourceProjectionError {
     InvalidScope,
     InvalidReference,
     InvalidExternalUrl,
+    InvalidInlineData,
     StaleScope,
     UnknownProjection,
     ProjectionLock,
@@ -125,6 +185,7 @@ impl fmt::Display for ResourceProjectionError {
             Self::InvalidScope => "Station resource scope is invalid",
             Self::InvalidReference => "Station resource reference is invalid",
             Self::InvalidExternalUrl => "external resource URL is invalid",
+            Self::InvalidInlineData => "inline resource data is invalid",
             Self::StaleScope => "Station resource belongs to a stale lifecycle",
             Self::UnknownProjection => "Station resource projection is unavailable",
             Self::ProjectionLock => "Station resource projection lock is unavailable",
@@ -264,6 +325,9 @@ impl StationResourceHandle {
         if value.starts_with("station-resource://local/") {
             return self.resolve(&value).map(ResourceReference::Station);
         }
+        if value.starts_with("data:") {
+            return InlineResourceData::parse(value).map(ResourceReference::Inline);
+        }
         if value.starts_with('/') {
             let scope = self.active_scope()?;
             return StationResourceRef::new(
@@ -311,6 +375,7 @@ impl StationResourceHandle {
                 self.project(resource).map(|uri| uri.as_str().to_string())
             }
             ResourceReference::External(url) => Ok(url.as_str().to_string()),
+            ResourceReference::Inline(data) => Ok(data.as_str().to_string()),
         }
     }
 
@@ -590,12 +655,34 @@ mod tests {
     }
 
     #[test]
+    fn inline_image_data_remains_non_network_resource() {
+        let resources = StationResourceHandle::new(StationClient::testing_scoped("station", 7));
+        let value = "data:image/svg+xml;base64,PHN2Zy8+";
+
+        let inline = resources.reference(value, None).unwrap();
+
+        assert!(matches!(
+            inline,
+            ResourceReference::Inline(ref data)
+                if data.as_str() == value
+                    && data.decoded_bytes().unwrap() == b"<svg/>"
+        ));
+        assert_eq!(resources.project_reference(value, None).unwrap(), value);
+        assert!(matches!(
+            resources.reference("data:text/html;base64,PGgxPng8L2gxPg==", None),
+            Err(ResourceProjectionError::InvalidInlineData)
+        ));
+    }
+
+    #[test]
     fn resource_request_carries_exact_lifecycle_scope() {
         let executor = Arc::new(RecordingExecutor::new(scope("station", 7)));
         let resources = StationResourceHandle::new(StationClient::new(executor.clone()));
         let resource = match resources.reference("/avatar/alice", None).unwrap() {
             ResourceReference::Station(resource) => resource,
-            ResourceReference::External(_) => panic!("relative resource must remain Station-bound"),
+            ResourceReference::External(_) | ResourceReference::Inline(_) => {
+                panic!("relative resource must remain Station-bound")
+            }
         };
 
         resources.open(&resource, None).unwrap();
@@ -675,7 +762,9 @@ mod tests {
         let resources = StationResourceHandle::new(StationClient::new(executor.clone()));
         let resource = match resources.reference("/avatar/alice", None).unwrap() {
             ResourceReference::Station(resource) => resource,
-            ResourceReference::External(_) => panic!("relative resource must remain Station-bound"),
+            ResourceReference::External(_) | ResourceReference::Inline(_) => {
+                panic!("relative resource must remain Station-bound")
+            }
         };
         executor.set_scope(scope("station-b", 8));
 
