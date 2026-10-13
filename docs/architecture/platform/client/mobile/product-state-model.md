@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-08-27 | **Updated**: 2026-10-08
+> **Created**: 2026-08-27 | **Updated**: 2026-10-12
 > **Owner**: Mobile Product Team
 
 ---
@@ -94,11 +94,6 @@ state after Shell entry; it does not fabricate empty data or reuse a prior
 generation. Authentication, PTID resolution, secure credential cleanup, and
 generation fencing are never degradable.
 
-A degradable runtime failure must not become a full-width or modal-like notice
-over an otherwise usable page. The owning tab or section contains its own
-compact recovery state. Global recovery is reserved for failures that make the
-entire authenticated scope unsafe or unusable.
-
 `commandRuntime` is shell-degradable but mutation-critical: if its encrypted
 ledger cannot open or validate, read-only projections may remain visible while
 all Station mutations stay disabled with an explicit recovery state.
@@ -112,10 +107,12 @@ all Station mutations stay disabled with an explicit recovery state.
 | OAuth | launching, awaiting-provider, callback-received, following-gate, cancelled, expired, replay/mismatch | retry provider, use Email, change Station |
 | Conversation list | loading, empty, ready, stale, unavailable | retry/reconcile, search, start from Contacts |
 | Conversation detail | history-loading, ready, sending, upload-progress, failed, unknown-outcome, permission-denied | retry when safe, check status, edit/discard draft, back |
+| One-to-one call | outgoing, ringing-all-devices, incoming, active-here, reconnecting, handled-elsewhere, ended | cancel, accept/reject, mute/camera toggle, hang up, dismiss terminal state; reconnect reconciles before retaining media |
 | Contacts/groups | loading, empty, no-results, request-pending, duplicate, remote-unavailable, role-denied | retry, refine search, inspect profile, back |
 | Moments | loading, empty, filtered-empty, ready, policy-hidden, unavailable, publish-pending, rollback | refresh, retry, edit/discard draft |
 | Me/settings | per-owner loading, ready, dirty, saving, saved, conflict, unavailable, permission-required, failed | save selected owner, discard selected draft, stay, reload canonical owner, open system settings, retry |
-| Runtime capacity | command-ledger-full, event-overflow-reconciling | continue read-only, resolve pending work, retry later |
+| Runtime capacity | command-ledger-full | continue read-only, resolve pending work, retry later |
+| Background reconciliation | event-overflow-reconciling | preserve the current route and reconcile in place; show route-local recovery only if its owner becomes unavailable |
 
 Chat and Moments drafts are device-local durable state. Tab/detail unmount and
 background do not discard them; process restart restores the last complete
@@ -136,30 +133,3 @@ discard or retain quarantined drafts for the original Station/PTID.
 | Resume sync failed | Existing projection marked stale | Retry while keeping unavailable actions disabled |
 | Teardown timeout | Old generation hidden and fenced | Retry cleanup; never restore old Shell |
 | Secure credential deletion failed | Shell-blocking teardown failure | Retry deletion or explicit local reset |
-
-## 7. Human-Readable Surface Contract
-
-Every visible state has four required projections:
-
-- **identity**: a friendly person, group, Station, or page name is primary;
-- **context**: technical identifiers are hidden or moved to an explicit
-  diagnostic/detail affordance;
-- **action**: the next valid action is visible, correctly prioritized, and
-  reachable with touch and accessibility navigation;
-- **recovery**: unavailable, stale, pending, or failed state is scoped to its
-  owning surface and preserves usable unrelated content.
-
-The foreground walkthrough inventory is:
-
-| Surface class | Required examples |
-|---|---|
-| Pre-shell | boot, Station selection, Station verification, login, access gate, runtime preparation |
-| Primary tabs | Chat, Moments, Contacts, Me |
-| Details | Direct chat, Group chat, contact profile, Moment comments, every Settings detail |
-| Overlays | Find People, Create Group, message actions, conversation actions, forwarding, group management, confirmations |
-| Recovery | empty, loading, unavailable, stale, unknown outcome, capacity, revocation, identity mismatch, draft restoration |
-
-An unvisited inventory row is `UNPROVEN`. A screenshot with an obstructed
-primary task, raw technical identity as the title, clipped content, or no
-actionable recovery is `FAILED`, even if the underlying command or readback
-succeeds.

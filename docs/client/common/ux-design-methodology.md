@@ -94,6 +94,31 @@ Rule:
 - If an issue reveals a repeatable work process, create or update a playbook.
 - If the evidence is too narrow, record the case but do not over-generalize the rule.
 
+### 2.7 Symmetry And Optical Balance
+
+Symmetry is part of structure, established before styling. Repeated surfaces
+need stable reading axes; framed surfaces need deliberate, balanced margins.
+
+Rules:
+
+- Declare what must align or balance: content start, metadata end, action
+  edge, row center, opposed insets, or a centered composition.
+- Repeated rows share those axes across different content lengths, metadata
+  widths and action counts. Pending/success/empty states must not push
+  neighboring columns sideways.
+- Corresponding left/right and top/bottom spacing is equal when both sides
+  serve the same purpose. A purposeful difference must be explained by
+  content hierarchy, platform needs or the surface contract.
+- Content order and reading direction remain meaningful; symmetry does not
+  require duplicating controls or mirroring human content.
+- Geometric checks establish common axes and spacing. Rendered review also
+  checks glyph placement, text weight and optical balance; passing rectangles
+  alone cannot establish visual quality.
+- Put measurable class invariants in the runnable gate before changing
+  pixels. Include mixed states and a deliberately misaligned negative
+  control. Detailed layout rules live in
+  [ui-identity/layout.md §3.1](./ui-identity/layout.md#31-symmetry-and-repeated-row-tracks).
+
 ## 3. UX Dimension Matrix
 
 Every reusable UX contract must declare which dimensions it covers and which dimensions are intentionally out of scope.

@@ -4,12 +4,11 @@ import { SessionList } from '../components/SessionList';
 import { ChatArea } from '../components/ChatArea';
 import { DetailPanel } from '../components/DetailPanel';
 import { FindPeopleModal } from '../components/FindPeopleModal';
+import { ContactsBook } from '../components/ContactsBook';
+import { SearchMessagesModal } from '../components/SearchMessagesModal';
 import { useChatState } from '../state';
 import { Contact, MessageCircle } from 'lucide-react';
-import { Flexbox } from 'react-layout-kit';
-import { theme, Typography } from 'antd';
-import { CONTACTS } from '../mock';
-import { ContactIdentityRow } from '../components/ContactIdentityRow';
+import { USERS } from '../mock';
 
 type SocialChatTab = 'chat' | 'contacts';
 
@@ -65,52 +64,6 @@ function ChatRail({ activeTab, onSelect }: { activeTab: SocialChatTab; onSelect:
   );
 }
 
-function ContactsPane() {
-  const { token } = theme.useToken();
-  return (
-    <Flexbox
-      horizontal
-      flex={1}
-      style={{
-        minWidth: 0,
-        background: token.colorBgContainer,
-      }}
-    >
-      <Flexbox
-        gap={4}
-        style={{
-          width: 320,
-          minWidth: 320,
-          padding: 12,
-          borderRight: `1px solid ${token.colorBorderSecondary}`,
-        }}
-      >
-        <Typography.Title level={5} style={{ margin: '0 0 8px' }}>
-          Contacts
-        </Typography.Title>
-        {CONTACTS.map((contact) => (
-          <Flexbox
-            key={contact.id}
-            horizontal
-            align="center"
-            style={{
-              padding: '9px 10px',
-              borderRadius: 8,
-            }}
-          >
-            <ContactIdentityRow contact={contact} />
-          </Flexbox>
-        ))}
-      </Flexbox>
-      <Flexbox flex={1} align="center" justify="center" gap={6}>
-        <Typography.Text strong>
-          Select a contact
-        </Typography.Text>
-      </Flexbox>
-    </Flexbox>
-  );
-}
-
 export function SocialChatPage() {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [rootWidth, setRootWidth] = useState(0);
@@ -120,8 +73,10 @@ export function SocialChatPage() {
     activeId,
     activeConversation,
     messages,
+    messagesByConversation,
     currentUserId,
     groupMembers,
+    groupMembersByConversation,
     showDetail,
     selectConversation,
     toggleDetail,
@@ -133,8 +88,12 @@ export function SocialChatPage() {
     clearConversationData,
     setConversationBackgroundImage,
     sendMessage,
+    sendAttachment,
+    editMessage,
+    retryMessage,
     renameGroup,
     removeGroupMember,
+    addGroupMembers,
     toggleMemberMute,
     setMemberRole,
     transferOwnership,
@@ -143,6 +102,19 @@ export function SocialChatPage() {
   } = useChatState();
 
   const [findPeopleOpen, setFindPeopleOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchConversationId, setSearchConversationId] = useState<string | undefined>(undefined);
+  const [pendingJumpMessageId, setPendingJumpMessageId] = useState<string | null>(null);
+
+  const senderName = (senderId: string): string =>
+    senderId === 'system'
+      ? 'System'
+      : (USERS[senderId]?.name ?? senderId);
+
+  const openMessageSearch = (conversationId?: string) => {
+    setSearchConversationId(conversationId);
+    setSearchOpen(true);
+  };
 
   useEffect(() => {
     if (!rootRef.current) return undefined;
@@ -160,7 +132,17 @@ export function SocialChatPage() {
     <div ref={rootRef} style={{ position: 'relative', display: 'flex', width: '100%', height: '100%', minWidth: 0, overflow: 'hidden', background: T.bg }}>
       <ChatRail activeTab={activeTab} onSelect={setActiveTab} />
       {activeTab === 'contacts' ? (
-        <ContactsPane />
+        <ContactsBook
+          compact={compact}
+          onOpenConversation={(conversationId) => {
+            selectConversation(conversationId);
+            setActiveTab('chat');
+          }}
+          onStartChatWithPerson={(name, peerId, meta) => {
+            createFriendConversation(name, peerId, meta);
+            setActiveTab('chat');
+          }}
+        />
       ) : (
         <>
       {!conversationOnly && (
@@ -177,14 +159,21 @@ export function SocialChatPage() {
           onDelete={deleteConversation}
           onCreateFriend={createFriendConversation}
           onCreateGroup={createGroupConversation}
+          groupMembersByConversation={groupMembersByConversation}
           onFindPeople={() => setFindPeopleOpen(true)}
         />
       )}
         <ChatArea
           conversation={activeConversation}
           messages={messages}
+          conversations={conversations}
           onToggleDetail={toggleDetail}
           onSendMessage={sendMessage}
+          onSendAttachment={sendAttachment}
+          onRetryMessage={retryMessage}
+          onEditMessage={editMessage}
+          externalJumpMessageId={pendingJumpMessageId}
+          onJumpConsumed={() => setPendingJumpMessageId(null)}
           backgroundImageUrl={activeConversation?.backgroundImage}
           compact={compact}
         />
@@ -195,15 +184,18 @@ export function SocialChatPage() {
               conversation={activeConversation}
               currentUserId={currentUserId}
               groupMembers={groupMembers}
+              messages={messages}
               onClose={toggleDetail}
               onDeleteConversation={deleteConversation}
               onClearHistory={clearConversationData}
               onSelectBackgroundImage={setConversationBackgroundImage}
               onRemoveMember={removeGroupMember}
+              onAddMembers={addGroupMembers}
               onRenameGroup={renameGroup}
               onSetMemberRole={setMemberRole}
               onToggleMemberMute={toggleMemberMute}
               onTransferOwnership={transferOwnership}
+              onSearchMessages={() => openMessageSearch(activeConversation.id)}
             />
           </div>
         ) : (
@@ -211,21 +203,37 @@ export function SocialChatPage() {
             conversation={activeConversation}
             currentUserId={currentUserId}
             groupMembers={groupMembers}
+            messages={messages}
             onClose={toggleDetail}
             onDeleteConversation={deleteConversation}
             onClearHistory={clearConversationData}
             onSelectBackgroundImage={setConversationBackgroundImage}
             onRemoveMember={removeGroupMember}
+            onAddMembers={addGroupMembers}
             onRenameGroup={renameGroup}
             onSetMemberRole={setMemberRole}
             onToggleMemberMute={toggleMemberMute}
             onTransferOwnership={transferOwnership}
+            onSearchMessages={() => openMessageSearch(activeConversation.id)}
           />
         )
       )}
         </>
       )}
       <FindPeopleModal open={findPeopleOpen} onClose={() => setFindPeopleOpen(false)} />
+      <SearchMessagesModal
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        conversations={conversations}
+        messagesByConversation={messagesByConversation}
+        senderName={senderName}
+        conversationId={searchConversationId}
+        onJump={(conversationId, messageId) => {
+          selectConversation(conversationId);
+          setPendingJumpMessageId(messageId);
+          setSearchOpen(false);
+        }}
+      />
     </div>
   );
 }

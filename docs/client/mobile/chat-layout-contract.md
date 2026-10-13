@@ -53,6 +53,9 @@ Implementation requirements:
 - Keyboard open/close transitions MUST update the same bottom clearance model, not a separate one-off style.
 - The Home Indicator area MUST be treated as an occlusion rectangle.
 - The last message bottom edge MUST remain at least `chat.scroll.bottomClearance` above the composer or active panel.
+- App-level recovery surfaces MUST derive bottom clearance from the active
+  navigation descriptor. A detail route with a hidden tab bar must not reserve
+  phantom tab-bar space.
 
 ## 4. Composer States
 
@@ -73,6 +76,17 @@ State rules:
 - Multiline input expands to the platform token maximum, then scrolls internally.
 - Emoji panel, attachment panel, voice panel, and system keyboard are mutually exclusive visible input surfaces.
 - Reply/edit preview uses a reserved row above the input; it MUST NOT consume message list padding directly.
+- Sender typing publication is best-effort ephemeral presence. Its progress or
+  transport failure MUST NOT add a status row, retry action, or height change to
+  the composer, and MUST NOT block durable message submission.
+- A routine `runtime_suspended` write fence during lifecycle resume is not a
+  user-recoverable error. It MUST NOT render a floating recovery card over the
+  thread or composer; mutation admission remains closed until reconciliation
+  succeeds.
+- When the active Chat route owner cannot recover, the route boundary MUST own
+  one centered unavailable state with Retry and preserved back navigation.
+  Dependency failures and background reconciliation MUST NOT add duplicate
+  global cards or expose internal runtime/domain counts.
 
 ## 5. Message Actions
 
@@ -157,6 +171,9 @@ Every Mobile Chat UI change should be checked in these states:
 | Long image near bottom | Fallback action surface does not collide with composer. |
 | Conversation action sheet open | Sheet uses bottom placement, safe-area padding, internal scroll, and separated danger group. |
 | Failed send | Retry is visible in `MetaRow` or reserved status row. |
+| Sender typing transport failure | No sender-side error or retry row appears; composer geometry and durable send remain unchanged. |
+| App resume reconciliation | Routine write fencing creates no floating card over the thread or composer. |
+| Chat runtime unavailable | One route-local recovery state preserves Back and Retry; no global recovery cards stack over it. |
 | Home Indicator device | Bottom content clears system safe area. |
 | Android gesture navigation | Bottom content clears system safe area. |
 
@@ -215,92 +232,3 @@ This refinement does not define general history cursor ordering, pending-row
 promotion between pages, or a retained-history eviction budget. Active and
 previously materialized histories remain complete until those decisions are
 accepted; the native index and DOM windows are not substitutes for them.
-
-Attachment previews and voice playback use Tauri's asset protocol. Its initial
-filesystem scope is empty. `messaging_open_attachment` grants the exact cache
-file only after the native Messaging owner has verified its availability and
-integrity; a pending or failed open grants no file access. The WebView content
-policy admits this asset origin for images, media, and file previews, and admits
-blob URLs for local recording drafts. The client must not grant an entire cache
-directory or expose arbitrary filesystem paths.
-
-MLS KeyPackage publication and Welcome consumption use the portable Messaging
-owner's shared recipient transaction lock. The lock covers provider-pool load,
-preparation, persistence, and installation so a Welcome cannot overwrite
-freshly published join material. Serial queue draining alone does not protect
-this shared pool from concurrent publication. Failure leaves the ordered inbox
-item pending; neither client may skip it or fabricate group readiness.
-
-## 13. Foreground Resume Write Admission
-
-```yaml
-surface: mobile.chat.thread
-scenario: foreground-resume-write-admission
-
-given:
-  - a signed-in Mobile client has an open Direct or Group conversation
-  - native foreground activation resumes a previously suspended runtime graph
-
-when:
-  - lifecycle reconciliation temporarily closes canonical write admission
-  - the user opens message actions or prepares a composer submission
-
-then:
-  - the thread exposes `data-chat-write-admission="closed"`
-  - an open group management sheet exposes the same current admission state
-  - remote mutation controls remain disabled while reads, navigation, and local draft editing remain available
-  - group save, member role, mute, invite, remove, ownership, leave and dissolve controls remain disabled during any reconciliation, including reconciliation after a preceding group command
-  - successful reconciliation changes the thread state to `data-chat-write-admission="open"`
-  - the same controls become usable without requiring the user to reopen the conversation
-
-visual_invariants:
-  - the affected surface uses the existing localized recovery explanation for the temporary pause
-  - disabled controls do not resize the message action sheet or composer
-
-forbidden:
-  - an enabled remote mutation control dispatches while canonical write admission is closed
-  - a foreground reaction click produces `mobile.recovery.writeRevocation.body`
-  - foreground automation bypasses the product admission state through Harness or API mutation
-
-evidence:
-  - foreground interaction trace
-  - action-sheet and composer DOM state
-  - group management admission and enabled-control state between consecutive commands
-  - sender and receiver screenshots
-```
-
-## 14. Message Presentation And Actions
-
-The global Mobile call surface owns the viewport while a call is visible.
-Caller identity, state and 52px rounded-square controls remain within system
-safe areas. Active video has one flexible remote stage and a bounded local
-preview; short landscape places controls beside the media stage. Product
-controls expose semantic call actions and localized accessible names.
-
-```yaml
-surface: mobile.chat.thread
-scenario: readable-owner-aligned-message-actions
-given:
-  - sent and received messages include short text, multiline text and media
-when:
-  - a user reads the conversation and opens a message action sheet
-then:
-  - each avatar shares the top edge of its message content
-  - received overflow is leftmost in its metadata row and sent overflow is rightmost
-  - overflow has no persistent border or background
-  - reaction choices show only the Unicode emoji and retain selected state
-  - reply, forward, thread, pin, flag and owned-message commands use icon-only targets
-  - emoji choices and actions retain accessible names and at least 44px touch targets
-visual_invariants:
-  - the reaction grid has six columns and bounded internal scrolling
-  - the composer uses the same 40-emoji catalog
-  - action controls do not cover message content
-forbidden:
-  - a decorative smiley appears beside every reaction choice
-  - all message overflow entries align to the right regardless of owner
-  - message height pushes avatars down to the metadata baseline
-evidence:
-  - foreground DOM geometry and computed-style assertions
-  - sender and receiver screenshots
-  - reaction, reply and forward interaction traces
-```

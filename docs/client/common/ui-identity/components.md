@@ -24,13 +24,13 @@ Implementation order:
 
 Button roles:
 
-| Role      | Meaning                     | Visual intent                         |
-| --------- | --------------------------- | ------------------------------------- |
-| Primary   | main user commitment        | strong but not visually alien         |
-| Secondary | normal navigation/action    | quiet, readable                       |
-| Ghost     | low-emphasis surface action | visible on hover or subtle background |
-| Danger    | destructive action          | scoped, explicit, recoverable         |
-| Icon      | compact repeated action     | accessible label required             |
+| Role | Meaning | Visual intent |
+| --- | --- | --- |
+| Primary | main user commitment | strong but not visually alien |
+| Secondary | normal navigation/action | quiet, readable |
+| Ghost | low-emphasis surface action | visible on hover or subtle background |
+| Danger | destructive action | scoped, explicit, recoverable |
+| Icon | compact repeated action | accessible label required |
 
 Rules:
 
@@ -39,7 +39,34 @@ Rules:
 - Danger text must not sit inline with ordinary links unless the action is low-risk and reversible.
 - Icon-only buttons need accessible labels and clear hover/focus states.
 - Disabled buttons must explain why when the disabled state blocks task completion.
-- User-facing icon buttons use rounded-square geometry. Circular icon buttons are not part of the Peers Touch product language.
+- Buttons come from one canonical size scale, never bespoke per-surface
+  numbers: 24 (inline icon), 28 (compact text), 30 (relationship decision
+  icon pair), 32 (standard text), 34 (chat chrome), 36 (header icon),
+  40 (hero CTA). Corner radius is 6/8/10/12 only.
+- Action groups inside a row share one horizontal center line and one
+  trailing edge (button bottoms and centers align); an action that floats
+  off the shared line is a defect.
+- Across repeated rows, metadata and actions follow the list's shared
+  tracks ([layout.md §3.1](./layout.md#31-symmetry-and-repeated-row-tracks)).
+  Different action counts do not move time labels or primary content.
+  Validate the visible control edge as well as its wrapper rectangle.
+
+### 3.1 One entity, one component
+
+A product entity has exactly one visual component across every surface.
+"Friend request in Contacts" and "friend request in Notifications" are the
+same entity — they must render the same row/item and the same decision
+controls, not two hand-built look-alikes.
+
+- Recurring entities (relationship request, contact row, session row,
+  identity block, decision pair, status tag) live in one shared component;
+  surfaces compose it, never restyle it.
+- Entity components carry a stable `data-entity` contract marker and their
+  controls carry stable `data-decision-action` / role markers, so the
+  geometry gate can prove cross-surface identity (same size, radius, control
+  set) instead of eyeballing each surface.
+- A surface-specific wrapper may change layout context around the entity,
+  never its internal control geometry or colors.
 
 ## 4. Cards And Surfaces
 
@@ -56,6 +83,13 @@ Rules:
 - Detail surfaces should not duplicate the same border hierarchy as list surfaces.
 - Nested cards are allowed only when each level has a separate user intent.
 - Card internal actions must align to the same action row model.
+- Foreground identity elements that overlap a cover keep their separation
+  contour visible on every edge and rounded corner. The cover, clipping, and
+  transient menus must not erase it or hide the face. A separation ring is
+  structural, not a trust or selection cue.
+- Validate overlapping boundaries in the browser's painted output and hit
+  testing; declared borders, rectangles, and `z-index` alone do not establish
+  visibility.
 
 ## 5. Tabs And Segmented Controls
 
@@ -83,34 +117,24 @@ Rules:
 - Composer input, attachment controls, audience selector, and publish action form one action surface.
 - Placeholder text should guide the task, not replace labels.
 - Error and loading states belong to the composer surface before child controls show local state.
-- Inputs use bounded rounded rectangles, never full pills. Adjacent send/tool buttons use the same radius family rather than circular geometry.
 
-## 8. User Identity And Avatars
-
-Rules:
-
-- Every person avatar uses the shared platform avatar primitive and circular geometry.
-- Every group or collective avatar uses the shared platform avatar primitive
-  and rounded-square geometry derived from its size.
-- The same canonical actor identity must project the same display name, avatar asset, and deterministic fallback color across feeds, comments, chat, contacts, and notifications.
-- Feature code may supply a DTO fallback, but it must not create a second avatar primitive or display a raw PTID when a canonical profile is available.
-- Account profiles present avatar and cover images as previews. Raw image
-  URLs, data URLs, internal actor IDs, and home-Station peer IDs do not belong
-  in ordinary profile or blocked-person rows. Technical details require a
-  user-invoked diagnostic surface.
-- Brand marks and page titles must not repeat the same brand as an additional
-  decorative eyebrow.
-
-## 9. Popovers And Menus
+## 8. Popovers And Menus
 
 Rules:
 
 - Floating surfaces must visually attach to the source control.
+- A side-anchored popover declares its aligned edge against the source
+  button's live rectangle. Bottom-aligned popovers share the source button's
+  bottom edge across resize and content changes; fixed viewport offsets alone
+  cannot establish this relationship.
 - Popovers must not cover the content the user is acting on unless no safe position exists.
 - Reaction pickers must remain compact and reversible.
 - Menus need keyboard access and focus restoration.
+- Expanding a compact preview into a complete viewer replaces the preview
+  with one dialog and retains the same data and row components. Search and
+  pagination preserve the dialog's bounds; closing restores source focus.
 
-## 10. Empty, Loading, And Error States
+## 9. Empty, Loading, And Error States
 
 Rules:
 
@@ -119,7 +143,7 @@ Rules:
 - Error states must include context, recovery, and stable localized text.
 - Trust-related empty states must distinguish "no data" from "hidden by policy".
 
-## 11. Covered UX Dimensions
+## 10. Covered UX Dimensions
 
 This component contract covers:
 
@@ -135,7 +159,7 @@ Out of scope:
 - Backend data ownership.
 - Exact implementation file structure.
 
-## 12. AI Agent Checklist
+## 11. AI Agent Checklist
 
 - [ ] Is every button role named before styling?
 - [ ] Are library defaults normalized through token roles?
@@ -143,4 +167,3 @@ Out of scope:
 - [ ] Are tabs, CTA, and page header aligned as one system?
 - [ ] Are popovers anchored, bounded, and keyboard-recoverable?
 - [ ] Are empty/loading/error states designed, localized, and recoverable?
-- [ ] Do person and group avatars use their shared role-specific geometry and canonical identity projection?

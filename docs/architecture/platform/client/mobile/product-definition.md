@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-08-27 | **Updated**: 2026-10-08
+> **Created**: 2026-08-27 | **Updated**: 2026-10-12
 > **Owner**: Mobile Product Team
 > **Module**: `apps/mobile/`
 
@@ -69,10 +69,9 @@ making the device a business authority.
 | MS-C09 | Profile and settings | required | Show and edit Actor Profile and privacy, Notification preferences, Social blocked users, device-local appearance/language/storage settings, Station switch, and logout. No additional account-preference fields are claimed in this release. |
 | MS-C10 | Runtime freshness and recovery | required | Foreground events plus reconciliation, background wakeups, resume sync, stale indication, and session revocation recovery. |
 | MS-C11 | WeChat OAuth | deferred | Visible only as unavailable until provider and callback support are production-ready. |
-| MS-C12 | Voice/video call | deferred | No enabled call action until the Mobile call contract and runtime exist. |
+| MS-C12 | One-to-one voice/video call | required | Start or receive audio/video from a Direct conversation; ring, accept/reject, resolve one winning device, connect, mute, toggle camera, reconnect, and end without losing Chat context. |
 | MS-C13 | Chat Docs custom tab | deferred | No enabled tab until a shared-document domain and product journey are accepted. |
 | MS-C14 | Local message flag | degraded | May remain device-local if clearly labeled and never presented as cross-device truth. |
-| MS-C15 | Whole-product usability | required | Every reachable Mobile surface is understandable, operable, accessible, and visually coherent in the foreground iOS runtime; technical identifiers and module failures never replace or obstruct the user's primary task. |
 
 ## 6. Platform Matrix
 
@@ -83,22 +82,18 @@ making the device a business authority.
 | Navigation | Desktop PageHost | Active-only tabs + descriptor details | Mobile viewport simulation | Desktop window patterns are excluded |
 | Device capability | Desktop OS adapters | Tauri Mobile native plugins | Not available | Missing permission/capability is explicit |
 | Background recovery | Process/window reconcile | Push/wakeup + resume reconcile | Scenario simulation only | Browser evidence cannot prove native lifecycle |
+| One-to-one call | Shared Chat semantics | Shell-owned overlay, native media permissions, sealed signaling, WebRTC direct/TURN | State and interaction simulation only | Prototype cannot prove native capture, media transport, arbitration, or cleanup |
 
 ## 7. Completeness Rule
 
-- Required capabilities MS-C01..MS-C10 and MS-C15 must pass every mapped
+- Required capabilities MS-C01..MS-C10 and MS-C12 must pass every mapped
   acceptance row.
 - Degraded MS-C14 must expose its device-only scope before the user relies on it.
-- Deferred MS-C11..MS-C13 do not count toward readiness, but any visible entry
-  must be disabled with a useful reason.
-- A narrow functional Gate cannot establish whole-product readiness. Completion
-  requires a foreground iOS walkthrough of every launch, tab, detail, overlay,
-  empty, loading, failure, recovery, and destructive-confirmation surface.
-- No required walkthrough surface may expose a raw PTID, Station URL, runtime
-  identifier, untranslated key, or internal error as its primary label when a
-  human-readable projection exists.
-- A module-local degradation must remain local. It may not cover the active
-  page, composer, navigation, or an unrelated module's usable content.
+- Deferred MS-C11 and MS-C13 do not count toward readiness, but any visible
+  entry must be disabled with a useful reason.
+- Existing MS-C12 source and prototype states are foundation evidence only.
+  Mobile media, reconnect, teardown, and Desktop/Mobile resolution remain
+  `UNPROVEN` until their required runtime cells pass.
 - `product-feasibility.md` owns current foundation, missing closure, and proof.
 
 ## 8. Product Boundaries
@@ -106,7 +101,8 @@ making the device a business authority.
 - Station owns shared business truth and access decisions.
 - Model owns cross-client contracts.
 - Mobile owns navigation, device-local UI state, secure local credentials, runtime
-  orchestration, and bounded caches.
+  orchestration, bounded caches, and the shell-level call surface. Realtime owns
+  call signaling resolution; the Mobile call runtime owns local media and cleanup.
 - A future cross-device preference requires a product amendment that names its
   fields and behavior before a new Station owner or UI section may exist.
 - Prototype-only types and demo transitions are not product contracts.

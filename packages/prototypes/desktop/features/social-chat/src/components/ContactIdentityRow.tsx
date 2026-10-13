@@ -9,15 +9,11 @@ const { Text } = Typography;
 export function ContactIdentityRow({
   contact,
   selected = false,
-  showMetadata = false,
 }: {
   contact: MockUser;
   selected?: boolean;
-  showMetadata?: boolean;
 }) {
   const { token } = theme.useToken();
-  const federation = contact.federationName || '';
-  const station = contact.homeStation || '';
 
   return (
     <Flexbox horizontal align="center" gap={10} flex={1} style={{ minWidth: 0 }}>
@@ -27,6 +23,7 @@ export function ContactIdentityRow({
         src={contact.avatar}
         size={36}
         online={contact.online}
+        federated={contact.federated}
       />
       <Flexbox gap={1} flex={1} style={{ minWidth: 0 }}>
         <Text
@@ -40,38 +37,6 @@ export function ContactIdentityRow({
         >
           {contact.name}
         </Text>
-        {showMetadata && federation ? (
-          <Text
-            data-prototype-identity-federation
-            type="secondary"
-            title={federation}
-            style={{
-              display: 'block',
-              fontSize: 11,
-              lineHeight: 1.25,
-              overflowWrap: 'anywhere',
-              whiteSpace: 'normal',
-            }}
-          >
-            Federation: {federation}
-          </Text>
-        ) : null}
-        {showMetadata && station ? (
-          <Text
-            data-prototype-identity-station
-            type="secondary"
-            title={station}
-            style={{
-              display: 'block',
-              fontSize: 11,
-              lineHeight: 1.25,
-              overflowWrap: 'anywhere',
-              whiteSpace: 'normal',
-            }}
-          >
-            Station: {station}
-          </Text>
-        ) : null}
       </Flexbox>
     </Flexbox>
   );

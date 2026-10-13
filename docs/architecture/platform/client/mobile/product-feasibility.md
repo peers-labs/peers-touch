@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-08-27 | **Updated**: 2026-10-08
+> **Created**: 2026-08-27 | **Updated**: 2026-10-12
 > **Owner**: Mobile Product Team
 > **Module**: `apps/mobile/`
 
@@ -28,10 +28,9 @@
 | MS-C09 Profile/settings | Edit Profile/privacy, Notification, Social blocked-user, and device-local settings; switch/logout | Owner-backed settings surfaces, Profile/Notification APIs, Social block owner, device settings runtime, prototype Me | Complete cross-client Profile/Notification CAS and selected-owner save states | MS-PA12, MS-PA21, MS-PA24 |
 | MS-C10 Runtime recovery | Background/resume, reconnect, revoke, reconcile, recover commands | Social ingress, Messaging runtime, command runtime, and native event bridge | Complete remaining native recovery evidence | MS-PA08, MS-PA13, MS-PA14, MS-PA26 |
 | MS-C11 WeChat OAuth | See truthful unavailable state | Disabled prototype action | Provider contract absent; remains deferred | MS-PA27 |
-| MS-C12 Voice/video call | See unavailable action before commitment | Disabled prototype call action | Call product/runtime contract absent; remains deferred | MS-PA27 |
+| MS-C12 One-to-one voice/video call | Start or receive audio/video, accept/reject, mute/toggle camera, reconnect/end, and resolve one winning device | `MobileCallManager`, sealed CallSignal ingress, WebRTC/TURN setup, Direct header actions, shell-owned `MobileCallSurface`, and mixed-client resolution actions | Production styling/i18n, native audio/video media journey, permission/device selection, direct/TURN evidence, reconnect/cleanup, and full exact-source Mobile runtime proof remain `UNPROVEN` | MS-PA28, MS-PA29 |
 | MS-C13 Chat Docs tab | No enabled entry | None required | Shared-document product/domain absent; remains deferred | MS-PA27 |
 | MS-C14 Local message flag | Flag/unflag locally and understand device-only scope | Prototype interaction | Durable local projection and explicit scope copy | MS-PA22 |
-| MS-C15 Whole-product usability | Complete every primary task and recovery path on every reachable page in a visible iOS Simulator | Confirmed Mobile prototype, descriptor registry, current production pages, Appium/DOM/AX/screenshot capture | Remove production/prototype drift; add complete route/state inventory, automated content/layout oracles, and agent visual review | MS-PA28, MS-PA29 |
 
 ## 3. Feasibility Rules
 
@@ -45,3 +44,6 @@
 - Prototype evidence establishes interaction intent only. Production proof uses
   the required runtime cells in `acceptance-matrix.md`; physical-device runs
   are optional diagnostics.
+- MS-C12 is required because the governing Chat lifecycle contract requires it.
+  Existing source does not close the row: MS-PA28 and MS-PA29 remain open until
+  exact-source Mobile media and resolution Gates produce current evidence.

@@ -3,6 +3,7 @@ import type { Contact, Conversation } from './types';
 
 export type SocialEvidenceScenario =
   | 'social-unavailable'
+  | 'social-detail-unavailable'
   | 'find-people-no-membership'
   | 'find-people-member'
   | 'contact-direct'
@@ -10,6 +11,7 @@ export type SocialEvidenceScenario =
 
 export const socialEvidenceScenarios: SocialEvidenceScenario[] = [
   'social-unavailable',
+  'social-detail-unavailable',
   'find-people-no-membership',
   'find-people-member',
   'contact-direct',
@@ -57,7 +59,10 @@ export function createSocialDemo(scenario: string): SocialDemoState {
     || scenario === 'find-people-member'
     || scenario === 'request-unknown';
   return {
-    runtime: scenario === 'social-unavailable' ? 'failed' : 'ready',
+    runtime: scenario === 'social-unavailable'
+      || scenario === 'social-detail-unavailable'
+      ? 'failed'
+      : 'ready',
     federations: scenario === 'find-people-no-membership' ? [] : [demoFederation],
     contacts: newRequest
       ? demoContacts.filter((contact) => contact.key !== demoRequestContact.key)

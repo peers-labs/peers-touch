@@ -1,10 +1,11 @@
-import { Avatar, Button, Spin, Typography } from 'antd';
+import { Button, Spin, Typography } from 'antd';
 import {
   ArrowLeft, Ban, Calendar, Fingerprint, Mail as MailIcon,
   MessageCircle, Phone, Server, ShieldCheck, Trash2, Video,
 } from 'lucide-react';
 import type { Contact } from '../types';
 import copy from '../../../../../locales/en/common.json';
+import { IdentityAvatar } from './IdentityAvatar';
 
 const { Text } = Typography;
 
@@ -30,7 +31,8 @@ export function ContactDetailView({
       </header>
 
       <div className="mp-detail-hero">
-        <Avatar size={80} style={{ background: contact.avatarGradient, borderRadius: 20 }}>{contact.avatar}</Avatar>
+        <IdentityAvatar name={contact.name} initials={contact.avatar}
+          src={contact.avatarUrl} size={80} />
         <Text className="mp-detail-hero-name">{contact.name}</Text>
         <Text className="mp-detail-hero-sub">{contact.note}</Text>
         {contact.online
@@ -78,21 +80,21 @@ export function ContactDetailView({
       <div className="mp-detail-section">
         <div className="mp-detail-section-title">Info</div>
         <div className="mp-detail-row">
-          <span className="mp-detail-row-icon" style={{ background: 'rgba(14,165,233,0.1)', color: '#0ea5e9' }}><MailIcon size={16} /></span>
+          <span className="mp-detail-row-icon tone-primary"><MailIcon size={16} /></span>
           <div className="mp-detail-row-content">
             <span className="mp-detail-row-label">Email</span>
             <span className="mp-detail-row-value">{contact.key}@peers.social</span>
           </div>
         </div>
         <div className="mp-detail-row">
-          <span className="mp-detail-row-icon" style={{ background: 'rgba(245,158,11,0.1)', color: '#f59e0b' }}><Calendar size={16} /></span>
+          <span className="mp-detail-row-icon tone-warning"><Calendar size={16} /></span>
           <div className="mp-detail-row-content">
             <span className="mp-detail-row-label">Joined</span>
             <span className="mp-detail-row-value">March 2025</span>
           </div>
         </div>
         <div className="mp-detail-row">
-          <span className="mp-detail-row-icon" style={{ background: 'rgba(34,197,94,0.1)', color: '#22c55e' }}><ShieldCheck size={16} /></span>
+          <span className="mp-detail-row-icon tone-success"><ShieldCheck size={16} /></span>
           <div className="mp-detail-row-content">
             <span className="mp-detail-row-label">Encryption</span>
             <span className="mp-detail-row-value">End-to-end encrypted</span>

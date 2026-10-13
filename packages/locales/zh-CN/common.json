@@ -987,5 +987,13 @@
   "mobile.list.previous": "上一页",
   "mobile.list.next": "下一页",
   "mobile.chat.messageUnavailable": "此消息已不可用。",
-  "mobile.chat.searchFailed": "消息搜索失败，请重试。"
+  "mobile.chat.searchFailed": "消息搜索失败，请重试。",
+  "mobile.route.preparingTitle": "正在准备{{feature}}",
+  "mobile.route.preparingBody": "同步完成后会自动显示现有内容。",
+  "mobile.route.unavailableTitle": "{{feature}}暂不可用",
+  "mobile.route.unavailableBody": "现有内容不会丢失。请重试连接以恢复此功能。",
+  "mobile.settings.profile.avatarUrl": "头像链接",
+  "mobile.settings.profile.headerUrl": "封面图链接",
+  "mobile.recovery.draftRestore.chatCount": "{{count}} 条聊天草稿",
+  "mobile.recovery.draftRestore.momentsCount": "{{count}} 条动态草稿"
 }

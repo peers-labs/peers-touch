@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Avatar, Input, Typography } from 'antd';
+import { Input, Typography } from 'antd';
 import { ArrowLeft, Plus, Send } from 'lucide-react';
 import type { Message, Conversation } from '../types';
-import { GRADIENTS } from '../types';
+import { demoAvatarUrls } from '../data';
+import { IdentityAvatar } from './IdentityAvatar';
 
 const { Text } = Typography;
 
@@ -48,9 +49,13 @@ export function ThreadView({ message, conversation, onBack }: { message: Message
       <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
         {localReplies.map((reply) => (
           <div key={reply.id} className="mp-thread-reply-item">
-            <Avatar size={32} style={{ background: reply.mine ? GRADIENTS[0] : conversation.avatarGradient, borderRadius: 10 }}>
-              {reply.mine ? 'AC' : conversation.avatar}
-            </Avatar>
+            <IdentityAvatar
+              name={reply.mine ? 'Alice Chen' : conversation.name}
+              initials={reply.mine ? 'AC' : conversation.avatar}
+              src={reply.mine ? demoAvatarUrls.alice : conversation.avatarUrl}
+              kind={conversation.isGroup && !reply.mine ? 'group' : 'person'}
+              size={32}
+            />
             <div className="mp-thread-reply-content">
               <div className="mp-thread-reply-name">{reply.mine ? 'You' : conversation.name}</div>
               <div className="mp-thread-reply-text">{reply.text}</div>

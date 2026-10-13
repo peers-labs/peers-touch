@@ -20,7 +20,7 @@
  *
  * Standalone web prototype: no real store / kernel / tauri, mock-data only.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
   Search,
   MessageCircle,
@@ -46,6 +46,7 @@ import { SocialChatPage } from '../../features/social-chat/src/pages/SocialChatP
 import { Page as AgentFeaturePage } from '../../features/agent/src/Page';
 import { AgentChatPage } from './AgentChatPage';
 import { SettingsPage } from './Settings';
+import { INITIAL_NOTIFICATIONS, NotificationPanel, type NotifItem } from './Notifications';
 import { T } from './theme';
 import { ToastHost } from '../../shared/Toast';
 import { ModernChatReview } from '../../features/modern-chat-agent/src/ModernChatReview';
@@ -131,16 +132,21 @@ function RailIcon({
   icon: Icon,
   active,
   title,
+  badge,
   onClick,
+  buttonRef,
 }: {
   icon: LucideIcon;
   active?: boolean;
   title: string;
+  badge?: number;
   onClick: () => void;
+  buttonRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const [hover, setHover] = useState(false);
   return (
     <button
+      ref={buttonRef}
       type="button"
       title={title}
       aria-label={title}
@@ -149,6 +155,7 @@ function RailIcon({
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
+        position: 'relative',
         width: 40,
         height: 40,
         border: 0,
@@ -163,6 +170,20 @@ function RailIcon({
       }}
     >
       <Icon size={20} />
+      {badge && badge > 0 ? (
+        <span
+          aria-label={`${badge} unread`}
+          style={{
+            position: 'absolute', top: 4, right: 4, minWidth: 15, height: 15,
+            padding: '0 4px', borderRadius: 8, boxSizing: 'border-box',
+            background: T.danger, color: T.white, fontSize: 9, fontWeight: 700,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            lineHeight: 1, border: `2px solid ${T.navBg}`,
+          }}
+        >
+          {badge > 99 ? '99+' : badge}
+        </span>
+      ) : null}
     </button>
   );
 }
@@ -171,9 +192,17 @@ function RailIcon({
 function SideNav({
   page,
   onNavigate,
+  notifOpen,
+  unreadCount,
+  onToggleNotifications,
+  notificationButtonRef,
 }: {
   page: string;
   onNavigate: (p: string) => void;
+  notifOpen: boolean;
+  unreadCount: number;
+  onToggleNotifications: () => void;
+  notificationButtonRef: RefObject<HTMLButtonElement | null>;
 }) {
   return (
     <div
@@ -236,7 +265,14 @@ function SideNav({
 
       {/* bottomActions */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <RailIcon icon={Bell} title="通知" onClick={() => {}} />
+        <RailIcon
+          buttonRef={notificationButtonRef}
+          icon={Bell}
+          title="通知"
+          active={notifOpen}
+          badge={unreadCount}
+          onClick={onToggleNotifications}
+        />
         <RailIcon icon={Settings} title="设置" active={page === 'settings'} onClick={() => onNavigate('settings')} />
       </div>
     </div>
@@ -621,10 +657,20 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   const showModernChatReview = modernChatState.startsWith('modern-');
   const showV2ProductReview = modernChatState.startsWith('v2-');
   const showAuthPrototype = modernChatState.startsWith('auth-oauth-');
-  const defaultPage = showModernChatReview || showV2ProductReview ? 'agent' : initialPage ?? 'applets';
+  const requestedSurface = typeof window === 'undefined'
+    ? ''
+    : new URLSearchParams(window.location.search).get('surface') ?? '';
+  const defaultPage = showModernChatReview || showV2ProductReview
+    ? 'agent'
+    : initialPage ?? (requestedSurface === 'chat' ? 'chat' : 'applets');
   const [page, setPage] = useState(defaultPage);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [notificationView, setNotificationView] = useState<'closed' | 'preview' | 'all'>('closed');
+  const notificationButtonRef = useRef<HTMLButtonElement>(null);
+  const notifOpen = notificationView !== 'closed';
+  const [notifications, setNotifications] = useState<NotifItem[]>(INITIAL_NOTIFICATIONS);
   const [authPrototypeComplete, setAuthPrototypeComplete] = useState(false);
+  const unreadCount = notifications.filter((n) => !n.read).length;
   const [visitedAgentSurfaces, setVisitedAgentSurfaces] = useState<Set<AgentSurfaceId>>(() => {
     const initialSurface = getAgentSurfaceId(defaultPage);
     return initialSurface ? new Set([initialSurface]) : new Set();
@@ -640,7 +686,14 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
         return next;
       });
     }
+    setNotificationView('closed');
     setPage(p);
+  };
+
+  const openNotification = (item: NotifItem) => {
+    setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, read: true } : n)));
+    setNotificationView('closed');
+    if (item.targetPage) navigate(item.targetPage);
   };
 
   useEffect(() => {
@@ -708,7 +761,31 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
       <SideNav
         page={page}
         onNavigate={navigate}
+        notifOpen={notifOpen}
+        unreadCount={unreadCount}
+        notificationButtonRef={notificationButtonRef}
+        onToggleNotifications={() => setNotificationView((v) => v === 'closed' ? 'preview' : 'closed')}
       />
+      {notifOpen ? (
+          <NotificationPanel
+            mode={notificationView === 'all' ? 'all' : 'preview'}
+            anchorRef={notificationButtonRef}
+            onShowAll={() => setNotificationView('all')}
+            onClose={() => {
+              setNotificationView('closed');
+              requestAnimationFrame(() => notificationButtonRef.current?.focus());
+            }}
+            items={notifications}
+            onMarkAllRead={() => setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))}
+            onOpenItem={openNotification}
+            onDismiss={(id) => setNotifications((prev) => prev.filter((n) => n.id !== id))}
+            onInviteDecision={(id, accept) => setNotifications((prev) => prev.map((n) =>
+              n.id === id
+                ? { ...n, read: true, pending: false, body: accept ? 'Invite accepted — group added to your chats.' : 'Invite declined.' }
+                : n,
+            ))}
+          />
+      ) : null}
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
         {visitedAgentSurfaces.size > 0 && (
           <div

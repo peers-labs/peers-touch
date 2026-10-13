@@ -49,6 +49,27 @@ Rules:
 - Publish/send button must align with the composer action row.
 - Audience/target must be visible enough to prevent mistakes.
 
+### 5.1 Grounded chat composer (desktop)
+
+The conversation composer is one grounded gray writing dock with a closed,
+symmetric boundary — never a floating white card, never a flat full-width color
+slab, and never a surface glued to one window edge:
+
+- A white chrome bar spans the full column width flush to the window bottom,
+  separated from messages by one 1px hairline; zero elevation shadow.
+- The writing surface itself is soft-gray (`bgMuted`), fully rounded (12px)
+  with a 1px hairline border on every edge, inset from the bar by an **equal
+  frame on all four sides**: 4px compact / 6px regular (a hair-thin gap, never
+  a card-width margin). Top, right, bottom, and left insets must be identical
+  within 1px — an open or glued edge breaks the boundary.
+- Text and the tool row live inside the one dock; focus is expressed by a
+  brand-tinted border plus a soft outer ring, not by lifting the surface.
+- Expand/collapse must change the surface immediately (reserve a multi-line
+  min-height), so the control has visible effect even with an empty draft.
+- Geometry is verified, not eyeballed: the four frame insets, full-radius
+  border, single-line content box, and expand/collapse heights are covered by
+  the rect-level gate (see review-checklist §13).
+
 ## 6. Recovery Rules
 
 - Text input must survive submission failure.

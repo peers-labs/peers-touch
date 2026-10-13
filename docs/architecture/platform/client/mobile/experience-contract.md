@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-08-27 | **Updated**: 2026-10-08
+> **Created**: 2026-08-27 | **Updated**: 2026-10-12
 > **Owner**: Mobile Product Team
 > **Module**: `apps/mobile/`
 
@@ -14,12 +14,11 @@
 |---|---|---|
 | MS-J01 | First Station entry | MS-C01, MS-C02, MS-C03 |
 | MS-J02 | Returning session restore | MS-C01, MS-C02, MS-C10 |
-| MS-J03 | Conversation work | MS-C04, MS-C05, MS-C06 |
+| MS-J03 | Conversation work | MS-C04, MS-C05, MS-C06, MS-C12 |
 | MS-J04 | Contact and group work | MS-C04, MS-C07 |
 | MS-J05 | Moments participation | MS-C04, MS-C08 |
 | MS-J06 | Profile, settings, and Station change | MS-C04, MS-C09, MS-C10 |
-| MS-J07 | Interrupted work and degraded recovery | MS-C05, MS-C08, MS-C10, MS-C14 |
-| MS-J08 | Whole-product foreground walkthrough | MS-C01..MS-C10, MS-C14, MS-C15 |
+| MS-J07 | Interrupted work and degraded recovery | MS-C05, MS-C08, MS-C10, MS-C12, MS-C14 |
 
 ## 2. MS-J01 First Station Entry
 
@@ -69,11 +68,20 @@ the restore decision is pending.
 8. Back returns to the prior list context.
 9. Attachment upload, typing, search, delete, and conversation settings expose
    their own waiting, success, failure, and recovery state.
+10. In a Direct conversation, the user starts or receives an audio/video call.
+11. The shell-level call surface preserves the conversation beneath it and
+    exposes outgoing, incoming, active, reconnecting, handled-on-another-device,
+    and ended states.
+12. Accept/reject, mute, camera toggle, reconnect, and hangup affect one call
+    identity; only the winning device may retain media resources.
 
 Message actions must preserve readable content and provide local recovery.
 Non-idempotent writes with unknown outcomes are never silently replayed.
 Conversation drafts survive tab changes and background/resume; process restart
 restores the latest safely persisted draft without presenting it as sent.
+Call setup or media failure ends visibly, releases resources, and never disables
+text messaging. A sibling device that loses resolution stops ringing and shows
+`handled_elsewhere`; it cannot establish a second media session.
 
 ## 5. MS-J04 Contact And Group Work
 
@@ -134,6 +142,9 @@ discard, or a new explicit save after reconciliation.
    replacement.
 6. A device-local message flag is explicitly labeled as local to this device;
    another device is not expected to show it.
+7. A suspended or partitioned call enters reconnecting, reconciles the
+   authoritative resolution before retaining media, and ends visibly if it
+   cannot recover.
 
 ## 9. Platform Adaptation
 
@@ -142,48 +153,10 @@ discard, or a new explicit save after reconciliation.
 | Primary navigation | Bottom tabs with same-frame visible feedback |
 | Detail navigation | Stack semantics; tab bar hidden for immersive detail |
 | Context actions | Bottom sheet or dedicated page |
+| Live call | Shell-owned full-screen overlay; Direct conversation remains the context owner |
 | Secure credentials | Tauri/native secure storage |
 | OAuth callback | Native deep link returns to the same Station/access attempt |
 | Foreground freshness | Event stream plus reconcile |
 | Background freshness | Push/wakeup marks stale; resume performs authoritative sync |
 | Large lists | Virtualized or bounded rendering with preserved anchors |
 | Accessibility | Screen-reader order, dynamic text, focus restoration, reduced motion, and labeled icon actions |
-
-## 10. MS-J08 Whole-Product Foreground Walkthrough
-
-The reviewer uses a visible iOS Simulator and real application controls. The
-walkthrough starts at launch and visits every reachable surface one by one:
-
-1. Boot, Station selection, Station verification, login, access gates, and
-   runtime preparation.
-2. Chat list, Direct and Group details, search, composer, attachment/voice
-   controls, message actions, conversation settings, forwarding, and group
-   management.
-3. Contacts, requests, profile detail, Find People, Create Group, and their
-   no-result, duplicate, unavailable, permission, and destructive states.
-4. Moments feed, detail/comments, composer, media lifecycle, pagination, empty,
-   filtered, policy-hidden, unavailable, pending, and rollback states.
-5. Me and every Settings detail, including profile/privacy, notifications,
-   blocked users, device preferences, storage, language, Station change,
-   logout, dirty drafts, conflict, permission, unavailable, and failure states.
-6. Shared recovery surfaces for revocation, stale data, command capacity,
-   unknown outcome, draft restoration, and deferred module activation.
-
-At every step, a human must be able to identify the page, primary content,
-primary action, current scope, state meaning, and recovery path without
-interpreting internal identifiers. Text and controls must fit at supported
-viewport and text-size cells; the keyboard, safe area, tab bar, composer,
-sheet, modal, notice, and system status area must not obscure one another.
-
-The walkthrough fails on any reachable surface that:
-
-- uses a raw PTID, Station URL, runtime ID, command ID, untranslated key, or
-  internal exception as primary user-facing copy when a friendly projection is
-  available;
-- presents a module failure as an app-wide blocking card while unrelated work
-  remains usable;
-- clips, overlaps, truncates without recovery, hides the active control, loses
-  navigation context, or lacks a usable next action;
-- differs materially from the confirmed Mobile prototype or UI Identity
-  without a recorded product decision; or
-- has not been opened and interacted with in the foreground runtime.

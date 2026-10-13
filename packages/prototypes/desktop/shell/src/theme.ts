@@ -25,6 +25,7 @@ export const T = {
   surface: '#fafafa',
   white: '#ffffff',
   fillQuaternary: 'rgba(0,0,0,0.02)',
+  fillTertiary: '#f0f0f0',
   radiusSm: 6,
   radiusMd: 8,
   radiusLg: 12,
