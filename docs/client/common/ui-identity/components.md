@@ -172,7 +172,9 @@ inbound request policy enforcement, cross-station directory) MUST render a
 visible **Pending backend** marker and be read-only/disabled — never a live
 control that silently does nothing. Fabricated operational numbers (peer/seed
 counts, per-federation degraded/unreachable health, visible-actor totals) are
-forbidden on user cards unless backed by a real endpoint.
+forbidden on user cards unless backed by a real endpoint. The Station/proto
+work required to remove each marker is enumerated in
+`docs/architecture/domains/federation/network-settings-backend-gaps.md`.
 
 ## 11. Covered UX Dimensions
 
