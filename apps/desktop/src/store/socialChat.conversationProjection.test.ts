@@ -132,7 +132,12 @@ describe('social chat conversation projection', () => {
   it('classifies a direct conversation as a bot from the peer actor kind', () => {
     useSessionStore.setState({
       authenticated: true,
-      currentUser: { actorPtid: 'ptid:peer:alice' },
+      currentUser: {
+        actorPtid: 'ptid:peer:alice',
+        name: 'Alice',
+        email: 'alice@test',
+        loginMethod: 'password',
+      },
     });
 
     expect(useSocialChatStore.getState().isBotConversation('direct-conversation')).toBe(false);
