@@ -5,7 +5,17 @@
 // ── Types ──────────────────────────────────────────────────────
 export type LaunchState = 'station-selection' | 'access-gate-chain' | 'shell';
 export type TabId = 'chat' | 'moments' | 'contacts' | 'profile';
-export type MessageStatus = 'sent' | 'delivered' | 'read';
+export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | 'unknown';
+export type AvatarRenderState = 'ready' | 'loading' | 'failed';
+export type ChatListEvidenceState = 'ready' | 'initial-loading' | 'refreshing' | 'empty' | 'cached-error';
+export type ChatThreadEvidenceState = 'ready' | 'initial-loading' | 'history-loading' | 'route-error' | 'unknown-outcome';
+
+export interface MobileUiEvidence {
+  avatarState: AvatarRenderState;
+  chatListState: ChatListEvidenceState;
+  chatThreadState: ChatThreadEvidenceState;
+  longContent: boolean;
+}
 
 export interface StationEntry {
   url: string;
@@ -17,6 +27,7 @@ export interface Conversation {
   key: string;
   name: string;
   avatar: string;
+  avatarUrl?: string;
   avatarGradient: string;
   lastMessage: string;
   time: string;
@@ -36,11 +47,9 @@ export interface MessageReply {
 }
 
 export type ReactionKind = 'like' | 'love' | 'laugh' | 'wow' | 'celebrate';
-export type MomentReactionKind = 'love';
 
 export interface MessageReaction {
   kind: ReactionKind;
-  emoji?: string;
   byMe: boolean;
   count: number;
 }
@@ -58,7 +67,6 @@ export interface Message {
   reactions?: MessageReaction[];
   recalled?: boolean;
   moderated?: boolean;
-  unknownOutcome?: boolean;
   pinned?: boolean;
   threadReplies?: Message[];
   threadCount?: number;
@@ -69,6 +77,7 @@ export interface MomentComment {
   id: string;
   name: string;
   avatar: string;
+  avatarUrl?: string;
   avatarGradient: string;
   text: string;
   time: string;
@@ -79,24 +88,15 @@ export interface Moment {
   id: string;
   name: string;
   avatar: string;
+  avatarUrl?: string;
   avatarGradient: string;
   time: string;
   text: string;
-  source?: string;
-  audience?: string;
-  reason?: string;
-  remote?: boolean;
   images?: string[];
-  contentKind?: 'text' | 'image' | 'video' | 'link' | 'poll' | 'repost' | 'location';
-  videoLabel?: string;
-  link?: { title: string; url: string };
-  poll?: { question: string; options: string[] };
-  repost?: { author: string; text: string };
-  location?: { name: string; address: string };
   likes: number;
   liked?: boolean;
-  myReaction?: MomentReactionKind;
-  reactionCounts?: Partial<Record<MomentReactionKind, number>>;
+  myReaction?: ReactionKind;
+  reactionCounts?: Partial<Record<ReactionKind, number>>;
   comments: MomentComment[];
 }
 
@@ -104,6 +104,7 @@ export interface Contact {
   key: string;
   name: string;
   avatar: string;
+  avatarUrl?: string;
   avatarGradient: string;
   note: string;
   online?: boolean;
@@ -117,25 +118,11 @@ export interface GroupItem {
   memberCount: number;
 }
 
-export type SettingId =
-  | 'account-info'
-  | 'notifications'
-  | 'privacy-security'
-  | 'safety-number'
-  | 'blocked-users'
-  | 'chat-settings'
-  | 'chat-background'
-  | 'station-connection'
-  | 'encryption'
-  | 'language'
-  | 'about';
-
 export interface SettingEntry {
-  id: SettingId;
   label: string;
   value?: string;
   icon: React.ComponentType<{ size?: number }>;
-  tint: string;
+  tint: 'primary' | 'success' | 'warning' | 'danger' | 'neutral';
 }
 
 export interface SettingGroup {
@@ -164,6 +151,12 @@ export const REACTION_EMOJI: Record<ReactionKind, string> = {
   celebrate: '\u{1F389}',
 };
 
-export const MOMENT_REACTION_EMOJI: Record<MomentReactionKind, string> = {
-  love: '\u{2764}\u{FE0F}',
-};
+export const REACTION_EMOJI_EXTENDED: string[] = ['\u{1F44D}', '\u{1F602}', '\u{1F63A}', '\u{1F44C}', '\u{2705}', '\u{1F914}', '\u{2764}\u{FE0F}', '\u{1F389}'];
+
+export const FULL_EMOJI_GRID = [
+  '\u{1F44D}', '\u{1F602}', '\u{1F63A}', '\u{1F44C}', '\u{2705}', '\u{1F914}', '\u{2764}\u{FE0F}', '\u{1F389}',
+  '\u{1F44F}', '\u{1F64F}', '\u{1F4AA}', '\u{1F91D}', '\u{1FAE1}', '\u{1F62E}', '\u{1F605}', '\u{1F972}',
+  '\u{1F60D}', '\u{1F923}', '\u{1F60E}', '\u{1F929}', '\u{1F973}', '\u{1F624}', '\u{1F62D}', '\u{1FAE0}',
+  '\u{1F525}', '\u{1F4AF}', '\u{2B50}', '\u{1F31F}', '\u{2728}', '\u{1F4AB}', '\u{1F38A}', '\u{1F3AF}',
+  '\u{1F440}', '\u{1F64C}', '\u{1F4AA}', '\u{1F919}', '\u{270C}\u{FE0F}', '\u{1FAF6}', '\u{1F49B}', '\u{1F49A}',
+];

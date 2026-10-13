@@ -1,13 +1,19 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   CONVERSATIONS,
   CURRENT_USER,
+  CHAT_JOURNEY_LOCALE,
   GROUP_MEMBERS,
   MESSAGES,
   type MockConversation,
   type MockGroupMember,
   type MockGroupRole,
+  type FederatedFriendMeta,
 } from './mock';
+import {
+  CHAT_JOURNEY,
+  CHAT_JOURNEY_MESSAGE_ID,
+} from '../../../../shared/chat-journey';
 
 export interface ChatState {
   conversations: MockConversation[];
@@ -16,6 +22,7 @@ export interface ChatState {
 }
 
 export function useChatState() {
+  const retryTimers = useRef<Set<number>>(new Set());
   const [conversations, setConversations] = useState(CONVERSATIONS);
   const [groupMembers, setGroupMembers] = useState(GROUP_MEMBERS);
   const [messagesByConversation, setMessagesByConversation] = useState(MESSAGES);
@@ -25,6 +32,11 @@ export function useChatState() {
   const activeConversation = conversations.find((c) => c.id === activeId) ?? null;
   const messages = activeId ? messagesByConversation[activeId] ?? [] : [];
   const activeGroupMembers = activeId ? groupMembers[activeId] ?? [] : [];
+
+  useEffect(() => () => {
+    retryTimers.current.forEach((timer) => window.clearTimeout(timer));
+    retryTimers.current.clear();
+  }, []);
 
   const selectConversation = useCallback((id: string) => {
     setActiveId(id);
@@ -105,6 +117,126 @@ export function useChatState() {
     } : c)));
   }, []);
 
+  const sendAttachment = useCallback((id: string, file: File) => {
+    const isImage = file.type.startsWith('image/');
+    const objectUrl = URL.createObjectURL(file);
+    const sizeLabel = file.size < 1024
+      ? `${file.size} B`
+      : file.size < 1024 * 1024
+        ? `${(file.size / 1024).toFixed(1)} KB`
+        : `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+    const nextMessage = {
+      id: `attach-${Date.now()}`,
+      senderId: CURRENT_USER.id,
+      content: '',
+      timestamp: Date.now(),
+      type: (isImage ? 'image' : 'file') as 'image' | 'file',
+      status: 'sent' as const,
+      attachmentName: file.name,
+      attachmentMeta: sizeLabel,
+      attachmentUrl: objectUrl,
+    };
+    setMessagesByConversation((prev) => ({
+      ...prev,
+      [id]: [...(prev[id] ?? []), nextMessage],
+    }));
+    setConversations((prev) => prev.map((c) => (c.id === id ? {
+      ...c,
+      lastMessage: isImage ? `[Image] ${file.name}` : `[File] ${file.name}`,
+      lastMessageTime: nextMessage.timestamp,
+      unread: 0,
+    } : c)));
+  }, []);
+
+  const editMessage = useCallback((conversationId: string, messageId: string, content: string) => {
+    const text = content.trim();
+    if (!text) return;
+    // Editing preserves the original send timestamp/order; only the body and
+    // the edited marker change (mirrors the Station envelope edit semantics).
+    setMessagesByConversation((prev) => ({
+      ...prev,
+      [conversationId]: (prev[conversationId] ?? []).map((message) => (
+        message.id === messageId
+          ? { ...message, content: text, edited: true }
+          : message
+      )),
+    }));
+  }, []);
+
+  const retryMessage = useCallback((id: string, messageId: string) => {
+    const isJourney = messageId === CHAT_JOURNEY_MESSAGE_ID;
+
+    // Generic retries only flip the delivery status. The CHAT-CRAFT-J01
+    // scenario additionally reconciles m4 and appends the peer follow-up;
+    // that journey copy must never leak into an ordinary conversation.
+    const transitionStatus = (status: 'sending' | 'delivered') => (prev: typeof MESSAGES) => {
+      const current = prev[id] ?? [];
+      // The row can disappear while the retry is in flight (Clear history).
+      if (!current.some((message) => message.id === messageId)) return prev;
+      return {
+        ...prev,
+        [id]: current.map((message) => (
+          message.id === messageId ? { ...message, status } : message
+        )),
+      };
+    };
+
+    setMessagesByConversation(transitionStatus('sending'));
+
+    const timer = window.setTimeout(() => {
+      retryTimers.current.delete(timer);
+      setMessagesByConversation((prev) => {
+        const current = prev[id] ?? [];
+        if (!current.some((message) => message.id === messageId)) return prev;
+        const messages = current.map((message) => {
+          if (message.id === messageId) {
+            return { ...message, status: 'delivered' as const };
+          }
+          if (isJourney && message.id === 'm4') {
+            return {
+              ...message,
+              content: CHAT_JOURNEY_LOCALE === 'zh'
+                ? '对方已确认收到该消息。'
+                : 'Delivered and confirmed.',
+            };
+          }
+          return message;
+        });
+        if (!isJourney || messages.some((message) => message.id === 'release-hold-ack')) {
+          return { ...prev, [id]: messages };
+        }
+        return {
+          ...prev,
+          [id]: [
+            ...messages,
+            {
+              id: 'release-hold-ack',
+              senderId: 'user-1',
+              content: CHAT_JOURNEY.messages.followup[CHAT_JOURNEY_LOCALE],
+              timestamp: Date.now(),
+              type: 'text' as const,
+            },
+          ],
+        };
+      });
+      // Only the scripted journey updates the session preview with the
+      // follow-up copy; a generic retry leaves the last-message preview alone.
+      if (isJourney) {
+        setConversations((prev) => prev.map((conversation) => (
+          conversation.id === id
+            ? {
+                ...conversation,
+                lastMessage: CHAT_JOURNEY.messages.followup[CHAT_JOURNEY_LOCALE],
+                lastMessageTime: Date.now(),
+                unread: 0,
+              }
+            : conversation
+        )));
+      }
+    }, 900);
+    retryTimers.current.add(timer);
+  }, []);
+
   const sendVoiceMessage = useCallback((id: string, durationSeconds: number) => {
     const nextMessage = {
       id: `voice-${Date.now()}`,
@@ -131,6 +263,26 @@ export function useChatState() {
         : conversation
     )));
   }, []);
+
+  const addGroupMembers = useCallback((conversationId: string, userIds: string[]) => {
+    if (userIds.length === 0) return;
+    setGroupMembers((prev) => {
+      const existing = new Set((prev[conversationId] ?? []).map((member) => member.userId));
+      const added = userIds
+        .filter((userId) => !existing.has(userId))
+        .map((userId) => ({ userId, role: 'member' as const, muted: false, joinedAt: Date.now() }));
+      return { ...prev, [conversationId]: [...(prev[conversationId] ?? []), ...added] };
+    });
+    setConversations((prevConversations) => prevConversations.map((conversation) => {
+      if (conversation.id !== conversationId) return conversation;
+      const existing = (groupMembers[conversationId] ?? []).length;
+      const merged = new Set([
+        ...(groupMembers[conversationId] ?? []).map((member) => member.userId),
+        ...userIds,
+      ]);
+      return { ...conversation, memberCount: merged.size || existing };
+    }));
+  }, [groupMembers]);
 
   const renameGroup = useCallback((id: string, name: string) => {
     setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
@@ -179,7 +331,11 @@ export function useChatState() {
     }));
   }, []);
 
-  const createFriendConversation = useCallback((name: string, peerId: string) => {
+  const createFriendConversation = useCallback((
+    name: string,
+    peerId: string,
+    federatedMeta?: FederatedFriendMeta,
+  ) => {
     const displayName = name.trim() || peerId.trim() || 'New Friend';
     const id = `friend-${Date.now()}`;
     const next: MockConversation = {
@@ -195,7 +351,15 @@ export function useChatState() {
       online: false,
       trustLabel: 'Pending verification',
       trustTone: 'attention',
-      detailHint: `Maps to Friend create/list flow · peer: ${peerId.trim() || 'station/user id pending'}`,
+      detailHint: '',
+      // Structural identity key: lets the session-search dropdown dedupe this
+      // contact instead of opening another identical friend session.
+      peerPtid: peerId.trim() || undefined,
+      // Federation provenance supplied by the caller (contact book / search).
+      // Drives the single cross-station deviation cue; addresses stay in detail.
+      federated: federatedMeta?.federated || undefined,
+      station: federatedMeta?.station,
+      handle: federatedMeta?.handle,
       background: 'Default',
     };
     setConversations((prev) => [next, ...prev]);
@@ -204,7 +368,7 @@ export function useChatState() {
       [id]: [{
         id: `system-${Date.now()}`,
         senderId: 'system',
-        content: 'Friend chat session is ready. Production maps this to /friend-chat/create before messaging.',
+        content: 'Chat started. Say hello.',
         timestamp: Date.now(),
         type: 'system',
       }],
@@ -230,7 +394,7 @@ export function useChatState() {
       memberCount: 1 + invited.length,
       trustLabel: 'Owner controls available',
       trustTone: 'verified',
-      detailHint: 'Maps to Group create, then invite selected members.',
+      detailHint: '',
       myNickname: CURRENT_USER.name,
       background: 'Default',
     };
@@ -245,7 +409,7 @@ export function useChatState() {
         id: `system-${Date.now()}`,
         senderId: 'system',
         content: invited.length > 0
-          ? `Group created. Invites queued for ${invited.join(', ')}.`
+          ? `Group created · ${invited.length} member${invited.length > 1 ? 's' : ''} invited.`
           : 'Group created. Invite members from group details.',
         timestamp: Date.now(),
         type: 'system',
@@ -266,8 +430,10 @@ export function useChatState() {
     activeId,
     activeConversation,
     messages,
+    messagesByConversation,
     currentUserId: CURRENT_USER.id,
     groupMembers: activeGroupMembers,
+    groupMembersByConversation: groupMembers,
     showDetail,
     selectConversation,
     toggleDetail,
@@ -279,9 +445,13 @@ export function useChatState() {
     clearConversationData,
     setConversationBackgroundImage,
     sendMessage,
+    sendAttachment,
+    editMessage,
+    retryMessage,
     sendVoiceMessage,
     renameGroup,
     removeGroupMember,
+    addGroupMembers,
     toggleMemberMute,
     setMemberRole,
     transferOwnership,

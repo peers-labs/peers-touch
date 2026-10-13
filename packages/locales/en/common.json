@@ -987,5 +987,13 @@
   "mobile.list.previous": "Previous",
   "mobile.list.next": "Next",
   "mobile.chat.messageUnavailable": "This message is no longer available.",
-  "mobile.chat.searchFailed": "Message search failed. Try again."
+  "mobile.chat.searchFailed": "Message search failed. Try again.",
+  "mobile.route.preparingTitle": "Preparing {{feature}}",
+  "mobile.route.preparingBody": "Your content will appear when synchronization finishes.",
+  "mobile.route.unavailableTitle": "{{feature}} unavailable",
+  "mobile.route.unavailableBody": "Your content is unchanged. Retry to reconnect this feature.",
+  "mobile.settings.profile.avatarUrl": "Avatar URL",
+  "mobile.settings.profile.headerUrl": "Header image URL",
+  "mobile.recovery.draftRestore.chatCount": "{{count}} chat drafts",
+  "mobile.recovery.draftRestore.momentsCount": "{{count}} Moments drafts"
 }

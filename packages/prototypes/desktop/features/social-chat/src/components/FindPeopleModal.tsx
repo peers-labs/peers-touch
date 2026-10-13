@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Search, Globe, ShieldCheck, UserPlus, X } from 'lucide-react';
 import { T } from '../theme';
+import { Avatar } from './Avatar';
 
 type SearchScope = 'all' | string;
 
@@ -192,15 +193,9 @@ function ResultCard({ result, sent, onSend }: {
       padding: '10px 12px', borderRadius: 10,
       border: `1px solid ${T.border}`, background: T.bg,
     }}>
-      {/* Avatar placeholder */}
-      <div style={{
-        width: 36, height: 36, borderRadius: 8,
-        background: `${T.primary}20`, display: 'flex',
-        alignItems: 'center', justifyContent: 'center',
-        fontSize: 14, fontWeight: 600, color: T.primary,
-      }}>
-        {result.displayName.charAt(0)}
-      </div>
+      {/* Avatar — every result here is a cross-network person, so the single
+          federated ring carries provenance; the address stays a quiet lookup key. */}
+      <Avatar name={result.displayName} size={36} federated />
 
       {/* Info */}
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -212,13 +207,11 @@ function ResultCard({ result, sent, onSend }: {
             <ShieldCheck size={12} color={T.primary} />
           )}
         </div>
-        <div style={{ fontSize: 11, color: T.textSecondary, marginTop: 1 }}>
+        <div style={{
+          fontSize: 11, color: T.textTertiary, marginTop: 1,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
           {result.handle}
-          {result.homeStation && (
-            <span style={{ marginLeft: 6, opacity: 0.7 }}>
-              · {result.homeStation}
-            </span>
-          )}
         </div>
       </div>
 

@@ -51,6 +51,17 @@ pnpm dev            # Vite，浏览器打开 localhost:3105
   - Welcome、快捷操作和 Composer 使用主区可用宽度，不保留固定 430px/560px 横向约束。
 - Orchestration Canvas 小于 1000px 时改为 `56px Agent rail + Canvas`，Engine / Progress / Detail 下移到下一行，由页面纵向滚动承载。
 
+## Notifications 查看流程
+
+- 用户目标：从当前工作上下文快速处理最近通知，按需搜索和翻阅全部通知。
+- 紧凑预览从全局铃铛打开；面板底边与铃铛按钮的实时底边对齐，最近四条通知内部滚动。
+- More notifications 替换预览为一个居中 dialog；不注册独立页面或 tab。搜索覆盖作者与正文，不区分大小写；每页六条，页码随筛选或删除修正。
+- Shell 持有唯一通知数据；预览和完整查看器复用 `NotificationList` 与 `RequestDecisionButtons`。读状态、邀请决策和删除立即在两种形态同步。
+- 列表拥有头像、正文、时间和操作区的共享列轨：时间右边界统一，单按钮与双按钮保留同宽操作区，决策完成后列轨不移动；左右留白及上下内距成对相等。继承 [共同布局合同 §3.1](../../../../client/common/ui-identity/layout.md#31-symmetry-and-repeated-row-tracks)，gate 比较跨行轴线、可见按钮边界、长时间文案与状态转换，并用故意错位的负例验证检出能力。
+- 浮层、搜索、列表与页码各有独立边界；分页和空态保持 dialog 大小，关闭后卸载内容并恢复铃铛焦点。完整列表只渲染当前页，筛选由 memoized derivation 承担。
+- 继承 shared UI Identity 与 Social Desktop 合同；保持安静的连续列表、单一强调色、方形头像和统一决策按钮。拒绝独立通知页面、重复实体控件、装饰动效和全部历史行同时挂载。
+- 验证入口：`packages/prototypes/desktop/features/social-chat/qa/geometry_checks.py`，覆盖宽窄窗口、对齐、搜索无结果及恢复、分页、决策、标记已读、删除末页、键盘关闭与回焦。数据为本地 mock，无网络加载和服务端失败态；生产状态同步、高数据量搜索性能与读屏器实测为 UNPROVEN。
+
 ## Atelier 是容器里的一个 applet
 
 - 左栏 Atelier pin（Blocks 图标）→ 进入 `applet:atelier` → 内容区渲染 `@peers-touch/prototype-desktop-atelier` 的 `AtelierPage`。

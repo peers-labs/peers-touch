@@ -1,13 +1,14 @@
-import { useState, type ReactNode } from 'react';
-import { Pin, BellOff, EyeOff, Trash2, CheckCheck, Volume2, VolumeX, Plus, RefreshCw, UserPlus, Users, X } from 'lucide-react';
+import { useState, useMemo, type ReactNode } from 'react';
+import { Pin, BellOff, EyeOff, Trash2, CheckCheck, Volume2, VolumeX, Plus, RefreshCw, UserPlus, Users, X, Search, MessageSquare } from 'lucide-react';
 import { Button } from '@lobehub/ui';
 import { Alert } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { T } from '../theme';
 import { Avatar } from './Avatar';
+import { GroupAvatar, type GroupAvatarTile } from './GroupAvatar';
 import { ContactIdentityRow } from './ContactIdentityRow';
 import { ContextMenu } from './ContextMenu';
-import { CONTACTS, type MockConversation } from '../mock';
+import { CONTACTS, USERS, type MockConversation, type MockGroupMember, type FederatedFriendMeta } from '../mock';
 
 interface SessionListProps {
   conversations: MockConversation[];
@@ -18,11 +19,25 @@ interface SessionListProps {
   onMarkAsRead: (id: string) => void;
   onHide: (id: string) => void;
   onDelete: (id: string) => void;
-  onCreateFriend: (name: string, peerId: string) => void;
+  onCreateFriend: (name: string, peerId: string, federatedMeta?: FederatedFriendMeta) => void;
   onCreateGroup: (name: string, invitees: string[]) => void;
+  groupMembersByConversation?: Record<string, MockGroupMember[]>;
   onFindPeople?: () => void;
   compact?: boolean;
   fill?: boolean;
+}
+
+// Resolve up to 9 group members (owners/admins first) into composite-avatar tiles.
+function groupAvatarTiles(members: MockGroupMember[] | undefined): GroupAvatarTile[] {
+  if (!members || members.length === 0) return [];
+  const rank = (role: MockGroupMember['role']) => (role === 'owner' ? 0 : role === 'admin' ? 1 : 2);
+  return [...members]
+    .sort((a, b) => rank(a.role) - rank(b.role) || a.joinedAt - b.joinedAt)
+    .slice(0, 9)
+    .map((member) => {
+      const user = USERS[member.userId];
+      return { key: member.userId, name: user?.name ?? member.userId, src: user?.avatar || undefined };
+    });
 }
 
 function formatTime(timestamp: number): string {
@@ -135,6 +150,7 @@ export function SessionList({
   onDelete,
   onCreateFriend,
   onCreateGroup,
+  groupMembersByConversation,
   onFindPeople,
   compact = false,
   fill = false,
@@ -148,6 +164,48 @@ export function SessionList({
     () => new Set(),
   );
   const [groupError, setGroupError] = useState('');
+  const [searchText, setSearchText] = useState('');
+
+  const searchQuery = searchText.trim().toLowerCase();
+
+  const visibleConversations = useMemo(() => {
+    if (!searchQuery) return conversations;
+    return conversations.filter((conversation) => {
+      const haystack = [
+        conversation.name,
+        conversation.lastMessage,
+        conversation.trustLabel,
+        conversation.detailHint,
+      ].join(' ').toLowerCase();
+      return haystack.includes(searchQuery);
+    });
+  }, [conversations, searchQuery]);
+
+  // Contacts not already represented by an open conversation, offered as a
+  // direct-open row in the search dropdown (matches ChatSearchDropdown).
+  const openPeerIds = useMemo(
+    () => new Set(conversations.map((conversation) => conversation.peerPtid).filter(Boolean)),
+    [conversations],
+  );
+  const searchContacts = useMemo(() => {
+    if (!searchQuery) return [];
+    return CONTACTS.filter((contact) => {
+      if (openPeerIds.has(contact.id)) return false;
+      const haystack = [
+        contact.name,
+        contact.username,
+        contact.federatedHandle,
+        contact.homeStation,
+        contact.federationName,
+      ].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(searchQuery);
+    }).slice(0, 6);
+  }, [searchQuery, openPeerIds]);
+
+  const openContactDirect = (name: string, peerId: string, meta?: FederatedFriendMeta) => {
+    onCreateFriend(name, peerId, meta);
+    setSearchText('');
+  };
 
   const closeCreateSurface = () => {
     setCreateMenuOpen(false);
@@ -171,9 +229,8 @@ export function SessionList({
           (contact) => groupSelectedIds.has(contact.id),
         );
         setGroupError(
-          `${unavailable?.name || 'Selected member'} · `
-          + `${unavailable?.federatedHandle || unavailable?.homeStation || ''} `
-          + 'is not ready for encrypted group chat.',
+          `${unavailable?.name || 'This person'} is on another network `
+          + `and can't be added to an encrypted group chat yet.`,
         );
         return;
       }
@@ -260,13 +317,13 @@ export function SessionList({
             <CreateAction
               icon={<UserPlus size={16} />}
               title="Add friend"
-              desc="Maps to Friend create/list before first message."
+              desc="Start a new direct chat."
               onClick={() => setCreateMode('friend')}
             />
             <CreateAction
               icon={<Users size={16} />}
               title="Create group"
-              desc="Maps to Group create, then invite selected members."
+              desc="Bring people together in a group chat."
               onClick={() => setCreateMode('group')}
             />
           </div>
@@ -320,15 +377,13 @@ export function SessionList({
               <Flexbox gap={6} style={{ marginTop: T.space2 }}>
                 {CONTACTS.map((contact) => {
                   const selected = groupSelectedIds.has(contact.id);
-                  const station = contact.homeStation
-                    || contact.federatedHandle
-                    || 'Station unavailable';
+                  const ariaNetwork = contact.homeStation ? ' (another network)' : '';
                   return (
                     <button
                       key={contact.id}
                       type="button"
                       data-prototype-create-group-contact={contact.id}
-                      aria-label={`Select ${contact.name} from ${station}`}
+                      aria-label={`Select ${contact.name}${ariaNetwork}`}
                       aria-pressed={selected}
                       onClick={() => toggleGroupContact(contact.id)}
                       style={{
@@ -420,7 +475,7 @@ export function SessionList({
       )}
 
       {/* Search */}
-      <div style={{ padding: `${T.space2}px ${T.space3}px` }}>
+      <div style={{ padding: `${T.space2}px ${T.space3}px`, position: 'relative' }}>
         <div
           style={{
             height: 32,
@@ -428,23 +483,143 @@ export function SessionList({
             background: T.bgMuted,
             display: 'flex',
             alignItems: 'center',
-            padding: `0 ${T.space3}px`,
+            padding: `0 ${T.space2}px`,
             gap: T.space2,
-            color: T.textTertiary,
-            fontSize: T.fontMd,
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="8" />
-            <path d="m21 21-4.35-4.35" />
-          </svg>
-          <span>Search</span>
+          <Search size={14} color={T.textQuaternary} aria-hidden />
+          <input
+            data-chat-session-search
+            value={searchText}
+            onChange={(event) => setSearchText(event.target.value)}
+            placeholder="Search"
+            aria-label="Search conversations and contacts"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              border: 'none',
+              outline: 'none',
+              background: 'transparent',
+              color: T.text,
+              fontSize: T.fontMd,
+            }}
+          />
+          {searchText ? (
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => setSearchText('')}
+              style={{ border: 'none', background: 'transparent', color: T.textQuaternary, cursor: 'pointer', display: 'flex', padding: 0 }}
+            >
+              <X size={14} />
+            </button>
+          ) : null}
         </div>
+        {searchQuery ? (
+          <div
+            data-chat-search-dropdown
+            style={{
+              position: 'absolute',
+              top: 'calc(100% - 4px)',
+              left: T.space3,
+              right: T.space3,
+              zIndex: 40,
+              maxHeight: 320,
+              overflowY: 'auto',
+              border: `1px solid ${T.border}`,
+              borderRadius: T.radiusLg,
+              background: T.bg,
+              boxShadow: '0 16px 40px rgba(15,23,42,0.18)',
+              padding: T.space1,
+            }}
+          >
+            {visibleConversations.length === 0 && searchContacts.length === 0 ? (
+              <div style={{ padding: `${T.space3}px ${T.space2}px`, color: T.textTertiary, fontSize: T.fontSm }}>
+                No conversations or contacts found
+              </div>
+            ) : null}
+            {visibleConversations.map((conversation) => (
+              <button
+                key={`search-${conversation.id}`}
+                type="button"
+                data-chat-search-result={conversation.id}
+                onClick={() => {
+                  onSelect(conversation.id);
+                  setSearchText('');
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: T.space2,
+                  padding: `${T.space2}px ${T.space2}px`,
+                  border: 'none',
+                  borderRadius: T.radiusMd,
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  color: 'inherit',
+                }}
+                onMouseEnter={(event) => { event.currentTarget.style.background = T.bgHover; }}
+                onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent'; }}
+              >
+                <MessageSquare size={15} color={T.textTertiary} aria-hidden />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: T.fontSm, fontWeight: 700, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {conversation.name}
+                  </span>
+                  <span style={{ display: 'block', fontSize: T.fontXs, color: T.textTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {conversation.lastMessage}
+                  </span>
+                </span>
+              </button>
+            ))}
+            {searchContacts.map((contact) => (
+              <button
+                key={`search-contact-${contact.id}`}
+                type="button"
+                data-chat-search-contact={contact.id}
+                onClick={() => openContactDirect(
+                  contact.name,
+                  contact.id,
+                  contact.federated
+                    ? { federated: true, station: contact.homeStation, handle: contact.federatedHandle }
+                    : undefined,
+                )}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: T.space2,
+                  padding: `${T.space2}px ${T.space2}px`,
+                  border: 'none',
+                  borderRadius: T.radiusMd,
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  color: 'inherit',
+                }}
+                onMouseEnter={(event) => { event.currentTarget.style.background = T.bgHover; }}
+                onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent'; }}
+              >
+                <UserPlus size={15} color={T.primary} aria-hidden />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: T.fontSm, fontWeight: 700, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {contact.name}
+                  </span>
+                  <span style={{ display: 'block', fontSize: T.fontXs, color: T.textTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {contact.username ? `@${contact.username}` : contact.name}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {/* Conversation list */}
       <div style={{ flex: 1, overflow: 'auto' }}>
-        {conversations.map((conv) => {
+        {visibleConversations.map((conv) => {
           const isActive = conv.id === activeId;
           const menuItems = [
             {
@@ -511,12 +686,17 @@ export function SessionList({
                   if (!isActive) e.currentTarget.style.background = conv.pinned ? T.bgSubtle : 'transparent';
                 }}
               >
+                {conv.type === 'group' ? (
+                  <GroupAvatar size={44} members={groupAvatarTiles(groupMembersByConversation?.[conv.id])} />
+                ) : (
                 <Avatar
                   name={conv.name}
                   size={44}
                   online={conv.type === 'friend' ? conv.online : undefined}
-                  groupIcon={conv.type === 'group'}
+                  groupIcon={false}
+                  federated={conv.type === 'friend' ? conv.federated : undefined}
                 />
+                )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span
