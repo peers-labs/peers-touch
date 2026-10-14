@@ -4,7 +4,7 @@
 > Audience: Desktop applet runtime 工程师、reviewer、AI agent。
 > Updated: 2026-07-03。
 
-本文档描述 **收敛后（Kernel 单一权威）** 的 Desktop applet 运行时生命周期落地实现。它是平台层文档，向上受两份架构层真源约束，向下对齐 `desktop-web` kernel 契约：
+本文档描述 **收敛后（Kernel 单一权威）** 的 Desktop applet 运行时生命周期落地实现。它是平台层文档，向上受两份架构层真源约束，向下对齐 embedded WebView renderer kernel 契约：
 
 - 架构真源（跨端状态机 / 资源策略）：[`../../architecture/platform/applet-runtime/applet-lifecycle-architecture.md`](../../architecture/platform/applet-runtime/applet-lifecycle-architecture.md)（§3 状态机、§5 资源策略、§6 分层职责）。
 - 执行计划：[`../../architecture/platform/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md`](../../architecture/platform/applet-runtime/execution-plans/2026-07-02-applet-runtime-lifecycle-buildout.md)（§6 Phase 3 Desktop、§9 Phase 5 收敛）。

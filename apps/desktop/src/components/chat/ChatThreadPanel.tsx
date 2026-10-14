@@ -243,6 +243,7 @@ export function ChatThreadPanel() {
     deleteMessage,
     recallFriendMessage,
     recallGroupMessage,
+    groupMembers,
     getIMConversations,
     getIMSenderProfile,
   } = useActiveSocialChatSlice((s) => ({
@@ -266,6 +267,7 @@ export function ChatThreadPanel() {
     deleteMessage: s.deleteMessage,
     recallFriendMessage: s.recallFriendMessage,
     recallGroupMessage: s.recallGroupMessage,
+    groupMembers: s.groupMembers,
     getIMConversations: s.getIMConversations,
     getIMSenderProfile: s.getIMSenderProfile,
   }));
@@ -289,6 +291,18 @@ export function ChatThreadPanel() {
   const activeConversation = activeUlid
     ? getIMConversations().find((conversation) => conversation.kind === activeKind && conversation.id === activeUlid)
     : undefined;
+  const mentionMembers = activeTab === 'group' && activeUlid
+    ? (groupMembers[activeUlid] ?? [])
+        .filter((member) => member.ptid && member.ptid !== currentUserPtid)
+        .map((member) => {
+          const profile = getIMSenderProfile('group', activeUlid, member.ptid);
+          return {
+            actorPtid: member.ptid,
+            displayName: profile.name,
+            avatar: profile.avatar,
+          };
+        })
+    : [];
   const currentMessages = useMemo(
     () => activeUlid
       ? projectDesktopIMMessages(activeKind, activeUlid, currentMessageProjection)
@@ -353,6 +367,10 @@ export function ChatThreadPanel() {
           replyToUlid,
           hasAttachment ? draft.attachments : undefined,
           rootMessage.ulid,
+          {
+            mentions: draft.mentions,
+            mentionAll: draft.mentionAll,
+          },
         );
       }
       await loadThreadMessages(activeUlid, rootMessage.ulid, activeKind);
@@ -622,6 +640,7 @@ export function ChatThreadPanel() {
             placeholder={t('chat.social.thread.placeholder')}
             replyPreview={replyPreview}
             replyPreviewKey={replyTarget?.ulid ?? null}
+            mentionMembers={mentionMembers}
             sending={sending}
             capabilities={CHAT_COMPOSER_CAPABILITIES_DESKTOP_THREAD}
             visualSurface="desktop-thread"

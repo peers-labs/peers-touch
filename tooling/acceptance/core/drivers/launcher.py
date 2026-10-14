@@ -9,7 +9,6 @@ from pathlib import Path
 class AppLaunchMetadata:
     webdriver_host: str
     webdriver_port: int
-    gateway_port: int
     profile: str
     storage_root: str
     process_id: int | None = None

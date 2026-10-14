@@ -122,7 +122,7 @@
 适合放这里的问题：
 
 - Station 和 Desktop 谁负责什么
-- `desktop-web / desktop-rust / desktop-app / station` 怎么协同
+- `embedded WebView renderer / desktop-rust / desktop-app / station` 怎么协同
 - 存储、i18n、handler 等跨层统一设计
 
 ### `client/desktop/`
@@ -367,7 +367,7 @@
 
 - 先看 `client/desktop/base.md`
 - 再看 `architecture/platform/client/desktop/runtime.md`（跨进程边界）
-- 再看 `client/desktop/runtime-projections.md`（desktop-web 内部 Page / Runtime / Boot 契约）
+- 再看 `client/desktop/runtime-projections.md`（embedded renderer 内部 Page / Runtime / Boot 契约）
 - 再按主题看：
   - `client/desktop/global-context-kernel.md`
   - `client/desktop/provider-model-target-architecture.md`

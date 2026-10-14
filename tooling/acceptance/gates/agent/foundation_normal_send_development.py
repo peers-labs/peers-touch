@@ -307,10 +307,8 @@ def cleanup_clients(
             {"runtime": "native-desktop", "returnCode": completed.returncode}
         )
     ports = {
-        "nativeGateway": port_released(runtime_pair.native.spec.gateway_port),
         "nativeRenderer": port_released(runtime_pair.native.spec.renderer_port),
         "nativeWebDriver": port_released(runtime_pair.native.spec.webdriver_port),
-        "secondaryGateway": port_released(runtime_pair.secondary.spec.gateway_port),
         "secondaryRenderer": port_released(runtime_pair.secondary.spec.renderer_port),
         "secondaryWebDriver": port_released(runtime_pair.secondary.spec.webdriver_port),
     }

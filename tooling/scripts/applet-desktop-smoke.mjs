@@ -66,30 +66,30 @@ write('package/bundle-artifact-output.txt', smokeFailures.some((failure) => fail
 const desktopAppletTests = spawnSync('pnpm', ['--filter', '@peers-touch/app-desktop', 'run', 'test:applet'], { encoding: 'utf8' });
 write('desktop/host-package-reader-test-output.txt', desktopAppletTests.stdout + desktopAppletTests.stderr);
 
-const gatewayTests = spawnSync('cargo', ['test', '--manifest-path', 'apps/desktop/src-tauri/Cargo.toml', 'applets::tests', '--', '--nocapture', '--test-threads=1'], { encoding: 'utf8' });
-write('desktop/gateway-real-invocation-test-output.txt', gatewayTests.stdout + gatewayTests.stderr);
+const nativeCommandTests = spawnSync('cargo', ['test', '--manifest-path', 'apps/desktop/src-tauri/Cargo.toml', 'applets::tests', '--', '--nocapture', '--test-threads=1'], { encoding: 'utf8' });
+write('desktop/native-command-invocation-test-output.txt', nativeCommandTests.stdout + nativeCommandTests.stderr);
 
 write('desktop/host-load-output.txt', validation.status === 0 && desktopAppletTests.status === 0 && smokeFailures.length === 0
   ? 'PASS Desktop package reader accepts complex external package shape and Lynx entry through executable applet tests.'
   : `FAIL host-load evidence failed\n${smokeFailures.join('\n')}`);
 write('desktop/service-binding-output.txt', manifest.services?.length > 0
-  ? `${gatewayTests.status === 0 ? 'PASS' : 'FAIL'} service binding is enforced by executable Gateway tests. Services: ${manifest.services.map((service) => `${service.id}:${service.binding}:${service.allowedPaths.join(',')}`).join('; ')}`
+  ? `${nativeCommandTests.status === 0 ? 'PASS' : 'FAIL'} service binding is enforced by executable Desktop Rust command tests. Services: ${manifest.services.map((service) => `${service.id}:${service.binding}:${service.allowedPaths.join(',')}`).join('; ')}`
   : 'FAIL no service binding declarations found.');
 write('desktop/skills-output.txt', manifest.skills?.length > 0
-  ? `${gatewayTests.status === 0 ? 'PASS' : 'FAIL'} skills.register/list/invoke registry and typed stream result paths are covered by executable Gateway tests. Skills: ${manifest.skills.map((skill) => skill.id).join(', ')}`
+  ? `${nativeCommandTests.status === 0 ? 'PASS' : 'FAIL'} skills.register/list/invoke registry and typed stream result paths are covered by executable Desktop Rust command tests. Skills: ${manifest.skills.map((skill) => skill.id).join(', ')}`
   : 'FAIL no skills declared.');
 write('desktop/tasks-streaming-output.txt', manifest.permissions?.includes('tasks.start') && manifest.permissions?.includes('tasks.cancel')
-  ? `${gatewayTests.status === 0 ? 'PASS' : 'FAIL'} task start/get/cancel lifecycle is covered by executable Gateway tests.`
+  ? `${nativeCommandTests.status === 0 ? 'PASS' : 'FAIL'} task start/get/cancel lifecycle is covered by executable Desktop Rust command tests.`
   : 'FAIL task lifecycle permissions missing.');
 write('desktop/agent-ai-output.txt', manifest.permissions?.includes('agent.stream') && manifest.permissions?.includes('ai.chat')
-  ? `${gatewayTests.status === 0 ? 'PASS' : 'FAIL'} agent.startSession/send/stream and ai.generate/chat permissions are manifest-gated and contract-shaped; live E2E uses a local controlled upstream fixture.`
+  ? `${nativeCommandTests.status === 0 ? 'PASS' : 'FAIL'} agent.startSession/send/stream and ai.generate/chat permissions are manifest-gated and contract-shaped; live E2E uses a local controlled upstream fixture.`
   : 'FAIL agent/AI permissions missing.');
-write('desktop/gateway-allow-deny-output.txt', gatewayTests.status === 0
-  ? 'PASS executable Gateway tests deny missing manifest permissions, raw URL network requests, disallowed service paths, destroyed sessions, oversized payloads, exhausted quotas, and timed-out capabilities.'
-  : 'FAIL executable Gateway allow/deny tests failed.');
-write('desktop/audit-output.txt', gatewayTests.status === 0
-  ? 'PASS Gateway audit sink captures executable evidence for allowed call, permission deny, session destroy, network allow/error, network deny, and manifest anti-forge paths.'
-  : 'FAIL Gateway audit evidence unavailable because executable tests failed.');
+write('desktop/native-command-allow-deny-output.txt', nativeCommandTests.status === 0
+  ? 'PASS executable Desktop Rust command tests deny missing manifest permissions, raw URL network requests, disallowed service paths, destroyed sessions, oversized payloads, exhausted quotas, and timed-out capabilities.'
+  : 'FAIL executable Desktop Rust command allow/deny tests failed.');
+write('desktop/audit-output.txt', nativeCommandTests.status === 0
+  ? 'PASS Desktop Rust command audit sink captures executable evidence for allowed call, permission deny, session destroy, network allow/error, network deny, and manifest anti-forge paths.'
+  : 'FAIL Desktop Rust command audit evidence unavailable.');
 write('contract/schema-source.txt', 'PASS packages/applet-contract is the canonical type source for manifest, bridge, capability, complex events.');
 write('contract/schema-consumers.txt', 'PASS generated JSON Schema is exported from the canonical applet-contract package and gated by applet:contract-test.');
 write('contract/validation-output.txt', validation.stdout + validation.stderr);
@@ -97,11 +97,11 @@ write('sdk/exported-api.txt', 'PASS SDK exports app/lifecycle/navigation/network
 write('sdk/forbidden-api-scan.txt', 'PASS SDK integrated adapters use Host bridge; standalone is explicit opt-in only and is not integrated acceptance.');
 write('sdk/complex-surface-output.txt', 'PASS complex surface is implemented against BridgeAdapter method mapping for skills/tasks/agent/ai/telemetry.');
 write('producer-independence/host-package-input-output.txt', `PASS smoke accepts package directory only: ${packageDir}`);
-write('summary.md', `# Applet Readiness Evidence\n\nDesktop smoke package: ${packageDir}\n\nValidation: ${validation.status === 0 ? 'PASS' : 'FAIL'}\nDesktop package reader tests: ${desktopAppletTests.status === 0 ? 'PASS' : 'FAIL'}\nDesktop Gateway executable tests: ${gatewayTests.status === 0 ? 'PASS' : 'FAIL'}\nComplex manifest checks: ${smokeFailures.length === 0 ? 'PASS' : `FAIL (${smokeFailures.length})`}\n\nResult: ${validation.status === 0 && desktopAppletTests.status === 0 && gatewayTests.status === 0 && smokeFailures.length === 0 ? 'PASS Desktop smoke foundation. Complete readiness evidence also requires applet:desktop-runtime-gate, applet:desktop-product-host-gate, applet:desktop-product-host-real-gateway-gate, applet:desktop-packaged-assets-gate, and applet:desktop-e2e; release L3 still requires packaged Tauri product-window E2E, rebuilt Tauri Mobile native plugin evidence, and external producer certification.' : 'FAIL'}\n`);
+write('summary.md', `# Applet Readiness Evidence\n\nDesktop smoke package: ${packageDir}\n\nValidation: ${validation.status === 0 ? 'PASS' : 'FAIL'}\nDesktop package reader tests: ${desktopAppletTests.status === 0 ? 'PASS' : 'FAIL'}\nDesktop Rust command tests: ${nativeCommandTests.status === 0 ? 'PASS' : 'FAIL'}\nComplex manifest checks: ${smokeFailures.length === 0 ? 'PASS' : `FAIL (${smokeFailures.length})`}\n\nResult: ${validation.status === 0 && desktopAppletTests.status === 0 && nativeCommandTests.status === 0 && smokeFailures.length === 0 ? 'PASS Desktop smoke foundation. Complete readiness evidence also requires the packaged Native Tauri product-window gate, Desktop packaged assets, Desktop native E2E, rebuilt Tauri Mobile native plugin evidence, and external producer certification.' : 'FAIL'}\n`);
 
 if (validation.status !== 0) process.exit(validation.status ?? 1);
 if (desktopAppletTests.status !== 0) process.exit(desktopAppletTests.status ?? 1);
-if (gatewayTests.status !== 0) process.exit(gatewayTests.status ?? 1);
+if (nativeCommandTests.status !== 0) process.exit(nativeCommandTests.status ?? 1);
 if (smokeFailures.length > 0) {
   process.stderr.write(`FAIL desktop smoke checks\n${smokeFailures.join('\n')}\n`);
   process.exit(1);

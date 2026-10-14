@@ -2,8 +2,8 @@
 // too heavy to bootstrap eagerly but still benefits from being warm by
 // the time the user clicks into it.
 //
-// Use case: the Settings page has many sections (statistics, applets,
-// tools, help). We don't want to fetch them all at boot, but we also
+// Use case: the Settings page has many sections (applets, tools, help).
+// We don't want to fetch them all at boot, but we also
 // don't want the first click to wait. `usePrefetch` queues the loader
 // onto an idle window and exposes a small in-memory cache so the
 // section can render synchronously when warm.

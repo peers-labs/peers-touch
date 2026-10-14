@@ -6,6 +6,7 @@ import { Spin, theme } from 'antd';
 import { Bot, User } from 'lucide-react';
 import { LazyMarkdown as Markdown } from '../components/LazyMarkdown';
 import { chatMarkdownProps } from '../components/messages/markdownConfig';
+import { api } from '../services/desktop_api';
 
 interface SharedMessage {
   id: string;
@@ -21,15 +22,8 @@ interface SharedData {
   messages: SharedMessage[];
 }
 
-const BASE_URL = import.meta.env.VITE_API_URL || '/api';
-
 async function fetchSharedSession(token: string): Promise<SharedData> {
-  const res = await fetch(`${BASE_URL}/share/${token}`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || 'Not found');
-  }
-  return res.json();
+  return api.getSharedSession(token);
 }
 
 export default function SharePage({ token }: { token: string }) {

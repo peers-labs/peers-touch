@@ -482,7 +482,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     resource=f"gate-environment:{gate_id}",
                 )
 
-        gateway_base = 3330 + slot * 100
         renderer_base = 3510 + slot * 100
         webdriver_base = 4445 + slot * 10
         run_root = (
@@ -498,7 +497,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 ),
                 runtime="native-tauri",
                 worktree=str(worktree),
-                gateway_port=gateway_base + index,
                 renderer_port=renderer_base + index,
                 webdriver_port=webdriver_base + index,
                 profile=f"chat-native-{role}",
@@ -519,7 +517,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         )
         for client in clients:
             for label, port in (
-                ("gateway", client.gateway_port),
                 ("renderer", client.renderer_port),
                 ("webdriver", client.webdriver_port),
             ):
@@ -551,15 +548,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             actor="alice",
             runtime="native-tauri",
             worktree=str(worktree),
-            gateway_port=int(
-                os.environ.get(
-                    "PT_AGENT_V2_NATIVE_GATEWAY_PORT",
-                    profile_env.get(
-                        "PT_DESKTOP_APP_GATEWAY_PORT",
-                        str(3030 + slot * 100),
-                    ),
-                )
-            ),
             renderer_port=int(
                 os.environ.get(
                     "PT_AGENT_V2_NATIVE_RENDERER_PORT",
@@ -598,17 +586,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             actor="alice",
             runtime="native-tauri",
             worktree=str(worktree),
-            gateway_port=int(
-                os.environ.get(
-                    "PT_AGENT_V2_SECONDARY_GATEWAY_PORT",
-                    str(
-                        int(profile_env.get(
-                            "PT_DESKTOP_APP_GATEWAY_PORT",
-                            str(3030 + slot * 100),
-                        )) + 1
-                    ),
-                )
-            ),
             renderer_port=int(
                 os.environ.get(
                     "PT_AGENT_V2_SECONDARY_RENDERER_PORT",
@@ -663,15 +640,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             actor=actor,
             runtime="native-tauri",
             worktree=str(worktree),
-            gateway_port=int(
-                os.environ.get(
-                    f"{environment_prefix}_NATIVE_GATEWAY_PORT",
-                    profile_env.get(
-                        "PT_DESKTOP_APP_GATEWAY_PORT",
-                        str(3030 + slot * 100),
-                    ),
-                )
-            ),
             renderer_port=int(
                 os.environ.get(
                     f"{environment_prefix}_NATIVE_RENDERER_PORT",
@@ -697,17 +665,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             actor=actor,
             runtime="native-tauri",
             worktree=str(worktree),
-            gateway_port=int(
-                os.environ.get(
-                    f"{environment_prefix}_SECONDARY_GATEWAY_PORT",
-                    str(
-                        int(profile_env.get(
-                            "PT_DESKTOP_APP_GATEWAY_PORT",
-                            str(3030 + slot * 100),
-                        )) + 1
-                    ),
-                )
-            ),
             renderer_port=int(
                 os.environ.get(
                     f"{environment_prefix}_SECONDARY_RENDERER_PORT",
@@ -783,22 +740,12 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         defaults = {
             "alice": (
                 profile_env.get(
-                    "PT_DESKTOP_APP_GATEWAY_PORT",
-                    str(3030 + slot * 100),
-                ),
-                profile_env.get(
                     "PT_DESKTOP_APP_WEB_PORT",
                     str(3210 + slot * 100),
                 ),
                 str(4445 + slot * 10),
             ),
             "bob": (
-                str(
-                    int(profile_env.get(
-                        "PT_DESKTOP_APP_GATEWAY_PORT",
-                        str(3030 + slot * 100),
-                    )) + 1
-                ),
                 str(
                     int(profile_env.get(
                         "PT_DESKTOP_APP_WEB_PORT",
@@ -813,22 +760,16 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 actor=actor,
                 runtime="native-tauri",
                 worktree=str(worktree),
-                gateway_port=int(
-                    os.environ.get(
-                        f"PT_AGENT_V2_EVALUATION_{actor.upper()}_GATEWAY_PORT",
-                        defaults[actor][0],
-                    )
-                ),
                 renderer_port=int(
                     os.environ.get(
                         f"PT_AGENT_V2_EVALUATION_{actor.upper()}_RENDERER_PORT",
-                        defaults[actor][1],
+                        defaults[actor][0],
                     )
                 ),
                 webdriver_port=int(
                     os.environ.get(
                         f"PT_AGENT_V2_EVALUATION_{actor.upper()}_WEBDRIVER_PORT",
-                        defaults[actor][2],
+                        defaults[actor][1],
                     )
                 ),
                 profile=(
@@ -865,15 +806,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             actor="alice",
             runtime="native-tauri",
             worktree=str(worktree),
-            gateway_port=int(
-                os.environ.get(
-                    "PT_AGENT_MARKETPLACE_GATEWAY_PORT",
-                    profile_env.get(
-                        "PT_DESKTOP_APP_GATEWAY_PORT",
-                        str(3030 + slot * 100),
-                    ),
-                )
-            ),
             renderer_port=int(
                 os.environ.get(
                     "PT_AGENT_MARKETPLACE_RENDERER_PORT",
@@ -908,7 +840,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         journey: str,
         profile: str,
         worktree_variable: str,
-        gateway_port_variable: str,
         renderer_port_variable: str,
         webdriver_port_variable: str,
         actor: str = "alice",
@@ -920,15 +851,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             actor=actor,
             runtime="native-tauri",
             worktree=str(worktree),
-            gateway_port=int(
-                os.environ.get(
-                    gateway_port_variable,
-                    profile_env.get(
-                        "PT_DESKTOP_APP_GATEWAY_PORT",
-                        str(3030 + slot * 100),
-                    ),
-                )
-            ),
             renderer_port=int(
                 os.environ.get(
                     renderer_port_variable,
@@ -965,7 +887,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             journey="stream",
             profile=profile,
             worktree_variable="PT_AGENT_STREAM_WORKTREE",
-            gateway_port_variable="PT_AGENT_STREAM_GATEWAY_PORT",
             renderer_port_variable="PT_AGENT_STREAM_RENDERER_PORT",
             webdriver_port_variable="PT_AGENT_STREAM_WEBDRIVER_PORT",
         )
@@ -983,7 +904,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             journey="attachment",
             profile=AGENT_V2_PROFILE,
             worktree_variable="PT_AGENT_ATTACHMENT_WORKTREE",
-            gateway_port_variable="PT_AGENT_ATTACHMENT_GATEWAY_PORT",
             renderer_port_variable="PT_AGENT_ATTACHMENT_RENDERER_PORT",
             webdriver_port_variable="PT_AGENT_ATTACHMENT_WEBDRIVER_PORT",
         )
@@ -1001,7 +921,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             journey="cli-provider",
             profile=AGENT_V2_BINDING_PROFILE,
             worktree_variable="PT_AGENT_CLI_PROVIDER_WORKTREE",
-            gateway_port_variable="PT_AGENT_CLI_PROVIDER_GATEWAY_PORT",
             renderer_port_variable="PT_AGENT_CLI_PROVIDER_RENDERER_PORT",
             webdriver_port_variable="PT_AGENT_CLI_PROVIDER_WEBDRIVER_PORT",
         )
@@ -1019,7 +938,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             journey="minimum-usable-chat",
             profile=AGENT_V2_BINDING_PROFILE,
             worktree_variable="PT_AGENT_MINIMUM_USABLE_WORKTREE",
-            gateway_port_variable="PT_AGENT_MINIMUM_USABLE_GATEWAY_PORT",
             renderer_port_variable="PT_AGENT_MINIMUM_USABLE_RENDERER_PORT",
             webdriver_port_variable="PT_AGENT_MINIMUM_USABLE_WEBDRIVER_PORT",
             actor="charlie",
@@ -1152,7 +1070,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         resource_prefix: str = "",
     ) -> None:
         for label, port in (
-            ("gateway", client.gateway_port),
             ("renderer", client.renderer_port),
             ("webdriver", client.webdriver_port),
         ):

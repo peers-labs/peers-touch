@@ -10,6 +10,32 @@ beforeEach(() => {
   invokeMock.mockReset()
 })
 
+function messagingMessageWire(overrides: Record<string, unknown> = {}) {
+  return {
+    event_id: 'event-1',
+    event_sequence: 7,
+    message_id: 'message-1',
+    sender_ptid: 'ptid:test:alice',
+    sender_device_id: 'alice-device',
+    plaintext: 'canonical plaintext',
+    attachments: [],
+    mentions: [],
+    mention_all: false,
+    state: 'committed',
+    timestamp_unix_ms: 1_800_000_000_000,
+    reply_to_message_id: null,
+    thread_root_message_id: null,
+    edited_text: null,
+    edited_at_unix_ms: null,
+    retracted: false,
+    reactions: [],
+    pinned_by_ptid: null,
+    pinned_at_unix_ms: null,
+    read_by_ptids: ['ptid:test:bob'],
+    ...overrides,
+  }
+}
+
 describe('IM service boundary', () => {
   it('does not expose the removed raw MLS service', () => {
     expect(imServiceV1).not.toHaveProperty('mlsGroup')
@@ -406,20 +432,7 @@ describe('Messaging message projection', () => {
     invokeMock.mockResolvedValueOnce({
       ok: true,
       data: {
-        messages: [{
-          event_id: 'event-1',
-          event_sequence: 7,
-          message_id: 'message-1',
-          sender_ptid: 'ptid:test:alice',
-          sender_device_id: 'alice-device',
-          plaintext: 'canonical plaintext',
-          attachments: [],
-          state: 'committed',
-          timestamp_unix_ms: 1_800_000_000_000,
-          retracted: false,
-          reactions: [],
-          read_by_ptids: ['ptid:test:bob'],
-        }],
+        messages: [messagingMessageWire()],
         has_more: true,
         next_before_sequence: 7,
       },
@@ -434,6 +447,8 @@ describe('Messaging message projection', () => {
         senderDeviceId: 'alice-device',
         plaintext: 'canonical plaintext',
         attachments: [],
+        mentions: [],
+        mentionAll: false,
         state: 'committed',
         timestampUnixMs: 1_800_000_000_000,
         replyToMessageId: undefined,
@@ -457,6 +472,59 @@ describe('Messaging message projection', () => {
         limit: undefined,
       },
     })
+  })
+
+  it.each([
+    [
+      'thread',
+      () => imServiceV1.messaging.listThreadMessages('conversation-1', 'root-1'),
+    ],
+    [
+      'search',
+      () => imServiceV1.messaging.searchMessages('conversation-1', 'Alice'),
+    ],
+  ])('uses the canonical mention projection for %s results', async (_surface, read) => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        messages: [messagingMessageWire({
+          mentions: [{
+            actor_ptid: 'ptid:test:bob',
+            offset: 0,
+            length: 6,
+            display: '@Alice',
+          }],
+          mention_all: true,
+        })],
+      },
+    })
+
+    await expect(read()).resolves.toEqual([
+      expect.objectContaining({
+        messageId: 'message-1',
+        mentions: [{
+          actorPtid: 'ptid:test:bob',
+          offset: 0,
+          length: 6,
+          display: '@Alice',
+        }],
+        mentionAll: true,
+      }),
+    ])
+  })
+
+  it('fails closed when a message projection omits required mention metadata', async () => {
+    const { mentions: _mentions, ...message } = messagingMessageWire()
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: { messages: [message] },
+    })
+
+    await expect(
+      imServiceV1.messaging.listThreadMessages('conversation-1', 'root-1'),
+    ).rejects.toThrow(
+      'Messaging projection contract violation at mentions: expected array',
+    )
   })
 
   it('retries the same logical message through the Engine owner', async () => {
@@ -611,6 +679,8 @@ describe('Messaging send outcome', () => {
         plaintext: '',
         reply_to_message_id: '',
         thread_root_message_id: '',
+        mention_all: false,
+        mentions: [],
         attachments: [
           {
             file_path: '/tmp/image.png',

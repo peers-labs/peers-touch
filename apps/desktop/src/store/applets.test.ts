@@ -11,6 +11,7 @@ const manager = vi.hoisted(() => ({
 
 const desktopApi = vi.hoisted(() => ({
   appletStoreInstall: vi.fn<() => Promise<unknown>>(),
+  appletStoreUninstall: vi.fn<() => Promise<unknown>>(),
   appletStoreListCatalog: vi.fn<() => Promise<{ items: unknown[]; stationUnavailable?: boolean; stationError?: string }>>(),
   appletStoreListInstalled: vi.fn<() => Promise<{ states: unknown[]; stationUnavailable?: boolean; stationError?: string }>>(),
 }));
@@ -66,12 +67,14 @@ describe('applets runtime store', () => {
   beforeEach(async () => {
     vi.resetModules();
     vi.restoreAllMocks();
+    vi.clearAllMocks();
     manager.scanApplets.mockResolvedValue([manifest]);
     manager.getLoadedApplets.mockReturnValue([]);
     manager.getDiagnostics.mockReturnValue([]);
     manager.loadApplet.mockResolvedValue(manifest);
     manager.unloadApplet.mockResolvedValue();
     desktopApi.appletStoreInstall.mockResolvedValue({});
+    desktopApi.appletStoreUninstall.mockResolvedValue({});
     desktopApi.appletStoreListCatalog.mockResolvedValue({ items: [] });
     desktopApi.appletStoreListInstalled.mockResolvedValue({ states: [] });
 
@@ -162,5 +165,34 @@ describe('applets runtime store', () => {
       }),
     ]);
     expect(useAppletsStore.getState().catalogApplets).toEqual([]);
+  });
+
+  it('uninstalls Station applets through the canonical store command', async () => {
+    const { useAppletsStore } = await import('./applets');
+    useAppletsStore.setState({
+      applets: [{ manifest, status: 'installed', source: 'station' }],
+      catalogApplets: [],
+      localDevInstalledAppletIds: [],
+      loading: false,
+    });
+
+    await useAppletsStore.getState().removeAppletInstallation(manifest.id);
+
+    expect(desktopApi.appletStoreUninstall).toHaveBeenCalledWith(manifest.id);
+  });
+
+  it('refuses to uninstall bundled official applets', async () => {
+    const { useAppletsStore } = await import('./applets');
+    useAppletsStore.setState({
+      applets: [{ manifest: atelierManifest, status: 'installed', source: 'bundled-official' }],
+      catalogApplets: [],
+      localDevInstalledAppletIds: [],
+      loading: false,
+    });
+
+    await expect(
+      useAppletsStore.getState().removeAppletInstallation(atelierManifest.id),
+    ).rejects.toThrow('error.applet.bundledCannotUninstall');
+    expect(desktopApi.appletStoreUninstall).not.toHaveBeenCalled();
   });
 });

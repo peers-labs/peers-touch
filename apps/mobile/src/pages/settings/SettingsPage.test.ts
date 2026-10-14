@@ -119,7 +119,7 @@ describe('Settings functional surface contract', () => {
       'manuallyApprovesFollowers: profile.manuallyApprovesFollowers',
     );
     expect(controllerSource).toContain(
-      'messagePermission: profile.messagePermission',
+      'contactPolicy: profile.contactPolicy',
     );
     expect(controllerSource).toContain(
       'autoExpireDays: profile.autoExpireDays',
@@ -140,7 +140,7 @@ describe('Settings functional surface contract', () => {
       'data-privacy-setting="manuallyApprovesFollowers"',
     );
     expect(sectionsSource).toContain(
-      'data-privacy-setting="messagePermission"',
+      'data-privacy-setting="contactPolicy"',
     );
     expect(sectionsSource).toContain(
       'data-privacy-setting="autoExpireDays"',

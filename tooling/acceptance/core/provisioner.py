@@ -37,6 +37,13 @@ PROFILE_ENV_OVERRIDES = (
     "PT_AGENT_DEFAULT_MODEL_ID",
     "PT_AGENT_PROVIDER_BASE_URL",
 )
+RETIRED_DESKTOP_PROFILE_FIELDS = frozenset(
+    {
+        "PT_DESKTOP_APP_GATEWAY_PORT",
+        "PT_DESKTOP_WEB_GATEWAY_PORT",
+        "PT_DESKTOP_WEB_WEB_PORT",
+    }
+)
 REVIEWED_PROFILE_NAME_PATTERN = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
 )
@@ -49,7 +56,10 @@ def load_env_file(path: Path) -> dict[str, str]:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip("'\"")
+        field = key.strip()
+        if field in RETIRED_DESKTOP_PROFILE_FIELDS:
+            continue
+        values[field] = value.strip().strip("'\"")
     return values
 
 
@@ -156,7 +166,6 @@ def resolve_machine_profile_environment(
             resource=f"profile:identity:{profile_name}",
         )
     port_fields = {
-        "desktopAppGateway": "PT_DESKTOP_APP_GATEWAY_PORT",
         "desktopAppWeb": "PT_DESKTOP_APP_WEB_PORT",
         "mobileWeb": "PT_MOBILE_WEB_PORT",
     }

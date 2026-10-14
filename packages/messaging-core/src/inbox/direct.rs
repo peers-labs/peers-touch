@@ -98,52 +98,71 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
             .event
             .as_ref()
             .ok_or_else(|| "messaging Direct delivery has no event".to_string())?;
-        let (message_id, is_edit, message_sender, reply_to_message_id, thread_root_message_id) =
-            match event.payload.as_ref() {
-                Some(conversation_event::Payload::MessageCommitted(message)) => {
-                    if MessagingContentKind::try_from(message.content_kind)
-                        .map_err(|_| "messaging Direct content kind is invalid".to_string())?
-                        != MessagingContentKind::Text
-                    {
-                        return Err(
-                            "messaging Direct processor only accepts text projections".to_string()
-                        );
-                    }
-                    (
-                        message.message_id.as_str(),
-                        false,
-                        message.sender.as_ref(),
-                        (!message.reply_to_message_id.is_empty())
-                            .then_some(message.reply_to_message_id.as_str()),
-                        (!message.thread_root_message_id.is_empty())
-                            .then_some(message.thread_root_message_id.as_str()),
-                    )
+        let (
+            message_id,
+            is_edit,
+            message_sender,
+            reply_to_message_id,
+            thread_root_message_id,
+            public_mentions,
+            public_mention_all,
+        ) = match event.payload.as_ref() {
+            Some(conversation_event::Payload::MessageCommitted(message)) => {
+                if MessagingContentKind::try_from(message.content_kind)
+                    .map_err(|_| "messaging Direct content kind is invalid".to_string())?
+                    != MessagingContentKind::Text
+                {
+                    return Err(
+                        "messaging Direct processor only accepts text projections".to_string()
+                    );
                 }
-                Some(conversation_event::Payload::MessageForwarded(message)) => {
-                    if MessagingContentKind::try_from(message.content_kind).map_err(|_| {
-                        "messaging Direct forward content kind is invalid".to_string()
-                    })? != MessagingContentKind::Text
-                    {
-                        return Err(
-                            "messaging Direct processor only accepts text projections".to_string()
-                        );
-                    }
-                    (
-                        message.destination_message_id.as_str(),
-                        false,
-                        message.sender.as_ref(),
-                        None,
-                        None,
-                    )
+                (
+                    message.message_id.as_str(),
+                    false,
+                    message.sender.as_ref(),
+                    (!message.reply_to_message_id.is_empty())
+                        .then_some(message.reply_to_message_id.as_str()),
+                    (!message.thread_root_message_id.is_empty())
+                        .then_some(message.thread_root_message_id.as_str()),
+                    message.mentioned_ptids.as_slice(),
+                    message.mention_all,
+                )
+            }
+            Some(conversation_event::Payload::MessageForwarded(message)) => {
+                if MessagingContentKind::try_from(message.content_kind)
+                    .map_err(|_| "messaging Direct forward content kind is invalid".to_string())?
+                    != MessagingContentKind::Text
+                {
+                    return Err(
+                        "messaging Direct processor only accepts text projections".to_string()
+                    );
                 }
-                Some(conversation_event::Payload::MessageEdited(fact)) => {
-                    if fact.message_id.trim().is_empty() {
-                        return Err("messaging Direct edit has no message ID".to_string());
-                    }
-                    (fact.message_id.as_str(), true, None, None, None)
+                (
+                    message.destination_message_id.as_str(),
+                    false,
+                    message.sender.as_ref(),
+                    None,
+                    None,
+                    &[][..],
+                    false,
+                )
+            }
+            Some(conversation_event::Payload::MessageEdited(fact)) => {
+                if fact.message_id.trim().is_empty() {
+                    return Err("messaging Direct edit has no message ID".to_string());
                 }
-                _ => return Err("messaging Direct delivery has unsupported event type".to_string()),
-            };
+                (
+                    fact.message_id.as_str(),
+                    true,
+                    None,
+                    None,
+                    None,
+                    &[][..],
+                    false,
+                )
+            }
+            _ => return Err("messaging Direct delivery has unsupported event type".to_string()),
+        };
         let direct = DirectDeviceCiphertext::decode(delivery.endpoint_payload.as_slice())
             .map_err(|_| "messaging Direct ciphertext payload is invalid".to_string())?;
         if let Some(init) = direct.session_init.as_ref() {
@@ -204,6 +223,13 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
         let outcome = double_ratchet::decrypt(&dr_session.ratchet, &wire, &skipped, &aad)
             .map_err(|error| format!("messaging Direct decrypt failed: {error}"))?;
         let private_content = decode_message_private_content(&outcome.plaintext)?;
+        if !public_mentions.is_empty()
+            || public_mention_all
+            || !private_content.mentions.is_empty()
+            || private_content.mention_all
+        {
+            return Err("messaging Direct participant mentions are unsupported".to_string());
+        }
         dr_session.ratchet = outcome.advanced_state;
         dr_session.updated_at_unix_ms = now;
 
@@ -296,6 +322,8 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
                     .unwrap_or_default(),
                 plaintext: private_content.text,
                 attachments: private_content.attachments,
+                mentions: Vec::new(),
+                mention_all: false,
                 committed_at_unix_ms,
                 reply_to_message_id: reply_to_message_id.map(str::to_string),
                 thread_root_message_id: thread_root_message_id.map(str::to_string),

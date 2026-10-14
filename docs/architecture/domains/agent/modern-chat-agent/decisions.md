@@ -1035,7 +1035,7 @@ run authority.
 The accepted architecture requires one durable ToolCall decision, claim,
 receipt, result, and continuation. The current implementation has three
 conflicting paths: Station can execute local tools directly inside the turn
-loop, Desktop Web can approve and invoke Rust, and Desktop Rust can block on an
+loop, Desktop renderer can approve and invoke Rust, and Desktop Rust can block on an
 in-memory approval waiter. The current `ClientCapabilityRequest` does not carry
 the committed decision revision or execution claim/fence needed to distinguish
 an authoritative dispatch from a replayed or fabricated local request.
@@ -1061,7 +1061,7 @@ before any side effect. It then reports `APPLIED`, a typed failure, or
 the actor/device/session/lease/claim/fence/revision/payload/deadline tuple
 matches its committed state.
 
-Desktop Web may submit a user decision and project Station events. It never
+Desktop renderer may submit a user decision and project Station events. It never
 claims or executes a ToolCall. `toolRuntime` is the sole Web projection owner
 for proposal and decision state, not an execution or policy authority.
 

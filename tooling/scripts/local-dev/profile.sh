@@ -106,8 +106,7 @@ case "$cmd" in
     fi
 
     station_port=$((18080 + slot * 100))
-    desktop_gw=$((3030 + slot * 100))
-    desktop_web=$((3210 + slot * 100))
+    desktop_renderer=$((3210 + slot * 100))
     mobile_web=$((5173 + slot * 100))
 
     temporary_profile="$(mktemp "$PROFILES_DIR/.${name}.XXXXXX")"
@@ -145,8 +144,7 @@ PT_RELAY_MULTIADDR=
 PT_BOOTSTRAP_NODES=
 
 # Desktop
-PT_DESKTOP_APP_GATEWAY_PORT=$desktop_gw
-PT_DESKTOP_APP_WEB_PORT=$desktop_web
+PT_DESKTOP_APP_WEB_PORT=$desktop_renderer
 
 # Mobile
 PT_MOBILE_WEB_PORT=$mobile_web

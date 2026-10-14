@@ -86,6 +86,8 @@ type Command struct {
 	MessageID               valueobject.MessageID
 	ReplyToMessageID        valueobject.MessageID
 	ThreadRootMessageID     valueobject.MessageID
+	MentionedPTIDs          []valueobject.PTID
+	MentionAll              bool
 	Reaction                string
 	ReasonCode              string
 	Payload                 []byte
@@ -1191,6 +1193,33 @@ func (c *Conversation) validateOrdinaryCommand(command Command) error {
 				"sender",
 				"is muted in this Conversation",
 			)
+		}
+		if len(command.MentionedPTIDs) > 0 || command.MentionAll {
+			if command.Kind != domainevent.KindMessageCommitted ||
+				c.kind != valueobject.ConversationKindGroup ||
+				(command.MentionAll && len(command.MentionedPTIDs) > 0) ||
+				len(command.MentionedPTIDs) > 64 {
+				return invalid(
+					"aggregate.validate_command",
+					"mentions",
+					"require a group message and valid mention mode",
+				)
+			}
+			var previous valueobject.PTID
+			for _, mentioned := range command.MentionedPTIDs {
+				member, exists := c.members[mentioned]
+				if mentioned == "" ||
+					(previous != "" && previous >= mentioned) ||
+					!exists ||
+					!member.Active() {
+					return invalid(
+						"aggregate.validate_command",
+						"mentioned_ptids",
+						"must be sorted unique active group members",
+					)
+				}
+				previous = mentioned
+			}
 		}
 	case domainevent.KindMessageEdited,
 		domainevent.KindMessageRetracted,

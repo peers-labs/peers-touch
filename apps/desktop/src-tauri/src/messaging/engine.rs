@@ -35,11 +35,11 @@ use crate::model::chat::{
     DeviceEventDelivery, DeviceInboxPayloadType, DissolveConversationIntent,
     DurableDeviceInboxItem, GetConversationPublicHeadRequest, GetConversationPublicHeadResponse,
     GetConversationRequest, GetConversationResponse, ListConversationEventsRequest,
-    ListConversationEventsResponse, MemberRole, MessagingMembershipAction, MessagingProjectionKind,
-    MlsLeaveIntent, PrepareConversationCommandRequest, PrepareConversationCommandResponse,
-    PreparedEndpointPayloadKind, SubmitConversationReadCursorRequest,
-    SubmitConversationReadCursorResponse, SubmitConversationTypingRequest,
-    UpdateConversationIntent,
+    ListConversationEventsResponse, MemberRole, MessageMention, MessagingMembershipAction,
+    MessagingProjectionKind, MlsLeaveIntent, PrepareConversationCommandRequest,
+    PrepareConversationCommandResponse, PreparedEndpointPayloadKind,
+    SubmitConversationReadCursorRequest, SubmitConversationReadCursorResponse,
+    SubmitConversationTypingRequest, UpdateConversationIntent,
 };
 use messaging_core::codec::verification::{verify_authority_event, verify_direct_genesis_event};
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
@@ -2016,6 +2016,8 @@ impl MessagingEngine {
         plaintext: &str,
         reply_to_message_id: &str,
         thread_root_message_id: &str,
+        mentions: &[MessageMention],
+        mention_all: bool,
         attachment_intents: &[LocalAttachmentIntent],
     ) -> Result<SubmitMessageOutcome, String> {
         let _guard = self
@@ -2026,9 +2028,12 @@ impl MessagingEngine {
             || (plaintext.is_empty() && attachment_intents.is_empty())
             || conversation_kind == ConversationKind::Unspecified
             || attachment_intents.len() > super::private_content::MESSAGE_MAX_ATTACHMENT_COUNT
+            || (conversation_kind != ConversationKind::Group
+                && (!mentions.is_empty() || mention_all))
         {
             return Err("messaging message intent is incomplete".to_string());
         }
+        super::private_content::validate_message_mentions(plaintext, mentions, mention_all)?;
         let conversation = self
             .store
             .conversation_projections()?
@@ -2039,6 +2044,16 @@ impl MessagingEngine {
             || conversation.authority_station_id.trim().is_empty()
         {
             return Err("messaging conversation projection does not match intent".to_string());
+        }
+        if mentions.iter().any(|mention| {
+            !conversation
+                .members
+                .iter()
+                .any(|member| member.ptid == mention.actor_ptid)
+        }) {
+            return Err(
+                "messaging mention target is not an active conversation member".to_string(),
+            );
         }
 
         let message_id = Ulid::new().to_string();
@@ -2082,6 +2097,8 @@ impl MessagingEngine {
             reply_to_message_id: reply_to_message_id.to_string(),
             thread_root_message_id: thread_root_message_id.to_string(),
             attachments: Vec::new(),
+            mentions: mentions.to_vec(),
+            mention_all,
             attempt_count: 0,
             created_at_unix_ms,
         };
@@ -2371,6 +2388,8 @@ impl MessagingEngine {
             reply_to_message_id: &draft.reply_to_message_id,
             thread_root_message_id: &draft.thread_root_message_id,
             attachments: &draft.attachments,
+            mentions: &draft.mentions,
+            mention_all: draft.mention_all,
             client_timestamp_unix_ms: draft.created_at_unix_ms,
         };
         match conversation_kind {
@@ -2691,6 +2710,9 @@ impl MessagingEngine {
             .ok_or_else(|| "messaging edit target projection is unavailable".to_string())?;
         if projection.sender_ptid != self.endpoint.ptid {
             return Err("messaging edit target is not authored by this actor".to_string());
+        }
+        if projection.mention_all || !projection.mentions.is_empty() {
+            return Err("messaging mentioned messages cannot be edited".to_string());
         }
         let plan = self.prepare_command_plan(
             token,

@@ -330,11 +330,6 @@ class StationAccessFederationBoundaryGateTest(unittest.TestCase):
                 "federation::federation_catalog_search,\n"
                 "federation::federation_list_contexts,\n"
             ),
-            "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs": (
-                '  "federation_resolve" => value,\n'
-                '  "federation_catalog_search" => value,\n'
-                '  "federation_list_contexts" => value,\n'
-            ),
             "apps/mobile/src/services/gateways/gatewayTypes.ts": (
                 "operationId: 'federation_contexts_list'\n"
                 "operationId: 'federation_resolve'\n"

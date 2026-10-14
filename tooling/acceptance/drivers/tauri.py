@@ -257,7 +257,6 @@ class LocalTauriLauncher(AppLauncher):
         self,
         app_binary: str | None = None,
         port: int = DEFAULT_PORT,
-        gateway_port: int | None = None,
         profile: str | None = None,
         storage_root: str | None = None,
         environment: Mapping[str, str] | None = None,
@@ -265,7 +264,6 @@ class LocalTauriLauncher(AppLauncher):
     ) -> None:
         self.app_binary = app_binary or find_app_binary()
         self.port = port
-        self.gateway_port = gateway_port or _available_port()
         self.profile = profile or f"acceptance-webdriver-{port}"
         self.storage_root = storage_root or tempfile.mkdtemp(
             prefix=f"peers-touch-webdriver-storage-{port}-"
@@ -285,7 +283,6 @@ class LocalTauriLauncher(AppLauncher):
         return AppLaunchMetadata(
             webdriver_host="127.0.0.1",
             webdriver_port=self.port,
-            gateway_port=self.gateway_port,
             profile=self.profile,
             storage_root=self.storage_root,
             process_id=self._process.pid if self._process is not None else None,
@@ -297,7 +294,6 @@ class LocalTauriLauncher(AppLauncher):
             return self.metadata
         env = os.environ.copy()
         env["TAURI_WEBDRIVER_PORT"] = str(self.port)
-        env["PT_GATEWAY_PORT"] = str(self.gateway_port)
         env["PT_PROFILE"] = self.profile
         env["PEERS_STORAGE_ROOT"] = self.storage_root
         env.update(self.environment)
@@ -375,7 +371,6 @@ class MakeDesktopLauncher(AppLauncher):
         *,
         worktree: str | Path,
         port: int,
-        gateway_port: int,
         renderer_port: int,
         profile: str,
         storage_root: str,
@@ -384,7 +379,6 @@ class MakeDesktopLauncher(AppLauncher):
     ) -> None:
         self.worktree = Path(worktree).resolve()
         self.port = port
-        self.gateway_port = gateway_port
         self.renderer_port = renderer_port
         self.profile = profile
         self.storage_root = storage_root
@@ -402,7 +396,6 @@ class MakeDesktopLauncher(AppLauncher):
         return AppLaunchMetadata(
             webdriver_host="127.0.0.1",
             webdriver_port=self.port,
-            gateway_port=self.gateway_port,
             profile=self.profile,
             storage_root=self.storage_root,
             process_id=self._runtime_pid,
@@ -427,8 +420,6 @@ class MakeDesktopLauncher(AppLauncher):
                 "VITE_ACCEPTANCE_HARNESS": "1",
                 "PT_ACCEPTANCE_WEBDRIVER_PORT": str(self.port),
                 "TAURI_WEBDRIVER_PORT": str(self.port),
-                "PT_GATEWAY_PORT": str(self.gateway_port),
-                "PT_RENDERER_PORT": str(self.renderer_port),
                 "PT_PROFILE": self.profile,
                 "PEERS_STORAGE_ROOT": self.storage_root,
                 "DESKTOP_RUST_STARTUP_TIMEOUT_SECONDS": str(
@@ -612,7 +603,7 @@ class MakeDesktopLauncher(AppLauncher):
 
     def _managed_process_pid(self) -> int:
         if self._runtime_profile_root is not None:
-            state_path = self._runtime_profile_root / "desktop-app-tauri.json"
+            state_path = self._runtime_profile_root / "desktop-native-tauri.json"
         else:
             environment = self._launch_environment or self.environment
             home = Path(environment.get("HOME") or Path.home()).expanduser()
@@ -624,7 +615,7 @@ class MakeDesktopLauncher(AppLauncher):
                 / workspace_id(self.worktree)
                 / "runtime"
                 / self.profile
-                / "desktop-app-tauri.json"
+                / "desktop-native-tauri.json"
             )
         try:
             state = json.loads(state_path.read_text(encoding="utf-8"))
@@ -634,7 +625,7 @@ class MakeDesktopLauncher(AppLauncher):
             ) from error
         pid = state.get("pid")
         if (
-            state.get("service") != "desktop-app-tauri"
+            state.get("service") != "desktop-native-tauri"
             or state.get("profile") != self.profile
             or state.get("worktreeId") != self.worktree.name
             or not isinstance(pid, int)
@@ -686,7 +677,6 @@ class MakeDesktopLauncher(AppLauncher):
 
         overrides = {
             "PT_DEV_PROFILE": self.profile,
-            "PT_DESKTOP_APP_GATEWAY_PORT": str(self.gateway_port),
             "PT_DESKTOP_APP_WEB_PORT": str(self.renderer_port),
         }
         for key in ("PT_STATION_URL", "PT_STATION_HEALTH_URL"):
@@ -809,10 +799,6 @@ class TauriSession(DomDriver):
     @property
     def port(self) -> int:
         return self.metadata.webdriver_port
-
-    @property
-    def gateway_port(self) -> int:
-        return self.metadata.gateway_port
 
     @property
     def profile(self) -> str:
@@ -1101,7 +1087,6 @@ def smoke_test(app_binary: Optional[str] = None, port: int = 0) -> bool:
     passed = False
     log_path: Path | None = None
     with tauri_driver_session(app_binary=app_binary, port=port) as td:
-        print(f"[smoke] Gateway port: {td.gateway_port}")
         print(f"[smoke] Profile: {td.profile}")
         state = td.wait_for_ready()
         title = state["title"]

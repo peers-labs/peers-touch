@@ -233,7 +233,7 @@ describe('Mobile Acceptance social actions', () => {
         timezone: '',
         defaultVisibility: 'followers',
         manuallyApprovesFollowers: false,
-        messagePermission: 'friends',
+        contactPolicy: 'federations',
         autoExpireDays: 30,
       },
     });
@@ -249,7 +249,7 @@ describe('Mobile Acceptance social actions', () => {
           timezone: '',
           defaultVisibility: 'private',
           manuallyApprovesFollowers: true,
-          messagePermission: 'none',
+          contactPolicy: 'nobody',
           autoExpireDays: 90,
         },
       },
@@ -301,7 +301,7 @@ describe('Mobile Acceptance social actions', () => {
       displayName: 'Alice Updated',
       defaultVisibility: 'private',
       manuallyApprovesFollowers: true,
-      messagePermission: 'none',
+      contactPolicy: 'nobody',
       autoExpireDays: 90,
     })).resolves.toMatchObject({
       outcome: 1,

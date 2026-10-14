@@ -458,8 +458,12 @@ type SendMessageIntent struct {
 	DirectPayloads              []*PreparedEndpointPayload   `protobuf:"bytes,6,rep,name=direct_payloads,json=directPayloads,proto3" json:"direct_payloads,omitempty"`
 	MlsApplicationPayload       []byte                       `protobuf:"bytes,7,opt,name=mls_application_payload,json=mlsApplicationPayload,proto3" json:"mls_application_payload,omitempty"`
 	MlsApplicationPayloadSha256 []byte                       `protobuf:"bytes,8,opt,name=mls_application_payload_sha256,json=mlsApplicationPayloadSha256,proto3" json:"mls_application_payload_sha256,omitempty"`
-	unknownFields               protoimpl.UnknownFields
-	sizeCache                   protoimpl.SizeCache
+	// Public routing metadata only. Exact positions and display text remain in
+	// MessagePrivateContent.
+	MentionedPtids []string `protobuf:"bytes,9,rep,name=mentioned_ptids,json=mentionedPtids,proto3" json:"mentioned_ptids,omitempty"`
+	MentionAll     bool     `protobuf:"varint,10,opt,name=mention_all,json=mentionAll,proto3" json:"mention_all,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SendMessageIntent) Reset() {
@@ -546,6 +550,20 @@ func (x *SendMessageIntent) GetMlsApplicationPayloadSha256() []byte {
 		return x.MlsApplicationPayloadSha256
 	}
 	return nil
+}
+
+func (x *SendMessageIntent) GetMentionedPtids() []string {
+	if x != nil {
+		return x.MentionedPtids
+	}
+	return nil
+}
+
+func (x *SendMessageIntent) GetMentionAll() bool {
+	if x != nil {
+		return x.MentionAll
+	}
+	return false
 }
 
 type EditMessageIntent struct {
@@ -2035,7 +2053,7 @@ const file_domain_chat_command_proto_rawDesc = "" +
 	"\trecipient\x18\x01 \x01(\v2).peers_touch.model.chat.v1.CryptoEndpointR\trecipient\x12J\n" +
 	"\x04kind\x18\x02 \x01(\x0e26.peers_touch.model.chat.v1.PreparedEndpointPayloadKindR\x04kind\x12%\n" +
 	"\x0eopaque_payload\x18\x03 \x01(\fR\ropaquePayload\x12%\n" +
-	"\x0epayload_sha256\x18\x04 \x01(\fR\rpayloadSha256\"\x9c\x04\n" +
+	"\x0epayload_sha256\x18\x04 \x01(\fR\rpayloadSha256\"\xe6\x04\n" +
 	"\x11SendMessageIntent\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tR\tmessageId\x12R\n" +
@@ -2045,7 +2063,11 @@ const file_domain_chat_command_proto_rawDesc = "" +
 	"\vattachments\x18\x05 \x03(\v24.peers_touch.model.chat.v1.EncryptedObjectDescriptorR\vattachments\x12[\n" +
 	"\x0fdirect_payloads\x18\x06 \x03(\v22.peers_touch.model.chat.v1.PreparedEndpointPayloadR\x0edirectPayloads\x126\n" +
 	"\x17mls_application_payload\x18\a \x01(\fR\x15mlsApplicationPayload\x12C\n" +
-	"\x1emls_application_payload_sha256\x18\b \x01(\fR\x1bmlsApplicationPayloadSha256\"\x8c\x02\n" +
+	"\x1emls_application_payload_sha256\x18\b \x01(\fR\x1bmlsApplicationPayloadSha256\x12'\n" +
+	"\x0fmentioned_ptids\x18\t \x03(\tR\x0ementionedPtids\x12\x1f\n" +
+	"\vmention_all\x18\n" +
+	" \x01(\bR\n" +
+	"mentionAll\"\x8c\x02\n" +
 	"\x11EditMessageIntent\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tR\tmessageId\x12[\n" +

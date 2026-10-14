@@ -81,14 +81,6 @@ CLIENT_BOUNDARY_CONTRACTS = {
             "federation_list_contexts",
         },
     },
-    "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs": {
-        "pattern": r'^\s*"(federation_[a-z0-9_]+)"\s*=>',
-        "allowed": {
-            "federation_resolve",
-            "federation_catalog_search",
-            "federation_list_contexts",
-        },
-    },
     "apps/mobile/src/services/gateways/gatewayTypes.ts": {
         "pattern": r"operationId:\s*'(federation_[a-z0-9_]+)'",
         "allowed": {

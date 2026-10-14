@@ -860,7 +860,10 @@ func TestMapEventAndRejectCodes(t *testing.T) {
 		Sender:          &chat.CryptoEndpoint{Ptid: "ptid:alice", DeviceId: "alice-1"},
 		ClientTimestamp: timestamppb.New(now),
 		Payload: &chat.ChatCommand_SendMessage{
-			SendMessage: &chat.SendMessageIntent{MessageId: "message-1"},
+			SendMessage: &chat.SendMessageIntent{
+				MessageId:      "message-1",
+				MentionedPtids: []string{"ptid:bob"},
+			},
 		},
 	}
 	commandBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(command)
@@ -890,7 +893,8 @@ func TestMapEventAndRejectCodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	if wire.EventId != "event-1" || wire.GetMessageCommitted().MessageId != "message-1" ||
-		wire.Actor.Ptid != "ptid:alice" {
+		wire.Actor.Ptid != "ptid:alice" ||
+		!reflect.DeepEqual(wire.GetMessageCommitted().MentionedPtids, []string{"ptid:bob"}) {
 		t.Fatalf("mapped event = %+v", wire)
 	}
 

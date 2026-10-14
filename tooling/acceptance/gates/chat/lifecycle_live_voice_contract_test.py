@@ -174,8 +174,8 @@ class LifecycleLiveVoiceContractTest(unittest.TestCase):
     def test_runtime_uses_canonical_identity_and_production_actions(self) -> None:
         runtime = self.source("apps/desktop/src/modules/p2p/callP2p.ts")
         harness = self.source("apps/desktop/src/acceptance/chat/harness.ts")
-        gateway = self.source(
-            "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
+        station_commands = self.source(
+            "apps/desktop/src-tauri/src/interface/tauri_commands/station.rs"
         )
         gate = self.source(
             "tooling/acceptance/gates/chat/lifecycle_live_voice.py"
@@ -193,8 +193,8 @@ class LifecycleLiveVoiceContractTest(unittest.TestCase):
         self.assertIn("callRestartConnection", harness)
         self.assertIn("callSwitchVideoDevice", harness)
         self.assertIn(
-            "station::station_set_active_with_state(",
-            gateway,
+            "station_set_active_with_state(",
+            station_commands,
         )
         self.assertIn(
             "device.deviceId !== currentDeviceId",

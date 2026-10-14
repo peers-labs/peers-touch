@@ -17,7 +17,6 @@ function fixtureProfile(name = 'cli-test') {
     `PT_STATION_NAME=${name}`,
     'PT_STATION_URL=http://127.0.0.1:18080',
     'PT_STATION_PORT=18080',
-    'PT_DESKTOP_APP_GATEWAY_PORT=3030',
     'PT_DESKTOP_APP_WEB_PORT=3210',
     'API_TOKEN=private',
     '',
@@ -85,7 +84,7 @@ test('desktop rejects an unconsumed positional mode', () => {
   assert.deepEqual(parsed.error.details.arguments, ['web']);
 });
 
-test('desktop install is exposed without a runtime mode', () => {
+test('desktop install is exposed only through the Native command', () => {
   const help = runCli(['help']);
   assert.equal(help.status, 0);
   assert.match(help.stdout, /devctl desktop install \[--json\]/u);
@@ -100,8 +99,5 @@ test('desktop install is exposed without a runtime mode', () => {
   assert.equal(result.status, 2);
   const parsed = JSON.parse(result.stderr);
   assert.equal(parsed.error.code, 'DEVCTL_UNSUPPORTED_MODE');
-  assert.equal(
-    parsed.error.message,
-    'Desktop installation does not accept --mode',
-  );
+  assert.deepEqual(parsed.error.details.arguments, ['--mode', 'web']);
 });

@@ -66,7 +66,7 @@ describe('Settings truthful unavailable and permission states', () => {
     defaultVisibility: 'followers',
     discoverability: 'by_handle',
     manuallyApprovesFollowers: true,
-    messagePermission: 'friends',
+    contactPolicy: 'federations',
     autoExpireDays: 30,
   } as const;
 
@@ -124,7 +124,7 @@ describe('Settings truthful unavailable and permission states', () => {
     expect(markup).not.toContain('mobile.settings.notifications.enabled');
     expect(markup).toContain('data-privacy-setting="defaultVisibility"');
     expect(markup).toContain('data-privacy-setting="manuallyApprovesFollowers"');
-    expect(markup).toContain('data-privacy-setting="messagePermission"');
+    expect(markup).toContain('data-privacy-setting="contactPolicy"');
     expect(markup).toContain('data-privacy-setting="autoExpireDays"');
   });
 

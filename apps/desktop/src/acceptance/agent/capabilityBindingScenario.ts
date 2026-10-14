@@ -30,6 +30,10 @@ import {
 import { useAgentStore } from '../../store/agent';
 import { useAgentCapabilityStore } from '../../store/agentCapabilities';
 import { useSessionStore } from '../../store/session';
+import {
+  runPasswordAccessChain,
+  type AcceptanceAccessGateFields,
+} from '../chat/passwordLogin';
 
 export interface CapabilityBindingScenarioInput {
   runId: string;
@@ -43,6 +47,7 @@ export interface CapabilityBindingScenarioInput {
   primaryAccount: string;
   secondaryAccount: string;
   password: string;
+  accessGateFields?: AcceptanceAccessGateFields;
   clientCapabilitySessionId?: string;
 }
 
@@ -182,7 +187,11 @@ function issueTypedError(issue: CapabilityCatalogIssue): AgentTypedErrorPayload 
   };
 }
 
-async function authenticate(account: string, password: string): Promise<string> {
+async function authenticate(
+  account: string,
+  password: string,
+  accessGateFields?: AcceptanceAccessGateFields,
+): Promise<string> {
   if (useSessionStore.getState().authenticated) {
     await identityRuntime.logout();
   }
@@ -193,7 +202,17 @@ async function authenticate(account: string, password: string): Promise<string> 
     },
     'capability scenario account gate',
   );
-  await identityRuntime.loginWithPassword(account, password);
+  await runPasswordAccessChain(
+    {
+      beginPasswordLogin: (loginAccount, loginPassword) =>
+        identityRuntime.beginPasswordLogin(loginAccount, loginPassword),
+      submitPasswordLoginGate: (decision, fields) =>
+        identityRuntime.submitPasswordLoginGate(decision, fields),
+    },
+    account,
+    password,
+    accessGateFields,
+  );
   await identityRuntime.completeCurrentSession();
   await waitFor(
     () => identityRuntime.getSnapshot().lifecycle.state === 'ready',
@@ -571,6 +590,7 @@ export async function runCapabilityBindingScenario(
         const secondaryActor = await authenticate(
           input.secondaryAccount,
           input.password,
+          input.accessGateFields,
         );
         let secondaryError = '';
         try {
@@ -583,6 +603,7 @@ export async function runCapabilityBindingScenario(
         const restoredActor = await authenticate(
           input.primaryAccount,
           input.password,
+          input.accessGateFields,
         );
         if (input.platform === 'desktop_app') {
           if (!resolveClientCapabilitySessionId) {

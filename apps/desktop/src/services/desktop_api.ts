@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import {
   create,
   fromBinary,
+  fromJson,
   fromJsonString,
   toBinary,
   toJson,
@@ -47,8 +48,12 @@ export type {
 } from '../gen/proto/domain/chat/storage_pb';
 export type {
   ActorList,
+  ActorDevice,
   ActorProfile,
   Actor,
+} from '../gen/proto/domain/actor/actor_pb';
+import {
+  ActorDeviceSchema,
 } from '../gen/proto/domain/actor/actor_pb';
 import {
   FederationResolveViewSchema,
@@ -182,8 +187,6 @@ export type {
 export type {
   Friend,
 } from '../gen/proto/domain/chat/chat_pb';
-
-const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 export type RustErrorCode =
   | 'NOT_IMPLEMENTED'
@@ -415,11 +418,11 @@ export class AuthCommandException extends Error {
   }
 }
 
-async function invokeAuthCommand<TInput>(
+async function invokeAuthCommand<TInput, TOutput = AuthSessionResponse>(
   command: string,
   input?: TInput,
-): Promise<AuthSessionResponse> {
-  const response = await invokeRustCommand<TInput, AuthSessionResponse>(command, input);
+): Promise<TOutput> {
+  const response = await invokeRustCommand<TInput, TOutput>(command, input);
   if (!response.ok || !response.data) {
     throw new AuthCommandException(
       response.error ?? {
@@ -1356,31 +1359,6 @@ export interface AppletStoreMaterializeBundleResponse {
   source?: AppletStoreSource;
 }
 
-export interface StatisticsRankItem {
-  name: string;
-  count: number;
-}
-
-export interface StatisticsActivityDay {
-  date: string;
-  count: number;
-}
-
-export interface StatisticsData {
-  summary: {
-    sessions: number;
-    messages: number;
-    total_words: number;
-    agents: number;
-    days_with_us: number;
-    first_date: string;
-  };
-  activity: StatisticsActivityDay[];
-  model_rank: StatisticsRankItem[] | null;
-  agent_rank: StatisticsRankItem[] | null;
-  topic_rank: StatisticsRankItem[] | null;
-}
-
 export interface SearchSource {
   id: string;
   name: string;
@@ -2258,6 +2236,27 @@ export interface AccessSubmitLoginInput {
   password: string;
 }
 
+export interface AccessGateScalarInput {
+  field_name: string;
+  value: string | boolean | number;
+}
+
+export interface AccessSubmitGenericInput {
+  attempt_id: string;
+  gate_id: string;
+  gate_type: number;
+  action_id: string;
+  schema_revision: number;
+  schema_digest: string;
+  submission_id: string;
+  fields: AccessGateScalarInput[];
+}
+
+export interface AccessGateStepResponse extends TauriStubPayload {
+  decision: AccessDecision;
+  session?: AuthSessionResponse | null;
+}
+
 export interface AuthValidateTokenInput {
   token?: string;
 }
@@ -2335,8 +2334,13 @@ export interface ProfileUpdateInput {
   tags?: string[];
   links?: AccountProfileLink[];
   discoverability?: 'hidden' | 'by_handle' | 'indexed';
+  contact_policy?: AccountContactPolicy;
+  federation_visibility?: Record<string, AccountDiscoverability>;
   observed_revision: number;
 }
+
+export type AccountDiscoverability = 'hidden' | 'by_handle' | 'indexed';
+export type AccountContactPolicy = 'anyone' | 'federations' | 'nobody';
 
 export interface AccountProfileLink {
   label: string;
@@ -2364,12 +2368,13 @@ export interface AccountProfile {
   links: AccountProfileLink[];
   default_visibility: string;
   manually_approves_followers: boolean;
-  message_permission: string;
+  contact_policy: AccountContactPolicy;
+  federation_visibility: Record<string, AccountDiscoverability>;
   auto_expire_days: number;
   federated_handle: string;
   home_station_peer_id: string;
   home_station_domain: string;
-  discoverability: 'hidden' | 'by_handle' | 'indexed';
+  discoverability: AccountDiscoverability;
   /**
    * Intrinsic ActorKind (1 = person, 7 = agent/bot). Drives one-way,
    * non-E2EE conversation UX for bot peers.
@@ -4828,7 +4833,16 @@ export const api = {
     invokeAccessCommand<AccessSubmitInviteInput>('access_submit_invite_code', input),
 
   accessSubmitLogin: (input: AccessSubmitLoginInput) =>
-    invokeAuthCommand<AccessSubmitLoginInput>('access_submit_login', input),
+    invokeAuthCommand<AccessSubmitLoginInput, AccessGateStepResponse>(
+      'access_submit_login',
+      input,
+    ),
+
+  accessSubmitGeneric: (input: AccessSubmitGenericInput) =>
+    invokeAuthCommand<AccessSubmitGenericInput, AccessGateStepResponse>(
+      'access_submit_generic',
+      input,
+    ),
 
   accessDecision: (attemptId: string) =>
     invokeAccessCommand<AccessDecisionInput>('access_decision', { attempt_id: attemptId }),
@@ -5920,9 +5934,6 @@ export const api = {
 
   resetOnboarding: () =>
     invokeRustDataFromStatus<void, { ok: boolean }>('onboarding_reset'),
-
-  getStatistics: () =>
-    Promise.reject(new Error('legacy_statistics_removed')),
 
   getPreferences: () =>
     invokeRustDataFromStatus<void, UserPreferences>('preferences_get'),
@@ -7062,20 +7073,6 @@ export const api = {
       max_bytes: maxBytes,
     }),
 
-  uploadFile: async (file: File): Promise<UploadResult> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    const res = await fetch(`${BASE_URL}/upload`, {
-      method: 'POST',
-      body: formData,
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || res.statusText);
-    }
-    return res.json();
-  },
-
   // OAuth2
   oauth2ListProviders: () =>
     invokeRustDataFromStatus<void, OAuth2ProviderSummary[]>('oauth2_list_providers'),
@@ -7236,21 +7233,6 @@ export const api = {
   ttsVoices: () =>
     invokeRustDataFromStatus<void, { voices: TTSVoice[] }>('tts_voices'),
 
-  stt: async (file: Blob, language?: string): Promise<{ text: string }> => {
-    const formData = new FormData();
-    formData.append('file', file, 'recording.webm');
-    if (language) formData.append('language', language);
-    const res = await fetch(`${BASE_URL}/stt`, {
-      method: 'POST',
-      body: formData,
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || res.statusText);
-    }
-    return res.json();
-  },
-
   // ── Config Sections (override mechanism) ──
 
   getConfigSection: (section: string) =>
@@ -7309,6 +7291,30 @@ export const api = {
       'actor_get_my_profile',
     );
     return data;
+  },
+
+  deviceList: async () => {
+    const response = await invokeRustData<
+      void,
+      { devices?: JsonValue[] }
+    >('device_list');
+    return (response.devices ?? []).map((device) => (
+      fromJson(ActorDeviceSchema, device)
+    ));
+  },
+
+  deviceRevoke: async (
+    deviceId: string,
+    observedProfileVersion: bigint,
+  ) => {
+    const response = await invokeRustData<
+      { device_id: string; observed_profile_version: number },
+      { device: JsonValue }
+    >('device_revoke', {
+      device_id: deviceId,
+      observed_profile_version: Number(observedProfileVersion),
+    });
+    return fromJson(ActorDeviceSchema, response.device);
   },
 
   // Read-only Federation context and discovery. Actor identity and
@@ -8027,15 +8033,6 @@ export interface EmbeddingModelInfo {
   name: string;
   provider: string;
   dimensions: number;
-}
-
-export interface UploadResult {
-  id: string;
-  filename: string;
-  mime_type: string;
-  size: number;
-  data_url: string;
-  url: string;
 }
 
 export interface IceServersResponse {

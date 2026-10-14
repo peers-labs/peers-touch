@@ -10,18 +10,18 @@
 2. [lifecycle.md](./lifecycle.md) — Desktop 顶层生命周期：boot、identity/auth gate、runtime bootstrap、steady reconcile
 3. [identity-lifecycle.md](./identity-lifecycle.md) — Desktop 登录态、profile、account cache、avatar cache 的状态机闭环
 4. [pin-recovery.md](./pin-recovery.md) — 忘记本地 PIN 后的交互式重新认证、账号绑定与原子 rekey 契约
-5. [runtime-projections.md](./runtime-projections.md) — `desktop-web` 内部 Page / Runtime / Boot 三组契约的**单点真源**
+5. [runtime-projections.md](./runtime-projections.md) — Embedded WebView renderer 内部 Page / Runtime / Boot 三组契约的**单点真源**
 6. [global-context-kernel.md](./global-context-kernel.md) — 全局上下文内核（与 Page/Runtime/Boot 正交）
 7. [chat-layout-contract.md](./chat-layout-contract.md) — Desktop Chat 布局、pane、hover、右键菜单、Composer 边界契约
 8. [navigation-and-settings-ownership.md](./navigation-and-settings-ownership.md) — 主导航与 Settings 工具入口的单一归属
 
 ## 架构层真源（跨进程）
 
-Desktop 与 `station / desktop-rust / desktop-web / desktop-app` 的跨进程关系：
+Desktop 与 `station / desktop-rust / embedded WebView renderer / desktop-app` 的运行关系：
 
 - [../../architecture/platform/client/desktop/runtime.md](../../architecture/platform/client/desktop/runtime.md)
 
-它在第 11 节明确指出：`desktop-web` 内部的契约归 `runtime-projections.md`，本文不重复定义。
+它明确指出：embedded renderer 内部契约归 `runtime-projections.md`，本文不重复定义。
 
 ## 相关子主题
 
@@ -55,7 +55,7 @@ Desktop 与 `station / desktop-rust / desktop-web / desktop-app` 的跨进程关
 - [page-component.md](../../global/coding-guide/desktop/page-component.md) — 页面 / 视图 / 模块注册
 - [store.md](../../global/coding-guide/desktop/store.md) — Zustand Store 与 Runtime ownership 边界
 - [kernel-events.md](../../global/coding-guide/desktop/kernel-events.md) — AppEventBus
-- [service-api.md](../../global/coding-guide/desktop/service-api.md) — Desktop Web ↔ Desktop Rust 调用约束
+- [service-api.md](../../global/coding-guide/desktop/service-api.md) — Embedded renderer ↔ Desktop Rust 调用约束
 
 ## 不确定从哪里开始
 

@@ -4,7 +4,9 @@ use tauri::{AppHandle, Manager, Runtime, State};
 use messaging_core::contracts::ConversationMessageProjection;
 use messaging_core::mls::membership_transition::MembershipTransitionIntentInput;
 use messaging_core::outbox::{CommandDispatchProgress, MetadataInteraction};
-use messaging_core::proto::chat::{MemberRole, MessagingMembershipAction, VoiceNoteMetadata};
+use messaging_core::proto::chat::{
+    MemberRole, MessageMention, MessagingMembershipAction, VoiceNoteMetadata,
+};
 use messaging_core::proto::social::SocialRelationshipAction;
 use prost::Message;
 use rand::rngs::OsRng;
@@ -165,6 +167,30 @@ pub struct MessagingSendMessageInput {
     thread_root_message_id: String,
     #[serde(default)]
     attachment_stage_ids: Vec<String>,
+    #[serde(default)]
+    mentions: Vec<MessagingMentionInput>,
+    #[serde(default)]
+    mention_all: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagingMentionInput {
+    actor_ptid: String,
+    offset: u32,
+    length: u32,
+    display: String,
+}
+
+impl From<MessagingMentionInput> for MessageMention {
+    fn from(value: MessagingMentionInput) -> Self {
+        Self {
+            actor_ptid: value.actor_ptid,
+            offset: value.offset,
+            length: value.length,
+            display: value.display,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -507,6 +533,8 @@ pub struct MessagingMessageProjection {
     sender_device_id: String,
     plaintext: String,
     attachments: Vec<MessagingAttachmentProjection>,
+    mentions: Vec<MessagingMentionProjection>,
+    mention_all: bool,
     state: String,
     timestamp_unix_ms: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -527,6 +555,15 @@ pub struct MessagingMessageProjection {
     #[serde(skip_serializing_if = "Option::is_none")]
     pinned_at_unix_ms: Option<i64>,
     read_by_ptids: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagingMentionProjection {
+    actor_ptid: String,
+    offset: u32,
+    length: u32,
+    display: String,
 }
 
 #[derive(Serialize)]
@@ -690,6 +727,17 @@ fn message_projection(
         sender_device_id: message.sender_device_id,
         plaintext: message.plaintext,
         attachments,
+        mentions: message
+            .mentions
+            .into_iter()
+            .map(|mention| MessagingMentionProjection {
+                actor_ptid: mention.actor_ptid,
+                offset: mention.offset,
+                length: mention.length,
+                display: mention.display,
+            })
+            .collect(),
+        mention_all: message.mention_all,
         state: message.state,
         timestamp_unix_ms: message.timestamp_unix_ms,
         reply_to_message_id: message.reply_to_message_id,
@@ -2337,12 +2385,19 @@ pub async fn messaging_send_message(
     let station_peer_id = input.station_peer_id.clone();
     let actor_ptid = input.actor_ptid.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
+        let mentions = input
+            .mentions
+            .into_iter()
+            .map(MessageMention::from)
+            .collect::<Vec<_>>();
         let outcome = engine.submit_message(
             &input.conversation_id,
             &input.plaintext,
             &input.reply_to_message_id,
             &input.thread_root_message_id,
             &input.attachment_stage_ids,
+            &mentions,
+            input.mention_all,
         )?;
         Ok::<_, String>(MessagingSubmitCommandResult {
             command_id: outcome.command_id,
@@ -2751,6 +2806,8 @@ mod tests {
                 sender_device_id: "device-1".to_string(),
                 plaintext: "hello".to_string(),
                 attachments: Vec::new(),
+                mentions: Vec::new(),
+                mention_all: false,
                 state: "pending".to_string(),
                 timestamp_unix_ms: 1,
                 reply_to_message_id: None,

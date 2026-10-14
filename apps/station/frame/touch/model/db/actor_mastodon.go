@@ -28,13 +28,13 @@ type ActorTouchMeta struct {
 	StatusesCount  int `gorm:"column:statuses_count;default:0"`
 
 	// Extended Profile Fields (Peers-Touch specific)
-	Region            string `gorm:"column:region;size:100"`
-	Timezone          string `gorm:"column:timezone;size:50"`
-	Tags              string `gorm:"column:tags;type:text"`                              // JSON list of strings (Feature tags)
-	Links             string `gorm:"column:links;type:text"`                             // JSON list of UserLink objects
-	DefaultVisibility string `gorm:"column:default_visibility;size:20;default:'public'"` // public, unlisted, followers, private
-	MessagePermission string `gorm:"column:message_permission;size:20;default:'everyone'"`
-	AutoExpireDays    int    `gorm:"column:auto_expire_days;default:0"`
+	Region               string `gorm:"column:region;size:100"`
+	Timezone             string `gorm:"column:timezone;size:50"`
+	Tags                 string `gorm:"column:tags;type:text"`                              // JSON list of strings (Feature tags)
+	Links                string `gorm:"column:links;type:text"`                             // JSON list of UserLink objects
+	DefaultVisibility    string `gorm:"column:default_visibility;size:20;default:'public'"` // public, unlisted, followers, private
+	ContactRequestPolicy string `gorm:"column:contact_request_policy;size:20;default:'anyone';not null"`
+	AutoExpireDays       int    `gorm:"column:auto_expire_days;default:0"`
 
 	LastWebfingeredAt time.Time `gorm:"column:last_webfingered_at"`
 	LastActivityAt    time.Time `gorm:"column:last_activity_at"`

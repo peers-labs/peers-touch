@@ -42,7 +42,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ Desktop Web: Agent Workbench                                     │
+│ Desktop renderer: Agent Workbench                                     │
 │   Pages: Chat, AgentProfile, Memory, Activity, Orchestration     │
 │   Runtimes: agentRuntime, chatRuntime, memoryRuntime, toolRuntime│
 └───────────────────────────────▲──────────────────────────────────┘
@@ -344,7 +344,7 @@ GrowthScore =
 | Memory | `apps/station/app/subserver/memory/` | RetrievalService、ExtractionService、PersonaService、LifecycleService |
 | Orchestration | `apps/station/app/subserver/orchestration/` | CollaborationService、ConsensusService、BudgetService、VerificationService |
 
-### 10.3 Desktop Web
+### 10.3 Desktop renderer
 
 | Runtime | 职责 |
 |---------|------|

@@ -105,6 +105,7 @@ import {
   GetRelationshipResponseSchema,
   GetFollowersResponseSchema,
   GetFollowingResponseSchema,
+  ListBlockedActorsResponseSchema,
   type BlockSocialActorResponse,
   type FollowResponse,
   type UnfollowResponse,
@@ -112,6 +113,7 @@ import {
   type GetRelationshipResponse,
   type GetFollowersResponse,
   type GetFollowingResponse,
+  type ListBlockedActorsResponse,
 } from '../gen/proto/domain/social/relationship_pb';
 import { EVENT, eventBus } from '../kernel/events';
 import { invokeRustProto } from './desktop_api';
@@ -628,6 +630,19 @@ export async function socialGetRelationship(
     GetRelationshipResponseSchema,
     { target_actor_ptid: targetActorPtid },
   );
+}
+
+export async function socialListBlockedActors(
+  cursor?: string,
+  limit?: number,
+): Promise<ListBlockedActorsResponse> {
+  return invokeRustProto<
+    { cursor?: string; limit?: number },
+    ListBlockedActorsResponse
+  >('social_list_blocked_actors', ListBlockedActorsResponseSchema, {
+    cursor,
+    limit,
+  });
 }
 
 export interface SocialRelationshipMutationInput {

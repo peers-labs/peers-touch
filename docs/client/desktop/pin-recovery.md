@@ -18,7 +18,7 @@ It defines:
 - the PIN recovery threat model;
 - identity lifecycle transitions;
 - account and provider binding;
-- Desktop Web and Desktop Rust ownership;
+- embedded renderer and Desktop Rust ownership;
 - authenticated PIN replacement and persistence semantics;
 - cancellation, failure, multi-account, and multi-window behavior;
 - verification requirements.
@@ -149,7 +149,7 @@ unrelated active session cannot manufacture an authorized recovery grant.
 | Recovery authorization and fresh-token binding | Desktop Rust application state | Short-lived, window-bound recovery grant |
 | PIN verification and cryptography | Desktop Rust `domain/pin_lock` | Domain implementation |
 | Account PIN/session persistence | Desktop Rust `auth_identity` + `session_vault` | `identities.json` and raw-session policy |
-| Recovery UI | Desktop Web login views | Runtime phase projection |
+| Recovery UI | Native Desktop login views | Runtime phase projection |
 | Account projection after completion | Identity reconciliation closure | `session.currentUser` + account registry projection |
 
 The PIN remains device-local. Station is not given the PIN and does not own PIN

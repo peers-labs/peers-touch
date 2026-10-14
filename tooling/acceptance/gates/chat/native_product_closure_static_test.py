@@ -69,7 +69,10 @@ NATIVE_FILE_PICKER = (
 CREATE_GROUP_MODAL = (
     ROOT / "apps/desktop/src/components/chat/CreateGroupModal.tsx"
 )
-HTTP_GATEWAY = ROOT / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
+MESSAGING_COMMANDS = (
+    ROOT
+    / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
+)
 
 
 class SyntheticLinuxRuntimeBinding:
@@ -150,7 +153,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.create_group_modal = CREATE_GROUP_MODAL.read_text(encoding="utf-8")
-        self.http_gateway = HTTP_GATEWAY.read_text(encoding="utf-8")
+        self.messaging_commands = MESSAGING_COMMANDS.read_text(encoding="utf-8")
         self.tree = ast.parse(self.source)
 
     def test_client_specs_are_keyed_by_stable_client_id(self) -> None:
@@ -1036,6 +1039,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn(
             'target.invoke_app_result("acceptance_request_activation")',
             yield_source,
+        )
+        self.assertNotIn(
+            "window.__TAURI_INTERNALS__.invoke(",
+            self.runtime_binding,
         )
         self.assertNotIn("acceptance_yield_activation", self.source)
         self.assertLess(semantic_return_index, recovery_index)
@@ -2257,23 +2264,21 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("void loadGroups().then(() => {", self.create_group_modal)
         self.assertNotIn("await loadGroups();", self.create_group_modal)
         self.assertNotIn("await loadSessions();", self.create_group_modal)
-        browser_group_create = self.http_gateway[
-            self.http_gateway.index('"messaging_create_group" => {'):
-            self.http_gateway.index('"messaging_membership_transition" => {')
+        native_group_create = self.messaging_commands[
+            self.messaging_commands.index("pub fn messaging_create_group("):
+            self.messaging_commands.index(
+                "pub fn messaging_membership_transition("
+            )
         ]
         self.assertIn(
-            "parse_args::<",
-            browser_group_create,
-        )
-        self.assertIn(
             "MessagingCreateGroupInput",
-            browser_group_create,
+            native_group_create,
         )
         self.assertIn(
             "messaging_create_group_with_engine(",
-            browser_group_create,
+            native_group_create,
         )
-        self.assertNotIn("ulid::Ulid::new()", browser_group_create)
+        self.assertNotIn("ulid::Ulid::new()", native_group_create)
 
     def test_conversation_pane_stays_inside_the_native_viewport(self) -> None:
         self.assertIn("width: 'clamp(180px, 28vw, 280px)'", self.chat_session_list)

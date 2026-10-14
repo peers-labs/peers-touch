@@ -268,7 +268,7 @@ Station owns turn and subprocess lifecycle independent of client connection stat
 ### 6.1 Client: Provider Settings UI
 
 - **Responsibility**: Render provider/model/credential settings; submit mutations to Station.
-- **Owner**: Desktop Web / Mobile UI
+- **Owner**: Desktop renderer / Mobile UI
 - **Inputs**: Cached provider config (from local cache or fresh fetch)
 - **Outputs**: Mutation requests to Station API
 - **Dependencies**: Station Provider Config API
@@ -288,7 +288,7 @@ Station owns turn and subprocess lifecycle independent of client connection stat
 ### 6.3 Client: Agent Chat (SSE Consumer)
 
 - **Responsibility**: Send turn requests, receive and render SSE stream.
-- **Owner**: Desktop Web / Mobile UI
+- **Owner**: Desktop renderer / Mobile UI
 - **Inputs**: User message, selected provider/model (from cache)
 - **Outputs**: Rendered AI response
 - **Dependencies**: Station Turn Stream endpoint

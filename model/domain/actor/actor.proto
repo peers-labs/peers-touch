@@ -52,6 +52,22 @@ enum ActorVisibility {
   ACTOR_VISIBILITY_INDEXED = 3;
 }
 
+// ActorContactPolicy is enforced by the receiver Home Station before a new
+// inbound Friend Request is materialized.
+enum ActorContactPolicy {
+  ACTOR_CONTACT_POLICY_UNSPECIFIED = 0;
+  ACTOR_CONTACT_POLICY_ANYONE = 1;
+  ACTOR_CONTACT_POLICY_FEDERATIONS = 2;
+  ACTOR_CONTACT_POLICY_NOBODY = 3;
+}
+
+// FederationVisibilityPolicy is a complete replacement snapshot of an
+// actor's Federation-scoped visibility caps. Missing Federation IDs default
+// to BY_HANDLE. A scoped value can only reduce the global discoverability.
+message FederationVisibilityPolicy {
+  map<string, ActorVisibility> visibility_by_federation = 1;
+}
+
 message ActorRef {
   reserved 1;
   reserved "actor_id";
@@ -228,6 +244,8 @@ message PeersTouchInfo {
 }
 
 message ActorProfile {
+  reserved 26;
+  reserved "message_permission";
   string id = 1;
   string display_name = 2 [json_name = "display_name"];
   string username = 3;
@@ -253,7 +271,6 @@ message ActorProfile {
   repeated string moments = 23;
   string default_visibility = 24 [json_name = "default_visibility"];
   bool manually_approves_followers = 25 [json_name = "manually_approves_followers"];
-  string message_permission = 26 [json_name = "message_permission"];
   int32 auto_expire_days = 27 [json_name = "auto_expire_days"];
   ActorRef ref = 28 [json_name = "ref"];
   uint64 profile_revision = 29 [json_name = "profile_revision"];
@@ -265,9 +282,13 @@ message ActorProfile {
   // for non-human peers, e.g. rendering a bot direct conversation as one-way,
   // non-E2EE. Mirrors ActorRef.kind as a first-class profile attribute.
   ActorKind kind = 34;
+  ActorContactPolicy contact_policy = 35 [json_name = "contact_policy"];
+  FederationVisibilityPolicy federation_visibility = 36 [json_name = "federation_visibility"];
 }
 
 message UpdateProfileRequest {
+  reserved 11;
+  reserved "message_permission";
   optional string display_name = 1 [json_name = "display_name"];
   optional string note = 2;
   optional string avatar = 3;
@@ -278,10 +299,11 @@ message UpdateProfileRequest {
   repeated UserLink links = 8;
   optional string default_visibility = 9 [json_name = "default_visibility"];
   optional bool manually_approves_followers = 10 [json_name = "manually_approves_followers"];
-  optional string message_permission = 11 [json_name = "message_permission"];
   optional int32 auto_expire_days = 12 [json_name = "auto_expire_days"];
   uint64 observed_revision = 13 [json_name = "observed_revision"];
   optional ActorVisibility discoverability = 14;
+  optional ActorContactPolicy contact_policy = 15 [json_name = "contact_policy"];
+  FederationVisibilityPolicy federation_visibility = 16 [json_name = "federation_visibility"];
 }
 
 enum ProfileUpdateOutcome {

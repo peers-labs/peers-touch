@@ -166,7 +166,6 @@ class FoundationClientSpecTest(unittest.TestCase):
             {
                 "runtime": runtime,
                 "worktree": str(root),
-                "gateway_port": 23030,
                 "renderer_port": 23210,
                 "webdriver_port": 24445,
                 "storage_root": str(root / "runtime" / "storage"),
@@ -418,7 +417,7 @@ class FoundationClientSpecTest(unittest.TestCase):
             ):
                 foundation_runtime_client.wait_until(
                     client._process_alive,
-                    "Secondary gateway and renderer",
+                    "Secondary Native renderer",
                     60,
                 )
             client._managed_runtime_started = False
@@ -721,7 +720,6 @@ class FoundationClientSpecTest(unittest.TestCase):
             native = {
                 "runtime": "native-tauri",
                 "worktree": str(root),
-                "gateway_port": 23030,
                 "renderer_port": 23210,
                 "webdriver_port": 24445,
                 "storage_root": str(root / "native" / "storage"),
@@ -730,7 +728,6 @@ class FoundationClientSpecTest(unittest.TestCase):
             secondary = {
                 **native,
                 "runtime": "native-tauri",
-                "gateway_port": 23031,
                 "renderer_port": 23211,
                 "webdriver_port": 24446,
                 "storage_root": str(root / "native-tauri" / "storage"),
@@ -875,7 +872,6 @@ class FoundationClientSpecTest(unittest.TestCase):
             native = {
                 "runtime": "native-tauri",
                 "worktree": str(root),
-                "gateway_port": 23030,
                 "renderer_port": 23210,
                 "webdriver_port": 24445,
                 "storage_root": str(root / "native" / "storage"),
@@ -978,7 +974,6 @@ class FoundationClientSpecTest(unittest.TestCase):
             native = {
                 "runtime": "native-tauri",
                 "worktree": str(root),
-                "gateway_port": 23030,
                 "renderer_port": 23210,
                 "webdriver_port": 24445,
                 "storage_root": str(root / "native" / "storage"),
@@ -987,7 +982,6 @@ class FoundationClientSpecTest(unittest.TestCase):
             secondary = {
                 **native,
                 "runtime": "native-tauri",
-                "gateway_port": 23031,
                 "renderer_port": 23211,
                 "webdriver_port": 24446,
                 "storage_root": str(root / "native-tauri" / "storage"),

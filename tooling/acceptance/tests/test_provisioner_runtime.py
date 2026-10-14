@@ -486,6 +486,8 @@ class ProfileResolutionTests(unittest.TestCase):
                         "PT_STATION_MODE=remote",
                         "PT_STATION_URL=http://station.example:18080",
                         "PT_DESKTOP_APP_GATEWAY_PORT=1",
+                        "PT_DESKTOP_WEB_GATEWAY_PORT=2",
+                        "PT_DESKTOP_WEB_WEB_PORT=3",
                         "PT_AGENT_PROVIDER_API_KEY=",
                     )
                 )
@@ -505,7 +507,6 @@ class ProfileResolutionTests(unittest.TestCase):
                     "sourceState": "tracked-clean",
                 },
                 "ports": {
-                    "desktopAppGateway": 3330,
                     "desktopAppWeb": 3510,
                     "mobileWeb": 5473,
                 },
@@ -533,7 +534,9 @@ class ProfileResolutionTests(unittest.TestCase):
         self.assertEqual(resolved_profile, profile.resolve())
         self.assertEqual(slot, 3)
         self.assertEqual(values["PT_DEV_SLOT"], "3")
-        self.assertEqual(values["PT_DESKTOP_APP_GATEWAY_PORT"], "3330")
+        self.assertNotIn("PT_DESKTOP_APP_GATEWAY_PORT", values)
+        self.assertNotIn("PT_DESKTOP_WEB_GATEWAY_PORT", values)
+        self.assertNotIn("PT_DESKTOP_WEB_WEB_PORT", values)
         self.assertEqual(values["PT_MOBILE_WEB_PORT"], "5473")
         self.assertEqual(
             values["PT_AGENT_PROVIDER_API_KEY"],
@@ -568,7 +571,6 @@ class ProfileResolutionTests(unittest.TestCase):
                     "sourceState": "tracked-clean",
                 },
                 "ports": {
-                    "desktopAppGateway": 3330,
                     "desktopAppWeb": 3510,
                     "mobileWeb": 5473,
                 },
@@ -624,7 +626,6 @@ class ProfileResolutionTests(unittest.TestCase):
                     "sourceState": "tracked-clean",
                 },
                 "ports": {
-                    "desktopAppGateway": 3330,
                     "desktopAppWeb": 3510,
                     "mobileWeb": 5473,
                 },
@@ -678,7 +679,6 @@ class ProfileResolutionTests(unittest.TestCase):
                     "sourceState": "tracked-clean",
                 },
                 "ports": {
-                    "desktopAppGateway": 3130,
                     "desktopAppWeb": 3310,
                     "mobileWeb": 5273,
                 },
@@ -735,7 +735,6 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 "PT_STATION_MODE": "remote",
                 "PT_STATION_URL": "http://station.example:18080",
                 "PT_STATION_DEPLOY_ENV": "station-1",
-                "PT_DESKTOP_APP_GATEWAY_PORT": "23030",
                 "PT_DESKTOP_APP_WEB_PORT": "23210",
                 "CHAT_NATIVE_DEMO_PASSWORD": "fixture-password",
                 "CHAT_ACCEPTANCE_RESET": "1",
@@ -754,7 +753,6 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 "PT_STATION_MODE": "remote",
                 "PT_STATION_URL": "http://station.example:28080",
                 "PT_STATION_DEPLOY_ENV": "station-2",
-                "PT_DESKTOP_APP_GATEWAY_PORT": "24030",
                 "PT_DESKTOP_APP_WEB_PORT": "24210",
                 "CHAT_NATIVE_DEMO_PASSWORD": "fixture-password",
                 "CHAT_ACCEPTANCE_RESET": "1",
@@ -1017,7 +1015,6 @@ class ProvisionerBlockingTests(unittest.TestCase):
             EnvironmentContract(id="home-station")
         )
         profile_env = {
-            "PT_DESKTOP_APP_GATEWAY_PORT": "13331",
             "PT_DESKTOP_APP_WEB_PORT": "13511",
         }
         with patch.dict(
@@ -1033,7 +1030,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
 
         self.assertEqual(client.actor, "alice")
         self.assertEqual(client.profile, "one")
-        self.assertEqual(client.gateway_port, 13331)
+        self.assertIsNone(client.gateway_port)
         self.assertEqual(client.renderer_port, 13511)
         self.assertEqual(client.webdriver_port, 14449)
         self.assertIn("pt-agent-stream-run-stream-resilience", client.storage_root)
@@ -1421,7 +1418,6 @@ class ProvisionerBlockingTests(unittest.TestCase):
             EnvironmentContract(id="home-station")
         )
         profile_env = {
-            "PT_DESKTOP_APP_GATEWAY_PORT": "13331",
             "PT_DESKTOP_APP_WEB_PORT": "13511",
         }
         with patch.dict(
@@ -1470,7 +1466,6 @@ class ProvisionerBlockingTests(unittest.TestCase):
             EnvironmentContract(id="home-station")
         )
         profile_env = {
-            "PT_DESKTOP_APP_GATEWAY_PORT": "13331",
             "PT_DESKTOP_APP_WEB_PORT": "13511",
         }
         with patch.dict(
@@ -1500,7 +1495,6 @@ class ProvisionerBlockingTests(unittest.TestCase):
             EnvironmentContract(id="home-station")
         )
         profile_env = {
-            "PT_DESKTOP_APP_GATEWAY_PORT": "13331",
             "PT_DESKTOP_APP_WEB_PORT": "13511",
         }
         with patch.dict(
@@ -1719,7 +1713,6 @@ class ProvisionerBlockingTests(unittest.TestCase):
             EnvironmentContract(id="home-station")
         )
         profile_env = {
-            "PT_DESKTOP_APP_GATEWAY_PORT": "13331",
             "PT_DESKTOP_APP_WEB_PORT": "13511",
         }
         with patch.dict(
@@ -1738,7 +1731,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
 
         self.assertEqual(client.actor, "alice")
         self.assertEqual(client.profile, "one")
-        self.assertEqual(client.gateway_port, 13331)
+        self.assertIsNone(client.gateway_port)
         self.assertEqual(client.renderer_port, 13511)
         self.assertEqual(client.webdriver_port, 14450)
         self.assertIn("pt-agent-attachment-run-attachment", client.storage_root)
@@ -1975,12 +1968,12 @@ class ProvisionerBlockingTests(unittest.TestCase):
         native, secondary = manifest.clients
         self.assertEqual(native.actor, "alice")
         self.assertEqual(native.runtime, "native-tauri")
-        self.assertEqual(native.gateway_port, 23030)
+        self.assertIsNone(native.gateway_port)
         self.assertEqual(native.renderer_port, 23210)
         self.assertEqual(native.webdriver_port, 24445)
         self.assertEqual(secondary.actor, "alice")
         self.assertEqual(secondary.runtime, "native-tauri")
-        self.assertEqual(secondary.gateway_port, 23031)
+        self.assertIsNone(secondary.gateway_port)
         self.assertEqual(secondary.renderer_port, 23211)
         self.assertEqual(secondary.webdriver_port, 24446)
         self.assertEqual(native.profile, "agent-v2-foundation-native")

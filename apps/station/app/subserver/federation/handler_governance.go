@@ -2,12 +2,17 @@ package federation
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/sha256"
+	"crypto/subtle"
 	"errors"
 	"net/url"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/application"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
+	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"google.golang.org/protobuf/proto"
 )
 
 func (s *subServer) handleFetchHead(ctx context.Context, req *pb.FetchHeadRequest) (*pb.FetchHeadResponse, error) {
@@ -70,12 +75,19 @@ func (s *subServer) handleSubmitProposal(ctx context.Context, req *pb.SubmitProp
 	if req.StationPeerId == "" {
 		return nil, errors.New("station_peer_id is required")
 	}
-	if req.JoiningStationName == "" {
-		return nil, errors.New("joining_station_name is required")
+	if req.ActorPtid == "" {
+		return nil, errors.New("actor_ptid is required")
 	}
-	joiningURL, err := url.ParseRequestURI(req.JoiningStationUrl)
-	if err != nil || joiningURL.Scheme == "" || joiningURL.Host == "" {
-		return nil, errors.New("joining_station_url must be an absolute HTTP endpoint")
+	if req.ActorFederatedHandle == "" {
+		return nil, errors.New("actor_federated_handle is required")
+	}
+	claims := httpadapter.GetVerifiedClaims(ctx)
+	if claims == nil ||
+		claims.Issuer != req.StationPeerId ||
+		claims.Subject != req.StationPeerId {
+		return nil, server.Forbidden(
+			"authenticated source Station does not match the governance proposal",
+		)
 	}
 
 	fed, err := s.federationSvc.GetFederation(ctx, req.FederationId)
@@ -94,19 +106,7 @@ func (s *subServer) handleSubmitProposal(ctx context.Context, req *pb.SubmitProp
 		return nil, errors.New("this station is not the sequencer for this federation")
 	}
 
-	if req.ProposedEventType != pb.EventType_STATION_JOIN_APPROVED {
-		return nil, errors.New("only STATION_JOIN_APPROVED proposals are supported")
-	}
-
 	actorKeySvc := s.actorKeySvc
-	_, actorPriv, err := actorKeySvc.GenerateKeyPair(ctx, req.ActorPtid)
-	if err != nil {
-		actorPriv, err = actorKeySvc.GetPrivateKey(ctx, req.ActorPtid)
-		if err != nil {
-			actorPriv = nil
-		}
-	}
-
 	sequencerActorPTID := fed.CreatedByActorPTID
 	_, seqPriv, keyErr := actorKeySvc.GenerateKeyPair(ctx, sequencerActorPTID)
 	if keyErr != nil {
@@ -116,34 +116,114 @@ func (s *subServer) handleSubmitProposal(ctx context.Context, req *pb.SubmitProp
 		}
 	}
 
-	membership, err := s.federationSvc.ApproveJoin(ctx, &application.ApproveJoinInput{
+	switch req.ProposedEventType {
+	case pb.EventType_STATION_JOIN_APPROVED:
+		if req.JoiningStationName == "" {
+			return nil, errors.New("joining_station_name is required")
+		}
+		joiningURL, err := url.ParseRequestURI(req.JoiningStationUrl)
+		if err != nil || joiningURL.Scheme == "" || joiningURL.Host == "" {
+			return nil, errors.New("joining_station_url must be an absolute HTTP endpoint")
+		}
+
+		membership, err := s.federationSvc.ApproveJoin(ctx, &application.ApproveJoinInput{
+			FederationID:                 req.FederationId,
+			JoiningStationPeerID:         req.StationPeerId,
+			JoiningStationName:           req.JoiningStationName,
+			JoiningStationURL:            req.JoiningStationUrl,
+			ApproverActorPTID:            sequencerActorPTID,
+			ApproverActorFederatedHandle: sequencerActorPTID,
+			ApproverStationPeerID:        localPeerID,
+			ActorPrivateKey:              seqPriv,
+			StationPrivateKey:            seqPriv,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		events, err := s.ledgerSvc.FetchEvents(ctx, req.FederationId, 0, 1000)
+		if err != nil {
+			return nil, err
+		}
+		if len(events) == 0 {
+			return nil, errors.New("accepted Federation has no bootstrap ledger")
+		}
+
+		return &pb.SubmitProposalResponse{
+			ProposalId:      membership.ApprovedByEventID,
+			Decision:        pb.ProposalDecision_DECISION_ACCEPTED,
+			AcceptedEvent:   events[len(events)-1],
+			BootstrapEvents: events,
+		}, nil
+
+	case pb.EventType_STATION_LEFT:
+		return s.handleAuthenticatedLeaveProposal(
+			ctx,
+			req,
+			claims.Issuer,
+			sequencerActorPTID,
+			localPeerID,
+			seqPriv,
+		)
+
+	default:
+		return nil, errors.New("unsupported proposal event type")
+	}
+}
+
+func (s *subServer) handleAuthenticatedLeaveProposal(
+	ctx context.Context,
+	req *pb.SubmitProposalRequest,
+	sourceStationPeerID string,
+	sequencerActorPTID string,
+	localPeerID string,
+	sequencerPrivateKey ed25519.PrivateKey,
+) (*pb.SubmitProposalResponse, error) {
+	if sourceStationPeerID == "" || sourceStationPeerID != req.StationPeerId {
+		return nil, server.Forbidden(
+			"authenticated source Station does not match the leave proposal",
+		)
+	}
+	if len(req.PayloadBytes) == 0 {
+		return nil, errors.New("payload_bytes is required")
+	}
+	payloadHash := sha256.Sum256(req.PayloadBytes)
+	if len(req.PayloadHash) != sha256.Size ||
+		subtle.ConstantTimeCompare(payloadHash[:], req.PayloadHash) != 1 {
+		return nil, errors.New("payload_hash does not match payload_bytes")
+	}
+
+	payload := &pb.StationLeftPayload{}
+	if err := proto.Unmarshal(req.PayloadBytes, payload); err != nil {
+		return nil, errors.New("invalid STATION_LEFT payload")
+	}
+	if payload.LeavingStationPeerId != req.StationPeerId {
+		return nil, errors.New("leaving station does not match proposal station")
+	}
+	if payload.LeavingActorPtid != req.ActorPtid ||
+		payload.LeavingActorFederatedHandle != req.ActorFederatedHandle {
+		return nil, errors.New("leaving actor does not match proposal actor")
+	}
+
+	event, err := s.federationSvc.ApproveLeave(ctx, &application.ApproveLeaveInput{
 		FederationID:                 req.FederationId,
-		JoiningStationPeerID:         req.StationPeerId,
-		JoiningStationName:           req.JoiningStationName,
-		JoiningStationURL:            req.JoiningStationUrl,
+		LeavingStationPeerID:         payload.LeavingStationPeerId,
+		LeavingActorPTID:             payload.LeavingActorPtid,
+		LeavingActorFederatedHandle:  payload.LeavingActorFederatedHandle,
+		Reason:                       payload.Reason,
 		ApproverActorPTID:            sequencerActorPTID,
 		ApproverActorFederatedHandle: sequencerActorPTID,
 		ApproverStationPeerID:        localPeerID,
-		ActorPrivateKey:              seqPriv,
-		StationPrivateKey:            seqPriv,
+		ActorPrivateKey:              sequencerPrivateKey,
+		StationPrivateKey:            sequencerPrivateKey,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	_ = actorPriv
-	events, err := s.ledgerSvc.FetchEvents(ctx, req.FederationId, 0, 1000)
-	if err != nil {
-		return nil, err
-	}
-	if len(events) == 0 {
-		return nil, errors.New("accepted Federation has no bootstrap ledger")
-	}
-
 	return &pb.SubmitProposalResponse{
-		ProposalId:      membership.ApprovedByEventID,
-		Decision:        pb.ProposalDecision_DECISION_ACCEPTED,
-		AcceptedEvent:   events[len(events)-1],
-		BootstrapEvents: events,
+		ProposalId:    event.EventId,
+		Decision:      pb.ProposalDecision_DECISION_ACCEPTED,
+		AcceptedEvent: event,
 	}, nil
 }

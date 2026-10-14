@@ -176,6 +176,12 @@ impl DirectMessageProcessor {
         let outcome = double_ratchet::decrypt(&session.ratchet, &wire, &skipped, &aad)
             .map_err(|error| format!("messaging Direct decrypt failed: {error}"))?;
         let private_content = decode_message_private_content(&outcome.plaintext)?;
+        if committed_fact.is_some_and(|fact| !fact.mentioned_ptids.is_empty() || fact.mention_all)
+            || !private_content.mentions.is_empty()
+            || private_content.mention_all
+        {
+            return Err("messaging Direct participant mentions are unsupported".to_string());
+        }
         session.ratchet = outcome.advanced_state;
         session.updated_at_unix_ms = now;
 
@@ -268,6 +274,8 @@ impl DirectMessageProcessor {
                     .unwrap_or_default(),
                 plaintext: private_content.text,
                 attachments: private_content.attachments,
+                mentions: Vec::new(),
+                mention_all: false,
                 committed_at_unix_ms,
                 reply_to_message_id: reply_to,
                 thread_root_message_id: thread_root,

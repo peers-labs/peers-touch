@@ -19,7 +19,7 @@ import type {
 import { SurfaceManager } from './SurfaceManager';
 
 // performance.memory is a non-standard Chromium extension (present in the
-// Desktop WebView). Typed locally since lib.dom does not declare it.
+// Native Tauri WebView). Typed locally since lib.dom does not declare it.
 interface ChromiumMemory {
   usedJSHeapSize: number;
   totalJSHeapSize: number;

@@ -452,6 +452,13 @@ export interface MessagingReactionProjection {
   createdAtUnixMs: number;
 }
 
+export interface MessagingMessageMention {
+  actorPtid: string;
+  offset: number;
+  length: number;
+  display: string;
+}
+
 export interface MessagingMessageProjection {
   eventId?: string;
   eventSequence?: number;
@@ -460,6 +467,8 @@ export interface MessagingMessageProjection {
   senderDeviceId: string;
   plaintext: string;
   attachments: MessagingAttachmentProjection[];
+  mentions: MessagingMessageMention[];
+  mentionAll: boolean;
   state:
     | 'draft'
     | 'pending'
@@ -1343,6 +1352,8 @@ export async function messagingSendMessage(
     replyToMessageId?: string;
     threadRootMessageId?: string;
     attachmentStageIds?: string[];
+    mentions?: MessagingMessageMention[];
+    mentionAll?: boolean;
   },
 ): Promise<MessagingSubmitCommandResult> {
   requireMessagingMutation(input, input.admissionDomain);

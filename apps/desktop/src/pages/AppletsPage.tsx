@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { toast } from '@lobehub/ui';
-import { Typography, Spin, Alert, theme } from 'antd';
+import { Button, toast } from '@lobehub/ui';
+import { Typography, Spin, Alert, Modal, Tag, theme } from 'antd';
 import {
   Bot,
   ChartCandlestick,
@@ -10,12 +10,16 @@ import {
   FlaskConical,
   NotebookPen,
   PackageOpen,
+  PackagePlus,
   Plus,
   Search,
   TerminalSquare,
+  Trash2,
 } from 'lucide-react';
 import type { RuntimeAppletInfo } from '../store/applets';
 import { useActiveAppletsSlice } from './useActiveAppletsStore';
+import { uninstallAppletRuntime } from '../runtimes/appletsRuntime';
+import { usePageContext } from '../kernel/usePageContext';
 
 const { Text } = Typography;
 
@@ -90,21 +94,27 @@ function appletIdentity(info: RuntimeAppletInfo) {
 export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => void }) {
   const { t } = useTranslation('applet');
   const { token } = theme.useToken();
+  const { appletPins } = usePageContext();
   const {
     applets,
+    catalogApplets,
     loading,
     stationUnavailable,
     importAppletDirectory,
+    installApplet,
   } = useActiveAppletsSlice((state) => ({
     applets: state.applets,
+    catalogApplets: state.catalogApplets,
     loading: state.loading,
     stationUnavailable: state.stationUnavailable,
     importAppletDirectory: state.importAppletDirectory,
+    installApplet: state.installApplet,
   }));
 
   const [query, setQuery] = useState('');
   const [importMenuOpen, setImportMenuOpen] = useState(false);
   const [runningExpanded, setRunningExpanded] = useState(false);
+  const [pendingAppletId, setPendingAppletId] = useState<string | null>(null);
   const importMenuRef = useRef<HTMLDivElement | null>(null);
 
   const visibleApplets = useMemo(() => {
@@ -113,6 +123,13 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
       .filter((info) => (normalized ? info.manifest.name.toLowerCase().includes(normalized) : true))
       .sort((left, right) => (right.lastOpenedAt ?? -1) - (left.lastOpenedAt ?? -1));
   }, [applets, query]);
+
+  const visibleCatalogApplets = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return catalogApplets
+      .filter((info) => (normalized ? info.manifest.name.toLowerCase().includes(normalized) : true))
+      .sort((left, right) => left.manifest.name.localeCompare(right.manifest.name));
+  }, [catalogApplets, query]);
 
   const runningApplets = useMemo(
     () => applets
@@ -135,6 +152,43 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
     }
   }, [importAppletDirectory, t]);
 
+  const handleInstall = useCallback(async (info: RuntimeAppletInfo) => {
+    setPendingAppletId(info.manifest.id);
+    try {
+      await installApplet(info.manifest.id);
+      toast.success(t('applet.toast.installed'));
+    } catch (error) {
+      toast.error(errorMessage(error, t('applet.toast.installFailed'), t));
+    } finally {
+      setPendingAppletId(null);
+    }
+  }, [installApplet, t]);
+
+  const handleUninstall = useCallback((info: RuntimeAppletInfo) => {
+    Modal.confirm({
+      title: t('applet.uninstall.title', { name: info.manifest.name }),
+      content: t('applet.uninstall.description'),
+      okText: t('applet.uninstall.confirm'),
+      cancelText: t('applet.uninstall.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setPendingAppletId(info.manifest.id);
+        try {
+          await uninstallAppletRuntime(info.manifest.id);
+          if (appletPins.pinnedApplets.includes(info.manifest.id)) {
+            appletPins.togglePin(info.manifest.id);
+          }
+          toast.success(t('applet.toast.uninstalled'));
+        } catch (error) {
+          toast.error(errorMessage(error, t('applet.toast.uninstallFailed'), t));
+          throw error;
+        } finally {
+          setPendingAppletId(null);
+        }
+      },
+    });
+  }, [appletPins, t]);
+
   useEffect(() => {
     if (!importMenuOpen) return undefined;
     const handlePointerDown = (event: MouseEvent) => {
@@ -146,7 +200,7 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [importMenuOpen]);
 
-  if (loading && applets.length === 0) {
+  if (loading && applets.length === 0 && catalogApplets.length === 0) {
     return (
       <Flexbox align="center" justify="center" style={{ height: '100%', background: token.colorBgLayout }}>
         <Spin size="large" />
@@ -155,6 +209,7 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
   }
 
   const hasApplets = applets.length > 0;
+  const hasCatalogApplets = catalogApplets.length > 0;
 
   return (
     <Flexbox
@@ -276,7 +331,7 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
                 }}
               >
                 <FileInput size={15} />
-                {t('applet.page.importPackage')}
+                {t('applet.page.importDirectory')}
               </button>
             </div>
           )}
@@ -294,30 +349,64 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
         </div>
       )}
 
-      {hasApplets ? (
-        <section
-          aria-label={t('applet.page.mine')}
+      {!hasApplets && !hasCatalogApplets ? (
+        <LauncherEmptyState onImport={handleImport} />
+      ) : (
+        <Flexbox
+          gap={22}
           style={{
-            flex: '0 0 auto',
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))',
-            alignContent: 'start',
-            gap: '22px 34px',
-            maxHeight: 196,
-            padding: '24px 28px 0',
-            overflow: 'auto',
+            flex: runningApplets.length > 0 ? '0 1 48%' : 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            padding: '22px 28px 8px',
           }}
         >
-          {visibleApplets.map((info) => (
-            <AppletIconTile
-              key={info.manifest.id}
-              info={info}
-              onOpen={() => handleOpen(info.manifest.id)}
-            />
-          ))}
-        </section>
-      ) : (
-        <LauncherEmptyState onImport={handleImport} />
+          {hasApplets && (
+            <section aria-label={t('applet.page.mine')}>
+              <Text strong style={{ display: 'block', marginBottom: 12, fontSize: 13 }}>
+                {t('applet.page.mine')}
+              </Text>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))',
+                  alignContent: 'start',
+                  gap: '22px 34px',
+                }}
+              >
+                {visibleApplets.map((info) => (
+                  <AppletIconTile
+                    key={info.manifest.id}
+                    info={info}
+                    pending={pendingAppletId === info.manifest.id}
+                    onOpen={() => handleOpen(info.manifest.id)}
+                    onUninstall={info.source === 'bundled-official'
+                      ? undefined
+                      : () => handleUninstall(info)}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {hasCatalogApplets && (
+            <section aria-label={t('applet.page.box')}>
+              <Text strong style={{ display: 'block', marginBottom: 8, fontSize: 13 }}>
+                {t('applet.page.box')}
+              </Text>
+              <Flexbox gap={6}>
+                {visibleCatalogApplets.map((info) => (
+                  <CatalogAppletRow
+                    key={info.manifest.id}
+                    info={info}
+                    pending={pendingAppletId === info.manifest.id}
+                    onInstall={() => void handleInstall(info)}
+                  />
+                ))}
+              </Flexbox>
+            </section>
+          )}
+        </Flexbox>
       )}
 
       {runningApplets.length > 0 && (
@@ -332,55 +421,194 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
   );
 }
 
-function AppletIconTile({ info, onOpen }: { info: RuntimeAppletInfo; onOpen: () => void }) {
+function AppletIconTile({
+  info,
+  pending,
+  onOpen,
+  onUninstall,
+}: {
+  info: RuntimeAppletInfo;
+  pending: boolean;
+  onOpen: () => void;
+  onUninstall?: () => void;
+}) {
   const { token } = theme.useToken();
   const { t } = useTranslation('applet');
   const [iconAssetFailed, setIconAssetFailed] = useState(false);
   const identity = appletIdentity(info);
   const isActive = info.status === 'active';
   const isRevoked = info.status === 'revoked';
+  const isDisabled = info.status === 'disabled';
+  const statusVisible = info.status === 'update-available' || isDisabled;
   const shouldUseAsset = Boolean(identity.assetUrl && !iconAssetFailed);
 
   return (
-    <button
-      type="button"
+    <div
       data-applet-open={info.manifest.id}
       data-applet-status={info.status}
-      onClick={onOpen}
-      disabled={isRevoked}
-      aria-label={`${t('applet.card.open')} ${info.manifest.name}`}
       style={{
         position: 'relative',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 9,
-        padding: '8px 6px 10px',
-        border: 0,
-        borderRadius: token.borderRadiusLG,
-        background: 'transparent',
-        cursor: isRevoked ? 'not-allowed' : 'pointer',
-        opacity: isRevoked ? 0.56 : 1,
-        transition: 'background 160ms ease',
-      }}
-      onMouseEnter={(event) => {
-        if (!isRevoked) event.currentTarget.style.background = token.colorFillQuaternary;
-      }}
-      onMouseLeave={(event) => {
-        event.currentTarget.style.background = 'transparent';
       }}
     >
-      <div
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={isRevoked || isDisabled || pending}
+        aria-label={`${t('applet.card.open')} ${info.manifest.name}`}
         style={{
-          position: 'relative',
-          width: 82,
-          height: 82,
+          width: '100%',
           display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 9,
+          padding: '8px 6px 10px',
+          border: 0,
+          borderRadius: token.borderRadiusLG,
+          background: 'transparent',
+          cursor: isRevoked || isDisabled || pending ? 'not-allowed' : 'pointer',
+          opacity: isRevoked || isDisabled ? 0.56 : 1,
+          transition: 'background 160ms ease',
+        }}
+        onMouseEnter={(event) => {
+          if (!isRevoked && !isDisabled) event.currentTarget.style.background = token.colorFillQuaternary;
+        }}
+        onMouseLeave={(event) => {
+          event.currentTarget.style.background = 'transparent';
+        }}
+      >
+        <div
+          style={{
+            position: 'relative',
+            width: 82,
+            height: 82,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 24,
+            background: shouldUseAsset ? token.colorBgContainer : identity.background,
+            color: identity.foreground,
+            boxShadow: `inset 0 0 0 1px ${token.colorBorderSecondary}`,
+            overflow: 'hidden',
+          }}
+        >
+          {shouldUseAsset ? (
+            <img
+              src={identity.assetUrl}
+              alt=""
+              draggable={false}
+              onError={() => setIconAssetFailed(true)}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            />
+          ) : identity.icon ? (
+            identity.icon
+          ) : (
+            <Text style={{ color: identity.foreground, fontSize: 26, fontWeight: 600, lineHeight: 1 }}>
+              {identity.label}
+            </Text>
+          )}
+          {isActive && (
+            <span
+              aria-label={t('applet.card.runningThisSession')}
+              style={{
+                position: 'absolute',
+                right: 6,
+                top: 6,
+                width: 9,
+                height: 9,
+                borderRadius: '50%',
+                background: token.colorSuccess,
+                border: `2px solid ${token.colorBgContainer}`,
+              }}
+            />
+          )}
+        </div>
+        <Text
+          style={{
+            maxWidth: 100,
+            fontSize: 14,
+            lineHeight: '18px',
+            textAlign: 'center',
+            color: token.colorText,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            width: '100%',
+          }}
+        >
+          {info.manifest.name}
+        </Text>
+        {statusVisible && (
+          <Text type="secondary" style={{ fontSize: 11, lineHeight: '14px' }}>
+            {t(`applet.status.${info.status}`)}
+          </Text>
+        )}
+      </button>
+      {onUninstall && (
+        <Button
+          type="text"
+          size="small"
+          danger
+          loading={pending}
+          icon={<Trash2 size={14} />}
+          onClick={onUninstall}
+          aria-label={t('applet.uninstall.action', { name: info.manifest.name })}
+          title={t('applet.uninstall.action', { name: info.manifest.name })}
+          data-applet-uninstall={info.manifest.id}
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: 0,
+            width: 28,
+            minWidth: 28,
+            height: 28,
+            padding: 0,
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CatalogAppletRow({
+  info,
+  pending,
+  onInstall,
+}: {
+  info: RuntimeAppletInfo;
+  pending: boolean;
+  onInstall: () => void;
+}) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('applet');
+  const [iconAssetFailed, setIconAssetFailed] = useState(false);
+  const identity = appletIdentity(info);
+  const revoked = info.status === 'revoked';
+  const shouldUseAsset = Boolean(identity.assetUrl && !iconAssetFailed);
+
+  return (
+    <Flexbox
+      horizontal
+      align="center"
+      gap={12}
+      data-applet-catalog={info.manifest.id}
+      data-applet-status={info.status}
+      style={{
+        minHeight: 58,
+        padding: '8px 10px',
+        borderTop: `1px solid ${token.colorBorderSecondary}`,
+      }}
+    >
+      <span
+        style={{
+          width: 38,
+          height: 38,
+          flexShrink: 0,
+          display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          borderRadius: 24,
-          background: shouldUseAsset ? token.colorBgContainer : identity.background,
+          borderRadius: 10,
           color: identity.foreground,
+          background: shouldUseAsset ? token.colorBgContainer : identity.background,
           boxShadow: `inset 0 0 0 1px ${token.colorBorderSecondary}`,
           overflow: 'hidden',
         }}
@@ -396,42 +624,34 @@ function AppletIconTile({ info, onOpen }: { info: RuntimeAppletInfo; onOpen: () 
         ) : identity.icon ? (
           identity.icon
         ) : (
-          <Text style={{ color: identity.foreground, fontSize: 26, fontWeight: 600, lineHeight: 1 }}>
+          <Text style={{ color: identity.foreground, fontSize: 13, fontWeight: 600 }}>
             {identity.label}
           </Text>
         )}
-        {isActive && (
-          <span
-            aria-label={t('applet.card.runningThisSession')}
-            style={{
-              position: 'absolute',
-              right: 6,
-              top: 6,
-              width: 9,
-              height: 9,
-              borderRadius: '50%',
-              background: token.colorSuccess,
-              border: `2px solid ${token.colorBgContainer}`,
-            }}
-          />
-        )}
-      </div>
-      <Text
-        style={{
-          maxWidth: 100,
-          fontSize: 14,
-          lineHeight: '18px',
-          textAlign: 'center',
-          color: token.colorText,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          width: '100%',
-        }}
+      </span>
+      <Flexbox gap={2} style={{ flex: 1, minWidth: 0 }}>
+        <Flexbox horizontal align="center" gap={6}>
+          <Text strong ellipsis style={{ fontSize: 13 }}>
+            {info.manifest.name}
+          </Text>
+          {revoked && <Tag color="error">{t('applet.status.revoked')}</Tag>}
+        </Flexbox>
+        <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
+          {info.statusReason || info.manifest.description || t('applet.page.boxDescription')}
+        </Text>
+      </Flexbox>
+      <Button
+        size="small"
+        type="primary"
+        loading={pending}
+        disabled={revoked}
+        icon={<PackagePlus size={14} />}
+        onClick={onInstall}
+        data-applet-install={info.manifest.id}
       >
-        {info.manifest.name}
-      </Text>
-    </button>
+        {t('applet.card.install')}
+      </Button>
+    </Flexbox>
   );
 }
 
@@ -799,7 +1019,7 @@ function LauncherEmptyState({ onImport }: { onImport: () => void }) {
         }}
       >
         <FileInput size={15} />
-        {t('applet.page.importPackage')}
+        {t('applet.page.importDirectory')}
       </button>
     </Flexbox>
   );

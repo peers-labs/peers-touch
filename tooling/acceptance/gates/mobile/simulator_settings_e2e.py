@@ -32,7 +32,7 @@ PROFILE_FIELDS = (
     "note",
     "defaultVisibility",
     "manuallyApprovesFollowers",
-    "messagePermission",
+    "contactPolicy",
     "autoExpireDays",
 )
 OPTIONAL_DIAGNOSTIC_SCOPE = (
@@ -608,10 +608,10 @@ class SimulatorSettingsGate(AcceptanceGate):
             "manuallyApprovesFollowers": not bool(
                 profile.get("manuallyApprovesFollowers")
             ),
-            "messagePermission": (
-                "none"
-                if profile.get("messagePermission") != "none"
-                else "friends"
+            "contactPolicy": (
+                "federations"
+                if profile.get("contactPolicy") != "federations"
+                else "nobody"
             ),
             "autoExpireDays": (
                 90 if profile.get("autoExpireDays") != 90 else 30

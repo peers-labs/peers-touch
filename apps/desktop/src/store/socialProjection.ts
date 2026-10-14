@@ -285,6 +285,8 @@ export type DesktopIMMessageProjection = IMMessageProjection<ChatAttachmentLike>
   deliveryState: string;
   // Common typed content for non-E2EE Station service messages.
   serviceMessage?: DesktopServiceMessage;
+  mentionedPtids: string[];
+  mentionAll: boolean;
 };
 
 export interface DesktopServiceMessage {
@@ -484,6 +486,8 @@ export function projectDesktopIMMessage(
     eventSequence: messageGroupSeq(message),
     deliveryState: (message as { deliveryState?: string }).deliveryState ?? '',
     serviceMessage: message.serviceMessage,
+    mentionedPtids: message.mentionedPtids ?? [],
+    mentionAll: message.mentionAll ?? false,
   };
 }
 

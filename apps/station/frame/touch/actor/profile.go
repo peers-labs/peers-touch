@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -19,6 +22,8 @@ var (
 	ErrProfileRevisionRequired = errors.New("profile observed revision is required")
 	ErrEmptyProfileMutation    = errors.New("profile mutation is empty")
 	ErrInvalidDiscoverability  = errors.New("profile discoverability is invalid")
+	ErrInvalidContactPolicy    = errors.New("profile contact policy is invalid")
+	ErrInvalidFederationScope  = errors.New("profile Federation visibility is invalid")
 	ErrRemoteProfileMutation   = errors.New("remote actor profile cannot be mutated")
 )
 
@@ -47,38 +52,40 @@ type ProfileResponse struct {
 	FollowingCount int64             `json:"following_count"`
 	FollowersCount int64             `json:"followers_count"`
 
-	Region                    string     `json:"region"`
-	Timezone                  string     `json:"timezone"`
-	Tags                      []string   `json:"tags"`
-	Links                     []UserLink `json:"links"`
-	DefaultVisibility         string     `json:"default_visibility"`
-	ManuallyApprovesFollowers bool       `json:"manually_approves_followers"`
-	MessagePermission         string     `json:"message_permission"`
-	AutoExpireDays            int        `json:"auto_expire_days"`
-	ProfileRevision           uint64     `json:"profile_revision"`
-	FederatedHandle           string     `json:"federated_handle"`
-	HomeStationPeerID         string     `json:"home_station_peer_id"`
-	HomeStationDomain         string     `json:"home_station_domain"`
-	Discoverability           int16      `json:"discoverability"`
+	Region                    string                             `json:"region"`
+	Timezone                  string                             `json:"timezone"`
+	Tags                      []string                           `json:"tags"`
+	Links                     []UserLink                         `json:"links"`
+	DefaultVisibility         string                             `json:"default_visibility"`
+	ManuallyApprovesFollowers bool                               `json:"manually_approves_followers"`
+	ContactPolicy             modelpb.ActorContactPolicy         `json:"contact_policy"`
+	FederationVisibility      map[string]modelpb.ActorVisibility `json:"federation_visibility"`
+	AutoExpireDays            int                                `json:"auto_expire_days"`
+	ProfileRevision           uint64                             `json:"profile_revision"`
+	FederatedHandle           string                             `json:"federated_handle"`
+	HomeStationPeerID         string                             `json:"home_station_peer_id"`
+	HomeStationDomain         string                             `json:"home_station_domain"`
+	Discoverability           int16                              `json:"discoverability"`
 
 	PeersTouch PeersTouchInfo `json:"peers_touch"`
 }
 
 type UpdateProfileRequest struct {
-	DisplayName               *string                  `json:"display_name"`
-	Note                      *string                  `json:"note"`
-	Avatar                    *string                  `json:"avatar"`
-	Header                    *string                  `json:"header"`
-	Region                    *string                  `json:"region"`
-	Timezone                  *string                  `json:"timezone"`
-	Tags                      *[]string                `json:"tags"`
-	Links                     *[]UserLink              `json:"links"`
-	DefaultVisibility         *string                  `json:"default_visibility"`
-	ManuallyApprovesFollowers *bool                    `json:"manually_approves_followers"`
-	MessagePermission         *string                  `json:"message_permission"`
-	AutoExpireDays            *int                     `json:"auto_expire_days"`
-	Discoverability           *modelpb.ActorVisibility `json:"discoverability"`
-	ObservedRevision          uint64                   `json:"observed_revision"`
+	DisplayName               *string                             `json:"display_name"`
+	Note                      *string                             `json:"note"`
+	Avatar                    *string                             `json:"avatar"`
+	Header                    *string                             `json:"header"`
+	Region                    *string                             `json:"region"`
+	Timezone                  *string                             `json:"timezone"`
+	Tags                      *[]string                           `json:"tags"`
+	Links                     *[]UserLink                         `json:"links"`
+	DefaultVisibility         *string                             `json:"default_visibility"`
+	ManuallyApprovesFollowers *bool                               `json:"manually_approves_followers"`
+	ContactPolicy             *modelpb.ActorContactPolicy         `json:"contact_policy"`
+	FederationVisibility      *modelpb.FederationVisibilityPolicy `json:"federation_visibility"`
+	AutoExpireDays            *int                                `json:"auto_expire_days"`
+	Discoverability           *modelpb.ActorVisibility            `json:"discoverability"`
+	ObservedRevision          uint64                              `json:"observed_revision"`
 }
 
 type ProfileUpdateResult struct {
@@ -171,6 +178,11 @@ func getWebProfileFromActor(c context.Context, rds *gorm.DB, actor *db.Actor, ba
 		links = []UserLink{}
 	}
 
+	federationVisibility, err := loadFederationVisibility(c, rds, actor.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	response := &ProfileResponse{
 		ID:                        activityPubID,
 		Ref:                       ProtoActorRef(actor),
@@ -192,7 +204,8 @@ func getWebProfileFromActor(c context.Context, rds *gorm.DB, actor *db.Actor, ba
 		Links:                     links,
 		DefaultVisibility:         meta.DefaultVisibility,
 		ManuallyApprovesFollowers: meta.ManuallyApprovesFollowers,
-		MessagePermission:         meta.MessagePermission,
+		ContactPolicy:             contactPolicyFromStorage(meta.ContactRequestPolicy),
+		FederationVisibility:      federationVisibility,
 		AutoExpireDays:            meta.AutoExpireDays,
 		ProfileRevision:           canonicalProfileRevision(meta.ProfileRevision),
 		FederatedHandle:           actor.FederatedHandle,
@@ -239,7 +252,8 @@ func (req UpdateProfileRequest) hasMutation() bool {
 		req.Links != nil ||
 		req.DefaultVisibility != nil ||
 		req.ManuallyApprovesFollowers != nil ||
-		req.MessagePermission != nil ||
+		req.ContactPolicy != nil ||
+		req.FederationVisibility != nil ||
 		req.AutoExpireDays != nil ||
 		req.Discoverability != nil
 }
@@ -252,12 +266,89 @@ func ValidateProfileUpdateRequest(req UpdateProfileRequest) error {
 		return ErrEmptyProfileMutation
 	}
 	if req.Discoverability != nil &&
-		*req.Discoverability != modelpb.ActorVisibility_ACTOR_VISIBILITY_HIDDEN &&
-		*req.Discoverability != modelpb.ActorVisibility_ACTOR_VISIBILITY_BY_HANDLE &&
-		*req.Discoverability != modelpb.ActorVisibility_ACTOR_VISIBILITY_INDEXED {
+		!isValidVisibility(*req.Discoverability) {
 		return fmt.Errorf("%w: %d", ErrInvalidDiscoverability, *req.Discoverability)
 	}
+	if req.ContactPolicy != nil && !isValidContactPolicy(*req.ContactPolicy) {
+		return fmt.Errorf("%w: %d", ErrInvalidContactPolicy, *req.ContactPolicy)
+	}
+	if req.FederationVisibility != nil {
+		for federationID, visibility := range req.FederationVisibility.VisibilityByFederation {
+			if federationID == "" ||
+				federationID != strings.TrimSpace(federationID) ||
+				len(federationID) > 30 ||
+				!isValidVisibility(visibility) {
+				return fmt.Errorf(
+					"%w: federation_id=%q visibility=%d",
+					ErrInvalidFederationScope,
+					federationID,
+					visibility,
+				)
+			}
+		}
+	}
 	return nil
+}
+
+func isValidVisibility(value modelpb.ActorVisibility) bool {
+	return value == modelpb.ActorVisibility_ACTOR_VISIBILITY_HIDDEN ||
+		value == modelpb.ActorVisibility_ACTOR_VISIBILITY_BY_HANDLE ||
+		value == modelpb.ActorVisibility_ACTOR_VISIBILITY_INDEXED
+}
+
+func isValidContactPolicy(value modelpb.ActorContactPolicy) bool {
+	return value == modelpb.ActorContactPolicy_ACTOR_CONTACT_POLICY_ANYONE ||
+		value == modelpb.ActorContactPolicy_ACTOR_CONTACT_POLICY_FEDERATIONS ||
+		value == modelpb.ActorContactPolicy_ACTOR_CONTACT_POLICY_NOBODY
+}
+
+func contactPolicyFromStorage(value string) modelpb.ActorContactPolicy {
+	switch value {
+	case "", "anyone":
+		return modelpb.ActorContactPolicy_ACTOR_CONTACT_POLICY_ANYONE
+	case "federations":
+		return modelpb.ActorContactPolicy_ACTOR_CONTACT_POLICY_FEDERATIONS
+	case "nobody":
+		return modelpb.ActorContactPolicy_ACTOR_CONTACT_POLICY_NOBODY
+	default:
+		return modelpb.ActorContactPolicy_ACTOR_CONTACT_POLICY_NOBODY
+	}
+}
+
+func contactPolicyToStorage(value modelpb.ActorContactPolicy) (string, bool) {
+	switch value {
+	case modelpb.ActorContactPolicy_ACTOR_CONTACT_POLICY_ANYONE:
+		return "anyone", true
+	case modelpb.ActorContactPolicy_ACTOR_CONTACT_POLICY_FEDERATIONS:
+		return "federations", true
+	case modelpb.ActorContactPolicy_ACTOR_CONTACT_POLICY_NOBODY:
+		return "nobody", true
+	default:
+		return "", false
+	}
+}
+
+func loadFederationVisibility(
+	c context.Context,
+	rds *gorm.DB,
+	actorID uint64,
+) (map[string]modelpb.ActorVisibility, error) {
+	var rows []db.ActorFederationVisibility
+	if err := rds.WithContext(c).
+		Where("actor_id = ?", actorID).
+		Order("federation_id ASC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[string]modelpb.ActorVisibility, len(rows))
+	for i := range rows {
+		visibility := modelpb.ActorVisibility(rows[i].Visibility)
+		if !isValidVisibility(visibility) {
+			visibility = modelpb.ActorVisibility_ACTOR_VISIBILITY_HIDDEN
+		}
+		result[rows[i].FederationID] = visibility
+	}
+	return result, nil
 }
 
 func canonicalProfileRevision(revision uint64) uint64 {
@@ -294,6 +385,9 @@ func updateProfileInternal(
 			return err
 		}
 		if req.Discoverability != nil && actor.Origin != OriginLocal {
+			return ErrRemoteProfileMutation
+		}
+		if req.FederationVisibility != nil && actor.Origin != OriginLocal {
 			return ErrRemoteProfileMutation
 		}
 
@@ -342,6 +436,10 @@ func updateProfileInternal(
 		if req.Discoverability != nil && int16(*req.Discoverability) != actor.Visibility {
 			actorUpdates["visibility"] = int16(*req.Discoverability)
 		}
+		resultingVisibility := modelpb.ActorVisibility(canonicalDiscoverability(actor.Visibility))
+		if req.Discoverability != nil {
+			resultingVisibility = *req.Discoverability
+		}
 
 		metaUpdates := map[string]interface{}{}
 		if req.Region != nil && *req.Region != meta.Region {
@@ -375,14 +473,42 @@ func updateProfileInternal(
 			*req.ManuallyApprovesFollowers != meta.ManuallyApprovesFollowers {
 			metaUpdates["manually_approves_followers"] = *req.ManuallyApprovesFollowers
 		}
-		if req.MessagePermission != nil && *req.MessagePermission != meta.MessagePermission {
-			metaUpdates["message_permission"] = *req.MessagePermission
+		if req.ContactPolicy != nil {
+			contactPolicy, _ := contactPolicyToStorage(*req.ContactPolicy)
+			if contactPolicy != meta.ContactRequestPolicy {
+				metaUpdates["contact_request_policy"] = contactPolicy
+			}
 		}
 		if req.AutoExpireDays != nil && *req.AutoExpireDays != meta.AutoExpireDays {
 			metaUpdates["auto_expire_days"] = *req.AutoExpireDays
 		}
 
-		if len(actorUpdates) == 0 && len(metaUpdates) == 0 {
+		currentFederationVisibility, err := loadFederationVisibility(c, tx, actor.ID)
+		if err != nil {
+			return err
+		}
+		nextFederationVisibility := currentFederationVisibility
+		if req.FederationVisibility != nil {
+			nextFederationVisibility = cloneFederationVisibility(
+				req.FederationVisibility.VisibilityByFederation,
+			)
+		}
+		if req.Discoverability != nil || req.FederationVisibility != nil {
+			if err := validateFederationVisibilityForActor(
+				tx,
+				&actor,
+				resultingVisibility,
+				nextFederationVisibility,
+			); err != nil {
+				return err
+			}
+		}
+		federationVisibilityChanged := !equalFederationVisibility(
+			currentFederationVisibility,
+			nextFederationVisibility,
+		)
+
+		if len(actorUpdates) == 0 && len(metaUpdates) == 0 && !federationVisibilityChanged {
 			profile, err := getWebProfileFromActor(c, tx, &actor, baseURL)
 			if err != nil {
 				return err
@@ -403,6 +529,15 @@ func updateProfileInternal(
 		metaUpdates["profile_revision"] = nextRevision
 		if err := tx.Model(&meta).Updates(metaUpdates).Error; err != nil {
 			return err
+		}
+		if federationVisibilityChanged {
+			if err := replaceFederationVisibility(
+				tx,
+				&actor,
+				nextFederationVisibility,
+			); err != nil {
+				return err
+			}
 		}
 		if err := tx.First(&actor, actorID).Error; err != nil {
 			return err
@@ -427,12 +562,138 @@ func updateProfileInternal(
 	// This is a user-driven content change. Publish only after the transaction
 	// commits, and never for stale or equal-value requests.
 	if changed {
+		// Remove first so a failed rehydrate cannot retain a privacy-stale row.
+		RemoveFederationCatalogActor(actorID)
+		if err := RefreshFederationCatalogActor(c, actorID); err != nil {
+			log.Warnf(c, "[Federation catalog] refresh actor=%d err=%v", actorID, err)
+		}
 		publishVisibilityAsync(actorID)
 		// Wake the actor's own authenticated devices so cached profiles refresh
 		// immediately instead of waiting for the periodic reconcile.
 		notifyProfileChanged(changedActorPtid, time.Now().UTC().UnixMilli())
 	}
 	return &result, nil
+}
+
+func cloneFederationVisibility(
+	input map[string]modelpb.ActorVisibility,
+) map[string]modelpb.ActorVisibility {
+	result := make(map[string]modelpb.ActorVisibility, len(input))
+	for federationID, visibility := range input {
+		result[federationID] = visibility
+	}
+	return result
+}
+
+func equalFederationVisibility(
+	left map[string]modelpb.ActorVisibility,
+	right map[string]modelpb.ActorVisibility,
+) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for federationID, visibility := range left {
+		if right[federationID] != visibility {
+			return false
+		}
+	}
+	return true
+}
+
+func validateFederationVisibilityForActor(
+	tx *gorm.DB,
+	actor *db.Actor,
+	global modelpb.ActorVisibility,
+	visibilityByFederation map[string]modelpb.ActorVisibility,
+) error {
+	if len(visibilityByFederation) == 0 {
+		return nil
+	}
+	if actor.HomeStationPeerID == "" {
+		return fmt.Errorf("%w: local Station PeerID is missing", ErrInvalidFederationScope)
+	}
+
+	federationIDs := make([]string, 0, len(visibilityByFederation))
+	for federationID, visibility := range visibilityByFederation {
+		if visibility > global {
+			return fmt.Errorf(
+				"%w: federation_id=%q visibility=%s exceeds global=%s",
+				ErrInvalidFederationScope,
+				federationID,
+				visibility,
+				global,
+			)
+		}
+		federationIDs = append(federationIDs, federationID)
+	}
+	sort.Strings(federationIDs)
+
+	var activeFederationIDs []string
+	if err := tx.Table("federation_station_membership AS membership").
+		Select("membership.federation_id").
+		Joins("JOIN federation ON federation.federation_id = membership.federation_id").
+		Where("membership.station_peer_id = ?", actor.HomeStationPeerID).
+		Where("membership.status = ?", "active").
+		Where("federation.status = ?", "active").
+		Where("membership.federation_id IN ?", federationIDs).
+		Order("membership.federation_id ASC").
+		Pluck("membership.federation_id", &activeFederationIDs).Error; err != nil {
+		return fmt.Errorf("%w: validate active memberships: %v", ErrInvalidFederationScope, err)
+	}
+	if len(activeFederationIDs) != len(federationIDs) {
+		active := make(map[string]struct{}, len(activeFederationIDs))
+		for _, federationID := range activeFederationIDs {
+			active[federationID] = struct{}{}
+		}
+		for _, federationID := range federationIDs {
+			if _, ok := active[federationID]; !ok {
+				return fmt.Errorf(
+					"%w: federation_id=%q is not active for Station %q",
+					ErrInvalidFederationScope,
+					federationID,
+					actor.HomeStationPeerID,
+				)
+			}
+		}
+	}
+	return nil
+}
+
+func replaceFederationVisibility(
+	tx *gorm.DB,
+	actor *db.Actor,
+	visibilityByFederation map[string]modelpb.ActorVisibility,
+) error {
+	if err := tx.Where("actor_id = ?", actor.ID).
+		Delete(&db.ActorFederationVisibility{}).Error; err != nil {
+		return err
+	}
+	if len(visibilityByFederation) == 0 {
+		return nil
+	}
+
+	actorRefBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(ProtoActorRef(actor))
+	if err != nil {
+		return fmt.Errorf("marshal actor ref for Federation visibility: %w", err)
+	}
+	federationIDs := make([]string, 0, len(visibilityByFederation))
+	for federationID := range visibilityByFederation {
+		federationIDs = append(federationIDs, federationID)
+	}
+	sort.Strings(federationIDs)
+
+	rows := make([]db.ActorFederationVisibility, 0, len(federationIDs))
+	for _, federationID := range federationIDs {
+		rows = append(rows, db.ActorFederationVisibility{
+			ActorID:            actor.ID,
+			FederationID:       federationID,
+			ActorRefBytes:      actorRefBytes,
+			StationPeerID:      actor.HomeStationPeerID,
+			Visibility:         int16(visibilityByFederation[federationID]),
+			UpdatedByActorPTID: actor.PTID,
+		})
+	}
+	return tx.Create(&rows).Error
 }
 
 // WebProfileToActorProfileProto maps a web ProfileResponse to the domain ActorProfile proto
@@ -470,12 +731,15 @@ func WebProfileToActorProfileProto(p *ProfileResponse) *modelpb.ActorProfile {
 		StatusesCount:             p.StatusesCount,
 		DefaultVisibility:         p.DefaultVisibility,
 		ManuallyApprovesFollowers: p.ManuallyApprovesFollowers,
-		MessagePermission:         p.MessagePermission,
-		AutoExpireDays:            int32(p.AutoExpireDays),
-		ProfileRevision:           p.ProfileRevision,
-		FederatedHandle:           p.FederatedHandle,
-		HomeStationPeerId:         p.HomeStationPeerID,
-		HomeStationDomain:         p.HomeStationDomain,
+		ContactPolicy:             p.ContactPolicy,
+		FederationVisibility: &modelpb.FederationVisibilityPolicy{
+			VisibilityByFederation: cloneFederationVisibility(p.FederationVisibility),
+		},
+		AutoExpireDays:    int32(p.AutoExpireDays),
+		ProfileRevision:   p.ProfileRevision,
+		FederatedHandle:   p.FederatedHandle,
+		HomeStationPeerId: p.HomeStationPeerID,
+		HomeStationDomain: p.HomeStationDomain,
 		Discoverability: modelpb.ActorVisibility(
 			canonicalDiscoverability(p.Discoverability),
 		),
@@ -538,9 +802,16 @@ func UpdateProfileRequestFromProto(req *modelpb.UpdateProfileRequest) UpdateProf
 		b := *req.ManuallyApprovesFollowers
 		out.ManuallyApprovesFollowers = &b
 	}
-	if req.MessagePermission != nil {
-		s := *req.MessagePermission
-		out.MessagePermission = &s
+	if req.ContactPolicy != nil {
+		value := *req.ContactPolicy
+		out.ContactPolicy = &value
+	}
+	if req.FederationVisibility != nil {
+		out.FederationVisibility = &modelpb.FederationVisibilityPolicy{
+			VisibilityByFederation: cloneFederationVisibility(
+				req.FederationVisibility.VisibilityByFederation,
+			),
+		}
 	}
 	if req.AutoExpireDays != nil {
 		n := int(*req.AutoExpireDays)

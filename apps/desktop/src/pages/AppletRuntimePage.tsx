@@ -337,46 +337,32 @@ function standaloneAppletWindowLabel(appletId: string): string {
   return `applet_${appletId.replace(/[^a-zA-Z0-9-/:_]/g, '_')}`;
 }
 
-function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-}
-
 async function openStandaloneAppletWindow(appletId: string, title: string): Promise<void> {
   const url = standaloneAppletUrl(appletId);
   const label = standaloneAppletWindowLabel(appletId);
-
-  if (isTauriRuntime()) {
-    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-    const existing = await WebviewWindow.getByLabel(label);
-    if (existing) {
-      await existing.setFocus();
-      return;
-    }
-    new WebviewWindow(label, {
-      center: true,
-      focus: true,
-      height: 820,
-      minHeight: 640,
-      minWidth: 360,
-      resizable: true,
-      title,
-      url,
-      width: 430,
-    });
+  const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+  const existing = await WebviewWindow.getByLabel(label);
+  if (existing) {
+    await existing.setFocus();
     return;
   }
-
-  window.open(url, label, 'popup=yes,width=430,height=820,resizable=yes');
+  new WebviewWindow(label, {
+    center: true,
+    focus: true,
+    height: 820,
+    minHeight: 640,
+    minWidth: 360,
+    resizable: true,
+    title,
+    url,
+    width: 430,
+  });
 }
 
 async function closeStandaloneAppletWindow(): Promise<boolean> {
-  if (isTauriRuntime()) {
-    const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-    await getCurrentWebviewWindow().close();
-    return true;
-  }
-  window.close();
-  return window.closed;
+  const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+  await getCurrentWebviewWindow().close();
+  return true;
 }
 
 function showStatusWarning(status: string | undefined, loading: boolean): boolean {

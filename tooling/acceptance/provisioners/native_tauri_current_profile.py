@@ -691,13 +691,11 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 reason="Current-profile Native actors are incomplete",
                 resource=f"gate-environment:{GATE_ID}",
             )
-        configured_gateway = int(profile_env["PT_DESKTOP_APP_GATEWAY_PORT"])
         configured_renderer = int(profile_env["PT_DESKTOP_APP_WEB_PORT"])
         configured_webdriver = 4445 + slot * 10
         allocation = next(
             (
                 (
-                    configured_gateway + offset,
                     configured_renderer + offset,
                     configured_webdriver + offset,
                 )
@@ -705,8 +703,6 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 if all(
                     self._port_available(port)
                     for port in (
-                        configured_gateway + offset,
-                        configured_gateway + offset + 1,
                         configured_renderer + offset,
                         configured_renderer + offset + 1,
                         configured_webdriver + offset,
@@ -721,8 +717,8 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 reason="No complete two-client Native port set is available",
                 resource="client-isolation:ports",
             )
-        gateway_base, renderer_base, webdriver_base = allocation
-        desktop_profile = f"{profile_name}-app"
+        renderer_base, webdriver_base = allocation
+        desktop_profile = f"{profile_name}-native"
         clients: list[ClientRuntime] = []
         for index, (role, seed_root, persistent_root) in enumerate(
             zip(CLIENT_ROLES, seed_roots, persistent_roots)
@@ -744,7 +740,6 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 actor=declared[role].actor,
                 runtime="native-tauri",
                 worktree=str(client_worktrees[role].root),
-                gateway_port=gateway_base + index,
                 renderer_port=renderer_base + index,
                 webdriver_port=webdriver_base + index,
                 profile=desktop_profile,

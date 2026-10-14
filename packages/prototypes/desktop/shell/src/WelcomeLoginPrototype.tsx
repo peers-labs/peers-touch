@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Check, ChevronRight, Globe2, Loader2, Mail, Server, ShieldCheck, UserRound } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight, Globe2, KeyRound, Loader2, Mail, Server, ShieldCheck, UserRound } from 'lucide-react';
 
-type ViewMode = 'pin' | 'accounts' | 'signin';
+type ViewMode = 'pin' | 'pinRecovery' | 'accounts' | 'signin';
 type FlowKind = 'message' | 'image' | 'file' | 'video';
 
 const PIN_LENGTH = 6;
@@ -372,6 +372,31 @@ const css = `
 .pt-card-action[disabled] {
   cursor: default;
   opacity: .76;
+}
+
+.pt-text-action {
+  display: block;
+  margin: 14px auto 0;
+  border: 0;
+  background: transparent;
+  color: #5f6fe8;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.pt-recovery-input {
+  width: 100%;
+  height: 46px;
+  margin-top: 22px;
+  border: 1px solid rgba(71, 80, 125, .13);
+  border-radius: 15px;
+  outline: 0;
+  background: rgba(255, 255, 255, .64);
+  padding: 0 14px;
+  color: #20263b;
+  font-size: 14px;
+  text-align: center;
 }
 
 .pt-spin {
@@ -866,7 +891,15 @@ function NetworkBackground() {
   );
 }
 
-function PinView({ loading, onUnlock }: { loading: boolean; onUnlock: () => void }) {
+function PinView({
+  loading,
+  onUnlock,
+  onForgotPin,
+}: {
+  loading: boolean;
+  onUnlock: () => void;
+  onForgotPin: () => void;
+}) {
   const [digits, setDigits] = useState(4);
 
   useEffect(() => {
@@ -908,10 +941,65 @@ function PinView({ loading, onUnlock }: { loading: boolean; onUnlock: () => void
         {loading ? <Loader2 className="pt-spin" size={16} /> : <ShieldCheck size={16} />}
         {loading ? 'Unlocking locally...' : 'Unlock'}
       </button>
+      <button className="pt-text-action" onClick={onForgotPin} type="button">
+        Forgot PIN?
+      </button>
       <div className="pt-login-note">
         <Check size={16} />
         Loading only occupies this card. The ambient network stays on its own CSS timeline.
       </div>
+    </>
+  );
+}
+
+function PinRecoveryView({ onCancel }: { onCancel: () => void }) {
+  const [step, setStep] = useState<'reauth' | 'newPin' | 'done'>('reauth');
+  const [newPin, setNewPin] = useState('');
+
+  return (
+    <>
+      <div className="pt-login-avatar">
+        <KeyRound size={28} strokeWidth={1.8} />
+      </div>
+      <div className="pt-login-title">
+        {step === 'reauth'
+          ? 'Recover your PIN'
+          : step === 'newPin'
+            ? 'Set a new PIN'
+            : 'PIN replaced'}
+      </div>
+      <div className="pt-login-subtitle">
+        {step === 'reauth'
+          ? 'Re-authenticate with the provider for this account. The old encrypted session stays untouched until the new PIN is committed.'
+          : step === 'newPin'
+            ? 'Recovery cannot be skipped. Choose a new 6-digit PIN to protect the fresh session.'
+            : 'The new PIN and encrypted session were committed together.'}
+      </div>
+      {step === 'newPin' ? (
+        <input
+          className="pt-recovery-input"
+          aria-label="New recovery PIN"
+          inputMode="numeric"
+          maxLength={PIN_LENGTH}
+          placeholder="New 6-digit PIN"
+          value={newPin}
+          onChange={(event) => setNewPin(event.target.value.replace(/\D/g, ''))}
+        />
+      ) : null}
+      {step !== 'done' ? (
+        <button
+          className="pt-card-action"
+          disabled={step === 'newPin' && newPin.length !== PIN_LENGTH}
+          onClick={() => setStep(step === 'reauth' ? 'newPin' : 'done')}
+          type="button"
+        >
+          <ShieldCheck size={16} />
+          {step === 'reauth' ? 'Re-authenticate' : 'Replace PIN'}
+        </button>
+      ) : null}
+      <button className="pt-text-action" onClick={onCancel} type="button">
+        {step === 'done' ? 'Return to unlock' : 'Cancel recovery'}
+      </button>
     </>
   );
 }
@@ -994,6 +1082,7 @@ export function WelcomeLoginPrototype() {
   const title = useMemo(() => {
     if (mode === 'accounts') return 'Account picker prototype';
     if (mode === 'signin') return 'Re-auth prototype';
+    if (mode === 'pinRecovery') return 'PIN recovery prototype';
     return 'PIN unlock prototype';
   }, [mode]);
 
@@ -1008,7 +1097,7 @@ export function WelcomeLoginPrototype() {
       <NetworkBackground />
       <section className="pt-login-card">
         <div className="pt-login-card__top">
-          <button className="pt-login-back" type="button">
+          <button className="pt-login-back" onClick={() => setMode('pin')} type="button">
             <ArrowLeft size={15} />
             Back
           </button>
@@ -1018,14 +1107,21 @@ export function WelcomeLoginPrototype() {
             <button data-active={mode === 'signin'} onClick={() => setMode('signin')} type="button">Sign in</button>
           </div>
         </div>
-        {mode === 'pin' ? <PinView loading={loading} onUnlock={runLoading} /> : null}
+        {mode === 'pin' ? (
+          <PinView
+            loading={loading}
+            onUnlock={runLoading}
+            onForgotPin={() => setMode('pinRecovery')}
+          />
+        ) : null}
+        {mode === 'pinRecovery' ? <PinRecoveryView onCancel={() => setMode('pin')} /> : null}
         {mode === 'accounts' ? <AccountsView /> : null}
         {mode === 'signin' ? <SignInView loading={loading} onUnlock={runLoading} /> : null}
       </section>
       <div className="pt-login-status">
         <div className="pt-status-pill">
           <Server size={14} />
-          10.37.246.80:18080
+          Aspen Station
           <span className="pt-status-dot" />
         </div>
         <div className="pt-status-pill">

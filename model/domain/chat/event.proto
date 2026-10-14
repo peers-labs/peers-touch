@@ -22,6 +22,8 @@ message MessageCommittedFact {
   // if member actor_kind projection is missing. SERVICE_PLAINTEXT for bot
   // direct_service_plaintext messages (no E2EE lock).
   MessageDeliverySecurity delivery_security = 8;
+  repeated string mentioned_ptids = 9;
+  bool mention_all = 10;
 }
 
 message MessageEditedFact {

@@ -83,6 +83,10 @@ if [[ "$PROFILE_FROM_MACHINE" == "0" ]]; then
     set +a
   fi
 fi
+unset \
+  PT_DESKTOP_APP_GATEWAY_PORT \
+  PT_DESKTOP_WEB_GATEWAY_PORT \
+  PT_DESKTOP_WEB_WEB_PORT
 
 : "${PT_DEV_PROFILE:?PT_DEV_PROFILE not set in profile}"
 
@@ -108,7 +112,6 @@ if [[ -n "${PT_MACHINE_WORKSPACE_ID:-}" ]]; then
   # Machine allocation owns local ports. Profile slot/port values are legacy
   # topology observations and cannot override the workspace binding.
   export PT_DEV_SLOT="$PT_MACHINE_SLOT"
-  export PT_DESKTOP_APP_GATEWAY_PORT="$PT_MACHINE_DESKTOP_APP_GATEWAY_PORT"
   export PT_DESKTOP_APP_WEB_PORT="$PT_MACHINE_DESKTOP_APP_WEB_PORT"
   export PT_MOBILE_WEB_PORT="$PT_MACHINE_MOBILE_WEB_PORT"
 

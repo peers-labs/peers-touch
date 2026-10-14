@@ -61,7 +61,6 @@ class SyntheticRemoteNativeLifecycle:
             AppLaunchMetadata(
                 webdriver_host="127.0.0.1",
                 webdriver_port=int(client_spec["webdriver_port"]),
-                gateway_port=int(client_spec["gateway_port"]),
                 profile=str(client_spec["profile"]),
                 storage_root=str(client_spec["storage_root"]),
                 process_id=712,
@@ -282,7 +281,6 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                     "actor": "alice",
                     "runtime": "native-tauri",
                     "webdriver_port": 4445,
-                    "gateway_port": 18081,
                     "profile": "alice",
                     "storage_root": "/workspace/run/actors/alice/storage",
                     "required_service_roles": ["station"],
@@ -955,7 +953,6 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         )
         client_spec = {
             "webdriver_port": 4445,
-            "gateway_port": 18081,
             "profile": "alice",
             "storage_root": "/workspace/run/actors/alice/storage",
         }
@@ -1491,7 +1488,6 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         client = {
             "worktree": str(Path.cwd()),
             "webdriver_port": 4447,
-            "gateway_port": 3140,
             "renderer_port": 3410,
             "profile": "chat-native-alice",
             "storage_root": "/tmp/chat-native-alice",
@@ -1513,7 +1509,6 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         self.assertIsInstance(session.launcher, MakeDesktopLauncher)
         self.assertEqual(session.launcher.worktree, Path.cwd())
         self.assertEqual(session.launcher.port, 4447)
-        self.assertEqual(session.launcher.gateway_port, 3140)
         self.assertEqual(session.launcher.renderer_port, 3410)
         self.assertEqual(session.launcher.profile, "chat-native-alice")
 
@@ -1533,7 +1528,6 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                             "PT_STATION_HEALTH_URL="
                             "http://stale-station.example/sub-oss/healthz"
                         ),
-                        "PT_DESKTOP_APP_GATEWAY_PORT=3140",
                         "PT_DESKTOP_APP_WEB_PORT=3410",
                     )
                 )
@@ -1543,9 +1537,8 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             launcher = MakeDesktopLauncher(
                 worktree=root,
                 port=4476,
-                gateway_port=3141,
                 renderer_port=3411,
-                profile="four-app",
+                profile="four-native",
                 storage_root=str(root / "storage"),
                 environment={
                     "PT_STATION_URL": "http://bound-station.example",
@@ -1594,7 +1587,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 launcher._launch_environment["PT_DEV_PROFILE_FILE"]
             )
             rendered = runtime_profile.read_text(encoding="utf-8")
-            self.assertIn("PT_DEV_PROFILE=four-app", rendered)
+            self.assertIn("PT_DEV_PROFILE=four-native", rendered)
             self.assertIn(
                 "PT_STATION_URL=http://bound-station.example",
                 rendered,
@@ -1605,7 +1598,6 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 rendered,
             )
             self.assertNotIn("http://stale-station.example", rendered)
-            self.assertIn("PT_DESKTOP_APP_GATEWAY_PORT=3141", rendered)
             self.assertIn("PT_DESKTOP_APP_WEB_PORT=3411", rendered)
             self.assertEqual(
                 launcher._launch_environment[
@@ -1652,15 +1644,15 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 / "workspaces"
                 / workspace_id(root)
                 / "runtime"
-                / "four-app"
-                / "desktop-app-tauri.json"
+                / "four-native"
+                / "desktop-native-tauri.json"
             )
             state_path.parent.mkdir(parents=True)
             state_path.write_text(
                 json.dumps(
                     {
-                        "service": "desktop-app-tauri",
-                        "profile": "four-app",
+                        "service": "desktop-native-tauri",
+                        "profile": "four-native",
                         "worktreeId": "peers-group-chat",
                         "pid": 5678,
                     }
@@ -1670,9 +1662,8 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             launcher = MakeDesktopLauncher(
                 worktree=root,
                 port=4447,
-                gateway_port=3140,
                 renderer_port=3410,
-                profile="four-app",
+                profile="four-native",
                 storage_root=str(root / "storage"),
                 environment={"HOME": str(home)},
             )
@@ -1687,12 +1678,12 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             home = Path(temp_dir) / "home"
             runtime_profile_root = Path(temp_dir) / "runtime-profile"
             runtime_profile_root.mkdir()
-            state_path = runtime_profile_root / "desktop-app-tauri.json"
+            state_path = runtime_profile_root / "desktop-native-tauri.json"
             state_path.write_text(
                 json.dumps(
                     {
-                        "service": "desktop-app-tauri",
-                        "profile": "four-app",
+                        "service": "desktop-native-tauri",
+                        "profile": "four-native",
                         "worktreeId": "peers-group-chat",
                         "pid": 6789,
                     }
@@ -1702,9 +1693,8 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             launcher = MakeDesktopLauncher(
                 worktree=root,
                 port=4447,
-                gateway_port=3140,
                 renderer_port=3410,
-                profile="four-app",
+                profile="four-native",
                 storage_root=str(root / "storage"),
                 environment={"HOME": str(home)},
             )
@@ -1730,14 +1720,12 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             client_specs = {
                 "alice": {
                     "webdriver_port": 4445,
-                    "gateway_port": 3140,
                     "renderer_port": 3410,
                     "storage_root": str(persistent),
                     "storage_lifecycle": "persistent",
                 },
                 "bob": {
                     "webdriver_port": 4446,
-                    "gateway_port": 3141,
                     "renderer_port": 3411,
                     "storage_root": str(ephemeral),
                     "storage_lifecycle": "ephemeral",
@@ -1779,7 +1767,6 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             client_specs = {
                 "alice": {
                     "webdriver_port": 4445,
-                    "gateway_port": 3140,
                     "renderer_port": 3410,
                     "storage_root": str(storage),
                     "storage_lifecycle": "mystery",
@@ -1806,7 +1793,6 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             launcher = MakeDesktopLauncher(
                 worktree=Path.cwd(),
                 port=4447,
-                gateway_port=3140,
                 renderer_port=3410,
                 profile="four",
                 storage_root=str(Path(temp_dir) / "storage"),

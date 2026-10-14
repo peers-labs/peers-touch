@@ -31,10 +31,10 @@ use crate::contracts::{
     SocialDeleteMomentInput, SocialFollowInput, SocialFriendRequestAcceptInput,
     SocialFriendRequestListInput, SocialFriendRequestRejectInput, SocialFriendRequestSendInput,
     SocialGetCommentsInput, SocialGetFollowersInput, SocialGetFollowingInput, SocialGetMomentInput,
-    SocialGetRelationshipInput, SocialGetTimelineInput, SocialListByAuthorInput, SocialReactInput,
-    SocialRelationshipMutationInput, SocialStationModerationDeleteInput,
-    SocialStationModerationListInput, SocialStationModerationUpsertInput,
-    SocialSyncMomentsProjectionInput, SocialUnreactInput,
+    SocialGetRelationshipInput, SocialGetTimelineInput, SocialListBlockedActorsInput,
+    SocialListByAuthorInput, SocialReactInput, SocialRelationshipMutationInput,
+    SocialStationModerationDeleteInput, SocialStationModerationListInput,
+    SocialStationModerationUpsertInput, SocialSyncMomentsProjectionInput, SocialUnreactInput,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::model;
@@ -242,7 +242,7 @@ pub(crate) fn friend_request_command_device_id(
         .ok_or_else(|| "friend request command authorizing device is unavailable".to_string())
 }
 
-fn sign_social_relationship_command(
+pub(crate) fn sign_social_relationship_command(
     station_client: &StationClient,
     state: &AppState,
     account_id: &str,
@@ -324,7 +324,7 @@ fn sign_social_relationship_command(
     })
 }
 
-fn social_relationship_command_device_id(
+pub(crate) fn social_relationship_command_device_id(
     command: &model::social::SocialRelationshipCommand,
 ) -> Result<&str, String> {
     command
@@ -1067,6 +1067,36 @@ pub fn social_get_relationship(
     ) {
         Ok(r) => r,
         Err(e) => return station_error_proto(e, "get relationship failed"),
+    };
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn social_list_blocked_actors(
+    input: SocialListBlockedActorsInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let mut query = Vec::new();
+    if let Some(cursor) = input.cursor.filter(|cursor| !cursor.trim().is_empty()) {
+        query.push(("cursor", cursor));
+    }
+    query.push((
+        "limit",
+        input.limit.unwrap_or(100).clamp(1, 200).to_string(),
+    ));
+    let resp: model::social::ListBlockedActorsResponse = match get_proto(
+        state.station.client(),
+        "/api/v1/social/relationships/blocked",
+        &token,
+        Some(&query),
+    ) {
+        Ok(response) => response,
+        Err(error) => return station_error_proto(error, "list blocked Social actors failed"),
     };
     AppResult::success(resp.encode_to_vec())
 }

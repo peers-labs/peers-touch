@@ -865,7 +865,7 @@ export function profileDraftFromReadback(
     defaultVisibility: profile.defaultVisibility,
     discoverability: profile.discoverability,
     manuallyApprovesFollowers: profile.manuallyApprovesFollowers,
-    messagePermission: profile.messagePermission,
+    contactPolicy: profile.contactPolicy,
     autoExpireDays: profile.autoExpireDays,
   };
 }

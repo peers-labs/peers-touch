@@ -18,6 +18,7 @@ import {
   parseEnvText,
   redactProfile,
   resolveProfile,
+  runtimeEnvironment,
 } from '../profile.mjs';
 
 function fixtureProfile(name = 'local-test') {
@@ -30,6 +31,8 @@ function fixtureProfile(name = 'local-test') {
     'PT_STATION_PORT=18080',
     'PT_DESKTOP_APP_GATEWAY_PORT=3030',
     'PT_DESKTOP_APP_WEB_PORT=3210',
+    'PT_DESKTOP_WEB_GATEWAY_PORT=3031',
+    'PT_DESKTOP_WEB_WEB_PORT=3211',
     'API_TOKEN=private',
     '',
   ].join('\n');
@@ -194,7 +197,19 @@ test('activates and resolves a profile by worktree identity', (t) => {
   assert.equal(activated.reference.profileName, name);
   assert.equal(resolved.profile.PT_DEV_PROFILE, name);
   assert.equal(resolved.profile.PT_DEV_SLOT, '5');
-  assert.equal(resolved.profile.PT_DESKTOP_APP_GATEWAY_PORT, '3530');
+  assert.equal(resolved.profile.PT_DESKTOP_APP_WEB_PORT, '3710');
+  assert.equal(resolved.profile.PT_DESKTOP_APP_GATEWAY_PORT, undefined);
+  assert.equal(resolved.profile.PT_DESKTOP_WEB_GATEWAY_PORT, undefined);
+  assert.equal(resolved.profile.PT_DESKTOP_WEB_WEB_PORT, undefined);
+  const runtime = runtimeEnvironment(resolved, {
+    PATH: '/usr/bin',
+    PT_DESKTOP_APP_GATEWAY_PORT: '3030',
+    PT_DESKTOP_WEB_GATEWAY_PORT: '3031',
+    PT_DESKTOP_WEB_WEB_PORT: '3211',
+  });
+  assert.equal(runtime.PT_DESKTOP_APP_GATEWAY_PORT, undefined);
+  assert.equal(runtime.PT_DESKTOP_WEB_GATEWAY_PORT, undefined);
+  assert.equal(runtime.PT_DESKTOP_WEB_WEB_PORT, undefined);
   assert.equal(resolved.reference.worktreeId, path.basename(root));
   assert.equal(resolved.reference.authority, 'machine-control-plane');
   assert.match(
@@ -256,7 +271,7 @@ test('resolves the machine binding instead of a stale legacy pointer', (t) => {
   assert.equal(resolved.reference.profileName, 'two');
   assert.equal(resolved.profile.PT_DEV_PROFILE, 'two');
   assert.equal(resolved.profile.PT_DEV_SLOT, '1');
-  assert.equal(resolved.profile.PT_DESKTOP_APP_GATEWAY_PORT, '3130');
+  assert.equal(resolved.profile.PT_DESKTOP_APP_WEB_PORT, '3310');
 });
 
 test('activates a profile by updating the machine binding', (t) => {
@@ -318,7 +333,6 @@ test('normal resolution uses the machine binding instead of the active symlink',
       },
       ports: {
         station: 18580,
-        desktopAppGateway: 3530,
         desktopAppWeb: 3710,
         mobileWeb: 5673,
       },
@@ -334,7 +348,7 @@ test('normal resolution uses the machine binding instead of the active symlink',
   assert.equal(resolved.reference.resolvedPath, machineProfile);
   assert.equal(resolved.profile.PT_DEV_SLOT, '5');
   assert.equal(resolved.profile.PT_STATION_PORT, '18580');
-  assert.equal(resolved.profile.PT_DESKTOP_APP_GATEWAY_PORT, '3530');
+  assert.equal(resolved.profile.PT_DESKTOP_APP_WEB_PORT, '3710');
   assert.equal(
     resolved.paths.profileData,
     path.join(machineState, 'runtime', 'machine', 'data'),
@@ -376,7 +390,6 @@ test('keeps Acceptance ports and state run-scoped while retaining the machine sl
 
   assert.equal(resolved.profile.PT_DEV_PROFILE, 'runtime');
   assert.equal(resolved.profile.PT_DEV_SLOT, '5');
-  assert.equal(resolved.profile.PT_DESKTOP_APP_GATEWAY_PORT, '3030');
   assert.equal(resolved.profile.PT_DESKTOP_APP_WEB_PORT, '3210');
   const canonicalProfileRoot = fs.realpathSync(profileRoot);
   assert.equal(resolved.paths.profileData, path.join(canonicalProfileRoot, 'data'));
@@ -391,7 +404,7 @@ test('initializes deterministic profile ports and refuses overwrite', (t) => {
   const content = fs.readFileSync(profilePath, 'utf8');
 
   assert.match(content, /PT_STATION_PORT=18280/u);
-  assert.match(content, /PT_DESKTOP_APP_GATEWAY_PORT=3230/u);
+  assert.match(content, /PT_DESKTOP_APP_WEB_PORT=3410/u);
   assert.throws(() => initializeProfile(root, 'slot-two', 2), DevctlError);
 });
 

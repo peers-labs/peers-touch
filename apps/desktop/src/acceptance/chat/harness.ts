@@ -21,11 +21,15 @@ import { callP2p } from '../../modules/p2p/callP2p';
 import { registerAcceptanceHarness } from '../registry';
 import { requireCanonicalAcceptancePtid } from './identity';
 import { nativeAcceptanceBridge } from './nativeBridge';
-import { runChatPasswordLogin } from './passwordLogin';
+import {
+  runChatPasswordLogin,
+  type AcceptanceAccessGateFields,
+} from './passwordLogin';
 
 interface LoginInput {
   account: string;
   password: string;
+  accessGateFields?: AcceptanceAccessGateFields;
 }
 
 interface SyncFriendInput {
@@ -416,7 +420,7 @@ export function installAcceptanceHarness(): void {
 
     identityState: () => nativeAcceptanceBridge.identityState(),
 
-    async loginWithPassword({ account, password }: LoginInput) {
+    async loginWithPassword({ account, password, accessGateFields }: LoginInput) {
       const readIdentityLoginState = () => {
         const snapshot = identityRuntime.getSnapshot();
         return {
@@ -434,11 +438,13 @@ export function installAcceptanceHarness(): void {
           description,
         ),
         logout: () => identityRuntime.logout(),
-        loginWithPassword: (loginAccount, loginPassword) =>
-          identityRuntime.loginWithPassword(loginAccount, loginPassword),
+        beginPasswordLogin: (loginAccount, loginPassword) =>
+          identityRuntime.beginPasswordLogin(loginAccount, loginPassword),
+        submitPasswordLoginGate: (decision, fields) =>
+          identityRuntime.submitPasswordLoginGate(decision, fields),
         completeCurrentSession: () =>
           identityRuntime.completeCurrentSession(),
-      }, account, password);
+      }, account, password, accessGateFields);
       const actorPtid = activeActorPtid();
       await installAuthenticatedCriticalRuntimes(actorPtid);
       await hydrateSocialForActiveActor();

@@ -605,9 +605,9 @@ class BehaviorRuleTests(unittest.TestCase):
         )
         self.assertIn("station-api-ownership", selected)
 
-    def test_gateway_only_handler_selects_no_desktop_product_gate(self) -> None:
+    def test_tauri_command_selects_no_unrelated_desktop_product_gate(self) -> None:
         selected = self.selected_ids(
-            "apps/desktop/src-tauri/src/interface/http_gateway/handler.rs"
+            "apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs"
         )
         self.assertEqual(selected, set())
 

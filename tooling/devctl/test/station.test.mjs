@@ -33,7 +33,6 @@ function fixtureProfile({
     `PT_STATION_PORT=${port}`,
     'PT_STATION_DEPLOY_ENV=fixture-station',
     `PT_STATION_HEALTH_URL=http://127.0.0.1:${port}/healthz`,
-    'PT_DESKTOP_APP_GATEWAY_PORT=3030',
     'PT_DESKTOP_APP_WEB_PORT=3210',
     '',
   ].join('\n');

@@ -52,11 +52,12 @@ state) during development without polluting production code.
 ### Runtime Data Flow
 
 ```
-dev-desktop-app.sh
-  → exports VITE_GIT_BRANCH, VITE_GIT_COMMIT, VITE_GIT_WORKTREE
-  → Vite exposes as import.meta.env.VITE_*
+make desktop
+  → devctl starts the Native Tauri runtime and its embedded renderer dependency
+  → Vite config derives worktree, branch, and source commit
+  → compile-time globals expose that identity to dev-only plugins
 
-Plugin reads import.meta.env at module scope
+Plugin reads the projected compile-time identity
   → renders into assigned slot
 ```
 
@@ -118,8 +119,8 @@ const DevOverlayProvider = import.meta.env.DEV
 - Plugin registration happens inside `dev/plugins/` at module scope.
 - `DevOverlayProvider` is the sole consumer of the registry.
 - Environment variables for dev info use `VITE_` prefix (Vite convention).
-- The launch script (`dev-desktop-app.sh`) is the only place that computes
-  git/worktree metadata and exports env vars.
+- `tooling/devctl/desktop.mjs` is the sole Desktop launch owner; Vite config is
+  the sole renderer build-time owner of Git/worktree identity projection.
 
 ### 4.2 MUST NOT
 

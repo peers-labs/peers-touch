@@ -196,6 +196,27 @@ flowchart TB
     LEG["Legacy envelope / imRuntime<br/>forbidden second owner"] -. "must not own messaging" .-> PR
 ```
 
+#### 2.3.1 Desktop renderer projection boundary
+
+Desktop message retrieval has one boundary contract from the Device Messaging
+Engine to the renderer:
+
+```text
+ConversationMessageProjection
+  -> MessagingMessageProjectionOutput (Rust typed Serialize DTO)
+  -> Tauri AppResult
+  -> parseMessagingMessageWire (TypeScript runtime decoder)
+  -> MessagingProjection
+```
+
+Conversation summary, paged history, thread messages, and local search MUST all
+use that same Rust DTO conversion and TypeScript decoder. A command MUST NOT
+construct an endpoint-local message JSON object or declare an unchecked
+`invoke<T>` message shape. Required arrays such as attachments, mentions,
+reactions, and read receipts are emitted even when empty. Missing or malformed
+fields fail closed at the service boundary with a projection contract error;
+components and stores never normalize an incomplete message into product state.
+
 以下是 consolidation 前已验证、并作为 MP-D30 hard-cut 输入保留的 Direct
 `DELIVERED` hot path：
 
@@ -236,7 +257,7 @@ Bob ordered queue item
 
 ```text
 ┌──────────────── Client Presentation ────────────────┐
-│ Desktop Web / Mobile UI                             │
+│ Desktop renderer / Mobile UI                             │
 │ typed intents, drafts, plaintext projections       │
 └──────────────────────┬─────────────────────────────┘
                        │ ChatCommand / LocalEvent

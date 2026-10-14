@@ -189,6 +189,7 @@ CREATE TABLE IF NOT EXISTS messaging_pending_messages (
     plaintext TEXT NOT NULL,
     reply_to_message_id TEXT NOT NULL DEFAULT '',
     thread_root_message_id TEXT NOT NULL DEFAULT '',
+    mention_metadata BLOB NOT NULL DEFAULT X'',
     state TEXT NOT NULL,
     attempt_count INTEGER NOT NULL,
     next_attempt_at_unix_ms INTEGER NOT NULL,
@@ -315,6 +316,7 @@ CREATE TABLE IF NOT EXISTS messaging_message_projections (
     hidden_for_actor INTEGER NOT NULL DEFAULT 0,
     moderated INTEGER NOT NULL DEFAULT 0,
     moderation_reason_code TEXT,
+    mention_metadata BLOB NOT NULL DEFAULT X'',
     PRIMARY KEY(conversation_id, event_id)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messaging_projection_message
@@ -633,6 +635,11 @@ pub const REQUIRED_COLUMNS: &[RequiredColumn] = &[
         definition: "TEXT NOT NULL DEFAULT ''",
     },
     RequiredColumn {
+        table: "messaging_pending_messages",
+        column: "mention_metadata",
+        definition: "BLOB NOT NULL DEFAULT X''",
+    },
+    RequiredColumn {
         table: "messaging_attachment_drafts",
         column: "content_kind",
         definition: "INTEGER NOT NULL DEFAULT 0",
@@ -701,6 +708,11 @@ pub const REQUIRED_COLUMNS: &[RequiredColumn] = &[
         table: "messaging_message_projections",
         column: "moderation_reason_code",
         definition: "TEXT",
+    },
+    RequiredColumn {
+        table: "messaging_message_projections",
+        column: "mention_metadata",
+        definition: "BLOB NOT NULL DEFAULT X''",
     },
     RequiredColumn {
         table: "messaging_interaction_intents",

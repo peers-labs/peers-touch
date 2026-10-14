@@ -2,6 +2,7 @@ import { useSocialStore } from '../social/socialStore';
 import type { UpdateFriendConversationSettingsInput } from '../social/socialApiTypes';
 import type {
   MessagingAttachmentStageProjection,
+  MessagingMessageMention,
   MessagingPendingCommandResult,
   MessagingSubmitCommandResult,
 } from '../../services/mobileCommands';
@@ -20,6 +21,8 @@ export type ChatConversationKind = 'friend' | 'group';
 export interface ChatMessageSendContext {
   replyToMessageId?: string;
   threadRootMessageId?: string;
+  mentions?: MessagingMessageMention[];
+  mentionAll?: boolean;
 }
 
 export interface ChatSearchCursor {

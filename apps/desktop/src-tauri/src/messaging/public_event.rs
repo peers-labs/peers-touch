@@ -161,6 +161,8 @@ impl PublicEventProcessor {
             sender_ptid: &self.endpoint.ptid,
             sender_device_id: &self.endpoint.device_id,
             attachments: &message.attachments,
+            mentioned_ptids: &message.mentioned_ptids,
+            mention_all: message.mention_all,
             reply_to_message_id: (!message.reply_to_message_id.is_empty())
                 .then_some(message.reply_to_message_id.as_str()),
             thread_root_message_id: (!message.thread_root_message_id.is_empty())

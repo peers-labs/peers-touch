@@ -15,7 +15,7 @@ model/domain/realtime/                     typed projection and call-control not
 packages/messaging-core/                   durable client state machine and encrypted projection
 apps/station/app/subserver/conversation/   shared Conversation authority
 apps/station/app/subserver/realtime/       Realtime routing and call-resolution control plane
-apps/desktop/src/messaging/runtime.ts      Desktop Web Messaging domain runtime
+apps/desktop/src/messaging/runtime.ts      Desktop renderer Messaging domain runtime
 apps/desktop/src/runtimes/messagingRuntime.ts
                                            thin Desktop Kernel descriptor
 apps/desktop/src/services/im-service.ts    transport-only typed adapter

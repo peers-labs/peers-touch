@@ -100,6 +100,8 @@ export interface MessagingProjection {
   senderDeviceId: string
   plaintext: string
   attachments: MessagingAttachmentProjection[]
+  mentions: MessagingMentionIntent[]
+  mentionAll: boolean
   state: string
   timestampUnixMs: number
   replyToMessageId?: string
@@ -139,6 +141,13 @@ export interface MessagingLocalAttachmentIntent {
   contentKind: 'file' | 'voice_note'
   durationMs: number
   size?: number
+}
+
+export interface MessagingMentionIntent {
+  actorPtid: string
+  offset: number
+  length: number
+  display: string
 }
 
 export type MessagingSendState = 'draft' | 'pending' | 'attachment_failed'
@@ -257,6 +266,8 @@ export interface MessagingServiceContract {
     relation?: {
       replyToMessageId?: string
       threadRootMessageId?: string
+      mentions?: readonly MessagingMentionIntent[]
+      mentionAll?: boolean
     },
   ): Promise<MessagingSendOutcome>
   listMessages(

@@ -326,7 +326,7 @@ const off = eventBus.subscribe(EVENT.AUTH_IDENTITY_CHANGED, () => {
 
 ### 认证错误边界约束
 - `session_revoked` 是全局认证状态机事件，不是普通业务错误。
-- Desktop Web 不得解析 `SESSION_REVOKED:...` 一类字符串协议；只允许消费 `RustCommandError.code/details`。
+- Desktop renderer 不得解析 `SESSION_REVOKED:...` 一类字符串协议；只允许消费 `RustCommandError.code/details`。
 - Desktop Rust 不得把 `session_revoked` 再包装回 `String` 供上层猜测。
 - 任何需要退出登录的路径都必须收敛到 `AUTH_SESSION_REVOKED -> session_logout` 这一条链路。
 

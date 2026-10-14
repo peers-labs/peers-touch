@@ -142,12 +142,6 @@
       "apps/desktop/src-tauri/src/interface",
       "apps/desktop/src-tauri/src/main.rs"
     ],
-    "http-gateway-registry": [
-      "apps/desktop/src-tauri/src/interface/http_gateway",
-      "apps/mobile/src/services/gateways",
-      "apps/station/app",
-      "tooling/scripts"
-    ],
     "compiled-proto-descriptor": [
       "model/domain/chat",
       "apps/desktop/src-tauri/src/model",
@@ -236,7 +230,6 @@
   "requiredDimensions": [
     "tracked-source",
     "tauri-registry",
-    "http-gateway-registry",
     "compiled-proto-descriptor",
     "generated-manifest",
     "mixed-client-runtime-trace",

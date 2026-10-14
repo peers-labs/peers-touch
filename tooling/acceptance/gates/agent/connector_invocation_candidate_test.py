@@ -203,26 +203,14 @@ class ConnectorInvocationCandidateTest(unittest.TestCase):
         self.assertLess(reconnected, reconnect_refresh)
         self.assertLess(reconnect_refresh, reconnect_bind)
 
-    def test_secondary_connector_oauth_does_not_use_local_mcp_identity_guard(
-        self,
-    ) -> None:
-        gateway = (
+    def test_connector_oauth_uses_native_window_identity(self) -> None:
+        commands = (
             ROOT
-            / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs"
         ).read_text(encoding="utf-8")
-        oauth_routes = gateway.split(
-            "// OAuth2",
-            maxsplit=1,
-        )[1].split(
-            "// Account",
-            maxsplit=1,
-        )[0]
-
-        self.assertIn("fn gateway_identity(", gateway)
-        self.assertIn("fn gateway_mcp_identity(", gateway)
-        self.assertIn("Local MCP is unavailable in the Secondary client", gateway)
-        self.assertIn("match gateway_identity(state)", oauth_routes)
-        self.assertNotIn("gateway_mcp_identity(state)", oauth_routes)
+        self.assertIn("session_resolver::ptid_for_window", commands)
+        self.assertIn("session_resolver::token_for_window", commands)
+        self.assertNotIn("gateway_identity", commands)
 
     def test_platform_handoff_retires_secondary_and_restarts_native_retry(
         self,

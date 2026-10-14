@@ -33,7 +33,6 @@ interface DevProfile {
   PT_STATION_NAME: string;
   PT_STATION_URL: string;
   PT_STATION_PORT: string;
-  PT_DESKTOP_APP_GATEWAY_PORT: string;
   PT_DESKTOP_APP_WEB_PORT: string;
 }
 ```

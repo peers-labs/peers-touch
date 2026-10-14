@@ -7,17 +7,16 @@ import { Button } from '@lobehub/ui';
 import {
   Settings, Bot, Wrench, HelpCircle,
   MessageSquare, Puzzle, Sparkles,
-  Hash, Type, Activity as ActivityIcon, Trophy, Layers,
   Terminal, Users, BookOpen, Brain,
   Search, Key, Cpu, Globe, Zap, FileText,
   Code, PenTool, Clock, Shield, ShieldCheck, File,
   Edit, Package, Plus, Send, RefreshCw,
   GitBranch, HardDrive, Image, Trash2, Server, AlertTriangle, RotateCcw,
-  Database, Network,
+  Bell, Database, Network,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useProviderStore } from '../store/provider';
-import { api, type Agent, type AppletInfo, type AvailableModel, type HelpCategoryGroup, type SearchProviderInfo, type StatisticsData } from '../services/desktop_api';
+import { api, type Agent, type AppletInfo, type AvailableModel, type HelpCategoryGroup, type SearchProviderInfo } from '../services/desktop_api';
 import { hasSettingsPanel, getAppletFrontend } from '../applets/registry';
 import { getModulesWithSettings } from '../modules/registry';
 import { PageHeader } from '../components/PageHeader';
@@ -25,8 +24,15 @@ import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
 import { log } from '../utils/logger';
 import { SettingsContainer, SettingsSection, SettingsItemCard, SettingsRow } from '../components/settings/SettingsLayout';
 import { ChatStorageSettings } from '../components/settings/ChatStorageSettings';
-import { FederationTab } from '../components/settings/FederationTab';
+import {
+  DiscoveryTab,
+  FederationTab,
+  YourStationTab,
+} from '../components/settings/FederationTab';
 import { RecoverySettings } from '../components/settings/RecoverySettings';
+import { NotificationSettings } from '../components/settings/NotificationSettings';
+import { PrivacySettings } from '../components/settings/PrivacySettings';
+import { AboutSettings } from '../components/settings/AboutSettings';
 import { ModelProviderSelect } from '../components/ModelProviderSelect';
 import { usePrefetch } from '../kernel/usePrefetch';
 import {
@@ -113,13 +119,35 @@ function useSettingsSections(): SectionDef[] {
         render: () => <RecoverySettings />,
       },
       {
-        key: 'federation',
-        label: t('settings.tab.federation', { defaultValue: 'Federation' }),
-        icon: Network,
-        // Slot between built-in `account` (registry order, 5–10) and
-        // `general` so the user sees their identity → federation
-        // → general flow naturally.
+        key: 'privacy',
+        label: t('settings.tab.privacy'),
+        icon: Shield,
+        order: 16,
+        policy: { cache: 'first-visit-cache' },
+        render: () => <PrivacySettings />,
+      },
+      {
+        key: 'network-station',
+        label: t('settings.tab.networkStation'),
+        icon: Server,
         order: 20,
+        policy: { cache: 'selected-only' },
+        render: () => <YourStationTab />,
+      },
+      {
+        key: 'network-discovery',
+        label: t('settings.tab.networkDiscovery'),
+        icon: Globe,
+        order: 21,
+        policy: { cache: 'first-visit-cache' },
+        render: () => <DiscoveryTab />,
+      },
+      {
+        key: 'federation',
+        label: t('settings.tab.networkFederation'),
+        icon: Network,
+        order: 22,
+        policy: { cache: 'first-visit-cache' },
         render: () => <FederationTab />,
       },
       {
@@ -143,6 +171,14 @@ function useSettingsSections(): SectionDef[] {
         icon: Settings,
         order: 70,
         render: () => <GeneralTab />,
+      },
+      {
+        key: 'notifications',
+        label: t('settings.tab.notifications'),
+        icon: Bell,
+        order: 71,
+        policy: { cache: 'selected-only' },
+        render: () => <NotificationSettings />,
       },
       {
         key: 'tools',
@@ -177,13 +213,13 @@ function useTabGroups(): TabGroupDef[] {
         key: 'general',
         label: t('settings.group.general'),
         icon: Settings,
-        sectionKeys: ['account', 'security', 'general'],
+        sectionKeys: ['account', 'security', 'privacy', 'general', 'notifications'],
       },
       {
-        key: 'federation',
-        label: t('settings.group.federation', { defaultValue: 'Federation' }),
+        key: 'network',
+        label: t('settings.group.network'),
         icon: Globe,
-        sectionKeys: ['federation'],
+        sectionKeys: ['network-station', 'network-discovery', 'federation'],
       },
       {
         key: 'ai',
@@ -224,7 +260,20 @@ function useTabGroups(): TabGroupDef[] {
     ];
 
     // Only keep section keys that actually exist in the registry or local definitions
-    const knownKeys = new Set([...allSections, 'security', 'federation', 'storage', 'applets', 'general', 'tools', 'help']);
+    const knownKeys = new Set([
+      ...allSections,
+      'security',
+      'privacy',
+      'network-station',
+      'network-discovery',
+      'federation',
+      'storage',
+      'applets',
+      'general',
+      'notifications',
+      'tools',
+      'help',
+    ]);
     return groups.map((g) => ({
       ...g,
       sectionKeys: g.sectionKeys.filter((k) => knownKeys.has(k)),
@@ -580,369 +629,6 @@ function AppletsSettingsTab() {
           <Text type="secondary">{t('settings.applets.noApplets')}</Text>
         </Flexbox>
       )}
-    </SettingsContainer>
-  );
-}
-
-/* ─── Activity Heatmap ───────────────────────────────────────────────── */
-
-function ActivityHeatmap({ activity }: { activity: { date: string; count: number }[] }) {
-  const { token } = theme.useToken();
-  const { t } = useTranslation('settings');
-
-  const today = new Date();
-  const startDate = new Date(today);
-  startDate.setFullYear(startDate.getFullYear() - 1);
-  startDate.setDate(startDate.getDate() - startDate.getDay());
-
-  const totalDays = Math.ceil((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-  const weeks = Math.ceil(totalDays / 7);
-
-  const countMap = new Map<string, number>();
-  for (const a of activity) {
-    countMap.set(a.date, a.count);
-  }
-
-  const maxCount = Math.max(1, ...activity.map((a) => a.count));
-
-  function getColor(count: number): string {
-    if (count === 0) return token.colorFillQuaternary;
-    const ratio = count / maxCount;
-    if (ratio <= 0.25) return '#9be9a8';
-    if (ratio <= 0.5) return '#40c463';
-    if (ratio <= 0.75) return '#30a14e';
-    return '#216e39';
-  }
-
-  const months: { label: string; col: number }[] = [];
-  let lastMonth = -1;
-  for (let w = 0; w < weeks; w++) {
-    const d = new Date(startDate);
-    d.setDate(d.getDate() + w * 7);
-    const m = d.getMonth();
-    if (m !== lastMonth) {
-      months.push({
-        label: d.toLocaleDateString(undefined, { month: 'short' }),
-        col: w,
-      });
-      lastMonth = m;
-    }
-  }
-
-  const cells: React.ReactNode[] = [];
-  for (let w = 0; w < weeks; w++) {
-    for (let day = 0; day < 7; day++) {
-      const d = new Date(startDate);
-      d.setDate(d.getDate() + w * 7 + day);
-      if (d > today) continue;
-      const dateStr = d.toISOString().slice(0, 10);
-      const count = countMap.get(dateStr) || 0;
-      cells.push(
-        <div
-          key={dateStr}
-          title={t('settings.statistics.heatmapTooltip', { date: dateStr, count })}
-          style={{
-            gridColumn: w + 1,
-            gridRow: day + 1,
-            width: 11,
-            height: 11,
-            borderRadius: 2,
-            background: getColor(count),
-            cursor: 'default',
-          }}
-        />,
-      );
-    }
-  }
-
-  const totalMessages = activity.reduce((s, a) => s + a.count, 0);
-
-  return (
-    <Flexbox gap={8}>
-      <div style={{ position: 'relative', paddingTop: 16 }}>
-        <div style={{ display: 'flex', gap: 0, marginBottom: 4, paddingLeft: 0, position: 'relative', height: 14 }}>
-          {months.map((m) => (
-            <span
-              key={m.label + m.col}
-              style={{
-                position: 'absolute',
-                left: m.col * 14,
-                fontSize: 10,
-                color: token.colorTextTertiary,
-              }}
-            >
-              {m.label}
-            </span>
-          ))}
-        </div>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: `repeat(${weeks}, 11px)`,
-            gridTemplateRows: 'repeat(7, 11px)',
-            gap: 3,
-          }}
-        >
-          {cells}
-        </div>
-      </div>
-      <Flexbox horizontal justify="space-between" align="center">
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          {t('settings.statistics.heatmapTotal', { count: totalMessages })}
-        </Text>
-        <Flexbox horizontal align="center" gap={4}>
-          <Text type="secondary" style={{ fontSize: 10 }}>{t('settings.statistics.heatmapInactive')}</Text>
-          {[0, 0.25, 0.5, 0.75, 1].map((r, i) => (
-            <div
-              key={i}
-              style={{
-                width: 10,
-                height: 10,
-                borderRadius: 2,
-                background: getColor(r * maxCount),
-              }}
-            />
-          ))}
-          <Text type="secondary" style={{ fontSize: 10 }}>{t('settings.statistics.heatmapActive')}</Text>
-        </Flexbox>
-      </Flexbox>
-    </Flexbox>
-  );
-}
-
-/* ─── Rank List ──────────────────────────────────────────────────────── */
-
-function RankList({
-  title,
-  icon,
-  items,
-  labelHeader,
-  valueHeader,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  items: { name: string; count: number }[] | null;
-  labelHeader: string;
-  valueHeader: string;
-}) {
-  const { token } = theme.useToken();
-  const { t } = useTranslation('settings');
-
-  if (!items || items.length === 0) {
-    return (
-      <Flexbox
-        gap={8}
-        style={{
-          background: token.colorBgContainer,
-          borderRadius: 12,
-          padding: 20,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          flex: 1,
-          minWidth: 200,
-        }}
-      >
-        <Flexbox horizontal align="center" gap={6}>
-          {icon}
-          <Text strong style={{ fontSize: 14 }}>{title}</Text>
-        </Flexbox>
-        <Flexbox align="center" justify="center" gap={8} style={{ padding: '24px 0' }}>
-          <Layers size={32} style={{ color: token.colorTextQuaternary }} />
-          <Text type="secondary" style={{ fontSize: 12 }}>{t('settings.statistics.rankNoData')}</Text>
-          <Text type="secondary" style={{ fontSize: 11 }}>
-            {t('settings.statistics.rankNoDataHint')}
-          </Text>
-        </Flexbox>
-      </Flexbox>
-    );
-  }
-
-  const maxVal = Math.max(1, ...items.map((i) => i.count));
-
-  return (
-    <Flexbox
-      gap={8}
-      style={{
-        background: token.colorBgContainer,
-        borderRadius: 12,
-        padding: 20,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        flex: 1,
-        minWidth: 200,
-      }}
-    >
-      <Flexbox horizontal align="center" gap={6}>
-        {icon}
-        <Text strong style={{ fontSize: 14 }}>{title}</Text>
-      </Flexbox>
-      <Flexbox horizontal justify="space-between" style={{ padding: '0 4px' }}>
-        <Text type="secondary" style={{ fontSize: 11 }}>{labelHeader}</Text>
-        <Text type="secondary" style={{ fontSize: 11 }}>{valueHeader}</Text>
-      </Flexbox>
-      {items.map((item, idx) => (
-        <Flexbox key={item.name} gap={4}>
-          <Flexbox horizontal justify="space-between" align="center" style={{ padding: '0 4px' }}>
-            <Flexbox horizontal gap={6} align="center">
-              <Text style={{ fontSize: 12, color: token.colorTextTertiary, width: 16, textAlign: 'right' }}>
-                {idx + 1}
-              </Text>
-              <Text style={{ fontSize: 13 }}>{item.name}</Text>
-            </Flexbox>
-            <Text style={{ fontSize: 13, fontWeight: 500 }}>{item.count}</Text>
-          </Flexbox>
-          <div
-            style={{
-              height: 4,
-              borderRadius: 2,
-              background: token.colorFillSecondary,
-              marginLeft: 24,
-            }}
-          >
-            <div
-              style={{
-                height: '100%',
-                borderRadius: 2,
-                width: `${(item.count / maxVal) * 100}%`,
-                background: 'linear-gradient(90deg, #667eea, #764ba2)',
-                transition: 'width 0.6s ease',
-              }}
-            />
-          </div>
-        </Flexbox>
-      ))}
-    </Flexbox>
-  );
-}
-
-/* ─── Statistics Tab ─────────────────────────────────────────────────── */
-
-export function StatisticsTab() {
-  const { token } = theme.useToken();
-  const { t } = useTranslation('settings');
-  // Statistics is per-page heavy data: prefetched onto the idle window
-  // by `kernel/usePrefetch` so the first click on the Statistics
-  // section paints immediately if the cache is already warm.
-  const { value: data, error } = usePrefetch<StatisticsData>(
-    'settings.statistics',
-    () => api.getStatistics(),
-  );
-
-  useEffect(() => {
-    if (error) log.error('settings', 'Failed to load statistics', error);
-  }, [error]);
-
-  if (!data) {
-    return (
-      <Flexbox align="center" justify="center" style={{ padding: 80 }}>
-        <Text type="secondary">{t('settings.statistics.loading')}</Text>
-      </Flexbox>
-    );
-  }
-
-  const summary = data.summary ?? {
-    sessions: 0,
-    messages: 0,
-    total_words: 0,
-    agents: 0,
-    days_with_us: 0,
-    first_date: '',
-  };
-
-  const summaryCards: { label: string; value: string | number; sub?: string; icon: React.ReactNode }[] = [
-    {
-      label: t('settings.statistics.sessions'),
-      value: summary.sessions,
-      icon: <MessageSquare size={20} style={{ color: token.colorPrimary }} />,
-    },
-    {
-      label: t('settings.statistics.messages'),
-      value: summary.messages,
-      icon: <Hash size={20} style={{ color: '#52c41a' }} />,
-    },
-    {
-      label: t('settings.statistics.totalWords'),
-      value: summary.total_words >= 1000 ? `${(summary.total_words / 1000).toFixed(1)}K` : summary.total_words,
-      icon: <Type size={20} style={{ color: '#fa8c16' }} />,
-    },
-    {
-      label: t('settings.statistics.agents'),
-      value: summary.agents,
-      icon: <Bot size={20} style={{ color: '#722ed1' }} />,
-    },
-  ];
-
-  return (
-    <SettingsContainer fullHeight maxWidth={900}>
-      <Flexbox gap={4}>
-        <Flexbox horizontal align="center" gap={8}>
-          <span style={{ fontSize: 16, fontWeight: 600 }}
-            dangerouslySetInnerHTML={{
-              __html: t('settings.statistics.daysWithUs', { days: summary.days_with_us })
-                .replace('<highlight>', `<span style="color: ${token.colorPrimary}; font-weight: 700; font-size: 20px">`)
-                .replace('</highlight>', '</span>'),
-            }}
-          />
-        </Flexbox>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          {t('settings.statistics.firstActive', {
-            date: summary.first_date ? new Date(summary.first_date).toLocaleDateString() : t('settings.statistics.firstActiveNA'),
-          })}
-        </Text>
-      </Flexbox>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-        {summaryCards.map((card) => (
-          <Flexbox
-            key={card.label}
-            gap={8}
-            style={{
-              background: token.colorBgContainer,
-              borderRadius: 12,
-              padding: 20,
-              border: `1px solid ${token.colorBorderSecondary}`,
-            }}
-          >
-            <Flexbox horizontal align="center" gap={8}>
-              {card.icon}
-              <Text type="secondary" style={{ fontSize: 13 }}>{card.label}</Text>
-            </Flexbox>
-            <Text style={{ fontSize: 28, fontWeight: 700, lineHeight: 1 }}>{card.value}</Text>
-          </Flexbox>
-        ))}
-      </div>
-
-      <SettingsSection
-        icon={<ActivityIcon size={16} />}
-        title={t('settings.statistics.activityTitle')}
-        style={{ padding: 20 }}
-      >
-        <div style={{ overflowX: 'auto' }}>
-          <ActivityHeatmap activity={data.activity || []} />
-        </div>
-      </SettingsSection>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-        <RankList
-          title={t('settings.statistics.modelRank')}
-          icon={<Cpu size={16} style={{ color: '#1890ff' }} />}
-          items={data.model_rank}
-          labelHeader={t('settings.statistics.rankLabelModel')}
-          valueHeader={t('settings.statistics.rankLabelMessages')}
-        />
-        <RankList
-          title={t('settings.statistics.agentRank')}
-          icon={<Bot size={16} style={{ color: '#722ed1' }} />}
-          items={data.agent_rank}
-          labelHeader={t('settings.statistics.rankLabelAgent')}
-          valueHeader={t('settings.statistics.rankLabelMessages')}
-        />
-        <RankList
-          title={t('settings.statistics.topicRank')}
-          icon={<Trophy size={16} style={{ color: '#fa8c16' }} />}
-          items={data.topic_rank}
-          labelHeader={t('settings.statistics.rankLabelTopic')}
-          valueHeader={t('settings.statistics.rankLabelMessages')}
-        />
-      </div>
     </SettingsContainer>
   );
 }
@@ -1720,16 +1406,7 @@ function HelpTab({ highlightId }: { highlightId?: string }) {
 
   return (
     <SettingsContainer maxWidth={800}>
-      <SettingsSection
-        icon={<Sparkles size={18} />}
-        title={t('settings.help.aboutTitle')}
-        subtitle={t('settings.help.aboutDescription')}
-        extra={<Tag style={{ fontSize: 11 }}>{t('settings.help.aboutTag')}</Tag>}
-        style={{ background: 'linear-gradient(135deg, #667eea15, #764ba215)' }}
-      >
-        {/* About section — content is in subtitle */}
-        <></>
-      </SettingsSection>
+      <AboutSettings />
 
       <Collapse
         activeKey={activeKeys}

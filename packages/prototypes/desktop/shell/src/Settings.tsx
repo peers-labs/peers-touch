@@ -420,6 +420,7 @@ const ACCOUNT_IDENTITY = {
   ptid: 'ptid:01HQX7K3M9VDGF2N8PWJRST6YZ',
   station: 'alpha.peers.social',
 } as const;
+const INITIAL_BLOCKED_USERS = ['Spam Bot', 'Old Contact', 'Noise Account'];
 
 function readCover(): string {
   if (typeof window === 'undefined') return DEFAULT_COVER;
@@ -501,6 +502,7 @@ function AccountSection({ federations }: { federations: JoinedFederation[] }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [coverName, setCoverName] = useState('');
   const [blockedOpen, setBlockedOpen] = useState(false);
+  const [blockedUsers, setBlockedUsers] = useState(INITIAL_BLOCKED_USERS);
 
   const applyCover = (value: string, name = '') => {
     window.localStorage.setItem(COVER_KEY, value === DEFAULT_COVER ? '' : value);
@@ -721,16 +723,25 @@ function AccountSection({ federations }: { federations: JoinedFederation[] }) {
           }}
         >
           <span style={{ fontSize: 13, fontWeight: 500, color: T.text, flex: 1 }}>Blocked users</span>
-          <span style={{ fontSize: 12, color: T.textTertiary }}>3</span>
+          <span style={{ fontSize: 12, color: T.textTertiary }}>{blockedUsers.length}</span>
           {blockedOpen ? <ChevronDown size={15} color={T.textTertiary} /> : <ChevronRight size={15} color={T.textTertiary} />}
         </button>
         {blockedOpen ? (
           <div style={{ marginTop: 4, borderTop: `1px solid ${T.border}` }}>
-            {['Spam Bot', 'Old Contact', 'Noise Account'].map((name) => (
-              <SettingsRow key={name} label={name}>
-                <GhostBtn label="Unblock" onClick={() => {}} />
-              </SettingsRow>
-            ))}
+            {blockedUsers.length === 0 ? (
+              <p style={{ margin: '12px 0 4px', fontSize: 12, color: T.textTertiary }}>
+                No blocked users.
+              </p>
+            ) : blockedUsers.map((name) => (
+                <SettingsRow key={name} label={name}>
+                  <GhostBtn
+                    label="Unblock"
+                    onClick={() => setBlockedUsers((users) => (
+                      users.filter((candidate) => candidate !== name)
+                    ))}
+                  />
+                </SettingsRow>
+              ))}
           </div>
         ) : null}
       </SettingsSection>
@@ -775,37 +786,126 @@ function NotificationsSettingsSection() {
 
 // ── General · Privacy & Security ─────────────────────────────────────────────
 function PrivacySection() {
-  const [pinLock, setPinLock] = useState(false);
-  const [hideOnline, setHideOnline] = useState(false);
-  const [hideRead, setHideRead] = useState(false);
+  const [pinLock, setPinLock] = useState(true);
+  const [pinEditor, setPinEditor] = useState<'set' | 'change' | null>(null);
+  const [pinValue, setPinValue] = useState('');
+  const [backupExists, setBackupExists] = useState(true);
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [recoveryPhrase, setRecoveryPhrase] = useState('');
+  const [restoreState, setRestoreState] = useState<'idle' | 'invalid' | 'restored'>('idle');
+  const recoveryWordCount = recoveryPhrase.trim().split(/\s+/).filter(Boolean).length;
+
+  const savePin = () => {
+    if (!/^\d{6}$/.test(pinValue)) return;
+    setPinLock(true);
+    setPinEditor(null);
+    setPinValue('');
+  };
+
   return (
     <SettingsContainer>
       <SettingsSection icon={Lock} title="App access" subtitle="Protect Peers Touch on this device.">
-        <SettingsRow label="PIN lock" desc="Ask for a PIN to open the app.">
-          <Toggle label="PIN lock" on={pinLock} onToggle={() => setPinLock(!pinLock)} />
+        <SettingsRow label="PIN lock" desc="A local PIN protects the encrypted session on this device.">
+          <Tag text={pinLock ? 'Enabled' : 'Not set'} color={pinLock ? T.success : T.textTertiary} />
         </SettingsRow>
-        {pinLock ? (
+        <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
+          <GhostBtn
+            label={pinLock ? 'Change PIN' : 'Set PIN'}
+            onClick={() => setPinEditor(pinLock ? 'change' : 'set')}
+          />
+          {pinLock ? (
+            <GhostBtn
+              label="Remove PIN"
+              danger
+              onClick={() => {
+                setPinLock(false);
+                setPinEditor(null);
+                setPinValue('');
+              }}
+            />
+          ) : null}
+        </div>
+        {pinEditor ? (
           <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
-            <GhostBtn label="Change PIN" onClick={() => {}} />
-            <GhostBtn label="Remove PIN" danger onClick={() => setPinLock(false)} />
+            <input
+              aria-label={pinEditor === 'change' ? 'New PIN' : 'PIN'}
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="6-digit PIN"
+              value={pinValue}
+              onChange={(event) => setPinValue(event.target.value.replace(/\D/g, ''))}
+              style={{ ...inputStyle, maxWidth: 180 }}
+            />
+            <PrimaryBtn label="Save PIN" onClick={savePin} />
+            <GhostBtn
+              label="Cancel"
+              onClick={() => {
+                setPinEditor(null);
+                setPinValue('');
+              }}
+            />
           </div>
         ) : null}
-        <SettingsRow label="Auto lock" desc="Lock automatically after inactivity.">
-          <Select value="5m" ariaLabel="Auto lock" width={140} options={[
-            { id: '1m', label: 'After 1 minute' },
-            { id: '5m', label: 'After 5 minutes' },
-            { id: '15m', label: 'After 15 minutes' },
-            { id: 'never', label: 'Never' },
-          ]} onChange={() => {}} />
-        </SettingsRow>
       </SettingsSection>
-      <SettingsSection icon={Eye} title="What others can see" subtitle="These defaults only affect new conversations.">
-        <SettingsRow label="Online status" desc="Let people you talk to see when you are online.">
-          <Toggle label="Online status visible" on={!hideOnline} onToggle={() => setHideOnline(!hideOnline)} />
+
+      <SettingsSection
+        icon={ShieldCheck}
+        title="Encryption backup & recovery"
+        subtitle="Restore encrypted message keys with a 24-word recovery phrase.">
+        <SettingsRow
+          label="Backup status"
+          desc={backupExists ? 'Latest encrypted key backup is available.' : 'No encrypted key backup exists.'}>
+          <Tag
+            text={backupExists ? 'Backup ready' : 'Backup needed'}
+            color={backupExists ? T.success : T.warning}
+          />
         </SettingsRow>
-        <SettingsRow label="Read receipts" desc="Show when you have read a message.">
-          <Toggle label="Read receipts" on={!hideRead} onToggle={() => setHideRead(!hideRead)} />
-        </SettingsRow>
+        <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
+          <GhostBtn label="Create backup" onClick={() => setBackupExists(true)} />
+          <GhostBtn
+            label="Restore from backup"
+            onClick={() => {
+              setRestoreOpen((open) => !open);
+              setRestoreState('idle');
+            }}
+          />
+        </div>
+        {restoreOpen ? (
+          <div style={{ display: 'grid', gap: 8, paddingTop: 12 }}>
+            <textarea
+              aria-label="24-word recovery phrase"
+              rows={3}
+              value={recoveryPhrase}
+              onChange={(event) => {
+                setRecoveryPhrase(event.target.value);
+                setRestoreState('idle');
+              }}
+              placeholder="Enter 24 recovery words separated by spaces"
+              style={{ ...inputStyle, resize: 'vertical' }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <PrimaryBtn
+                label="Restore encryption keys"
+                onClick={() => setRestoreState(
+                  recoveryWordCount === 24 ? 'restored' : 'invalid',
+                )}
+              />
+              <span
+                role={restoreState === 'invalid' ? 'alert' : 'status'}
+                style={{
+                  fontSize: 12,
+                  color: restoreState === 'invalid' ? T.danger : T.success,
+                }}
+              >
+                {restoreState === 'invalid'
+                  ? `Enter exactly 24 words (${recoveryWordCount}/24).`
+                  : restoreState === 'restored'
+                    ? 'Encryption keys restored on this device.'
+                    : `${recoveryWordCount}/24 words`}
+              </span>
+            </div>
+          </div>
+        ) : null}
       </SettingsSection>
     </SettingsContainer>
   );

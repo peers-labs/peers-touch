@@ -1,5 +1,12 @@
 import { createDesktopStore } from './createDesktopStore';
-import { api, type AccountIdentity, type Agent } from '../services/desktop_api';
+import {
+  api,
+  type AccountIdentity,
+  type ActorDevice,
+  type Agent,
+  type NotificationPreferenceData,
+  type NotificationPreferencePatchInput,
+} from '../services/desktop_api';
 import { toolService, type ToolInfo } from '../services/tool-service';
 import { log } from '../utils/logger';
 import {
@@ -7,8 +14,28 @@ import {
   normalizeChatScreenshotShortcut,
 } from '../utils/chatScreenshotShortcut';
 import { beginMutation, endMutation, toStoreError, type RevalidationState } from './revalidation';
+import { currentAuthenticatedActorPtid, useSessionStore } from './session';
 
 const CHAT_SCREENSHOT_SHORTCUT_SETTING_KEY = 'settings.chat.screenshotShortcut';
+
+interface SettingsSessionFence {
+  actorPtid: string;
+  sessionEpoch: number;
+}
+
+function currentSettingsSessionFence(): SettingsSessionFence | null {
+  const actorPtid = currentAuthenticatedActorPtid();
+  if (!actorPtid) return null;
+  return {
+    actorPtid,
+    sessionEpoch: useSessionStore.getState().sessionEpoch,
+  };
+}
+
+function settingsSessionFenceMatches(fence: SettingsSessionFence): boolean {
+  return currentAuthenticatedActorPtid() === fence.actorPtid
+    && useSessionStore.getState().sessionEpoch === fence.sessionEpoch;
+}
 
 function registerChatScreenshotShortcut(shortcut: string): void {
   api.chatScreenshotShortcutRegister({ shortcut }).catch((error) => {
@@ -27,12 +54,34 @@ interface SettingsState extends RevalidationState {
    * "Settings" never triggers an `accountGetActive` round-trip.
    */
   activeAccount: AccountIdentity | null;
+  /** Station-authoritative device projection for Settings > Network. */
+  devices: ActorDevice[];
+  currentDeviceId: string;
+  devicesLoading: boolean;
+  devicesError: string | null;
+  deviceRevokingId: string | null;
+  /** Station-authoritative per-category notification preferences. */
+  notificationPreferences: NotificationPreferenceData[];
+  notificationPreferencesRevision: number;
+  notificationPreferencesLoading: boolean;
+  notificationPreferencesError: string | null;
+  notificationPreferenceSavingCategory: number | null;
   chatScreenshotShortcut: string;
 
   loadChatPreferences: () => Promise<void>;
   loadAgents: () => Promise<void>;
   loadTools: () => Promise<void>;
   refreshActiveAccount: () => Promise<void>;
+  clearSessionProjection: () => void;
+  refreshDevices: () => Promise<void>;
+  revokeDevice: (deviceId: string, observedProfileVersion: bigint) => Promise<void>;
+  clearDeviceProjection: () => void;
+  refreshNotificationPreferences: () => Promise<void>;
+  updateNotificationPreference: (
+    category: number,
+    patch: Omit<NotificationPreferencePatchInput, 'category'>,
+  ) => Promise<void>;
+  clearNotificationPreferences: () => void;
   setChatScreenshotShortcut: (shortcut: string) => void;
   setCurrentAgent: (name: string) => void;
   setDefaultAgent: (id: string) => Promise<void>;
@@ -44,6 +93,16 @@ export const useSettingsStore = createDesktopStore<SettingsState>('settings', (s
   tools: [],
   currentAgent: 'assistant',
   activeAccount: null,
+  devices: [],
+  currentDeviceId: '',
+  devicesLoading: false,
+  devicesError: null,
+  deviceRevokingId: null,
+  notificationPreferences: [],
+  notificationPreferencesRevision: 0,
+  notificationPreferencesLoading: false,
+  notificationPreferencesError: null,
+  notificationPreferenceSavingCategory: null,
   chatScreenshotShortcut: DEFAULT_CHAT_SCREENSHOT_SHORTCUT,
   loading: false,
   error: null,
@@ -101,15 +160,202 @@ export const useSettingsStore = createDesktopStore<SettingsState>('settings', (s
   },
 
   refreshActiveAccount: async () => {
+    const fence = currentSettingsSessionFence();
+    if (!fence) {
+      set({ activeAccount: null });
+      return;
+    }
     try {
       const active = await api.accountGetActive();
+      if (!settingsSessionFenceMatches(fence)) return;
       set({ activeAccount: active ?? null });
     } catch (e) {
+      if (!settingsSessionFenceMatches(fence)) return;
       const message = toStoreError(e);
       log.warn('settings', 'Failed to refresh active account', { error: message });
       set({ error: message });
     }
   },
+
+  clearSessionProjection: () => set({
+    activeAccount: null,
+    devices: [],
+    currentDeviceId: '',
+    devicesLoading: false,
+    devicesError: null,
+    deviceRevokingId: null,
+    notificationPreferences: [],
+    notificationPreferencesRevision: 0,
+    notificationPreferencesLoading: false,
+    notificationPreferencesError: null,
+    notificationPreferenceSavingCategory: null,
+  }),
+
+  refreshDevices: async () => {
+    const fence = currentSettingsSessionFence();
+    if (!fence) {
+      get().clearDeviceProjection();
+      return;
+    }
+    set({ devicesLoading: true, devicesError: null });
+    try {
+      const [devices, current] = await Promise.all([
+        api.deviceList(),
+        api.accountGetDeviceId(),
+      ]);
+      if (!settingsSessionFenceMatches(fence)) return;
+      set({
+        devices,
+        currentDeviceId: current.device_id,
+        devicesLoading: false,
+        devicesError: null,
+      });
+    } catch (e) {
+      if (!settingsSessionFenceMatches(fence)) return;
+      const message = toStoreError(e);
+      log.warn('settings', 'Failed to refresh authorized devices', { error: message });
+      set({
+        devicesLoading: false,
+        devicesError: message,
+      });
+    }
+  },
+
+  revokeDevice: async (deviceId, observedProfileVersion) => {
+    const fence = currentSettingsSessionFence();
+    if (!fence) throw new Error('settings.devices.sessionUnavailable');
+    set({ deviceRevokingId: deviceId, devicesError: null });
+    try {
+      const revoked = await api.deviceRevoke(deviceId, observedProfileVersion);
+      if (!settingsSessionFenceMatches(fence)) return;
+      set((state) => ({
+        devices: state.devices.map((device) => (
+          device.ref?.deviceId === deviceId ? revoked : device
+        )),
+      }));
+    } catch (e) {
+      if (!settingsSessionFenceMatches(fence)) return;
+      const message = toStoreError(e);
+      log.warn('settings', 'Failed to revoke authorized device', {
+        deviceId,
+        error: message,
+      });
+      set({ devicesError: message });
+      throw e;
+    } finally {
+      if (settingsSessionFenceMatches(fence)) {
+        set({ deviceRevokingId: null });
+      }
+    }
+  },
+
+  clearDeviceProjection: () => set({
+    devices: [],
+    currentDeviceId: '',
+    devicesLoading: false,
+    devicesError: null,
+    deviceRevokingId: null,
+  }),
+
+  refreshNotificationPreferences: async () => {
+    const fence = currentSettingsSessionFence();
+    if (!fence) {
+      get().clearNotificationPreferences();
+      return;
+    }
+    set({
+      notificationPreferencesLoading: true,
+      notificationPreferencesError: null,
+    });
+    try {
+      const snapshot = await api.notificationPreferences();
+      if (!settingsSessionFenceMatches(fence)) return;
+      set((state) => (
+        snapshot.notificationPreferencesRevision < state.notificationPreferencesRevision
+          ? { notificationPreferencesLoading: false }
+          : {
+              notificationPreferences: snapshot.preferences,
+              notificationPreferencesRevision: snapshot.notificationPreferencesRevision,
+              notificationPreferencesLoading: false,
+              notificationPreferencesError: null,
+            }
+      ));
+    } catch (e) {
+      if (!settingsSessionFenceMatches(fence)) return;
+      const message = toStoreError(e);
+      log.warn('settings', 'Failed to refresh notification preferences', { error: message });
+      set({
+        notificationPreferencesLoading: false,
+        notificationPreferencesError: message,
+      });
+    }
+  },
+
+  updateNotificationPreference: async (category, patch) => {
+    const fence = currentSettingsSessionFence();
+    if (!fence) throw new Error('notification.preferences.sessionUnavailable');
+    const state = get();
+    const current = state.notificationPreferences.find(
+      (preference) => preference.category === category,
+    );
+    if (!current || state.notificationPreferencesRevision <= 0) {
+      throw new Error('notification.preferences.unavailable');
+    }
+
+    set({
+      notificationPreferenceSavingCategory: category,
+      notificationPreferencesError: null,
+    });
+    try {
+      const result = await api.notificationPreferencesUpdate({
+        updates: [{
+          category,
+          enabled: patch.enabled,
+          pushEnabled: patch.pushEnabled,
+          soundEnabled: patch.soundEnabled,
+        }],
+        observedRevision: state.notificationPreferencesRevision,
+      });
+      if (!settingsSessionFenceMatches(fence)) return;
+      set((currentState) => (
+        result.snapshot.notificationPreferencesRevision
+          < currentState.notificationPreferencesRevision
+          ? {}
+          : {
+              notificationPreferences: result.snapshot.preferences,
+              notificationPreferencesRevision:
+                result.snapshot.notificationPreferencesRevision,
+            }
+      ));
+      if (
+        result.outcome
+        === 'NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_CONFLICT'
+      ) {
+        throw new Error('notification.preferences.conflict');
+      }
+    } catch (e) {
+      if (!settingsSessionFenceMatches(fence)) return;
+      const message = toStoreError(e);
+      log.warn('settings', 'Failed to update notification preference', {
+        category,
+        error: message,
+      });
+      set({ notificationPreferencesError: message });
+      throw e;
+    } finally {
+      if (settingsSessionFenceMatches(fence)) {
+        set({ notificationPreferenceSavingCategory: null });
+      }
+    }
+  },
+
+  clearNotificationPreferences: () => set({
+    notificationPreferences: [],
+    notificationPreferencesRevision: 0,
+    notificationPreferencesLoading: false,
+    notificationPreferencesError: null,
+    notificationPreferenceSavingCategory: null,
+  }),
 
   setCurrentAgent: (name: string) => {
     set({ currentAgent: name });

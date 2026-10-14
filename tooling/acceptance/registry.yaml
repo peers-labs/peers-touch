@@ -60,7 +60,6 @@
           "apps/desktop/src-tauri/src/application/oauth2/**",
           "apps/desktop/src-tauri/src/contracts.rs",
           "apps/desktop/src-tauri/src/interface/contracts/mod.rs",
-          "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
           "apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs",
           "apps/desktop/src-tauri/src/main.rs",
           "apps/desktop/src/gen/proto/domain/oauth/**",
@@ -179,7 +178,6 @@
           "apps/desktop/src-tauri/src/application/station_binding/**",
           "apps/desktop/src-tauri/src/application/station_runtime/**",
           "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
-          "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
           "apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs"
         ]
       },
@@ -2520,9 +2518,8 @@
       ],
       "when": {
         "paths": [
-          "tooling/scripts/_ensure-desktop-rust.sh",
-          "tooling/scripts/_ensure-desktop-vite.sh",
-          "tooling/scripts/local-dev/desktop-dev.sh",
+          "tooling/devctl/desktop.mjs",
+          "tooling/devctl/profile.mjs",
           "tooling/scripts/local-dev/env.sh",
           "tooling/scripts/local-dev/profile.sh",
           "tooling/acceptance/gates/desktop/dev_runtime_multi_instance.py",

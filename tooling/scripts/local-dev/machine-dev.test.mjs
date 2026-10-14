@@ -75,7 +75,6 @@ function profileText({
     'PT_STATION_PORT=18080',
     `PT_STATION_DEPLOY_ENV=${deployEnvironment}`,
     `PT_STATION_HEALTH_URL=${stationUrl}/sub-oss/healthz`,
-    'PT_DESKTOP_APP_GATEWAY_PORT=3130',
     'PT_DESKTOP_APP_WEB_PORT=3310',
     'PT_MOBILE_WEB_PORT=5273',
     '',
@@ -334,7 +333,7 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
       capabilities: 'station.connect,station.deploy',
       budgetSeconds: 1200,
     });
-    assert.equal(checked.ports.desktopAppGateway, 3530);
+    assert.equal(checked.ports.desktopAppWeb, 3710);
     assert.equal(checked.ports.mobileWeb, 5673);
     assert.equal(checked.profile.stationDeployEnvironment, 'station-four');
     assert.equal(checked.profile.resetPolicy, 'agent-resettable');

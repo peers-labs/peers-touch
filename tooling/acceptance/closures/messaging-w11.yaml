@@ -168,7 +168,7 @@ deliverables:
         - friend_chat_list_friend_requests
       search_files:
         - apps/desktop/src-tauri/src/main.rs
-        - apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
+        - apps/desktop/src-tauri/src/interface/tauri_commands
 
   - id: native-evidence-bundle
     verify:

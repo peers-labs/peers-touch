@@ -2,15 +2,15 @@
 // @generated from file domain/federation/federation_discovery.proto (package peers_touch.model.federation.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file domain/federation/federation_discovery.proto.
  */
 export const file_domain_federation_federation_discovery: GenFile = /*@__PURE__*/
-  fileDesc("Cixkb21haW4vZmVkZXJhdGlvbi9mZWRlcmF0aW9uX2Rpc2NvdmVyeS5wcm90bxIfcGVlcnNfdG91Y2gubW9kZWwuZmVkZXJhdGlvbi52MSKiAQoeRmVkZXJhdGlvbkNhdGFsb2dTZWFyY2hSZXF1ZXN0EhUKDWZlZGVyYXRpb25faWQYASABKAkSDgoGcHJlZml4GAIgASgJEg4KBmxvY2FsZRgDIAEoCRIOCgZyZWdpb24YBCABKAkSEQoJcGFnZV9zaXplGAUgASgNEhIKCnBhZ2VfdG9rZW4YBiABKAkSEgoKc3RhdGlvbl9pZBgHIAEoCSKZAQofRmVkZXJhdGlvbkNhdGFsb2dTZWFyY2hSZXNwb25zZRJICgdlbnRyaWVzGAEgAygLMjcucGVlcnNfdG91Y2gubW9kZWwuZmVkZXJhdGlvbi52MS5GZWRlcmF0aW9uQ2F0YWxvZ0VudHJ5EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCRITCgt0b3RhbF9jb3VudBgDIAEoDSK9AQoWRmVkZXJhdGlvbkNhdGFsb2dFbnRyeRISCgphY3Rvcl9wdGlkGAEgASgJEhgKEGZlZGVyYXRlZF9oYW5kbGUYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJEhIKCmF2YXRhcl91cmwYBCABKAkSHAoUaG9tZV9zdGF0aW9uX3BlZXJfaWQYBSABKAkSGQoRaG9tZV9zdGF0aW9uX25hbWUYBiABKAkSEgoKdmlzaWJpbGl0eRgHIAEoCSI2Ch1MaXN0RmVkZXJhdGlvblN0YXRpb25zUmVxdWVzdBIVCg1mZWRlcmF0aW9uX2lkGAEgASgJImsKHkxpc3RGZWRlcmF0aW9uU3RhdGlvbnNSZXNwb25zZRJJCghzdGF0aW9ucxgBIAMoCzI3LnBlZXJzX3RvdWNoLm1vZGVsLmZlZGVyYXRpb24udjEuRmVkZXJhdGlvblN0YXRpb25FbnRyeSKJAQoWRmVkZXJhdGlvblN0YXRpb25FbnRyeRIXCg9zdGF0aW9uX3BlZXJfaWQYASABKAkSFAoMc3RhdGlvbl9uYW1lGAIgASgJEhMKC3N0YXRpb25fdXJsGAMgASgJEg4KBnN0YXR1cxgEIAEoCRIbChN2aXNpYmxlX2FjdG9yX2NvdW50GAUgASgNQlRaUmdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2FwcC9zdWJzZXJ2ZXIvZmVkZXJhdGlvbi9wYjtmZWRlcmF0aW9ucGJiBnByb3RvMw");
+  fileDesc("Cixkb21haW4vZmVkZXJhdGlvbi9mZWRlcmF0aW9uX2Rpc2NvdmVyeS5wcm90bxIfcGVlcnNfdG91Y2gubW9kZWwuZmVkZXJhdGlvbi52MSKiAQoeRmVkZXJhdGlvbkNhdGFsb2dTZWFyY2hSZXF1ZXN0EhUKDWZlZGVyYXRpb25faWQYASABKAkSDgoGcHJlZml4GAIgASgJEg4KBmxvY2FsZRgDIAEoCRIOCgZyZWdpb24YBCABKAkSEQoJcGFnZV9zaXplGAUgASgNEhIKCnBhZ2VfdG9rZW4YBiABKAkSEgoKc3RhdGlvbl9pZBgHIAEoCSKWAgofRmVkZXJhdGlvbkNhdGFsb2dTZWFyY2hSZXNwb25zZRJICgdlbnRyaWVzGAEgAygLMjcucGVlcnNfdG91Y2gubW9kZWwuZmVkZXJhdGlvbi52MS5GZWRlcmF0aW9uQ2F0YWxvZ0VudHJ5EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCRITCgt0b3RhbF9jb3VudBgDIAEoDRJJCgdzb3VyY2VzGAQgAygLMjgucGVlcnNfdG91Y2gubW9kZWwuZmVkZXJhdGlvbi52MS5GZWRlcmF0aW9uQ2F0YWxvZ1NvdXJjZRIfChdsb2NhbF9kaXJlY3RvcnlfZW5hYmxlZBgFIAEoCBIPCgdwYXJ0aWFsGAYgASgIIr0BChZGZWRlcmF0aW9uQ2F0YWxvZ0VudHJ5EhIKCmFjdG9yX3B0aWQYASABKAkSGAoQZmVkZXJhdGVkX2hhbmRsZRgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRIcChRob21lX3N0YXRpb25fcGVlcl9pZBgFIAEoCRIZChFob21lX3N0YXRpb25fbmFtZRgGIAEoCRISCgp2aXNpYmlsaXR5GAcgASgJIrABChdGZWRlcmF0aW9uQ2F0YWxvZ1NvdXJjZRIXCg9zdGF0aW9uX3BlZXJfaWQYASABKAkSFAoMc3RhdGlvbl9uYW1lGAIgASgJElAKB291dGNvbWUYAyABKA4yPy5wZWVyc190b3VjaC5tb2RlbC5mZWRlcmF0aW9uLnYxLkZlZGVyYXRpb25DYXRhbG9nU291cmNlT3V0Y29tZRIUCgxyZXN1bHRfY291bnQYBCABKA0iRwoXRmVkZXJhdGlvbkNhdGFsb2dDdXJzb3ISGAoQZmVkZXJhdGVkX2hhbmRsZRgBIAEoCRISCgphY3Rvcl9wdGlkGAIgASgJIjYKHUxpc3RGZWRlcmF0aW9uU3RhdGlvbnNSZXF1ZXN0EhUKDWZlZGVyYXRpb25faWQYASABKAkiawoeTGlzdEZlZGVyYXRpb25TdGF0aW9uc1Jlc3BvbnNlEkkKCHN0YXRpb25zGAEgAygLMjcucGVlcnNfdG91Y2gubW9kZWwuZmVkZXJhdGlvbi52MS5GZWRlcmF0aW9uU3RhdGlvbkVudHJ5IokBChZGZWRlcmF0aW9uU3RhdGlvbkVudHJ5EhcKD3N0YXRpb25fcGVlcl9pZBgBIAEoCRIUCgxzdGF0aW9uX25hbWUYAiABKAkSEwoLc3RhdGlvbl91cmwYAyABKAkSDgoGc3RhdHVzGAQgASgJEhsKE3Zpc2libGVfYWN0b3JfY291bnQYBSABKA0qwwIKHkZlZGVyYXRpb25DYXRhbG9nU291cmNlT3V0Y29tZRIxCi1GRURFUkFUSU9OX0NBVEFMT0dfU09VUkNFX09VVENPTUVfVU5TUEVDSUZJRUQQABIoCiRGRURFUkFUSU9OX0NBVEFMT0dfU09VUkNFX09VVENPTUVfT0sQARIuCipGRURFUkFUSU9OX0NBVEFMT0dfU09VUkNFX09VVENPTUVfRElTQUJMRUQQAhIyCi5GRURFUkFUSU9OX0NBVEFMT0dfU09VUkNFX09VVENPTUVfUkFURV9MSU1JVEVEEAMSLQopRkVERVJBVElPTl9DQVRBTE9HX1NPVVJDRV9PVVRDT01FX1RJTUVPVVQQBBIxCi1GRURFUkFUSU9OX0NBVEFMT0dfU09VUkNFX09VVENPTUVfVU5BVkFJTEFCTEUQBUJUWlJnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9hcHAvc3Vic2VydmVyL2ZlZGVyYXRpb24vcGI7ZmVkZXJhdGlvbnBiYgZwcm90bzM");
 
 /**
  * FederationCatalogSearchRequest scopes an actor search to a specific federation.
@@ -81,6 +81,21 @@ export type FederationCatalogSearchResponse = Message<"peers_touch.model.federat
    * @generated from field: uint32 total_count = 3;
    */
   totalCount: number;
+
+  /**
+   * @generated from field: repeated peers_touch.model.federation.v1.FederationCatalogSource sources = 4;
+   */
+  sources: FederationCatalogSource[];
+
+  /**
+   * @generated from field: bool local_directory_enabled = 5;
+   */
+  localDirectoryEnabled: boolean;
+
+  /**
+   * @generated from field: bool partial = 6;
+   */
+  partial: boolean;
 };
 
 /**
@@ -138,6 +153,62 @@ export const FederationCatalogEntrySchema: GenMessage<FederationCatalogEntry> = 
   messageDesc(file_domain_federation_federation_discovery, 2);
 
 /**
+ * @generated from message peers_touch.model.federation.v1.FederationCatalogSource
+ */
+export type FederationCatalogSource = Message<"peers_touch.model.federation.v1.FederationCatalogSource"> & {
+  /**
+   * @generated from field: string station_peer_id = 1;
+   */
+  stationPeerId: string;
+
+  /**
+   * @generated from field: string station_name = 2;
+   */
+  stationName: string;
+
+  /**
+   * @generated from field: peers_touch.model.federation.v1.FederationCatalogSourceOutcome outcome = 3;
+   */
+  outcome: FederationCatalogSourceOutcome;
+
+  /**
+   * @generated from field: uint32 result_count = 4;
+   */
+  resultCount: number;
+};
+
+/**
+ * Describes the message peers_touch.model.federation.v1.FederationCatalogSource.
+ * Use `create(FederationCatalogSourceSchema)` to create a new message.
+ */
+export const FederationCatalogSourceSchema: GenMessage<FederationCatalogSource> = /*@__PURE__*/
+  messageDesc(file_domain_federation_federation_discovery, 3);
+
+/**
+ * Server-owned keyset cursor. Clients receive only its opaque base64 encoding.
+ *
+ * @generated from message peers_touch.model.federation.v1.FederationCatalogCursor
+ */
+export type FederationCatalogCursor = Message<"peers_touch.model.federation.v1.FederationCatalogCursor"> & {
+  /**
+   * @generated from field: string federated_handle = 1;
+   */
+  federatedHandle: string;
+
+  /**
+   * @generated from field: string actor_ptid = 2;
+   */
+  actorPtid: string;
+};
+
+/**
+ * Describes the message peers_touch.model.federation.v1.FederationCatalogCursor.
+ * Use `create(FederationCatalogCursorSchema)` to create a new message.
+ */
+export const FederationCatalogCursorSchema: GenMessage<FederationCatalogCursor> = /*@__PURE__*/
+  messageDesc(file_domain_federation_federation_discovery, 4);
+
+/**
  * ListFederationStations returns member stations for a specific federation.
  * Used by Desktop search UI to show which stations are in scope.
  *
@@ -155,7 +226,7 @@ export type ListFederationStationsRequest = Message<"peers_touch.model.federatio
  * Use `create(ListFederationStationsRequestSchema)` to create a new message.
  */
 export const ListFederationStationsRequestSchema: GenMessage<ListFederationStationsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_discovery, 3);
+  messageDesc(file_domain_federation_federation_discovery, 5);
 
 /**
  * @generated from message peers_touch.model.federation.v1.ListFederationStationsResponse
@@ -172,7 +243,7 @@ export type ListFederationStationsResponse = Message<"peers_touch.model.federati
  * Use `create(ListFederationStationsResponseSchema)` to create a new message.
  */
 export const ListFederationStationsResponseSchema: GenMessage<ListFederationStationsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_discovery, 4);
+  messageDesc(file_domain_federation_federation_discovery, 6);
 
 /**
  * @generated from message peers_touch.model.federation.v1.FederationStationEntry
@@ -209,4 +280,45 @@ export type FederationStationEntry = Message<"peers_touch.model.federation.v1.Fe
  * Use `create(FederationStationEntrySchema)` to create a new message.
  */
 export const FederationStationEntrySchema: GenMessage<FederationStationEntry> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_discovery, 5);
+  messageDesc(file_domain_federation_federation_discovery, 7);
+
+/**
+ * @generated from enum peers_touch.model.federation.v1.FederationCatalogSourceOutcome
+ */
+export enum FederationCatalogSourceOutcome {
+  /**
+   * @generated from enum value: FEDERATION_CATALOG_SOURCE_OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FEDERATION_CATALOG_SOURCE_OUTCOME_OK = 1;
+   */
+  OK = 1,
+
+  /**
+   * @generated from enum value: FEDERATION_CATALOG_SOURCE_OUTCOME_DISABLED = 2;
+   */
+  DISABLED = 2,
+
+  /**
+   * @generated from enum value: FEDERATION_CATALOG_SOURCE_OUTCOME_RATE_LIMITED = 3;
+   */
+  RATE_LIMITED = 3,
+
+  /**
+   * @generated from enum value: FEDERATION_CATALOG_SOURCE_OUTCOME_TIMEOUT = 4;
+   */
+  TIMEOUT = 4,
+
+  /**
+   * @generated from enum value: FEDERATION_CATALOG_SOURCE_OUTCOME_UNAVAILABLE = 5;
+   */
+  UNAVAILABLE = 5,
+}
+
+/**
+ * Describes the enum peers_touch.model.federation.v1.FederationCatalogSourceOutcome.
+ */
+export const FederationCatalogSourceOutcomeSchema: GenEnum<FederationCatalogSourceOutcome> = /*@__PURE__*/
+  enumDesc(file_domain_federation_federation_discovery, 0);

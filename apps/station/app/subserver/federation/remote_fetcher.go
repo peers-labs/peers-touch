@@ -130,19 +130,27 @@ func (f *httpLedgerFetcher) FetchEvents(ctx context.Context, endpoint, targetPee
 	return result.Events, nil
 }
 
-func (f *httpLedgerFetcher) SubmitProposal(ctx context.Context, endpoint, _ string, req *pb.SubmitProposalRequest) (*pb.SubmitProposalResponse, error) {
+func (f *httpLedgerFetcher) SubmitProposal(ctx context.Context, endpoint, targetPeerID string, req *pb.SubmitProposalRequest) (*pb.SubmitProposalResponse, error) {
 	body, err := protojson.Marshal(req)
 	if err != nil {
 		return nil, err
 	}
+	if targetPeerID == "" {
+		return nil, fmt.Errorf("target Station peer identity is required for governance proposal")
+	}
 
-	url := endpoint + "/fed/v1/governance/submit-proposal"
+	url := endpoint + "/fed/v1/governance/submit-member-proposal"
+	token, err := f.mintToken(ctx, targetPeerID)
+	if err != nil {
+		return nil, fmt.Errorf("mint federation token for %s: %w", url, err)
+	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := f.client.Do(httpReq)
 	if err != nil {

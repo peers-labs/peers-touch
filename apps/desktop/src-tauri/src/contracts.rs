@@ -70,6 +70,24 @@ pub struct AccessSubmitLoginInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccessGateScalarInput {
+    pub field_name: String,
+    pub value: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccessSubmitGenericInput {
+    pub attempt_id: String,
+    pub gate_id: String,
+    pub gate_type: i32,
+    pub action_id: String,
+    pub schema_revision: u32,
+    pub schema_digest: String,
+    pub submission_id: String,
+    pub fields: Vec<AccessGateScalarInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessGateActionProjection {
     pub action_id: String,
@@ -114,6 +132,14 @@ pub struct AccessDecisionPayload {
     pub command: String,
     pub status: String,
     pub decision: AccessDecisionProjection,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AccessGateStepPayload {
+    pub command: String,
+    pub status: String,
+    pub decision: AccessDecisionProjection,
+    pub session: Option<AuthSessionPayload>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -269,6 +295,8 @@ pub struct ProfileUpdateInput {
     pub tags: Option<Vec<String>>,
     pub links: Option<Vec<ProfileLinkInput>>,
     pub discoverability: Option<String>,
+    pub contact_policy: Option<String>,
+    pub federation_visibility: Option<HashMap<String, String>>,
     pub observed_revision: u64,
 }
 
@@ -1878,6 +1906,14 @@ pub struct SocialGetFollowingInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialGetRelationshipInput {
     pub target_actor_ptid: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialListBlockedActorsInput {
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default)]
+    pub limit: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

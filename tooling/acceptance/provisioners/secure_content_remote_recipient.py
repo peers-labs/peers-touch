@@ -373,6 +373,10 @@ class RemotePrivateRecipientProvisioner:
             primary_authority.get("federationEndpoint"),
             "primary Federation endpoint",
         )
+        sequencer_station_peer_id = _required_text(
+            primary_authority.get("sequencerStationPeerId"),
+            "primary Federation sequencer",
+        )
         remote_home_station = _required_text(
             actor.get("homeStationPeerId"),
             "fiveArm Home Station",
@@ -404,6 +408,7 @@ class RemotePrivateRecipientProvisioner:
                 {
                     "federationEndpoint": federation_endpoint,
                     "federationId": federation_id,
+                    "sequencerStationPeerId": sequencer_station_peer_id,
                 },
             )
             if (

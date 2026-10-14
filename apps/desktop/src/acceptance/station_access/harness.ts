@@ -9,6 +9,7 @@ import { configureCurrentAcceptanceStation } from '../stationAccess';
 import {
   isChatAuthenticatedReady,
   runChatPasswordLogin,
+  type AcceptanceAccessGateFields,
   type ChatIdentityLoginState,
 } from '../chat/passwordLogin';
 
@@ -160,16 +161,26 @@ export function installAcceptanceHarness(): void {
       }
     },
 
-    async loginWithPassword({ account, password }: { account: string; password: string }) {
+    async loginWithPassword({
+      account,
+      password,
+      accessGateFields,
+    }: {
+      account: string;
+      password: string;
+      accessGateFields?: AcceptanceAccessGateFields;
+    }) {
       await runChatPasswordLogin({
         boot: () => identityRuntime.boot(),
         readState: identityState,
         waitFor: waitForIdentityState,
         logout: () => identityRuntime.logout(),
-        loginWithPassword: (loginAccount, loginPassword) =>
-          identityRuntime.loginWithPassword(loginAccount, loginPassword),
+        beginPasswordLogin: (loginAccount, loginPassword) =>
+          identityRuntime.beginPasswordLogin(loginAccount, loginPassword),
+        submitPasswordLoginGate: (decision, fields) =>
+          identityRuntime.submitPasswordLoginGate(decision, fields),
         completeCurrentSession: () => identityRuntime.completeCurrentSession(),
-      }, account, password);
+      }, account, password, accessGateFields);
       return {
         authenticated: true,
         actorPtid: identityState().actorPtid,

@@ -624,11 +624,11 @@ class ClientRuntime:
     actor: str
     runtime: str
     worktree: str
-    gateway_port: int
     renderer_port: int
     webdriver_port: int
     profile: str
     storage_root: str
+    gateway_port: int | None = None
     storage_lifecycle: str = "ephemeral"
     id: str = ""
     required_service_roles: tuple[str, ...] = ()

@@ -297,10 +297,10 @@ const DISCOVERABILITY_OPTIONS = [
   { value: 'indexed', labelKey: 'mobile.settings.privacy.discoverability.indexed' },
 ] as const;
 
-const MESSAGE_PERMISSION_OPTIONS = [
-  { value: 'everyone', labelKey: 'mobile.settings.privacy.message.everyone' },
-  { value: 'friends', labelKey: 'mobile.settings.privacy.message.friends' },
-  { value: 'none', labelKey: 'mobile.settings.privacy.message.none' },
+const CONTACT_POLICY_OPTIONS = [
+  { value: 'anyone', labelKey: 'mobile.settings.privacy.contact.anyone' },
+  { value: 'federations', labelKey: 'mobile.settings.privacy.contact.federations' },
+  { value: 'nobody', labelKey: 'mobile.settings.privacy.contact.nobody' },
 ] as const;
 
 export function PrivacySection({
@@ -361,14 +361,14 @@ export function PrivacySection({
         />
       </div>
       <div className="settings-row">
-        <Text>{t('mobile.settings.privacy.messagePermission')}</Text>
+        <Text>{t('mobile.settings.privacy.contactPolicy')}</Text>
         <Select
-          aria-label={t('mobile.settings.privacy.messagePermission')}
-          value={profile?.messagePermission || undefined}
+          aria-label={t('mobile.settings.privacy.contactPolicy')}
+          value={profile?.contactPolicy || undefined}
           disabled={controlsDisabled}
-          data-privacy-setting="messagePermission"
-          onChange={(value) => onPatch({ messagePermission: value })}
-          options={MESSAGE_PERMISSION_OPTIONS.map(({ value, labelKey }) => ({
+          data-privacy-setting="contactPolicy"
+          onChange={(value) => onPatch({ contactPolicy: value })}
+          options={CONTACT_POLICY_OPTIONS.map(({ value, labelKey }) => ({
             value,
             label: t(labelKey),
           }))}

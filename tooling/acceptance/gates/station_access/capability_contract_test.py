@@ -270,8 +270,6 @@ class StationAccessCapabilityContractTest(unittest.TestCase):
             return f"pub fn {command}() {{}}"
         if surface == "Desktop Tauri handlers":
             return f"auth::{command},"
-        if surface == "Desktop HTTP gateway":
-            return f'    "{command}" => value,'
         if surface == "Mobile frontend":
             return f"invoke('{command}')"
         if surface == "Mobile native commands":

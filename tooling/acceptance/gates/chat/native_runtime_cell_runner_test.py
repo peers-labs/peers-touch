@@ -294,11 +294,6 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         main = (
             ROOT / "apps/desktop/src-tauri/src/main.rs"
         ).read_text(encoding="utf-8")
-        gateway = (
-            ROOT
-            / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
-        ).read_text(encoding="utf-8")
-
         for command in (
             "keypackage_upload",
             "keypackage_fetch",
@@ -321,7 +316,7 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         )
         self.assertIn(
             "execute_keypackage_count(context)",
-            gateway,
+            key_exchange_commands,
         )
 
     def test_native_acceptance_commands_are_registered_with_tauri(self) -> None:

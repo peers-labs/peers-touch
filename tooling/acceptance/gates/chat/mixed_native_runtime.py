@@ -358,7 +358,6 @@ class MixedNativeRuntime:
                 name=client_id,
                 runtime="desktop-macos-native",
                 port=session.port,
-                gateway_port=session.gateway_port,
                 profile=session.profile,
                 storage_root=session.storage_root,
                 pid=session.process_id,

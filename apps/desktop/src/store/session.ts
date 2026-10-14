@@ -6,12 +6,14 @@ import {
   accessSubmissionDescriptor,
   completeAccessSubmission,
   currentGate,
+  isAccessGranted,
   isLoginGate,
   normalizeDecision,
   requireSupportedAccessDecision,
   stationAccessError,
   type AccessDecision,
   type AccessGate,
+  type AccessGateFieldValues,
 } from '../services/accessGate';
 
 // ── Types ──
@@ -52,8 +54,14 @@ interface SessionStore {
   accessStart: () => Promise<AccessDecision>;
   /** Redeem an invite code against a live attempt; returns the re-evaluated decision. */
   accessSubmitInviteCode: (attemptId: string, gate: AccessGate, code: string) => Promise<AccessDecision>;
-  /** Submit the login gate for a live attempt; on grant lands the session. */
-  accessSubmitLogin: (attemptId: string, gate: AccessGate, account: string, password: string) => Promise<void>;
+  /** Submit the login gate and return the next Station decision. */
+  accessSubmitLogin: (attemptId: string, gate: AccessGate, account: string, password: string) => Promise<AccessDecision>;
+  /** Submit schema-bound scalar values and return the next Station decision. */
+  accessSubmitGeneric: (
+    attemptId: string,
+    gate: AccessGate,
+    fields: AccessGateFieldValues,
+  ) => Promise<AccessDecision>;
   accessCancel: (attemptId: string) => Promise<void>;
   restoreSession: () => Promise<void>;
   logout: () => Promise<void>;
@@ -114,7 +122,8 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     const decision = await get().accessStart();
     const gate = currentGate(decision);
     if (!gate || !isLoginGate(gate)) throw new Error('auth.gate.unsupported');
-    await get().accessSubmitLogin(decision.attemptId, gate, account, password);
+    const next = await get().accessSubmitLogin(decision.attemptId, gate, account, password);
+    if (!isAccessGranted(next)) throw new Error('auth.gate.actionRequired');
   },
 
   accessStart: async () => {
@@ -155,14 +164,52 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     } catch (error) {
       throw stationAccessError(error);
     }
-    await completeStationBindingOrRollback();
+    const decision = requireSupportedAccessDecision(normalizeDecision(resp.decision));
+    if (resp.session) {
+      await completeStationBindingOrRollback();
+      get().activateAuthenticatedSession(resp.session);
+      await runIdentityPipeline({
+        reason: 'login',
+        actorPtid: resp.session.actor_ptid ?? null,
+        loginMethod: 'password',
+      });
+    } else if (isAccessGranted(decision)) {
+      throw new Error('auth.gate.sessionMissing');
+    }
     completeAccessSubmission(key);
-    get().activateAuthenticatedSession(resp);
-    await runIdentityPipeline({
-      reason: 'login',
-      actorPtid: resp.actor_ptid ?? null,
-      loginMethod: 'password',
-    });
+    return decision;
+  },
+
+  accessSubmitGeneric: async (attemptId, gate, fields) => {
+    markLocalIdentityAction();
+    const { key, ...descriptor } = accessSubmissionDescriptor(attemptId, gate);
+    let resp;
+    try {
+      resp = await api.accessSubmitGeneric({
+        attempt_id: attemptId,
+        ...descriptor,
+        fields: Object.entries(fields).map(([field_name, value]) => ({
+          field_name,
+          value,
+        })),
+      });
+    } catch (error) {
+      throw stationAccessError(error);
+    }
+    const decision = requireSupportedAccessDecision(normalizeDecision(resp.decision));
+    if (resp.session) {
+      await completeStationBindingOrRollback();
+      get().activateAuthenticatedSession(resp.session);
+      await runIdentityPipeline({
+        reason: 'login',
+        actorPtid: resp.session.actor_ptid ?? null,
+        loginMethod: 'password',
+      });
+    } else if (isAccessGranted(decision)) {
+      throw new Error('auth.gate.sessionMissing');
+    }
+    completeAccessSubmission(key);
+    return decision;
   },
 
   accessCancel: async (attemptId) => {
@@ -221,20 +268,22 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
 
   logout: async () => {
     markLocalIdentityAction();
-    let cleanupError: unknown;
+    let logoutError: unknown;
     try {
       await api.authLogout();
     } catch (error) {
-      cleanupError = error;
+      logoutError = error;
     }
-    await runIdentityPipeline({
-      reason: 'logout',
-      actorPtid: null,
-      loginMethod: null,
-    });
-    if (cleanupError) {
-      throw cleanupError;
+    try {
+      await runIdentityPipeline({
+        reason: 'logout',
+        actorPtid: null,
+        loginMethod: null,
+      });
+    } finally {
+      get().reset();
     }
+    if (logoutError) throw logoutError;
   },
 
   activateAuthenticatedSession: (response) => {

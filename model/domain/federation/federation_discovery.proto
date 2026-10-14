@@ -27,6 +27,9 @@ message FederationCatalogSearchResponse {
   repeated FederationCatalogEntry entries = 1;
   string next_page_token = 2;
   uint32 total_count = 3;
+  repeated FederationCatalogSource sources = 4;
+  bool local_directory_enabled = 5;
+  bool partial = 6;
 }
 
 message FederationCatalogEntry {
@@ -37,6 +40,28 @@ message FederationCatalogEntry {
   string home_station_peer_id = 5;
   string home_station_name = 6;
   string visibility = 7;
+}
+
+enum FederationCatalogSourceOutcome {
+  FEDERATION_CATALOG_SOURCE_OUTCOME_UNSPECIFIED = 0;
+  FEDERATION_CATALOG_SOURCE_OUTCOME_OK = 1;
+  FEDERATION_CATALOG_SOURCE_OUTCOME_DISABLED = 2;
+  FEDERATION_CATALOG_SOURCE_OUTCOME_RATE_LIMITED = 3;
+  FEDERATION_CATALOG_SOURCE_OUTCOME_TIMEOUT = 4;
+  FEDERATION_CATALOG_SOURCE_OUTCOME_UNAVAILABLE = 5;
+}
+
+message FederationCatalogSource {
+  string station_peer_id = 1;
+  string station_name = 2;
+  FederationCatalogSourceOutcome outcome = 3;
+  uint32 result_count = 4;
+}
+
+// Server-owned keyset cursor. Clients receive only its opaque base64 encoding.
+message FederationCatalogCursor {
+  string federated_handle = 1;
+  string actor_ptid = 2;
 }
 
 // ListFederationStations returns member stations for a specific federation.

@@ -109,7 +109,6 @@ class StorageGovernanceContractTest(unittest.TestCase):
             for path in (
                 "apps/desktop/src-tauri/src/application/system/mod.rs",
                 "apps/desktop/src-tauri/src/interface/tauri_commands/system.rs",
-                "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
                 "apps/desktop/src-tauri/src/main.rs",
                 "apps/desktop/src/services/desktop_api.ts",
             )

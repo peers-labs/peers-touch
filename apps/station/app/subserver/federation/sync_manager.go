@@ -144,6 +144,27 @@ func (m *LedgerSyncManager) syncAllFederations(ctx context.Context) {
 	}
 }
 
+func (m *LedgerSyncManager) SyncFederationNow(ctx context.Context, federationID string) error {
+	if federationID == "" {
+		return errors.New("federation_id is required")
+	}
+	if m.localStationID == "" {
+		m.localStationID = localStationPeerID()
+		if m.localStationID == "" {
+			return errors.New("local Station peer identity unavailable")
+		}
+	}
+
+	fed, err := m.federationRepo.GetByID(ctx, federationID)
+	if err != nil {
+		return err
+	}
+	if fed == nil {
+		return fmt.Errorf("federation not found: %s", federationID)
+	}
+	return m.syncFederation(ctx, fed)
+}
+
 func (m *LedgerSyncManager) syncFederation(ctx context.Context, fed *domain.FederationRecord) error {
 	if fed.SequencerStationPeerID == m.localStationID {
 		return nil
@@ -172,26 +193,66 @@ func (m *LedgerSyncManager) syncFederation(ctx context.Context, fed *domain.Fede
 		return err
 	}
 	var localSeq uint64
+	var nextSeq uint64
 	if headEvent != nil {
 		localSeq = headEvent.Seq
+		nextSeq = headEvent.Seq + 1
 	}
 
-	if remoteHeadSeq <= localSeq {
+	if headEvent != nil && remoteHeadSeq == localSeq {
+		if subtle.ConstantTimeCompare(remoteHeadHash, headEvent.EventHash) != 1 {
+			m.updateCursor(ctx, fed, remoteHeadHash, remoteHeadSeq, localSeq, "fork_detected")
+			return domain.ErrForkDetected
+		}
 		m.updateCursor(ctx, fed, remoteHeadHash, remoteHeadSeq, localSeq, "healthy")
 		return nil
 	}
-
-	events, err := m.fetcher.FetchEvents(ctx, endpoint, fed.SequencerStationPeerID, fed.FederationID, localSeq+1, 100)
-	if err != nil {
-		return fmt.Errorf("fetch events from %s: %w", endpoint, err)
+	if headEvent != nil && remoteHeadSeq < localSeq {
+		return fmt.Errorf(
+			"remote Federation head regressed: local_seq=%d remote_seq=%d",
+			localSeq,
+			remoteHeadSeq,
+		)
 	}
 
-	for _, event := range events {
-		if err := m.ApplyRemoteEvent(ctx, event); err != nil {
-			m.updateCursor(ctx, fed, remoteHeadHash, remoteHeadSeq, localSeq, "fork_detected")
-			return fmt.Errorf("apply event seq=%d: %w", event.Seq, err)
+	for nextSeq <= remoteHeadSeq {
+		events, err := m.fetcher.FetchEvents(
+			ctx,
+			endpoint,
+			fed.SequencerStationPeerID,
+			fed.FederationID,
+			nextSeq,
+			100,
+		)
+		if err != nil {
+			return fmt.Errorf("fetch events from %s: %w", endpoint, err)
 		}
-		localSeq = event.Seq
+		if len(events) == 0 {
+			return fmt.Errorf(
+				"remote Federation returned no events for seq=%d head=%d",
+				nextSeq,
+				remoteHeadSeq,
+			)
+		}
+
+		for _, event := range events {
+			if event.Seq != nextSeq {
+				return fmt.Errorf(
+					"remote Federation event sequence mismatch: got=%d want=%d",
+					event.Seq,
+					nextSeq,
+				)
+			}
+			if err := m.ApplyRemoteEvent(ctx, event); err != nil {
+				m.updateCursor(ctx, fed, remoteHeadHash, remoteHeadSeq, localSeq, "fork_detected")
+				return fmt.Errorf("apply event seq=%d: %w", event.Seq, err)
+			}
+			localSeq = event.Seq
+			nextSeq = event.Seq + 1
+			if localSeq == remoteHeadSeq {
+				break
+			}
+		}
 	}
 
 	m.updateCursor(ctx, fed, remoteHeadHash, remoteHeadSeq, localSeq, "healthy")

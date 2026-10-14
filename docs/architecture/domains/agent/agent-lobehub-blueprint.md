@@ -15,7 +15,7 @@ This document defines the formal architecture target for rebuilding Peers-Touch 
 This document covers:
 
 - UI / UX capability mapping from LobeHub to Peers-Touch Desktop.
-- Desktop Web, Desktop Rust, and Station backend responsibility boundaries.
+- Desktop renderer, Desktop Rust, and Station backend responsibility boundaries.
 - Required capability closure for chat, tools, MCP, skills, agent configuration, knowledge, state management, voice, connectors, and diagnostics.
 - Architectural decisions that constrain implementation plans.
 
@@ -31,7 +31,7 @@ This document does not define:
 
 The current Peers-Touch Agent experience is behind the intended product direction:
 
-1. Streaming is not truly streaming in Desktop Web. The current frontend path calls `chat_completion_once` and simulates stream events after receiving a full response.
+1. Streaming is not truly streaming in Desktop renderer. The current frontend path calls `chat_completion_once` and simulates stream events after receiving a full response.
 2. Several Desktop Rust Agent modules are local stubs or partial local stores, especially MCP, tools, skills market, cron, and agent persistence.
 3. Agent UI state is concentrated in large frontend modules, making tool, skill, runtime, and chat responsibilities hard to reason about independently.
 4. LobeHub has a mature tool / plugin / MCP / agent settings ecosystem that should be used as a benchmark, not copied as-is.
@@ -49,7 +49,7 @@ The target is not “clone LobeHub”. The target is:
 
 1. **Station owns Agent intelligence.** Turn loop, memory, skill security, provider fallback, growth, delegation, and trace persistence remain Station-owned unless a capability is explicitly local-only.
 2. **Desktop Rust owns local capability execution.** MCP process management, local file access, local tool execution, OS integration, and secure local persistence belong in Desktop Rust.
-3. **Desktop Web owns interaction and projection.** UI renders runtime state, approvals, progress, configuration, and diagnostics. It must not become the hidden runtime owner.
+3. **Desktop renderer owns interaction and projection.** UI renders runtime state, approvals, progress, configuration, and diagnostics. It must not become the hidden runtime owner.
 4. **Every powerful action is observable.** Tool calls, MCP calls, approvals, errors, retries, and fallbacks must project into trace and UI.
 5. **LobeHub is the benchmark, Peers-Touch is the product.** We borrow capability shape and UX maturity while preserving Client -> Model -> Station boundaries.
 
@@ -82,7 +82,7 @@ Legend:
 ## 5. Target Architecture
 
 ```text
-Desktop Web
+Desktop renderer
   ├─ Chat / Agent Profile / Settings / Tool Cards
   ├─ chatStore: message projection and composer state
   ├─ agentStore: agent profile, config, selection, package state
@@ -106,7 +106,7 @@ Station Agent Subserver
 
 The important boundary is directional:
 
-- Desktop Web must call Desktop Rust or Station-facing service APIs; it must not secretly own long-lived runtime behavior.
+- Desktop renderer must call Desktop Rust or Station-facing service APIs; it must not secretly own long-lived runtime behavior.
 - Desktop Rust may execute local capabilities and bridge to Station.
 - Station remains authoritative for federated Agent execution and persisted Agent intelligence.
 
@@ -120,7 +120,7 @@ The kernel has five layers:
 
 ```text
 ┌───────────────────────────────────────────────────────────────────────┐
-│ Desktop Web: Agent Workbench                                           │
+│ Desktop renderer: Agent Workbench                                           │
 │ Pages are renderers; runtimes own projections.                         │
 │ Chat, Agent Profile, Tool/MCP/Skill panels, approvals, diagnostics.     │
 └───────────────────────────────▲───────────────────────────────────────┘
@@ -152,27 +152,27 @@ External Capability Plane:
 
 | State / Capability | Source of Truth | Projection / Executor | Rule |
 |---|---|---|---|
-| Conversation, messages, turn trace | Station | Desktop Web runtime projection | Desktop may cache but not own durable truth |
+| Conversation, messages, turn trace | Station | Desktop renderer runtime projection | Desktop may cache but not own durable truth |
 | Turn orchestration | Station | Desktop Rust stream bridge | Desktop does not reimplement the Agent turn loop |
-| Agent config | Station when cross-device; Desktop only for device-local draft/preferences | Desktop Web Agent runtime | Persisted Agent identity and bindings must converge to Station |
-| Agent selection, pinning, local layout | Desktop local preference unless shared explicitly | Desktop Web Agent runtime | UI preference, not business truth |
-| Memory | Station | Desktop Web projection | Memory CRUD/evaluation remains Station-owned |
-| Skill package trust, scan, versions | Station | Desktop Rust cache + Desktop Web projection | Local cache cannot override trust decision |
+| Agent config | Station when cross-device; Desktop only for device-local draft/preferences | Desktop renderer Agent runtime | Persisted Agent identity and bindings must converge to Station |
+| Agent selection, pinning, local layout | Desktop local preference unless shared explicitly | Desktop renderer Agent runtime | UI preference, not business truth |
+| Memory | Station | Desktop renderer projection | Memory CRUD/evaluation remains Station-owned |
+| Skill package trust, scan, versions | Station | Desktop Rust cache + Desktop renderer projection | Local cache cannot override trust decision |
 | MCP server config | Station policy + Desktop local endpoint details | Desktop Rust executor | Secrets and local commands stay device-local; enabled binding is Agent policy |
-| MCP tool discovery/execution | Desktop Rust for local server execution; Station for turn decision and trace | Desktop Web tool projection | Every execution returns structured trace/audit |
-| Builtin local tools | Desktop Rust | Desktop Web approval cards | Device-privileged execution never happens in Web |
-| OAuth connectors | Station owns credential/session truth | Desktop Web authorization UX; Desktop Rust callback bridge where needed | Tokens are never prompt-visible or log-visible |
-| Knowledge resources | Station for shared resources; Desktop Rust for local file handles | Desktop Web knowledge projection | Retrieval/injection must be traceable |
-| Artifacts | Station or Desktop Rust depending on storage target | Desktop Web artifact surface | Artifact provenance links back to turn/message |
-| Voice input/output | Desktop Rust device adapter + provider capability | Desktop Web voice controls | Audio device access is local; transcription/synthesis follows provider policy |
-| Diagnostics/replay | Station trace + Desktop Rust local audit | Desktop Web diagnostics | Replay must not depend on hidden component state |
+| MCP tool discovery/execution | Desktop Rust for local server execution; Station for turn decision and trace | Desktop renderer tool projection | Every execution returns structured trace/audit |
+| Builtin local tools | Desktop Rust | Desktop renderer approval cards | Device-privileged execution never happens in Web |
+| OAuth connectors | Station owns credential/session truth | Desktop renderer authorization UX; Desktop Rust callback bridge where needed | Tokens are never prompt-visible or log-visible |
+| Knowledge resources | Station for shared resources; Desktop Rust for local file handles | Desktop renderer knowledge projection | Retrieval/injection must be traceable |
+| Artifacts | Station or Desktop Rust depending on storage target | Desktop renderer artifact surface | Artifact provenance links back to turn/message |
+| Voice input/output | Desktop Rust device adapter + provider capability | Desktop renderer voice controls | Audio device access is local; transcription/synthesis follows provider policy |
+| Diagnostics/replay | Station trace + Desktop Rust local audit | Desktop renderer diagnostics | Replay must not depend on hidden component state |
 
 ### 6.2 Turn Execution Path
 
 Every Agent turn follows one canonical path:
 
 ```text
-User action in Desktop Web
+User action in Desktop renderer
   → agentRuntime/chatRuntime validates UI state and creates a turn request
   → Desktop Rust agent_turn opens a stream to Station
   → Station TurnService assembles prompt from Agent config, memory, skills, context, knowledge
@@ -186,8 +186,8 @@ User action in Desktop Web
           → Result returns to Station TurnService
       → Station continues model/tool loop
   → Station persists TurnTrace, messages, memory/skill attribution, diagnostics
-  → Desktop Rust forwards stream events to Desktop Web
-  → Desktop Web runtimes update projections; pages render only
+  → Desktop Rust forwards stream events to Desktop renderer
+  → Desktop renderer runtimes update projections; pages render only
 ```
 
 The rule is strict: Desktop may execute local capabilities, but Station owns the turn state machine and final trace.
@@ -283,16 +283,16 @@ Large modules may keep compatibility exports while being split, but new capabili
 
 ## 7. Domain Responsibilities
 
-### 7.1 Desktop Web
+### 7.1 Desktop renderer
 
-Desktop Web is responsible for:
+Desktop renderer is responsible for:
 
 - Rendering messages, streaming text, thinking, tool calls, approvals, MCP health, and trace cards.
 - Agent list, Agent Profile, Agent Settings, Skill/MCP/Tool configuration surfaces.
 - User choices: approve, deny, retry, cancel, enable/disable, bind/unbind.
 - Local UI state that has no runtime authority.
 
-Desktop Web must not:
+Desktop renderer must not:
 
 - Spawn MCP processes directly.
 - Execute local files or OS-level actions directly.
@@ -308,7 +308,7 @@ Desktop Rust is responsible for:
   - `sse`: JSON-RPC-compatible event-stream response handling.
 - MCP health checks, tool discovery, local persistence, and execution dispatch.
 - Local builtin tools that require OS access.
-- Streaming and cancellation bridge between Station/provider and Desktop Web.
+- Streaming and cancellation bridge between Station/provider and Desktop renderer.
 - Policy and audit events for local execution.
 
 ### 7.3 Station
@@ -388,7 +388,7 @@ As of 2026-06-16:
 
 - Station Agent services are comparatively strong and should be reused.
 - Desktop Rust MCP now has the first real foundation for `stdio`, `http`, and `sse` connection tests and tool discovery.
-- Desktop Web MCP UI exposes the three transport types.
+- Desktop renderer MCP UI exposes the three transport types.
 - MCP tool execution into the Agent turn loop is not complete yet.
 - This document supersedes `.trae/documents/agent-rebuild-lobehub-blueprint.md` as the formal architecture source. The `.trae` document remains a work note.
 

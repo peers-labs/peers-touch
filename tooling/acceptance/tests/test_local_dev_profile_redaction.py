@@ -57,6 +57,9 @@ class LocalDevProfileRedactionTests(unittest.TestCase):
                     "PT_DEV_PROFILE=one",
                     "PT_STATION_MODE=remote",
                     "PT_STATION_URL=http://station.example:18080",
+                    "PT_DESKTOP_APP_GATEWAY_PORT=3030",
+                    "PT_DESKTOP_WEB_GATEWAY_PORT=3031",
+                    "PT_DESKTOP_WEB_WEB_PORT=3211",
                     "PT_GO_BIN=/synthetic/go/bin",
                     "PT_PYTHON_BIN=/synthetic/python/bin",
                     "PT_NODE_BIN=/synthetic/node/bin",
@@ -213,6 +216,14 @@ class LocalDevProfileRedactionTests(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout, "http://station.example:18080")
+
+    def test_retired_desktop_gateway_values_are_unset_after_profile_load(self) -> None:
+        source = (self.script_root / "env.sh").read_text(encoding="utf-8")
+
+        self.assertIn("unset \\", source)
+        self.assertIn("PT_DESKTOP_APP_GATEWAY_PORT \\", source)
+        self.assertIn("PT_DESKTOP_WEB_GATEWAY_PORT \\", source)
+        self.assertIn("PT_DESKTOP_WEB_WEB_PORT", source)
 
     def test_profile_tool_bins_are_exported_on_path(self) -> None:
         environment = os.environ.copy()

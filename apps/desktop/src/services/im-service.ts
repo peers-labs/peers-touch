@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { fromJson } from '@bufbuild/protobuf'
 import type { JsonValue } from '@bufbuild/protobuf'
-import { RustCommandException, type RustCommandResult } from './desktop_api'
+import { api, RustCommandException, type RustCommandResult } from './desktop_api'
 import type {
   ConversationServiceContract,
   KeyPackageServiceContract,
@@ -24,7 +24,6 @@ import {
   ConversationEventSchema,
   type ConversationEvent,
 } from '../gen/proto/domain/chat/event_pb'
-import { ActorDeviceSchema } from '../gen/proto/domain/actor/actor_pb'
 
 async function cmd<TInput, TData>(command: string, input?: TInput): Promise<TData> {
   const payload = input === undefined ? undefined : { input }
@@ -265,23 +264,10 @@ const keyPackageService: KeyPackageServiceContract = {
 }
 
 const deviceService: DeviceServiceContract = {
-  async list() {
-    const resp = await cmd<void, { devices: JsonValue[] }>('device_list')
-    return (resp.devices ?? []).map(device =>
-      fromJson(ActorDeviceSchema, device),
-    )
-  },
-
-  async revoke(deviceId, observedProfileVersion) {
-    const resp = await cmd<
-      { device_id: string; observed_profile_version: number },
-      { device: JsonValue }
-    >('device_revoke', {
-      device_id: deviceId,
-      observed_profile_version: Number(observedProfileVersion),
-    })
-    return fromJson(ActorDeviceSchema, resp.device)
-  },
+  list: () => api.deviceList(),
+  revoke: (deviceId, observedProfileVersion) => (
+    api.deviceRevoke(deviceId, observedProfileVersion)
+  ),
 }
 
 interface MessagingMessageWire {
@@ -303,6 +289,13 @@ interface MessagingMessageWire {
     ciphertext_size: number
     availability_state: 'uploading' | 'remote' | 'local' | 'failed'
   }>
+  mentions: Array<{
+    actor_ptid: string
+    offset: number
+    length: number
+    display: string
+  }>
+  mention_all: boolean
   state: string
   timestamp_unix_ms: number
   reply_to_message_id?: string
@@ -403,7 +396,143 @@ function normalizeServiceMessage(
   }
 }
 
-function projectMessagingMessage(message: MessagingMessageWire): MessagingProjection {
+type MessagingWireRecord = Record<string, unknown>
+
+function messagingWireError(path: string, expected: string): Error {
+  return new Error(`Messaging projection contract violation at ${path}: expected ${expected}`)
+}
+
+function messagingWireRecord(value: unknown, path: string): MessagingWireRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw messagingWireError(path, 'object')
+  }
+  return value as MessagingWireRecord
+}
+
+function messagingWireArray(value: unknown, path: string): unknown[] {
+  if (!Array.isArray(value)) throw messagingWireError(path, 'array')
+  return value
+}
+
+function messagingWireString(value: unknown, path: string): string {
+  if (typeof value !== 'string') throw messagingWireError(path, 'string')
+  return value
+}
+
+function messagingWireNumber(value: unknown, path: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw messagingWireError(path, 'finite number')
+  }
+  return value
+}
+
+function messagingWireBoolean(value: unknown, path: string): boolean {
+  if (typeof value !== 'boolean') throw messagingWireError(path, 'boolean')
+  return value
+}
+
+function optionalMessagingWireString(value: unknown, path: string): string | undefined {
+  if (value == null) return undefined
+  return messagingWireString(value, path)
+}
+
+function optionalMessagingWireNumber(value: unknown, path: string): number | undefined {
+  if (value == null) return undefined
+  return messagingWireNumber(value, path)
+}
+
+function parseMessagingAttachment(value: unknown, index: number): MessagingMessageWire['attachments'][number] {
+  const path = `attachments[${index}]`
+  const attachment = messagingWireRecord(value, path)
+  const availabilityState = messagingWireString(
+    attachment.availability_state,
+    `${path}.availability_state`,
+  )
+  if (!['uploading', 'remote', 'local', 'failed'].includes(availabilityState)) {
+    throw messagingWireError(`${path}.availability_state`, 'known attachment state')
+  }
+  return {
+    attachment_id: messagingWireString(attachment.attachment_id, `${path}.attachment_id`),
+    filename: messagingWireString(attachment.filename, `${path}.filename`),
+    mime_type: messagingWireString(attachment.mime_type, `${path}.mime_type`),
+    content_kind: messagingWireNumber(attachment.content_kind, `${path}.content_kind`),
+    duration_ms: messagingWireNumber(attachment.duration_ms, `${path}.duration_ms`),
+    plaintext_size: messagingWireNumber(attachment.plaintext_size, `${path}.plaintext_size`),
+    object_id: messagingWireString(attachment.object_id, `${path}.object_id`),
+    storage_ref: messagingWireString(attachment.storage_ref, `${path}.storage_ref`),
+    ciphertext_size: messagingWireNumber(attachment.ciphertext_size, `${path}.ciphertext_size`),
+    availability_state: availabilityState as MessagingMessageWire['attachments'][number]['availability_state'],
+  }
+}
+
+function parseMessagingMention(value: unknown, index: number): MessagingMessageWire['mentions'][number] {
+  const path = `mentions[${index}]`
+  const mention = messagingWireRecord(value, path)
+  return {
+    actor_ptid: messagingWireString(mention.actor_ptid, `${path}.actor_ptid`),
+    offset: messagingWireNumber(mention.offset, `${path}.offset`),
+    length: messagingWireNumber(mention.length, `${path}.length`),
+    display: messagingWireString(mention.display, `${path}.display`),
+  }
+}
+
+function parseMessagingReaction(value: unknown, index: number): MessagingMessageWire['reactions'][number] {
+  const path = `reactions[${index}]`
+  const reaction = messagingWireRecord(value, path)
+  return {
+    actor_ptid: messagingWireString(reaction.actor_ptid, `${path}.actor_ptid`),
+    reaction: messagingWireString(reaction.reaction, `${path}.reaction`),
+    created_at_unix_ms: messagingWireNumber(
+      reaction.created_at_unix_ms,
+      `${path}.created_at_unix_ms`,
+    ),
+  }
+}
+
+function parseMessagingMessageWire(value: unknown): MessagingMessageWire {
+  const message = messagingWireRecord(value, 'message')
+  return {
+    event_id: optionalMessagingWireString(message.event_id, 'event_id'),
+    event_sequence: optionalMessagingWireNumber(message.event_sequence, 'event_sequence'),
+    message_id: messagingWireString(message.message_id, 'message_id'),
+    sender_ptid: messagingWireString(message.sender_ptid, 'sender_ptid'),
+    sender_device_id: messagingWireString(message.sender_device_id, 'sender_device_id'),
+    plaintext: messagingWireString(message.plaintext, 'plaintext'),
+    attachments: messagingWireArray(message.attachments, 'attachments')
+      .map(parseMessagingAttachment),
+    mentions: messagingWireArray(message.mentions, 'mentions')
+      .map(parseMessagingMention),
+    mention_all: messagingWireBoolean(message.mention_all, 'mention_all'),
+    state: messagingWireString(message.state, 'state'),
+    timestamp_unix_ms: messagingWireNumber(message.timestamp_unix_ms, 'timestamp_unix_ms'),
+    reply_to_message_id: optionalMessagingWireString(
+      message.reply_to_message_id,
+      'reply_to_message_id',
+    ),
+    thread_root_message_id: optionalMessagingWireString(
+      message.thread_root_message_id,
+      'thread_root_message_id',
+    ),
+    edited_text: optionalMessagingWireString(message.edited_text, 'edited_text'),
+    edited_at_unix_ms: optionalMessagingWireNumber(
+      message.edited_at_unix_ms,
+      'edited_at_unix_ms',
+    ),
+    retracted: messagingWireBoolean(message.retracted, 'retracted'),
+    reactions: messagingWireArray(message.reactions, 'reactions')
+      .map(parseMessagingReaction),
+    pinned_by_ptid: optionalMessagingWireString(message.pinned_by_ptid, 'pinned_by_ptid'),
+    pinned_at_unix_ms: optionalMessagingWireNumber(
+      message.pinned_at_unix_ms,
+      'pinned_at_unix_ms',
+    ),
+    read_by_ptids: messagingWireArray(message.read_by_ptids, 'read_by_ptids')
+      .map((ptid, index) => messagingWireString(ptid, `read_by_ptids[${index}]`)),
+  }
+}
+
+function projectMessagingMessage(value: unknown): MessagingProjection {
+  const message = parseMessagingMessageWire(value)
   return {
     eventId: message.event_id,
     eventSequence: message.event_sequence,
@@ -423,6 +552,13 @@ function projectMessagingMessage(message: MessagingMessageWire): MessagingProjec
       ciphertextSize: attachment.ciphertext_size,
       availabilityState: attachment.availability_state,
     })),
+    mentions: message.mentions.map(mention => ({
+      actorPtid: mention.actor_ptid,
+      offset: mention.offset,
+      length: mention.length,
+      display: mention.display,
+    })),
+    mentionAll: message.mention_all,
     state: message.state,
     timestampUnixMs: message.timestamp_unix_ms,
     replyToMessageId: message.reply_to_message_id,
@@ -700,7 +836,7 @@ const messagingService: MessagingServiceContract = {
           updated_at_unix_ms: number
           summary: {
             unread_count: number
-            latest_message?: MessagingMessageWire | null
+            latest_message?: unknown
           }
         }>
       }
@@ -787,6 +923,13 @@ const messagingService: MessagingServiceContract = {
         plaintext: string
         reply_to_message_id: string
         thread_root_message_id: string
+        mentions: Array<{
+          actor_ptid: string
+          offset: number
+          length: number
+          display: string
+        }>
+        mention_all: boolean
         attachments: Array<{
           file_path: string
           filename: string
@@ -807,6 +950,13 @@ const messagingService: MessagingServiceContract = {
       plaintext,
       reply_to_message_id: relation.replyToMessageId ?? '',
       thread_root_message_id: relation.threadRootMessageId ?? '',
+      mentions: (relation.mentions ?? []).map(mention => ({
+        actor_ptid: mention.actorPtid,
+        offset: mention.offset,
+        length: mention.length,
+        display: mention.display,
+      })),
+      mention_all: relation.mentionAll ?? false,
       attachments: attachments.map(attachment => ({
         file_path: attachment.filePath,
         filename: attachment.filename,
@@ -828,7 +978,7 @@ const messagingService: MessagingServiceContract = {
     const response = await cmd<
       { conversation_id: string; before_sequence?: number; limit?: number },
       {
-        messages: MessagingMessageWire[]
+        messages: unknown[]
         has_more: boolean
         next_before_sequence?: number
       }
@@ -878,7 +1028,7 @@ const messagingService: MessagingServiceContract = {
   async listThreadMessages(conversationId, threadRootMessageId) {
     const response = await cmd<
       { conversation_id: string; thread_root_message_id: string },
-      { messages: MessagingMessageWire[] }
+      { messages: unknown[] }
     >('messaging_list_thread_messages', {
       conversation_id: conversationId,
       thread_root_message_id: threadRootMessageId,
@@ -953,41 +1103,7 @@ const messagingService: MessagingServiceContract = {
         limit: number
       },
       {
-        messages: Array<{
-          event_id?: string
-          event_sequence?: number
-          message_id: string
-          sender_ptid: string
-          sender_device_id: string
-          plaintext: string
-          attachments: Array<{
-            attachment_id: string
-            filename: string
-            mime_type: string
-            content_kind: number
-            duration_ms: number
-            plaintext_size: number
-            object_id: string
-            storage_ref: string
-            ciphertext_size: number
-            availability_state: 'uploading' | 'remote' | 'local' | 'failed'
-          }>
-          state: string
-          timestamp_unix_ms: number
-          reply_to_message_id?: string
-          thread_root_message_id?: string
-          edited_text?: string
-          edited_at_unix_ms?: number
-          retracted: boolean
-          reactions: Array<{
-            actor_ptid: string
-            reaction: string
-            created_at_unix_ms: number
-          }>
-          pinned_by_ptid?: string
-          pinned_at_unix_ms?: number
-          read_by_ptids: string[]
-        }>
+        messages: unknown[]
       }
     >('messaging_search_messages', {
       conversation_id: conversationId,
@@ -996,41 +1112,7 @@ const messagingService: MessagingServiceContract = {
       before_message_id: options.beforeMessageId,
       limit: options.limit ?? 50,
     })
-    return response.messages.map(message => ({
-      eventId: message.event_id,
-      eventSequence: message.event_sequence,
-      messageId: message.message_id,
-      senderPtid: message.sender_ptid,
-      senderDeviceId: message.sender_device_id,
-      plaintext: message.plaintext,
-      attachments: message.attachments.map(attachment => ({
-        attachmentId: attachment.attachment_id,
-        filename: attachment.filename,
-        mimeType: attachment.mime_type,
-        contentKind: attachment.content_kind === 2 ? 'voice_note' : 'file',
-        durationMs: attachment.duration_ms,
-        plaintextSize: attachment.plaintext_size,
-        objectId: attachment.object_id,
-        storageRef: attachment.storage_ref,
-        ciphertextSize: attachment.ciphertext_size,
-        availabilityState: attachment.availability_state,
-      })),
-      state: message.state,
-      timestampUnixMs: message.timestamp_unix_ms,
-      replyToMessageId: message.reply_to_message_id,
-      threadRootMessageId: message.thread_root_message_id,
-      editedText: message.edited_text,
-      editedAtUnixMs: message.edited_at_unix_ms,
-      retracted: message.retracted,
-      reactions: message.reactions.map(reaction => ({
-        actorPtid: reaction.actor_ptid,
-        reaction: reaction.reaction,
-        createdAtUnixMs: reaction.created_at_unix_ms,
-      })),
-      pinnedByPtid: message.pinned_by_ptid,
-      pinnedAtUnixMs: message.pinned_at_unix_ms,
-      readByPtids: message.read_by_ptids,
-    }))
+    return response.messages.map(projectMessagingMessage)
   },
 
   async openAttachment(attachmentId) {

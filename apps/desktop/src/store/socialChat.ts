@@ -28,6 +28,7 @@ import { imServiceV1 } from '../services/im-service';
 import { shouldApplyPresenceRevision } from '../services/chatPresence';
 import type {
   MessagingLocalAttachmentIntent,
+  MessagingMentionIntent,
   MessagingProjection,
   MessagingQueuedSendOutcome,
   MessagingSendOutcome,
@@ -205,6 +206,8 @@ function projectMessagingProjection(
       ? timestampFromDate(new Date(projection.editedAtUnixMs))
       : undefined,
     groupSeq: BigInt(projection.eventSequence ?? 0),
+    mentionedPtids: projection.mentions.map((mention) => mention.actorPtid),
+    mentionAll: projection.mentionAll,
     readByPtids: projection.readByPtids,
     deliveryState: projection.state,
   };
@@ -232,8 +235,6 @@ function projectMessagingProjection(
     ...common,
     $typeName: 'peers_touch.model.chat.v1.ChatMessage',
     groupUlid: conversationId,
-    mentionedPtids: [],
-    mentionAll: false,
   };
 }
 
@@ -504,6 +505,10 @@ interface SocialChatState {
     replyToUlid?: string,
     attachments?: MessagingLocalAttachmentIntent[],
     threadRootUlid?: string,
+    mention?: {
+      mentions: MessagingMentionIntent[]
+      mentionAll: boolean
+    },
   ) => Promise<MessagingQueuedSendOutcome>;
   loadGroupMembers: (groupUlid: string) => Promise<void>;
   toggleDetail: () => void;
@@ -1620,7 +1625,15 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }
   },
 
-  sendGroupMessage: async (groupUlid, content, type, _replyToUlid, attachments, explicitThreadRootUlid) => {
+  sendGroupMessage: async (
+    groupUlid,
+    content,
+    type,
+    _replyToUlid,
+    attachments,
+    explicitThreadRootUlid,
+    mention,
+  ) => {
     try {
       if ((type ?? 1) !== 1 && !attachments?.length) {
         throw new Error('This message type has not been migrated to the Messaging Engine');
@@ -1633,6 +1646,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       const outcome = await imServiceV1.messaging.sendMessage(groupUlid, 'group', content, attachments, {
         replyToMessageId: _replyToUlid,
         threadRootMessageId: threadRootUlid,
+        mentions: mention?.mentions,
+        mentionAll: mention?.mentionAll,
       });
       set((state) => ({
         sendOutcomes: {

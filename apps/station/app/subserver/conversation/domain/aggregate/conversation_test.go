@@ -460,6 +460,50 @@ func TestConversationApplyCommand(t *testing.T) {
 		_, err = fixture.conversation.ApplyCommand(command)
 		assertErrorCode(t, err, conversationdomain.ErrorCodeUnauthorized)
 	})
+
+	t.Run("group mentions require sorted active members", func(t *testing.T) {
+		fixture := mustCreateGroup(t)
+		command := mustCommand(
+			t,
+			fixture,
+			fixture.owner,
+			"mention-command",
+			domainevent.KindMessageCommitted,
+			testTime.Add(time.Minute),
+		)
+		command.MentionedPTIDs = []valueobject.PTID{fixture.member.Actor}
+		if _, err := fixture.conversation.ApplyCommand(command); err != nil {
+			t.Fatalf("ApplyCommand(group mention) error = %v", err)
+		}
+
+		rejected := mustCreateGroup(t)
+		command = mustCommand(
+			t,
+			rejected,
+			rejected.owner,
+			"invalid-mention-command",
+			domainevent.KindMessageCommitted,
+			testTime.Add(time.Minute),
+		)
+		command.MentionedPTIDs = []valueobject.PTID{"ptid:outsider"}
+		_, err := rejected.conversation.ApplyCommand(command)
+		assertErrorCode(t, err, conversationdomain.ErrorCodeInvalidArgument)
+	})
+
+	t.Run("direct conversations reject participant mentions", func(t *testing.T) {
+		fixture := mustCreateDirect(t)
+		command := mustCommand(
+			t,
+			fixture,
+			fixture.owner,
+			"direct-mention-command",
+			domainevent.KindMessageCommitted,
+			testTime.Add(time.Minute),
+		)
+		command.MentionAll = true
+		_, err := fixture.conversation.ApplyCommand(command)
+		assertErrorCode(t, err, conversationdomain.ErrorCodeInvalidArgument)
+	})
 }
 
 func TestConversationApplyMembershipTransition(t *testing.T) {
@@ -1637,6 +1681,43 @@ func TestUpdateSettingsEventUsesNormalizedCommittedValues(t *testing.T) {
 		eventPatch.Description == nil || *eventPatch.Description != settings.Description ||
 		eventPatch.AvatarObjectID == nil || *eventPatch.AvatarObjectID != settings.AvatarObjectID {
 		t.Fatalf("event settings patch = %+v, committed settings = %+v", eventPatch, settings)
+	}
+}
+
+func mustCreateDirect(t *testing.T) conversationFixture {
+	t.Helper()
+
+	owner := mustEndpoint(t, "ptid:alice", "alice-device")
+	member := mustEndpoint(t, "ptid:bob", "bob-device")
+	station := valueobject.StationID("station-a")
+	conversation, transition, err := aggregate.CreateDirect(aggregate.CreateInput{
+		FederationID:     testFederationID,
+		AuthorityStation: station,
+		AuthorityEpoch:   testAuthorityEpoch,
+		Participants: []aggregate.Participant{
+			{Actor: owner.Actor, HomeStation: station},
+			{Actor: member.Actor, HomeStation: station},
+		},
+		Devices: []entity.MemberDevice{
+			mustMemberDevice(t, owner, station),
+			mustMemberDevice(t, member, station),
+		},
+		CommandID:    "create-direct-fixture",
+		Creator:      owner,
+		Deliveries:   mustDeliveries(t, []valueobject.Endpoint{owner, member}, station, "direct-fixture"),
+		EventPayload: []byte("direct-created"),
+		CreatedAt:    testTime,
+		EventSealer:  testEventSealer{},
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+	return conversationFixture{
+		conversation: conversation,
+		owner:        owner,
+		member:       member,
+		station:      station,
+		genesis:      transition,
 	}
 }
 

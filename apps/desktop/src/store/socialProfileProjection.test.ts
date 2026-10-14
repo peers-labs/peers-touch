@@ -9,6 +9,7 @@ import {
   resolveActorIdentity,
 } from './socialProfileProjection';
 import type { FederationResolveView } from '../gen/proto/domain/federation/federation_resolve_pb';
+import { ActorContactPolicy } from '../gen/proto/domain/actor/actor_pb';
 
 const alice = 'ptid:alice';
 const bob = 'ptid:bob';
@@ -63,7 +64,8 @@ describe('social profile projection', () => {
         links: [],
         defaultVisibility: '',
         manuallyApprovesFollowers: false,
-        messagePermission: '',
+        contactPolicy: ActorContactPolicy.ANYONE,
+        federationVisibility: { visibilityByFederation: {} },
         autoExpireDays: 0,
         peersTouch: { networkId: bob },
       },

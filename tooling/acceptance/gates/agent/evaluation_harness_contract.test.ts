@@ -19,10 +19,10 @@ const evaluationPage = [
   'apps/desktop/src/pages/evaluation/RunList.tsx',
   'apps/desktop/src/pages/evaluation/RunDetail.tsx',
 ].map((path) => readFileSync(resolve(process.cwd(), path), 'utf8')).join('\n');
-const httpGateway = readFileSync(
+const capabilityCommands = readFileSync(
   resolve(
     process.cwd(),
-    'apps/desktop/src-tauri/src/interface/http_gateway/mod.rs',
+    'apps/desktop/src-tauri/src/interface/tauri_commands/capability_authority.rs',
   ),
   'utf8',
 );
@@ -155,14 +155,14 @@ test('J06 ERR-E04 creates a retryable partial parent before idempotency conflict
   );
 });
 
-test('J06 secondary gateway exposes the scenario clock-advance command', () => {
+test('J06 Native command exposes the scenario clock-advance action', () => {
   assert.match(
-    httpGateway,
-    /"agent_capability_acceptance_scenario_clock_advance"\s*=>/,
+    capabilityCommands,
+    /pub fn agent_capability_acceptance_scenario_clock_advance\(/,
   );
   assert.match(
-    httpGateway,
-    /app_capability_authority::advance_acceptance_scenario_clock\(/,
+    capabilityCommands,
+    /capability_authority::advance_acceptance_scenario_clock\(/,
   );
 });
 

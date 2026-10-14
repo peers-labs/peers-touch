@@ -1447,7 +1447,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       manuallyApprovesFollowers: optionalBoolean(
         input?.manuallyApprovesFollowers,
       ),
-      messagePermission: optionalText(input?.messagePermission),
+      contactPolicy: optionalContactPolicy(input?.contactPolicy),
       autoExpireDays: optionalNonNegativeInteger(input?.autoExpireDays),
     });
     return {
@@ -2657,7 +2657,7 @@ function publicProfile(actorPtid: string, profile: PeerProfile) {
     timezone: profile.timezone,
     defaultVisibility: profile.defaultVisibility,
     manuallyApprovesFollowers: profile.manuallyApprovesFollowers,
-    messagePermission: profile.messagePermission,
+    contactPolicy: profile.contactPolicy,
     autoExpireDays: profile.autoExpireDays,
   };
 }
@@ -2712,6 +2712,20 @@ function optionalText(value: unknown): string | undefined {
 function optionalBoolean(value: unknown): boolean | undefined {
   if (value === undefined) return undefined;
   return requireBoolean(value, 'settings.profile.boolean');
+}
+
+function optionalContactPolicy(
+  value: unknown,
+): 'anyone' | 'federations' | 'nobody' | undefined {
+  if (value === undefined) return undefined;
+  if (
+    value !== 'anyone'
+    && value !== 'federations'
+    && value !== 'nobody'
+  ) {
+    throw new Error('acceptance.mobile.invalidInput:settings.profile.contactPolicy');
+  }
+  return value;
 }
 
 function optionalNonNegativeInteger(value: unknown): number | undefined {

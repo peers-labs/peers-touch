@@ -22,11 +22,13 @@ const mocks = vi.hoisted(() => {
     accountUnlock: vi.fn(),
     authValidateToken: vi.fn(),
     stationList: vi.fn(),
+    stationRemove: vi.fn(),
     stationSetActive: vi.fn(),
     accountListRestorable: vi.fn(),
     accountLoad: vi.fn(),
     accessStart: vi.fn(),
     accessSubmitLogin: vi.fn(),
+    accessSubmitGeneric: vi.fn(),
     restoreSession: vi.fn(),
     loginWithPassword: vi.fn(),
     loginWithOAuth: vi.fn(),
@@ -79,6 +81,7 @@ vi.mock('../store/session', () => ({
       },
       accessStart: mocks.accessStart,
       accessSubmitLogin: mocks.accessSubmitLogin,
+      accessSubmitGeneric: mocks.accessSubmitGeneric,
       loginWithPassword: mocks.loginWithPassword,
       loginWithOAuth: mocks.loginWithOAuth,
       restoreSession: mocks.restoreSession,
@@ -140,6 +143,7 @@ vi.mock('../services/desktop_api', () => ({
     accountUnlock: mocks.accountUnlock,
     authValidateToken: mocks.authValidateToken,
     stationList: mocks.stationList,
+    stationRemove: mocks.stationRemove,
     stationSetActive: mocks.stationSetActive,
     syncUserProfile: vi.fn(async () => ({ name: 'New', email: '', avatar_url: '' })),
     accountListRestorable: mocks.accountListRestorable,
@@ -229,6 +233,18 @@ describe('identityRuntime account switch ordering', () => {
       entries: [],
     });
     mocks.stationSetActive.mockResolvedValue(undefined);
+    mocks.stationRemove.mockResolvedValue({
+      removed: 'http://station.test',
+      was_selected: true,
+      binding: {
+        phase: 'unbound',
+        selected_url: null,
+        bound_url: null,
+        target_url: null,
+        generation: 2,
+        error: null,
+      },
+    });
     mocks.runIdentityPipeline.mockImplementation(async () => {
       mocks.order.push(`pipeline:${mocks.session.currentUser?.actorPtid}`);
       return { ok: true, failures: [] };
@@ -263,6 +279,22 @@ describe('identityRuntime account switch ordering', () => {
         loginMethod: 'password',
       };
       mocks.session.authenticated = true;
+      return {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        currentGateId: '',
+        gates: [],
+        accessGrantId: 'grant-1',
+        message: '',
+      };
+    });
+    mocks.accessSubmitGeneric.mockResolvedValue({
+      state: 'ACCESS_DECISION_STATE_GRANTED',
+      attemptId: 'attempt-1',
+      currentGateId: '',
+      gates: [],
+      accessGrantId: 'grant-1',
+      message: '',
     });
     mocks.loginWithOAuth.mockImplementation(async () => {
       mocks.order.push('oauth-session-login');
@@ -332,6 +364,110 @@ describe('identityRuntime account switch ordering', () => {
     expect(mocks.stationBindingComplete).toHaveBeenCalledOnce();
     expect(identityRuntime.getSnapshot().lifecycle.state).toBe('ready');
     expect(identityRuntime.getSnapshot().lifecycle.authenticated).toBe(true);
+  });
+
+  it('surfaces the next Station gate instead of accepting an absent session', async () => {
+    mocks.session.currentUser = null;
+    mocks.session.authenticated = false;
+    mocks.accessSubmitLogin.mockResolvedValue({
+      state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+      attemptId: 'attempt-1',
+      currentGateId: 'terms.acceptance',
+      gates: [{
+        gateId: 'terms.acceptance',
+        gateType: 'ACCESS_GATE_TYPE_TERMS_ACCEPTANCE',
+        state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
+        title: 'Terms',
+        description: '',
+        blockingReason: '',
+        submitAction: 'access_submit_generic',
+        inputSchemaJson: '',
+        alternativeActions: [],
+        actionId: 'terms.accept',
+        schemaRevision: 1,
+        schemaDigest: 'terms-schema',
+      }],
+      accessGrantId: '',
+      message: '',
+    });
+
+    await expect(
+      identityRuntime.loginWithPassword('alice@p.t', 'password'),
+    ).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      details: expect.objectContaining({
+        gate_id: 'terms.acceptance',
+      }),
+    });
+    expect(identityRuntime.getSnapshot().phase.kind).not.toBe(
+      'authenticatedPendingCompletion',
+    );
+  });
+
+  it('continues a valid post-password gate without restarting the access attempt', async () => {
+    mocks.session.currentUser = null;
+    mocks.session.authenticated = false;
+    const termsDecision = {
+      state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+      attemptId: 'attempt-1',
+      currentGateId: 'terms.acceptance',
+      gates: [{
+        gateId: 'terms.acceptance',
+        gateType: 'ACCESS_GATE_TYPE_TERMS_ACCEPTANCE',
+        state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
+        title: 'Terms',
+        description: '',
+        blockingReason: '',
+        submitAction: 'access_submit_generic',
+        inputSchemaJson: JSON.stringify({
+          fields: [{ name: 'accepted', type: 'checkbox', required: true }],
+        }),
+        alternativeActions: [],
+        actionId: 'terms.accept',
+        schemaRevision: 1,
+        schemaDigest: 'terms-schema',
+      }],
+      accessGrantId: '',
+      message: '',
+    };
+    mocks.accessSubmitLogin.mockResolvedValueOnce(termsDecision);
+    mocks.accessSubmitGeneric.mockImplementationOnce(async () => {
+      mocks.session.currentUser = {
+        actorPtid: 'ptid:person:new',
+        name: 'New',
+        email: '',
+        loginMethod: 'password',
+      };
+      mocks.session.authenticated = true;
+      return {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        currentGateId: '',
+        gates: [],
+        accessGrantId: 'grant-1',
+        message: '',
+      };
+    });
+
+    const pending = await identityRuntime.beginPasswordLogin(
+      'alice@p.t',
+      'password',
+    );
+    const granted = await identityRuntime.submitPasswordLoginGate(
+      pending,
+      { accepted: true },
+    );
+
+    expect(mocks.accessStart).toHaveBeenCalledOnce();
+    expect(mocks.accessSubmitGeneric).toHaveBeenCalledWith(
+      'attempt-1',
+      expect.objectContaining({ gateId: 'terms.acceptance' }),
+      { accepted: true },
+    );
+    expect(granted.state).toBe('ACCESS_DECISION_STATE_GRANTED');
+    expect(identityRuntime.getSnapshot().phase.kind).toBe(
+      'authenticatedPendingCompletion',
+    );
   });
 
   it('completes the persisted Station binding before accepting a restored session', async () => {
@@ -493,6 +629,86 @@ describe('identityRuntime account switch ordering', () => {
 
     await expect(identityRuntime.logout()).rejects.toBe(cleanupError);
 
+    expect(identityRuntime.getSnapshot().phase).toEqual({
+      kind: 'accountGate',
+      reason: 'logout',
+    });
+    expect(identityRuntime.getSnapshot().lifecycle.authenticated).toBe(false);
+  });
+
+  it('switches Station through remote logout, active Station removal, then account projection', async () => {
+    mocks.stationList.mockImplementationOnce(async () => {
+      mocks.order.push('station-list');
+      return {
+        active_url: 'http://station.test',
+        entries: [],
+        binding: {
+          phase: 'bound',
+          selected_url: 'http://station.test',
+          bound_url: 'http://station.test',
+          target_url: null,
+          generation: 1,
+          error: null,
+        },
+      };
+    });
+    mocks.logout.mockImplementationOnce(async () => {
+      mocks.order.push('logout');
+    });
+    mocks.stationRemove.mockImplementationOnce(async (url: string) => {
+      mocks.order.push(`remove:${url}`);
+      return {
+        removed: url,
+        was_selected: true,
+        binding: {
+          phase: 'unbound',
+          selected_url: null,
+          bound_url: null,
+          target_url: null,
+          generation: 2,
+          error: null,
+        },
+      };
+    });
+    mocks.accountListRestorable.mockImplementationOnce(async () => {
+      mocks.order.push('accounts');
+      return [];
+    });
+
+    await identityRuntime.switchStation();
+
+    expect(mocks.order).toEqual([
+      'station-list',
+      'logout',
+      'remove:http://station.test',
+      'accounts',
+    ]);
+    expect(identityRuntime.getSnapshot().phase).toEqual({
+      kind: 'accountGate',
+      reason: 'logout',
+    });
+  });
+
+  it('does not detach the active Station when remote logout is incomplete', async () => {
+    const cleanupError = new Error('remote logout failed');
+    mocks.logout.mockRejectedValueOnce(cleanupError);
+
+    await expect(identityRuntime.switchStation()).rejects.toBe(cleanupError);
+
+    expect(mocks.stationRemove).not.toHaveBeenCalled();
+    expect(identityRuntime.getSnapshot().phase).toEqual({
+      kind: 'accountGate',
+      reason: 'logout',
+    });
+  });
+
+  it('surfaces Station removal failure after entering the non-authenticated gate', async () => {
+    const removalError = new Error('station removal failed');
+    mocks.stationRemove.mockRejectedValueOnce(removalError);
+
+    await expect(identityRuntime.switchStation()).rejects.toBe(removalError);
+
+    expect(mocks.stationRemove).toHaveBeenCalledWith('http://station.test');
     expect(identityRuntime.getSnapshot().phase).toEqual({
       kind: 'accountGate',
       reason: 'logout',

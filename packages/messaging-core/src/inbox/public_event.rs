@@ -184,6 +184,8 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
             sender_ptid: &self.endpoint.ptid,
             sender_device_id: &self.endpoint.device_id,
             attachments: &message.attachments,
+            mentioned_ptids: &message.mentioned_ptids,
+            mention_all: message.mention_all,
             reply_to_message_id: (!message.reply_to_message_id.is_empty())
                 .then_some(message.reply_to_message_id.as_str()),
             thread_root_message_id: (!message.thread_root_message_id.is_empty())
@@ -323,6 +325,8 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
                 // Forwarding only exists for human encrypted traffic; service
                 // plaintext is inbound-only and can never be forwarded.
                 delivery_security: MessageDeliverySecurity::E2ee as i32,
+                mentioned_ptids: Vec::new(),
+                mention_all: false,
             },
             delivery,
             consumer_epoch,

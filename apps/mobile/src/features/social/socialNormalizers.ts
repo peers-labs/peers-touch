@@ -249,7 +249,12 @@ export function normalizePeerProfile(raw: PeerProfileInput): PeerProfile {
     links: normalizeProfileLinks(raw.links ?? record.links),
     defaultVisibility: String(raw.defaultVisibility ?? record.default_visibility ?? ''),
     manuallyApprovesFollowers: Boolean(raw.manuallyApprovesFollowers ?? record.manually_approves_followers ?? false),
-    messagePermission: String(raw.messagePermission ?? record.message_permission ?? ''),
+    contactPolicy: normalizeContactPolicy(
+      raw.contactPolicy ?? record.contact_policy,
+    ),
+    federationVisibility: normalizeFederationVisibility(
+      raw.federationVisibility ?? record.federation_visibility,
+    ),
     autoExpireDays: Number(raw.autoExpireDays ?? record.auto_expire_days ?? 0),
     networkId: String(raw.networkId ?? peersTouch?.network_id ?? ''),
     federatedHandle: String(raw.federatedHandle ?? record.federated_handle ?? ''),
@@ -265,6 +270,46 @@ function normalizeDiscoverability(value: unknown): PeerProfile['discoverability'
   }
   if (value === 3 || value === 'ACTOR_VISIBILITY_INDEXED' || value === 'indexed') return 'indexed';
   return 'hidden';
+}
+
+function normalizeContactPolicy(value: unknown): PeerProfile['contactPolicy'] {
+  if (
+    value === 1
+    || value === 'ACTOR_CONTACT_POLICY_ANYONE'
+    || value === 'anyone'
+  ) {
+    return 'anyone';
+  }
+  if (
+    value === 2
+    || value === 'ACTOR_CONTACT_POLICY_FEDERATIONS'
+    || value === 'federations'
+  ) {
+    return 'federations';
+  }
+  if (
+    value === 3
+    || value === 'ACTOR_CONTACT_POLICY_NOBODY'
+    || value === 'nobody'
+  ) {
+    return 'nobody';
+  }
+  return 'nobody';
+}
+
+function normalizeFederationVisibility(
+  value: unknown,
+): PeerProfile['federationVisibility'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const policy = value as Record<string, unknown>;
+  const raw = policy.visibilityByFederation ?? policy.visibility_by_federation;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw as Record<string, unknown>).map(([federationId, visibility]) => [
+      federationId,
+      normalizeDiscoverability(visibility),
+    ]),
+  );
 }
 
 function normalizePositiveRevision(value: unknown): bigint {

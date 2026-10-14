@@ -400,13 +400,12 @@ class StationAccessDesktopOAuthNativeProvisioner(EnvironmentProvisioner):
                 lambda: shutil.rmtree(runtime_root, ignore_errors=True),
             )
             client_contract = declared[CLIENT_ID]
-            gateway_port, renderer_port, webdriver_port = _available_ports(3)
+            renderer_port, webdriver_port = _available_ports(2)
             client = ClientRuntime(
                 id=CLIENT_ID,
                 actor=client_contract.actor,
                 runtime="native-tauri",
                 worktree=str(REPO_ROOT),
-                gateway_port=gateway_port,
                 renderer_port=renderer_port,
                 webdriver_port=webdriver_port,
                 profile=f"{profile_name}-oauth-login",

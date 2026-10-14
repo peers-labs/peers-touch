@@ -37,6 +37,7 @@ import {
   type MessagingCreateGroupResult,
   type MessagingLeaveIntentSubmissionResult,
   type MessagingMemberAuthorityResult,
+  type MessagingMessageMention,
   type MessagingPendingCommandResult,
   type MessagingPendingConversationCommandResult,
   type MessagingSubmitCommandResult,
@@ -257,6 +258,8 @@ export interface SocialState {
     context?: {
       replyToMessageId?: string;
       threadRootMessageId?: string;
+      mentions?: MessagingMessageMention[];
+      mentionAll?: boolean;
     },
   ) => Promise<MessagingSubmitCommandResult | null>;
   editMessage: (
@@ -1733,6 +1736,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         replyToMessageId: context?.replyToMessageId,
         threadRootMessageId: context?.threadRootMessageId,
         attachmentStageIds: attachments?.map((attachment) => attachment.stageId),
+        mentions: context?.mentions,
+        mentionAll: context?.mentionAll,
       });
       await get().loadMessages(sessionUlid);
       if (context?.threadRootMessageId) {

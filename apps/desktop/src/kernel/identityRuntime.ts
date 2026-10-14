@@ -8,7 +8,12 @@ import {
   accessDecisionMessage,
   currentGate,
   isAccessActionRequired,
+  isAccessGranted,
+  isGenericSchemaGate,
+  isInviteCodeGate,
   isLoginGate,
+  type AccessDecision,
+  type AccessGateFieldValues,
 } from '../services/accessGate';
 import { readDesktopPreferenceSync, removeDesktopPreferenceSync, writeDesktopPreferenceSync } from '../storage/desktopClientStorage';
 import type { AppLifecycle, SessionUser } from '../types/navigation';
@@ -404,7 +409,10 @@ class IdentityRuntime {
     await this.acceptAuthenticatedEdge(identityAuthenticatedEdge('completed_login', user));
   };
 
-  loginWithPassword = async (account: string, password: string): Promise<void> => {
+  beginPasswordLogin = async (
+    account: string,
+    password: string,
+  ): Promise<AccessDecision> => {
     const session = useSessionStore.getState();
     const decision = await session.accessStart();
     const gate = currentGate(decision);
@@ -425,8 +433,81 @@ class IdentityRuntime {
         },
       });
     }
-    await session.accessSubmitLogin(decision.attemptId, gate, account, password);
-    await this.acceptAuthenticatedEdgeFromCurrentSession('fresh_login');
+    const nextDecision = await session.accessSubmitLogin(
+      decision.attemptId,
+      gate,
+      account,
+      password,
+    );
+    if (isAccessGranted(nextDecision)) {
+      await this.acceptAuthenticatedEdgeFromCurrentSession('fresh_login');
+    }
+    return nextDecision;
+  };
+
+  submitPasswordLoginGate = async (
+    decision: AccessDecision,
+    fields: AccessGateFieldValues,
+  ): Promise<AccessDecision> => {
+    const gate = currentGate(decision);
+    if (
+      !decision.attemptId
+      || !gate
+      || !isAccessActionRequired(decision)
+      || (!isGenericSchemaGate(gate) && !isInviteCodeGate(gate))
+    ) {
+      throw new AuthCommandException({
+        code: 'FORBIDDEN',
+        message:
+          accessDecisionMessage(decision)
+          || 'Station access requires a supported continuation gate',
+        details: {
+          reason: 'access_gate_action_required',
+          attempt_id: decision.attemptId || null,
+          gate_id: gate?.gateId ?? null,
+          decision,
+        },
+      });
+    }
+    const session = useSessionStore.getState();
+    let nextDecision: AccessDecision;
+    if (isInviteCodeGate(gate)) {
+      const inviteCode = String(fields.invite_code ?? '').trim();
+      if (!inviteCode) throw new Error('auth.gate.inviteCode.required');
+      nextDecision = await session.accessSubmitInviteCode(
+        decision.attemptId,
+        gate,
+        inviteCode,
+      );
+    } else {
+      nextDecision = await session.accessSubmitGeneric(
+        decision.attemptId,
+        gate,
+        fields,
+      );
+    }
+    if (isAccessGranted(nextDecision)) {
+      await this.acceptAuthenticatedEdgeFromCurrentSession('fresh_login');
+    }
+    return nextDecision;
+  };
+
+  loginWithPassword = async (account: string, password: string): Promise<void> => {
+    const nextDecision = await this.beginPasswordLogin(account, password);
+    if (!isAccessGranted(nextDecision)) {
+      throw new AuthCommandException({
+        code: 'FORBIDDEN',
+        message:
+          accessDecisionMessage(nextDecision)
+          || 'Station access requires another gate after password login',
+        details: {
+          reason: 'access_gate_action_required',
+          attempt_id: nextDecision.attemptId,
+          gate_id: currentGate(nextDecision)?.gateId ?? null,
+          decision: nextDecision,
+        },
+      });
+    }
   };
 
   loginWithOAuthBridge = async (): Promise<void> => {
@@ -554,7 +635,9 @@ class IdentityRuntime {
     await this.loadAuthGate('revoked', false);
   };
 
-  logout = async (): Promise<void> => {
+  private logoutToAuthGate = async (
+    afterSessionLogout?: () => Promise<void>,
+  ): Promise<void> => {
     if (this.oauthAcknowledgementRetryTimer) {
       clearTimeout(this.oauthAcknowledgementRetryTimer);
       this.oauthAcknowledgementRetryTimer = null;
@@ -606,6 +689,14 @@ class IdentityRuntime {
       );
       // #endregion
     }
+    let postLogoutError: unknown;
+    if (cleanupError === undefined && afterSessionLogout) {
+      try {
+        await afterSessionLogout();
+      } catch (error) {
+        postLogoutError = error;
+      }
+    }
     await this.loadAuthGate('logout', false);
     // #region debug-point A-D:forbidden-actor-account-gate-loaded
     reportFoundationForbiddenActorAccountGateDebug(
@@ -618,12 +709,33 @@ class IdentityRuntime {
         authenticated: useSessionStore.getState().authenticated,
         knownAccountCount: this.knownAccounts.length,
         cleanupErrorPresent: cleanupError !== undefined,
+        postLogoutErrorPresent: postLogoutError !== undefined,
       },
     );
     // #endregion
     if (cleanupError) {
       throw cleanupError;
     }
+    if (postLogoutError) {
+      throw postLogoutError;
+    }
+  };
+
+  logout = (): Promise<void> => this.logoutToAuthGate();
+
+  switchStation = async (): Promise<void> => {
+    const station = await api.stationList();
+    const activeStationUrl = station.active_url?.trim()
+      || station.binding.bound_url?.trim()
+      || station.binding.selected_url?.trim()
+      || '';
+    await this.logoutToAuthGate(
+      activeStationUrl
+        ? async () => {
+            await api.stationRemove(activeStationUrl);
+          }
+        : undefined,
+    );
   };
 
   revalidateIfNeeded = (): void => {

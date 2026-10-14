@@ -425,13 +425,12 @@ the target identity contract is complete.
 
 | # | Issue | Status |
 |---|---|---|
-| 1 | `AppState.session` legacy global is still read by `session_resolver` as a fallback (C-2 step 2). A window opened before `auth_restore_session` binds it inherits the global, weakening multi-window isolation in that narrow window of time. | Planned: removed once `http_gateway` learns about windows. |
-| 2 | Three parallel `ActorKind` definitions exist: prost-generated (Rust), `domain::identity::ActorKind` hand-coded (Rust), `identity.AccountType` hand-coded (Go). Bridges (`KindFromProto`, `ActorKindFromShorthand`) cover the runtime gap, but the duplication is real. | Planned: collapse hand-coded enums into the generated types in a follow-up. |
-| 3 | JWT `subject_id` still carries bare numeric `actor_id`. | Blocking migration: mint PTID subject identity before target Mobile session activation. |
-| 4 | `account_type` legacy proto string field has no scheduled removal. | Planned: remove one release after every client confirms adoption of `kind`. |
-| 5 | The `clear-localstorage-caches` prefix list is hand-maintained. New cached keys not on the list will leak across identity changes, with no automated detection. | Mitigation: ESLint rule or boot-time prefix registry. Out of scope here. |
-| 6 | No automated end-to-end test exercises a real two-window two-account scenario through the Tauri runtime. Coverage today is unit / type / build only. | Planned: WebDriver-based smoke under `tooling/`. |
-| 7 | The current `__default__` bucket absorbs empty identity. | Blocking migration: remove fallback and return a typed missing-PTID error. |
+| 1 | Three parallel `ActorKind` definitions exist: prost-generated (Rust), `domain::identity::ActorKind` hand-coded (Rust), `identity.AccountType` hand-coded (Go). Bridges (`KindFromProto`, `ActorKindFromShorthand`) cover the runtime gap, but the duplication is real. | Planned: collapse hand-coded enums into the generated types in a follow-up. |
+| 2 | JWT `subject_id` still carries bare numeric `actor_id`. | Blocking migration: mint PTID subject identity before target Mobile session activation. |
+| 3 | `account_type` legacy proto string field has no scheduled removal. | Planned: remove one release after every client confirms adoption of `kind`. |
+| 4 | The `clear-localstorage-caches` prefix list is hand-maintained. New cached keys not on the list will leak across identity changes, with no automated detection. | Mitigation: ESLint rule or boot-time prefix registry. Out of scope here. |
+| 5 | No automated end-to-end test exercises a real two-window two-account scenario through the Tauri runtime. Coverage today is unit / type / build only. | Planned: WebDriver-based smoke under `tooling/`. |
+| 6 | The current `__default__` bucket absorbs empty identity. | Blocking migration: remove fallback and return a typed missing-PTID error. |
 
 These items are not regressions of this design; they are the explicit residue of a phased migration. Future work tracks them as separate PRs.
 

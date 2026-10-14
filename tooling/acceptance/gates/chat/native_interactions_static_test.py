@@ -136,16 +136,16 @@ class NativeInteractionContractsTest(unittest.TestCase):
 
     def test_engine_readback_is_acceptance_feature_gated(self) -> None:
         store = self.source("apps/desktop/src-tauri/src/messaging/store.rs")
-        gateway = self.source(
-            "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
+        commands = self.source(
+            "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
         )
         self.assertIn(
             '#[cfg(any(test, feature = "acceptance-webdriver"))]',
             store,
         )
         self.assertIn("acceptance_interaction_snapshot", store)
-        self.assertIn('#[cfg(feature = "acceptance-webdriver")]', gateway)
-        self.assertIn("messaging_acceptance_interaction_snapshot", gateway)
+        self.assertIn('#[cfg(feature = "acceptance-webdriver")]', commands)
+        self.assertIn("messaging_acceptance_interaction_snapshot", commands)
         self.assertIn('"outbox": outbox', store)
         self.assertIn('"attemptCount"', store)
         self.assertIn('"commandSha256"', store)

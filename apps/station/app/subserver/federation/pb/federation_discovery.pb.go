@@ -21,6 +21,64 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type FederationCatalogSourceOutcome int32
+
+const (
+	FederationCatalogSourceOutcome_FEDERATION_CATALOG_SOURCE_OUTCOME_UNSPECIFIED  FederationCatalogSourceOutcome = 0
+	FederationCatalogSourceOutcome_FEDERATION_CATALOG_SOURCE_OUTCOME_OK           FederationCatalogSourceOutcome = 1
+	FederationCatalogSourceOutcome_FEDERATION_CATALOG_SOURCE_OUTCOME_DISABLED     FederationCatalogSourceOutcome = 2
+	FederationCatalogSourceOutcome_FEDERATION_CATALOG_SOURCE_OUTCOME_RATE_LIMITED FederationCatalogSourceOutcome = 3
+	FederationCatalogSourceOutcome_FEDERATION_CATALOG_SOURCE_OUTCOME_TIMEOUT      FederationCatalogSourceOutcome = 4
+	FederationCatalogSourceOutcome_FEDERATION_CATALOG_SOURCE_OUTCOME_UNAVAILABLE  FederationCatalogSourceOutcome = 5
+)
+
+// Enum value maps for FederationCatalogSourceOutcome.
+var (
+	FederationCatalogSourceOutcome_name = map[int32]string{
+		0: "FEDERATION_CATALOG_SOURCE_OUTCOME_UNSPECIFIED",
+		1: "FEDERATION_CATALOG_SOURCE_OUTCOME_OK",
+		2: "FEDERATION_CATALOG_SOURCE_OUTCOME_DISABLED",
+		3: "FEDERATION_CATALOG_SOURCE_OUTCOME_RATE_LIMITED",
+		4: "FEDERATION_CATALOG_SOURCE_OUTCOME_TIMEOUT",
+		5: "FEDERATION_CATALOG_SOURCE_OUTCOME_UNAVAILABLE",
+	}
+	FederationCatalogSourceOutcome_value = map[string]int32{
+		"FEDERATION_CATALOG_SOURCE_OUTCOME_UNSPECIFIED":  0,
+		"FEDERATION_CATALOG_SOURCE_OUTCOME_OK":           1,
+		"FEDERATION_CATALOG_SOURCE_OUTCOME_DISABLED":     2,
+		"FEDERATION_CATALOG_SOURCE_OUTCOME_RATE_LIMITED": 3,
+		"FEDERATION_CATALOG_SOURCE_OUTCOME_TIMEOUT":      4,
+		"FEDERATION_CATALOG_SOURCE_OUTCOME_UNAVAILABLE":  5,
+	}
+)
+
+func (x FederationCatalogSourceOutcome) Enum() *FederationCatalogSourceOutcome {
+	p := new(FederationCatalogSourceOutcome)
+	*p = x
+	return p
+}
+
+func (x FederationCatalogSourceOutcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FederationCatalogSourceOutcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_federation_federation_discovery_proto_enumTypes[0].Descriptor()
+}
+
+func (FederationCatalogSourceOutcome) Type() protoreflect.EnumType {
+	return &file_domain_federation_federation_discovery_proto_enumTypes[0]
+}
+
+func (x FederationCatalogSourceOutcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FederationCatalogSourceOutcome.Descriptor instead.
+func (FederationCatalogSourceOutcome) EnumDescriptor() ([]byte, []int) {
+	return file_domain_federation_federation_discovery_proto_rawDescGZIP(), []int{0}
+}
+
 // FederationCatalogSearchRequest scopes an actor search to a specific federation.
 type FederationCatalogSearchRequest struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
@@ -116,12 +174,15 @@ func (x *FederationCatalogSearchRequest) GetStationId() string {
 }
 
 type FederationCatalogSearchResponse struct {
-	state         protoimpl.MessageState    `protogen:"open.v1"`
-	Entries       []*FederationCatalogEntry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
-	NextPageToken string                    `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
-	TotalCount    uint32                    `protobuf:"varint,3,opt,name=total_count,json=totalCount,proto3" json:"total_count,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                 protoimpl.MessageState     `protogen:"open.v1"`
+	Entries               []*FederationCatalogEntry  `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	NextPageToken         string                     `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	TotalCount            uint32                     `protobuf:"varint,3,opt,name=total_count,json=totalCount,proto3" json:"total_count,omitempty"`
+	Sources               []*FederationCatalogSource `protobuf:"bytes,4,rep,name=sources,proto3" json:"sources,omitempty"`
+	LocalDirectoryEnabled bool                       `protobuf:"varint,5,opt,name=local_directory_enabled,json=localDirectoryEnabled,proto3" json:"local_directory_enabled,omitempty"`
+	Partial               bool                       `protobuf:"varint,6,opt,name=partial,proto3" json:"partial,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *FederationCatalogSearchResponse) Reset() {
@@ -173,6 +234,27 @@ func (x *FederationCatalogSearchResponse) GetTotalCount() uint32 {
 		return x.TotalCount
 	}
 	return 0
+}
+
+func (x *FederationCatalogSearchResponse) GetSources() []*FederationCatalogSource {
+	if x != nil {
+		return x.Sources
+	}
+	return nil
+}
+
+func (x *FederationCatalogSearchResponse) GetLocalDirectoryEnabled() bool {
+	if x != nil {
+		return x.LocalDirectoryEnabled
+	}
+	return false
+}
+
+func (x *FederationCatalogSearchResponse) GetPartial() bool {
+	if x != nil {
+		return x.Partial
+	}
+	return false
 }
 
 type FederationCatalogEntry struct {
@@ -267,6 +349,127 @@ func (x *FederationCatalogEntry) GetVisibility() string {
 	return ""
 }
 
+type FederationCatalogSource struct {
+	state         protoimpl.MessageState         `protogen:"open.v1"`
+	StationPeerId string                         `protobuf:"bytes,1,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
+	StationName   string                         `protobuf:"bytes,2,opt,name=station_name,json=stationName,proto3" json:"station_name,omitempty"`
+	Outcome       FederationCatalogSourceOutcome `protobuf:"varint,3,opt,name=outcome,proto3,enum=peers_touch.model.federation.v1.FederationCatalogSourceOutcome" json:"outcome,omitempty"`
+	ResultCount   uint32                         `protobuf:"varint,4,opt,name=result_count,json=resultCount,proto3" json:"result_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FederationCatalogSource) Reset() {
+	*x = FederationCatalogSource{}
+	mi := &file_domain_federation_federation_discovery_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FederationCatalogSource) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FederationCatalogSource) ProtoMessage() {}
+
+func (x *FederationCatalogSource) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_federation_federation_discovery_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FederationCatalogSource.ProtoReflect.Descriptor instead.
+func (*FederationCatalogSource) Descriptor() ([]byte, []int) {
+	return file_domain_federation_federation_discovery_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *FederationCatalogSource) GetStationPeerId() string {
+	if x != nil {
+		return x.StationPeerId
+	}
+	return ""
+}
+
+func (x *FederationCatalogSource) GetStationName() string {
+	if x != nil {
+		return x.StationName
+	}
+	return ""
+}
+
+func (x *FederationCatalogSource) GetOutcome() FederationCatalogSourceOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return FederationCatalogSourceOutcome_FEDERATION_CATALOG_SOURCE_OUTCOME_UNSPECIFIED
+}
+
+func (x *FederationCatalogSource) GetResultCount() uint32 {
+	if x != nil {
+		return x.ResultCount
+	}
+	return 0
+}
+
+// Server-owned keyset cursor. Clients receive only its opaque base64 encoding.
+type FederationCatalogCursor struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	FederatedHandle string                 `protobuf:"bytes,1,opt,name=federated_handle,json=federatedHandle,proto3" json:"federated_handle,omitempty"`
+	ActorPtid       string                 `protobuf:"bytes,2,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *FederationCatalogCursor) Reset() {
+	*x = FederationCatalogCursor{}
+	mi := &file_domain_federation_federation_discovery_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FederationCatalogCursor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FederationCatalogCursor) ProtoMessage() {}
+
+func (x *FederationCatalogCursor) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_federation_federation_discovery_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FederationCatalogCursor.ProtoReflect.Descriptor instead.
+func (*FederationCatalogCursor) Descriptor() ([]byte, []int) {
+	return file_domain_federation_federation_discovery_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *FederationCatalogCursor) GetFederatedHandle() string {
+	if x != nil {
+		return x.FederatedHandle
+	}
+	return ""
+}
+
+func (x *FederationCatalogCursor) GetActorPtid() string {
+	if x != nil {
+		return x.ActorPtid
+	}
+	return ""
+}
+
 // ListFederationStations returns member stations for a specific federation.
 // Used by Desktop search UI to show which stations are in scope.
 type ListFederationStationsRequest struct {
@@ -278,7 +481,7 @@ type ListFederationStationsRequest struct {
 
 func (x *ListFederationStationsRequest) Reset() {
 	*x = ListFederationStationsRequest{}
-	mi := &file_domain_federation_federation_discovery_proto_msgTypes[3]
+	mi := &file_domain_federation_federation_discovery_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -290,7 +493,7 @@ func (x *ListFederationStationsRequest) String() string {
 func (*ListFederationStationsRequest) ProtoMessage() {}
 
 func (x *ListFederationStationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_federation_federation_discovery_proto_msgTypes[3]
+	mi := &file_domain_federation_federation_discovery_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -303,7 +506,7 @@ func (x *ListFederationStationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFederationStationsRequest.ProtoReflect.Descriptor instead.
 func (*ListFederationStationsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_federation_federation_discovery_proto_rawDescGZIP(), []int{3}
+	return file_domain_federation_federation_discovery_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListFederationStationsRequest) GetFederationId() string {
@@ -322,7 +525,7 @@ type ListFederationStationsResponse struct {
 
 func (x *ListFederationStationsResponse) Reset() {
 	*x = ListFederationStationsResponse{}
-	mi := &file_domain_federation_federation_discovery_proto_msgTypes[4]
+	mi := &file_domain_federation_federation_discovery_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -334,7 +537,7 @@ func (x *ListFederationStationsResponse) String() string {
 func (*ListFederationStationsResponse) ProtoMessage() {}
 
 func (x *ListFederationStationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_federation_federation_discovery_proto_msgTypes[4]
+	mi := &file_domain_federation_federation_discovery_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -347,7 +550,7 @@ func (x *ListFederationStationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFederationStationsResponse.ProtoReflect.Descriptor instead.
 func (*ListFederationStationsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_federation_federation_discovery_proto_rawDescGZIP(), []int{4}
+	return file_domain_federation_federation_discovery_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ListFederationStationsResponse) GetStations() []*FederationStationEntry {
@@ -370,7 +573,7 @@ type FederationStationEntry struct {
 
 func (x *FederationStationEntry) Reset() {
 	*x = FederationStationEntry{}
-	mi := &file_domain_federation_federation_discovery_proto_msgTypes[5]
+	mi := &file_domain_federation_federation_discovery_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -382,7 +585,7 @@ func (x *FederationStationEntry) String() string {
 func (*FederationStationEntry) ProtoMessage() {}
 
 func (x *FederationStationEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_federation_federation_discovery_proto_msgTypes[5]
+	mi := &file_domain_federation_federation_discovery_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -395,7 +598,7 @@ func (x *FederationStationEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FederationStationEntry.ProtoReflect.Descriptor instead.
 func (*FederationStationEntry) Descriptor() ([]byte, []int) {
-	return file_domain_federation_federation_discovery_proto_rawDescGZIP(), []int{5}
+	return file_domain_federation_federation_discovery_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *FederationStationEntry) GetStationPeerId() string {
@@ -447,12 +650,15 @@ const file_domain_federation_federation_discovery_proto_rawDesc = "" +
 	"\n" +
 	"page_token\x18\x06 \x01(\tR\tpageToken\x12\x1d\n" +
 	"\n" +
-	"station_id\x18\a \x01(\tR\tstationId\"\xbd\x01\n" +
+	"station_id\x18\a \x01(\tR\tstationId\"\xe3\x02\n" +
 	"\x1fFederationCatalogSearchResponse\x12Q\n" +
 	"\aentries\x18\x01 \x03(\v27.peers_touch.model.federation.v1.FederationCatalogEntryR\aentries\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x1f\n" +
 	"\vtotal_count\x18\x03 \x01(\rR\n" +
-	"totalCount\"\xa1\x02\n" +
+	"totalCount\x12R\n" +
+	"\asources\x18\x04 \x03(\v28.peers_touch.model.federation.v1.FederationCatalogSourceR\asources\x126\n" +
+	"\x17local_directory_enabled\x18\x05 \x01(\bR\x15localDirectoryEnabled\x12\x18\n" +
+	"\apartial\x18\x06 \x01(\bR\apartial\"\xa1\x02\n" +
 	"\x16FederationCatalogEntry\x12\x1d\n" +
 	"\n" +
 	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12)\n" +
@@ -464,7 +670,16 @@ const file_domain_federation_federation_discovery_proto_rawDesc = "" +
 	"\x11home_station_name\x18\x06 \x01(\tR\x0fhomeStationName\x12\x1e\n" +
 	"\n" +
 	"visibility\x18\a \x01(\tR\n" +
-	"visibility\"D\n" +
+	"visibility\"\xe2\x01\n" +
+	"\x17FederationCatalogSource\x12&\n" +
+	"\x0fstation_peer_id\x18\x01 \x01(\tR\rstationPeerId\x12!\n" +
+	"\fstation_name\x18\x02 \x01(\tR\vstationName\x12Y\n" +
+	"\aoutcome\x18\x03 \x01(\x0e2?.peers_touch.model.federation.v1.FederationCatalogSourceOutcomeR\aoutcome\x12!\n" +
+	"\fresult_count\x18\x04 \x01(\rR\vresultCount\"c\n" +
+	"\x17FederationCatalogCursor\x12)\n" +
+	"\x10federated_handle\x18\x01 \x01(\tR\x0ffederatedHandle\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x02 \x01(\tR\tactorPtid\"D\n" +
 	"\x1dListFederationStationsRequest\x12#\n" +
 	"\rfederation_id\x18\x01 \x01(\tR\ffederationId\"u\n" +
 	"\x1eListFederationStationsResponse\x12S\n" +
@@ -475,7 +690,14 @@ const file_domain_federation_federation_discovery_proto_rawDesc = "" +
 	"\vstation_url\x18\x03 \x01(\tR\n" +
 	"stationUrl\x12\x16\n" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x12.\n" +
-	"\x13visible_actor_count\x18\x05 \x01(\rR\x11visibleActorCountBTZRgithub.com/peers-labs/peers-touch/station/app/subserver/federation/pb;federationpbb\x06proto3"
+	"\x13visible_actor_count\x18\x05 \x01(\rR\x11visibleActorCount*\xc3\x02\n" +
+	"\x1eFederationCatalogSourceOutcome\x121\n" +
+	"-FEDERATION_CATALOG_SOURCE_OUTCOME_UNSPECIFIED\x10\x00\x12(\n" +
+	"$FEDERATION_CATALOG_SOURCE_OUTCOME_OK\x10\x01\x12.\n" +
+	"*FEDERATION_CATALOG_SOURCE_OUTCOME_DISABLED\x10\x02\x122\n" +
+	".FEDERATION_CATALOG_SOURCE_OUTCOME_RATE_LIMITED\x10\x03\x12-\n" +
+	")FEDERATION_CATALOG_SOURCE_OUTCOME_TIMEOUT\x10\x04\x121\n" +
+	"-FEDERATION_CATALOG_SOURCE_OUTCOME_UNAVAILABLE\x10\x05BTZRgithub.com/peers-labs/peers-touch/station/app/subserver/federation/pb;federationpbb\x06proto3"
 
 var (
 	file_domain_federation_federation_discovery_proto_rawDescOnce sync.Once
@@ -489,23 +711,29 @@ func file_domain_federation_federation_discovery_proto_rawDescGZIP() []byte {
 	return file_domain_federation_federation_discovery_proto_rawDescData
 }
 
-var file_domain_federation_federation_discovery_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_domain_federation_federation_discovery_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_domain_federation_federation_discovery_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_domain_federation_federation_discovery_proto_goTypes = []any{
-	(*FederationCatalogSearchRequest)(nil),  // 0: peers_touch.model.federation.v1.FederationCatalogSearchRequest
-	(*FederationCatalogSearchResponse)(nil), // 1: peers_touch.model.federation.v1.FederationCatalogSearchResponse
-	(*FederationCatalogEntry)(nil),          // 2: peers_touch.model.federation.v1.FederationCatalogEntry
-	(*ListFederationStationsRequest)(nil),   // 3: peers_touch.model.federation.v1.ListFederationStationsRequest
-	(*ListFederationStationsResponse)(nil),  // 4: peers_touch.model.federation.v1.ListFederationStationsResponse
-	(*FederationStationEntry)(nil),          // 5: peers_touch.model.federation.v1.FederationStationEntry
+	(FederationCatalogSourceOutcome)(0),     // 0: peers_touch.model.federation.v1.FederationCatalogSourceOutcome
+	(*FederationCatalogSearchRequest)(nil),  // 1: peers_touch.model.federation.v1.FederationCatalogSearchRequest
+	(*FederationCatalogSearchResponse)(nil), // 2: peers_touch.model.federation.v1.FederationCatalogSearchResponse
+	(*FederationCatalogEntry)(nil),          // 3: peers_touch.model.federation.v1.FederationCatalogEntry
+	(*FederationCatalogSource)(nil),         // 4: peers_touch.model.federation.v1.FederationCatalogSource
+	(*FederationCatalogCursor)(nil),         // 5: peers_touch.model.federation.v1.FederationCatalogCursor
+	(*ListFederationStationsRequest)(nil),   // 6: peers_touch.model.federation.v1.ListFederationStationsRequest
+	(*ListFederationStationsResponse)(nil),  // 7: peers_touch.model.federation.v1.ListFederationStationsResponse
+	(*FederationStationEntry)(nil),          // 8: peers_touch.model.federation.v1.FederationStationEntry
 }
 var file_domain_federation_federation_discovery_proto_depIdxs = []int32{
-	2, // 0: peers_touch.model.federation.v1.FederationCatalogSearchResponse.entries:type_name -> peers_touch.model.federation.v1.FederationCatalogEntry
-	5, // 1: peers_touch.model.federation.v1.ListFederationStationsResponse.stations:type_name -> peers_touch.model.federation.v1.FederationStationEntry
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	3, // 0: peers_touch.model.federation.v1.FederationCatalogSearchResponse.entries:type_name -> peers_touch.model.federation.v1.FederationCatalogEntry
+	4, // 1: peers_touch.model.federation.v1.FederationCatalogSearchResponse.sources:type_name -> peers_touch.model.federation.v1.FederationCatalogSource
+	0, // 2: peers_touch.model.federation.v1.FederationCatalogSource.outcome:type_name -> peers_touch.model.federation.v1.FederationCatalogSourceOutcome
+	8, // 3: peers_touch.model.federation.v1.ListFederationStationsResponse.stations:type_name -> peers_touch.model.federation.v1.FederationStationEntry
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_domain_federation_federation_discovery_proto_init() }
@@ -518,13 +746,14 @@ func file_domain_federation_federation_discovery_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_federation_federation_discovery_proto_rawDesc), len(file_domain_federation_federation_discovery_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   6,
+			NumEnums:      1,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_domain_federation_federation_discovery_proto_goTypes,
 		DependencyIndexes: file_domain_federation_federation_discovery_proto_depIdxs,
+		EnumInfos:         file_domain_federation_federation_discovery_proto_enumTypes,
 		MessageInfos:      file_domain_federation_federation_discovery_proto_msgTypes,
 	}.Build()
 	File_domain_federation_federation_discovery_proto = out.File

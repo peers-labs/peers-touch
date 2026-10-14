@@ -26,6 +26,7 @@ pub struct FederationFixtureJoinInput {
     federation_endpoint: String,
     federation_id: String,
     message: String,
+    sequencer_station_peer_id: String,
 }
 
 fn token_or_unauthorized(
@@ -139,10 +140,13 @@ pub(crate) fn join_fixture(
     token: &str,
     input: FederationFixtureJoinInput,
 ) -> AppResult<Value> {
-    if input.federation_id.trim().is_empty() || input.federation_endpoint.trim().is_empty() {
+    if input.federation_id.trim().is_empty()
+        || input.federation_endpoint.trim().is_empty()
+        || input.sequencer_station_peer_id.trim().is_empty()
+    {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
-            "federation_id and federation_endpoint are required",
+            "federation_id, federation_endpoint, and sequencer_station_peer_id are required",
             None,
         );
     }
@@ -150,6 +154,7 @@ pub(crate) fn join_fixture(
         federation_endpoint: input.federation_endpoint.trim().to_string(),
         federation_id: input.federation_id.trim().to_string(),
         message: input.message,
+        sequencer_station_peer_id: input.sequencer_station_peer_id.trim().to_string(),
     };
     match station_client.request_proto::<JoinFederationRequest, JoinFederationResponse>(
         Method::POST,

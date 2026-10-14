@@ -232,7 +232,6 @@ class LinuxCellProfile:
     cargo_registry_index: str
     display: str
     webdriver_port: int
-    gateway_port: int
     observer_port: int
     runtime_root: str = _DEFAULT_RUNTIME_ROOT
     cache_root: str = _DEFAULT_CACHE_ROOT
@@ -309,12 +308,6 @@ class LinuxCellProfile:
                 4445,
                 path,
             ),
-            gateway_port=_port(
-                values,
-                "PT_ACCEPTANCE_CELL_GATEWAY_PORT",
-                3030,
-                path,
-            ),
             observer_port=_port(
                 values,
                 "PT_ACCEPTANCE_CELL_OBSERVER_PORT",
@@ -376,7 +369,7 @@ class LinuxCellProfile:
                 raise ProvisioningError(
                     f"Linux runtime-cell {name} must be relative to remote home"
                 )
-        ports = (self.webdriver_port, self.gateway_port, self.observer_port)
+        ports = (self.webdriver_port, self.observer_port)
         if len(set(ports)) != len(ports):
             raise ProvisioningError("Linux runtime-cell ports must be distinct")
 
@@ -386,7 +379,6 @@ class _ActorRuntime:
     actor: str
     webdriver_tunnel: SshTunnel | None
     webdriver_local_port: int
-    gateway_tunnel: SshTunnel
     log_path: Path
     released: bool = False
 
@@ -650,8 +642,6 @@ class NativeDesktopLinuxProvisioner:
                 str(expires_epoch),
                 "--webdriver-port",
                 str(self.profile.webdriver_port),
-                "--gateway-port",
-                str(self.profile.gateway_port),
                 "--observer-port",
                 str(self.profile.observer_port),
             )
@@ -701,7 +691,6 @@ class NativeDesktopLinuxProvisioner:
                 container_name=container_name,
                 actor="cell-probe",
                 webdriver_port=self.profile.webdriver_port,
-                gateway_port=self.profile.gateway_port,
                 profile=f"{self.profile.name}-probe",
                 environment={},
             )
@@ -883,7 +872,7 @@ class NativeDesktopLinuxProvisioner:
             raise ProvisioningError(
                 f"Linux runtime-cell actor {actor!r} is already launched"
             )
-        remote_webdriver_port, remote_gateway_port = self._actor_remote_ports(
+        remote_webdriver_port = self._actor_remote_port(
             actor,
             client_spec,
         )
@@ -894,7 +883,6 @@ class NativeDesktopLinuxProvisioner:
                 container_name=str(state["containerName"]),
                 actor=actor,
                 webdriver_port=remote_webdriver_port,
-                gateway_port=remote_gateway_port,
                 profile=str(client_spec["profile"]),
                 environment=environment,
             )
@@ -902,7 +890,6 @@ class NativeDesktopLinuxProvisioner:
             self._actor_port_slots.pop(actor, None)
             raise
         webdriver_tunnel: SshTunnel | None = None
-        gateway_tunnel: SshTunnel | None = None
         try:
             if int(remote["webdriverPort"]) == getattr(
                 self.profile,
@@ -921,14 +908,9 @@ class NativeDesktopLinuxProvisioner:
                     local_port=int(client_spec["webdriver_port"]),
                 )
                 webdriver_local_port = webdriver_tunnel.local_port
-            gateway_tunnel = self.transport.start_local_forward(
-                remote_port=int(remote["gatewayPort"]),
-                local_port=int(client_spec["gateway_port"]),
-            )
         except BaseException:
-            for tunnel in (gateway_tunnel, webdriver_tunnel):
-                if tunnel is not None:
-                    tunnel.stop()
+            if webdriver_tunnel is not None:
+                webdriver_tunnel.stop()
             self._stop_remote_actor(
                 remote_control=Path(str(state["remoteControl"])),
                 run_id=str(state["runId"]),
@@ -951,14 +933,12 @@ class NativeDesktopLinuxProvisioner:
             actor=actor,
             webdriver_tunnel=webdriver_tunnel,
             webdriver_local_port=webdriver_local_port,
-            gateway_tunnel=gateway_tunnel,
             log_path=log_path,
         )
         self._actors[actor] = runtime
         metadata = AppLaunchMetadata(
             webdriver_host="127.0.0.1",
             webdriver_port=webdriver_local_port,
-            gateway_port=gateway_tunnel.local_port,
             profile=str(remote["profile"]),
             storage_root=str(remote["storageRoot"]),
             process_id=int(remote["processId"]),
@@ -973,11 +953,11 @@ class NativeDesktopLinuxProvisioner:
             alive=lambda: self.actor_is_alive(actor),
         )
 
-    def _actor_remote_ports(
+    def _actor_remote_port(
         self,
         actor: str,
         client_spec: dict[str, Any],
-    ) -> tuple[int, int]:
+    ) -> int:
         slots = getattr(self, "_actor_port_slots", {})
         if actor not in slots:
             used_slots = set(slots.values())
@@ -1003,23 +983,12 @@ class NativeDesktopLinuxProvisioner:
                 client_spec["webdriver_port"],
             )
         ) + slot
-        gateway_port = int(
-            getattr(
-                self.profile,
-                "gateway_port",
-                client_spec["gateway_port"],
-            )
-        ) + slot
-        if (
-            webdriver_port > 65535
-            or gateway_port > 65535
-            or webdriver_port == gateway_port
-        ):
+        if webdriver_port > 65535:
             slots.pop(actor, None)
             raise ProvisioningError(
-                f"Linux runtime-cell actor {actor!r} has no valid remote port pair"
+                f"Linux runtime-cell actor {actor!r} has no valid WebDriver port"
             )
-        return webdriver_port, gateway_port
+        return webdriver_port
 
     def expose_orchestrator_endpoint(
         self,
@@ -1124,25 +1093,20 @@ class NativeDesktopLinuxProvisioner:
             return
         runtime.released = True
         failures: list[str] = []
-        for name, tunnel in (
-            ("gateway tunnel", runtime.gateway_tunnel),
-            ("WebDriver tunnel", runtime.webdriver_tunnel),
-        ):
-            if tunnel is None:
-                continue
-            failure_detail = tunnel.failure_detail()
+        if runtime.webdriver_tunnel is not None:
+            failure_detail = runtime.webdriver_tunnel.failure_detail()
             if failure_detail is not None:
                 self._tunnel_failures.append(
                     {
                         "actor": actor,
-                        "tunnel": name,
+                        "tunnel": "WebDriver tunnel",
                         **failure_detail,
                     }
                 )
             try:
-                tunnel.stop()
+                runtime.webdriver_tunnel.stop()
             except Exception as error:
-                failures.append(f"{name}: {error}")
+                failures.append(f"WebDriver tunnel: {error}")
         state = self._read_state()
         if state:
             try:
@@ -1178,7 +1142,7 @@ class NativeDesktopLinuxProvisioner:
             if runtime.webdriver_tunnel is not None
             else _local_port_listening(runtime.webdriver_local_port)
         )
-        if not webdriver_alive or not runtime.gateway_tunnel.is_alive():
+        if not webdriver_alive:
             return False
         if any(
             not endpoint.released and not endpoint.tunnel.is_alive()
@@ -1768,7 +1732,6 @@ class NativeDesktopLinuxProvisioner:
                 str(state.get("containerName") or ""),
                 str(state.get("buildContainerName") or ""),
                 str(self.profile.webdriver_port),
-                str(self.profile.gateway_port),
                 str(self.profile.observer_port),
                 str(state.get("remoteSource") or ""),
                 str(state.get("sourceCommit") or ""),
@@ -2093,7 +2056,6 @@ class NativeDesktopLinuxProvisioner:
                 "-c",
                 script,
                 str(self.profile.webdriver_port),
-                str(self.profile.gateway_port),
                 str(self.profile.observer_port),
             ),
             timeout=15,
@@ -2312,8 +2274,6 @@ class NativeDesktopLinuxProvisioner:
                 "--env",
                 f"TAURI_WEBDRIVER_PORT={self.profile.webdriver_port}",
                 "--env",
-                f"PT_GATEWAY_PORT={self.profile.gateway_port}",
-                "--env",
                 f"PT_PROFILE={self.profile.name}",
                 "--env",
                 "PEERS_STORAGE_ROOT=/workspace/run/storage",
@@ -2416,7 +2376,6 @@ class NativeDesktopLinuxProvisioner:
         container_name: str,
         actor: str,
         webdriver_port: int,
-        gateway_port: int,
         profile: str,
         environment: dict[str, str],
     ) -> dict[str, Any]:
@@ -2437,8 +2396,6 @@ class NativeDesktopLinuxProvisioner:
             self.profile.display,
             "--webdriver-port",
             str(webdriver_port),
-            "--gateway-port",
-            str(gateway_port),
             "--profile",
             profile,
             "--environment-json",

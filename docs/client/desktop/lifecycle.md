@@ -1,6 +1,6 @@
 # Desktop Client Lifecycle
 
-> Desktop platform lifecycle source. This document gives the top-level Desktop lifecycle that corresponds to Mobile's lifecycle. Detailed login/profile/account/avatar identity state is owned by [`identity-lifecycle.md`](./identity-lifecycle.md), and detailed `desktop-web` Page / Runtime / Boot contracts remain in [`runtime-projections.md`](./runtime-projections.md).
+> Desktop platform lifecycle source. This document gives the top-level Desktop lifecycle that corresponds to Mobile's lifecycle. Detailed login/profile/account/avatar identity state is owned by [`identity-lifecycle.md`](./identity-lifecycle.md), and detailed embedded renderer Page / Runtime / Boot contracts remain in [`runtime-projections.md`](./runtime-projections.md).
 
 ---
 
@@ -9,15 +9,15 @@
 Desktop is not a single React page. It is a multi-runtime client made of:
 
 - `desktop-app`: Tauri native window host.
-- `desktop-web`: React renderer and projection reader.
-- `desktop-rust`: local application runtime, command gateway, and local capability owner.
+- embedded WebView renderer: React renderer and projection reader.
+- `desktop-rust`: local application runtime, Tauri command layer, and local capability owner.
 - `station`: remote business source of truth.
 
 This document defines the user-visible and runtime lifecycle across those units. It does not redefine:
 
 - Cross-process topology, owned by [`../../architecture/platform/client/desktop/runtime.md`](../../architecture/platform/client/desktop/runtime.md).
 - Desktop identity state machine, owned by [`identity-lifecycle.md`](./identity-lifecycle.md).
-- `desktop-web` kernel contracts, owned by [`runtime-projections.md`](./runtime-projections.md).
+- Embedded renderer kernel contracts, owned by [`runtime-projections.md`](./runtime-projections.md).
 - Access gate architecture, owned by [`../../architecture/platform/station/access/station-access-gate-architecture.md`](../../architecture/platform/station/access/station-access-gate-architecture.md).
 
 ---
@@ -26,8 +26,8 @@ This document defines the user-visible and runtime lifecycle across those units.
 
 | Phase | Entry Trigger | Owner | Exit Condition |
 | --- | --- | --- | --- |
-| `app-boot` | Process starts | `desktop-app` + `desktop-rust` | Local gateway, storage, app-scoped Station runtime, and WebView are ready |
-| `shell-boot` | `desktop-web` starts | `desktop-web` kernel | Shell has mounted and boot telemetry starts |
+| `app-boot` | Process starts | `desktop-app` + `desktop-rust` | Tauri commands, storage, app-scoped Station runtime, and WebView are ready |
+| `shell-boot` | Embedded renderer starts | Renderer kernel | Shell has mounted and boot telemetry starts |
 | `identity-restore` | Shell boot completes | `desktop-rust` + session service | Existing account/session context is restored or rejected |
 | `station-handshake` | Station context is known | `desktop-rust` + Station gateway | Station capability baseline is checked |
 | `access-gate-chain` | Station handshake passes | Station access gate runtime | Station returns `access_granted` |
@@ -44,8 +44,8 @@ This document defines the user-visible and runtime lifecycle across those units.
 
 ```text
 desktop-app boot
-  -> desktop-rust gateway/storage ready
-  -> desktop-web shell boot
+  -> desktop-rust commands/storage ready
+  -> embedded renderer shell boot
   -> restore identity
   -> station-handshake
   -> access-gate-chain
@@ -65,10 +65,10 @@ The Desktop user must not enter business surfaces that require Station access be
 ## 4. Runtime Rules
 
 - Station owns cross-device business truth.
-- `desktop-rust` owns local command execution, local storage, local gateway behavior, and native capability coordination.
+- `desktop-rust` owns local command execution, local storage, Station adapters, and native capability coordination.
 - Tauri `AppState` owns one Station runtime. Setup and shutdown are explicit;
   URL getters and request builders cannot create listeners or background workers.
-- `desktop-web` owns rendering and local projections.
+- The embedded WebView renderer owns rendering and local projections.
 - Long-lived projection freshness belongs to runtimes, not page mount effects.
 - Session-scoped runtimes bootstrap on authenticated actor edges and teardown on logout/account switch.
 - App-scoped runtimes may install at boot but must not assume an actor unless their contract explicitly allows it.
@@ -86,6 +86,7 @@ The detailed runtime API and Boot Pipeline phases are defined in [`runtime-proje
 | Cold start with invalid session | Clear stale session, show the current access gate |
 | Logout | Teardown session runtimes, clear secrets, restart access gate chain |
 | Account switch | Teardown old actor runtimes before running access gates for the new actor |
+| Station switch | Revoke the remote session, remove the active Station binding, preserve local messages, then return to Station/account selection |
 | Invite/allowlist blocked | Stay in access gate chain; do not enter ready |
 | Station unreachable | Keep local shell safe; surface retry state; do not pretend projections are fresh |
 | Event stream dropped | Runtime reconnects and reconciles from Station |
@@ -107,7 +108,7 @@ The difference is platform responsibility:
 
 | Concern | Desktop | Mobile |
 | --- | --- | --- |
-| Local gateway | `desktop-rust` is required | Rust capability kernel + Tauri commands |
+| Local command layer | `desktop-rust` Tauri commands are required | Rust capability kernel + Tauri commands |
 | Station selection | Usually configured by desktop profile / account context | First-class onboarding gate |
 | Access gate chain | Account picker/login/PIN/OAuth/invite gates before business runtime | Login/invite/device gates before entering Station shell |
 | Runtime freshness | SSE/stream + reconciliation | Foreground stream + push/resume delta sync |

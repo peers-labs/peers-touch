@@ -2,18 +2,21 @@ use crate::application::station_runtime::client::{self as station_client, Statio
 use crate::application::station_runtime::StationRuntime;
 use crate::contracts::{
     AccessDecisionInput, AccessDecisionPayload, AccessDecisionProjection,
-    AccessGateActionProjection, AccessGateProjection, AccessSubmitInviteInput,
-    AccessSubmitLoginInput, AuthSessionPayload, AuthValidateTokenInput,
+    AccessGateActionProjection, AccessGateProjection, AccessGateScalarInput, AccessGateStepPayload,
+    AccessSubmitGenericInput, AccessSubmitInviteInput, AccessSubmitLoginInput, AuthSessionPayload,
+    AuthValidateTokenInput,
 };
 use crate::domain::auth::session::{
-    from_station_response, validate_login_input, validate_token, AuthDomainError, AuthSession,
+    from_station_response, session_id_from_token, validate_login_input, validate_token,
+    AuthDomainError, AuthSession,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::session_store::SessionSource;
 use crate::infrastructure::session_vault::{self, SessionVaultError};
 use crate::model::access_gate::{
-    submit_access_gate_request, AccessDecision, AccessDecisionState, AccessGateClientInfo,
-    AccessGateState, AccessGateType, CancelAccessAttemptRequest, CancelAccessAttemptResponse,
+    access_gate_scalar_value, submit_access_gate_request, AccessDecision, AccessDecisionState,
+    AccessGateClientInfo, AccessGateGenericInput, AccessGateScalarValue, AccessGateState,
+    AccessGateType, CancelAccessAttemptRequest, CancelAccessAttemptResponse,
     GetAccessDecisionRequest, GetAccessDecisionResponse, StartAccessAttemptRequest,
     StartAccessAttemptResponse, SubmitAccessGateRequest, SubmitAccessGateResponse,
 };
@@ -599,15 +602,15 @@ pub fn access_submit_login(
     station: &StationRuntime,
     input: AccessSubmitLoginInput,
     state: &AppState,
-) -> AppResult<AuthSessionPayload> {
+) -> AppResult<AccessGateStepPayload> {
     if let Err(error) = validate_login_input(&input.account, &input.password) {
-        return map_domain_error(error);
+        return remap_result(map_domain_error(error));
     }
     let device_type = input
         .device_type
         .as_deref()
         .unwrap_or(DESKTOP_SESSION_CLASS);
-    let response = match submit_request::<AuthSessionPayload>(
+    let response = match submit_request::<AccessGateStepPayload>(
         station,
         input.attempt_id,
         input.gate_id,
@@ -625,29 +628,38 @@ pub fn access_submit_login(
         Ok(response) => response,
         Err(error) => return error,
     };
-    let Some(decision) = response.decision.as_ref() else {
-        return AppResult::fail(
-            ErrorCode::InternalError,
-            "Login failed: access gate response missing decision",
-            None,
-        );
+    gate_step_payload(station, "access_submit_login", response, state)
+}
+
+pub fn access_submit_generic(
+    station: &StationRuntime,
+    input: AccessSubmitGenericInput,
+    state: &AppState,
+) -> AppResult<AccessGateStepPayload> {
+    let fields = match input
+        .fields
+        .into_iter()
+        .map(generic_scalar)
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(fields) => fields,
+        Err(message) => return AppResult::fail(ErrorCode::InvalidArgument, message, None),
     };
-    if decision.state != AccessDecisionState::Granted as i32 {
-        return AppResult::fail(ErrorCode::Forbidden, decision_block_reason(decision), None);
-    }
-    let Some(login_response) = response.login_response else {
-        return AppResult::fail(
-            ErrorCode::Unauthorized,
-            "Login failed: access gate response missing login session",
-            None,
-        );
+    let response = match submit_request::<AccessGateStepPayload>(
+        station,
+        input.attempt_id,
+        input.gate_id,
+        input.gate_type,
+        input.action_id,
+        input.schema_revision,
+        input.schema_digest,
+        input.submission_id,
+        submit_access_gate_request::ActionInput::Generic(AccessGateGenericInput { fields }),
+    ) {
+        Ok(response) => response,
+        Err(error) => return error,
     };
-    finish_login(
-        station.resources(),
-        login_response,
-        state,
-        "access_submit_login",
-    )
+    gate_step_payload(station, "access_submit_generic", response, state)
 }
 
 pub fn access_decision(
@@ -729,6 +741,86 @@ fn decision_payload(
             decision,
         }),
         Err(message) => AppResult::fail(ErrorCode::InternalError, message, None),
+    }
+}
+
+fn gate_step_payload(
+    station: &StationRuntime,
+    command: &str,
+    response: SubmitAccessGateResponse,
+    state: &AppState,
+) -> AppResult<AccessGateStepPayload> {
+    let Some(decision) = response.decision.as_ref() else {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            "error.auth.accessDecisionMissing",
+            None,
+        );
+    };
+    let projected = match project_access_decision(decision) {
+        Ok(decision) => decision,
+        Err(message) => return AppResult::fail(ErrorCode::InternalError, message, None),
+    };
+    let session = if decision.state == AccessDecisionState::Granted as i32 {
+        match response.login_response {
+            Some(login_response) => {
+                let result = finish_login(station.resources(), login_response, state, command);
+                if !result.ok {
+                    return remap_result(result);
+                }
+                result.data
+            }
+            None => {
+                return AppResult::fail(ErrorCode::Unauthorized, "error.auth.sessionMissing", None)
+            }
+        }
+    } else {
+        None
+    };
+    AppResult::success(AccessGateStepPayload {
+        command: command.to_string(),
+        status: if session.is_some() {
+            "authenticated".to_string()
+        } else {
+            "evaluated".to_string()
+        },
+        decision: projected,
+        session,
+    })
+}
+
+fn generic_scalar(input: AccessGateScalarInput) -> Result<AccessGateScalarValue, &'static str> {
+    let field_name = input.field_name.trim();
+    if field_name.is_empty() || field_name != input.field_name {
+        return Err("error.auth.accessGateFieldInvalid");
+    }
+    let value = match input.value {
+        serde_json::Value::String(value) => access_gate_scalar_value::Value::StringValue(value),
+        serde_json::Value::Bool(value) => access_gate_scalar_value::Value::BoolValue(value),
+        serde_json::Value::Number(value) => {
+            if let Some(value) = value.as_i64() {
+                access_gate_scalar_value::Value::IntegerValue(value)
+            } else {
+                let value = value
+                    .as_f64()
+                    .filter(|value| value.is_finite())
+                    .ok_or("error.auth.accessGateFieldInvalid")?;
+                access_gate_scalar_value::Value::NumberValue(value)
+            }
+        }
+        _ => return Err("error.auth.accessGateFieldInvalid"),
+    };
+    Ok(AccessGateScalarValue {
+        field_name: field_name.to_string(),
+        value: Some(value),
+    })
+}
+
+fn remap_result<T: serde::Serialize, U: serde::Serialize>(result: AppResult<T>) -> AppResult<U> {
+    AppResult {
+        ok: false,
+        data: None,
+        error: result.error,
     }
 }
 
@@ -983,6 +1075,90 @@ pub fn auth_logout(state: &AppState) -> AppResult<AuthSessionPayload> {
         avatar_local_path: None,
         login_method: None,
     })
+}
+
+pub(crate) fn revoke_station_session(
+    station: &StationRuntime,
+    token: &str,
+) -> Result<(), AppResult<AuthSessionPayload>> {
+    let Some(session_id) = session_id_from_token(token) else {
+        return Err(AppResult::fail(
+            ErrorCode::Unauthorized,
+            "error.auth.sessionIdMissing",
+            Some(json!({
+                "command": "auth_logout",
+                "reason": "session_id_missing",
+            })),
+        ));
+    };
+    let body = json!({ "session_id": session_id });
+    match station.client().request_json_auth(
+        reqwest::Method::POST,
+        "/actor/logout",
+        token,
+        None,
+        Some(&body),
+    ) {
+        Ok(_) => Ok(()),
+        Err(error) if is_idempotent_station_revoke_error(&error) => Ok(()),
+        Err(error) => Err(AppResult::fail(
+            ErrorCode::InternalError,
+            "error.auth.sessionRevokeFailed",
+            Some(json!({
+                "command": "auth_logout",
+                "reason": "station_session_revoke_failed",
+                "cause": error.message,
+                "station_details": error.details,
+            })),
+        )),
+    }
+}
+
+pub(crate) fn run_logout_transition(
+    revoke_station_session: impl FnOnce() -> Result<(), AppResult<AuthSessionPayload>>,
+    detach_native_authority: impl FnOnce() -> Result<(), String>,
+    cleanup: impl FnOnce() -> AppResult<AuthSessionPayload>,
+    broadcast: impl FnOnce(),
+) -> AppResult<AuthSessionPayload> {
+    let revoke_error = revoke_station_session().err();
+    let detach_error = detach_native_authority().err();
+    let result = cleanup();
+    broadcast();
+    if !result.ok {
+        return result;
+    }
+    if let Some(error) = detach_error {
+        return secure_content_teardown_failure(error);
+    }
+    if let Some(error) = revoke_error {
+        return error;
+    }
+    result
+}
+
+fn secure_content_teardown_failure(error: String) -> AppResult<AuthSessionPayload> {
+    AppResult::fail(
+        ErrorCode::InternalError,
+        "Failed to complete Secure Content teardown",
+        Some(json!({
+            "command": "auth_logout",
+            "reason": "secure_content_teardown_failed",
+            "failures": [{
+                "operation": "secure_content_teardown",
+                "message": error,
+            }],
+        })),
+    )
+}
+
+pub(crate) fn is_idempotent_station_revoke_error(
+    error: &station_client::StationClientError,
+) -> bool {
+    matches!(
+        error.kind,
+        station_client::StationClientErrorKind::SessionRevoked
+            | station_client::StationClientErrorKind::HttpStatus(401)
+    )
 }
 
 fn run_required_logout_cleanup(
@@ -1678,7 +1854,7 @@ fn session_takeover_failure_is_retryable(error: &station_client::StationClientEr
 #[cfg(test)]
 mod tests {
     use super::{
-        canonical_actor_identity_fingerprint, canonical_actor_profile_version,
+        canonical_actor_identity_fingerprint, canonical_actor_profile_version, generic_scalar,
         run_required_logout_cleanup, session_takeover_failed,
         session_takeover_failure_is_retryable, should_resume_access_binding,
         station_verification_rejects_session, DESKTOP_SESSION_CLASS, RESTORE_TAKEOVER_MAX_ATTEMPTS,
@@ -1686,7 +1862,7 @@ mod tests {
     };
     use crate::application::station_binding::StationBindingPhase;
     use crate::application::station_runtime::client::{StationClientError, StationClientErrorKind};
-    use crate::contracts::AuthSessionPayload;
+    use crate::contracts::{AccessGateScalarInput, AuthSessionPayload};
     use crate::error::ErrorCode;
     use crate::model::actor::{
         ActorDevice, ActorDeviceRef, ActorProfile, ActorRef, ListActorDevicesResponse,
@@ -1897,6 +2073,39 @@ mod tests {
     }
 
     #[test]
+    fn generic_access_fields_preserve_scalar_types() {
+        let cases = [
+            (
+                serde_json::json!("earth"),
+                crate::model::access_gate::access_gate_scalar_value::Value::StringValue(
+                    "earth".to_string(),
+                ),
+            ),
+            (
+                serde_json::json!(true),
+                crate::model::access_gate::access_gate_scalar_value::Value::BoolValue(true),
+            ),
+            (
+                serde_json::json!(42),
+                crate::model::access_gate::access_gate_scalar_value::Value::IntegerValue(42),
+            ),
+            (
+                serde_json::json!(1.5),
+                crate::model::access_gate::access_gate_scalar_value::Value::NumberValue(1.5),
+            ),
+        ];
+
+        for (input, expected) in cases {
+            let scalar = generic_scalar(AccessGateScalarInput {
+                field_name: "field".to_string(),
+                value: input,
+            })
+            .expect("scalar should be accepted");
+            assert_eq!(scalar.value, Some(expected));
+        }
+    }
+
+    #[test]
     fn restore_takeover_retry_window_matches_interactive_route_readiness() {
         let retry_window =
             RESTORE_TAKEOVER_RETRY_DELAY * (RESTORE_TAKEOVER_MAX_ATTEMPTS as u32 - 1);
@@ -1930,6 +2139,25 @@ mod tests {
                 .and_then(|details| details.get("code").cloned()),
             Some(json!("session_revoked"))
         );
+    }
+
+    #[test]
+    fn generic_access_fields_reject_non_scalar_or_non_canonical_names() {
+        for input in [
+            AccessGateScalarInput {
+                field_name: " field ".to_string(),
+                value: serde_json::json!(true),
+            },
+            AccessGateScalarInput {
+                field_name: "field".to_string(),
+                value: serde_json::json!({ "nested": true }),
+            },
+        ] {
+            assert_eq!(
+                generic_scalar(input).expect_err("invalid scalar must fail"),
+                "error.auth.accessGateFieldInvalid"
+            );
+        }
     }
 
     #[test]

@@ -80,7 +80,6 @@ def wait_until(
 class FoundationClientSpec:
     runtime: str
     worktree: Path
-    gateway_port: int
     renderer_port: int
     webdriver_port: int
     storage_root: Path
@@ -91,7 +90,6 @@ class FoundationClientSpec:
         spec = cls(
             runtime=str(value.get("runtime") or ""),
             worktree=Path(str(value.get("worktree") or "")).expanduser().resolve(),
-            gateway_port=int(value.get("gateway_port") or 0),
             renderer_port=int(value.get("renderer_port") or 0),
             webdriver_port=int(value.get("webdriver_port") or 0),
             storage_root=Path(str(value.get("storage_root") or "")).expanduser(),
@@ -105,9 +103,7 @@ class FoundationClientSpec:
             raise FoundationClientError(
                 f"Foundation client worktree is missing: {spec.worktree}"
             )
-        if not all(
-            (spec.gateway_port, spec.renderer_port, spec.webdriver_port, spec.profile)
-        ):
+        if not all((spec.renderer_port, spec.webdriver_port, spec.profile)):
             raise FoundationClientError(
                 f"{spec.runtime} Foundation client manifest is incomplete"
             )
@@ -194,7 +190,6 @@ class FoundationRuntimeClient:
             "PEERS_STATION_URL": self._station_url,
             "PEERS_STORAGE_ROOT": str(self.spec.storage_root),
             "PEERS_ACTOR_IDENTITY_ROOT": str(self.actor_identity_root),
-            "PT_DESKTOP_APP_GATEWAY_PORT": str(self.spec.gateway_port),
             "PT_DESKTOP_APP_WEB_PORT": str(self.spec.renderer_port),
             "VITE_ACCEPTANCE_HARNESS": "1",
         }
@@ -213,9 +208,6 @@ class FoundationRuntimeClient:
             "PT_DEV_PROFILE_FILE_AUTHORITY": "acceptance-runtime-manifest",
             "PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT": str(self.run_root),
             "PT_PROFILE": self.spec.profile,
-            "GATEWAY_PORT": str(self.spec.gateway_port),
-            "WEB_PORT": str(self.spec.renderer_port),
-            "PT_DESKTOP_APP_GATEWAY_PORT": str(self.spec.gateway_port),
             "PT_DESKTOP_APP_WEB_PORT": str(self.spec.renderer_port),
             "PEERS_STORAGE_ROOT": str(self.spec.storage_root),
             "PEERS_ACTOR_IDENTITY_ROOT": str(self.actor_identity_root),
@@ -587,7 +579,6 @@ class FoundationRuntimeClient:
         if remove_storage:
             shutil.rmtree(self.spec.storage_root, ignore_errors=True)
         ports = {
-            "gateway": not port_open(self.spec.gateway_port),
             "renderer": not port_open(self.spec.renderer_port),
             "webdriver": not port_open(self.spec.webdriver_port),
         }
@@ -640,7 +631,6 @@ class FoundationRuntimeClient:
         failures: list[str] = []
         worktree = str(self.spec.worktree.resolve())
         ports = {
-            self.spec.gateway_port,
             self.spec.renderer_port,
             self.spec.webdriver_port,
         }

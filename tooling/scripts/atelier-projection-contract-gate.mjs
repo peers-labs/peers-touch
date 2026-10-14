@@ -221,7 +221,6 @@ const files = {
   masterGoal: 'docs/architecture/domains/applets/atelier/execution-plans/master-goal.md',
   atelierAcceptanceEvidenceReport: 'tooling/acceptance/evidence/applets/official-applet/atelier-acceptance-evidence-report-2026-07-06.md',
   atelierCompletionAudit: 'tooling/acceptance/evidence/applets/official-applet/atelier-completion-audit-2026-07-06.md',
-  atelierDevRuntimeOpenSmoke: 'tooling/acceptance/evidence/applets/official-applet/atelier-dev-runtime-open-smoke.json',
   atelierNativeDesktopProcessSmoke: 'tooling/acceptance/evidence/applets/official-applet/atelier-native-desktop-process-smoke.json',
   atelierDataModel: 'docs/architecture/domains/applets/atelier/data-model.md',
   atelierDecisions: 'docs/architecture/domains/applets/atelier/decisions.md',
@@ -9661,22 +9660,14 @@ expectIncludes(files.desktopAppletsStore, contents.desktopAppletsStore, "const P
 expectIncludes(files.desktopAppletsStoreTest, contents.desktopAppletsStoreTest, "shows bundled Atelier as an installed official applet", 'Desktop applet store tests must prove peers.atelier appears as an installed bundled official applet');
 expectIncludes(files.desktopAppletsStoreTest, contents.desktopAppletsStoreTest, "path: '/applets-dist/peers.atelier'", 'Desktop applet store tests must cover packaged peers.atelier path visibility');
 expectIncludes(files.desktopAppletsPage, contents.desktopAppletsPage, "'peers.atelier': { icon: <FlaskConical", 'Applets page must expose a stable visible Atelier identity instead of only a generic fallback tile');
-expectIncludes(files.atelierDevRuntimeOpenSmoke, contents.atelierDevRuntimeOpenSmoke, '"evidenceClass": "DEV_RUNTIME_OPEN_SMOKE"', 'Atelier dev runtime open smoke evidence must classify itself as a dev runtime smoke');
-expectIncludes(files.atelierDevRuntimeOpenSmoke, contents.atelierDevRuntimeOpenSmoke, '"lynxHostMounted": true', 'Atelier dev runtime open smoke evidence must prove lynx-host was mounted');
-expectIncludes(files.atelierDevRuntimeOpenSmoke, contents.atelierDevRuntimeOpenSmoke, '"lynxHostAppletId": "peers.atelier"', 'Atelier dev runtime open smoke evidence must be scoped to peers.atelier');
-expectIncludes(files.atelierDevRuntimeOpenSmoke, contents.atelierDevRuntimeOpenSmoke, '"/applets-dist/peers.atelier/main.lynx.bundle"', 'Atelier dev runtime open smoke evidence must prove packaged bundle path resolution');
-expectIncludes(files.atelierDevRuntimeOpenSmoke, contents.atelierDevRuntimeOpenSmoke, '"lifecycleReadyObserved": true', 'Atelier dev runtime open smoke evidence must prove lifecycle ready observation');
-expectIncludes(files.atelierDevRuntimeOpenSmoke, contents.atelierDevRuntimeOpenSmoke, '"readiness": "NOT_READY"', 'Atelier dev runtime open smoke evidence must not overclaim global readiness');
 expectIncludes(files.atelierNativeDesktopProcessSmoke, contents.atelierNativeDesktopProcessSmoke, '"status": "PARTIAL"', 'Atelier native desktop process smoke evidence must remain partial until native visual content is proven');
 expectIncludes(files.atelierNativeDesktopProcessSmoke, contents.atelierNativeDesktopProcessSmoke, '"evidenceClass": "NATIVE_DESKTOP_PROCESS_SMOKE"', 'Atelier native desktop process smoke evidence must classify itself as process/window smoke');
 expectIncludes(files.atelierNativeDesktopProcessSmoke, contents.atelierNativeDesktopProcessSmoke, '"nativeProcessDetected": true', 'Atelier native desktop process smoke evidence must prove native process detection');
-expectIncludes(files.atelierNativeDesktopProcessSmoke, contents.atelierNativeDesktopProcessSmoke, '"desktopAppGatewayListening": true', 'Atelier native desktop process smoke evidence must prove native app gateway listening');
+expectIncludes(files.atelierNativeDesktopProcessSmoke, contents.atelierNativeDesktopProcessSmoke, '"nativeProcessAlive": true', 'Atelier native desktop process smoke evidence must prove the Tauri process is alive');
 expectIncludes(files.atelierNativeDesktopProcessSmoke, contents.atelierNativeDesktopProcessSmoke, '"screenCaptureSucceeded": false', 'Atelier native desktop process smoke evidence must preserve screenshot proof gap');
 expectIncludes(files.atelierNativeDesktopProcessSmoke, contents.atelierNativeDesktopProcessSmoke, '"native Tauri Desktop mounts lynx-host applet-id=peers.atelier"', 'Atelier native desktop process smoke evidence must not claim native lynx-host mount');
 expectIncludes(files.atelierNativeDesktopProcessSmoke, contents.atelierNativeDesktopProcessSmoke, '"readiness": "NOT_READY"', 'Atelier native desktop process smoke evidence must not overclaim global readiness');
-expectIncludes(files.atelierAcceptanceEvidenceReport, contents.atelierAcceptanceEvidenceReport, 'P4-34 Desktop Web Dev Runtime Open Smoke', 'Acceptance report must include P4-34 dev runtime open smoke section');
 expectIncludes(files.atelierAcceptanceEvidenceReport, contents.atelierAcceptanceEvidenceReport, 'P4-35 Native Desktop Process-Window Smoke', 'Acceptance report must include P4-35 native process-window smoke section');
-expectIncludes(files.atelierCompletionAudit, contents.atelierCompletionAudit, 'official-applet/atelier-dev-runtime-open-smoke.json', 'Completion audit must cite dev runtime open smoke evidence JSON');
 expectIncludes(files.atelierCompletionAudit, contents.atelierCompletionAudit, 'official-applet/atelier-native-desktop-process-smoke.json', 'Completion audit must cite native desktop process smoke evidence JSON');
 expectNotIncludes(files.atelierFullE2EPreflightEvidence, contents.atelierFullE2EPreflightEvidence, 'PEERS_ATELIER_FULL_E2E_AUTH_CONTEXT', 'Full E2E preflight evidence must not require runner-visible bearer auth context');
 expectIncludes(files.atelierFullE2EPreflightEvidence, contents.atelierFullE2EPreflightEvidence, 'pnpm run atelier:prototype-unit-gate', 'Full E2E preflight evidence must record prototype unit gate in controlled gates script');

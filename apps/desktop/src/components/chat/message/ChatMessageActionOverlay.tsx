@@ -123,7 +123,9 @@ export function ChatMessageActionOverlay({
       && isOwn
       && !isRecalled
       && withinMutationWindow
-      && !isEncryptedPlaceholder(message),
+      && !isEncryptedPlaceholder(message)
+      && !message.mentionAll
+      && message.mentionedPtids.length === 0,
   );
 
   useLayoutEffect(() => {

@@ -10,7 +10,7 @@ const DEFAULT_SITE: PrototypeSite = normalizeSite(import.meta.env.VITE_PROTOTYPE
 const SITE_META: Record<PrototypeSite, { title: string; subtitle: string; icon: ReactElement }> = {
   desktop: {
     title: 'Desktop Prototypes',
-    subtitle: 'Desktop App / desktop-web / applet container experiences',
+    subtitle: 'Native Desktop embedded renderer / applet container experiences',
     icon: <Monitor size={18} />,
   },
   mobile: {

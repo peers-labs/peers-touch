@@ -599,7 +599,7 @@ function currentDesktopProductWindowFreshnessCheck() {
       'tooling/scripts/applet-desktop-product-window-gate.mjs',
       'tooling/fixtures/applets/packages/generic-complex-applet',
     ],
-    passDetail: 'Desktop packaged product-window evidence is current relative to product shell, Rust Gateway, packaged applets, gate, and generated package inputs.',
+    passDetail: 'Desktop packaged product-window evidence is current relative to product shell, Desktop Rust commands, packaged applets, gate, and generated package inputs.',
     staleDetail: 'Desktop packaged product-window evidence is older than relevant packaged product-window inputs',
   });
 }
@@ -978,34 +978,6 @@ const candidateChecks = [
     ],
   }),
   currentTauriBundleFreshnessCheck(),
-  evidenceCheck({
-    name: 'Desktop HTTP Gateway command dispatch gate',
-    path: 'desktop/http-gateway-gate-output.txt',
-    required: [
-      /status: PASS/,
-      /applet_commands_route_through_http_gateway_dispatch/,
-      /test result: ok/,
-    ],
-  }),
-  currentDesktopHttpGatewayFreshnessCheck(),
-  evidenceCheck({
-    name: 'Desktop Lynx runtime gate',
-    path: 'desktop/runtime-gate-output.txt',
-    required: [/Runtime status: PASS/, /task\.event/],
-  }),
-  currentDesktopRuntimeFreshnessCheck(),
-  evidenceCheck({
-    name: 'Desktop product Host real Gateway gate',
-    path: 'desktop/product-host-real-gateway-gate-output.txt',
-    required: [/Product host status: PASS/, /task-agent/, /skill-agent/, /Controlled upstream requests/],
-  }),
-  currentDesktopProductHostFreshnessCheck(),
-  evidenceCheck({
-    name: 'Desktop product shell real Gateway gate',
-    path: 'desktop/product-shell-real-gateway-gate-output.txt',
-    required: [/Product host status: PASS/, /shellRoute":true/, /appletListProjection/, /permissionGroups/, /Controlled upstream requests/],
-  }),
-  currentDesktopProductShellFreshnessCheck(),
   evidenceCheck({
     name: 'Desktop packaged product-window gate',
     path: 'desktop/product-window-gate-output.txt',

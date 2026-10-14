@@ -1,9 +1,11 @@
 use super::group::MlsGroupManager;
-use crate::codec::private_content::encode_message_private_content;
+use crate::codec::private_content::{
+    encode_message_private_content, encode_message_private_content_with_mentions, mentioned_ptids,
+};
 use crate::proto::actor_device_ptid;
 use crate::proto::chat::{
     chat_command, AttachmentPlaintextMetadata, ChatCommand, ConversationKind, CryptoEndpoint,
-    EditMessageIntent, ForwardMessageIntent, MessagingContentKind,
+    EditMessageIntent, ForwardMessageIntent, MessageMention, MessagingContentKind,
     PrepareConversationCommandResponse, SendMessageIntent,
 };
 use crate::store::{
@@ -21,6 +23,8 @@ pub struct GroupSendTextIntent<'a> {
     pub reply_to_message_id: &'a str,
     pub thread_root_message_id: &'a str,
     pub attachments: &'a [AttachmentPlaintextMetadata],
+    pub mentions: &'a [MessageMention],
+    pub mention_all: bool,
     pub client_timestamp_unix_ms: i64,
 }
 
@@ -80,7 +84,12 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
 
         let expected_mls_epoch = u64::try_from(plan.mls_epoch)
             .map_err(|_| "messaging MLS epoch is invalid".to_string())?;
-        let private_content = encode_message_private_content(intent.plaintext, intent.attachments)?;
+        let private_content = encode_message_private_content_with_mentions(
+            intent.plaintext,
+            intent.attachments,
+            intent.mentions,
+            intent.mention_all,
+        )?;
         let prepared = self.manager.prepare_outbound_application(
             intent.conversation_id,
             expected_mls_epoch,
@@ -178,6 +187,8 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
             reply_to_message_id: "",
             thread_root_message_id: "",
             attachments: intent.attachments,
+            mentions: &[],
+            mention_all: false,
             client_timestamp_unix_ms: intent.client_timestamp_unix_ms,
         };
         validate_send_context(plan, &send, &self.endpoint)?;
@@ -236,7 +247,12 @@ fn validate_send_context(
     intent: &GroupSendTextIntent<'_>,
     endpoint: &CryptoEndpoint,
 ) -> Result<(), String> {
-    let private_content = encode_message_private_content(intent.plaintext, intent.attachments)?;
+    let private_content = encode_message_private_content_with_mentions(
+        intent.plaintext,
+        intent.attachments,
+        intent.mentions,
+        intent.mention_all,
+    )?;
     if intent.command_id.trim().is_empty()
         || intent.message_id.trim().is_empty()
         || intent.conversation_id.trim().is_empty()
@@ -300,6 +316,8 @@ fn validate_edit_context(
             reply_to_message_id: "",
             thread_root_message_id: "",
             attachments: &[],
+            mentions: &[],
+            mention_all: false,
             client_timestamp_unix_ms: intent.client_timestamp_unix_ms,
         },
         endpoint,
@@ -351,6 +369,8 @@ fn build_send_command(
             direct_payloads: Vec::new(),
             mls_application_payload: mls_payload.to_vec(),
             mls_application_payload_sha256: Sha256::digest(mls_payload).to_vec(),
+            mentioned_ptids: mentioned_ptids(intent.mentions),
+            mention_all: intent.mention_all,
         })),
     })
 }
@@ -636,6 +656,8 @@ mod tests {
                     reply_to_message_id: "",
                     thread_root_message_id: "",
                     attachments: std::slice::from_ref(&attachment),
+                    mentions: &[],
+                    mention_all: false,
                     client_timestamp_unix_ms: 100,
                 },
             )
@@ -712,6 +734,49 @@ mod tests {
     }
 
     #[test]
+    fn group_prepare_binds_private_mentions_to_sorted_public_targets() {
+        let store = Arc::new(TestOutboundRepository::new());
+        let (alice, bob) = group();
+        let mentions = vec![MessageMention {
+            actor_ptid: "ptid:bob".to_string(),
+            offset: 6,
+            length: 4,
+            display: "Bob".to_string(),
+        }];
+        let command = preparer(store, alice)
+            .prepare_send(
+                &plan(),
+                &GroupSendTextIntent {
+                    command_id: "group-command-mention",
+                    message_id: "group-message-mention",
+                    conversation_id: "group-1",
+                    plaintext: "Hello @Bob",
+                    reply_to_message_id: "",
+                    thread_root_message_id: "",
+                    attachments: &[],
+                    mentions: &mentions,
+                    mention_all: false,
+                    client_timestamp_unix_ms: 100,
+                },
+            )
+            .unwrap();
+        let send = match command.payload.as_ref().unwrap() {
+            chat_command::Payload::SendMessage(send) => send,
+            _ => panic!("unexpected command payload"),
+        };
+        assert_eq!(send.mentioned_ptids, vec!["ptid:bob"]);
+        let received = bob
+            .prepare_application_message("group-1", &send.mls_application_payload)
+            .unwrap();
+        assert_eq!(
+            decode_message_private_content(&received.plaintext)
+                .unwrap()
+                .mentions,
+            mentions,
+        );
+    }
+
+    #[test]
     fn persistence_failure_does_not_install_prepared_outbound_state() {
         let store = Arc::new(TestOutboundRepository::new());
         store.set_fail_persistence(true);
@@ -725,6 +790,8 @@ mod tests {
             reply_to_message_id: "",
             thread_root_message_id: "",
             attachments: &[],
+            mentions: &[],
+            mention_all: false,
             client_timestamp_unix_ms: 100,
         };
 

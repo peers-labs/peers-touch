@@ -1452,17 +1452,6 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             / "messaging"
             / "lifecycle.rs"
         ).read_text(encoding="utf-8")
-        gateway_source = (
-            REPO_ROOT
-            / "apps"
-            / "desktop"
-            / "src-tauri"
-            / "src"
-            / "interface"
-            / "http_gateway"
-            / "mod.rs"
-        ).read_text(encoding="utf-8")
-
         self.assertIn('"/conversation/members"', lifecycle_source)
         self.assertIn("GetConversationMembersResponse", lifecycle_source)
         self.assertNotIn(
@@ -1470,8 +1459,8 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             lifecycle_source,
         )
         self.assertIn(
-            "hydrate_projections_from_station(&engine, &token)",
-            gateway_source,
+            "hydrate_projections_from_station(engine, token)",
+            lifecycle_source,
         )
 
     def test_prekey_publication_reconciles_station_inventory(self) -> None:

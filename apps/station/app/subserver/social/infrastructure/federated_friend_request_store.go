@@ -32,6 +32,9 @@ type FederatedFriendRequestTransaction interface {
 		ctx context.Context,
 		receiverPTID string,
 		senderPTID string,
+		federationID string,
+		senderHomeStationPeerID string,
+		receiverHomeStationPeerID string,
 	) (domain.ReceiverFriendRequestPolicy, error)
 	PutCommand(
 		ctx context.Context,
@@ -622,15 +625,49 @@ func (t *federatedFriendRequestTransaction) LoadReceiverFriendRequestPolicy(
 	ctx context.Context,
 	receiverPTID string,
 	senderPTID string,
+	federationID string,
+	senderHomeStationPeerID string,
+	receiverHomeStationPeerID string,
 ) (domain.ReceiverFriendRequestPolicy, error) {
 	const operation = "social.load_receiver_friend_request_policy"
-	if receiverPTID == "" || senderPTID == "" || receiverPTID == senderPTID {
+	if receiverPTID == "" ||
+		senderPTID == "" ||
+		receiverPTID == senderPTID ||
+		federationID == "" ||
+		senderHomeStationPeerID == "" ||
+		receiverHomeStationPeerID == "" {
 		return domain.ReceiverFriendRequestPolicy{}, domain.NewFederationError(
 			domain.FederationErrorInvalidArgument,
 			operation,
-			"actor_pair",
-			"must contain distinct receiver and sender PTIDs",
+			"authority_context",
+			"must contain distinct actors, Federation, and both Home Stations",
 		)
+	}
+
+	var persistedPolicy struct {
+		Value string `gorm:"column:contact_request_policy"`
+	}
+	err := t.db.WithContext(ctx).
+		Table("touch_actor AS actor").
+		Select("meta.contact_request_policy").
+		Joins(
+			"JOIN touch_actor_meta AS meta ON meta.actor_id = actor.id",
+		).
+		Where("actor.ptid = ?", receiverPTID).
+		Where("actor.home_station_peer_id = ?", receiverHomeStationPeerID).
+		Take(&persistedPolicy).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return domain.ReceiverFriendRequestPolicy{},
+			domain.NewFederationError(
+				domain.FederationErrorNotFound,
+				operation,
+				"receiver",
+				"local receiver profile policy is unavailable",
+			)
+	}
+	if err != nil {
+		return domain.ReceiverFriendRequestPolicy{},
+			mapFederatedFriendRequestPersistenceError(operation, err)
 	}
 
 	var acceptedRelationshipCount int64
@@ -669,6 +706,7 @@ func (t *federatedFriendRequestTransaction) LoadReceiverFriendRequestPolicy(
 	policy := domain.ReceiverFriendRequestPolicy{
 		Blocked:              blockCount > 0,
 		ExistingRelationship: acceptedRelationshipCount > 0,
+		ContactPolicy:        friendRequestContactPolicy(persistedPolicy.Value),
 	}
 	if policy.Blocked {
 		return policy, nil
@@ -684,7 +722,49 @@ func (t *federatedFriendRequestTransaction) LoadReceiverFriendRequestPolicy(
 	}
 	policy.ExistingRelationship =
 		policy.ExistingRelationship || acceptedProjectionCount > 0
+	if policy.ContactPolicy ==
+		model.ActorContactPolicy_ACTOR_CONTACT_POLICY_FEDERATIONS {
+		var activeStations int64
+		if err := t.db.WithContext(ctx).
+			Table("federation_station_membership AS membership").
+			Joins(
+				"JOIN federation ON federation.federation_id = membership.federation_id",
+			).
+			Where("membership.federation_id = ?", federationID).
+			Where("membership.status = ?", "active").
+			Where("federation.status = ?", "active").
+			Where(
+				"membership.station_peer_id IN ?",
+				[]string{
+					senderHomeStationPeerID,
+					receiverHomeStationPeerID,
+				},
+			).
+			Distinct("membership.station_peer_id").
+			Count(&activeStations).Error; err != nil {
+			return domain.ReceiverFriendRequestPolicy{},
+				mapFederatedFriendRequestPersistenceError(operation, err)
+		}
+		requiredStations := int64(2)
+		if senderHomeStationPeerID == receiverHomeStationPeerID {
+			requiredStations = 1
+		}
+		policy.SharedFederation = activeStations == requiredStations
+	}
 	return policy, nil
+}
+
+func friendRequestContactPolicy(value string) model.ActorContactPolicy {
+	switch strings.TrimSpace(value) {
+	case "anyone":
+		return model.ActorContactPolicy_ACTOR_CONTACT_POLICY_ANYONE
+	case "federations":
+		return model.ActorContactPolicy_ACTOR_CONTACT_POLICY_FEDERATIONS
+	case "nobody":
+		return model.ActorContactPolicy_ACTOR_CONTACT_POLICY_NOBODY
+	default:
+		return model.ActorContactPolicy_ACTOR_CONTACT_POLICY_UNSPECIFIED
+	}
 }
 
 func (t *federatedFriendRequestTransaction) PutCommand(

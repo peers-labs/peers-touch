@@ -1000,14 +1000,14 @@
       "timeout_seconds": 60,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate dev-runtime multi-instance isolation: machine-registry slots, OS-held leases, reviewed profile resolution, PID files, bundle IDs, and proto ownership without launching processes."
+      "description": "Validate the canonical Native Desktop entrypoint, machine-registry renderer allocation, reviewed profile resolution, and proto ownership without launching processes."
     },
     "desktop-dev-runtime-multi-instance": {
       "command": "python3 tooling/acceptance/gates/desktop/dev_runtime_multi_instance.py",
       "timeout_seconds": 300,
       "environment": "local",
       "tier": "local-evidence",
-      "description": "Prove two Desktop dev-runtime instances can run simultaneously with distinct gateway ports, storage roots, and profiles without port or PID conflicts."
+      "description": "Prove two Native Desktop applications can run simultaneously with distinct embedded WebDriver ports, storage roots, profiles, and process identities."
     },
     "agent-message-actions-static": {
       "command": "cd apps/desktop && pnpm exec vitest run src/store/messageActions.test.ts",
@@ -1301,7 +1301,7 @@
       "timeout_seconds": 600,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Run Desktop Rust cargo check for agent_turn, http_gateway, contracts, and tauri commands."
+      "description": "Run Desktop Rust cargo check for agent_turn, contracts, native capabilities, and Tauri commands."
     },
     "agent-contract-static": {
       "command": "python3 -m unittest tooling.acceptance.gates.agent.agent_contract_test tooling.acceptance.gates.agent.agent_native_static_test",

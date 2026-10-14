@@ -84,7 +84,7 @@ class _Binding:
             "timezone": "",
             "defaultVisibility": "followers",
             "manuallyApprovesFollowers": False,
-            "messagePermission": "friends",
+            "contactPolicy": "anyone",
             "autoExpireDays": 30,
         }
         self.notification = {
@@ -247,6 +247,15 @@ class SimulatorSettingsGateTests(unittest.TestCase):
                 {"includeDiagnostics": True, "minimumGeneration": 2},
             ],
         )
+
+    def test_profile_mutation_uses_only_the_contact_policy_contract(self) -> None:
+        changed = SimulatorSettingsGate._changed_profile(
+            {"contactPolicy": "anyone"},
+            "journey-1",
+        )
+
+        self.assertEqual(changed["contactPolicy"], "federations")
+        self.assertNotIn("messagePermission", changed)
 
     def test_same_account_converges_and_device_settings_remain_local(self) -> None:
         binding = _Binding()

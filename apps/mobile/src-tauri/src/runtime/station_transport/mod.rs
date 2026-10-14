@@ -49,7 +49,7 @@ struct ActorProfileUpdateInput {
     #[serde(skip_serializing_if = "Option::is_none")]
     manually_approves_followers: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    message_permission: Option<String>,
+    contact_policy: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     auto_expire_days: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -707,11 +707,7 @@ fn build_request(
                 128,
                 "default_visibility",
             )?;
-            validate_optional_text(
-                input.message_permission.as_deref(),
-                128,
-                "message_permission",
-            )?;
+            validate_optional_text(input.contact_policy.as_deref(), 128, "contact_policy")?;
             validate_optional_text(input.discoverability.as_deref(), 64, "discoverability")?;
             validate_revision(&input.observed_revision, "actor_profile_update")?;
             let body = typed_json_body(&input, "actor_profile_update")?;

@@ -266,6 +266,41 @@ async function releaseAppletPage(pageId: string): Promise<void> {
   await useAppletsStore.getState().unloadApplet(appletId);
 }
 
+export async function releaseAppletRuntime(appletId: string): Promise<void> {
+  const pageIds = Array.from(activeAppletPageIds)
+    .filter(([, activeAppletId]) => activeAppletId === appletId)
+    .map(([pageId]) => pageId);
+  if (pageIds.length === 0) {
+    await useAppletsStore.getState().unloadApplet(appletId);
+    return;
+  }
+  await Promise.all(pageIds.map((pageId) => releaseAppletPage(pageId)));
+}
+
+export async function uninstallAppletRuntime(appletId: string): Promise<void> {
+  const store = useAppletsStore.getState();
+  const target = store.applets.find((info) => info.manifest.id === appletId);
+  if (!target) return;
+  if (target.source === 'bundled-official') {
+    throw new Error('error.applet.bundledCannotUninstall');
+  }
+
+  const pageIds = Array.from(activeAppletPageIds)
+    .filter(([, activeAppletId]) => activeAppletId === appletId)
+    .map(([pageId]) => pageId);
+  const foregroundPageId = pageIds.includes(foregroundAppletPageId ?? '')
+    ? foregroundAppletPageId
+    : null;
+  await releaseAppletRuntime(appletId);
+  try {
+    await useAppletsStore.getState().removeAppletInstallation(appletId);
+  } catch (error) {
+    await Promise.allSettled(pageIds.map((pageId) => acquireAppletPage(pageId)));
+    if (foregroundPageId) notifyActiveAppletPage(foregroundPageId);
+    throw error;
+  }
+}
+
 /**
  * Active-page bridge (§6.3): the Shell reports the currently shown page whenever
  * it changes. Leaving an applet backgrounds it (`hide` → hidden-warm, kept

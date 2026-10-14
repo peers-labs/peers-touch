@@ -1,7 +1,17 @@
 import React, { memo, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Alert, Button, Input, Tooltip, Typography, theme } from 'antd';
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Input,
+  InputNumber,
+  Select,
+  Tooltip,
+  Typography,
+  theme,
+} from 'antd';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -21,8 +31,15 @@ import { UserSquareAvatar } from '../../../components/common/UserSquareAvatar';
 import { BRANDING } from '../../../branding';
 import {
   currentGate,
+  isAccessBlocked,
+  isGenericSchemaGate,
+  isInviteCodeGate,
+  isMaintenanceGate,
   parseGateFields,
   type AccessDecision,
+  type AccessGateField,
+  type AccessGateFieldValues,
+  type AccessGateScalar,
 } from '../../../services/accessGate';
 import { LOGIN_FORM_LAYOUT } from '../constants';
 import type {
@@ -50,6 +67,7 @@ export interface GateState {
   error: string;
   loading: boolean;
   onSubmitCode: (code: string) => Promise<void>;
+  onSubmitValues: (fields: AccessGateFieldValues) => Promise<void>;
   onCancel: () => void;
 }
 
@@ -100,6 +118,7 @@ export const LoginFormView = memo(function LoginFormView({
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
+  const [gateValues, setGateValues] = useState<AccessGateFieldValues>({});
   const oauthActionRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
   const oauthCancelRefs = React.useRef<Record<string, HTMLElement | null>>({});
   const previousOAuthProviderRef = React.useRef<string | null>(null);
@@ -110,6 +129,18 @@ export const LoginFormView = memo(function LoginFormView({
       setEmail(expiredAccount.email);
     }
   }, [expiredAccount]);
+
+  const activeGate = currentGate(gateState?.decision ?? null);
+  const gateFields = useMemo(() => parseGateFields(activeGate), [activeGate]);
+
+  React.useEffect(() => {
+    const initialValues = Object.fromEntries(gateFields.map((field) => [
+      field.name,
+      ['checkbox', 'boolean', 'bool'].includes(field.type.toLowerCase()) ? false : '',
+    ])) as AccessGateFieldValues;
+    setGateValues(initialValues);
+    setInviteCode('');
+  }, [activeGate?.gateId, gateFields]);
 
   React.useEffect(() => {
     const previousProviderId = previousOAuthProviderRef.current;
@@ -154,6 +185,11 @@ export const LoginFormView = memo(function LoginFormView({
     await gateState.onSubmitCode(inviteCode.trim());
   }, [gateState, inviteCode]);
 
+  const handleGenericSubmit = useCallback(async () => {
+    if (!gateState) return;
+    await gateState.onSubmitValues(gateValues);
+  }, [gateState, gateValues]);
+
   const handleCancelGate = useCallback(() => {
     setInviteCode('');
     gateState?.onCancel();
@@ -161,6 +197,20 @@ export const LoginFormView = memo(function LoginFormView({
 
   const oauthFlowLocked = !!oauthActionProviderId
     && ['opening', 'waiting', 'initializing', 'success'].includes(oauthActionState);
+
+  const updateGateValue = useCallback((field: AccessGateField, value: AccessGateScalar) => {
+    setGateValues(current => ({ ...current, [field.name]: value }));
+  }, []);
+
+  const genericGateComplete = gateFields.every((field) => {
+    if (!field.required) return true;
+    const value = gateValues[field.name];
+    if (['checkbox', 'boolean', 'bool'].includes(field.type.toLowerCase())) {
+      return value === true;
+    }
+    if (typeof value === 'number') return Number.isFinite(value);
+    return typeof value === 'string' && value.trim().length > 0;
+  });
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
     flex: 1,
@@ -194,6 +244,159 @@ export const LoginFormView = memo(function LoginFormView({
     () => oauth2Providers.filter(p => p.id === 'github' || p.id === 'google'),
     [oauth2Providers],
   );
+
+  const gateContent = gateState ? (() => {
+    const blocked = isAccessBlocked(gateState.decision);
+    const inviteGate = isInviteCodeGate(activeGate);
+    const genericGate = isGenericSchemaGate(activeGate);
+    const maintenanceGate = isMaintenanceGate(activeGate);
+    const title = activeGate?.title || (maintenanceGate
+      ? t('auth.gate.maintenance.title')
+      : t('auth.gate.blocked.title'));
+    const description = gateState.error
+      || activeGate?.blockingReason
+      || activeGate?.description
+      || (maintenanceGate
+        ? t('auth.gate.maintenance.subtitle')
+        : t('auth.gate.blocked.subtitle'));
+
+    return (
+      <Flexbox gap={10}>
+        <Alert
+          type={blocked ? 'warning' : 'info'}
+          showIcon
+          icon={blocked
+            ? <AlertTriangle size={18} style={{ color: token.colorWarningText }} />
+            : <ShieldCheck size={18} style={{ color: token.colorInfoText }} />}
+          style={{ width: '100%', borderRadius: 12, padding: '10px 12px' }}
+          message={<Text strong style={{ fontSize: 13 }}>{title}</Text>}
+          description={<Text type="secondary" style={{ fontSize: 12 }}>{description}</Text>}
+        />
+
+        {!blocked && inviteGate && (
+          <Flexbox horizontal gap={8} align="center">
+            <Input
+              size="large"
+              autoFocus
+              prefix={<Lock size={16} style={{ color: token.colorTextQuaternary }} />}
+              placeholder={
+                gateFields[0]?.placeholder
+                  || gateFields[0]?.label
+                  || t('auth.gate.inviteCode.placeholder')
+              }
+              value={inviteCode}
+              onChange={e => setInviteCode(e.target.value)}
+              onPressEnter={handleInviteSubmit}
+              style={{ borderRadius: 12, height: 44, flex: 1 }}
+            />
+            <Button
+              type="primary"
+              loading={gateState.loading}
+              disabled={!inviteCode.trim() || gateState.loading}
+              onClick={handleInviteSubmit}
+              style={{
+                height: 44,
+                borderRadius: 12,
+                fontWeight: 500,
+                padding: '0 16px',
+                flexShrink: 0,
+              }}
+              icon={!gateState.loading ? <ArrowRight size={16} /> : undefined}
+              iconPosition="end"
+            >
+              {t('auth.gate.inviteCode.submit')}
+            </Button>
+          </Flexbox>
+        )}
+
+        {!blocked && genericGate && (
+          <Flexbox gap={10}>
+            {gateFields.map((field) => {
+              const fieldType = field.type.toLowerCase();
+              const value = gateValues[field.name];
+              if (['checkbox', 'boolean', 'bool'].includes(fieldType)) {
+                return (
+                  <Checkbox
+                    checked={value === true}
+                    key={field.name}
+                    onChange={event => updateGateValue(field, event.target.checked)}
+                  >
+                    {field.label || t('auth.gate.generic.accept')}
+                  </Checkbox>
+                );
+              }
+              if (fieldType === 'select') {
+                return (
+                  <Select
+                    key={field.name}
+                    options={(field.options ?? []).map(option => (
+                      typeof option === 'string'
+                        ? { label: option, value: option }
+                        : { label: option.label || option.value, value: option.value }
+                    ))}
+                    placeholder={field.placeholder || field.label}
+                    value={typeof value === 'string' && value ? value : undefined}
+                    onChange={next => updateGateValue(field, next)}
+                    style={{ width: '100%', height: 44 }}
+                  />
+                );
+              }
+              if (fieldType === 'integer' || fieldType === 'number') {
+                return (
+                  <InputNumber
+                    key={field.name}
+                    controls
+                    placeholder={field.placeholder || field.label}
+                    precision={fieldType === 'integer' ? 0 : undefined}
+                    value={typeof value === 'number' ? value : null}
+                    onChange={next => updateGateValue(
+                      field,
+                      typeof next === 'number' ? next : '',
+                    )}
+                    style={{ width: '100%', height: 44 }}
+                  />
+                );
+              }
+              return (
+                <Input
+                  key={field.name}
+                  type={fieldType === 'email' ? 'email' : 'text'}
+                  placeholder={field.placeholder || field.label}
+                  value={typeof value === 'string' ? value : ''}
+                  onChange={event => updateGateValue(field, event.target.value)}
+                  style={{ borderRadius: 12, height: 44 }}
+                />
+              );
+            })}
+            <Button
+              type="primary"
+              loading={gateState.loading}
+              disabled={!genericGateComplete || gateState.loading}
+              onClick={handleGenericSubmit}
+              style={{ height: 44, borderRadius: 12, fontWeight: 500 }}
+              icon={!gateState.loading ? <ArrowRight size={16} /> : undefined}
+              iconPosition="end"
+            >
+              {t('auth.gate.generic.submit')}
+            </Button>
+          </Flexbox>
+        )}
+
+        {gateState.error && !blocked && (
+          <Text type="danger" style={{ fontSize: 12 }}>{gateState.error}</Text>
+        )}
+        <Button
+          type="text"
+          size="small"
+          icon={<ArrowLeft size={14} />}
+          onClick={handleCancelGate}
+          style={{ alignSelf: 'flex-start' }}
+        >
+          {t('auth.gate.action.back')}
+        </Button>
+      </Flexbox>
+    );
+  })() : null;
 
   return (
     <>
@@ -313,37 +516,39 @@ export const LoginFormView = memo(function LoginFormView({
         );
       })()}
 
-      <div
-        style={{
-          width: '100%',
-          background: token.colorFillQuaternary,
-          padding: 4,
-          borderRadius: 10,
-          display: 'flex',
-          marginBottom: LOGIN_FORM_LAYOUT.tabBottom,
-          border: `1px solid ${token.colorBorderSecondary}`,
-        }}
-      >
-        <button
-          data-login-tab="quick"
-          disabled={oauthFlowLocked}
-          onClick={() => onTabChange('quick')}
-          style={tabStyle(tab === 'quick')}
+      {!gateState && (
+        <div
+          style={{
+            width: '100%',
+            background: token.colorFillQuaternary,
+            padding: 4,
+            borderRadius: 10,
+            display: 'flex',
+            marginBottom: LOGIN_FORM_LAYOUT.tabBottom,
+            border: `1px solid ${token.colorBorderSecondary}`,
+          }}
         >
-          {t('auth.login.tab.quick')}
-        </button>
-        <button
-          data-login-tab="email"
-          disabled={oauthFlowLocked}
-          onClick={() => onTabChange('email')}
-          style={tabStyle(tab === 'email')}
-        >
-          {t('auth.login.tab.email')}
-        </button>
-      </div>
+          <button
+            data-login-tab="quick"
+            disabled={oauthFlowLocked}
+            onClick={() => onTabChange('quick')}
+            style={tabStyle(tab === 'quick')}
+          >
+            {t('auth.login.tab.quick')}
+          </button>
+          <button
+            data-login-tab="email"
+            disabled={oauthFlowLocked}
+            onClick={() => onTabChange('email')}
+            style={tabStyle(tab === 'email')}
+          >
+            {t('auth.login.tab.email')}
+          </button>
+        </div>
+      )}
 
       <div style={{ width: '100%' }}>
-        {tab === 'quick' ? (
+        {gateState ? gateContent : tab === 'quick' ? (
           <Flexbox gap={10}>
             {oauth2AccountProviders.map(provider => {
               const active = oauthActionProviderId === provider.id;
@@ -455,70 +660,6 @@ export const LoginFormView = memo(function LoginFormView({
                 </Button>
               </>
             )}
-          </Flexbox>
-        ) : gateState ? (
-          <Flexbox gap={10}>
-            <Alert
-              type="info"
-              showIcon
-              icon={<ShieldCheck size={18} style={{ color: token.colorInfoText }} />}
-              style={{ width: '100%', borderRadius: 12, padding: '10px 12px' }}
-              message={
-                <Text strong style={{ fontSize: 13, color: token.colorInfoText }}>
-                  {currentGate(gateState.decision)?.title || t('auth.gate.inviteCode.title')}
-                </Text>
-              }
-              description={
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {currentGate(gateState.decision)?.description || t('auth.gate.inviteCode.subtitle')}
-                </Text>
-              }
-            />
-            <Flexbox horizontal gap={8} align="center">
-              <Input
-                size="large"
-                autoFocus
-                prefix={<Lock size={16} style={{ color: token.colorTextQuaternary }} />}
-                placeholder={
-                  parseGateFields(currentGate(gateState.decision))[0]?.placeholder
-                    || parseGateFields(currentGate(gateState.decision))[0]?.label
-                    || t('auth.gate.inviteCode.placeholder')
-                }
-                value={inviteCode}
-                onChange={e => setInviteCode(e.target.value)}
-                onPressEnter={handleInviteSubmit}
-                style={{ borderRadius: 12, height: 44, flex: 1 }}
-              />
-              <Button
-                type="primary"
-                loading={gateState.loading}
-                disabled={!inviteCode.trim() || gateState.loading}
-                onClick={handleInviteSubmit}
-                style={{
-                  height: 44,
-                  borderRadius: 12,
-                  fontWeight: 500,
-                  padding: '0 16px',
-                  flexShrink: 0,
-                }}
-                icon={!gateState.loading ? <ArrowRight size={16} /> : undefined}
-                iconPosition="end"
-              >
-                {t('auth.gate.inviteCode.submit')}
-              </Button>
-            </Flexbox>
-            {gateState.error && (
-              <Text type="danger" style={{ fontSize: 12 }}>{gateState.error}</Text>
-            )}
-            <Button
-              type="text"
-              size="small"
-              icon={<ArrowLeft size={14} />}
-              onClick={handleCancelGate}
-              style={{ alignSelf: 'flex-start' }}
-            >
-              {t('auth.gate.inviteCode.back')}
-            </Button>
           </Flexbox>
         ) : (
           <form onSubmit={handleEmailSubmit}>

@@ -79,16 +79,6 @@ export default defineConfig(({ command }) => ({
     watch: process.env.VITE_RUNTIME_EVIDENCE_HARNESS
       ? { ignored: ['**/*'] }
       : { ignored: ['**/src-tauri/target/**'] },
-    proxy: {
-      '/api': {
-        target: process.env.PEERS_STATION_URL || 'http://127.0.0.1:18080',
-        changeOrigin: true,
-      },
-      '/sub-agent': {
-        target: process.env.PEERS_STATION_URL || 'http://127.0.0.1:18080',
-        changeOrigin: true,
-      },
-    },
   },
   build: {
     outDir: 'dist',

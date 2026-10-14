@@ -22,6 +22,8 @@ const (
 	ActorEndpointManifestRoute = "/federation/actor/endpoint-manifest"
 	// PresenceQueryRoute serves Home Station-owned presence snapshots.
 	PresenceQueryRoute = "/federation/presence/query"
+	// FederationCatalogSearchRoute serves one Station's Federation-scoped directory slice.
+	FederationCatalogSearchRoute = "/federation/catalog/search"
 	// ConversationCommandPrepareRoute prepares a command at its authority.
 	ConversationCommandPrepareRoute = "/federation/conversation/command/prepare"
 	// ConversationLeaveIntentSubmitRoute submits a signed leave intent.
@@ -70,6 +72,7 @@ type PeerRoute string
 const (
 	PeerRouteActorEndpointManifest            PeerRoute = "actor-endpoint-manifest"
 	PeerRoutePresenceQuery                    PeerRoute = "presence-query"
+	PeerRouteFederationCatalogSearch          PeerRoute = "federation-catalog-search"
 	PeerRouteConversationCommandPrepare       PeerRoute = "conversation-command-prepare"
 	PeerRouteConversationLeaveIntentSubmit    PeerRoute = "conversation-leave-intent-submit"
 	PeerRouteConversationLeaveIntentList      PeerRoute = "conversation-leave-intent-list"
@@ -89,7 +92,7 @@ const (
 	PeerRouteRealtimeCallResolution           PeerRoute = "realtime-call-resolution"
 	PeerRouteRealtimeSignal                   PeerRoute = "realtime-signal"
 	PeerRouteGroupCallAuthorityJoin           PeerRoute = "group-call-authority-join"
-	PeerRouteSocialPrivateObjectRead           PeerRoute = "social-private-object-read"
+	PeerRouteSocialPrivateObjectRead          PeerRoute = "social-private-object-read"
 )
 
 // PeerEndpointResolver resolves a resource-owner endpoint lazily at request
@@ -124,6 +127,7 @@ type peerRouteSpec struct {
 var peerRouteSpecs = []peerRouteSpec{
 	{PeerRouteActorEndpointManifest, "federation-actor-endpoint-manifest", ActorEndpointManifestRoute, server.POST, ActorEndpointManifestScope},
 	{PeerRoutePresenceQuery, "federation-presence-query", PresenceQueryRoute, server.POST, PresenceQueryScope},
+	{PeerRouteFederationCatalogSearch, "federation-catalog-search", FederationCatalogSearchRoute, server.POST, FederationCatalogSearchScope},
 	{PeerRouteConversationCommandPrepare, "federation-conversation-command-prepare", ConversationCommandPrepareRoute, server.POST, ConversationCommandPrepareScope},
 	{PeerRouteConversationLeaveIntentSubmit, "federation-conversation-leave-intent-submit", ConversationLeaveIntentSubmitRoute, server.POST, ConversationLeaveIntentScope},
 	{PeerRouteConversationLeaveIntentList, "federation-conversation-leave-intent-list", ConversationLeaveIntentListRoute, server.POST, ConversationLeaveIntentScope},
@@ -234,6 +238,13 @@ func (f *PeerRouteFactory) Handlers() []server.Handler {
 			server.POST,
 			f.dispatchRoute(PeerRoutePresenceQuery),
 			f.wrappers[PeerRoutePresenceQuery],
+		),
+		server.NewSimpleHandler(
+			"federation-catalog-search",
+			FederationCatalogSearchRoute,
+			server.POST,
+			f.dispatchRoute(PeerRouteFederationCatalogSearch),
+			f.wrappers[PeerRouteFederationCatalogSearch],
 		),
 		server.NewSimpleHandler(
 			"federation-conversation-command-prepare",

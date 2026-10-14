@@ -161,6 +161,7 @@ interface FederationBindingInput {
 
 interface JoinAcceptanceFederationInput extends FederationBindingInput {
   federationEndpoint: string;
+  sequencerStationPeerId: string;
 }
 
 interface RuntimeIdentityResult {
@@ -894,6 +895,7 @@ export function installAcceptanceHarness(): void {
             federationEndpoint: sequencer.stationUrl.trim(),
             federationId,
             homeStationPeerId,
+            sequencerStationPeerId,
           };
         }
       }
@@ -925,6 +927,7 @@ export function installAcceptanceHarness(): void {
         federationEndpoint: sequencer.stationUrl.trim(),
         federationId,
         homeStationPeerId,
+        sequencerStationPeerId: homeStationPeerId,
       };
     },
 
@@ -952,7 +955,8 @@ export function installAcceptanceHarness(): void {
     async joinAcceptanceFederation(input: JoinAcceptanceFederationInput) {
       const federationId = input.federationId?.trim();
       const federationEndpoint = input.federationEndpoint?.trim();
-      if (!federationId || !federationEndpoint) {
+      const sequencerStationPeerId = input.sequencerStationPeerId?.trim();
+      if (!federationId || !federationEndpoint || !sequencerStationPeerId) {
         throw new Error('moments.acceptance.federationJoinMissing');
       }
       const response = await invokeFederationFixture<{
@@ -962,6 +966,7 @@ export function installAcceptanceHarness(): void {
         federation_endpoint: federationEndpoint,
         federation_id: federationId,
         message: 'secure-content-w8 remote recipient fixture',
+        sequencer_station_peer_id: sequencerStationPeerId,
       });
       const status = response.status.trim().toLowerCase();
       if (status !== 'active') {

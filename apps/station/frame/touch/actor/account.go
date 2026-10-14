@@ -98,7 +98,7 @@ func SignUp(c context.Context, req *model.ActorSignRequest, baseURL string) erro
 		Discoverable:              true,
 		ManuallyApprovesFollowers: false,
 		DefaultVisibility:         "public",
-		MessagePermission:         "everyone",
+		ContactRequestPolicy:      "anyone",
 	}
 
 	if err = rds.Create(&meta).Error; err != nil {
@@ -107,6 +107,10 @@ func SignUp(c context.Context, req *model.ActorSignRequest, baseURL string) erro
 	}
 
 	log.Infof(c, "[SignUp] Actor and meta created successfully for actor %s with peers ID %s", a.PreferredUsername, a.PTID)
+
+	if err = RefreshFederationCatalogActor(c, a.ID); err != nil {
+		log.Warnf(c, "[Federation catalog] refresh actor=%d err=%v", a.ID, err)
+	}
 
 	// Federation locator publish — best-effort, async. SignUp returns
 	// success regardless of DHT state; the publisher is bound to the

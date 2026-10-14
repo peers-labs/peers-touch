@@ -665,7 +665,6 @@ def acquire(args: argparse.Namespace) -> int:
 
     ports = (
         args.webdriver_port,
-        args.gateway_port,
         args.observer_port,
     )
     if any(port < 1 or port > 65535 for port in ports):
@@ -843,9 +842,6 @@ def actor_start(args: argparse.Namespace) -> int:
     actor = _slug(args.actor, "actor")
     profile = _slug(args.profile, "profile")
     webdriver_port = _port(args.webdriver_port, "WebDriver port")
-    gateway_port = _port(args.gateway_port, "gateway port")
-    if webdriver_port == gateway_port:
-        raise ValueError("actor WebDriver and gateway ports must be distinct")
     environment = _actor_environment(args.environment_json)
     lease_path, lease = _owned_lease(
         root,
@@ -864,13 +860,10 @@ def actor_start(args: argparse.Namespace) -> int:
         int(port)
         for item in actors
         if isinstance(item, dict)
-        for port in (
-            item.get("webdriverPort"),
-            item.get("gatewayPort"),
-        )
+        for port in (item.get("webdriverPort"),)
         if int(port or 0) > 0
     }
-    requested_ports = {webdriver_port, gateway_port}
+    requested_ports = {webdriver_port}
     if allocated_ports & requested_ports:
         raise RuntimeError("runtime-cell actor ports are already allocated")
     _assert_ports_available(tuple(sorted(requested_ports)))
@@ -895,8 +888,6 @@ def actor_start(args: argparse.Namespace) -> int:
         f"DISPLAY={args.display}",
         "--env",
         f"TAURI_WEBDRIVER_PORT={webdriver_port}",
-        "--env",
-        f"PT_GATEWAY_PORT={gateway_port}",
         "--env",
         f"PT_PROFILE={profile}",
         "--env",
@@ -951,12 +942,6 @@ def actor_start(args: argparse.Namespace) -> int:
             webdriver_port,
             deadline,
         )
-        _wait_actor_port(
-            container_name,
-            process_id,
-            gateway_port,
-            deadline,
-        )
     except (OSError, RuntimeError, ValueError):
         if pid_path.is_file():
             _stop_actor_record(
@@ -971,7 +956,6 @@ def actor_start(args: argparse.Namespace) -> int:
         "actor": actor,
         "processId": process_id,
         "webdriverPort": webdriver_port,
-        "gatewayPort": gateway_port,
         "profile": profile,
         "storageRoot": f"{container_actor_root}/storage",
         "logPath": f"{container_actor_root}/app.log",
@@ -981,7 +965,6 @@ def actor_start(args: argparse.Namespace) -> int:
     lease["ports"] = [
         *lease.get("ports", []),
         webdriver_port,
-        gateway_port,
     ]
     _write_json(lease_path, lease)
     sys.stdout.write(json.dumps(record, sort_keys=True) + "\n")
@@ -1018,7 +1001,6 @@ def actor_stop(args: argparse.Namespace) -> int:
     )
     stopped_ports = {
         int(record.get("webdriverPort") or 0),
-        int(record.get("gatewayPort") or 0),
     }
     _assert_ports_released(
         tuple(port for port in stopped_ports if port > 0)
@@ -1166,7 +1148,6 @@ def parser() -> argparse.ArgumentParser:
             command.add_argument("--source-path", required=True)
             command.add_argument("--source-commit", required=True)
             command.add_argument("--webdriver-port", type=int, required=True)
-            command.add_argument("--gateway-port", type=int, required=True)
             command.add_argument("--observer-port", type=int, required=True)
 
     status_parser = subparsers.add_parser("status")
@@ -1185,7 +1166,6 @@ def parser() -> argparse.ArgumentParser:
         if name == "actor-start":
             command.add_argument("--display", required=True)
             command.add_argument("--webdriver-port", type=int, required=True)
-            command.add_argument("--gateway-port", type=int, required=True)
             command.add_argument("--profile", required=True)
             command.add_argument("--environment-json", required=True)
             command.add_argument("--timeout", type=float, default=30)

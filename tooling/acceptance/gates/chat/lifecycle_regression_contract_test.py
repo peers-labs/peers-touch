@@ -175,9 +175,9 @@ class LifecycleRegressionContractTest(unittest.TestCase):
         messaging_schema = (
             REPO_ROOT / "packages/messaging-core/src/store/schema.rs"
         ).read_text(encoding="utf-8")
-        desktop_gateway = (
+        desktop_messaging_commands = (
             REPO_ROOT
-            / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
         ).read_text(encoding="utf-8")
 
         self.assertIn("resolveFederationStationName", message_area)
@@ -186,7 +186,10 @@ class LifecycleRegressionContractTest(unittest.TestCase):
         self.assertIn("resolveMessageSearchTargets(", social_chat)
         self.assertIn("data-chat-message-search-clear", search_modal)
         self.assertNotIn("message-search-backfill-v1", messaging_schema)
-        self.assertIn("messaging_search_messages_result", desktop_gateway)
+        self.assertIn(
+            "messaging_search_messages_result",
+            desktop_messaging_commands,
+        )
         self.assertIn("conversation_summary_projection", messaging_store)
         self.assertIn("conversation_message_page", messaging_store)
         self.assertIn("prepare_message_retry", messaging_store)

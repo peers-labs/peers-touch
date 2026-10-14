@@ -3,6 +3,9 @@
 
 export const ACCESS_GATE_TYPE_AUTH_LOGIN = 2;
 export const ACCESS_GATE_TYPE_INVITE_CODE = 5;
+export const ACCESS_GATE_TYPE_MAINTENANCE = 7;
+export const ACCESS_GATE_TYPE_TERMS_ACCEPTANCE = 8;
+export const ACCESS_GATE_TYPE_CUSTOM = 100;
 export const ACCESS_DECISION_ACTION_REQUIRED = 2;
 export const ACCESS_DECISION_GRANTED = 3;
 export const ACCESS_DECISION_BLOCKED = 4;
@@ -16,7 +19,11 @@ export interface AccessGateField {
   label?: string;
   required?: boolean;
   placeholder?: string;
+  options?: Array<string | { label?: string; value: string }>;
 }
+
+export type AccessGateScalar = string | boolean | number;
+export type AccessGateFieldValues = Record<string, AccessGateScalar>;
 
 export interface AccessGate {
   gateId: string;
@@ -262,6 +269,22 @@ export function isLoginGate(gate: AccessGate | undefined): boolean {
     || gate?.gateType === 'ACCESS_GATE_TYPE_AUTH_LOGIN';
 }
 
+export function isTermsAcceptanceGate(gate: AccessGate | undefined): boolean {
+  return gate?.gateType === ACCESS_GATE_TYPE_TERMS_ACCEPTANCE
+    || gate?.gateType === 'ACCESS_GATE_TYPE_TERMS_ACCEPTANCE';
+}
+
+export function isGenericSchemaGate(gate: AccessGate | undefined): boolean {
+  return isTermsAcceptanceGate(gate)
+    || gate?.gateType === ACCESS_GATE_TYPE_CUSTOM
+    || gate?.gateType === 'ACCESS_GATE_TYPE_CUSTOM';
+}
+
+export function isMaintenanceGate(gate: AccessGate | undefined): boolean {
+  return gate?.gateType === ACCESS_GATE_TYPE_MAINTENANCE
+    || gate?.gateType === 'ACCESS_GATE_TYPE_MAINTENANCE';
+}
+
 export function isAccessGranted(decision: AccessDecision | null): boolean {
   return decision?.state === ACCESS_DECISION_GRANTED
     || decision?.state === 'ACCESS_DECISION_STATE_GRANTED';
@@ -285,8 +308,19 @@ export function accessDecisionMessage(decision: AccessDecision | null): string {
 
 export function accessGateTypeNumber(gate: AccessGate): number {
   if (typeof gate.gateType === 'number') return gate.gateType;
-  if (gate.gateType === 'ACCESS_GATE_TYPE_AUTH_LOGIN') return ACCESS_GATE_TYPE_AUTH_LOGIN;
-  if (gate.gateType === 'ACCESS_GATE_TYPE_INVITE_CODE') return ACCESS_GATE_TYPE_INVITE_CODE;
+  const value = {
+    ACCESS_GATE_TYPE_STATION_CAPABILITY: 1,
+    ACCESS_GATE_TYPE_AUTH_LOGIN,
+    ACCESS_GATE_TYPE_AUTH_SESSION_RESTORE: 3,
+    ACCESS_GATE_TYPE_INVITE_ALLOWLIST: 4,
+    ACCESS_GATE_TYPE_INVITE_CODE,
+    ACCESS_GATE_TYPE_DEVICE_TRUST: 6,
+    ACCESS_GATE_TYPE_MAINTENANCE,
+    ACCESS_GATE_TYPE_TERMS_ACCEPTANCE,
+    ACCESS_GATE_TYPE_AUTH_OAUTH: 9,
+    ACCESS_GATE_TYPE_CUSTOM,
+  }[gate.gateType];
+  if (value !== undefined) return value;
   throw new Error('auth.gate.unsupported');
 }
 

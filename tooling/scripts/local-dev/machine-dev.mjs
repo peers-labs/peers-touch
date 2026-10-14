@@ -97,7 +97,6 @@ function outputShell(resolved) {
       resolved.binding.allowedCapabilities.join(','),
     PT_MACHINE_PROFILE: resolved.binding.profile,
     PT_MACHINE_SLOT: resolved.binding.slot,
-    PT_MACHINE_DESKTOP_APP_GATEWAY_PORT: resolved.ports.desktopAppGateway,
     PT_MACHINE_DESKTOP_APP_WEB_PORT: resolved.ports.desktopAppWeb,
     PT_MACHINE_MOBILE_WEB_PORT: resolved.ports.mobileWeb,
   };

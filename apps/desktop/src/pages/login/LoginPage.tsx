@@ -15,9 +15,11 @@ import {
   currentGate,
   isAccessBlocked,
   isAccessGranted,
+  isGenericSchemaGate,
   isInviteCodeGate,
   isLoginGate,
   type AccessDecision,
+  type AccessGateFieldValues,
 } from '../../services/accessGate';
 import { UserSquareAvatar } from '../../components/common/UserSquareAvatar';
 import { StationNetworkIntro } from '../../components/common/StationNetworkIntro';
@@ -92,6 +94,7 @@ export function LoginPage({
   const accessStart = useSessionStore(s => s.accessStart);
   const accessSubmitInviteCode = useSessionStore(s => s.accessSubmitInviteCode);
   const accessSubmitLogin = useSessionStore(s => s.accessSubmitLogin);
+  const accessSubmitGeneric = useSessionStore(s => s.accessSubmitGeneric);
   const accessCancel = useSessionStore(s => s.accessCancel);
 
   // ── Determine initial state ──
@@ -252,16 +255,25 @@ export function LoginPage({
   const finishLoginGate = useCallback(async (decision: AccessDecision) => {
     const gate = currentGate(decision);
     if (!gate || !isLoginGate(gate)) throw new Error('auth.gate.unsupported');
-    await accessSubmitLogin(
+    const nextDecision = await accessSubmitLogin(
       decision.attemptId,
       gate,
       emailRef.current,
       passwordRef.current,
     );
+    if (!isAccessGranted(nextDecision)) {
+      setGateDecision(nextDecision);
+      setGateError(
+        isAccessBlocked(nextDecision)
+          ? accessDecisionMessage(nextDecision) || t('auth.gate.blocked.subtitle')
+          : '',
+      );
+      return;
+    }
     setGateDecision(null);
     setGateInviteCode('');
     await continueAfterFreshAuth();
-  }, [accessSubmitLogin, continueAfterFreshAuth]);
+  }, [accessSubmitLogin, continueAfterFreshAuth, t]);
 
   // ── Route to provider login ──
 
@@ -594,10 +606,11 @@ export function LoginPage({
       const decision = await accessStart();
       const gate = currentGate(decision);
       if (isAccessBlocked(decision)) {
-        message.error(accessDecisionMessage(decision) || t('auth.gate.blocked.subtitle'));
+        setGateDecision(decision);
+        setGateError(accessDecisionMessage(decision) || t('auth.gate.blocked.subtitle'));
         return;
       }
-      if (isInviteCodeGate(gate)) {
+      if (isInviteCodeGate(gate) || isGenericSchemaGate(gate)) {
         setGateDecision(decision);
         setGateInviteCode('');
         return;
@@ -635,11 +648,22 @@ export function LoginPage({
         await continueAfterFreshAuth();
         return;
       }
-      if (isAccessGranted(decision) || !isInviteCodeGate(currentGate(decision))) {
+      if (isAccessGranted(decision)) {
+        setGateDecision(null);
+        setGateInviteCode('');
+        await continueAfterFreshAuth();
+        return;
+      }
+      const nextGate = currentGate(decision);
+      if (isLoginGate(nextGate)) {
         await finishLoginGate(decision);
         return;
       }
+      if (!isInviteCodeGate(nextGate) && !isGenericSchemaGate(nextGate)) {
+        throw new Error('auth.gate.unsupported');
+      }
       setGateDecision(decision);
+      setGateInviteCode('');
     } catch (err: unknown) {
       setGateError(errorMessage(err, t('auth.gate.inviteCode.rejected')));
     } finally {
@@ -651,6 +675,51 @@ export function LoginPage({
     completeOAuthAccountLogin,
     continueAfterFreshAuth,
     finishLoginGate,
+    onLoginWithOAuthBridge,
+    pendingOAuthSessionId,
+    t,
+  ]);
+
+  const handleSubmitGenericValues = useCallback(async (fields: AccessGateFieldValues) => {
+    if (!gateDecision?.attemptId) return;
+    setGateLoading(true);
+    setGateError('');
+    try {
+      const gate = currentGate(gateDecision);
+      if (!gate || !isGenericSchemaGate(gate)) throw new Error('auth.gate.unsupported');
+      const decision = await accessSubmitGeneric(gateDecision.attemptId, gate, fields);
+      if (isAccessBlocked(decision)) {
+        setGateError(accessDecisionMessage(decision) || t('auth.gate.blocked.subtitle'));
+        setGateDecision(decision);
+        return;
+      }
+      if (isAccessGranted(decision) && pendingOAuthSessionId) {
+        const nextDecision = await completeOAuthAccountLogin();
+        if (nextDecision) {
+          setGateDecision(nextDecision);
+          return;
+        }
+        setGateDecision(null);
+        await onLoginWithOAuthBridge();
+        await continueAfterFreshAuth();
+        return;
+      }
+      if (isAccessGranted(decision)) {
+        setGateDecision(null);
+        await continueAfterFreshAuth();
+        return;
+      }
+      setGateDecision(decision);
+    } catch (err: unknown) {
+      setGateError(errorMessage(err, t('auth.gate.generic.rejected')));
+    } finally {
+      setGateLoading(false);
+    }
+  }, [
+    accessSubmitGeneric,
+    completeOAuthAccountLogin,
+    continueAfterFreshAuth,
+    gateDecision,
     onLoginWithOAuthBridge,
     pendingOAuthSessionId,
     t,
@@ -751,6 +820,7 @@ export function LoginPage({
     error: gateError,
     loading: gateLoading,
     onSubmitCode: handleSubmitInviteCode,
+    onSubmitValues: handleSubmitGenericValues,
     onCancel: handleCancelGate,
   } : null;
 

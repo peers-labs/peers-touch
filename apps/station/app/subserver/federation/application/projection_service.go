@@ -112,7 +112,7 @@ func (s *ProjectionService) ListFederations(ctx context.Context, stationPeerID, 
 
 		if role != nil {
 			summary.MyRole = role.Role
-			summary.Capability = computeCapability(role.Role)
+			summary.Capability = CapabilityForRole(role.Role)
 		}
 
 		resp.Federations = append(resp.Federations, summary)
@@ -140,7 +140,7 @@ func (s *ProjectionService) ListMemberStations(ctx context.Context, federationID
 	return resp, nil
 }
 
-func computeCapability(role string) *pb.ActorCapability {
+func CapabilityForRole(role string) *pb.ActorCapability {
 	switch role {
 	case "federation_owner":
 		return &pb.ActorCapability{
@@ -154,9 +154,11 @@ func computeCapability(role string) *pb.ActorCapability {
 			CanViewLedger: true, CanRemoveStation: true, CanGrantAdmin: false,
 			CanLeave: true, CanArchive: false,
 		}
-	default:
+	case "federation_member":
 		return &pb.ActorCapability{
 			CanViewLedger: true, CanLeave: true,
 		}
+	default:
+		return &pb.ActorCapability{}
 	}
 }

@@ -10,7 +10,7 @@
 ## 1. Scope
 
 This cutover replaces the live direct-message crypto path across Model,
-Station, Desktop Rust, Desktop Web, generated bindings, and native acceptance.
+Station, Desktop Rust, Desktop renderer, generated bindings, and native acceptance.
 It does not preserve a runtime compatibility path.
 
 ## 2. Current Defects

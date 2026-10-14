@@ -9,7 +9,7 @@ This document is the Desktop platform source for how runtime components consume 
 Cross-end architecture source:
 
 - `docs/architecture/platform/client/frontend-runtime/README.md` defines the cross-client frontend runtime model: scheduling lanes, page/section/applet lifecycle, hidden-tree budget, and performance evidence.
-- `docs/architecture/domains/social/runtime/README.md` defines the Desktop/Mobile shared social runtime abstraction. This Desktop document refines that abstraction inside `desktop-web` kernel/runtime contracts.
+- `docs/architecture/domains/social/runtime/README.md` defines the Desktop/Mobile shared social runtime abstraction. This Desktop document refines that abstraction inside the embedded WebView renderer kernel/runtime contracts.
 
 Read this before changing:
 
@@ -26,9 +26,9 @@ Read this before changing:
 
 ## 2. Runtime Ownership
 
-Station owns cross-device business truth. `desktop-rust` is the local command and gateway runtime. `desktop-web` owns view rendering and local projections.
+Station owns cross-device business truth. `desktop-rust` is the local command and capability runtime. The embedded WebView renderer owns view rendering and local projections.
 
-Inside `desktop-web`, long-lived runtimes own projection freshness:
+Inside the embedded WebView renderer, long-lived runtimes own projection freshness:
 
 | Runtime | Owns |
 |---|---|
@@ -57,7 +57,7 @@ If a feature only refreshes on component mount, tab switch, or button click, the
 
 ## 4. Social Runtime Contract
 
-`messaging` is the only Desktop Web owner of Chat projection freshness after
+`messaging` is the only embedded Desktop renderer owner of Chat projection freshness after
 login:
 
 - own the authenticated Device Messaging Engine scope and command facade;
@@ -101,7 +101,7 @@ Peer public profile is also part of this projection. The chat layer needs the ri
 When adding or fixing a runtime-backed feature:
 
 1. Identify the domain owner and source of truth.
-2. Identify the `desktop-web` runtime/store that owns the projection.
+2. Identify the embedded renderer runtime/store that owns the projection.
 3. Add immediate event/notification consumption in that runtime.
 4. Add low-frequency reconciliation for missed events.
 5. Keep page/component changes limited to rendering and user actions.

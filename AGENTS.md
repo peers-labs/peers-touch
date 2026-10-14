@@ -128,7 +128,7 @@ Example:
 ## 4. Thinking Principles
 
 1. **Rationality over minimalism** — Architectural soundness is the goal, not minimum change.
-2. **Run scripts first** — Prefer `tooling/scripts/` (`dev-desktop-app.sh`, `pt.sh`, etc.).
+2. **Use canonical entrypoints first** — Prefer `make desktop` for Native Desktop and repository-owned `tooling/scripts/` commands such as `pt.sh` for other workflows.
 3. **Architecture design methodology** — For architecture design / system boundaries / ownership / contracts / topology / design decisions, **MUST** use `pt-architecture-design-methodology` skill before execution planning.
 4. **Architecture execution methodology** — For architecture landing / migration / domain decomposition, **MUST** use `pt-architecture-execution-methodology` skill: `Domain Responsibility → Execution Closure → Dependency Order → Verifiable Delivery`.
 5. **Runtime projection first** — For Desktop bugs involving chat, contacts, notifications, badges, realtime, or store freshness, first identify the owning runtime and its projection contract. Do not patch stale state only with page/component refreshes; read `docs/client/desktop/runtime-projections.md`.

@@ -153,10 +153,15 @@ import {
   runAcceptanceCleanupSteps,
   type AcceptanceCleanupFailure,
 } from './cleanup';
+import {
+  runPasswordAccessChain,
+  type AcceptanceAccessGateFields,
+} from '../chat/passwordLogin';
 
 interface LoginInput {
   account: string;
   password: string;
+  accessGateFields?: AcceptanceAccessGateFields;
 }
 
 interface ConfigureStationInput {
@@ -32913,7 +32918,7 @@ export function installAcceptanceHarness(): void {
       };
     },
 
-    async loginWithPassword({ account, password }: LoginInput) {
+    async loginWithPassword({ account, password, accessGateFields }: LoginInput) {
       const reportIdentityDebug = (
         hypothesisId: string,
         msg: string,
@@ -33002,7 +33007,17 @@ export function installAcceptanceHarness(): void {
       // The Tauri backend may still be initializing IPC listeners when the
       // harness becomes ready at the web layer.
       const attemptLogin = async (): Promise<void> => {
-        await identityRuntime.loginWithPassword(account, password);
+        await runPasswordAccessChain(
+          {
+            beginPasswordLogin: (loginAccount, loginPassword) =>
+              identityRuntime.beginPasswordLogin(loginAccount, loginPassword),
+            submitPasswordLoginGate: (decision, fields) =>
+              identityRuntime.submitPasswordLoginGate(decision, fields),
+          },
+          account,
+          password,
+          accessGateFields,
+        );
         await identityRuntime.completeCurrentSession();
         await waitFor(
           () => identityRuntime.getSnapshot().lifecycle.state === 'ready',

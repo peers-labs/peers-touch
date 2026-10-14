@@ -4,15 +4,20 @@ import {
   socialGetFollowers,
   socialGetFollowing,
   socialGetRelationship,
+  socialListBlockedActors,
+  socialUnblockActor,
   socialUnfollow,
 } from '../services/social_api';
-import type {
-  Follower,
-  Following,
-  Relationship,
+import {
+  SocialRelationshipCommandResultKind,
+  type BlockedActorProjection,
+  type Follower,
+  type Following,
+  type Relationship,
 } from '../gen/proto/domain/social/relationship_pb';
 import { EVENT, eventBus } from '../kernel/events';
 import { log } from '../utils/logger';
+import { currentAuthenticatedActorPtid, useSessionStore } from './session';
 import {
   projectMutualFriends,
   type MutualFriendProjection,
@@ -21,6 +26,26 @@ import {
 const TAG = 'relationships-store';
 const RELATIONSHIP_PAGE_SIZE = 100;
 let relationshipsGeneration = 0;
+const BLOCKED_ACTOR_PAGE_SIZE = 100;
+
+interface RelationshipSessionFence {
+  actorPtid: string;
+  sessionEpoch: number;
+}
+
+function currentRelationshipSessionFence(): RelationshipSessionFence | null {
+  const actorPtid = currentAuthenticatedActorPtid();
+  if (!actorPtid) return null;
+  return {
+    actorPtid,
+    sessionEpoch: useSessionStore.getState().sessionEpoch,
+  };
+}
+
+function relationshipSessionFenceMatches(fence: RelationshipSessionFence): boolean {
+  return currentAuthenticatedActorPtid() === fence.actorPtid
+    && useSessionStore.getState().sessionEpoch === fence.sessionEpoch;
+}
 
 // Per-actor relationship cache:
 //   - `relations[actorPtid]` — the viewer's edge to that actor
@@ -62,6 +87,12 @@ interface RelationshipsState {
   mutualFriendsLoading: boolean;
   mutualFriendsLoadedAt?: number;
   mutualFriendsError: string | null;
+  blockedActors: BlockedActorProjection[];
+  blockedActorsLoading: boolean;
+  blockedActorsLoadedAt?: number;
+  blockedActorsError: string | null;
+  blockedActorMutatingPtid: string | null;
+  blockedActorMutationGeneration: number;
 
   loadRelationship: (targetActorPtid: string) => Promise<Relationship | undefined>;
   follow: (targetActorPtid: string) => Promise<void>;
@@ -70,6 +101,8 @@ interface RelationshipsState {
   loadFollowers: (actorPtid: string, refresh?: boolean) => Promise<void>;
   loadFollowing: (actorPtid: string, refresh?: boolean) => Promise<void>;
   loadMutualFriends: (actorPtid: string, refresh?: boolean) => Promise<void>;
+  loadBlockedActors: () => Promise<void>;
+  unblockActor: (targetActorPtid: string) => Promise<void>;
   resetMutualFriends: () => void;
 
   reset: () => void;
@@ -86,6 +119,12 @@ const initialState: Pick<
   | 'mutualFriendsLoading'
   | 'mutualFriendsLoadedAt'
   | 'mutualFriendsError'
+  | 'blockedActors'
+  | 'blockedActorsLoading'
+  | 'blockedActorsLoadedAt'
+  | 'blockedActorsError'
+  | 'blockedActorMutatingPtid'
+  | 'blockedActorMutationGeneration'
 > = {
   relations: {},
   loading: {},
@@ -96,6 +135,12 @@ const initialState: Pick<
   mutualFriendsLoading: false,
   mutualFriendsLoadedAt: undefined,
   mutualFriendsError: null,
+  blockedActors: [],
+  blockedActorsLoading: false,
+  blockedActorsLoadedAt: undefined,
+  blockedActorsError: null,
+  blockedActorMutatingPtid: null,
+  blockedActorMutationGeneration: 0,
 };
 
 async function loadAllFollowers(actorPtid: string): Promise<Follower[]> {
@@ -144,6 +189,34 @@ async function loadAllFollowing(actorPtid: string): Promise<Following[]> {
   } while (cursor);
 
   return following;
+}
+
+async function loadAllBlockedActors(): Promise<BlockedActorProjection[]> {
+  const blockedActors: BlockedActorProjection[] = [];
+  const seenActorPtids = new Set<string>();
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+
+  do {
+    const response = await socialListBlockedActors(
+      cursor,
+      BLOCKED_ACTOR_PAGE_SIZE,
+    );
+    for (const item of response.items) {
+      const actorPtid = item.actor?.ptid.trim() ?? '';
+      if (!actorPtid || seenActorPtids.has(actorPtid)) continue;
+      seenActorPtids.add(actorPtid);
+      blockedActors.push(item);
+    }
+    const nextCursor = response.nextCursor || undefined;
+    if (nextCursor && seenCursors.has(nextCursor)) {
+      throw new Error('social_list_blocked_actors returned a repeated cursor');
+    }
+    if (nextCursor) seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  } while (cursor);
+
+  return blockedActors;
 }
 
 export const useRelationshipsStore = createDesktopStore<RelationshipsState>('relationships', (set, get) => ({
@@ -239,6 +312,105 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
         };
       });
       throw err;
+    }
+  },
+
+  loadBlockedActors: async () => {
+    const fence = currentRelationshipSessionFence();
+    if (!fence) {
+      set({
+        blockedActors: [],
+        blockedActorsLoading: false,
+        blockedActorsLoadedAt: undefined,
+        blockedActorsError: null,
+      });
+      return;
+    }
+    if (get().blockedActorsLoading) return;
+    set({
+      blockedActorsLoading: true,
+      blockedActorsError: null,
+    });
+    try {
+      const blockedActors = await loadAllBlockedActors();
+      if (!relationshipSessionFenceMatches(fence)) return;
+      set({
+        blockedActors,
+        blockedActorsLoading: false,
+        blockedActorsLoadedAt: Date.now(),
+        blockedActorsError: null,
+      });
+    } catch (err) {
+      if (!relationshipSessionFenceMatches(fence)) return;
+      const error = err instanceof Error ? err.message : String(err);
+      log.warn(TAG, 'loadBlockedActors failed', { error });
+      set({
+        blockedActorsLoading: false,
+        blockedActorsError: error,
+      });
+      throw err;
+    }
+  },
+
+  unblockActor: async (targetActorPtid) => {
+    const fence = currentRelationshipSessionFence();
+    if (!fence) throw new Error('settings.privacy.sessionUnavailable');
+    const blocked = get().blockedActors.find(
+      (item) => item.actor?.ptid === targetActorPtid,
+    );
+    if (!blocked || !blocked.homeStationPeerId) {
+      throw new Error('social.blockedActor.unavailable');
+    }
+    const observedRevision = Number(blocked.revision);
+    if (!Number.isSafeInteger(observedRevision) || observedRevision < 0) {
+      throw new Error('social.blockedActor.invalidRevision');
+    }
+
+    const mutationGeneration = get().blockedActorMutationGeneration + 1;
+    set({
+      blockedActorMutatingPtid: targetActorPtid,
+      blockedActorMutationGeneration: mutationGeneration,
+      blockedActorsError: null,
+    });
+    try {
+      const response = await socialUnblockActor({
+        targetActorPtid,
+        targetHomeStationPeerId: blocked.homeStationPeerId,
+        observedRevision,
+      });
+      if (!relationshipSessionFenceMatches(fence)) return;
+      const kind = response.result?.kind
+        ?? SocialRelationshipCommandResultKind.UNSPECIFIED;
+      if (
+        kind !== SocialRelationshipCommandResultKind.COMMITTED
+        && kind !== SocialRelationshipCommandResultKind.DUPLICATE
+      ) {
+        throw new Error(
+          kind === SocialRelationshipCommandResultKind.CONFLICT
+            ? 'settings.privacy.unblockConflict'
+            : 'settings.privacy.unblockRejected',
+        );
+      }
+      await get().loadBlockedActors();
+      if (!relationshipSessionFenceMatches(fence)) return;
+      eventBus.publish(EVENT.RELATIONSHIP_CHANGED, {
+        targetActorPtid,
+        action: 'unblock',
+      });
+    } catch (err) {
+      if (!relationshipSessionFenceMatches(fence)) return;
+      const error = err instanceof Error ? err.message : String(err);
+      log.warn(TAG, 'unblockActor failed', { targetActorPtid, error });
+      set({ blockedActorsError: error });
+      throw err;
+    } finally {
+      if (relationshipSessionFenceMatches(fence)) {
+        set((state) => (
+          state.blockedActorMutationGeneration === mutationGeneration
+            ? { blockedActorMutatingPtid: null }
+            : state
+        ));
+      }
     }
   },
 

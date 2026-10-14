@@ -642,6 +642,7 @@ message JoinFederationRequest {
   string federation_endpoint = 1;     // sequencer station URL or manifest URL
   string federation_id = 2;           // from manifest or known
   string message = 3;                 // optional join message
+  string sequencer_station_peer_id = 4; // pinned target identity for Station auth
 }
 
 message JoinFederationResponse {

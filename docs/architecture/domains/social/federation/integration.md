@@ -53,7 +53,7 @@
 
 ### 3.4 Runtime
 
-- Desktop Web 页面保持纯渲染。
+- Desktop renderer 页面保持纯渲染。
 - `momentsRuntime` 或后续 `humanSocialRuntime` 负责 bootstrap、事件消费、periodic reconcile。
 - 显式分页、发布、评论、reaction 是用户动作，可以调用 store action。
 
@@ -107,7 +107,7 @@
 | Proto | 已补 `FeedObjectExplanation`、`ActivitySource`、`RelationshipReason`、`AudienceExplanation`、`BlockExplanation` |
 | Station | timeline / projection sync / profile / detail 返回 source/reason/audience/block explanation |
 | Desktop Rust | social command bridge 保持 proto bytes，由 Tauri build.rs 生成 Rust proto |
-| Desktop Web Runtime | momentsRuntime 继续拥有 projection freshness |
+| Desktop renderer Runtime | momentsRuntime 继续拥有 projection freshness |
 | Store | 已增加 `feedExplanations` map |
 | UI | Feed card、Profile、Search、Circles 重构 |
 | Locales | 所有新增文案进入 `packages/locales` |

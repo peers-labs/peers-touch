@@ -571,6 +571,8 @@ fn build_send_command(
             direct_payloads,
             mls_application_payload: Vec::new(),
             mls_application_payload_sha256: Vec::new(),
+            mentioned_ptids: Vec::new(),
+            mention_all: false,
         })),
     })
 }

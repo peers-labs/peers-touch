@@ -14,7 +14,7 @@
 |---|---|---|
 | `tooling/scripts/local-dev/profile.sh` and `env.sh` | `tooling/devctl/profile.mjs` | Replaced for daily use; legacy scripts have no Make/package consumer |
 | `tooling/scripts/local-dev/station-*.sh` | `tooling/devctl/station.mjs` | Local lifecycle replaced; legacy log/remote paths retained |
-| `tooling/scripts/local-dev/desktop-dev.sh` and `_ensure-desktop-*.sh` | `tooling/devctl/desktop.mjs` | Replaced for daily App/Web lifecycle |
+| Retired Desktop shell launchers | `tooling/devctl/desktop.mjs` | Deleted; `make desktop` owns the Native lifecycle |
 | `tooling/scripts/local-dev/status.sh`, `stop.sh`, `restart.sh` | `tooling/devctl/runtime-state.mjs` plus command modules | Replaced for managed Station/Desktop processes |
 | `tooling/make/local-dev.mk` | thin `devctl` forwarding recipes | Completed for in-scope commands |
 | Desktop/Mobile social shell checks | `tooling/devctl/checks.mjs` | Deleted after package cutover |
@@ -41,7 +41,7 @@
 - Canonical env-repository precedence.
 - Profile identity mismatch rejection.
 - Station health as the start postcondition.
-- App/Web process and storage isolation.
+- Native Tauri process and storage isolation.
 - Acceptance runtime-time Station profile injection.
 - Existing Station and Desktop runtime architecture.
 

@@ -3,10 +3,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const refresh = vi.hoisted(() => vi.fn<() => Promise<void>>());
 const loadApplet = vi.hoisted(() => vi.fn<(id: string) => Promise<void>>());
 const unloadApplet = vi.hoisted(() => vi.fn<(id: string) => Promise<void>>());
+const removeAppletInstallation = vi.hoisted(
+  () => vi.fn<(id: string) => Promise<void>>(),
+);
+const applets = vi.hoisted(() => [{
+  manifest: { id: 'peers.note' },
+  source: 'station',
+}]);
 
 vi.mock('../store/applets', () => ({
   useAppletsStore: {
-    getState: () => ({ refresh, loadApplet, unloadApplet }),
+    getState: () => ({
+      applets,
+      refresh,
+      loadApplet,
+      unloadApplet,
+      removeAppletInstallation,
+    }),
   },
 }));
 
@@ -124,9 +137,11 @@ describe('applets runtime projection', () => {
     vi.useFakeTimers();
     vi.resetModules();
     kernelState.instances.clear();
+    applets[0]!.source = 'station';
     refresh.mockReset();
     loadApplet.mockReset();
     unloadApplet.mockReset();
+    removeAppletInstallation.mockReset();
     dispatch.mockClear();
     sessionsCreate.mockClear();
     runSweep.mockClear();
@@ -137,6 +152,7 @@ describe('applets runtime projection', () => {
     refresh.mockResolvedValue(undefined);
     loadApplet.mockResolvedValue(undefined);
     unloadApplet.mockResolvedValue(undefined);
+    removeAppletInstallation.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -228,6 +244,48 @@ describe('applets runtime projection', () => {
     await appletsRuntime.releasePage?.('applet:peers.note', 'evict');
     expect(unloadApplet).toHaveBeenCalledTimes(2);
     expect(unloadApplet).toHaveBeenCalledWith('peers.note');
+  });
+
+  it('releases every runtime lease before uninstalling an applet', async () => {
+    const { appletsRuntime, uninstallAppletRuntime } = await import('./appletsRuntime');
+
+    await appletsRuntime.acquirePage?.('applet:peers.note', 'activate');
+    await uninstallAppletRuntime('peers.note');
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'destroy',
+      appletId: 'peers.note',
+      instanceId: 'applet:peers.note',
+    }));
+    expect(unloadApplet).toHaveBeenCalledTimes(1);
+    expect(unloadApplet).toHaveBeenCalledWith('peers.note');
+    expect(removeAppletInstallation).toHaveBeenCalledWith('peers.note');
+  });
+
+  it('restores active runtime leases when installation removal fails', async () => {
+    const removalError = new Error('remove failed');
+    removeAppletInstallation.mockRejectedValueOnce(removalError);
+    const { appletsRuntime, uninstallAppletRuntime } = await import('./appletsRuntime');
+
+    await appletsRuntime.acquirePage?.('applet:peers.note', 'activate');
+    await expect(uninstallAppletRuntime('peers.note')).rejects.toBe(removalError);
+
+    expect(loadApplet).toHaveBeenCalledTimes(2);
+    expect(kernelState.instances.has('applet:peers.note')).toBe(true);
+  });
+
+  it('rejects bundled applet removal before releasing its runtime', async () => {
+    applets[0]!.source = 'bundled-official';
+    const { appletsRuntime, uninstallAppletRuntime } = await import('./appletsRuntime');
+    await appletsRuntime.acquirePage?.('applet:peers.note', 'activate');
+    dispatch.mockClear();
+
+    await expect(uninstallAppletRuntime('peers.note')).rejects.toThrow(
+      'error.applet.bundledCannotUninstall',
+    );
+
+    expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'destroy' }));
+    expect(removeAppletInstallation).not.toHaveBeenCalled();
   });
 
   it('backgrounds the previous applet and foregrounds the entered one via the active-page bridge', async () => {

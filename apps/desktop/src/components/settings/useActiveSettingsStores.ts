@@ -3,10 +3,16 @@ import { useSectionActiveStoreSelector } from '../../kernel/SectionActivityConte
 import { useFederationStore } from '../../store/federation';
 import { useOAuth2Store } from '../../store/oauth2';
 import { useProviderStore } from '../../store/provider';
+import { useRelationshipsStore } from '../../store/relationships';
+import { useSocialChatStore } from '../../store/socialChat';
+import { useSettingsStore } from '../../store/settings';
 
 type FederationState = ReturnType<typeof useFederationStore.getState>;
 type OAuth2State = ReturnType<typeof useOAuth2Store.getState>;
 type ProviderState = ReturnType<typeof useProviderStore.getState>;
+type RelationshipsState = ReturnType<typeof useRelationshipsStore.getState>;
+type SocialChatState = ReturnType<typeof useSocialChatStore.getState>;
+type SettingsState = ReturnType<typeof useSettingsStore.getState>;
 
 export function useActiveFederationStore<TSelected>(
   selector: (state: FederationState) => TSelected,
@@ -25,4 +31,20 @@ export function useActiveOAuth2Slice<TSelected>(selector: (state: OAuth2State) =
 
 export function useActiveProviderSlice<TSelected>(selector: (state: ProviderState) => TSelected): TSelected {
   return useSectionActiveStoreSelector(useProviderStore, selector, shallow);
+}
+
+export function useActiveSettingsSlice<TSelected>(selector: (state: SettingsState) => TSelected): TSelected {
+  return useSectionActiveStoreSelector(useSettingsStore, selector, shallow);
+}
+
+export function useActiveRelationshipsSlice<TSelected>(
+  selector: (state: RelationshipsState) => TSelected,
+): TSelected {
+  return useSectionActiveStoreSelector(useRelationshipsStore, selector, shallow);
+}
+
+export function useActiveSocialChatSlice<TSelected>(
+  selector: (state: SocialChatState) => TSelected,
+): TSelected {
+  return useSectionActiveStoreSelector(useSocialChatStore, selector, shallow);
 }

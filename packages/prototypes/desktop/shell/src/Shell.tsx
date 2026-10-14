@@ -52,6 +52,7 @@ import { ToastHost } from '../../shared/Toast';
 import { ModernChatReview } from '../../features/modern-chat-agent/src/ModernChatReview';
 import { V2ProductReview } from '../../features/modern-chat-agent/src/V2ProductReview';
 import { OAuthLoginPrototype } from './OAuthLoginPrototype';
+import { WelcomeLoginPrototype } from './WelcomeLoginPrototype';
 
 /** An installed applet (mirrors RuntimeAppletInfo.manifest + status). */
 interface AppletInfo {
@@ -657,6 +658,7 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   const showModernChatReview = modernChatState.startsWith('modern-');
   const showV2ProductReview = modernChatState.startsWith('v2-');
   const showAuthPrototype = modernChatState.startsWith('auth-oauth-');
+  const showIdentityRecoveryPrototype = modernChatState === 'auth-recovery';
   const requestedSurface = typeof window === 'undefined'
     ? ''
     : new URLSearchParams(window.location.search).get('surface') ?? '';
@@ -722,6 +724,9 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
 
   if (showAuthPrototype && !authPrototypeComplete) {
     return <OAuthLoginPrototype onComplete={() => setAuthPrototypeComplete(true)} />;
+  }
+  if (showIdentityRecoveryPrototype) {
+    return <WelcomeLoginPrototype />;
   }
 
   const applet = page.startsWith('applet:')

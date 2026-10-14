@@ -123,9 +123,6 @@ def resolve_machine_profile() -> tuple[str, Path, int, dict[str, str]]:
         {
             "PT_DEV_PROFILE": profile_name,
             "PT_DEV_SLOT": str(slot),
-            "PT_DESKTOP_APP_GATEWAY_PORT": str(
-                ports["desktopAppGateway"]
-            ),
             "PT_DESKTOP_APP_WEB_PORT": str(ports["desktopAppWeb"]),
         }
     )
@@ -477,10 +474,8 @@ def cleanup_clients(runtime_pair: FoundationRuntimePair) -> dict[str, Any]:
             {"runtime": "native-desktop", "returnCode": completed.returncode}
         )
     ports = {
-        "nativeGateway": port_released(runtime_pair.native.spec.gateway_port),
         "nativeRenderer": port_released(runtime_pair.native.spec.renderer_port),
         "nativeWebDriver": port_released(runtime_pair.native.spec.webdriver_port),
-        "secondaryGateway": port_released(runtime_pair.secondary.spec.gateway_port),
         "secondaryRenderer": port_released(runtime_pair.secondary.spec.renderer_port),
         "secondaryWebDriver": port_released(runtime_pair.secondary.spec.webdriver_port),
     }

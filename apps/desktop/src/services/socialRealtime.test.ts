@@ -40,6 +40,8 @@ const mocks = vi.hoisted(() => ({
   markGroupRead: vi.fn(),
   ingestRealtimeMessage: vi.fn(),
   loadMutualFriends: vi.fn(),
+  loadRelationship: vi.fn(),
+  loadBlockedActors: vi.fn(),
   resetRelationships: vi.fn(),
   bumpChatUnread: vi.fn(),
   clearChatUnread: vi.fn(),
@@ -66,6 +68,7 @@ const mocks = vi.hoisted(() => ({
   }>,
   conversationMembers: {} as Record<string, Array<{ ptid: string }>>,
   peerProfiles: {} as Record<string, { username?: string }>,
+  blockedActors: [] as Array<{ actor?: { ptid: string } }>,
 }));
 
 const originalWindow = globalThis.window;
@@ -88,8 +91,11 @@ vi.mock('../store/relationships', () => ({
   useRelationshipsStore: {
     getState: () => ({
       loadMutualFriends: mocks.loadMutualFriends,
+      loadRelationship: mocks.loadRelationship,
+      loadBlockedActors: mocks.loadBlockedActors,
       reset: mocks.resetRelationships,
       mutualFriends: [],
+      blockedActors: mocks.blockedActors,
     }),
   },
 }));
@@ -202,6 +208,8 @@ describe('social realtime group membership side effects', () => {
     vi.clearAllMocks();
     mocks.ingestRealtimeMessage.mockResolvedValue(undefined);
     mocks.loadMutualFriends.mockResolvedValue(undefined);
+    mocks.loadRelationship.mockResolvedValue(undefined);
+    mocks.loadBlockedActors.mockResolvedValue(undefined);
     mocks.loadSessions.mockResolvedValue(undefined);
     mocks.loadGroups.mockResolvedValue(undefined);
     mocks.loadFriendRequests.mockResolvedValue(undefined);
@@ -229,6 +237,7 @@ describe('social realtime group membership side effects', () => {
     mocks.conversations = [];
     mocks.conversationMembers = {};
     mocks.peerProfiles = {};
+    mocks.blockedActors = [];
     teardownSocialRealtimeBridge();
     installSocialRealtimeBridge();
   });

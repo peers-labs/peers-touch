@@ -20,7 +20,8 @@ function row(index: number): MessagingMessageProjection {
   return {
     messageId: `message-${index}`, senderPtid: 'ptid:bob', senderDeviceId: 'device',
     plaintext: 'Indexed history', timestampUnixMs: 10000 - index,
-    attachments: [], state: 'accepted', retracted: false, moderated: false,
+    attachments: [], mentions: [], mentionAll: false,
+    state: 'accepted', retracted: false, moderated: false,
     reactions: [], readByPtids: [],
   };
 }

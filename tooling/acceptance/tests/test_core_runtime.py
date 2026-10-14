@@ -413,7 +413,6 @@ class TauriDriverAttachTests(unittest.TestCase):
             launcher = LocalTauriLauncher(
                 app_binary="/tmp/synthetic-acceptance-binary",
                 port=4555,
-                gateway_port=4556,
                 storage_root=str(Path(directory) / "storage"),
                 log_path=log_path,
             )

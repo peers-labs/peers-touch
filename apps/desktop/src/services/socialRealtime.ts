@@ -153,18 +153,20 @@ export async function refreshSocialProjection(label: string, includeNotification
     await Promise.allSettled([
       chat.loadFriendRequests(),
       refreshFriendshipProjection(true),
+      useRelationshipsStore.getState().loadBlockedActors(),
       notifications.refreshUnreadCounts(),
       includeNotifications ? notifications.loadNotifications() : Promise.resolve(),
     ]);
 
     const refreshed = useSocialChatStore.getState();
-    const relationships = useRelationshipsStore.getState();
+    const refreshedRelationships = useRelationshipsStore.getState();
     const peerPtids = Array.from(new Set(
       [
         ...Object.values(refreshed.conversationMembers)
           .flat()
           .map((member) => member.ptid),
-        ...relationships.mutualFriends.map((friend) => friend.actorPtid),
+        ...refreshedRelationships.mutualFriends.map((friend) => friend.actorPtid),
+        ...refreshedRelationships.blockedActors.map((item) => item.actor?.ptid ?? ''),
       ]
         .filter((ptid) => ptid.startsWith('ptid:') && ptid !== refreshed.currentUserPtid),
     ));
@@ -224,6 +226,7 @@ async function bootstrapSocialProjection(actorPtid: string, sequence: number): P
     chat.loadCurrentUserProfile(),
     chat.loadFriendRequests(),
     refreshFriendshipProjection(true),
+    useRelationshipsStore.getState().loadBlockedActors(),
     notifications.refreshUnreadCounts(),
   ]);
 
@@ -237,6 +240,7 @@ async function bootstrapSocialProjection(actorPtid: string, sequence: number): P
         .flat()
         .map((member) => member.ptid),
       ...relationships.mutualFriends.map((friend) => friend.actorPtid),
+      ...relationships.blockedActors.map((item) => item.actor?.ptid ?? ''),
     ]
       .filter((ptid) => ptid.startsWith('ptid:') && ptid !== refreshed.currentUserPtid),
   ));
@@ -384,10 +388,17 @@ function onActorProfileChanged(payload: RealtimeActorProfileChangedPayload): voi
   ));
 }
 
-function onRelationshipChanged(_payload: RelationshipChangedPayload): void {
-  runDetached('relationship friendship projection refresh', () => (
-    refreshFriendshipProjection(true)
-  ));
+function onRelationshipChanged(payload: RelationshipChangedPayload): void {
+  runDetached('relationship projection refresh', async () => {
+    const relationships = useRelationshipsStore.getState();
+    await Promise.allSettled([
+      refreshFriendshipProjection(true),
+      relationships.loadRelationship(payload.targetActorPtid),
+      ...(payload.action === 'block' || payload.action === 'unblock'
+        ? [relationships.loadBlockedActors()]
+        : []),
+    ]);
+  });
 }
 
 function startSocialReconcile(): void {

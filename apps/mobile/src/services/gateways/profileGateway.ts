@@ -12,6 +12,7 @@ import { create, fromJson, toJson, type JsonValue } from '@bufbuild/protobuf';
 import type { MobileAuthSession } from '../../features/auth/authSession';
 import {
   ActorListSchema,
+  ActorContactPolicy,
   ActorVisibility,
   ProfileUpdateOutcome,
   UpdateProfileRequestSchema,
@@ -74,7 +75,7 @@ export interface EditableProfileInput {
   readonly timezone?: string;
   readonly defaultVisibility?: string;
   readonly manuallyApprovesFollowers?: boolean;
-  readonly messagePermission?: string;
+  readonly contactPolicy?: 'anyone' | 'federations' | 'nobody';
   readonly autoExpireDays?: number;
   readonly discoverability?: 'hidden' | 'by_handle' | 'indexed';
 }
@@ -146,6 +147,9 @@ export function createProfileGateway(session: MobileAuthSession): ProfileGateway
         discoverability: input.discoverability === undefined
           ? undefined
           : actorDiscoverability(input.discoverability),
+        contactPolicy: input.contactPolicy === undefined
+          ? undefined
+          : actorContactPolicy(input.contactPolicy),
         observedRevision,
       });
       const body = toJson(UpdateProfileRequestSchema, request, {
@@ -564,8 +568,8 @@ function profileMatchesInput(
       || input.manuallyApprovesFollowers === profile.manuallyApprovesFollowers
     )
     && (
-      input.messagePermission === undefined
-      || input.messagePermission === profile.messagePermission
+      input.contactPolicy === undefined
+      || input.contactPolicy === profile.contactPolicy
     )
     && (
       input.autoExpireDays === undefined
@@ -587,6 +591,19 @@ function actorDiscoverability(
       return ActorVisibility.INDEXED;
     default:
       return ActorVisibility.BY_HANDLE;
+  }
+}
+
+function actorContactPolicy(
+  value: NonNullable<EditableProfileInput['contactPolicy']>,
+): ActorContactPolicy {
+  switch (value) {
+    case 'federations':
+      return ActorContactPolicy.FEDERATIONS;
+    case 'nobody':
+      return ActorContactPolicy.NOBODY;
+    default:
+      return ActorContactPolicy.ANYONE;
   }
 }
 

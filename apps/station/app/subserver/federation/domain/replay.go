@@ -83,8 +83,23 @@ func (r *ReplayService) applyEvent(state *MaterializedState, event *pb.LedgerEve
 			state.ActiveMemberStations = append(state.ActiveMemberStations, payload.ApprovedStationPeerId)
 		}
 
-	case pb.EventType_STATION_LEFT, pb.EventType_STATION_REMOVED:
-		state.ActiveMemberStations = removeStation(state.ActiveMemberStations, event.StationPeerId)
+	case pb.EventType_STATION_LEFT:
+		var payload pb.StationLeftPayload
+		if err := proto.Unmarshal(event.PayloadBytes, &payload); err == nil {
+			state.ActiveMemberStations = removeStation(
+				state.ActiveMemberStations,
+				payload.LeavingStationPeerId,
+			)
+		}
+
+	case pb.EventType_STATION_REMOVED:
+		var payload pb.StationRemovedPayload
+		if err := proto.Unmarshal(event.PayloadBytes, &payload); err == nil {
+			state.ActiveMemberStations = removeStation(
+				state.ActiveMemberStations,
+				payload.TargetStationPeerId,
+			)
+		}
 
 	case pb.EventType_SEQUENCER_CHANGED:
 		state.SequencerStationPeerID = event.SequencerStationPeerId

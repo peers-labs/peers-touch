@@ -89,7 +89,7 @@ describe('profileGateway current profile', () => {
             timezone: 'Asia/Shanghai',
             default_visibility: 'followers',
             manually_approves_followers: true,
-            message_permission: 'friends',
+            contact_policy: 'ACTOR_CONTACT_POLICY_FEDERATIONS',
             auto_expire_days: 30,
             profile_revision: '2',
           },
@@ -106,7 +106,7 @@ describe('profileGateway current profile', () => {
       timezone: 'Asia/Shanghai',
       defaultVisibility: 'followers',
       manuallyApprovesFollowers: true,
-      messagePermission: 'friends',
+      contactPolicy: 'federations',
       autoExpireDays: 30,
     }, 1n);
 
@@ -121,7 +121,7 @@ describe('profileGateway current profile', () => {
           timezone: 'Asia/Shanghai',
           defaultVisibility: 'followers',
           manuallyApprovesFollowers: true,
-          messagePermission: 'friends',
+          contactPolicy: 'federations',
           autoExpireDays: 30,
           profileRevision: 2n,
         },
@@ -129,21 +129,20 @@ describe('profileGateway current profile', () => {
     });
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(fetchMock.mock.calls[0]?.[0]).toBe('https://station.example/actor/profile');
-    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
-      method: 'POST',
-      body: JSON.stringify({
-        display_name: 'Alice',
-        note: 'Hello',
-        avatar: 'https://cdn.example/avatar.png',
-        header: 'https://cdn.example/header.png',
-        region: 'CN',
-        timezone: 'Asia/Shanghai',
-        default_visibility: 'followers',
-        manually_approves_followers: true,
-        message_permission: 'friends',
-        auto_expire_days: 30,
-        observed_revision: '1',
-      }),
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(request.method).toBe('POST');
+    expect(JSON.parse(String(request.body))).toEqual({
+      display_name: 'Alice',
+      note: 'Hello',
+      avatar: 'https://cdn.example/avatar.png',
+      header: 'https://cdn.example/header.png',
+      region: 'CN',
+      timezone: 'Asia/Shanghai',
+      default_visibility: 'followers',
+      manually_approves_followers: true,
+      contact_policy: 'ACTOR_CONTACT_POLICY_FEDERATIONS',
+      auto_expire_days: 30,
+      observed_revision: '1',
     });
   });
 

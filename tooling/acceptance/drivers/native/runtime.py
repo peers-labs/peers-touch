@@ -848,7 +848,6 @@ class NativeDesktopRuntimeBinding(ABC):
             "launchGeneration": generation,
             "processId": session.process_id,
             "webdriverPort": session.port,
-            "gatewayPort": session.gateway_port,
             "profile": session.profile,
             "storageRoot": session.storage_root,
         }
@@ -1510,7 +1509,6 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                 MakeDesktopLauncher(
                     worktree=str(client_spec["worktree"]),
                     port=int(client_spec["webdriver_port"]),
-                    gateway_port=int(client_spec["gateway_port"]),
                     renderer_port=int(client_spec["renderer_port"]),
                     profile=str(client_spec["profile"]),
                     storage_root=str(client_spec["storage_root"]),
@@ -1524,7 +1522,6 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
             LocalTauriLauncher(
                 app_binary=str(self._binary),
                 port=int(client_spec["webdriver_port"]),
-                gateway_port=int(client_spec["gateway_port"]),
                 profile=str(client_spec["profile"]),
                 storage_root=str(client_spec["storage_root"]),
                 environment=environment,
@@ -1751,7 +1748,6 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                 for spec in client_specs.values()
                 for field in (
                     "webdriver_port",
-                    "gateway_port",
                     "renderer_port",
                 )
             }

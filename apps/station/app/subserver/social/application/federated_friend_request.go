@@ -482,6 +482,9 @@ func (s *FederatedFriendRequestService) ReceiveFriendRequestCommand(
 			ctx,
 			body.GetReceiver().GetPtid(),
 			body.GetSender().GetPtid(),
+			body.GetFederationId(),
+			body.GetSenderHomeStationPeerId(),
+			body.GetReceiverHomeStationPeerId(),
 		)
 		if policyErr != nil {
 			return delivery.Result{}, policyErr
@@ -1129,6 +1132,10 @@ func friendRequestCommandResultForError(
 	bool,
 ) {
 	switch domain.FederationErrorCodeOf(err) {
+	case domain.FederationErrorUnauthorized:
+		return model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_REJECTED,
+			model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_UNAUTHORIZED,
+			true
 	case domain.FederationErrorBlocked:
 		return model.FriendRequestCommandResultKind_FRIEND_REQUEST_COMMAND_RESULT_KIND_REJECTED,
 			model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_BLOCKED,

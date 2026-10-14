@@ -13,7 +13,8 @@ const mocks = vi.hoisted(() => ({
   stationAdd: vi.fn(),
   stationList: vi.fn(),
   stationSetActive: vi.fn(),
-  loginWithPassword: vi.fn(),
+  beginPasswordLogin: vi.fn(),
+  submitPasswordLoginGate: vi.fn(),
   completeCurrentSession: vi.fn(),
   unlockWithPin: vi.fn(),
   createAcceptanceRevision: vi.fn(),
@@ -40,7 +41,8 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 vi.mock('../../kernel/identityRuntime', () => ({
   identityRuntime: {
-    loginWithPassword: mocks.loginWithPassword,
+    beginPasswordLogin: mocks.beginPasswordLogin,
+    submitPasswordLoginGate: mocks.submitPasswordLoginGate,
     completeCurrentSession: mocks.completeCurrentSession,
     unlockWithPin: mocks.unlockWithPin,
   },
@@ -112,8 +114,16 @@ describe('Secure Content fixture harness', () => {
       actorPtid: 'ptid:primary',
       rendererGeneration: 1,
     };
-    mocks.loginWithPassword.mockImplementation(async () => {
+    mocks.beginPasswordLogin.mockImplementation(async () => {
       sessionState.authenticated = true;
+      return {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        currentGateId: '',
+        gates: [],
+        accessGrantId: 'grant-1',
+        message: '',
+      };
     });
     mocks.completeCurrentSession.mockResolvedValue(undefined);
     mocks.invoke.mockResolvedValue({
@@ -132,7 +142,7 @@ describe('Secure Content fixture harness', () => {
       password: TEST_CREDENTIAL,
     });
 
-    expect(mocks.loginWithPassword).toHaveBeenCalledWith(
+    expect(mocks.beginPasswordLogin).toHaveBeenCalledWith(
       'alice@p.t',
       TEST_CREDENTIAL,
     );
@@ -153,10 +163,18 @@ describe('Secure Content fixture harness', () => {
         id: 'account-secondary',
         provider_user_id: 'ptid:secondary',
       });
-    mocks.loginWithPassword.mockImplementation(async () => {
+    mocks.beginPasswordLogin.mockImplementation(async () => {
       sessionState.currentUser = { actorPtid: 'ptid:secondary' };
       sessionState.authenticated = true;
       sessionState.sessionEpoch += 1;
+      return {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        currentGateId: '',
+        gates: [],
+        accessGrantId: 'grant-1',
+        message: '',
+      };
     });
     mocks.unlockWithPin.mockImplementation(async () => {
       sessionState.currentUser = { actorPtid: 'ptid:primary' };

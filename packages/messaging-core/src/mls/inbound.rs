@@ -1,5 +1,7 @@
 use super::group::{MlsGroupManager, MlsPreparedReceive};
-use crate::codec::private_content::decode_message_private_content;
+use crate::codec::private_content::{
+    decode_message_private_content, mentioned_ptids, validate_public_mentions,
+};
 use crate::codec::verification::verify_device_event_delivery;
 use crate::contracts::{
     ConversationAuthorityMemberProjection, CryptoEndpoint, InteractionMutation,
@@ -70,52 +72,67 @@ impl<R: MlsInboundRepository> MlsApplicationProcessor<R> {
             .event
             .as_ref()
             .ok_or_else(|| "messaging MLS delivery has no event".to_string())?;
-        let (message_id, is_edit, message_sender, reply_to_message_id, thread_root_message_id) =
-            match event.payload.as_ref() {
-                Some(conversation_event::Payload::MessageCommitted(message)) => {
-                    if MessagingContentKind::try_from(message.content_kind)
-                        .map_err(|_| "messaging MLS content kind is invalid".to_string())?
-                        != MessagingContentKind::Text
-                    {
-                        return Err(
-                            "messaging MLS processor only accepts text projections".to_string()
-                        );
-                    }
-                    (
-                        message.message_id.as_str(),
-                        false,
-                        message.sender.as_ref(),
-                        (!message.reply_to_message_id.is_empty())
-                            .then_some(message.reply_to_message_id.as_str()),
-                        (!message.thread_root_message_id.is_empty())
-                            .then_some(message.thread_root_message_id.as_str()),
-                    )
+        let (
+            message_id,
+            is_edit,
+            message_sender,
+            reply_to_message_id,
+            thread_root_message_id,
+            public_mentions,
+            public_mention_all,
+        ) = match event.payload.as_ref() {
+            Some(conversation_event::Payload::MessageCommitted(message)) => {
+                if MessagingContentKind::try_from(message.content_kind)
+                    .map_err(|_| "messaging MLS content kind is invalid".to_string())?
+                    != MessagingContentKind::Text
+                {
+                    return Err("messaging MLS processor only accepts text projections".to_string());
                 }
-                Some(conversation_event::Payload::MessageForwarded(message)) => {
-                    if MessagingContentKind::try_from(message.content_kind)
-                        .map_err(|_| "messaging MLS forward content kind is invalid".to_string())?
-                        != MessagingContentKind::Text
-                    {
-                        return Err(
-                            "messaging MLS processor only accepts text projections".to_string()
-                        );
-                    }
-                    (
-                        message.destination_message_id.as_str(),
-                        false,
-                        message.sender.as_ref(),
-                        None,
-                        None,
-                    )
+                (
+                    message.message_id.as_str(),
+                    false,
+                    message.sender.as_ref(),
+                    (!message.reply_to_message_id.is_empty())
+                        .then_some(message.reply_to_message_id.as_str()),
+                    (!message.thread_root_message_id.is_empty())
+                        .then_some(message.thread_root_message_id.as_str()),
+                    message.mentioned_ptids.as_slice(),
+                    message.mention_all,
+                )
+            }
+            Some(conversation_event::Payload::MessageForwarded(message)) => {
+                if MessagingContentKind::try_from(message.content_kind)
+                    .map_err(|_| "messaging MLS forward content kind is invalid".to_string())?
+                    != MessagingContentKind::Text
+                {
+                    return Err("messaging MLS processor only accepts text projections".to_string());
                 }
-                Some(conversation_event::Payload::MessageEdited(fact)) => {
-                    if fact.message_id.trim().is_empty() {
-                        return Err("messaging MLS edit has no message ID".to_string());
-                    }
-                    (fact.message_id.as_str(), true, None, None, None)
+                (
+                    message.destination_message_id.as_str(),
+                    false,
+                    message.sender.as_ref(),
+                    None,
+                    None,
+                    &[][..],
+                    false,
+                )
+            }
+            Some(conversation_event::Payload::MessageEdited(fact)) => {
+                if fact.message_id.trim().is_empty() {
+                    return Err("messaging MLS edit has no message ID".to_string());
                 }
-                _ => return Err("messaging MLS application has unsupported event type".to_string()),
-            };
+                (
+                    fact.message_id.as_str(),
+                    true,
+                    None,
+                    None,
+                    None,
+                    &[][..],
+                    false,
+                )
+            }
+            _ => return Err("messaging MLS application has unsupported event type".to_string()),
+        };
         if !is_edit {
             let sender = message_sender
                 .ok_or_else(|| "messaging MLS event has no message sender".to_string())?;
@@ -139,6 +156,12 @@ impl<R: MlsInboundRepository> MlsApplicationProcessor<R> {
             .manager
             .prepare_application_message(&event.conversation_id, &delivery.endpoint_payload)?;
         let private_content = decode_message_private_content(&prepared.plaintext)?;
+        validate_public_mentions(public_mentions, public_mention_all)?;
+        if mentioned_ptids(&private_content.mentions) != public_mentions
+            || private_content.mention_all != public_mention_all
+        {
+            return Err("messaging MLS public/private mention binding mismatch".to_string());
+        }
         let committed_at_unix_ms = timestamp_millis(event, now);
         let receipt = consumption_receipt(item, event, &self.endpoint, now);
         let receipt_bytes = receipt.encode_to_vec();
@@ -187,6 +210,8 @@ impl<R: MlsInboundRepository> MlsApplicationProcessor<R> {
             sender_device_id: message_sender.device_id.clone(),
             plaintext: private_content.text,
             attachments: private_content.attachments,
+            mentions: private_content.mentions,
+            mention_all: private_content.mention_all,
             committed_at_unix_ms,
             reply_to_message_id: reply_to_message_id.map(str::to_string),
             thread_root_message_id: thread_root_message_id.map(str::to_string),

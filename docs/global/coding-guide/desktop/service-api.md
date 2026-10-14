@@ -20,7 +20,9 @@
 设计原则：
 - 前端组件**不直接调用** `invoke()`，统一通过 `api` 对象访问
 - 类型定义与 API 方法**共置于同一文件**，保持类型与调用的一致性
-- Tauri 用于所有本地操作，仅 SSE 流式聊天和文件上传通过 HTTP
+- Desktop 只运行在 Native Tauri 内；renderer 与 Rust 的边界统一使用
+  Tauri command/event
+- renderer 不得直连 Station，也不得提供浏览器或 `localStorage` fallback
 
 
 ## 三层 invoke 封装
@@ -141,19 +143,6 @@ interface TauriStubPayload {
 - 新增 Desktop 命令时，如果 Station 返回 protobuf 或结构化错误，禁止再包一层字符串 `status`
 
 
-## 运行时检测
-
-```typescript
-function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-}
-```
-
-部分 API（OAuth2、Account）根据运行时环境选择不同实现：
-- Tauri 环境：走 Tauri invoke
-- Web 环境：走 localStorage 模拟
-
-
 ## api 对象
 
 `api` 是导出的核心对象，包含所有业务方法。按领域分组如下：
@@ -217,8 +206,8 @@ api.deleteSkill(id)                        // → { ok: boolean }
 api.toggleSkill(id, enabled)               // → { ok: boolean }
 api.importSkillFromAddress(address, oauth?) // → SkillImportBatchResult
 api.importSkillFromGitHub(owner, repo, ...)// → SkillImportResult
-api.importSkillFromZIP(file)               // → SkillImportResult  (HTTP)
-api.validateSkillZIP(file)                 // → SkillZipValidation (HTTP)
+api.importSkillFromZIP(file)               // → SkillImportResult
+api.validateSkillZIP(file)                 // → SkillZipValidation
 ```
 
 ### Skill 市场
@@ -337,10 +326,8 @@ api.getHelp()                              // → HelpCategoryGroup[]
 api.search(query, source?, limit?)         // → SearchSourceGroup / SearchResultItem
 api.aiSearch(query, web?)                  // → AISearchResponse
 api.tailLogs(cursor, limit?, maxBytes?)    // → LogTailResponse
-api.uploadFile(file)                       // → UploadResult (HTTP)
 api.tts(text, voice?, speed?)              // → { url: string }
 api.ttsVoices()                            // → { voices: TTSVoice[] }
-api.stt(file, language?)                   // → { text: string } (HTTP)
 api.openExternalUrl(url)                   // → { ok: boolean }
 api.listApplets()                          // → AppletInfo[]
 api.getApplet(id)                          // → AppletInfo
@@ -377,15 +364,15 @@ onDone()
 返回的 `AbortController` 可用于取消请求。
 
 
-## Tauri vs HTTP 的选择
+## 传输边界
 
-| 通信方式 | 使用场景 |
-|----------|---------|
-| Tauri invoke | 所有本地 CRUD 操作、认证、设置、Agent、Provider、Skill、MCP、Cron、Channel、Memory 等 |
-| HTTP POST (FormData) | 文件上传（`uploadFile`、`importSkillFromZIP`、`validateSkillZIP`、`stt`） |
-| HTTP GET | OAuth Provider 配置加载（Web 环境 fallback） |
-
-原则：能用 Tauri invoke 的一律用 Tauri invoke，仅在 Tauri 无法处理（如 FormData 文件上传）或需要 Web 兼容时使用 HTTP。
+- renderer 到 Desktop Rust：Tauri command/event。
+- 文件内容：在 renderer 中编码后交给 typed Tauri command，禁止 localhost
+  HTTP upload side channel。
+- Desktop Rust 到 Station：由 Rust client 使用 canonical HTTP/protobuf/SSE。
+- OAuth 外部页面：由 Native shell 打开；授权结果仍回到 Rust-owned broker。
+- 唯一例外是显式的 acceptance-only debug sink，不得成为产品能力或
+  readiness 依赖。
 
 
 ## 核心类型定义

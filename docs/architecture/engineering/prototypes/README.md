@@ -1,8 +1,8 @@
 # 原型统一入口（Prototypes Portal & Ledger）
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-06-22 | **Updated**: 2026-06-24
+> **Version**: v1.1
+> **Created**: 2026-06-22 | **Updated**: 2026-10-14
 > **Owner**: Architecture Team
 
 ---
@@ -33,6 +33,11 @@
 - 当前总账继续负责确认门、状态和正式落地准入。
 
 执行计划见：[Prototype Portal — 统一原型入口执行计划](./execution-plans/20260622-prototype-portal.md)。
+
+Desktop Shell、Social Chat、Agent、Applet 与真实平台的 111 项整体对齐由
+[Desktop Platform Alignment Plan](./execution-plans/20261014-desktop-platform-alignment/plan.md)
+统一管理；逐项现状见同目录的
+[scope ledger](./execution-plans/20261014-desktop-platform-alignment/scope-ledger.md)。
 
 ---
 

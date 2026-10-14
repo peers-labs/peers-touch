@@ -1,3 +1,12 @@
+import {
+  accessDecisionMessage,
+  currentGate,
+  isAccessActionRequired,
+  isAccessGranted,
+  type AccessDecision,
+  type AccessGateFieldValues,
+} from '../../services/accessGate';
+
 export interface ChatIdentityLoginState {
   phaseKind: string;
   lifecycleState: string;
@@ -13,9 +22,15 @@ export interface ChatPasswordLoginLifecycle {
     description: string,
   ): Promise<void>;
   logout(): Promise<void>;
-  loginWithPassword(account: string, password: string): Promise<void>;
+  beginPasswordLogin(account: string, password: string): Promise<AccessDecision>;
+  submitPasswordLoginGate(
+    decision: AccessDecision,
+    fields: AccessGateFieldValues,
+  ): Promise<AccessDecision>;
   completeCurrentSession(): Promise<void>;
 }
+
+export type AcceptanceAccessGateFields = Record<string, AccessGateFieldValues>;
 
 export function isChatLoginPreconditionReady(
   state: ChatIdentityLoginState,
@@ -38,10 +53,49 @@ export function isChatAuthenticatedReady(
   return state.authenticated && state.lifecycleState === 'ready';
 }
 
+export async function runPasswordAccessChain(
+  lifecycle: Pick<
+    ChatPasswordLoginLifecycle,
+    'beginPasswordLogin' | 'submitPasswordLoginGate'
+  >,
+  account: string,
+  password: string,
+  accessGateFields: AcceptanceAccessGateFields = {},
+): Promise<void> {
+  let decision = await lifecycle.beginPasswordLogin(account, password);
+  const submittedGates = new Set<string>();
+  while (!isAccessGranted(decision)) {
+    const gate = currentGate(decision);
+    if (!isAccessActionRequired(decision) || !gate) {
+      throw new Error(
+        accessDecisionMessage(decision)
+        || 'acceptance.passwordAccess.notActionable',
+      );
+    }
+    const fields = accessGateFields[gate.gateId];
+    if (!fields) {
+      throw new Error(`acceptance.passwordAccess.gateFieldsMissing:${gate.gateId}`);
+    }
+    const submissionKey = [
+      decision.attemptId,
+      gate.gateId,
+      gate.actionId,
+      gate.schemaRevision,
+      gate.schemaDigest,
+    ].join('\0');
+    if (submittedGates.has(submissionKey)) {
+      throw new Error(`acceptance.passwordAccess.gateDidNotAdvance:${gate.gateId}`);
+    }
+    submittedGates.add(submissionKey);
+    decision = await lifecycle.submitPasswordLoginGate(decision, fields);
+  }
+}
+
 export async function runChatPasswordLogin(
   lifecycle: ChatPasswordLoginLifecycle,
   account: string,
   password: string,
+  accessGateFields: AcceptanceAccessGateFields = {},
 ): Promise<void> {
   lifecycle.boot();
   await lifecycle.waitFor(
@@ -57,7 +111,12 @@ export async function runChatPasswordLogin(
     isChatAccountGateReady,
     'identity account gate before login',
   );
-  await lifecycle.loginWithPassword(account, password);
+  await runPasswordAccessChain(
+    lifecycle,
+    account,
+    password,
+    accessGateFields,
+  );
   await lifecycle.completeCurrentSession();
   await lifecycle.waitFor(
     isChatAuthenticatedReady,

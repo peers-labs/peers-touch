@@ -20,6 +20,7 @@ message FederationContext {
   string federation_id = 1;
   string name = 2;
   string status = 3;
+  bool local_directory_enabled = 4;
 }
 
 // ─── ListFederations ────────────────────────────────────────────────────────
@@ -91,6 +92,7 @@ message JoinFederationRequest {
   string federation_endpoint = 1;
   string federation_id = 2;
   string message = 3;
+  string sequencer_station_peer_id = 4;
 }
 
 message JoinFederationResponse {

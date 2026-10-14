@@ -1,7 +1,10 @@
 pub use messaging_core::codec::private_content::{
-    decode_message_private_content, encode_message_private_content,
-    validate_attachment_plaintext_metadata, validate_message_private_content,
-    MESSAGE_MAX_ATTACHMENT_COUNT, MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
+    decode_message_mention_set, decode_message_private_content, encode_message_mention_set,
+    encode_message_private_content, encode_message_private_content_with_mentions, mentioned_ptids,
+    validate_attachment_plaintext_metadata, validate_message_mention_set,
+    validate_message_mentions, validate_message_private_content, validate_public_mentions,
+    MESSAGE_MAX_ATTACHMENT_COUNT, MESSAGE_MAX_MENTION_COUNT,
+    MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
 };
 
 #[cfg(test)]
@@ -57,6 +60,8 @@ mod tests {
             format_version: MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
             text: "exact plaintext".to_string(),
             attachments: vec![test_attachment_metadata("attachment-1")],
+            mentions: Vec::new(),
+            mention_all: false,
         };
         let encoded =
             encode_message_private_content(&expected.text, &expected.attachments).unwrap();
@@ -74,6 +79,8 @@ mod tests {
                 test_attachment_metadata("attachment-1"),
                 test_attachment_metadata("attachment-1"),
             ],
+            mentions: Vec::new(),
+            mention_all: false,
         };
         assert!(validate_message_private_content(&duplicate).is_err());
 

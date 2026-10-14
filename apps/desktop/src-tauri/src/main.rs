@@ -176,11 +176,9 @@ fn acceptance_input_mode_is_exclusive(
             if isolation == Some("isolated-gui-session") {
                 Ok(true)
             } else {
-                Err(
-                    "exclusive-native-input requires \
+                Err("exclusive-native-input requires \
                      PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION=isolated-gui-session"
-                        .to_string(),
-                )
+                    .to_string())
             }
         }
         value => Err(format!(
@@ -366,38 +364,22 @@ mod acceptance_window_tests {
 
     #[test]
     fn semantic_input_is_the_default() {
+        assert!(!acceptance_input_mode_is_exclusive(None, None).expect("mode should parse"));
         assert!(
-            !acceptance_input_mode_is_exclusive(None, None)
-                .expect("mode should parse")
-        );
-        assert!(
-            !acceptance_input_mode_is_exclusive(
-                Some("semantic-nonintrusive"),
-                None,
-            )
+            !acceptance_input_mode_is_exclusive(Some("semantic-nonintrusive"), None,)
                 .expect("mode should parse")
         );
     }
 
     #[test]
     fn exclusive_input_requires_an_explicit_mode() {
-        assert!(
-            acceptance_input_mode_is_exclusive(
-                Some("exclusive-native-input"),
-                Some("isolated-gui-session"),
-            )
-            .expect("mode should parse")
-        );
-        assert!(
-            acceptance_input_mode_is_exclusive(
-                Some("exclusive-native-input"),
-                None,
-            )
-            .is_err()
-        );
-        assert!(
-            acceptance_input_mode_is_exclusive(Some("legacy"), None).is_err()
-        );
+        assert!(acceptance_input_mode_is_exclusive(
+            Some("exclusive-native-input"),
+            Some("isolated-gui-session"),
+        )
+        .expect("mode should parse"));
+        assert!(acceptance_input_mode_is_exclusive(Some("exclusive-native-input"), None,).is_err());
+        assert!(acceptance_input_mode_is_exclusive(Some("legacy"), None).is_err());
     }
 
     #[test]
@@ -652,8 +634,6 @@ fn main() {
                     }
                 }))
                 .expect("messaging projection notifier must initialize");
-            #[cfg(debug_assertions)]
-            interface::http_gateway::start(Arc::clone(state.inner()), app.handle().clone());
             application::desktop_executor_worker::start(Arc::clone(state.inner()));
             let capability_supervisor = app
                 .state::<Arc<application::desktop_executor_worker::CapabilityWorkerSupervisor>>();
@@ -739,6 +719,7 @@ fn main() {
             auth::access_start,
             auth::access_submit_invite_code,
             auth::access_submit_login,
+            auth::access_submit_generic,
             auth::access_decision,
             auth::access_cancel,
             auth::auth_logout,
@@ -772,6 +753,7 @@ fn main() {
             social_commands::social_get_followers,
             social_commands::social_get_following,
             social_commands::social_get_relationship,
+            social_commands::social_list_blocked_actors,
             social_commands::social_block_actor,
             social_commands::social_unblock_actor,
             social_commands::social_circle_create,

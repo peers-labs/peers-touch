@@ -243,23 +243,6 @@ export function SearchMessagesModal({
     return () => window.clearTimeout(handle);
   }, [localQuery, open, initialScope, conversationId, searchMessages]);
 
-  useEffect(() => {
-    if (!open || !localQuery) return undefined;
-    const frame = window.requestAnimationFrame(() => {
-      const input = document.querySelector<HTMLElement>('[data-chat-message-search-input]');
-      const field = input?.closest<HTMLElement>('.ant-input-affix-wrapper') ?? input?.parentElement ?? null;
-      const clear = field?.querySelector<HTMLElement>('[data-chat-message-search-clear]') ?? null;
-      const suffix = field?.querySelector<HTMLElement>('.ant-input-suffix') ?? null;
-      const fieldRect = field?.getBoundingClientRect();
-      const clearRect = clear?.getBoundingClientRect();
-      const suffixRect = suffix?.getBoundingClientRect();
-      // #region debug-point D:search-clear-geometry
-      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'D', location: 'SearchMessagesModal.tsx:search-clear-geometry', msg: '[DEBUG] Search field clear-control geometry', data: { field: fieldRect ? { left: fieldRect.left, right: fieldRect.right, width: fieldRect.width } : null, clear: clearRect ? { left: clearRect.left, right: clearRect.right, width: clearRect.width } : null, suffix: suffixRect ? { left: suffixRect.left, right: suffixRect.right, width: suffixRect.width } : null, rightInset: fieldRect && clearRect ? Math.round(fieldRect.right - clearRect.right) : null, loading: searchLoading }, ts: Date.now() }) }).catch(() => {});
-      // #endregion
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [localQuery, open, searchLoading]);
-
   const handleClose = useCallback(() => {
     clearSearch();
     setLocalQuery('');

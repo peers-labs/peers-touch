@@ -24,7 +24,7 @@
 ## 2. System Architecture
 
 ```text
-Desktop Web
+Desktop renderer
   Chat projection / composer
           |
           v

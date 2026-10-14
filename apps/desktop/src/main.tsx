@@ -29,6 +29,12 @@ declare global {
   }
 }
 
+if (!('__TAURI_INTERNALS__' in window)) {
+  const detail = 'Desktop requires the Native Tauri runtime';
+  window.__PT_BOOT_ERROR__?.(detail);
+  throw new Error(detail);
+}
+
 // ── Platform Setup (synchronous, before any async work) ──
 
 purgeRetiredStorage();

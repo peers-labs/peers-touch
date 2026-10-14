@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { findExecutable } from './doctor.mjs';
 import { DevctlError, ERROR_CODES } from './errors.mjs';
-import { probeHttp, waitForHttp, waitForPort } from './health.mjs';
+import { probeHttp, waitForHttp } from './health.mjs';
 import {
   inspectManagedProcess,
   inspectProcess,
@@ -67,7 +67,6 @@ export async function warmDesktopViteModuleGraph(
 
 export async function waitForDesktopVite(
   webPort,
-  mode,
   processAlive,
   waitForReady = waitForHttp,
   warmModuleGraph = warmDesktopViteModuleGraph,
@@ -76,7 +75,7 @@ export async function waitForDesktopVite(
 ) {
   const url = desktopViteReadinessUrl(webPort);
   const options = {
-    label: `Desktop ${mode} Vite`,
+    label: 'Desktop embedded renderer',
     processAlive,
   };
   await waitForReady(url, options);
@@ -104,9 +103,11 @@ export async function waitForDesktopFrontend(
   logPath,
   {
     fromOffset = 0,
-    timeoutMs = 90_000,
+    compileTimeoutMs = 600_000,
+    mountTimeoutMs = 90_000,
     intervalMs = 250,
     processAlive,
+    now = () => Date.now(),
     readLog = () =>
       fs.existsSync(logPath)
         ? fs.readFileSync(logPath, 'utf8').slice(fromOffset)
@@ -115,8 +116,9 @@ export async function waitForDesktopFrontend(
       new Promise((resolve) => setTimeout(resolve, durationMs)),
   } = {},
 ) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
+  const compileDeadline = now() + compileTimeoutMs;
+  let mountDeadline;
+  while (now() < (mountDeadline ?? compileDeadline)) {
     if (processAlive && !processAlive()) {
       throw new DevctlError(
         ERROR_CODES.START_TIMEOUT,
@@ -124,7 +126,8 @@ export async function waitForDesktopFrontend(
         { logPath },
       );
     }
-    const state = desktopFrontendLogState(readLog());
+    const content = readLog();
+    const state = desktopFrontendLogState(content);
     if (state.ready) return state;
     if (state.failure) {
       throw new DevctlError(
@@ -133,32 +136,42 @@ export async function waitForDesktopFrontend(
         { logPath, failure: state.failure },
       );
     }
+    if (
+      mountDeadline === undefined
+      && content.includes('Launching Tauri application')
+    ) {
+      mountDeadline = now() + mountTimeoutMs;
+    }
     await wait(intervalMs);
+  }
+  if (mountDeadline === undefined) {
+    throw new DevctlError(
+      ERROR_CODES.START_TIMEOUT,
+      `Desktop Tauri did not launch within ${compileTimeoutMs}ms`,
+      { logPath },
+    );
   }
   throw new DevctlError(
     ERROR_CODES.START_TIMEOUT,
-    `Desktop renderer did not mount within ${timeoutMs}ms`,
+    `Desktop renderer did not mount within ${mountTimeoutMs}ms of Native launch`,
     { logPath },
   );
 }
 
 function desktopValues(root, resolved) {
   const profile = resolved.profile;
-  const mode = 'app';
-  const runtimeProfile = `${profile.PT_DEV_PROFILE}-app`;
+  const runtimeProfile = `${profile.PT_DEV_PROFILE}-native`;
   const webPort = Number(profile.PT_DESKTOP_APP_WEB_PORT);
   return {
-    mode,
     runtimeProfile,
     desktopDirectory: path.join(root, 'apps', 'desktop'),
-    gatewayPort: Number(profile.PT_DESKTOP_APP_GATEWAY_PORT),
     webPort,
     viteReadinessUrl: desktopViteReadinessUrl(webPort),
-    viteService: `desktop-${mode}-vite`,
-    tauriService: `desktop-${mode}-tauri`,
-    storageRoot: path.join(resolved.paths.profileData, `desktop-${mode}`),
-    viteLog: path.join(resolved.paths.profileLogs, `desktop-${mode}-vite.log`),
-    tauriLog: path.join(resolved.paths.profileLogs, `desktop-${mode}-tauri.log`),
+    viteService: 'desktop-native-vite',
+    tauriService: 'desktop-native-tauri',
+    storageRoot: path.join(resolved.paths.profileData, 'desktop-native'),
+    viteLog: path.join(resolved.paths.profileLogs, 'desktop-native-vite.log'),
+    tauriLog: path.join(resolved.paths.profileLogs, 'desktop-native-tauri.log'),
     appletLog: path.join(resolved.paths.profileLogs, 'desktop-applets-build.log'),
     dependencyLog: path.join(
       resolved.paths.profileLogs,
@@ -192,7 +205,7 @@ function desktopValues(root, resolved) {
     ),
     configPath: path.join(
       resolved.paths.profileData,
-      `desktop-${mode}-tauri.conf.json`,
+      'desktop-native-tauri.conf.json',
     ),
   };
 }
@@ -423,7 +436,7 @@ function desktopProtoRequirements(values) {
 function writeTauriOverride(values, worktreeId) {
   const suffix = worktreeId.replace(/[^A-Za-z0-9]+/gu, '-').replace(/-$/u, '');
   const config = {
-    identifier: `com.peertouch.dev.${suffix}.${values.mode}`,
+    identifier: `com.peertouch.dev.${suffix}.native`,
     build: {
       devUrl: `http://127.0.0.1:${values.webPort}`,
       beforeDevCommand: null,
@@ -715,17 +728,12 @@ function windowsDeveloperEnvironment(environment) {
 }
 
 async function assertPortsAvailable(values) {
-  for (const [label, port] of [
-    ['Vite', values.webPort],
-    ['Gateway', values.gatewayPort],
-  ]) {
-    if (await isPortListening(port)) {
-      throw new DevctlError(
-        ERROR_CODES.PORT_CONFLICT,
-        `${label} port is occupied by an unmanaged process: ${port}`,
-        { label, port },
-      );
-    }
+  if (await isPortListening(values.webPort)) {
+    throw new DevctlError(
+      ERROR_CODES.PORT_CONFLICT,
+      `Embedded renderer port is occupied by an unmanaged process: ${values.webPort}`,
+      { label: 'Embedded renderer', port: values.webPort },
+    );
   }
 }
 
@@ -737,18 +745,18 @@ export function reconcileDesktopRuntime(
   stopProcess = stopManagedProcess,
 ) {
   const processStates = [
-    existing.web.process,
-    existing.gateway.process,
+    existing.renderer.process,
+    existing.native.process,
   ];
   if (processStates.some(({ status }) => status === 'foreign')) {
     throw new DevctlError(
       ERROR_CODES.PROCESS_IDENTITY_MISMATCH,
-      `Desktop ${values.mode} has a foreign runtime-state record`,
+      'Desktop Native has a foreign runtime-state record',
     );
   }
   const reusable =
-    existing.web.health.ok
-    && existing.gateway.listening
+    existing.renderer.health.ok
+    && existing.native.renderer.ready
     && processStates.every(({ status }) => status === 'running')
     && processStates.every(
       ({ record }) => record.sourceCommit === sourceCommit,
@@ -770,29 +778,30 @@ export async function desktopStatus(
   const resolved = resolveProfile(root, environment);
   const values = desktopValues(root, resolved);
   const runtimeIdentity = desktopRuntimeIdentity(values, environment);
-  const [viteReady, gatewayReady] = await Promise.all([
-    probeHttp(values.viteReadinessUrl),
-    isPortListening(values.gatewayPort),
-  ]);
+  const viteReady = await probeHttp(values.viteReadinessUrl);
+  const nativeProcess = inspectManagedProcess(
+    resolved.paths.profileState,
+    values.tauriService,
+  );
+  const rendererState = desktopFrontendLogState(
+    fs.existsSync(values.tauriLog)
+      ? fs.readFileSync(values.tauriLog, 'utf8')
+      : '',
+  );
   return {
     profile: resolved.reference.profileName,
-    mode: values.mode,
     runtimeProfile: runtimeIdentity.profile,
-    web: {
-      url: `http://127.0.0.1:${values.webPort}/`,
+    renderer: {
+      port: values.webPort,
       health: viteReady,
       process: inspectManagedProcess(
         resolved.paths.profileState,
         values.viteService,
       ),
     },
-    gateway: {
-      port: values.gatewayPort,
-      listening: gatewayReady,
-      process: inspectManagedProcess(
-        resolved.paths.profileState,
-        values.tauriService,
-      ),
+    native: {
+      renderer: rendererState,
+      process: nativeProcess,
     },
   };
 }
@@ -803,7 +812,6 @@ export async function startDesktop(
 ) {
   const resolved = resolveProfile(root, environment);
   const values = desktopValues(root, resolved);
-  const mode = values.mode;
   const runtimeEnv = runtimeEnvironment(resolved, environment);
   const runtimeIdentity = desktopRuntimeIdentity(values, environment);
   const pnpm = findExecutable('pnpm', runtimeEnv);
@@ -864,8 +872,6 @@ export async function startDesktop(
     PEERS_STATION_URL: resolved.profile.PT_STATION_URL,
     PEERS_STATION_MODE: resolved.profile.PT_STATION_MODE,
     PEERS_STORAGE_ROOT: runtimeIdentity.storageRoot,
-    PT_GATEWAY_PORT: String(values.gatewayPort),
-    VITE_GATEWAY_PORT: String(values.gatewayPort),
     CARGO_BUILD_JOBS: environment.CARGO_BUILD_JOBS ?? '1',
   });
 
@@ -895,7 +901,6 @@ export async function startDesktop(
   try {
     await waitForDesktopVite(
       values.webPort,
-      mode,
       () => Boolean(inspectProcess(vite.pid)),
     );
     const tauriLogOffset = fs.existsSync(values.tauriLog)
@@ -914,14 +919,9 @@ export async function startDesktop(
       cwd: values.desktopDirectory,
       environment: childEnvironment,
       logPath: values.tauriLog,
-      ports: [values.gatewayPort],
+      ports: [],
       identityTokens: ['tauri', path.basename(values.configPath)],
       sourceCommit,
-    });
-    await waitForPort(values.gatewayPort, {
-      label: `Desktop ${mode} Gateway`,
-      processAlive: () => Boolean(inspectProcess(tauri.pid)),
-      timeoutMs: 1_800_000,
     });
     await waitForDesktopFrontend(values.tauriLog, {
       fromOffset: tauriLogOffset,
@@ -929,14 +929,14 @@ export async function startDesktop(
     });
     const status = await desktopStatus(root, environment);
     if (
-      !status.web.health.ok
-      || !status.gateway.listening
-      || status.web.process.status !== 'running'
-      || status.gateway.process.status !== 'running'
+      !status.renderer.health.ok
+      || !status.native.renderer.ready
+      || status.renderer.process.status !== 'running'
+      || status.native.process.status !== 'running'
     ) {
       throw new DevctlError(
         ERROR_CODES.START_TIMEOUT,
-        `Desktop ${mode} did not reach a fully healthy managed state`,
+        'Desktop Native did not reach a fully healthy managed state',
         { status },
       );
     }
@@ -1092,7 +1092,7 @@ export async function stopDesktop(
   for (const service of [values.tauriService, values.viteService]) {
     results.push(stopManagedProcess(resolved.paths.profileState, service));
   }
-  return { profile: resolved.reference.profileName, mode: values.mode, results };
+  return { profile: resolved.reference.profileName, results };
 }
 
 export async function restartDesktop(

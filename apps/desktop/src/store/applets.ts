@@ -44,6 +44,7 @@ interface AppletsState {
   refresh: () => Promise<void>;
   importAppletDirectory: () => Promise<void>;
   installApplet: (id: string) => Promise<void>;
+  removeAppletInstallation: (id: string) => Promise<void>;
   loadApplet: (id: string) => Promise<void>;
   unloadApplet: (id: string) => Promise<void>;
 }
@@ -331,6 +332,24 @@ export const useAppletsStore = createDesktopStore<AppletsState>('applets', (set,
       return;
     }
     await api.appletStoreInstall(id);
+    await get().refresh();
+  },
+
+  removeAppletInstallation: async (id) => {
+    const target = get().applets.find((info) => info.manifest.id === id);
+    if (!target) return;
+    if (target.source === 'bundled-official') {
+      throw new Error('error.applet.bundledCannotUninstall');
+    }
+    if (target.source === 'local-dev') {
+      const localDevInstalledAppletIds = persistLocalDevInstalledAppletIds(
+        get().localDevInstalledAppletIds.filter((appletId) => appletId !== id),
+      );
+      set({ localDevInstalledAppletIds });
+      await get().refresh();
+      return;
+    }
+    await api.appletStoreUninstall(id);
     await get().refresh();
   },
 

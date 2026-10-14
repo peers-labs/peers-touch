@@ -418,10 +418,12 @@ describe('Moments acceptance harness', () => {
       federationEndpoint: 'https://four.invalid',
       federationId: 'federation-1',
       homeStationPeerId: 'station-five-arm',
+      sequencerStationPeerId: 'station-four',
     });
     await expect(harness().joinAcceptanceFederation({
       federationEndpoint: 'https://four.invalid',
       federationId: 'federation-1',
+      sequencerStationPeerId: 'station-four',
     })).resolves.toEqual({
       federationId: 'federation-1',
       status: 'active',
@@ -441,6 +443,7 @@ describe('Moments acceptance harness', () => {
           federation_endpoint: 'https://four.invalid',
           federation_id: 'federation-1',
           message: 'secure-content-w8 remote recipient fixture',
+          sequencer_station_peer_id: 'station-four',
         },
       },
     );
@@ -488,6 +491,7 @@ describe('Moments acceptance harness', () => {
       federationEndpoint: 'https://four.invalid',
       federationId: 'created-federation',
       homeStationPeerId: 'station-four',
+      sequencerStationPeerId: 'station-four',
     });
     expect(invoke).toHaveBeenCalledWith(
       'acceptance_federation_fixture_create',

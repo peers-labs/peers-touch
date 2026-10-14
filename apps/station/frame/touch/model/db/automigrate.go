@@ -21,6 +21,9 @@ func init() {
 		if err := migrateSocialIdentityColumns(rds); err != nil {
 			panic(fmt.Errorf("migrate social identity columns: %w", err))
 		}
+		if err := migrateTouchProfilePolicyColumns(rds); err != nil {
+			panic(fmt.Errorf("migrate touch profile policy columns: %w", err))
+		}
 
 		if err := MigrateAccessGateIdentity(rds); err != nil {
 			panic(fmt.Errorf("migrate Access Gate identities: %w", err))
@@ -28,7 +31,8 @@ func init() {
 
 		err := rds.AutoMigrate(
 			// Actor models
-			&Actor{}, &ActorTouchMeta{}, &PeerAddress{}, &ActorStatus{},
+			&Actor{}, &ActorTouchMeta{}, &ActorFederationVisibility{},
+			&PeerAddress{}, &ActorStatus{},
 			// OAuth models
 			&OAuthClient{}, &OAuthAuthCode{}, &OAuthToken{},
 			&OAuth2IdentityBinding{}, &OAuth2TokenState{}, &OAuth2ConnectionState{},
@@ -78,6 +82,52 @@ func migrateSocialIdentityColumns(rds *gorm.DB) error {
 	return migrateStringIdentityColumns(rds, []stringIdentityColumnRename{
 		{table: "social_circle_members", from: "member_did", to: "actor_ptid"},
 		{table: "social_circle_members", from: "actor_did", to: "actor_ptid"},
+	})
+}
+
+func migrateTouchProfilePolicyColumns(rds *gorm.DB) error {
+	if !rds.Migrator().HasTable("touch_actor_meta") {
+		return nil
+	}
+	const (
+		table         = "touch_actor_meta"
+		legacyColumn  = "message_permission"
+		contactColumn = "contact_request_policy"
+	)
+	hasLegacy := rds.Migrator().HasColumn(table, legacyColumn)
+	hasContact := rds.Migrator().HasColumn(table, contactColumn)
+	addedContact := false
+	if !hasContact {
+		if !hasLegacy {
+			return nil
+		}
+		if err := rds.Migrator().AddColumn(&ActorTouchMeta{}, "ContactRequestPolicy"); err != nil {
+			return fmt.Errorf("add contact request policy column: %w", err)
+		}
+		addedContact = true
+	}
+
+	return rds.Transaction(func(tx *gorm.DB) error {
+		query := tx.Table(table)
+		if addedContact {
+			query = query.Where("1 = 1")
+		} else {
+			query = query.Where(
+				"contact_request_policy IS NULL OR contact_request_policy NOT IN ?",
+				[]string{"anyone", "federations", "nobody"},
+			)
+		}
+		if err := query.Update(contactColumn, "nobody").Error; err != nil {
+			return err
+		}
+		if hasLegacy {
+			if err := tx.Exec(
+				"ALTER TABLE touch_actor_meta DROP COLUMN message_permission",
+			).Error; err != nil {
+				return fmt.Errorf("drop legacy message policy column: %w", err)
+			}
+		}
+		return nil
 	})
 }
 

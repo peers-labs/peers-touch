@@ -44,8 +44,8 @@ domain.
 ## Key Decisions
 
 - Station owns cross-device social truth, permissions, delivery facts, and audit.
-- Desktop Rust is the local BFF and event bridge; Desktop Web must not bypass it.
-- Desktop Web pages are pure renderers over runtime-owned projections.
+- Desktop Rust is the local BFF and event bridge; Desktop renderer must not bypass it.
+- Desktop renderer pages are pure renderers over runtime-owned projections.
 - Every visible social business state needs both event consumption and periodic
   reconciliation.
 - Private HOME timeline should converge on viewer-scoped delivery inbox rather

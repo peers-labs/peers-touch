@@ -164,9 +164,6 @@ Use these gates for Desktop applet changes:
 pnpm applet:contract-test
 pnpm applet:developer-flow-gate
 pnpm applet:desktop-package-gate
-pnpm applet:desktop-runtime-gate
-pnpm applet:desktop-product-host-gate
-pnpm applet:desktop-product-host-real-gateway-gate
 pnpm applet:desktop-packaged-assets-gate
 pnpm applet:desktop-e2e
 ```

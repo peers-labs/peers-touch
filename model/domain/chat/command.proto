@@ -73,6 +73,10 @@ message SendMessageIntent {
   repeated PreparedEndpointPayload direct_payloads = 6;
   bytes mls_application_payload = 7;
   bytes mls_application_payload_sha256 = 8;
+  // Public routing metadata only. Exact positions and display text remain in
+  // MessagePrivateContent.
+  repeated string mentioned_ptids = 9;
+  bool mention_all = 10;
 }
 
 message EditMessageIntent {

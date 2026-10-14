@@ -116,6 +116,21 @@ Authenticated edges are:
 - renderer reload restore;
 - applet product-window launch when it materializes an actor.
 
+Station switch is a logout transition, not an account switch:
+
+```text
+capture active Station URL
+  -> LOGOUT_REQUESTED
+  -> revoke the remote Station session and clear local auth/runtime authority
+  -> remove the active Station binding
+  -> load the account/Station gate
+```
+
+If logout cleanup is incomplete, the active Station is not removed. If Station
+removal fails after logout, the runtime still enters the non-authenticated gate
+and reports the failure; the Station remains available there for explicit
+retry/removal. Neither path deletes local messages.
+
 The closure must update both:
 
 - shell identity projection: `session.currentUser`;
@@ -169,6 +184,8 @@ Runtime code must not branch on raw booleans such as
 - `ready` without a valid session is invalid.
 - `loggingOut` must not start auth-gate account projection reads; the runtime
   enters `accountGate(logout)` only after session teardown completes.
+- Station switch must complete remote logout before removing the active Station,
+  and must remove it before loading account/Station projections.
 - Every transition into an authenticated actor must be represented as an
   `IdentityAuthenticatedEdge`.
 - Boot restore decisions must go through `IdentityBootResolution`.
@@ -208,5 +225,7 @@ Required functional checks:
 - password login updates shell avatar and account picker avatar from the same profile;
 - PIN unlock runs profile/account reconciliation before shell steady state;
 - account switch refreshes session, profile, account cache, and shell avatar;
+- Station switch revokes the remote session, removes the active Station, keeps
+  local messages, and only then exposes account/Station selection;
 - renderer reload keeps the session and refreshes profile/account cache;
 - profile sync failure is represented as `profile=failed` rather than being swallowed.

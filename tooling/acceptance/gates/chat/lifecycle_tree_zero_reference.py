@@ -32,7 +32,6 @@ INVENTORY_PATH = (
 EXPECTED_DIMENSIONS: tuple[str, ...] = (
     "tracked-source",
     "tauri-registry",
-    "http-gateway-registry",
     "compiled-proto-descriptor",
     "generated-manifest",
     "mixed-client-runtime-trace",

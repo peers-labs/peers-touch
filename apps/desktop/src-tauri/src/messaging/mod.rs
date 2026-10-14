@@ -106,8 +106,10 @@ pub(crate) use lifecycle::hydrate_projections_from_station;
 pub use lifecycle::MessagingLifecycleWorker;
 pub use membership_transition::StationMembershipTransitionTransport;
 pub use messaging_core::codec::private_content::{
-    decode_message_private_content, encode_message_private_content,
-    validate_attachment_plaintext_metadata, validate_message_private_content,
+    decode_message_mention_set, decode_message_private_content, encode_message_mention_set,
+    encode_message_private_content, encode_message_private_content_with_mentions, mentioned_ptids,
+    validate_attachment_plaintext_metadata, validate_message_mention_set,
+    validate_message_mentions, validate_message_private_content, validate_public_mentions,
     MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
 };
 pub use messaging_core::crypto::prekeys::PendingPreKeyBundle;

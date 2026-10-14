@@ -1424,7 +1424,6 @@ export function slotPorts(slotValue) {
   const slot = requiredSlot(slotValue);
   return {
     station: 18_080 + slot * 100,
-    desktopAppGateway: 3_030 + slot * 100,
     desktopAppWeb: 3_210 + slot * 100,
     mobileWeb: 5_173 + slot * 100,
   };

@@ -34,7 +34,7 @@
 | Make is not a Windows compatibility layer in the current tree | `verified_fact` | Root `Makefile` fixes `SHELL := /bin/bash`; `gmake config` fails without `sh.exe` | high | none |
 | Daily local-development ownership is Bash-based | `verified_fact` | `tooling/make/local-dev.mk` and `tooling/scripts/local-dev/*.sh` | high | none |
 | Package checks are not shell-neutral | `verified_fact` | `apps/desktop/package.json` directly executes two `.sh` files | high | none |
-| Tauri development builds applets twice | `verified_fact` | `pretauri:dev` and `beforeDevCommand -> pnpm dev -> predev` | high | none |
+| Native Desktop startup has one applet-build owner | `verified_fact` | `devctl desktop start` runs `runAppletBuild`; generated Tauri config disables `beforeDevCommand` | high | none |
 | Windows build support is not a complete lifecycle | `verified_fact` | `tooling/scripts/windows-desktop-build.ps1` has no profile/status/stop/restart contract | high | none |
 | A Node control plane can provide the required OS adapters without a new runtime dependency | `proposal` | Node is already required by the pnpm workspace and exposes filesystem, child-process, crypto, and networking APIs | high | Windows and Unix lifecycle gates |
 
@@ -155,8 +155,9 @@ devctl profile activate <name>
 devctl config [--json]
 devctl doctor [--json]
 devctl station start|check|status|stop|restart
-devctl desktop start [--mode app|web] [--foreground]
-devctl desktop status|stop|restart [--mode app|web]
+devctl desktop start
+devctl desktop status|stop|restart
+devctl desktop install
 devctl status [--json]
 devctl stop [station|desktop|all]
 devctl restart [station|desktop|all]

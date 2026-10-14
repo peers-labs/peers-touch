@@ -11,6 +11,7 @@ use crate::infrastructure::storage::{open_database, resolve_database_path};
 use crate::model::chat::{
     chat_command, AttachmentPlaintextMetadata, AttachmentTransferState, ChatCommand,
     ConversationKind, EncryptedObjectDescriptor, EncryptedObjectUploadSpec, MemberRole,
+    MessageMention,
 };
 pub use messaging_core::attachment::AttachmentTransferRecord;
 use messaging_core::attachment::{
@@ -144,6 +145,8 @@ pub struct MessageProjection {
     pub sender_device_id: String,
     pub plaintext: String,
     pub attachments: Vec<AttachmentPlaintextMetadata>,
+    pub mentions: Vec<MessageMention>,
+    pub mention_all: bool,
     pub committed_at_unix_ms: i64,
     /// The message_id of the parent message this is replying to, if any.
     pub reply_to_message_id: Option<String>,
@@ -183,6 +186,8 @@ pub struct PendingMessageDraft {
     pub reply_to_message_id: String,
     pub thread_root_message_id: String,
     pub attachments: Vec<AttachmentPlaintextMetadata>,
+    pub mentions: Vec<MessageMention>,
+    pub mention_all: bool,
     pub attempt_count: u32,
     pub created_at_unix_ms: i64,
 }
@@ -422,6 +427,8 @@ pub struct PublicEventReceiveCommit<'a> {
     pub sender_ptid: &'a str,
     pub sender_device_id: &'a str,
     pub attachments: &'a [EncryptedObjectDescriptor],
+    pub mentioned_ptids: &'a [String],
+    pub mention_all: bool,
     pub reply_to_message_id: Option<&'a str>,
     pub thread_root_message_id: Option<&'a str>,
     pub committed_at_unix_ms: i64,
@@ -759,6 +766,8 @@ fn map_conversation_message_projection(
         sender_device_id: row.get(4)?,
         plaintext: row.get(5)?,
         attachments: Vec::new(),
+        mentions: Vec::new(),
+        mention_all: false,
         state: row.get(6)?,
         timestamp_unix_ms: row.get(7)?,
         reply_to_message_id: row.get(8)?,
@@ -773,6 +782,21 @@ fn map_conversation_message_projection(
         pinned_at_unix_ms: None,
         read_by_ptids: Vec::new(),
     })
+}
+
+fn message_mentions_from_row(
+    row: &rusqlite::Row<'_>,
+    column: usize,
+) -> rusqlite::Result<(Vec<MessageMention>, bool)> {
+    let bytes = row.get::<_, Vec<u8>>(column)?;
+    let metadata = super::private_content::decode_message_mention_set(&bytes).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            column,
+            rusqlite::types::Type::Blob,
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, error)),
+        )
+    })?;
+    Ok((metadata.mentions, metadata.mention_all))
 }
 
 fn merge_message_projection_rows<T: OrderedMessageProjection>(rows: Vec<(T, i64)>) -> Vec<T> {
@@ -827,6 +851,8 @@ fn conversation_message_projection_from_row(
             row.get(5)?
         },
         attachments: Vec::new(),
+        mentions: Vec::new(),
+        mention_all: false,
         state: row.get(6)?,
         timestamp_unix_ms: row.get(7)?,
         reply_to_message_id: row.get(8)?,
@@ -2855,6 +2881,8 @@ impl MessagingStore {
                             sender_device_id: row.get(3)?,
                             plaintext: row.get(4)?,
                             attachments: Vec::new(),
+                            mentions: Vec::new(),
+                            mention_all: false,
                             committed_at_unix_ms: row.get(6)?,
                             reply_to_message_id: row.get(7)?,
                             thread_root_message_id: row.get(8)?,
@@ -2923,6 +2951,8 @@ impl MessagingStore {
             .map_err(|error| error.to_string())?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| error.to_string())?;
+        (projection.mentions, projection.mention_all) =
+            load_message_mention_metadata(&connection, conversation_id, message_id)?;
         Ok(Some((projection, delivery_state)))
     }
 
@@ -3499,6 +3529,8 @@ impl MessagingStore {
         let pins = load_pins_for_conversation(&connection, conversation_id)?;
         for row in &mut rows {
             row.attachments = load_visible_message_attachments(&connection, &row.message_id)?;
+            (row.mentions, row.mention_all) =
+                load_message_mention_metadata(&connection, conversation_id, &row.message_id)?;
             row.reactions = load_reactions_for_message(&connection, &row.message_id)?;
             row.read_by_ptids = load_readers_for_message(
                 &connection,
@@ -3618,6 +3650,8 @@ impl MessagingStore {
         for message in &mut messages {
             message.attachments =
                 load_visible_message_attachments(&connection, &message.message_id)?;
+            (message.mentions, message.mention_all) =
+                load_message_mention_metadata(&connection, conversation_id, &message.message_id)?;
             message.reactions = load_reactions_for_message(&connection, &message.message_id)?;
             message.read_by_ptids = load_readers_for_message(
                 &connection,
@@ -3765,6 +3799,8 @@ impl MessagingStore {
         let pins = load_pins_for_conversation(&connection, conversation_id)?;
         for row in &mut rows {
             row.attachments = load_visible_message_attachments(&connection, &row.message_id)?;
+            (row.mentions, row.mention_all) =
+                load_message_mention_metadata(&connection, conversation_id, &row.message_id)?;
             row.reactions = load_reactions_for_message(&connection, &row.message_id)?;
             row.read_by_ptids = load_readers_for_message(
                 &connection,
@@ -3956,6 +3992,8 @@ impl MessagingStore {
         let pins = load_pins_for_conversation(&connection, conversation_id)?;
         for row in &mut rows {
             row.attachments = load_attachment_metadata(&connection, &row.message_id)?;
+            (row.mentions, row.mention_all) =
+                load_message_mention_metadata(&connection, conversation_id, &row.message_id)?;
             row.reactions = load_reactions_for_message(&connection, &row.message_id)?;
             row.read_by_ptids = load_readers_for_message(
                 &connection,
@@ -4216,10 +4254,14 @@ impl MessagingStore {
     }
 
     pub fn create_message_draft(&self, draft: &PendingMessageDraft) -> Result<(), String> {
-        let private_content = super::private_content::encode_message_private_content(
+        let private_content = super::private_content::encode_message_private_content_with_mentions(
             &draft.plaintext,
             &draft.attachments,
+            &draft.mentions,
+            draft.mention_all,
         )?;
+        let mention_metadata =
+            super::private_content::encode_message_mention_set(&draft.mentions, draft.mention_all)?;
         if draft.conversation_id.trim().is_empty()
             || draft.conversation_kind <= 0
             || draft.message_id.trim().is_empty()
@@ -4238,10 +4280,10 @@ impl MessagingStore {
                 "INSERT INTO messaging_pending_messages(
                     conversation_id, conversation_kind, message_id,
                     sender_ptid, sender_device_id, plaintext,
-                    reply_to_message_id, thread_root_message_id, state,
+                    reply_to_message_id, thread_root_message_id, mention_metadata, state,
                     attempt_count, next_attempt_at_unix_ms, last_error_code,
                     created_at_unix_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'draft', 0, ?9, '', ?9)
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'draft', 0, ?10, '', ?10)
                  ON CONFLICT(conversation_id, message_id) DO NOTHING",
                 params![
                     draft.conversation_id,
@@ -4252,7 +4294,8 @@ impl MessagingStore {
                     draft.plaintext,
                     draft.reply_to_message_id,
                     draft.thread_root_message_id,
-                    draft.created_at_unix_ms
+                    mention_metadata,
+                    draft.created_at_unix_ms,
                 ],
             )
             .map_err(|error| error.to_string())?;
@@ -4275,6 +4318,13 @@ impl MessagingStore {
         draft: &PendingMessageDraft,
         uploads: &[PendingAttachmentUpload],
     ) -> Result<(), String> {
+        super::private_content::validate_message_mentions(
+            &draft.plaintext,
+            &draft.mentions,
+            draft.mention_all,
+        )?;
+        let mention_metadata =
+            super::private_content::encode_message_mention_set(&draft.mentions, draft.mention_all)?;
         if uploads.is_empty()
             || !draft.attachments.is_empty()
             || draft.conversation_id.trim().is_empty()
@@ -4315,10 +4365,10 @@ impl MessagingStore {
                 "INSERT INTO messaging_pending_messages(
                     conversation_id, conversation_kind, message_id,
                     sender_ptid, sender_device_id, plaintext,
-                    reply_to_message_id, thread_root_message_id, state,
+                    reply_to_message_id, thread_root_message_id, mention_metadata, state,
                     attempt_count, next_attempt_at_unix_ms, last_error_code,
                     created_at_unix_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'draft', 0, ?9, '', ?9)
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'draft', 0, ?10, '', ?10)
                  ON CONFLICT(conversation_id, message_id) DO NOTHING",
                 params![
                     draft.conversation_id,
@@ -4329,7 +4379,8 @@ impl MessagingStore {
                     draft.plaintext,
                     draft.reply_to_message_id,
                     draft.thread_root_message_id,
-                    draft.created_at_unix_ms
+                    mention_metadata,
+                    draft.created_at_unix_ms,
                 ],
             )
             .map_err(|error| error.to_string())?;
@@ -5333,7 +5384,7 @@ impl MessagingStore {
                 "SELECT conversation_id, conversation_kind, message_id,
                         sender_ptid, sender_device_id, plaintext,
                         reply_to_message_id, thread_root_message_id,
-                        attempt_count, created_at_unix_ms
+                        mention_metadata, attempt_count, created_at_unix_ms
                  FROM messaging_pending_messages pending
                  WHERE state = 'draft'
                    AND next_attempt_at_unix_ms <= ?1
@@ -5346,6 +5397,7 @@ impl MessagingStore {
                  LIMIT 1",
                 params![now_unix_ms],
                 |row| {
+                    let (mentions, mention_all) = message_mentions_from_row(row, 8)?;
                     Ok(PendingMessageDraft {
                         conversation_id: row.get(0)?,
                         conversation_kind: row.get(1)?,
@@ -5356,8 +5408,10 @@ impl MessagingStore {
                         reply_to_message_id: row.get(6)?,
                         thread_root_message_id: row.get(7)?,
                         attachments: Vec::new(),
-                        attempt_count: row.get(8)?,
-                        created_at_unix_ms: row.get(9)?,
+                        mentions,
+                        mention_all,
+                        attempt_count: row.get(9)?,
+                        created_at_unix_ms: row.get(10)?,
                     })
                 },
             )
@@ -5367,9 +5421,11 @@ impl MessagingStore {
             return Ok(None);
         };
         draft.attachments = load_pending_message_attachments(&connection, &draft.message_id)?;
-        super::private_content::encode_message_private_content(
+        super::private_content::encode_message_private_content_with_mentions(
             &draft.plaintext,
             &draft.attachments,
+            &draft.mentions,
+            draft.mention_all,
         )?;
         Ok(Some(draft))
     }
@@ -5384,7 +5440,7 @@ impl MessagingStore {
                 "SELECT conversation_id, conversation_kind, message_id,
                         sender_ptid, sender_device_id, plaintext,
                         reply_to_message_id, thread_root_message_id,
-                        attempt_count, created_at_unix_ms
+                        mention_metadata, attempt_count, created_at_unix_ms
                  FROM messaging_pending_messages pending
                  WHERE message_id = ?1
                    AND state = 'draft'
@@ -5395,6 +5451,7 @@ impl MessagingStore {
                    )",
                 params![message_id],
                 |row| {
+                    let (mentions, mention_all) = message_mentions_from_row(row, 8)?;
                     Ok(PendingMessageDraft {
                         conversation_id: row.get(0)?,
                         conversation_kind: row.get(1)?,
@@ -5405,8 +5462,10 @@ impl MessagingStore {
                         reply_to_message_id: row.get(6)?,
                         thread_root_message_id: row.get(7)?,
                         attachments: Vec::new(),
-                        attempt_count: row.get(8)?,
-                        created_at_unix_ms: row.get(9)?,
+                        mentions,
+                        mention_all,
+                        attempt_count: row.get(9)?,
+                        created_at_unix_ms: row.get(10)?,
                     })
                 },
             )
@@ -5416,9 +5475,11 @@ impl MessagingStore {
             return Ok(None);
         };
         draft.attachments = load_pending_message_attachments(&connection, &draft.message_id)?;
-        super::private_content::encode_message_private_content(
+        super::private_content::encode_message_private_content_with_mentions(
             &draft.plaintext,
             &draft.attachments,
+            &draft.mentions,
+            draft.mention_all,
         )?;
         Ok(Some(draft))
     }
@@ -7121,7 +7182,7 @@ impl MessagingStore {
             let pending = transaction
                 .query_row(
                     "SELECT p.conversation_id, p.message_id, p.sender_ptid,
-                            p.sender_device_id, p.plaintext
+                            p.sender_device_id, p.plaintext, p.mention_metadata
                      FROM messaging_command_attempts a
                      JOIN messaging_pending_messages p
                        ON p.conversation_id = a.conversation_id
@@ -7135,6 +7196,7 @@ impl MessagingStore {
                             row.get::<_, String>(2)?,
                             row.get::<_, String>(3)?,
                             row.get::<_, String>(4)?,
+                            row.get::<_, Vec<u8>>(5)?,
                         ))
                     },
                 )
@@ -7157,10 +7219,20 @@ impl MessagingStore {
             if private_descriptors != input.attachments {
                 return Err("messaging public-event attachment descriptor mismatch".to_string());
             }
-            let private_content = super::private_content::encode_message_private_content(
-                &pending.4,
-                &attachment_metadata,
-            )?;
+            let mention_metadata = super::private_content::decode_message_mention_set(&pending.5)?;
+            if super::private_content::mentioned_ptids(&mention_metadata.mentions)
+                != input.mentioned_ptids
+                || mention_metadata.mention_all != input.mention_all
+            {
+                return Err("messaging public-event mention metadata mismatch".to_string());
+            }
+            let private_content =
+                super::private_content::encode_message_private_content_with_mentions(
+                    &pending.4,
+                    &attachment_metadata,
+                    &mention_metadata.mentions,
+                    mention_metadata.mention_all,
+                )?;
             persist_sender_content(
                 transaction,
                 input.conversation_id,
@@ -7176,9 +7248,9 @@ impl MessagingStore {
                         sender_ptid, sender_device_id, plaintext,
                         delivery_state, committed_at_unix_ms,
                         reply_to_message_id, thread_root_message_id,
-                        edited_text, edited_at_unix_ms, retracted
+                        edited_text, edited_at_unix_ms, retracted, mention_metadata
                      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'accepted', ?8,
-                               ?9, ?10, NULL, NULL, 0)",
+                               ?9, ?10, NULL, NULL, 0, ?11)",
                     params![
                         input.conversation_id,
                         input.event_id,
@@ -7189,7 +7261,8 @@ impl MessagingStore {
                         pending.4,
                         input.committed_at_unix_ms,
                         input.reply_to_message_id,
-                        input.thread_root_message_id
+                        input.thread_root_message_id,
+                        pending.5,
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -7252,6 +7325,8 @@ impl MessagingStore {
             sender_device_id: input.sender_device_id.to_string(),
             plaintext: input.fallback_text.to_string(),
             attachments: Vec::new(),
+            mentions: Vec::new(),
+            mention_all: false,
             committed_at_unix_ms: input.committed_at_unix_ms,
             reply_to_message_id: None,
             thread_root_message_id: None,
@@ -9146,6 +9221,10 @@ impl MessagingStore {
         }
 
         if let Some(projection) = input.projection {
+            let mention_metadata = super::private_content::encode_message_mention_set(
+                &projection.mentions,
+                projection.mention_all,
+            )?;
             let changed = transaction
                 .execute(
                     "INSERT INTO messaging_message_projections(
@@ -9153,9 +9232,9 @@ impl MessagingStore {
                         sender_ptid, sender_device_id, plaintext,
                         delivery_state, committed_at_unix_ms,
                         reply_to_message_id, thread_root_message_id,
-                        edited_text, edited_at_unix_ms, retracted
+                        edited_text, edited_at_unix_ms, retracted, mention_metadata
                      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'consumed', ?8,
-                               ?9, ?10, NULL, NULL, 0)
+                               ?9, ?10, NULL, NULL, 0, ?11)
                      ON CONFLICT(conversation_id, event_id) DO NOTHING",
                     params![
                         projection.conversation_id,
@@ -9167,7 +9246,8 @@ impl MessagingStore {
                         projection.plaintext,
                         projection.committed_at_unix_ms,
                         projection.reply_to_message_id,
-                        projection.thread_root_message_id
+                        projection.thread_root_message_id,
+                        mention_metadata,
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -10733,6 +10813,8 @@ impl MlsInboundRepository for MessagingStore {
             sender_device_id: commit.projection.sender_device_id.clone(),
             plaintext: commit.projection.plaintext.clone(),
             attachments: commit.projection.attachments.clone(),
+            mentions: commit.projection.mentions.clone(),
+            mention_all: commit.projection.mention_all,
             committed_at_unix_ms: commit.projection.committed_at_unix_ms,
             reply_to_message_id: commit.projection.reply_to_message_id.clone(),
             thread_root_message_id: commit.projection.thread_root_message_id.clone(),
@@ -11181,6 +11263,7 @@ fn validate_direct_receive(input: &DirectReceiveCommit<'_>) -> Result<(), String
 
 fn validate_public_event_receive(input: &PublicEventReceiveCommit<'_>) -> Result<(), String> {
     validate_receive_core(&public_event_receive_core(input))?;
+    super::private_content::validate_public_mentions(input.mentioned_ptids, input.mention_all)?;
     if input.command_id.trim().is_empty()
         || input.message_id.trim().is_empty()
         || input.sender_ptid.trim().is_empty()
@@ -11204,6 +11287,8 @@ fn validate_service_plaintext_receive(
         sender_device_id: input.sender_device_id.to_string(),
         plaintext: input.fallback_text.to_string(),
         attachments: Vec::new(),
+        mentions: Vec::new(),
+        mention_all: false,
         committed_at_unix_ms: input.committed_at_unix_ms,
         reply_to_message_id: None,
         thread_root_message_id: None,
@@ -11967,6 +12052,31 @@ fn load_pending_message_attachments(
     load_staged_attachment_metadata(connection, message_id)
 }
 
+fn load_message_mention_metadata(
+    connection: &Connection,
+    conversation_id: &str,
+    message_id: &str,
+) -> Result<(Vec<MessageMention>, bool), String> {
+    let bytes = connection
+        .query_row(
+            "SELECT mention_metadata
+             FROM messaging_message_projections
+             WHERE conversation_id = ?1 AND message_id = ?2
+             UNION ALL
+             SELECT mention_metadata
+             FROM messaging_pending_messages
+             WHERE conversation_id = ?1 AND message_id = ?2
+             LIMIT 1",
+            params![conversation_id, message_id],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .unwrap_or_default();
+    let metadata = super::private_content::decode_message_mention_set(&bytes)?;
+    Ok((metadata.mentions, metadata.mention_all))
+}
+
 fn load_visible_message_attachments(
     connection: &Connection,
     message_id: &str,
@@ -12001,6 +12111,12 @@ fn persist_prepared_command(
     command_bytes: &[u8],
     projection: &PendingSenderProjection<'_>,
 ) -> Result<(), String> {
+    let private_content =
+        super::private_content::decode_message_private_content(projection.private_content)?;
+    let mention_metadata = super::private_content::encode_message_mention_set(
+        &private_content.mentions,
+        private_content.mention_all,
+    )?;
     let local_changed = transaction
         .execute(
             "INSERT INTO messaging_local_commands(
@@ -12040,18 +12156,20 @@ fn persist_prepared_command(
             "INSERT INTO messaging_pending_messages(
                 conversation_id, conversation_kind, message_id, sender_ptid,
                 sender_device_id, plaintext, reply_to_message_id,
-                thread_root_message_id, state, attempt_count,
+                thread_root_message_id, mention_metadata, state, attempt_count,
                 next_attempt_at_unix_ms, last_error_code, created_at_unix_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending', 0, ?9, '', ?9)
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending', 0, ?10, '', ?10)
              ON CONFLICT(conversation_id, message_id) DO UPDATE SET
                 state='pending',
                 conversation_kind=excluded.conversation_kind,
+                mention_metadata=excluded.mention_metadata,
                 last_error_code=''
              WHERE messaging_pending_messages.sender_ptid = excluded.sender_ptid
                AND messaging_pending_messages.sender_device_id = excluded.sender_device_id
                AND messaging_pending_messages.plaintext = excluded.plaintext
                AND messaging_pending_messages.reply_to_message_id = excluded.reply_to_message_id
-               AND messaging_pending_messages.thread_root_message_id = excluded.thread_root_message_id",
+               AND messaging_pending_messages.thread_root_message_id = excluded.thread_root_message_id
+               AND messaging_pending_messages.mention_metadata = excluded.mention_metadata",
             params![
                 projection.conversation_id,
                 projection.conversation_kind,
@@ -12061,7 +12179,8 @@ fn persist_prepared_command(
                 projection.plaintext,
                 projection.reply_to_message_id,
                 projection.thread_root_message_id,
-                projection.created_at_unix_ms
+                mention_metadata,
+                projection.created_at_unix_ms,
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -16023,6 +16142,8 @@ mod tests {
             sender_device_id: "bob-device".to_string(),
             plaintext: "exact plaintext".to_string(),
             attachments: Vec::new(),
+            mentions: Vec::new(),
+            mention_all: false,
             committed_at_unix_ms: 100,
             reply_to_message_id: None,
             thread_root_message_id: None,
@@ -17358,6 +17479,8 @@ mod tests {
             reply_to_message_id: String::new(),
             thread_root_message_id: String::new(),
             attachments: Vec::new(),
+            mentions: Vec::new(),
+            mention_all: false,
             attempt_count: 0,
             created_at_unix_ms: 10,
         };
@@ -17626,10 +17749,17 @@ mod tests {
             message_id: "message-draft".to_string(),
             sender_ptid: "ptid:alice".to_string(),
             sender_device_id: "alice-device".to_string(),
-            plaintext: "survives prepare failure".to_string(),
+            plaintext: "survives @Bob prepare failure".to_string(),
             reply_to_message_id: String::new(),
             thread_root_message_id: String::new(),
             attachments: Vec::new(),
+            mentions: vec![MessageMention {
+                actor_ptid: "ptid:bob".to_string(),
+                offset: 9,
+                length: 4,
+                display: "Bob".to_string(),
+            }],
+            mention_all: false,
             attempt_count: 0,
             created_at_unix_ms: 100,
         };
@@ -17642,7 +17772,8 @@ mod tests {
         assert_eq!(projection.len(), 1);
         assert_eq!(projection[0].message_id, "message-draft");
         assert_eq!(projection[0].state, "draft");
-        assert_eq!(projection[0].plaintext, "survives prepare failure");
+        assert_eq!(projection[0].plaintext, "survives @Bob prepare failure");
+        assert_eq!(projection[0].mentions, draft.mentions);
 
         store
             .schedule_message_draft_retry("group-1", "message-draft", 1_100, "prepare_failed")
@@ -17650,6 +17781,7 @@ mod tests {
         assert_eq!(store.next_due_message_draft(1_099).unwrap(), None);
         let retried = store.next_due_message_draft(1_100).unwrap().unwrap();
         assert_eq!(retried.attempt_count, 1);
+        assert_eq!(retried.mentions, draft.mentions);
         assert_eq!(retried.message_id, draft.message_id);
     }
 

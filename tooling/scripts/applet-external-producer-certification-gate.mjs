@@ -87,10 +87,6 @@ if (!manifest.load?.desktop || manifest.load.desktop.type !== 'lynx-web') {
 
 const steps = [
   ['Validate canonical package', 'pnpm', ['applet:validate', packageDir]],
-  ['Desktop Lynx runtime gate', 'pnpm', ['applet:desktop-runtime-gate', packageDir, ...productGateArgs]],
-  ['Desktop product Host gate', 'pnpm', ['applet:desktop-product-host-gate', packageDir, ...productGateArgs]],
-  ['Desktop product Host real Gateway gate', 'pnpm', ['applet:desktop-product-host-real-gateway-gate', packageDir, ...productGateArgs]],
-  ['Desktop product shell real Gateway gate', 'pnpm', ['applet:desktop-product-shell-real-gateway-gate', packageDir, ...productGateArgs]],
   ['Packaged product-window gate', 'node', ['tooling/scripts/applet-desktop-product-window-gate.mjs', packageDir, ...productGateArgs]],
   ['Desktop live E2E gate', 'pnpm', ['applet:desktop-e2e', packageDir]],
 ];

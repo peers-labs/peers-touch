@@ -32,7 +32,7 @@
 | Desktop Rust `cache.rs` | In-memory TTL cache for Station provider state + credential status |
 | Desktop Rust `station_api.rs` | Typed HTTP client for 10+ Station agent endpoints |
 | Desktop Rust `remote.rs` | Inference-only: `chat_completion` + `resolve_model_protocol` |
-| Desktop Web `store/provider.ts` | Calls Rust Tauri commands (unchanged interface) |
+| Desktop renderer `store/provider.ts` | Calls Rust Tauri commands (unchanged interface) |
 | Station `agent_providers` | Per-actor provider preferences + credential storage |
 | Station `credential/resolve` | Returns decrypted api_key + base_url + protocol for authenticated actor |
 
@@ -92,11 +92,11 @@ These files import from `application::provider` and need adaptation:
 | `application/chat/mod.rs` | 866 | `with_provider_store()` (resolve provider base_url/api_key/protocol), `chat_completion()` | Replace `with_provider_store()` with new cache-reading API |
 | `application/chat/streaming.rs` | 460 | `with_provider_store()`, `resolve_model_protocol()` | Same as above |
 | `application/applets/mod.rs` | 9304 | `chat_completion()`, `with_provider_store()`, `ProviderRecord` | Applet gateway reads from new cache |
-| `interface/http_gateway/mod.rs` | 7032 | Provider/model command dispatch block (~80 lines) | Rewire to new proxy commands |
+| `interface/tauri_commands/provider.rs` | 256 | Native provider/model command boundary | Rewire to new proxy commands |
 
 ---
 
-## 6. Desktop Web Impact
+## 6. Desktop renderer Impact
 
 | Path (relative to `apps/desktop/src/`) | Current behavior | Target behavior |
 |---|---|---|
@@ -144,7 +144,7 @@ Delivered:
 
 **Architectural correction (v1.1)**: v1.0 incorrectly planned to "seed Station from local YAML". This was wrong. The catalog is a product asset that always ships with the client. Station never needs to know "what providers exist in the world" — it only stores what the user configured (credentials + enabled/disabled preferences).
 
-### Phase 3: Desktop Web Adaptation
+### Phase 3: Desktop renderer Adaptation
 
 1. Settings UI handles 409 version conflict (re-fetch + retry or notify user).
 2. Regenerate proto TS types.
@@ -180,7 +180,7 @@ Move the provider catalog from Desktop to Station. Desktop becomes a pure render
 
 ## 9. Compatibility
 
-- Desktop Web Tauri command interface remains stable — implementation changes underneath.
+- Desktop renderer Tauri command interface remains stable — implementation changes underneath.
 - Turn execution path (`agent_execute_turn_stream` → Station SSE) is already correct and unchanged.
 - Mobile can use Station API directly (no Rust BFF needed for provider config).
 

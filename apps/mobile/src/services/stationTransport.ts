@@ -22,7 +22,7 @@ export type StationTransportOperation =
       timezone?: string;
       default_visibility?: string;
       manually_approves_followers?: boolean;
-      message_permission?: string;
+      contact_policy?: string;
       auto_expire_days?: number;
       discoverability?: string;
       observed_revision: string;

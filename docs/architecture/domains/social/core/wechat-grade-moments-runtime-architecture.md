@@ -4,7 +4,7 @@
 >
 > Scope: 将现有 Moments / Social 能力从“页面拉取型朋友圈”升级为
 > “熟人社交实时投影系统”。本文是 architecture-layer source，约束
-> Station、Desktop Rust BFF、Desktop Web runtime、页面与未来 Mobile
+> Station、Desktop Rust BFF、Desktop renderer runtime、页面与未来 Mobile
 > 的职责边界。
 >
 > Related:
@@ -47,8 +47,8 @@ to:   runtime-projected trusted relationship moments network
 目标状态：
 
 - Station 持有跨端业务真源、权限判定、投递事实、审计事实。
-- Desktop Rust 是本地 BFF / 网关 / 本地能力编排层，不被 Desktop Web 绕过。
-- Desktop Web 通过长生命周期 runtime 持有业务投影，页面只做纯渲染和用户动作。
+- Desktop Rust 是本地 BFF / 网关 / 本地能力编排层，不被 Desktop renderer 绕过。
+- Desktop renderer 通过长生命周期 runtime 持有业务投影，页面只做纯渲染和用户动作。
 - 每个可见业务状态同时具备事件消费路径和周期 reconcile 路径。
 - Moments 主体验围绕熟人动态、个人相册、互动消息、隐私控制，而不是公开 Explore。
 
@@ -155,7 +155,7 @@ to:   runtime-projected trusted relationship moments network
 
 ### 2.7 `momentsRuntime`
 
-Desktop Web 长生命周期 runtime，负责 Moments 投影新鲜度。
+Desktop renderer 长生命周期 runtime，负责 Moments 投影新鲜度。
 
 职责：
 
@@ -276,16 +276,16 @@ Desktop Rust 是本地 BFF 和本地网关。
 - Tauri command / HTTP gateway。
 - Station API 编排。
 - 本地安全存储、会话、OSS URL resolve、系统通知。
-- Station event stream 到 Desktop Web eventBus 的桥接。
+- Station event stream 到 Desktop renderer eventBus 的桥接。
 
 禁止：
 
-- 把 Desktop Web 绕过 Rust 直连 Station。
+- 把 Desktop renderer 绕过 Rust 直连 Station。
 - 在 Rust 中复制 Station 权限规则作为第二套真源。
 
-### 4.3 Desktop Web
+### 4.3 Desktop renderer
 
-Desktop Web 是渲染和投影消费层。
+Desktop renderer 是渲染和投影消费层。
 
 负责：
 
@@ -431,7 +431,7 @@ Proto 仍是唯一真源。后续新增或扩展应优先落在：
 ### 9.4 反指标
 
 - 新增页面级 `useEffect(...loadFeed...)` 作为主加载机制。
-- Desktop Web 直连 Station。
+- Desktop renderer 直连 Station。
 - 未经 Station 权限判定的端侧私密可见性猜测。
 - 评论/Reaction 只改 UI 数字但不进入 projection sync。
 - runtime 多处写同一 store 字段且无 owner。

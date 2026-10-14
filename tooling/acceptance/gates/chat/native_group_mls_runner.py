@@ -309,7 +309,6 @@ class NativeGroupMlsGate(AcceptanceGate):
                 name=actor,
                 runtime=self.runtime_binding.cell_id,
                 port=client.port,
-                gateway_port=client.gateway_port,
                 profile=client.profile,
                 storage_root=client.storage_root,
                 pid=client.process_id,
@@ -1538,7 +1537,6 @@ class NativeGroupMlsGate(AcceptanceGate):
                     "ptid": self.ptids[actor],
                     "deviceId": self.device_ids[actor],
                     "webdriverPort": self.clients[actor].port,
-                    "gatewayPort": self.clients[actor].gateway_port,
                     "profile": self.clients[actor].profile,
                     "storageRoot": self.clients[actor].storage_root,
                 }

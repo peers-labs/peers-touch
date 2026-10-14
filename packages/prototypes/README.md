@@ -23,7 +23,7 @@
 
 | 站点 | 含义 | 示例 |
 |------|------|------|
-| `desktop` | Desktop App / desktop-web / applet 容器内体验 | desktop shell、atelier applet、social chat、call |
+| `desktop` | Native Desktop embedded renderer / applet 容器内体验 | desktop shell、atelier applet、social chat、call |
 | `mobile` | Mobile 端页面、组件与交互体验 | mobile shell、chat、contacts |
 | `dashboard` | Station Dashboard / 管理台 / 运维台体验 | station admin dashboard |
 

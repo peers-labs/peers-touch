@@ -216,7 +216,6 @@ test('desktop waits for the Vite dependency canary before launching Tauri', asyn
   const stabilizationDurations = [];
   const result = await waitForDesktopVite(
     3210,
-    'app',
     processAlive,
     async (url, options) => {
       calls.push({ url, options });
@@ -236,7 +235,7 @@ test('desktop waits for the Vite dependency canary before launching Tauri', asyn
     assert.deepEqual(call, {
       url: 'http://127.0.0.1:3210/src/services/desktop_api.ts',
       options: {
-        label: 'Desktop app Vite',
+        label: 'Desktop embedded renderer',
         processAlive,
       },
     });
@@ -294,6 +293,27 @@ test('desktop frontend readiness distinguishes mount from boot failure', async (
       '[frontend] [500ms] React app mounted — dismissing boot fallback',
     wait: async () => {},
   });
+  assert.deepEqual(result, { ready: true });
+});
+
+test('desktop frontend readiness gives cold Rust compilation its own budget', async () => {
+  let elapsedMs = 0;
+  const result = await waitForDesktopFrontend('/tmp/desktop.log', {
+    compileTimeoutMs: 600_000,
+    mountTimeoutMs: 90_000,
+    intervalMs: 30_000,
+    now: () => elapsedMs,
+    processAlive: () => true,
+    readLog: () => {
+      if (elapsedMs < 300_000) return 'Compiling peers-touch-desktop';
+      if (elapsedMs < 330_000) return 'Launching Tauri application';
+      return '[frontend] React app mounted — dismissing boot fallback';
+    },
+    wait: async (durationMs) => {
+      elapsedMs += durationMs;
+    },
+  });
+
   assert.deepEqual(result, { ready: true });
 });
 
@@ -478,23 +498,22 @@ test('desktop generated-source preparation fills missing proto bindings once', (
 test('desktop partial managed runtime is stopped before restart', () => {
   const stopped = [];
   const values = {
-    mode: 'app',
-    tauriService: 'desktop-app-tauri',
-    viteService: 'desktop-app-vite',
+    tauriService: 'desktop-native-tauri',
+    viteService: 'desktop-native-vite',
   };
   const result = reconcileDesktopRuntime(
     '/runtime',
     values,
     {
-      web: {
+      renderer: {
         health: { ok: true },
         process: {
           status: 'running',
           record: { sourceCommit: 'old' },
         },
       },
-      gateway: {
-        listening: false,
+      native: {
+        renderer: { ready: false },
         process: { status: 'stale', record: {} },
       },
     },
@@ -507,27 +526,26 @@ test('desktop partial managed runtime is stopped before restart', () => {
 
   assert.equal(result.reused, false);
   assert.deepEqual(stopped, [
-    { stateDirectory: '/runtime', service: 'desktop-app-tauri' },
-    { stateDirectory: '/runtime', service: 'desktop-app-vite' },
+    { stateDirectory: '/runtime', service: 'desktop-native-tauri' },
+    { stateDirectory: '/runtime', service: 'desktop-native-vite' },
   ]);
 });
 
 test('desktop reuses only a complete source-matched managed runtime', () => {
   const values = {
-    mode: 'app',
-    tauriService: 'desktop-app-tauri',
-    viteService: 'desktop-app-vite',
+    tauriService: 'desktop-native-tauri',
+    viteService: 'desktop-native-vite',
   };
   const existing = {
-    web: {
+    renderer: {
       health: { ok: true },
       process: {
         status: 'running',
         record: { sourceCommit: 'current' },
       },
     },
-    gateway: {
-      listening: true,
+    native: {
+      renderer: { ready: true },
       process: {
         status: 'running',
         record: { sourceCommit: 'current' },
@@ -550,23 +568,22 @@ test('desktop reuses only a complete source-matched managed runtime', () => {
 test('desktop recycles a complete managed runtime from another source commit', () => {
   const stopped = [];
   const values = {
-    mode: 'app',
-    tauriService: 'desktop-app-tauri',
-    viteService: 'desktop-app-vite',
+    tauriService: 'desktop-native-tauri',
+    viteService: 'desktop-native-vite',
   };
   const result = reconcileDesktopRuntime(
     '/runtime',
     values,
     {
-      web: {
+      renderer: {
         health: { ok: true },
         process: {
           status: 'running',
           record: { sourceCommit: 'old' },
         },
       },
-      gateway: {
-        listening: true,
+      native: {
+        renderer: { ready: true },
         process: {
           status: 'running',
           record: { sourceCommit: 'old' },
@@ -582,8 +599,8 @@ test('desktop recycles a complete managed runtime from another source commit', (
 
   assert.equal(result.reused, false);
   assert.deepEqual(stopped, [
-    'desktop-app-tauri',
-    'desktop-app-vite',
+    'desktop-native-tauri',
+    'desktop-native-vite',
   ]);
 });
 
@@ -593,17 +610,16 @@ test('desktop never reconciles a foreign runtime-state record', () => {
       reconcileDesktopRuntime(
         '/runtime',
         {
-          mode: 'app',
-          tauriService: 'desktop-app-tauri',
-          viteService: 'desktop-app-vite',
+          tauriService: 'desktop-native-tauri',
+          viteService: 'desktop-native-vite',
         },
         {
-          web: {
+          renderer: {
             health: { ok: true },
             process: { status: 'foreign', record: {} },
           },
-          gateway: {
-            listening: false,
+          native: {
+            renderer: { ready: false },
             process: { status: 'absent' },
           },
         },

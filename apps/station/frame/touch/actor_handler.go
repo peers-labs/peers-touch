@@ -553,7 +553,11 @@ func ActorLogout(c context.Context, ctx *app.RequestContext) {
 
 	// 2. Clear from store
 	if sessionID != "" {
-		_ = auth.LogoutSession(c, sessionID)
+		if err := auth.LogoutSession(c, sessionID); err != nil {
+			log.Errorf(c, "Actor logout session revocation failed: %v", err)
+			FailedResponse(c, ctx, err)
+			return
+		}
 	}
 
 	// 3. Update user status to offline

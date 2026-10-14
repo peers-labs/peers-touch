@@ -347,9 +347,6 @@ class WindowsDesktopBroker:
             )
         log_path = _windows_path(payload.get("logPath"), "log path")
         webdriver_port = _port(payload.get("webdriverPort"), "WebDriver port")
-        gateway_port = _port(payload.get("gatewayPort"), "Gateway port")
-        if webdriver_port == gateway_port:
-            raise BrokerError("actor ports must be distinct")
         environment = payload.get("environment") or {}
         arguments = payload.get("arguments") or []
         if not isinstance(environment, dict) or any(
@@ -374,7 +371,6 @@ class WindowsDesktopBroker:
             "environment": {
                 **environment,
                 "TAURI_WEBDRIVER_PORT": str(webdriver_port),
-                "PT_GATEWAY_PORT": str(gateway_port),
                 "PEERS_STORAGE_ROOT": storage_root,
             },
             "storageRoot": storage_root,
@@ -419,7 +415,6 @@ class WindowsDesktopBroker:
             "taskName": task_name,
             "processId": process_id,
             "webdriverPort": webdriver_port,
-            "gatewayPort": gateway_port,
             "storageRoot": storage_root,
             "storageLifecycle": storage_lifecycle,
             "logPath": log_path,
@@ -564,10 +559,7 @@ class WindowsDesktopBroker:
         self.scheduler.unregister(str(actor_state["taskName"]))
         active_ports = [
             port
-            for port in (
-                int(actor_state["webdriverPort"]),
-                int(actor_state["gatewayPort"]),
-            )
+            for port in (int(actor_state["webdriverPort"]),)
             if self._port_listening(port)
         ]
         if active_ports:

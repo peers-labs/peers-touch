@@ -147,14 +147,14 @@ describe('profile privacy settings state', () => {
     expect(profileDraftFromReadback(profile())).toMatchObject({
       defaultVisibility: 'followers',
       manuallyApprovesFollowers: true,
-      messagePermission: 'friends',
+      contactPolicy: 'federations',
       autoExpireDays: 30,
     });
   });
 
   it('preserves a dirty privacy draft and reports divergent Station readback', () => {
     const server = profileDraftFromReadback(profile())!;
-    const draft = { ...server, messagePermission: 'none' };
+    const draft = { ...server, contactPolicy: 'nobody' };
     const incoming = profile({ defaultVisibility: 'private' });
 
     expect(reconcileEditableProfileDraft(server, draft, incoming)).toEqual({
@@ -199,7 +199,7 @@ function profile(overrides: Partial<PeerProfile> = {}): PeerProfile {
     links: [],
     defaultVisibility: 'followers',
     manuallyApprovesFollowers: true,
-    messagePermission: 'friends',
+    contactPolicy: 'federations',
     autoExpireDays: 30,
     networkId: '',
     ...overrides,

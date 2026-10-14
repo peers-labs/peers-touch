@@ -673,7 +673,6 @@
       "synthetic_paths": [
         "docs/architecture/domains/chat/lifecycle/legacy-inventory.json",
         "apps/desktop/src/store/socialChat.ts",
-        "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
         "apps/mobile/src/features/chat/**",
         "apps/mobile/src/runtimes/messagingRuntime.ts",
         "apps/station/app/subserver/conversation/**",

@@ -225,7 +225,6 @@ class WindowsCellProfile:
     perl_path: str
     protoc_path: str
     webdriver_port: int
-    gateway_port: int
     cargo_target_root: str = _DEFAULT_CARGO_TARGET_ROOT
     build_timeout_seconds: int = 3600
 
@@ -303,12 +302,6 @@ class WindowsCellProfile:
                 4645,
                 path,
             ),
-            gateway_port=_port(
-                values,
-                "PT_ACCEPTANCE_CELL_GATEWAY_PORT",
-                3230,
-                path,
-            ),
             cargo_target_root=values.get(
                 "PT_ACCEPTANCE_CELL_CARGO_TARGET_ROOT",
                 _DEFAULT_CARGO_TARGET_ROOT,
@@ -355,10 +348,6 @@ class WindowsCellProfile:
             raise ProvisioningError(
                 "Windows runtime-cell protoc path must be drive-absolute"
             )
-        if self.webdriver_port == self.gateway_port:
-            raise ProvisioningError(
-                "Windows runtime-cell ports must be distinct"
-            )
         if self.build_timeout_seconds <= 0:
             raise ProvisioningError(
                 "Windows runtime-cell build timeout must be positive"
@@ -369,7 +358,6 @@ class WindowsCellProfile:
 class _ActorRuntime:
     actor: str
     webdriver_tunnel: SshTunnel
-    gateway_tunnel: SshTunnel
     log_path: Path
     released: bool = False
 
@@ -506,7 +494,6 @@ class NativeDesktopWindowsProvisioner:
             )
             self._assert_remote_ports_free(
                 self.profile.webdriver_port,
-                self.profile.gateway_port,
             )
             binary_path, binary_sha256 = self._build_binary(
                 remote_source,
@@ -565,7 +552,6 @@ class NativeDesktopWindowsProvisioner:
             probe = self._launch_remote_actor(
                 actor="cell-probe",
                 webdriver_port=self.profile.webdriver_port,
-                gateway_port=self.profile.gateway_port,
                 profile=f"{self.profile.name}-probe",
                 environment={},
             )
@@ -573,15 +559,11 @@ class NativeDesktopWindowsProvisioner:
                 self._wait_remote_actor_endpoints(
                     "cell-probe",
                     self.profile.webdriver_port,
-                    self.profile.gateway_port,
                 )
                 webdriver_tunnel = self.transport.start_local_forward(
                     remote_port=self.profile.webdriver_port,
                 )
-                gateway_tunnel = self.transport.start_local_forward(
-                    remote_port=self.profile.gateway_port,
-                )
-                probe_tunnels.extend((webdriver_tunnel, gateway_tunnel))
+                probe_tunnels.append(webdriver_tunnel)
                 adapter = self._probe_adapter(
                     int(probe["processId"]),
                 )
@@ -676,37 +658,27 @@ class NativeDesktopWindowsProvisioner:
                 f"Windows runtime-cell actor {normalized_actor!r} "
                 "is already launched"
             )
-        webdriver_port, gateway_port = self._actor_remote_ports(
-            normalized_actor,
-        )
+        webdriver_port = self._actor_remote_port(normalized_actor)
         remote = self._launch_remote_actor(
             actor=normalized_actor,
             webdriver_port=webdriver_port,
-            gateway_port=gateway_port,
             profile=str(client_spec["profile"]),
             environment=environment,
             client_spec=client_spec,
         )
         webdriver_tunnel: SshTunnel | None = None
-        gateway_tunnel: SshTunnel | None = None
         try:
             self._wait_remote_actor_endpoints(
                 normalized_actor,
                 webdriver_port,
-                gateway_port,
             )
             webdriver_tunnel = self.transport.start_local_forward(
                 remote_port=webdriver_port,
                 local_port=int(client_spec["webdriver_port"]),
             )
-            gateway_tunnel = self.transport.start_local_forward(
-                remote_port=gateway_port,
-                local_port=int(client_spec["gateway_port"]),
-            )
         except BaseException:
-            for tunnel in (gateway_tunnel, webdriver_tunnel):
-                if tunnel is not None:
-                    tunnel.stop()
+            if webdriver_tunnel is not None:
+                webdriver_tunnel.stop()
             self._stop_remote_actor(normalized_actor)
             self._actor_slots.pop(normalized_actor, None)
             raise
@@ -720,14 +692,12 @@ class NativeDesktopWindowsProvisioner:
         runtime = _ActorRuntime(
             actor=normalized_actor,
             webdriver_tunnel=webdriver_tunnel,
-            gateway_tunnel=gateway_tunnel,
             log_path=log_path,
         )
         self._actors[normalized_actor] = runtime
         metadata = AppLaunchMetadata(
             webdriver_host="127.0.0.1",
             webdriver_port=webdriver_tunnel.local_port,
-            gateway_port=gateway_tunnel.local_port,
             profile=str(remote["profile"]),
             storage_root=str(remote["storageRoot"]),
             process_id=int(remote["processId"]),
@@ -753,19 +723,15 @@ class NativeDesktopWindowsProvisioner:
             return
         runtime.released = True
         failures: list[str] = []
-        for name, tunnel in (
-            ("gateway tunnel", runtime.gateway_tunnel),
-            ("WebDriver tunnel", runtime.webdriver_tunnel),
-        ):
-            detail = tunnel.failure_detail()
-            if detail is not None:
-                self._tunnel_failures.append(
-                    {"actor": actor, "tunnel": name, **detail}
-                )
-            try:
-                tunnel.stop()
-            except Exception as error:
-                failures.append(f"{name}: {error}")
+        detail = runtime.webdriver_tunnel.failure_detail()
+        if detail is not None:
+            self._tunnel_failures.append(
+                {"actor": actor, "tunnel": "WebDriver tunnel", **detail}
+            )
+        try:
+            runtime.webdriver_tunnel.stop()
+        except Exception as error:
+            failures.append(f"WebDriver tunnel: {error}")
         try:
             stopped = self._stop_remote_actor(
                 actor,
@@ -802,10 +768,7 @@ class NativeDesktopWindowsProvisioner:
         runtime = self._actors.get(actor)
         if runtime is None or runtime.released:
             return False
-        if (
-            not runtime.webdriver_tunnel.is_alive()
-            or not runtime.gateway_tunnel.is_alive()
-        ):
+        if not runtime.webdriver_tunnel.is_alive():
             return False
         result = self._broker_from_state(
             self._require_state(),
@@ -1480,7 +1443,6 @@ class NativeDesktopWindowsProvisioner:
         *,
         actor: str,
         webdriver_port: int,
-        gateway_port: int,
         profile: str,
         environment: dict[str, str],
         client_spec: dict[str, Any] | None = None,
@@ -1510,7 +1472,6 @@ class NativeDesktopWindowsProvisioner:
                     "PT_PROFILE": profile,
                 },
                 "webdriverPort": webdriver_port,
-                "gatewayPort": gateway_port,
                 "profile": profile,
                 "storageRoot": actor_state_root,
                 "storageLifecycle": storage_lifecycle,
@@ -1589,7 +1550,6 @@ class NativeDesktopWindowsProvisioner:
         self,
         actor: str,
         webdriver_port: int,
-        gateway_port: int,
         *,
         timeout: float = 60,
     ) -> None:
@@ -1598,10 +1558,7 @@ class NativeDesktopWindowsProvisioner:
             webdriver_ready = self.transport.remote_loopback_port_listening(
                 webdriver_port
             )
-            gateway_ready = self.transport.remote_loopback_port_listening(
-                gateway_port
-            )
-            if webdriver_ready and gateway_ready:
+            if webdriver_ready:
                 return
             time.sleep(0.25)
         status = self._broker_from_state(
@@ -1611,7 +1568,7 @@ class NativeDesktopWindowsProvisioner:
         )
         raise ProvisioningError(
             f"Windows runtime-cell actor {actor!r} endpoints did not become "
-            f"ready: webdriver={webdriver_port} gateway={gateway_port} "
+            f"ready: webdriver={webdriver_port} "
             f"broker={json.dumps(status, sort_keys=True)}"
         )
 
@@ -1826,7 +1783,7 @@ class NativeDesktopWindowsProvisioner:
                 resource=f"runtime-cell-ports:{self.contract.cell_id}",
             )
 
-    def _actor_remote_ports(self, actor: str) -> tuple[int, int]:
+    def _actor_remote_port(self, actor: str) -> int:
         if actor not in self._actor_slots:
             used = set(self._actor_slots.values())
             slot = next(
@@ -1840,13 +1797,12 @@ class NativeDesktopWindowsProvisioner:
             self._actor_slots[actor] = slot
         slot = self._actor_slots[actor]
         webdriver = self.profile.webdriver_port + slot
-        gateway = self.profile.gateway_port + slot
-        if webdriver > 65535 or gateway > 65535 or webdriver == gateway:
+        if webdriver > 65535:
             self._actor_slots.pop(actor, None)
             raise ProvisioningError(
-                f"Windows runtime-cell actor {actor!r} has no valid port pair"
+                f"Windows runtime-cell actor {actor!r} has no valid WebDriver port"
             )
-        return webdriver, gateway
+        return webdriver
 
     def _manifest(
         self,

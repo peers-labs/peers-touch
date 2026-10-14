@@ -575,7 +575,7 @@ Ownership:
   result acceptance, and turn continuation.
 - Desktop Rust owns envelope validation, opaque resource resolution, local
   permission enforcement, durable receipt attempts, and device-local execution.
-- Desktop Web owns only user decision intent and the projection rendered by
+- Desktop renderer owns only user decision intent and the projection rendered by
   ToolCallCard/AgentProfile.
 - `toolRuntime` is the sole Web projection owner. It cannot classify policy,
   claim execution, invoke Rust, or continue a turn.

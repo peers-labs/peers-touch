@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	federationmodel "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
 	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange"
 	keyexchangemodel "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
@@ -42,6 +43,14 @@ type presencePeerCapabilities interface {
 		context.Context,
 		[]string,
 	) ([]*presencemodel.PresenceStatus, error)
+}
+
+type federationCatalogPeerCapabilities interface {
+	SearchLocalFederationCatalog(
+		context.Context,
+		string,
+		*federationmodel.FederationCatalogSearchRequest,
+	) (*federationmodel.FederationCatalogSearchResponse, error)
 }
 
 type keyExchangePeerCapabilities interface {
@@ -86,6 +95,8 @@ func resolveFederationPeerEndpoint(
 		return handleActorEndpointManifest, nil
 	case federationruntime.PeerRoutePresenceQuery:
 		return handlePresenceQuery, nil
+	case federationruntime.PeerRouteFederationCatalogSearch:
+		return handleFederationCatalogSearch, nil
 	case federationruntime.PeerRouteKeyExchangeDirectFetch:
 		return handleKeyExchangeDirectFetch, nil
 	case federationruntime.PeerRouteKeyExchangeMLSFetch:
@@ -120,6 +131,59 @@ func resolveFederationPeerEndpoint(
 
 		return provider.FederationPeerHandler(route)
 	}
+}
+
+func handleFederationCatalogSearch(
+	ctx context.Context,
+	request server.Request,
+	response server.Response,
+) error {
+	instance := server.GetOptions().SubserverInstances["federation"]
+	provider, ok := instance.(federationCatalogPeerCapabilities)
+	if !ok || provider == nil {
+		return server.NewHandlerError(
+			http.StatusServiceUnavailable,
+			"Federation catalog capability is unavailable",
+		)
+	}
+	input := &federationmodel.FederationCatalogSearchRequest{}
+	if err := decodeFederationPeerRequest(request, input); err != nil {
+		return err
+	}
+	requestSHA256, err := catalogRequestSHA256(input)
+	if err != nil {
+		return server.BadRequestWithCause(
+			"Federation catalog request is invalid",
+			err,
+		)
+	}
+	claims := httpadapter.GetVerifiedClaims(ctx)
+	if claims == nil ||
+		strings.TrimSpace(claims.Subject) == "" ||
+		strings.TrimSpace(input.GetFederationId()) == "" ||
+		claims.Custom[federationruntime.ClaimFederationID] !=
+			input.GetFederationId() ||
+		claims.Custom[federationruntime.ClaimCatalogRequestSHA256] !=
+			requestSHA256 ||
+		claims.Custom[federationruntime.ClaimSourceStationPeerID] !=
+			claims.Issuer ||
+		claims.Custom[federationruntime.ClaimTargetStationPeerID] !=
+			claims.Audience ||
+		(input.GetStationId() != "" &&
+			input.GetStationId() != claims.Audience) {
+		return server.Forbidden(
+			"Federation claims do not match the catalog search request",
+		)
+	}
+	result, err := provider.SearchLocalFederationCatalog(
+		ctx,
+		claims.Issuer,
+		input,
+	)
+	if err != nil {
+		return err
+	}
+	return writeFederationPeerResponse(response, result)
 }
 
 func handleRealtimeCallResolution(

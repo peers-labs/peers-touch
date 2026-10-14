@@ -60,7 +60,6 @@
         "apps/desktop/src/services/accessGate.ts",
         "apps/desktop/src-tauri/src/application/oauth2/mod.rs",
         "apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs",
-        "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
         "apps/desktop/src-tauri/src/application/station_binding/mod.rs",
         "apps/mobile/src/features/auth/authSession.ts",
         "apps/mobile/src/features/station/stationConnection.ts",

@@ -36,7 +36,7 @@ use messaging_core::proto::chat::{
     chat_command, AttachmentPlaintextMetadata, AttachmentTransferState, ChatCommand,
     ChatRetentionPreset, ChatStorageOperationState, ChatStoragePolicy, ChatStorageScope,
     ConversationCommandKind, ConversationMemberAuthorityAction, ConversationMemberAuthorityCommand,
-    DeviceConsumptionReceipt, EncryptedObjectDescriptor, EncryptedObjectUploadSpec,
+    DeviceConsumptionReceipt, EncryptedObjectDescriptor, EncryptedObjectUploadSpec, MessageMention,
     VoiceNoteMetadata,
 };
 use messaging_core::storage_governance::cache::{
@@ -2021,6 +2021,8 @@ pub(crate) struct PendingMessageDraft {
     pub reply_to_message_id: String,
     pub thread_root_message_id: String,
     pub attachments: Vec<messaging_core::proto::chat::AttachmentPlaintextMetadata>,
+    pub mentions: Vec<MessageMention>,
+    pub mention_all: bool,
     pub attempt_count: u32,
     pub created_at_unix_ms: i64,
 }
@@ -3306,6 +3308,16 @@ impl MobileMessagingStore {
         {
             return Err("mobile messaging attachment draft intent is incomplete".to_string());
         }
+        messaging_core::codec::private_content::validate_message_mentions(
+            &draft.plaintext,
+            &draft.mentions,
+            draft.mention_all,
+        )?;
+        let mention_metadata =
+            messaging_core::codec::private_content::encode_message_mention_set(
+                &draft.mentions,
+                draft.mention_all,
+            )?;
         let mut previous_attachment_id: Option<&str> = None;
         for upload in uploads {
             validate_chat_attachment_transfer_record(&upload.transfer)?;
@@ -3332,10 +3344,10 @@ impl MobileMessagingStore {
                     "INSERT INTO messaging_pending_messages(
                         conversation_id, conversation_kind, command_kind, message_id,
                         sender_ptid, sender_device_id, plaintext,
-                        reply_to_message_id, thread_root_message_id, state,
+                        reply_to_message_id, thread_root_message_id, mention_metadata, state,
                         attempt_count, next_attempt_at_unix_ms, last_error_code,
                         created_at_unix_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'draft', 0, ?10, '', ?10)
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'draft', 0, ?11, '', ?11)
                      ON CONFLICT(conversation_id, message_id) DO NOTHING",
                     params![
                         draft.conversation_id,
@@ -3347,7 +3359,8 @@ impl MobileMessagingStore {
                         draft.plaintext,
                         draft.reply_to_message_id,
                         draft.thread_root_message_id,
-                        draft.created_at_unix_ms
+                        mention_metadata,
+                        draft.created_at_unix_ms,
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -4811,7 +4824,7 @@ impl MobileMessagingStore {
                 "SELECT conversation_id, conversation_kind, command_kind, message_id,
                         sender_ptid, sender_device_id, plaintext,
                         reply_to_message_id, thread_root_message_id,
-                        attempt_count, created_at_unix_ms
+                        mention_metadata, attempt_count, created_at_unix_ms
                  FROM messaging_pending_messages pending
                  WHERE state = 'draft'
                    AND next_attempt_at_unix_ms <= ?1
@@ -4824,6 +4837,7 @@ impl MobileMessagingStore {
                  LIMIT 1",
                 params![now_unix_ms],
                 |row| {
+                    let (mentions, mention_all) = message_mentions_from_row(row, 9)?;
                     Ok(PendingMessageDraft {
                         conversation_id: row.get(0)?,
                         conversation_kind: row.get(1)?,
@@ -4835,8 +4849,10 @@ impl MobileMessagingStore {
                         reply_to_message_id: row.get(7)?,
                         thread_root_message_id: row.get(8)?,
                         attachments: Vec::new(),
-                        attempt_count: row.get(9)?,
-                        created_at_unix_ms: row.get(10)?,
+                        mentions,
+                        mention_all,
+                        attempt_count: row.get(10)?,
+                        created_at_unix_ms: row.get(11)?,
                     })
                 },
             )
@@ -4846,9 +4862,11 @@ impl MobileMessagingStore {
             return Ok(None);
         };
         draft.attachments = load_pending_message_attachments(&connection, &draft.message_id)?;
-        messaging_core::codec::private_content::encode_message_private_content(
+        messaging_core::codec::private_content::encode_message_private_content_with_mentions(
             &draft.plaintext,
             &draft.attachments,
+            &draft.mentions,
+            draft.mention_all,
         )?;
         Ok(Some(draft))
     }
@@ -6167,7 +6185,8 @@ impl MessagingRepository for MobileMessagingStore {
                 .query_row(
                     "SELECT p.conversation_id, p.message_id, p.sender_ptid,
                             p.sender_device_id, p.plaintext,
-                            p.reply_to_message_id, p.thread_root_message_id
+                            p.reply_to_message_id, p.thread_root_message_id,
+                            p.mention_metadata
                      FROM messaging_command_attempts a
                      JOIN messaging_pending_messages p
                        ON p.conversation_id = a.conversation_id
@@ -6183,6 +6202,7 @@ impl MessagingRepository for MobileMessagingStore {
                             row.get::<_, String>(4)?,
                             row.get::<_, String>(5)?,
                             row.get::<_, String>(6)?,
+                            row.get::<_, Vec<u8>>(7)?,
                         ))
                     },
                 )
@@ -6199,6 +6219,15 @@ impl MessagingRepository for MobileMessagingStore {
                 || pending.6 != commit.thread_root_message_id.unwrap_or_default()
             {
                 return Err("mobile messaging public-event pending projection mismatch".to_string());
+            }
+            let mention_metadata =
+                messaging_core::codec::private_content::decode_message_mention_set(&pending.7)?;
+            if messaging_core::codec::private_content::mentioned_ptids(
+                &mention_metadata.mentions,
+            ) != commit.mentioned_ptids
+                || mention_metadata.mention_all != commit.mention_all
+            {
+                return Err("mobile messaging public-event mention metadata mismatch".to_string());
             }
             let attachments = load_pending_attachments(transaction, commit.message_id)?;
             let descriptors = attachments
@@ -6218,8 +6247,9 @@ impl MessagingRepository for MobileMessagingStore {
                     "INSERT INTO messaging_message_projections(
                         conversation_id, event_id, event_sequence, message_id,
                         sender_ptid, sender_device_id, plaintext, delivery_state,
-                        committed_at_unix_ms, reply_to_message_id, thread_root_message_id
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'accepted', ?8, ?9, ?10)",
+                        committed_at_unix_ms, reply_to_message_id, thread_root_message_id,
+                        mention_metadata
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'accepted', ?8, ?9, ?10, ?11)",
                     params![
                         commit.conversation_id,
                         commit.event_id,
@@ -6230,7 +6260,8 @@ impl MessagingRepository for MobileMessagingStore {
                         pending.4,
                         commit.committed_at_unix_ms,
                         commit.reply_to_message_id,
-                        commit.thread_root_message_id
+                        commit.thread_root_message_id,
+                        pending.7,
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -7194,6 +7225,11 @@ impl MessagingRepository for MobileMessagingStore {
         &self,
         commit: &DirectReceiveCommit,
     ) -> Result<ReceiveCommitResult, String> {
+        let mention_metadata =
+            messaging_core::codec::private_content::encode_message_mention_set(
+                &commit.projection.mentions,
+                commit.projection.mention_all,
+            )?;
         self.with_transaction(|transaction| {
             let result = Self::commit_claimed_item(
                 transaction,
@@ -7228,8 +7264,9 @@ impl MessagingRepository for MobileMessagingStore {
                     "INSERT INTO messaging_message_projections(
                         conversation_id, event_id, event_sequence, message_id,
                         sender_ptid, sender_device_id, plaintext, delivery_state,
-                        committed_at_unix_ms, reply_to_message_id, thread_root_message_id
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'consumed', ?8, ?9, ?10)",
+                        committed_at_unix_ms, reply_to_message_id, thread_root_message_id,
+                        mention_metadata
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'consumed', ?8, ?9, ?10, ?11)",
                     params![
                         commit.projection.conversation_id,
                         commit.projection.event_id,
@@ -7240,7 +7277,8 @@ impl MessagingRepository for MobileMessagingStore {
                         commit.projection.plaintext,
                         commit.projection.committed_at_unix_ms,
                         commit.projection.reply_to_message_id,
-                        commit.projection.thread_root_message_id
+                        commit.projection.thread_root_message_id,
+                        mention_metadata,
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -8396,6 +8434,11 @@ impl MlsInboundRepository for MobileMessagingStore {
         {
             return Err("mobile messaging MLS application is incomplete".to_string());
         }
+        let mention_metadata =
+            messaging_core::codec::private_content::encode_message_mention_set(
+                &commit.projection.mentions,
+                commit.projection.mention_all,
+            )?;
         self.with_transaction(|transaction| {
             let result = MobileMessagingStore::commit_claimed_item(
                 transaction,
@@ -8431,8 +8474,9 @@ impl MlsInboundRepository for MobileMessagingStore {
                     "INSERT INTO messaging_message_projections(
                         conversation_id, event_id, event_sequence, message_id,
                         sender_ptid, sender_device_id, plaintext, delivery_state,
-                        committed_at_unix_ms, reply_to_message_id, thread_root_message_id
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'consumed', ?8, ?9, ?10)",
+                        committed_at_unix_ms, reply_to_message_id, thread_root_message_id,
+                        mention_metadata
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'consumed', ?8, ?9, ?10, ?11)",
                     params![
                         commit.projection.conversation_id,
                         commit.projection.event_id,
@@ -8443,7 +8487,8 @@ impl MlsInboundRepository for MobileMessagingStore {
                         commit.projection.plaintext,
                         commit.projection.committed_at_unix_ms,
                         commit.projection.reply_to_message_id,
-                        commit.projection.thread_root_message_id
+                        commit.projection.thread_root_message_id,
+                        mention_metadata,
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -8872,6 +8917,15 @@ fn persist_pending_sender(
     command_bytes: &[u8],
     projection: &PendingSenderProjection<'_>,
 ) -> Result<(), String> {
+    let private_content =
+        messaging_core::codec::private_content::decode_message_private_content(
+            projection.private_content,
+        )?;
+    let mention_metadata =
+        messaging_core::codec::private_content::encode_message_mention_set(
+            &private_content.mentions,
+            private_content.mention_all,
+        )?;
     persist_local_command(
         transaction,
         projection.command_id,
@@ -8884,10 +8938,10 @@ fn persist_pending_sender(
             "INSERT INTO messaging_pending_messages(
                 conversation_id, conversation_kind, message_id, sender_ptid,
                 sender_device_id, plaintext, reply_to_message_id,
-                thread_root_message_id, state, attempt_count,
+                thread_root_message_id, mention_metadata, state, attempt_count,
                 next_attempt_at_unix_ms, last_error_code, created_at_unix_ms
              ) VALUES (
-                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending', 0, ?9, '', ?9
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending', 0, ?10, '', ?10
              )
              ON CONFLICT(conversation_id, message_id) DO UPDATE SET
                 state='pending',
@@ -8897,7 +8951,8 @@ fn persist_pending_sender(
                AND messaging_pending_messages.sender_device_id = excluded.sender_device_id
                AND messaging_pending_messages.plaintext = excluded.plaintext
                AND messaging_pending_messages.reply_to_message_id = excluded.reply_to_message_id
-               AND messaging_pending_messages.thread_root_message_id = excluded.thread_root_message_id",
+               AND messaging_pending_messages.thread_root_message_id = excluded.thread_root_message_id
+               AND messaging_pending_messages.mention_metadata = excluded.mention_metadata",
             params![
                 projection.conversation_id,
                 projection.conversation_kind,
@@ -8907,7 +8962,8 @@ fn persist_pending_sender(
                 projection.plaintext,
                 projection.reply_to_message_id,
                 projection.thread_root_message_id,
-                projection.created_at_unix_ms
+                mention_metadata,
+                projection.created_at_unix_ms,
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -10280,6 +10336,8 @@ fn conversation_message_from_row(
             row.get(5)?
         },
         attachments: Vec::new(),
+        mentions: Vec::new(),
+        mention_all: false,
         state: row.get(6)?,
         timestamp_unix_ms: row.get(7)?,
         reply_to_message_id: row.get(8)?,
@@ -10294,6 +10352,50 @@ fn conversation_message_from_row(
         pinned_at_unix_ms: None,
         read_by_ptids: Vec::new(),
     })
+}
+
+fn load_message_mentions(
+    connection: &Connection,
+    conversation_id: &str,
+    message_id: &str,
+) -> Result<(Vec<MessageMention>, bool), String> {
+    let bytes = connection
+        .query_row(
+            "SELECT mention_metadata
+             FROM messaging_message_projections
+             WHERE conversation_id = ?1 AND message_id = ?2
+             UNION ALL
+             SELECT mention_metadata
+             FROM messaging_pending_messages
+             WHERE conversation_id = ?1 AND message_id = ?2
+             LIMIT 1",
+            params![conversation_id, message_id],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .unwrap_or_default();
+    let metadata =
+        messaging_core::codec::private_content::decode_message_mention_set(&bytes)?;
+    Ok((metadata.mentions, metadata.mention_all))
+}
+
+fn message_mentions_from_row(
+    row: &rusqlite::Row<'_>,
+    column: usize,
+) -> rusqlite::Result<(Vec<MessageMention>, bool)> {
+    let bytes = row.get::<_, Vec<u8>>(column)?;
+    let metadata =
+        messaging_core::codec::private_content::decode_message_mention_set(&bytes).map_err(
+            |error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    column,
+                    rusqlite::types::Type::Blob,
+                    Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, error)),
+                )
+            },
+        )?;
+    Ok((metadata.mentions, metadata.mention_all))
 }
 
 const MESSAGE_PIN_QUERY: &str = "SELECT actor_ptid, pinned_at_unix_ms
@@ -10313,6 +10415,8 @@ fn enrich_message_projections(
             message.attachments =
                 load_pending_message_attachments(connection, &message.message_id)?;
         }
+        (message.mentions, message.mention_all) =
+            load_message_mentions(connection, conversation_id, &message.message_id)?;
         message.reactions = load_reactions_for_message(connection, &message.message_id)?;
         message.read_by_ptids = load_readers_for_message(
             connection,
@@ -11224,6 +11328,8 @@ mod tests {
             sender_ptid: "ptid:alice",
             sender_device_id: "alice-device",
             attachments: &[],
+            mentioned_ptids: &[],
+            mention_all: false,
             reply_to_message_id: None,
             thread_root_message_id: None,
             committed_at_unix_ms: 20,
@@ -12114,6 +12220,8 @@ mod tests {
             sender_device_id: "bob-device".into(),
             plaintext: "hello".into(),
             attachments: vec![],
+            mentions: vec![],
+            mention_all: false,
             committed_at_unix_ms: 20,
             reply_to_message_id: None,
             thread_root_message_id: None,
@@ -12590,6 +12698,8 @@ mod tests {
                     "hello".to_string()
                 },
                 attachments: Vec::new(),
+                mentions: Vec::new(),
+                mention_all: false,
                 state: "accepted".to_string(),
                 timestamp_unix_ms: timestamp,
                 reply_to_message_id: thread_root.map(str::to_string),
@@ -12654,6 +12764,8 @@ mod tests {
             sender_device_id: "alice-device".to_string(),
             plaintext: "hello".to_string(),
             attachments: Vec::new(),
+            mentions: Vec::new(),
+            mention_all: false,
             state: "retry_wait".to_string(),
             timestamp_unix_ms: 10,
             reply_to_message_id: Some("a-root".to_string()),
@@ -13616,8 +13728,15 @@ mod tests {
             message_id: "message-mls".into(),
             sender_ptid: "ptid:bob".into(),
             sender_device_id: "bob-device".into(),
-            plaintext: "hello".into(),
+            plaintext: "hello @Alice".into(),
             attachments: vec![],
+            mentions: vec![MessageMention {
+                actor_ptid: "ptid:alice".into(),
+                offset: 6,
+                length: 6,
+                display: "Alice".into(),
+            }],
+            mention_all: false,
             committed_at_unix_ms: 43,
             reply_to_message_id: None,
             thread_root_message_id: None,
@@ -13643,6 +13762,11 @@ mod tests {
             },
         )
         .unwrap();
+        let projected = store
+            .conversation_message_projections("group-1")
+            .unwrap();
+        assert_eq!(projected[0].mentions, message.mentions);
+        assert!(!projected[0].mention_all);
 
         let retirement_hash = [33u8; 32];
         MlsInboundRepository::persist_claimed_item(
@@ -14336,6 +14460,8 @@ mod tests {
             reply_to_message_id: String::new(),
             thread_root_message_id: String::new(),
             attachments: Vec::new(),
+            mentions: Vec::new(),
+            mention_all: false,
             attempt_count: 0,
             created_at_unix_ms: 10,
         };

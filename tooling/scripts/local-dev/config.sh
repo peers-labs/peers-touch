@@ -20,7 +20,6 @@ echo "Profile Definition:"
 print_redacted_env_file "$PROFILE_FILE" | sed 's/^/  /'
 echo ""
 echo "Resolved Local Ports:"
-echo "  PT_DESKTOP_APP_GATEWAY_PORT=$PT_DESKTOP_APP_GATEWAY_PORT"
 echo "  PT_DESKTOP_APP_WEB_PORT=$PT_DESKTOP_APP_WEB_PORT"
 echo "  PT_MOBILE_WEB_PORT=$PT_MOBILE_WEB_PORT"
 echo ""

@@ -488,7 +488,6 @@ class ContactMessageResilienceGate(AcceptanceGate):
                         else "native-tauri-embedded-webdriver"
                     ),
                     port=self.client.port,
-                    gateway_port=self.client.gateway_port,
                     profile=self.client.profile,
                     storage_root=self.client.storage_root,
                     pid=self.client.process_id,

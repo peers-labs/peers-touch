@@ -172,6 +172,30 @@ func TestReceiverFriendRequestPolicyMatchesActionSemantics(t *testing.T) {
 			action: model.FriendRequestAction_FRIEND_REQUEST_ACTION_REJECT,
 			policy: domain.ReceiverFriendRequestPolicy{Blocked: true},
 		},
+		{
+			name:   "nobody rejects new inbound request",
+			action: model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+			policy: domain.ReceiverFriendRequestPolicy{
+				ContactPolicy: model.ActorContactPolicy_ACTOR_CONTACT_POLICY_NOBODY,
+			},
+			code: domain.FederationErrorUnauthorized,
+		},
+		{
+			name:   "federations requires shared active membership",
+			action: model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+			policy: domain.ReceiverFriendRequestPolicy{
+				ContactPolicy: model.ActorContactPolicy_ACTOR_CONTACT_POLICY_FEDERATIONS,
+			},
+			code: domain.FederationErrorUnauthorized,
+		},
+		{
+			name:   "federations allows shared active membership",
+			action: model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+			policy: domain.ReceiverFriendRequestPolicy{
+				ContactPolicy:    model.ActorContactPolicy_ACTOR_CONTACT_POLICY_FEDERATIONS,
+				SharedFederation: true,
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -184,7 +208,9 @@ func TestReceiverFriendRequestPolicyMatchesActionSemantics(t *testing.T) {
 	}
 	if err := domain.ValidateReceiverFriendRequestPolicy(
 		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
-		domain.ReceiverFriendRequestPolicy{},
+		domain.ReceiverFriendRequestPolicy{
+			ContactPolicy: model.ActorContactPolicy_ACTOR_CONTACT_POLICY_ANYONE,
+		},
 	); err != nil {
 		t.Fatalf("clear receiver policy error = %v", err)
 	}

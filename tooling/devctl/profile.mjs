@@ -10,6 +10,11 @@ import {
 
 const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
 const SECRET_NAME = /(TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY|CREDENTIAL)/i;
+const RETIRED_DESKTOP_PROFILE_FIELDS = [
+  'PT_DESKTOP_APP_GATEWAY_PORT',
+  'PT_DESKTOP_WEB_GATEWAY_PORT',
+  'PT_DESKTOP_WEB_WEB_PORT',
+];
 
 function unquote(value) {
   if (value.length >= 2) {
@@ -61,6 +66,14 @@ export function readEnvFile(filePath) {
     });
   }
   return parseEnvText(fs.readFileSync(filePath, 'utf8'), filePath);
+}
+
+function withoutRetiredDesktopFields(values) {
+  const current = { ...values };
+  for (const field of RETIRED_DESKTOP_PROFILE_FIELDS) {
+    delete current[field];
+  }
+  return current;
 }
 
 export function worktreeId(root) {
@@ -193,7 +206,6 @@ function applyMachineAllocation(profile, machine) {
   const allocated = {
     ...profile,
     PT_DEV_SLOT: String(machine.binding.slot),
-    PT_DESKTOP_APP_GATEWAY_PORT: String(machine.ports.desktopAppGateway),
     PT_DESKTOP_APP_WEB_PORT: String(machine.ports.desktopAppWeb),
     PT_MOBILE_WEB_PORT: String(machine.ports.mobileWeb),
   };
@@ -212,7 +224,6 @@ export function validateProfile(profile, expectedName, filePath) {
     'PT_STATION_NAME',
     'PT_STATION_URL',
     'PT_STATION_PORT',
-    'PT_DESKTOP_APP_GATEWAY_PORT',
     'PT_DESKTOP_APP_WEB_PORT',
   ];
   const missing = required.filter((key) => !profile[key]);
@@ -265,7 +276,7 @@ export function resolveProfile(
   const explicit = resolveAcceptanceProfilePath(environment);
   const resolvedPath = explicit ?? machine.profile.profileFile;
   const selectedProfile = validateProfile(
-    readEnvFile(resolvedPath),
+    withoutRetiredDesktopFields(readEnvFile(resolvedPath)),
     explicit ? undefined : machine.binding.profile,
     resolvedPath,
   );
@@ -417,7 +428,6 @@ export function initializeProfile(root, name, slot = 0) {
     'PT_STATION_DEPLOY_BRANCH=',
     'PT_STATION_HEALTH_URL=',
     '',
-    `PT_DESKTOP_APP_GATEWAY_PORT=${3030 + slot * 100}`,
     `PT_DESKTOP_APP_WEB_PORT=${3210 + slot * 100}`,
     `PT_MOBILE_WEB_PORT=${5173 + slot * 100}`,
     `PT_MOBILE_DEFAULT_STATION_URL=http://127.0.0.1:${stationPort}`,
@@ -446,6 +456,7 @@ export function normalizeConfiguredPath(value, platform = process.platform) {
 
 export function runtimeEnvironment(resolved, environment = process.env) {
   const profile = resolved.profile;
+  const runtime = withoutRetiredDesktopFields(environment);
   const configuredBins = [
     'PT_GO_BIN',
     'PT_PYTHON_BIN',
@@ -457,7 +468,7 @@ export function runtimeEnvironment(resolved, environment = process.env) {
     .filter(Boolean);
 
   return {
-    ...environment,
+    ...runtime,
     ...profile,
     PATH: [...configuredBins, environment.PATH ?? ''].join(path.delimiter),
     PROJECT_ROOT: resolved.reference.workspaceRoot,

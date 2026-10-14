@@ -102,6 +102,8 @@ type MessageCommittedFact struct {
 	// if member actor_kind projection is missing. SERVICE_PLAINTEXT for bot
 	// direct_service_plaintext messages (no E2EE lock).
 	DeliverySecurity MessageDeliverySecurity `protobuf:"varint,8,opt,name=delivery_security,json=deliverySecurity,proto3,enum=peers_touch.model.chat.v1.MessageDeliverySecurity" json:"delivery_security,omitempty"`
+	MentionedPtids   []string                `protobuf:"bytes,9,rep,name=mentioned_ptids,json=mentionedPtids,proto3" json:"mentioned_ptids,omitempty"`
+	MentionAll       bool                    `protobuf:"varint,10,opt,name=mention_all,json=mentionAll,proto3" json:"mention_all,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -190,6 +192,20 @@ func (x *MessageCommittedFact) GetDeliverySecurity() MessageDeliverySecurity {
 		return x.DeliverySecurity
 	}
 	return MessageDeliverySecurity_MESSAGE_DELIVERY_SECURITY_UNSPECIFIED
+}
+
+func (x *MessageCommittedFact) GetMentionedPtids() []string {
+	if x != nil {
+		return x.MentionedPtids
+	}
+	return nil
+}
+
+func (x *MessageCommittedFact) GetMentionAll() bool {
+	if x != nil {
+		return x.MentionAll
+	}
+	return false
 }
 
 type MessageEditedFact struct {
@@ -2356,7 +2372,7 @@ var File_domain_chat_event_proto protoreflect.FileDescriptor
 
 const file_domain_chat_event_proto_rawDesc = "" +
 	"\n" +
-	"\x17domain/chat/event.proto\x12\x19peers_touch.model.chat.v1\x1a\x1cdomain/chat/attachment.proto\x1a\x19domain/chat/command.proto\x1a\x1edomain/chat/conversation.proto\x1a\x1adomain/chat/endpoint.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb0\x04\n" +
+	"\x17domain/chat/event.proto\x12\x19peers_touch.model.chat.v1\x1a\x1cdomain/chat/attachment.proto\x1a\x19domain/chat/command.proto\x1a\x1edomain/chat/conversation.proto\x1a\x1adomain/chat/endpoint.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfa\x04\n" +
 	"\x14MessageCommittedFact\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tR\tmessageId\x12A\n" +
@@ -2366,7 +2382,11 @@ const file_domain_chat_event_proto_rawDesc = "" +
 	"\x16thread_root_message_id\x18\x05 \x01(\tR\x13threadRootMessageId\x12V\n" +
 	"\vattachments\x18\x06 \x03(\v24.peers_touch.model.chat.v1.EncryptedObjectDescriptorR\vattachments\x12E\n" +
 	"\x10client_timestamp\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x0fclientTimestamp\x12_\n" +
-	"\x11delivery_security\x18\b \x01(\x0e22.peers_touch.model.chat.v1.MessageDeliverySecurityR\x10deliverySecurity\"\xae\x01\n" +
+	"\x11delivery_security\x18\b \x01(\x0e22.peers_touch.model.chat.v1.MessageDeliverySecurityR\x10deliverySecurity\x12'\n" +
+	"\x0fmentioned_ptids\x18\t \x03(\tR\x0ementionedPtids\x12\x1f\n" +
+	"\vmention_all\x18\n" +
+	" \x01(\bR\n" +
+	"mentionAll\"\xae\x01\n" +
 	"\x11MessageEditedFact\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tR\tmessageId\x12A\n" +

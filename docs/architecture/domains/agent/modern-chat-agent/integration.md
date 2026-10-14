@@ -60,11 +60,11 @@ Downstream consumers:
 | `application/agent_turn/` | Station stream bridge, cancellation forwarding, local tool request handling |
 | `application/mcp/` and `application/tools/` | Desktop-local secret/process and device capability execution |
 | `application/agent_orchestration/` | Agent Canvas bridge, downstream of the single-Agent kernel |
-| `interface/http_gateway/` | Browser gateway to the same Station business contracts |
+| `interface/tauri_commands/agent_turn.rs` | Native renderer command/event bridge to Agent turn contracts |
 | `domain/actor_device_identity.rs` | Existing actor/device Ed25519 identity used to sign terminal recovery proof |
 | `application/station_runtime/client.rs` | Typed per-device protobuf transport for lease and receipt APIs |
 
-### Desktop Web
+### Desktop renderer
 
 | Asset | Retained responsibility |
 |---|---|
@@ -219,7 +219,7 @@ Every runtime has:
 Under accepted `MCA-D08A`, Desktop message-action cutover is all-or-nothing.
 The legacy
 `updateMessage`, `deleteMessage`, destructive regenerate, and duplicated-topic
-branch construction are removed only when Desktop Web and Rust consume the
+branch construction are removed only when Desktop renderer and Rust consume the
 canonical Station commands `RetryTurn`, `RegenerateTurn`, `EditAndResend`,
 `SelectActiveBranch`, and `TombstoneMessage`.
 
@@ -283,7 +283,7 @@ The cutover is atomic at the authority boundary:
 5. Station commits each immutable ToolCall result once. The final successful
    member of a provider-response batch atomically creates the single
    `(turn_id, attempt_id, tool_batch_id)` continuation.
-6. Desktop Web `toolRuntime` projects proposal/decision/result and submits only
+6. Desktop renderer `toolRuntime` projects proposal/decision/result and submits only
    user decision commands.
 7. A durable Station continuation worker claims and completes that continuation;
    restart reclaims only pre-emission or provider-idempotent work.

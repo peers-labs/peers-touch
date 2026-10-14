@@ -236,7 +236,7 @@ def validate_report(
         isinstance(actors, dict) and set(actors) == expected_actor_roles,
         "actor evidence does not match the expected roles",
     )
-    for field in ("port", "gateway_port", "storage_root", "pid"):
+    for field in ("port", "storage_root", "pid"):
         values = {str(actor.get(field) or "") for actor in actors.values()}
         require(
             "" not in values and len(values) == len(expected_actor_roles),

@@ -9,7 +9,7 @@ use crate::model::chat::{
 use crate::state::AppState;
 use prost::Message;
 use reqwest::Method;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::Path;
 use std::sync::Arc;
@@ -45,7 +45,19 @@ pub struct MessagingSendMessageInput {
     #[serde(default)]
     pub thread_root_message_id: String,
     #[serde(default)]
+    pub mentions: Vec<MessagingMentionInput>,
+    #[serde(default)]
+    pub mention_all: bool,
+    #[serde(default)]
     pub attachments: Vec<MessagingLocalAttachmentInput>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingMentionInput {
+    pub actor_ptid: String,
+    pub offset: u32,
+    pub length: u32,
+    pub display: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -362,35 +374,176 @@ fn conversation_member_json(
     })
 }
 
-fn message_projection_json(message: &crate::messaging::ConversationMessageProjection) -> Value {
-    json!({
-        "event_id": message.event_id,
-        "event_sequence": message.event_sequence,
-        "message_id": message.message_id,
-        "sender_ptid": message.sender_ptid,
-        "sender_device_id": message.sender_device_id,
-        "plaintext": message.plaintext,
-        "attachments": message.attachments.iter()
-            .map(attachment_projection_json)
-            .collect::<Vec<_>>(),
-        "state": message.state,
-        "timestamp_unix_ms": message.timestamp_unix_ms,
-        "reply_to_message_id": message.reply_to_message_id,
-        "thread_root_message_id": message.thread_root_message_id,
-        "edited_text": message.edited_text,
-        "edited_at_unix_ms": message.edited_at_unix_ms,
-        "retracted": message.retracted,
-        "reactions": message.reactions.iter().map(
-            |(actor_ptid, reaction, created_at_unix_ms)| json!({
-                "actor_ptid": actor_ptid,
-                "reaction": reaction,
-                "created_at_unix_ms": created_at_unix_ms,
-            })
-        ).collect::<Vec<_>>(),
-        "pinned_by_ptid": message.pinned_by_ptid,
-        "pinned_at_unix_ms": message.pinned_at_unix_ms,
-        "read_by_ptids": message.read_by_ptids,
-    })
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MessagingAttachmentProjectionOutput {
+    attachment_id: String,
+    filename: String,
+    mime_type: String,
+    content_kind: i32,
+    duration_ms: u32,
+    plaintext_size: u64,
+    object_id: String,
+    storage_ref: String,
+    ciphertext_size: u64,
+    availability_state: &'static str,
+}
+
+impl From<&crate::model::chat::AttachmentPlaintextMetadata>
+    for MessagingAttachmentProjectionOutput
+{
+    fn from(attachment: &crate::model::chat::AttachmentPlaintextMetadata) -> Self {
+        let object = attachment.object.as_ref();
+        Self {
+            attachment_id: attachment.attachment_id.clone(),
+            filename: attachment.filename.clone(),
+            mime_type: attachment.mime_type.clone(),
+            content_kind: attachment.content_kind,
+            duration_ms: attachment.duration_ms,
+            plaintext_size: attachment.plaintext_size,
+            object_id: object
+                .map(|value| value.object_id.clone())
+                .unwrap_or_default(),
+            storage_ref: object
+                .map(|value| value.storage_ref.clone())
+                .unwrap_or_default(),
+            ciphertext_size: object
+                .map(|value| value.ciphertext_size)
+                .unwrap_or_default(),
+            availability_state: if object.is_some() {
+                "remote"
+            } else {
+                "uploading"
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MessagingMentionProjectionOutput {
+    actor_ptid: String,
+    offset: u32,
+    length: u32,
+    display: String,
+}
+
+impl From<&crate::model::chat::MessageMention> for MessagingMentionProjectionOutput {
+    fn from(mention: &crate::model::chat::MessageMention) -> Self {
+        Self {
+            actor_ptid: mention.actor_ptid.clone(),
+            offset: mention.offset,
+            length: mention.length,
+            display: mention.display.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MessagingReactionProjectionOutput {
+    actor_ptid: String,
+    reaction: String,
+    created_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MessagingMessageProjectionOutput {
+    event_id: Option<String>,
+    event_sequence: Option<i64>,
+    message_id: String,
+    sender_ptid: String,
+    sender_device_id: String,
+    plaintext: String,
+    attachments: Vec<MessagingAttachmentProjectionOutput>,
+    mentions: Vec<MessagingMentionProjectionOutput>,
+    mention_all: bool,
+    state: String,
+    timestamp_unix_ms: i64,
+    reply_to_message_id: Option<String>,
+    thread_root_message_id: Option<String>,
+    edited_text: Option<String>,
+    edited_at_unix_ms: Option<i64>,
+    retracted: bool,
+    reactions: Vec<MessagingReactionProjectionOutput>,
+    pinned_by_ptid: Option<String>,
+    pinned_at_unix_ms: Option<i64>,
+    read_by_ptids: Vec<String>,
+}
+
+impl From<&crate::messaging::ConversationMessageProjection> for MessagingMessageProjectionOutput {
+    fn from(message: &crate::messaging::ConversationMessageProjection) -> Self {
+        let crate::messaging::ConversationMessageProjection {
+            event_id,
+            event_sequence,
+            message_id,
+            sender_ptid,
+            sender_device_id,
+            plaintext,
+            attachments,
+            mentions,
+            mention_all,
+            state,
+            timestamp_unix_ms,
+            reply_to_message_id,
+            thread_root_message_id,
+            edited_text,
+            edited_at_unix_ms,
+            retracted,
+            moderated: _,
+            moderation_reason_code: _,
+            reactions,
+            pinned_by_ptid,
+            pinned_at_unix_ms,
+            read_by_ptids,
+        } = message;
+        Self {
+            event_id: event_id.clone(),
+            event_sequence: *event_sequence,
+            message_id: message_id.clone(),
+            sender_ptid: sender_ptid.clone(),
+            sender_device_id: sender_device_id.clone(),
+            plaintext: plaintext.clone(),
+            attachments: attachments
+                .iter()
+                .map(MessagingAttachmentProjectionOutput::from)
+                .collect(),
+            mentions: mentions
+                .iter()
+                .map(MessagingMentionProjectionOutput::from)
+                .collect(),
+            mention_all: *mention_all,
+            state: state.clone(),
+            timestamp_unix_ms: *timestamp_unix_ms,
+            reply_to_message_id: reply_to_message_id.clone(),
+            thread_root_message_id: thread_root_message_id.clone(),
+            edited_text: edited_text.clone(),
+            edited_at_unix_ms: *edited_at_unix_ms,
+            retracted: *retracted,
+            reactions: reactions
+                .iter()
+                .map(|(actor_ptid, reaction, created_at_unix_ms)| {
+                    MessagingReactionProjectionOutput {
+                        actor_ptid: actor_ptid.clone(),
+                        reaction: reaction.clone(),
+                        created_at_unix_ms: *created_at_unix_ms,
+                    }
+                })
+                .collect(),
+            pinned_by_ptid: pinned_by_ptid.clone(),
+            pinned_at_unix_ms: *pinned_at_unix_ms,
+            read_by_ptids: read_by_ptids.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MessagingMessagesOutput {
+    messages: Vec<MessagingMessageProjectionOutput>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MessagingMessagePageOutput {
+    messages: Vec<MessagingMessageProjectionOutput>,
+    has_more: bool,
+    next_before_sequence: Option<i64>,
 }
 
 pub(crate) fn conversation_projection_json(
@@ -425,7 +578,8 @@ pub(crate) fn conversation_projection_json(
         "updated_at_unix_ms": conversation.updated_at_unix_ms,
         "summary": {
             "unread_count": summary.unread_count,
-            "latest_message": summary.latest_message.as_ref().map(message_projection_json),
+            "latest_message": summary.latest_message.as_ref()
+                .map(MessagingMessageProjectionOutput::from),
         },
     }))
 }
@@ -625,6 +779,15 @@ fn active_engine(
             )
         })?;
     Ok((session.account_id, session.jwt, engine))
+}
+
+fn retype_app_error<T: Serialize>(result: AppResult<Value>) -> AppResult<T> {
+    debug_assert!(!result.ok);
+    AppResult {
+        ok: false,
+        data: None,
+        error: result.error,
+    }
 }
 
 #[tauri::command]
@@ -1044,24 +1207,6 @@ fn require_acceptance_actor(
     Ok(expected.to_string())
 }
 
-fn attachment_projection_json(
-    attachment: &crate::model::chat::AttachmentPlaintextMetadata,
-) -> Value {
-    let object = attachment.object.as_ref();
-    json!({
-        "attachment_id": attachment.attachment_id,
-        "filename": attachment.filename,
-        "mime_type": attachment.mime_type,
-        "content_kind": attachment.content_kind,
-        "duration_ms": attachment.duration_ms,
-        "plaintext_size": attachment.plaintext_size,
-        "object_id": object.map(|value| value.object_id.as_str()).unwrap_or_default(),
-        "storage_ref": object.map(|value| value.storage_ref.as_str()).unwrap_or_default(),
-        "ciphertext_size": object.map(|value| value.ciphertext_size).unwrap_or_default(),
-        "availability_state": if object.is_some() { "remote" } else { "uploading" },
-    })
-}
-
 fn allow_attachment_preview(window: &Window, path: &Path) -> Result<(), String> {
     let scope = window.app_handle().asset_protocol_scope();
     scope
@@ -1420,6 +1565,8 @@ pub async fn messaging_acceptance_create_restorable_command(
             &submit_plaintext,
             "",
             "",
+            &[],
+            false,
             &[],
         )
     })
@@ -2079,6 +2226,17 @@ pub async fn messaging_send_message(
     let plaintext = input.plaintext;
     let reply_to_message_id = input.reply_to_message_id;
     let thread_root_message_id = input.thread_root_message_id;
+    let mentions = input
+        .mentions
+        .into_iter()
+        .map(|mention| crate::model::chat::MessageMention {
+            actor_ptid: mention.actor_ptid,
+            offset: mention.offset,
+            length: mention.length,
+            display: mention.display,
+        })
+        .collect::<Vec<_>>();
+    let mention_all = input.mention_all;
     let attachment_intents = input
         .attachments
         .into_iter()
@@ -2102,6 +2260,8 @@ pub async fn messaging_send_message(
             &plaintext,
             &reply_to_message_id,
             &thread_root_message_id,
+            &mentions,
+            mention_all,
             &attachment_intents,
         )
     })
@@ -2409,10 +2569,10 @@ pub fn messaging_list_messages(
     input: MessagingListMessagesInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
-) -> AppResult<Value> {
+) -> AppResult<MessagingMessagePageOutput> {
     let (_, _, engine) = match active_engine(state.inner(), &window) {
         Ok(value) => value,
-        Err(error) => return error,
+        Err(error) => return retype_app_error(error),
     };
     messaging_list_messages_result(&engine, &input)
 }
@@ -2548,7 +2708,7 @@ fn message_content_json(content: MessageContent) -> Value {
 pub(crate) fn messaging_list_messages_result(
     engine: &crate::messaging::MessagingEngine,
     input: &MessagingListMessagesInput,
-) -> AppResult<Value> {
+) -> AppResult<MessagingMessagePageOutput> {
     if input.conversation_id.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
@@ -2564,11 +2724,15 @@ pub(crate) fn messaging_list_messages_result(
         Ok(page) => page,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    AppResult::success(json!({
-        "messages": page.messages.iter().map(message_projection_json).collect::<Vec<_>>(),
-        "has_more": page.has_more,
-        "next_before_sequence": page.next_before_sequence,
-    }))
+    AppResult::success(MessagingMessagePageOutput {
+        messages: page
+            .messages
+            .iter()
+            .map(MessagingMessageProjectionOutput::from)
+            .collect(),
+        has_more: page.has_more,
+        next_before_sequence: page.next_before_sequence,
+    })
 }
 
 #[tauri::command]
@@ -2576,7 +2740,7 @@ pub fn messaging_list_thread_messages(
     input: MessagingListThreadMessagesInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
-) -> AppResult<Value> {
+) -> AppResult<MessagingMessagesOutput> {
     if input.conversation_id.trim().is_empty() || input.thread_root_message_id.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
@@ -2586,43 +2750,19 @@ pub fn messaging_list_thread_messages(
     }
     let (_, _, engine) = match active_engine(state.inner(), &window) {
         Ok(value) => value,
-        Err(error) => return error,
+        Err(error) => return retype_app_error(error),
     };
     let messages =
         match engine.thread_messages(&input.conversation_id, &input.thread_root_message_id) {
             Ok(messages) => messages,
             Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
         };
-    AppResult::success(json!({
-        "messages": messages.into_iter().map(|message| json!({
-            "event_id": message.event_id,
-            "event_sequence": message.event_sequence,
-            "message_id": message.message_id,
-            "sender_ptid": message.sender_ptid,
-            "sender_device_id": message.sender_device_id,
-            "plaintext": message.plaintext,
-            "attachments": message.attachments.iter()
-                .map(attachment_projection_json)
-                .collect::<Vec<_>>(),
-            "state": message.state,
-            "timestamp_unix_ms": message.timestamp_unix_ms,
-            "reply_to_message_id": message.reply_to_message_id,
-            "thread_root_message_id": message.thread_root_message_id,
-            "edited_text": message.edited_text,
-            "edited_at_unix_ms": message.edited_at_unix_ms,
-            "retracted": message.retracted,
-            "reactions": message.reactions.into_iter().map(
-                |(actor_ptid, reaction, created_at_unix_ms)| json!({
-                    "actor_ptid": actor_ptid,
-                    "reaction": reaction,
-                    "created_at_unix_ms": created_at_unix_ms,
-                })
-            ).collect::<Vec<_>>(),
-            "pinned_by_ptid": message.pinned_by_ptid,
-            "pinned_at_unix_ms": message.pinned_at_unix_ms,
-            "read_by_ptids": message.read_by_ptids,
-        })).collect::<Vec<_>>()
-    }))
+    AppResult::success(MessagingMessagesOutput {
+        messages: messages
+            .iter()
+            .map(MessagingMessageProjectionOutput::from)
+            .collect(),
+    })
 }
 
 #[tauri::command]
@@ -2710,10 +2850,10 @@ pub fn messaging_search_messages(
     input: MessagingSearchMessagesInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
-) -> AppResult<Value> {
+) -> AppResult<MessagingMessagesOutput> {
     let (_, _, engine) = match active_engine(state.inner(), &window) {
         Ok(value) => value,
-        Err(error) => return error,
+        Err(error) => return retype_app_error(error),
     };
     messaging_search_messages_result(&engine, &input)
 }
@@ -2721,7 +2861,7 @@ pub fn messaging_search_messages(
 pub(crate) fn messaging_search_messages_result(
     engine: &crate::messaging::MessagingEngine,
     input: &MessagingSearchMessagesInput,
-) -> AppResult<Value> {
+) -> AppResult<MessagingMessagesOutput> {
     let before = match (
         input.before_timestamp_unix_ms,
         input.before_message_id.as_deref(),
@@ -2741,45 +2881,24 @@ pub(crate) fn messaging_search_messages_result(
             Ok(messages) => messages,
             Err(error) => return AppResult::fail(ErrorCode::InvalidArgument, error, None),
         };
-    AppResult::success(json!({
-        "messages": messages.into_iter().map(|message| json!({
-            "event_id": message.event_id,
-            "event_sequence": message.event_sequence,
-            "message_id": message.message_id,
-            "sender_ptid": message.sender_ptid,
-            "sender_device_id": message.sender_device_id,
-            "plaintext": message.plaintext,
-            "attachments": message.attachments.iter()
-                .map(attachment_projection_json)
-                .collect::<Vec<_>>(),
-            "state": message.state,
-            "timestamp_unix_ms": message.timestamp_unix_ms,
-            "reply_to_message_id": message.reply_to_message_id,
-            "thread_root_message_id": message.thread_root_message_id,
-            "edited_text": message.edited_text,
-            "edited_at_unix_ms": message.edited_at_unix_ms,
-            "retracted": message.retracted,
-            "reactions": message.reactions.into_iter().map(
-                |(actor_ptid, reaction, created_at_unix_ms)| json!({
-                    "actor_ptid": actor_ptid,
-                    "reaction": reaction,
-                    "created_at_unix_ms": created_at_unix_ms,
-                })
-            ).collect::<Vec<_>>(),
-            "pinned_by_ptid": message.pinned_by_ptid,
-            "pinned_at_unix_ms": message.pinned_at_unix_ms,
-            "read_by_ptids": message.read_by_ptids,
-        })).collect::<Vec<_>>()
-    }))
+    AppResult::success(MessagingMessagesOutput {
+        messages: messages
+            .iter()
+            .map(MessagingMessageProjectionOutput::from)
+            .collect(),
+    })
 }
 
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "acceptance-webdriver")]
     use super::require_acceptance_actor;
-    use super::{conversation_member_json, group_creation_state, member_settings_json};
+    use super::{
+        conversation_member_json, group_creation_state, member_settings_json,
+        MessagingMessageProjectionOutput,
+    };
     use crate::messaging::CommandDispatchProgress;
-    use crate::model::chat::{MemberRole, MemberSettings, MemberStatus};
+    use crate::model::chat::{MemberRole, MemberSettings, MemberStatus, MessageMention};
 
     #[test]
     fn group_creation_only_reports_projected_for_its_own_consumed_command() {
@@ -2878,6 +2997,79 @@ mod tests {
         assert_eq!(settings["pinned"], true);
         assert_eq!(settings["background"], "mint");
         assert_eq!(settings["backgroundImage"], "oss://station/background");
+    }
+
+    #[test]
+    fn message_projection_output_is_the_complete_renderer_contract() {
+        let projection = crate::messaging::ConversationMessageProjection {
+            event_id: Some("event-1".to_string()),
+            event_sequence: Some(7),
+            message_id: "message-1".to_string(),
+            sender_ptid: "ptid:test:alice".to_string(),
+            sender_device_id: "alice-device".to_string(),
+            plaintext: "hello @Bob".to_string(),
+            attachments: Vec::new(),
+            mentions: vec![MessageMention {
+                actor_ptid: "ptid:test:bob".to_string(),
+                offset: 6,
+                length: 4,
+                display: "@Bob".to_string(),
+            }],
+            mention_all: false,
+            state: "committed".to_string(),
+            timestamp_unix_ms: 1_800_000_000_000,
+            reply_to_message_id: Some("root-1".to_string()),
+            thread_root_message_id: Some("root-1".to_string()),
+            edited_text: None,
+            edited_at_unix_ms: None,
+            retracted: false,
+            moderated: false,
+            moderation_reason_code: None,
+            reactions: vec![(
+                "ptid:test:bob".to_string(),
+                "thumbs-up".to_string(),
+                1_800_000_000_100,
+            )],
+            pinned_by_ptid: Some("ptid:test:alice".to_string()),
+            pinned_at_unix_ms: Some(1_800_000_000_200),
+            read_by_ptids: vec!["ptid:test:bob".to_string()],
+        };
+
+        assert_eq!(
+            serde_json::to_value(MessagingMessageProjectionOutput::from(&projection))
+                .expect("serialize messaging projection"),
+            serde_json::json!({
+                "event_id": "event-1",
+                "event_sequence": 7,
+                "message_id": "message-1",
+                "sender_ptid": "ptid:test:alice",
+                "sender_device_id": "alice-device",
+                "plaintext": "hello @Bob",
+                "attachments": [],
+                "mentions": [{
+                    "actor_ptid": "ptid:test:bob",
+                    "offset": 6,
+                    "length": 4,
+                    "display": "@Bob",
+                }],
+                "mention_all": false,
+                "state": "committed",
+                "timestamp_unix_ms": 1_800_000_000_000_i64,
+                "reply_to_message_id": "root-1",
+                "thread_root_message_id": "root-1",
+                "edited_text": null,
+                "edited_at_unix_ms": null,
+                "retracted": false,
+                "reactions": [{
+                    "actor_ptid": "ptid:test:bob",
+                    "reaction": "thumbs-up",
+                    "created_at_unix_ms": 1_800_000_000_100_i64,
+                }],
+                "pinned_by_ptid": "ptid:test:alice",
+                "pinned_at_unix_ms": 1_800_000_000_200_i64,
+                "read_by_ptids": ["ptid:test:bob"],
+            })
+        );
     }
 
     #[cfg(feature = "acceptance-webdriver")]

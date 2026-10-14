@@ -85,6 +85,13 @@ export interface SocialMessage {
   }>;
   pinnedByPtid?: string;
   pinnedAtUnixMs?: number;
+  mentions?: Array<{
+    actorPtid: string;
+    offset: number;
+    length: number;
+    display: string;
+  }>;
+  mentionAll?: boolean;
   encryptedPayload?: Uint8Array;
   attachments?: FriendMessageAttachment[];
 }
@@ -205,7 +212,8 @@ export interface PeerProfile {
   links: PeerProfileLink[];
   defaultVisibility: string;
   manuallyApprovesFollowers: boolean;
-  messagePermission: string;
+  contactPolicy: 'anyone' | 'federations' | 'nobody';
+  federationVisibility: Record<string, 'hidden' | 'by_handle' | 'indexed'>;
   autoExpireDays: number;
   networkId: string;
   federatedHandle: string;

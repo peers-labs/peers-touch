@@ -109,12 +109,30 @@ message AttachmentPlaintextMetadata {
   VoiceNoteMetadata voice_note = 11;
 }
 
+// One actor mention inside the end-to-end encrypted message text. Offsets and
+// lengths are UTF-8 byte positions so every client validates the same bytes.
+message MessageMention {
+  string actor_ptid = 1;
+  uint32 offset = 2;
+  uint32 length = 3;
+  string display = 4;
+}
+
+// Durable local metadata used while a message draft is retried. This remains
+// private client state and is never sent to Station as plaintext.
+message MessageMentionSet {
+  repeated MessageMention mentions = 1;
+  bool mention_all = 2;
+}
+
 // The complete private message body encrypted by Double Ratchet or OpenMLS.
 // Station never receives these bytes in plaintext.
 message MessagePrivateContent {
   uint32 format_version = 1;
   string text = 2;
   repeated AttachmentPlaintextMetadata attachments = 3;
+  repeated MessageMention mentions = 4;
+  bool mention_all = 5;
 }
 
 message BeginAttachmentUploadRequest {

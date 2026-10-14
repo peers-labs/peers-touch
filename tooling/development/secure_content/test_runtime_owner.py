@@ -2179,6 +2179,7 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "federationEndpoint": "https://four.invalid",
                 "federationId": "federation-1",
                 "homeStationPeerId": "station-four-peer",
+                "sequencerStationPeerId": "station-four-peer",
             },
             federation_action=federation_action,
         )
@@ -2197,6 +2198,7 @@ class RuntimeOwnerTest(unittest.TestCase):
                     {
                         "federationEndpoint": "https://four.invalid",
                         "federationId": "federation-1",
+                        "sequencerStationPeerId": "station-four-peer",
                     },
                 ),
                 (
@@ -2301,6 +2303,7 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "federationEndpoint": "https://four.invalid",
                 "federationId": "federation-1",
                 "homeStationPeerId": "station-four-peer",
+                "sequencerStationPeerId": "station-four-peer",
             },
             federation_action=federation_action,
         )
@@ -2336,6 +2339,7 @@ class RuntimeOwnerTest(unittest.TestCase):
                     "federationEndpoint": "https://four.invalid",
                     "federationId": "federation-1",
                     "homeStationPeerId": "station-four-peer",
+                    "sequencerStationPeerId": "station-four-peer",
                 },
                 federation_action=lambda _client, method, _payload: (
                     {

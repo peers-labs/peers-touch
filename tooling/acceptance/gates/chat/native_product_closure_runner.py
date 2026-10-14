@@ -429,7 +429,6 @@ class NativeProductClosureGate(AcceptanceGate):
             "deviceId": "",
             "pid": None,
             "webdriverPort": client.port,
-            "gatewayPort": client.gateway_port,
             "rendererPort": int(spec["renderer_port"]),
             "profile": client.profile,
             "storageRoot": client.storage_root,
@@ -512,7 +511,6 @@ class NativeProductClosureGate(AcceptanceGate):
                     name=actor,
                     runtime=self.runtime_binding.cell_id,
                     port=client.port,
-                    gateway_port=client.gateway_port,
                     profile=client.profile,
                     storage_root=client.storage_root,
                     pid=client.process_id,
@@ -4731,7 +4729,6 @@ class NativeProductClosureGate(AcceptanceGate):
             != self.client_specs["alice2"][field]
             for field in (
                 "webdriver_port",
-                "gateway_port",
                 "profile",
                 "storage_root",
             )

@@ -115,6 +115,7 @@ export function ChatMessageArea({
     setScrollToMessageUlid,
     encryptionEnabled,
     groupSecurityState,
+    groupMembers,
     peerOnline,
     typingPeers,
     threadCounts,
@@ -153,6 +154,7 @@ export function ChatMessageArea({
     setScrollToMessageUlid: s.setScrollToMessageUlid,
     encryptionEnabled: s.encryptionEnabled,
     groupSecurityState: s.groupSecurityState,
+    groupMembers: s.groupMembers,
     peerOnline: s.peerOnline,
     typingPeers: s.typingPeers,
     threadCounts: s.threadCounts,
@@ -206,6 +208,18 @@ export function ChatMessageArea({
   const activeConversation = activeUlid
     ? getIMConversations().find((conversation) => conversation.kind === activeKind && conversation.id === activeUlid)
     : undefined;
+  const mentionMembers = activeTab === 'group' && activeUlid
+    ? (groupMembers[activeUlid] ?? [])
+        .filter((member) => member.ptid && member.ptid !== currentUserPtid)
+        .map((member) => {
+          const profile = getIMSenderProfile('group', activeUlid, member.ptid);
+          return {
+            actorPtid: member.ptid,
+            displayName: profile.name,
+            avatar: profile.avatar,
+          };
+        })
+    : [];
   const currentMessages = activeUlid ? getIMMessages(activeKind, activeUlid) : [];
   const mainTimelineMessages = currentMessages.filter((message) => !messageThreadRootUlid(message));
   const activeLocalState = activeUlid ? conversationLocalState[`${activeTab}:${activeUlid}`] : undefined;
@@ -571,6 +585,11 @@ export function ChatMessageArea({
           draft.messageType,
           replyRef,
           draft.attachments.length > 0 ? draft.attachments : undefined,
+          undefined,
+          {
+            mentions: draft.mentions,
+            mentionAll: draft.mentionAll,
+          },
         );
       }
     } catch (err) {
@@ -1228,6 +1247,7 @@ export function ChatMessageArea({
         replyPreviewKey={replyToUlid}
         editPreview={editingUlid ? currentMessages.find((m) => m.ulid === editingUlid)?.content || '' : undefined}
         sending={sending}
+        mentionMembers={mentionMembers}
         capabilities={CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN}
       />
       )}

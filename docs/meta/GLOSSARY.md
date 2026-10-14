@@ -63,14 +63,17 @@ A delivery-oriented document that records migration order, rollout phases, or im
 
 ## Desktop Terms
 
-### Desktop Web
-The TypeScript/React runtime rendered in browser or WebView.
+### Desktop Renderer
+The TypeScript/React runtime embedded exclusively in the Native Tauri WebView.
+It is not a browser product or standalone Desktop mode.
 
 ### Desktop Rust
-The Rust runtime used by Desktop for local application services and gateway responsibilities.
+The Rust runtime used by Desktop for local application services, Station
+transport, and native capabilities.
 
 ### Desktop App
-The Tauri host application that carries Desktop Web and Desktop Rust together in native app mode.
+The only Desktop product runtime: Native Tauri carrying the embedded renderer
+and Desktop Rust.
 
 ### GlobalContext Kernel
 Desktop's cross-cutting state coordination kernel.

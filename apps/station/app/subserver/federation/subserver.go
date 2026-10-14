@@ -25,6 +25,7 @@ import (
 	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 )
 
 const deliveryRuntimeRestartDelay = time.Second
@@ -40,9 +41,11 @@ type subServer struct {
 	ledgerSvc      *application.LedgerService
 	projectionSvc  *application.ProjectionService
 	membershipRepo domain.MembershipRepository
+	actorRoleRepo  domain.ActorRoleRepository
 	actorKeySvc    *domain.ActorKeyService
 	syncManager    *LedgerSyncManager
 	govClient      RemoteGovernanceClient
+	catalog        *catalogCoordinator
 
 	deliveryRuntime *federationruntime.Runtime
 	deliveryCancel  context.CancelFunc
@@ -161,6 +164,17 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		repos.SyncCursor,
 	)
 	s.membershipRepo = repos.Membership
+	s.actorRoleRepo = repos.ActorRole
+	if err := touchactor.RebuildFederationCatalogIndex(ctx); err != nil {
+		return fmt.Errorf("build Federation catalog index: %w", err)
+	}
+	s.catalog = newCatalogCoordinator(
+		catalogConfigFromEnvironment(),
+		s.projectionSvc,
+		repos.Federation,
+		repos.Membership,
+		s.deliveryRuntime,
+	)
 
 	publisher := NewLedgerEventPublisher(repos.ActorRole)
 	s.ledgerSvc.SetOnAppended(func(ctx context.Context, event *pb.LedgerEvent) {
@@ -294,7 +308,8 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("fed-catalog-search", "/sub-federation/catalog/search", server.POST, s.handleCatalogSearch, jw),
 		server.NewTypedHandler("fed-fetch-head", "/fed/v1/ledger/head", server.POST, s.handleFetchHead, fw),
 		server.NewTypedHandler("fed-fetch-events", "/fed/v1/ledger/events", server.POST, s.handleFetchEvents, fw),
-		server.NewTypedHandler("fed-submit-proposal", "/fed/v1/governance/submit-proposal", server.POST, s.handleSubmitProposal),
+		server.NewTypedHandler("fed-submit-proposal", "/fed/v1/governance/submit-proposal", server.POST, s.handleSubmitProposal, fw),
+		server.NewTypedHandler("fed-submit-member-proposal", "/fed/v1/governance/submit-member-proposal", server.POST, s.handleSubmitProposal, fw),
 	}
 	if s.deliveryRuntime != nil {
 		handlers = append(handlers, s.deliveryRuntime.Handlers()...)

@@ -1171,7 +1171,7 @@ export interface PublicProfileProjection {
   timezone: string;
   defaultVisibility: string;
   manuallyApprovesFollowers: boolean;
-  messagePermission: string;
+  contactPolicy: string;
   autoExpireDays: number;
 }
 
@@ -1182,7 +1182,7 @@ export interface SettingsProfileUpdateActionInput {
   timezone?: string;
   defaultVisibility?: string;
   manuallyApprovesFollowers?: boolean;
-  messagePermission?: string;
+  contactPolicy?: string;
   autoExpireDays?: number;
 }
 

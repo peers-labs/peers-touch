@@ -1,8 +1,8 @@
 #[cfg(feature = "acceptance-webdriver")]
 use crate::contracts::StubPayload;
 use crate::contracts::{
-    AccessDecisionInput, AccessDecisionPayload, AccessSubmitInviteInput, AccessSubmitLoginInput,
-    AuthSessionPayload, AuthValidateTokenInput,
+    AccessDecisionInput, AccessDecisionPayload, AccessGateStepPayload, AccessSubmitGenericInput,
+    AccessSubmitInviteInput, AccessSubmitLoginInput, AuthSessionPayload, AuthValidateTokenInput,
 };
 use crate::domain::identity::{ActiveSession, ActorRef};
 use crate::error::{AppResult, ErrorCode};
@@ -148,6 +148,42 @@ fn bind_after(
     result
 }
 
+fn run_access_step_transition(
+    state: &Arc<AppState>,
+    app: &AppHandle,
+    window: &Window,
+    operation: impl FnOnce() -> AppResult<AccessGateStepPayload>,
+) -> AppResult<AccessGateStepPayload> {
+    let _transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
+                None,
+            )
+        }
+    };
+    let result = operation();
+    if !result.ok {
+        return result;
+    }
+    if let Some(session) = result.data.as_ref().and_then(|data| data.session.as_ref()) {
+        if let Err(error) = bind_window_session(state, app, window, session) {
+            return AppResult::fail(ErrorCode::Unauthorized, error, None);
+        }
+    }
+    result
+}
+
+fn broadcast_access_step(app: &AppHandle, result: &AppResult<AccessGateStepPayload>) {
+    let session_result = match result.data.as_ref().and_then(|data| data.session.clone()) {
+        Some(session) => AppResult::success(session),
+        None => return,
+    };
+    broadcast_identity(app, IdentityChangeReason::Login, &session_result);
+}
+
 fn is_session_revoked(result: &AppResult<AuthSessionPayload>) -> bool {
     result
         .error
@@ -167,18 +203,14 @@ fn unbind_for_logout(state: &Arc<AppState>, window: &Window) -> Result<(), Strin
     Ok(())
 }
 
-fn run_logout_transition(
-    detach_native_authority: impl FnOnce() -> Result<(), String>,
-    cleanup: impl FnOnce() -> AppResult<AuthSessionPayload>,
-    broadcast: impl FnOnce(),
-) -> AppResult<AuthSessionPayload> {
-    let detach_error = detach_native_authority().err();
-    let result = cleanup();
-    broadcast();
-    if let Some(error) = detach_error {
-        return secure_content_teardown_failure(error);
-    }
-    result
+fn revoke_station_session(
+    state: &AppState,
+    session: Option<&ActiveSession>,
+) -> Result<(), AppResult<AuthSessionPayload>> {
+    let Some(session) = session else {
+        return Ok(());
+    };
+    auth_service::revoke_station_session(&state.station, &session.jwt)
 }
 
 fn secure_content_teardown_failure(error: String) -> AppResult<AuthSessionPayload> {
@@ -239,14 +271,25 @@ pub fn access_submit_login(
     state: State<'_, Arc<AppState>>,
     app: AppHandle,
     window: Window,
-) -> AppResult<AuthSessionPayload> {
-    let result = bind_after(
-        state.inner(),
-        &app,
-        &window,
-        auth_service::access_submit_login(&state.station, input, state.inner()),
-    );
-    broadcast_identity(&app, IdentityChangeReason::Login, &result);
+) -> AppResult<AccessGateStepPayload> {
+    let result = run_access_step_transition(state.inner(), &app, &window, || {
+        auth_service::access_submit_login(&state.station, input, state.inner())
+    });
+    broadcast_access_step(&app, &result);
+    result
+}
+
+#[tauri::command]
+pub fn access_submit_generic(
+    input: AccessSubmitGenericInput,
+    state: State<'_, Arc<AppState>>,
+    app: AppHandle,
+    window: Window,
+) -> AppResult<AccessGateStepPayload> {
+    let result = run_access_step_transition(state.inner(), &app, &window, || {
+        auth_service::access_submit_generic(&state.station, input, state.inner())
+    });
+    broadcast_access_step(&app, &result);
     result
 }
 
@@ -266,7 +309,9 @@ pub fn auth_logout(
             )
         }
     };
-    run_logout_transition(
+    let window_session = state.sessions.get(window.label());
+    auth_service::run_logout_transition(
+        || revoke_station_session(state.inner(), window_session.as_ref()),
         || unbind_for_logout(state.inner(), &window),
         || auth_service::auth_logout(state.inner()),
         || {
@@ -428,10 +473,14 @@ pub fn ensure_station_session(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_session_revoked, run_logout_transition, secure_content_session_replaced};
+    use super::{is_session_revoked, secure_content_session_replaced};
+    use crate::application::auth::service::{
+        is_idempotent_station_revoke_error, run_logout_transition,
+    };
     use crate::contracts::AuthSessionPayload;
     use crate::domain::identity::{ActiveSession, ActorRef};
     use crate::error::{AppResult, ErrorCode};
+    use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
     use std::cell::RefCell;
 
     #[test]
@@ -475,9 +524,13 @@ mod tests {
     }
 
     #[test]
-    fn logout_detaches_and_broadcasts_before_returning_cleanup_failure() {
+    fn logout_revokes_detaches_and_broadcasts_before_returning_cleanup_failure() {
         let order = RefCell::new(Vec::new());
         let result = run_logout_transition(
+            || {
+                order.borrow_mut().push("revoke");
+                Ok(())
+            },
             || {
                 order.borrow_mut().push("detach");
                 Ok(())
@@ -493,7 +546,10 @@ mod tests {
             || order.borrow_mut().push("broadcast"),
         );
 
-        assert_eq!(*order.borrow(), vec!["detach", "cleanup", "broadcast"]);
+        assert_eq!(
+            *order.borrow(),
+            vec!["revoke", "detach", "cleanup", "broadcast"]
+        );
         assert!(!result.ok);
         assert_eq!(
             result
@@ -508,6 +564,10 @@ mod tests {
     fn logout_surfaces_secure_content_teardown_failure_after_cleanup() {
         let order = RefCell::new(Vec::new());
         let result = run_logout_transition(
+            || {
+                order.borrow_mut().push("revoke");
+                Ok(())
+            },
             || {
                 order.borrow_mut().push("detach");
                 Err("request drain timed out".to_string())
@@ -529,7 +589,10 @@ mod tests {
             || order.borrow_mut().push("broadcast"),
         );
 
-        assert_eq!(*order.borrow(), vec!["detach", "cleanup", "broadcast"]);
+        assert_eq!(
+            *order.borrow(),
+            vec!["revoke", "detach", "cleanup", "broadcast"]
+        );
         assert!(!result.ok);
         assert_eq!(
             result
@@ -538,5 +601,69 @@ mod tests {
                 .and_then(|details| details["reason"].as_str().map(str::to_string)),
             Some("secure_content_teardown_failed".to_string())
         );
+    }
+
+    #[test]
+    fn logout_clears_local_authority_when_station_revoke_fails() {
+        let order = RefCell::new(Vec::new());
+        let result = run_logout_transition(
+            || {
+                order.borrow_mut().push("revoke");
+                Err(AppResult::fail(
+                    ErrorCode::InternalError,
+                    "station unavailable",
+                    Some(serde_json::json!({
+                        "reason": "station_session_revoke_failed"
+                    })),
+                ))
+            },
+            || {
+                order.borrow_mut().push("detach");
+                Ok(())
+            },
+            || {
+                order.borrow_mut().push("cleanup");
+                AppResult::success(AuthSessionPayload {
+                    command: "auth_logout".to_string(),
+                    status: "logged_out".to_string(),
+                    actor_ptid: None,
+                    session_token: None,
+                    name: None,
+                    email: None,
+                    avatar_url: None,
+                    avatar_local_path: None,
+                    login_method: None,
+                })
+            },
+            || order.borrow_mut().push("broadcast"),
+        );
+
+        assert_eq!(
+            *order.borrow(),
+            vec!["revoke", "detach", "cleanup", "broadcast"]
+        );
+        assert!(!result.ok);
+        assert_eq!(
+            result
+                .error
+                .and_then(|error| error.details)
+                .and_then(|details| details["reason"].as_str().map(str::to_string)),
+            Some("station_session_revoke_failed".to_string())
+        );
+    }
+
+    #[test]
+    fn logout_treats_unauthorized_and_revoked_station_sessions_as_idempotent() {
+        for kind in [
+            StationClientErrorKind::HttpStatus(401),
+            StationClientErrorKind::SessionRevoked,
+        ] {
+            assert!(is_idempotent_station_revoke_error(
+                &StationClientError::new(kind, "already revoked", None,)
+            ));
+        }
+        assert!(!is_idempotent_station_revoke_error(
+            &StationClientError::new(StationClientErrorKind::Network, "offline", None,)
+        ));
     }
 }

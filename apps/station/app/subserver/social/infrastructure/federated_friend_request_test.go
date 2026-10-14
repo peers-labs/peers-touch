@@ -751,6 +751,46 @@ func TestReceiverRejectsSendPolicyBeforePendingMaterialization(t *testing.T) {
 			},
 			errorCode: model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_ALREADY_FRIENDS,
 		},
+		{
+			name: "receiver contact policy nobody",
+			seed: func(t *testing.T, station *friendRequestStation) {
+				t.Helper()
+				if err := station.db.Exec(`
+					UPDATE touch_actor_meta
+					SET contact_request_policy = 'nobody'
+					WHERE actor_id = (
+						SELECT id FROM touch_actor WHERE ptid = ?
+					)
+				`, bobPTID).Error; err != nil {
+					t.Fatal(err)
+				}
+			},
+			errorCode: model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_UNAUTHORIZED,
+		},
+		{
+			name: "receiver Federation policy without shared active membership",
+			seed: func(t *testing.T, station *friendRequestStation) {
+				t.Helper()
+				if err := station.db.Exec(`
+					UPDATE touch_actor_meta
+					SET contact_request_policy = 'federations'
+					WHERE actor_id = (
+						SELECT id FROM touch_actor WHERE ptid = ?
+					)
+				`, bobPTID).Error; err != nil {
+					t.Fatal(err)
+				}
+				if err := station.db.Exec(`
+					UPDATE federation_station_membership
+					SET status = 'left'
+					WHERE federation_id = 'federation:test'
+					  AND station_peer_id = ?
+				`, stationA).Error; err != nil {
+					t.Fatal(err)
+				}
+			},
+			errorCode: model.FriendRequestCommandErrorCode_FRIEND_REQUEST_COMMAND_ERROR_CODE_UNAUTHORIZED,
+		},
 	}
 
 	for _, test := range tests {
@@ -823,6 +863,44 @@ func TestReceiverRejectsSendPolicyBeforePendingMaterialization(t *testing.T) {
 			)
 		})
 	}
+}
+
+func TestReceiverFederationPolicyAllowsSharedActiveMembership(t *testing.T) {
+	fixture := newFederatedFriendRequestFixture(t)
+	if err := fixture.b.db.Exec(`
+		UPDATE touch_actor_meta
+		SET contact_request_policy = 'federations'
+		WHERE actor_id = (
+			SELECT id FROM touch_actor WHERE ptid = ?
+		)
+	`, bobPTID).Error; err != nil {
+		t.Fatal(err)
+	}
+	command := fixture.command(
+		t,
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+		"command-federation-policy",
+		"request-federation-policy",
+		stationA,
+		stationB,
+		fixture.clock.Now(),
+	)
+	if _, err := fixture.a.service.SubmitFriendRequestCommand(
+		context.Background(),
+		command,
+	); err != nil {
+		t.Fatal(err)
+	}
+	fixture.dispatchOnce(t, fixture.a)
+	fixture.dispatchOnce(t, fixture.b)
+	assertProjectionState(
+		t,
+		fixture.b,
+		command.GetBody().GetRequestId(),
+		model.FriendRequestState_FRIEND_REQUEST_STATE_PENDING,
+		1,
+		true,
+	)
 }
 
 func TestPendingResultHashConflictDoesNotAdvanceSenderProjection(t *testing.T) {
@@ -2001,7 +2079,11 @@ func newFriendRequestStation(
 ) *friendRequestStation {
 	t.Helper()
 	db := openFriendRequestSQLite(t)
-	if err := db.AutoMigrate(&dbmodel.Actor{}, &dbmodel.Follow{}); err != nil {
+	if err := db.AutoMigrate(
+		&dbmodel.Actor{},
+		&dbmodel.ActorTouchMeta{},
+		&dbmodel.Follow{},
+	); err != nil {
 		t.Fatal(err)
 	}
 	for index, actorPTID := range []string{alicePTID, bobPTID} {
@@ -2025,6 +2107,36 @@ func newFriendRequestStation(
 			Origin:            "local",
 		}
 		if err := db.Create(&actor).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&dbmodel.ActorTouchMeta{
+			ActorID:              actor.ID,
+			ProfileRevision:      1,
+			ContactRequestPolicy: "anyone",
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, statement := range []string{
+		`CREATE TABLE federation (
+			federation_id TEXT PRIMARY KEY,
+			status TEXT NOT NULL
+		)`,
+		`CREATE TABLE federation_station_membership (
+			federation_id TEXT NOT NULL,
+			station_peer_id TEXT NOT NULL,
+			status TEXT NOT NULL,
+			PRIMARY KEY (federation_id, station_peer_id)
+		)`,
+		`INSERT INTO federation (federation_id, status)
+		 VALUES ('federation:test', 'active')`,
+		`INSERT INTO federation_station_membership (
+			federation_id, station_peer_id, status
+		 ) VALUES
+			('federation:test', 'station-a', 'active'),
+			('federation:test', 'station-b', 'active')`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
 			t.Fatal(err)
 		}
 	}

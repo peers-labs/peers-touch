@@ -21,7 +21,6 @@ class LifecycleTreeZeroReferenceTest(unittest.TestCase):
         self.dimension_roots = {
             "tracked-source": ["src"],
             "tauri-registry": ["tauri"],
-            "http-gateway-registry": ["gateway"],
             "compiled-proto-descriptor": ["proto"],
             "generated-manifest": ["generated"],
             "mixed-client-runtime-trace": ["trace"],

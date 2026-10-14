@@ -180,8 +180,7 @@ reset remains forbidden.
 | `PT_RELAY_MODE` | if relay used | `remote` | Relay run mode |
 | `PT_RELAY_URL` | if relay used | `http://host:port` | Relay base URL |
 | `PT_RELAY_DEPLOY_ENV` | if relay remote | `relay-1` | Maps to deploy env |
-| `PT_DESKTOP_APP_GATEWAY_PORT` | yes | `3030` | Desktop Tauri BFF port |
-| `PT_DESKTOP_APP_WEB_PORT` | yes | `3210` | Desktop Tauri web port |
+| `PT_DESKTOP_APP_WEB_PORT` | yes | `3210` | Desktop embedded renderer development port |
 | `PT_MOBILE_WEB_PORT` | if mobile | `5173` | Mobile dev server port |
 
 ### 2.5 Deploy Env Files

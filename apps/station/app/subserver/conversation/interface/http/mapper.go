@@ -299,6 +299,13 @@ func MapSubmitCommand(
 			payload.SendMessage.GetThreadRootMessageId(),
 		)
 		mapped.ObjectIDs = objectIDs(payload.SendMessage.GetAttachments())
+		mapped.MentionedPTIDs, err = mapMentionedPTIDs(
+			payload.SendMessage.GetMentionedPtids(),
+		)
+		mapped.MentionAll = payload.SendMessage.GetMentionAll()
+		if err != nil {
+			return command.SubmitRequest{}, err
+		}
 		mapped.Deliveries, err = mapContentDeliveries(
 			wire,
 			preparation.Kind,
@@ -505,6 +512,8 @@ func MapEvent(record domainevent.Record) (*chat.ConversationEvent, error) {
 				ThreadRootMessageId: intent.ThreadRootMessageId,
 				Attachments:         intent.Attachments,
 				ClientTimestamp:     source.ClientTimestamp,
+				MentionedPtids:      intent.MentionedPtids,
+				MentionAll:          intent.MentionAll,
 			},
 		}
 	case domainevent.KindSystemServiceMessageCommitted:
@@ -1285,6 +1294,18 @@ func objectIDs(descriptors []*chat.EncryptedObjectDescriptor) []valueobject.Obje
 		}
 	}
 	return ids
+}
+
+func mapMentionedPTIDs(values []string) ([]valueobject.PTID, error) {
+	result := make([]valueobject.PTID, 0, len(values))
+	for _, value := range values {
+		ptid, err := valueobject.NewPTID(value)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, ptid)
+	}
+	return result, nil
 }
 
 func endpointUnion(left []valueobject.Endpoint, right []valueobject.Endpoint) []valueobject.Endpoint {

@@ -5,13 +5,10 @@
   "type": "module",
   "scripts": {
     "build:applets": "pnpm --dir ../.. applets:build",
-    "predev": "pnpm run build:applets",
-    "dev": "vite",
     "prebuild": "pnpm run build:applets",
     "build": "vite build",
     "prebuild:check": "tsc --noEmit -p tsconfig.json",
     "icon:build": "tauri icon ./src-tauri/icon-source.png --output ./src-tauri/icons",
-    "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "check:social-wire": "node ../../tooling/devctl/index.mjs check desktop-social-wire --root ../..",
     "check:social-runtime-boundaries": "node ../../tooling/devctl/index.mjs check social-runtime-boundaries --root ../..",
@@ -19,8 +16,7 @@
     "lint": "ESLINT_USE_FLAT_CONFIG=false eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "vitest run src buildSourceIdentity.test.ts",
     "test:chat-visual": "vitest run src/components/chat/chatComposerInput.test.ts",
-    "test:applet": "vitest run src/applet/*.test.ts",
-    "preview": "vite preview"
+    "test:applet": "vitest run src/applet/*.test.ts"
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",

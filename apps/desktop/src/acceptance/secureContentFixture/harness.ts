@@ -7,16 +7,22 @@ import { messagingRecoveryService } from '../../services/messaging-recovery-serv
 import { usePrivateMomentsStore } from '../../store/privateMoments';
 import { useSessionStore } from '../../store/session';
 import { registerAcceptanceHarness } from '../registry';
+import {
+  runPasswordAccessChain,
+  type AcceptanceAccessGateFields,
+} from '../chat/passwordLogin';
 
 interface AccountFixtureInput {
   secondaryAccount: string;
   password: string;
   pin: string;
+  accessGateFields?: AcceptanceAccessGateFields;
 }
 
 interface SessionRestoreInput {
   account: string;
   password: string;
+  accessGateFields?: AcceptanceAccessGateFields;
 }
 
 interface AccountSwitchInput {
@@ -30,6 +36,7 @@ interface AccountSwitchInput {
   secondaryLoginId: string;
   pin: string;
   password: string;
+  accessGateFields?: AcceptanceAccessGateFields;
 }
 
 interface StationFixtureInput {
@@ -41,6 +48,7 @@ interface StationSwitchInput {
   password: string;
   primaryStationUrl: string;
   secondaryStationUrl: string;
+  accessGateFields?: AcceptanceAccessGateFields;
 }
 
 interface RecoveryAdvanceInput {
@@ -110,20 +118,32 @@ async function unlockOrReauth(
   loginId: string,
   pin: string,
   password: string,
+  accessGateFields?: AcceptanceAccessGateFields,
 ): Promise<void> {
   try {
     await identityRuntime.unlockWithPin(accountId, pin);
     await completeLogin();
   } catch {
-    await replaceSessionWithPassword(loginId, password);
+    await replaceSessionWithPassword(loginId, password, accessGateFields);
   }
 }
 
 async function replaceSessionWithPassword(
   account: string,
   password: string,
+  accessGateFields?: AcceptanceAccessGateFields,
 ): Promise<void> {
-  await identityRuntime.loginWithPassword(account, password);
+  await runPasswordAccessChain(
+    {
+      beginPasswordLogin: (loginAccount, loginPassword) =>
+        identityRuntime.beginPasswordLogin(loginAccount, loginPassword),
+      submitPasswordLoginGate: (decision, fields) =>
+        identityRuntime.submitPasswordLoginGate(decision, fields),
+    },
+    account,
+    password,
+    accessGateFields,
+  );
   await completeLogin();
 }
 
@@ -206,6 +226,7 @@ export function installAcceptanceHarness(): void {
       await replaceSessionWithPassword(
         requireText(input.account, 'account'),
         requireText(input.password, 'password'),
+        input.accessGateFields,
       );
       return {
         actorPtid: requireCurrentActor(),
@@ -227,6 +248,7 @@ export function installAcceptanceHarness(): void {
       await replaceSessionWithPassword(
         requireText(input.secondaryAccount, 'secondaryAccount'),
         requireText(input.password, 'password'),
+        input.accessGateFields,
       );
       const secondaryActorPtid = requireCurrentActor();
       const secondaryAccount = await api.accountGetActive();
@@ -269,6 +291,7 @@ export function installAcceptanceHarness(): void {
         requireText(input.secondaryLoginId, 'secondaryLoginId'),
         requireText(input.pin, 'pin'),
         requireText(input.password, 'password'),
+        input.accessGateFields,
       );
       const secondaryActorPtid = requireCurrentActor();
       if (secondaryActorPtid !== input.secondaryActorPtid) {
@@ -283,6 +306,7 @@ export function installAcceptanceHarness(): void {
         requireText(input.primaryLoginId, 'primaryLoginId'),
         input.pin,
         input.password,
+        input.accessGateFields,
       );
       const primaryActorPtid = requireCurrentActor();
       const afterGeneration = useSessionStore.getState().sessionEpoch;
@@ -354,13 +378,18 @@ export function installAcceptanceHarness(): void {
       await replaceSessionWithPassword(
         requireText(input.account, 'account'),
         requireText(input.password, 'password'),
+        input.accessGateFields,
       );
       const secondary = await boundStation();
       await api.stationSetActive(
         primarySelection.stationPeerId,
         primarySelection.routeId,
       );
-      await replaceSessionWithPassword(input.account, input.password);
+      await replaceSessionWithPassword(
+        input.account,
+        input.password,
+        input.accessGateFields,
+      );
       const restored = await boundStation();
       if (
         secondary.url !== input.secondaryStationUrl.replace(/\/+$/, '')

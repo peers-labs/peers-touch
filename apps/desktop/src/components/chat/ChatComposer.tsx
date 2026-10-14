@@ -16,6 +16,7 @@ import { Popover, Progress, theme, Tooltip, Typography } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import {
   AlertCircle,
+  AtSign,
   File as FileIcon,
   FolderOpen,
   Image,
@@ -66,6 +67,16 @@ import {
   markTextInputVisible,
   scheduleAfterPaint,
 } from '../../kernel/frontendRuntimeProfiler';
+import {
+  conversationMentionDraft,
+  detectConversationMentionTrigger,
+  insertConversationMention,
+  reconcileConversationMentions,
+  type ConversationMentionMember,
+  type ConversationMentionSelection,
+  type ConversationMentionTrigger,
+} from './composer/conversationMentions';
+import type { MessagingMentionIntent } from '../../services/im-service-contract';
 
 export type { ChatComposerCapabilities } from '@peers-touch/client-chat-core';
 
@@ -83,6 +94,8 @@ const DEFAULT_EMOJI_GROUPS = [
 export interface ChatComposerDraft {
   text: string;
   attachments: MessagingLocalAttachmentIntent[];
+  mentions: MessagingMentionIntent[];
+  mentionAll: boolean;
   messageType?: number;
 }
 
@@ -103,6 +116,7 @@ interface ChatComposerProps {
   replyPreviewKey?: string | null;
   visualSurface?: Extract<ChatVisualSurface, 'desktop-main' | 'desktop-thread'>;
   editPreview?: string;
+  mentionMembers?: readonly ConversationMentionMember[];
   sending: boolean;
 }
 
@@ -154,6 +168,7 @@ export function ChatComposer({
   replyPreviewKey,
   visualSurface = 'desktop-main',
   editPreview,
+  mentionMembers = [],
   sending,
 }: ChatComposerProps) {
   const { t } = useTranslation('chat');
@@ -166,6 +181,9 @@ export function ChatComposer({
   const [inputExpanded, setInputExpanded] = useState(false);
   const [voiceSending, setVoiceSending] = useState(false);
   const [recordedVoice, setRecordedVoice] = useState<RecordedVoiceDraft | null>(null);
+  const [mentionSelections, setMentionSelections] = useState<ConversationMentionSelection[]>([]);
+  const [mentionTrigger, setMentionTrigger] = useState<ConversationMentionTrigger | null>(null);
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   const [recentEmojis, setRecentEmojis] = useState<string[]>(() => loadRecentEmojis());
   const screenshotShortcut = useActiveChatSettingsSlice((state) => state.chatScreenshotShortcut);
   const latestSendOutcome = useSocialChatStore(
@@ -236,6 +254,8 @@ export function ChatComposer({
       await onSend({
         text: '',
         attachments: [attachment],
+        mentions: [],
+        mentionAll: false,
         messageType: chatMessageTypeForAttachments([attachment]),
       });
       setRecordedVoice((current) => current?.previewUrl === draft.previewUrl ? null : current);
@@ -306,6 +326,9 @@ export function ChatComposer({
     setEmojiOpen(false);
     setInputExpanded(false);
     setRecordedVoice(null);
+    setMentionSelections([]);
+    setMentionTrigger(null);
+    setMentionActiveIndex(0);
   }, [activeConversationId]);
 
   useEffect(() => () => {
@@ -361,6 +384,89 @@ export function ChatComposer({
       textareaRef.current?.setSelectionRange(start + emoji.length, start + emoji.length);
     });
     setEmojiOpen(false);
+  };
+
+  const mentionOptions = useMemo(() => {
+    if (!mentionTrigger || mentionMembers.length === 0 || editing) return [];
+    const query = mentionTrigger.query.toLocaleLowerCase();
+    const selectedActors = new Set(
+      mentionSelections.flatMap((selection) => (
+        selection.actorPtid ? [selection.actorPtid] : []
+      )),
+    );
+    const options: Array<
+      { kind: 'all'; key: 'all'; label: string }
+      | { kind: 'member'; key: string; label: string; member: ConversationMentionMember }
+    > = [];
+    if (
+      !mentionSelections.some((selection) => selection.actorPtid === null)
+      && 'all'.startsWith(query)
+    ) {
+      options.push({ kind: 'all', key: 'all', label: t('chat.social.composer.mentionAll') });
+    }
+    for (const member of mentionMembers) {
+      if (
+        selectedActors.has(member.actorPtid)
+        || !member.displayName.toLocaleLowerCase().includes(query)
+      ) {
+        continue;
+      }
+      options.push({
+        kind: 'member',
+        key: member.actorPtid,
+        label: member.displayName,
+        member,
+      });
+    }
+    return options;
+  }, [editing, mentionMembers, mentionSelections, mentionTrigger, t]);
+
+  const selectMentionOption = (option: (typeof mentionOptions)[number]) => {
+    if (!mentionTrigger) return;
+    const inserted = insertConversationMention(
+      value,
+      mentionTrigger,
+      option.kind === 'member' ? option.member : null,
+    );
+    const nextSelections = option.kind === 'all'
+      ? [inserted.selection]
+      : [
+          ...mentionSelections.filter((selection) => (
+            selection.actorPtid !== null
+            && selection.actorPtid !== inserted.selection.actorPtid
+          )),
+          inserted.selection,
+        ];
+    onChange(inserted.text);
+    setMentionSelections(nextSelections);
+    setMentionTrigger(null);
+    setMentionActiveIndex(0);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(inserted.cursor, inserted.cursor);
+    });
+  };
+
+  const handleComposerChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    const nextValue = event.target.value;
+    const cursor = event.target.selectionStart ?? nextValue.length;
+    onChange(nextValue);
+    setMentionSelections((current) => reconcileConversationMentions(nextValue, current));
+    const trigger = mentionMembers.length > 0 && !editing
+      ? detectConversationMentionTrigger(nextValue, cursor)
+      : null;
+    setMentionTrigger(trigger);
+    setMentionActiveIndex(0);
+  };
+
+  const handleComposerSelection = (event: FormEvent<HTMLTextAreaElement>) => {
+    const start = event.currentTarget.selectionStart ?? value.length;
+    const end = event.currentTarget.selectionEnd ?? start;
+    const trigger = start === end && mentionMembers.length > 0 && !editing
+      ? detectConversationMentionTrigger(value, start)
+      : null;
+    setMentionTrigger(trigger);
+    setMentionActiveIndex(0);
   };
 
   const emojiPanel = (
@@ -431,11 +537,14 @@ export function ChatComposer({
   const submit = async () => {
     if (!canSend) return;
     const messageType = chatMessageTypeForAttachments(readyAttachments);
+    const mentionDraft = conversationMentionDraft(value.trim(), mentionSelections);
     const previousOutcomeRevision = useSocialChatStore.getState()
       .sendOutcomes[activeConversationId]?.revision ?? 0;
     await onSend({
       text: value.trim(),
       attachments: readyAttachments,
+      mentions: mentionDraft.mentions,
+      mentionAll: mentionDraft.mentionAll,
       messageType,
     });
     if (
@@ -452,6 +561,29 @@ export function ChatComposer({
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     const native = event.nativeEvent;
+    const composing = composingRef.current
+      || native.isComposing
+      || native.keyCode === 229;
+    if (!composing && mentionTrigger && mentionOptions.length > 0) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        setMentionActiveIndex((current) => {
+          const delta = event.key === 'ArrowDown' ? 1 : -1;
+          return (current + delta + mentionOptions.length) % mentionOptions.length;
+        });
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        selectMentionOption(mentionOptions[mentionActiveIndex] ?? mentionOptions[0]!);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setMentionTrigger(null);
+        return;
+      }
+    }
     if (!shouldSendComposerEnter({
       key: event.key,
       shiftKey: event.shiftKey,
@@ -546,6 +678,59 @@ export function ChatComposer({
       <style>
         {'.chat-composer-spin{animation:chat-composer-spin 1s linear infinite}@keyframes chat-composer-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}'}
       </style>
+      {mentionTrigger && (
+        <Flexbox
+          data-chat-mention-picker
+          style={{
+            position: 'absolute',
+            left: 16,
+            bottom: '100%',
+            zIndex: token.zIndexPopupBase,
+            width: 280,
+            maxHeight: 240,
+            overflowY: 'auto',
+            padding: 6,
+            border: `1px solid ${token.colorBorderSecondary}`,
+            borderRadius: 8,
+            background: token.colorBgElevated,
+            boxShadow: token.boxShadowSecondary,
+          }}
+        >
+          {mentionOptions.length === 0 ? (
+            <Text type="secondary" style={{ padding: '8px 10px', fontSize: 12 }}>
+              {t('chat.social.composer.mentionNoResults')}
+            </Text>
+          ) : mentionOptions.map((option, index) => (
+            <button
+              key={option.key}
+              type="button"
+              data-chat-mention-option={option.key}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => selectMentionOption(option)}
+              onMouseEnter={() => setMentionActiveIndex(index)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                width: '100%',
+                minHeight: 36,
+                padding: '6px 8px',
+                border: 0,
+                borderRadius: 6,
+                background: index === mentionActiveIndex ? token.colorFillSecondary : 'transparent',
+                color: token.colorText,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <AtSign size={15} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {option.label}
+              </span>
+            </button>
+          ))}
+        </Flexbox>
+      )}
       {dragging && (
         <Flexbox
           align="center"
@@ -764,7 +949,8 @@ export function ChatComposer({
           disabled={disabled || sending || recording || voiceSending || Boolean(recordedVoice)}
           rows={3}
           onInput={handleTextInputObserved}
-          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => onChange(event.target.value)}
+          onChange={handleComposerChange}
+          onSelect={handleComposerSelection}
           onCompositionStart={() => {
             composingRef.current = true;
           }}

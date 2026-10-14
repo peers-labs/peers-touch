@@ -161,7 +161,6 @@ def resolve_machine_profile() -> tuple[str, Path, int, dict[str, str]]:
         {
             "PT_DEV_PROFILE": profile_name,
             "PT_DEV_SLOT": str(slot),
-            "PT_DESKTOP_APP_GATEWAY_PORT": str(ports["desktopAppGateway"]),
             "PT_DESKTOP_APP_WEB_PORT": str(ports["desktopAppWeb"]),
         }
     )

@@ -135,6 +135,8 @@ type FriendRequestCommandRecord struct {
 type ReceiverFriendRequestPolicy struct {
 	Blocked              bool
 	ExistingRelationship bool
+	ContactPolicy        model.ActorContactPolicy
+	SharedFederation     bool
 }
 
 // FriendRequestProjection is one Station-local projection of canonical Social truth.
@@ -203,6 +205,35 @@ func ValidateReceiverFriendRequestPolicy(
 			"relationship",
 			"already exists at the receiver Home Station",
 		)
+	}
+	if action == model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND {
+		switch policy.ContactPolicy {
+		case model.ActorContactPolicy_ACTOR_CONTACT_POLICY_ANYONE:
+		case model.ActorContactPolicy_ACTOR_CONTACT_POLICY_FEDERATIONS:
+			if !policy.SharedFederation {
+				return NewFederationError(
+					FederationErrorUnauthorized,
+					operation,
+					"contact_policy",
+					"requires both Home Stations to be active Federation members",
+				)
+			}
+		case model.ActorContactPolicy_ACTOR_CONTACT_POLICY_NOBODY,
+			model.ActorContactPolicy_ACTOR_CONTACT_POLICY_UNSPECIFIED:
+			return NewFederationError(
+				FederationErrorUnauthorized,
+				operation,
+				"contact_policy",
+				"does not permit inbound Friend Requests",
+			)
+		default:
+			return NewFederationError(
+				FederationErrorUnauthorized,
+				operation,
+				"contact_policy",
+				"is unknown and fails closed",
+			)
+		}
 	}
 	switch action {
 	case model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,

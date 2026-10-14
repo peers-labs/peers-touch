@@ -1,6 +1,7 @@
 use super::{EngineEndpoint, MessagingStore};
 use crate::model::chat::{
-    AttachmentPlaintextMetadata, ChatCommand, CryptoEndpoint, PrepareConversationCommandResponse,
+    AttachmentPlaintextMetadata, ChatCommand, CryptoEndpoint, MessageMention,
+    PrepareConversationCommandResponse,
 };
 use messaging_core::mls::group::MlsGroupManager;
 use messaging_core::mls::outbound::{
@@ -18,6 +19,8 @@ pub struct SendTextIntent<'a> {
     pub reply_to_message_id: &'a str,
     pub thread_root_message_id: &'a str,
     pub attachments: &'a [AttachmentPlaintextMetadata],
+    pub mentions: &'a [MessageMention],
+    pub mention_all: bool,
     pub client_timestamp_unix_ms: i64,
 }
 
@@ -67,6 +70,9 @@ impl SendPreparer {
         intent: &SendTextIntent<'_>,
         bootstraps: &[DirectSessionBootstrap],
     ) -> Result<ChatCommand, String> {
+        if !intent.mentions.is_empty() || intent.mention_all {
+            return Err("messaging participant mentions require a group conversation".to_string());
+        }
         DirectOutboundPreparer::new(self.store.clone(), model_endpoint(&self.endpoint))?
             .prepare_send(
                 plan,
@@ -126,6 +132,8 @@ impl SendPreparer {
                 reply_to_message_id: intent.reply_to_message_id,
                 thread_root_message_id: intent.thread_root_message_id,
                 attachments: intent.attachments,
+                mentions: intent.mentions,
+                mention_all: intent.mention_all,
                 client_timestamp_unix_ms: intent.client_timestamp_unix_ms,
             },
         )
@@ -358,6 +366,8 @@ mod tests {
                     reply_to_message_id: "",
                     thread_root_message_id: "",
                     attachments: std::slice::from_ref(&attachment),
+                    mentions: &[],
+                    mention_all: false,
                     client_timestamp_unix_ms: 99,
                 },
             )
@@ -385,6 +395,8 @@ mod tests {
                     reply_to_message_id: "",
                     thread_root_message_id: "",
                     attachments: std::slice::from_ref(&attachment),
+                    mentions: &[],
+                    mention_all: false,
                     client_timestamp_unix_ms: 100,
                 },
             )
@@ -454,6 +466,8 @@ mod tests {
                     reply_to_message_id: &reloaded.reply_to_message_id,
                     thread_root_message_id: &reloaded.thread_root_message_id,
                     attachments: &reloaded.attachments,
+                    mentions: &reloaded.mentions,
+                    mention_all: reloaded.mention_all,
                     client_timestamp_unix_ms: 110,
                 },
             )

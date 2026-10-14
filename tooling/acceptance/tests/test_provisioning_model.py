@@ -484,7 +484,6 @@ class EnvironmentContractTests(unittest.TestCase):
                     run_id=run_id,
                     profile_name="four",
                     profile_env={
-                        "PT_DESKTOP_APP_GATEWAY_PORT": "3140",
                         "PT_DESKTOP_APP_WEB_PORT": "3410",
                     },
                     slot=3,
@@ -504,7 +503,7 @@ class EnvironmentContractTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     [client.profile for client in clients],
-                    ["four-app", "four-app"],
+                    ["four-native", "four-native"],
                 )
                 self.assertEqual(
                     [Path(client.worktree).name for client in clients],
@@ -567,7 +566,6 @@ class EnvironmentContractTests(unittest.TestCase):
                         run_id=f"{run_id}-repeat",
                         profile_name="four",
                         profile_env={
-                            "PT_DESKTOP_APP_GATEWAY_PORT": "3140",
                             "PT_DESKTOP_APP_WEB_PORT": "3410",
                         },
                         slot=3,
@@ -612,7 +610,6 @@ class EnvironmentContractTests(unittest.TestCase):
                         run_id=f"{run_id}-reset",
                         profile_name="four",
                         profile_env={
-                            "PT_DESKTOP_APP_GATEWAY_PORT": "3140",
                             "PT_DESKTOP_APP_WEB_PORT": "3410",
                         },
                         slot=3,
@@ -1943,7 +1940,6 @@ class MachineProfileEnvironmentTests(unittest.TestCase):
                     "sourceState": "tracked-clean",
                 },
                 "ports": {
-                    "desktopAppGateway": 3130,
                     "desktopAppWeb": 3310,
                     "mobileWeb": 5273,
                 },

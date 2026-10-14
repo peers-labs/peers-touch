@@ -376,7 +376,7 @@
         "tooling/scripts/lib/machine-dev-paths.mjs",
         "tooling/scripts/lib/machine-dev-paths.test.mjs",
         "tooling/scripts/local-dev/config.sh",
-        "tooling/scripts/local-dev/desktop-dev.sh",
+        "tooling/devctl/desktop.mjs",
         "tooling/scripts/local-dev/env.sh",
         "tooling/scripts/local-dev/git-workspace.mjs",
         "tooling/scripts/local-dev/machine-dev-lease.py",

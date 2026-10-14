@@ -681,21 +681,17 @@ class MessagingPlatformContractTest(unittest.TestCase):
         for route in mls_routes:
             self.assertIn(f'"{route}"', key_exchange_commands)
 
-        gateway = (
-            desktop_rust / "interface/http_gateway/mod.rs"
-        ).read_text(encoding="utf-8")
         for command in (
             "execute_keypackage_upload",
             "execute_keypackage_fetch",
             "execute_keypackage_count",
         ):
-            self.assertIn(command, gateway)
+            self.assertIn(command, key_exchange_commands)
 
         conversation_commands = (
             desktop_rust / "interface/tauri_commands/conversation.rs"
         ).read_text(encoding="utf-8")
         self.assertIn('"/key-exchange/dkx/send"', conversation_commands)
-        self.assertIn('"/key-exchange/dkx/send"', gateway)
 
     def test_profile_engine_owns_lifecycle_and_fresh_key_activation(self) -> None:
         messaging = ROOT / "apps/desktop/src-tauri/src/messaging"

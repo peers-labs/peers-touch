@@ -344,7 +344,6 @@ class LifecycleGroupLiveGate(AcceptanceGate):
                 name=actor,
                 runtime=self.runtime_binding.cell_id,
                 port=client.port,
-                gateway_port=client.gateway_port,
                 profile=client.profile,
                 storage_root=client.storage_root,
                 pid=client.process_id,

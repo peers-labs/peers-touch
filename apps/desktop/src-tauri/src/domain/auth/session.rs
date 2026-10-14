@@ -83,7 +83,19 @@ pub fn validate_token(token: &str) -> Result<AuthSession, AuthDomainError> {
     })
 }
 
+pub fn session_id_from_token(token: &str) -> Option<String> {
+    token
+        .split('.')
+        .nth(1)
+        .and_then(|payload| decode_jwt_string_claim(payload, "session_id"))
+}
+
 fn decode_jwt_subject_ptid(payload_b64: &str) -> Option<String> {
+    decode_jwt_string_claim(payload_b64, "subject_ptid")
+        .filter(|subject| subject.starts_with("ptid:"))
+}
+
+fn decode_jwt_string_claim(payload_b64: &str, claim: &str) -> Option<String> {
     let mut b64 = payload_b64.replace('-', "+").replace('_', "/");
     let pad = (4 - b64.len() % 4) % 4;
     b64.extend(std::iter::repeat('=').take(pad));
@@ -91,9 +103,9 @@ fn decode_jwt_subject_ptid(payload_b64: &str) -> Option<String> {
     let decoded = base64_decode(&b64)?;
     let text = String::from_utf8(decoded).ok()?;
     let v: serde_json::Value = serde_json::from_str(&text).ok()?;
-    v.get("subject_ptid")
+    v.get(claim)
         .and_then(|s| s.as_str())
-        .filter(|subject| subject.starts_with("ptid:"))
+        .filter(|value| !value.trim().is_empty() && value.trim() == *value)
         .map(|s| s.to_string())
 }
 
@@ -147,7 +159,7 @@ fn now_epoch_seconds() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{from_station_response, validate_token, AuthDomainError};
+    use super::{from_station_response, session_id_from_token, validate_token, AuthDomainError};
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 
     fn jwt_with_claims(claims: serde_json::Value) -> String {
@@ -160,11 +172,16 @@ mod tests {
     fn station_jwt_accepts_canonical_subject_ptid() {
         let token = jwt_with_claims(serde_json::json!({
             "subject_ptid": "ptid:test:12345",
+            "session_id": "session-12345",
         }));
         let session = from_station_response("ptid:test:12345".to_string(), token);
         let validated = validate_token(&session.token).expect("JWT should be accepted");
         assert_eq!(validated.actor_ptid, "ptid:test:12345");
         assert_eq!(validated.token, session.token);
+        assert_eq!(
+            session_id_from_token(&session.token).as_deref(),
+            Some("session-12345")
+        );
     }
 
     #[test]
@@ -177,5 +194,19 @@ mod tests {
             validate_token(&token),
             Err(AuthDomainError::Unauthorized(_))
         ));
+    }
+
+    #[test]
+    fn station_jwt_session_id_requires_a_non_empty_canonical_claim() {
+        let missing = jwt_with_claims(serde_json::json!({
+            "subject_ptid": "ptid:test:12345",
+        }));
+        let padded = jwt_with_claims(serde_json::json!({
+            "subject_ptid": "ptid:test:12345",
+            "session_id": " session-12345 ",
+        }));
+
+        assert_eq!(session_id_from_token(&missing), None);
+        assert_eq!(session_id_from_token(&padded), None);
     }
 }

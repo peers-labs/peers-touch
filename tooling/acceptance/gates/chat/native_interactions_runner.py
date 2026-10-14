@@ -408,7 +408,6 @@ class NativeInteractionsGate(AcceptanceGate):
                     else "native-tauri-embedded-webdriver"
                 ),
                 port=client.port,
-                gateway_port=client.gateway_port,
                 profile=client.profile,
                 storage_root=client.storage_root,
                 pid=client.process_id,
@@ -2549,9 +2548,8 @@ class NativeInteractionsGate(AcceptanceGate):
         else:
             ports = sorted(
                 {
-                    port
+                    client.port
                     for client in self.clients.values()
-                    for port in (client.port, client.gateway_port)
                 }
             )
             released = bool(
@@ -2625,7 +2623,6 @@ class NativeInteractionsGate(AcceptanceGate):
                 len(set(self.ptids.values())) == len(ACTORS)
                 and len(set(self.device_ids.values())) == len(ACTORS)
                 and len({client.port for client in self.clients.values()}) == len(ACTORS)
-                and len({client.gateway_port for client in self.clients.values()}) == len(ACTORS)
                 and len({client.storage_root for client in self.clients.values()}) == len(ACTORS),
             )
             federation_id = self.step(
@@ -2793,7 +2790,6 @@ class NativeInteractionsGate(AcceptanceGate):
                     "ptid": self.ptids[actor],
                     "deviceId": self.device_ids[actor],
                     "webdriverPort": self.clients[actor].port,
-                    "gatewayPort": self.clients[actor].gateway_port,
                     "profile": self.clients[actor].profile,
                     "storageRoot": self.clients[actor].storage_root,
                 }

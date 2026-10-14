@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   accessStart: vi.fn(),
   accessSubmitLogin: vi.fn(),
+  accessSubmitGeneric: vi.fn(),
   ensureStationSession: vi.fn(),
   authLogout: vi.fn(),
   authRestoreSession: vi.fn(),
@@ -15,6 +16,7 @@ vi.mock('../services/desktop_api', () => ({
   api: {
     accessStart: mocks.accessStart,
     accessSubmitLogin: mocks.accessSubmitLogin,
+    accessSubmitGeneric: mocks.accessSubmitGeneric,
     ensureStationSession: mocks.ensureStationSession,
     authLogout: mocks.authLogout,
     authRestoreSession: mocks.authRestoreSession,
@@ -69,6 +71,27 @@ const loginGate = {
   schemaDigest: 'a'.repeat(64),
 };
 
+const termsGate = {
+  ...loginGate,
+  gateId: 'terms.acceptance',
+  gateType: 'ACCESS_GATE_TYPE_TERMS_ACCEPTANCE',
+  submitAction: 'submit_schema_values',
+  inputSchemaJson: JSON.stringify({
+    fields: [{ name: 'accepted', type: 'checkbox', required: true }],
+  }),
+  actionId: 'terms.accept',
+  schemaDigest: 'b'.repeat(64),
+};
+
+const grantedDecision = {
+  state: 'ACCESS_DECISION_STATE_GRANTED',
+  attemptId: 'attempt-1',
+  currentGateId: '',
+  gates: [],
+  accessGrantId: 'grant-1',
+  message: '',
+};
+
 describe('session authentication convergence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -109,7 +132,18 @@ describe('session authentication convergence', () => {
         message: '',
       },
     });
-    mocks.accessSubmitLogin.mockResolvedValue(authenticatedResponse);
+    mocks.accessSubmitLogin.mockResolvedValue({
+      command: 'access_submit_login',
+      status: 'authenticated',
+      decision: grantedDecision,
+      session: authenticatedResponse,
+    });
+    mocks.accessSubmitGeneric.mockResolvedValue({
+      command: 'access_submit_generic',
+      status: 'evaluated',
+      decision: grantedDecision,
+      session: null,
+    });
     mocks.ensureStationSession.mockResolvedValue({
       ...authenticatedResponse,
       login_method: 'github',
@@ -152,6 +186,89 @@ describe('session authentication convergence', () => {
         password: TEST_PASSWORD,
       }),
     );
+  });
+
+  it('keeps the session unlanded while a post-credential gate is still required', async () => {
+    const termsDecision = {
+      state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+      attemptId: 'attempt-1',
+      currentGateId: termsGate.gateId,
+      gates: [termsGate],
+      accessGrantId: '',
+      message: '',
+    };
+    mocks.accessSubmitLogin.mockResolvedValueOnce({
+      command: 'access_submit_login',
+      status: 'evaluated',
+      decision: termsDecision,
+      session: null,
+    });
+    useSessionStore.getState().reset();
+
+    const result = await useSessionStore.getState().accessSubmitLogin(
+      'attempt-1',
+      loginGate,
+      'alice@p.t',
+      'password',
+    );
+
+    expect(result).toEqual(termsDecision);
+    expect(mocks.stationBindingComplete).not.toHaveBeenCalled();
+    expect(mocks.runIdentityPipeline).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().authenticated).toBe(false);
+  });
+
+  it('submits schema-bound values and lands a granted password session', async () => {
+    mocks.accessSubmitGeneric.mockResolvedValueOnce({
+      command: 'access_submit_generic',
+      status: 'authenticated',
+      decision: grantedDecision,
+      session: authenticatedResponse,
+    });
+    mocks.stationBindingComplete.mockResolvedValueOnce({
+      phase: 'bound',
+      selected_url: 'http://station.example',
+      bound_url: 'http://station.example',
+    });
+    mocks.runIdentityPipeline.mockResolvedValueOnce({ ok: true, failures: [] });
+    useSessionStore.getState().reset();
+
+    await useSessionStore.getState().accessSubmitGeneric(
+      'attempt-1',
+      termsGate,
+      { accepted: true },
+    );
+
+    expect(mocks.accessSubmitGeneric).toHaveBeenCalledWith(expect.objectContaining({
+      attempt_id: 'attempt-1',
+      gate_id: termsGate.gateId,
+      gate_type: 8,
+      fields: [{ field_name: 'accepted', value: true }],
+    }));
+    expect(useSessionStore.getState().authenticated).toBe(true);
+    expect(useSessionStore.getState().currentUser?.actorPtid).toBe('ptid:person:new');
+  });
+
+  it('rejects a granted generic continuation without an authenticated session', async () => {
+    mocks.accessSubmitGeneric.mockResolvedValueOnce({
+      command: 'access_submit_generic',
+      status: 'evaluated',
+      decision: grantedDecision,
+      session: null,
+    });
+    useSessionStore.getState().reset();
+
+    await expect(
+      useSessionStore.getState().accessSubmitGeneric(
+        'attempt-1',
+        termsGate,
+        { accepted: true },
+      ),
+    ).rejects.toThrow('auth.gate.sessionMissing');
+
+    expect(mocks.stationBindingComplete).not.toHaveBeenCalled();
+    expect(mocks.runIdentityPipeline).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().authenticated).toBe(false);
   });
 
   it('restores a persisted session and completes station binding', async () => {
@@ -205,22 +322,17 @@ describe('session authentication convergence', () => {
     expect(useSessionStore.getState().authenticated).toBe(false);
   });
 
-  it('runs the identity pipeline before propagating native cleanup failure', async () => {
-    const order: string[] = [];
+  it('clears the renderer identity even when native logout reports cleanup failure', async () => {
     const cleanupError = new Error('logout cleanup failed');
-    mocks.authLogout.mockImplementation(async () => {
-      order.push('native-cleanup');
-      throw cleanupError;
-    });
-    mocks.runIdentityPipeline.mockImplementation(async () => {
-      order.push('identity-pipeline');
-      useSessionStore.getState().reset();
-      return { ok: true, failures: [] };
-    });
+    mocks.authLogout.mockRejectedValueOnce(cleanupError);
 
     await expect(useSessionStore.getState().logout()).rejects.toBe(cleanupError);
 
-    expect(order).toEqual(['native-cleanup', 'identity-pipeline']);
+    expect(mocks.runIdentityPipeline).toHaveBeenCalledWith({
+      reason: 'logout',
+      actorPtid: null,
+      loginMethod: null,
+    });
     expect(useSessionStore.getState().authenticated).toBe(false);
     expect(useSessionStore.getState().currentUser).toBeNull();
   });

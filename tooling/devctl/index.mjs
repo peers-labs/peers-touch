@@ -258,16 +258,6 @@ export async function run(argv = process.argv.slice(2), environment = process.en
   }
 
   if (command === 'desktop') {
-    const requestedInstallMode = subcommand === 'install'
-      ? takeOption(args, '--mode')
-      : undefined;
-    if (requestedInstallMode !== undefined) {
-      throw new DevctlError(
-        ERROR_CODES.UNSUPPORTED_MODE,
-        'Desktop installation does not accept --mode',
-        { mode: requestedInstallMode },
-      );
-    }
     if (args.length !== 2) {
       throw new DevctlError(
         ERROR_CODES.UNSUPPORTED_MODE,

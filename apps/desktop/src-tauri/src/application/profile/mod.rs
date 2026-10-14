@@ -16,8 +16,8 @@ use crate::domain::profile::{ProfileError, UploadKind};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::{avatar_cache, profile_store};
 use crate::model::actor::{
-    ActorProfile, ActorVisibility, ProfileUpdateOutcome, UpdateProfileRequest,
-    UpdateProfileResponse, UserLink,
+    ActorContactPolicy, ActorProfile, ActorVisibility, FederationVisibilityPolicy,
+    ProfileUpdateOutcome, UpdateProfileRequest, UpdateProfileResponse, UserLink,
 };
 use reqwest::Method;
 use serde_json::{json, Value};
@@ -204,6 +204,8 @@ fn upload_and_set_profile_image(
         tags: None,
         links: None,
         discoverability: None,
+        contact_policy: None,
+        federation_visibility: None,
         observed_revision: current_profile.profile_revision,
     };
     match field {
@@ -337,6 +339,22 @@ fn actor_profile_to_value(
         .iter()
         .map(|l| json!({ "label": l.label, "url": l.url }))
         .collect();
+    let federation_visibility = p
+        .federation_visibility
+        .as_ref()
+        .map(|policy| {
+            policy
+                .visibility_by_federation
+                .iter()
+                .map(|(federation_id, visibility)| {
+                    (
+                        federation_id.clone(),
+                        Value::String(discoverability_label(*visibility).to_string()),
+                    )
+                })
+                .collect::<serde_json::Map<String, Value>>()
+        })
+        .unwrap_or_default();
     let mut data = json!({
         "id": p.id,
         "username": p.username,
@@ -357,7 +375,8 @@ fn actor_profile_to_value(
         "statuses_count": p.statuses_count,
         "default_visibility": p.default_visibility,
         "manually_approves_followers": p.manually_approves_followers,
-        "message_permission": p.message_permission,
+        "contact_policy": contact_policy_label(p.contact_policy),
+        "federation_visibility": federation_visibility,
         "auto_expire_days": p.auto_expire_days,
         "profile_revision": p.profile_revision,
         "federated_handle": p.federated_handle,
@@ -431,6 +450,19 @@ fn profile_input_to_proto(input: &ProfileUpdateInput) -> UpdateProfileRequest {
     }
     if let Some(value) = input.discoverability.as_deref() {
         r.discoverability = Some(discoverability_value(value));
+    }
+    if let Some(value) = input.contact_policy.as_deref() {
+        r.contact_policy = Some(contact_policy_value(value));
+    }
+    if let Some(values) = input.federation_visibility.as_ref() {
+        r.federation_visibility = Some(FederationVisibilityPolicy {
+            visibility_by_federation: values
+                .iter()
+                .map(|(federation_id, visibility)| {
+                    (federation_id.clone(), discoverability_value(visibility))
+                })
+                .collect(),
+        });
     }
     r.observed_revision = input.observed_revision;
     r
@@ -551,6 +583,22 @@ fn profile_matches_input(profile: &ActorProfile, input: &ProfileUpdateInput) -> 
             .discoverability
             .as_deref()
             .is_none_or(|value| discoverability_value(value) == profile.discoverability)
+        && input
+            .contact_policy
+            .as_deref()
+            .is_none_or(|value| contact_policy_value(value) == profile.contact_policy)
+        && input.federation_visibility.as_ref().is_none_or(|values| {
+            profile
+                .federation_visibility
+                .as_ref()
+                .is_some_and(|policy| {
+                    policy.visibility_by_federation.len() == values.len()
+                        && values.iter().all(|(federation_id, visibility)| {
+                            policy.visibility_by_federation.get(federation_id)
+                                == Some(&discoverability_value(visibility))
+                        })
+                })
+        })
 }
 
 fn discoverability_value(value: &str) -> i32 {
@@ -568,6 +616,23 @@ fn discoverability_label(value: i32) -> &'static str {
         ActorVisibility::ByHandle => "by_handle",
         ActorVisibility::Indexed => "indexed",
         ActorVisibility::Unspecified => "hidden",
+    }
+}
+
+fn contact_policy_value(value: &str) -> i32 {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "anyone" => ActorContactPolicy::Anyone as i32,
+        "federations" => ActorContactPolicy::Federations as i32,
+        "nobody" => ActorContactPolicy::Nobody as i32,
+        _ => ActorContactPolicy::Unspecified as i32,
+    }
+}
+
+fn contact_policy_label(value: i32) -> &'static str {
+    match ActorContactPolicy::try_from(value).unwrap_or(ActorContactPolicy::Unspecified) {
+        ActorContactPolicy::Anyone => "anyone",
+        ActorContactPolicy::Federations => "federations",
+        ActorContactPolicy::Nobody | ActorContactPolicy::Unspecified => "nobody",
     }
 }
 

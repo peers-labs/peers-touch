@@ -18,6 +18,8 @@ const (
 	ActorEndpointManifestScope = "actor-endpoint-manifest-read"
 	// PresenceQueryScope authenticates Home Station presence snapshot reads.
 	PresenceQueryScope = "presence-query-read"
+	// FederationCatalogSearchScope authenticates Federation-scoped directory reads.
+	FederationCatalogSearchScope = "federation-catalog-search"
 	// ConversationCommandPrepareScope authenticates authority command preparation.
 	ConversationCommandPrepareScope = "conversation-command-prepare"
 	// ConversationLeaveIntentScope authenticates MLS leave-intent operations.
@@ -73,6 +75,7 @@ const (
 	ClaimRecipientPTID           = "recipient_ptid"
 	ClaimSessionULID             = "session_ulid"
 	ClaimObjectID                = "object_id"
+	ClaimCatalogRequestSHA256    = "catalog_request_sha256"
 )
 
 var peerScopes = []scope.Scope{
@@ -126,6 +129,20 @@ var peerScopes = []scope.Scope{
 			AllowedClaimKeys: []string{
 				ClaimRequesterPTID,
 				ClaimPresenceRequestSHA256,
+				ClaimSourceStationPeerID,
+				ClaimTargetStationPeerID,
+			},
+		},
+	},
+	{
+		Name:        FederationCatalogSearchScope,
+		Description: "search a Station-local actor directory within one Federation",
+		Policy: scope.Policy{
+			TTLMax:           time.Minute,
+			AudienceRequired: true,
+			AllowedClaimKeys: []string{
+				ClaimFederationID,
+				ClaimCatalogRequestSHA256,
 				ClaimSourceStationPeerID,
 				ClaimTargetStationPeerID,
 			},

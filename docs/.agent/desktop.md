@@ -49,7 +49,7 @@ Do **not** use this file as the place to redefine Desktop architecture, module b
 
 ## 3. Hard Constraints
 
-- UI runtime is `desktop-web -> desktop-rust -> station`; do not bypass `desktop-rust` when the architecture says it is the required bridge.
+- UI runtime is `embedded WebView renderer -> desktop-rust Tauri commands -> station`; do not bypass `desktop-rust` when it owns the required local capability boundary.
 - Use generated proto/domain contracts; do not introduce manual parallel models.
 - Desktop UI uses LobeUI first; use antd only when necessary and normalized into `docs/client/common/ui-identity/`.
 - For UI/UX design, visual refactor, screenshot review, layout/boundary/button/style issues, or edits under Desktop UI paths, read `docs/client/common/ui-identity/README.md`, the closest module UI ID, and relevant pattern docs before proposing or editing UI.

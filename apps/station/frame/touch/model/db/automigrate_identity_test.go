@@ -97,6 +97,106 @@ func TestMigrateSocialIdentityColumnsRollsBackAsASet(t *testing.T) {
 	assertIdentityValue(t, rds, "social_circle_members", "member_did", "ptid:alice")
 }
 
+func TestMigrateTouchProfilePolicyColumnsDoesNotReinterpretLegacyMessagePolicy(t *testing.T) {
+	rds := openIdentityMigrationDB(t, "touch_profile_policy")
+	mustExecuteMigrationSQL(t, rds,
+		`CREATE TABLE touch_actor_meta (
+			actor_id INTEGER PRIMARY KEY,
+			message_permission TEXT
+		)`,
+		`INSERT INTO touch_actor_meta (actor_id, message_permission) VALUES
+			(1, 'everyone'),
+			(2, 'friends'),
+			(3, 'nobody'),
+			(4, 'unexpected'),
+				(5, ''),
+				(6, NULL)`,
+	)
+
+	if err := migrateTouchProfilePolicyColumns(rds); err != nil {
+		t.Fatalf("migrate profile policy columns: %v", err)
+	}
+	if rds.Migrator().HasColumn("touch_actor_meta", "message_permission") {
+		t.Fatal("legacy message_permission column remains after migration")
+	}
+	if !rds.Migrator().HasColumn("touch_actor_meta", "contact_request_policy") {
+		t.Fatal("contact_request_policy column is missing after migration")
+	}
+
+	var rows []struct {
+		ActorID uint64
+		Policy  string `gorm:"column:contact_request_policy"`
+	}
+	if err := rds.Table("touch_actor_meta").
+		Select("actor_id, contact_request_policy").
+		Order("actor_id ASC").
+		Find(&rows).Error; err != nil {
+		t.Fatalf("read migrated profile policies: %v", err)
+	}
+	want := []string{
+		"nobody",
+		"nobody",
+		"nobody",
+		"nobody",
+		"nobody",
+		"nobody",
+	}
+	if len(rows) != len(want) {
+		t.Fatalf("migrated row count = %d, want %d", len(rows), len(want))
+	}
+	for i := range rows {
+		if rows[i].Policy != want[i] {
+			t.Fatalf(
+				"actor %d policy = %q, want %q",
+				rows[i].ActorID,
+				rows[i].Policy,
+				want[i],
+			)
+		}
+	}
+}
+
+func TestMigrateTouchProfilePolicyColumnsPreservesExplicitContactPolicy(t *testing.T) {
+	rds := openIdentityMigrationDB(t, "touch_profile_policy_existing")
+	mustExecuteMigrationSQL(t, rds,
+		`CREATE TABLE touch_actor_meta (
+			actor_id INTEGER PRIMARY KEY,
+			message_permission TEXT,
+			contact_request_policy TEXT
+		)`,
+		`INSERT INTO touch_actor_meta (
+			actor_id, message_permission, contact_request_policy
+		) VALUES
+			(1, 'friends', 'anyone'),
+			(2, 'everyone', 'federations'),
+			(3, 'friends', 'nobody'),
+			(4, 'everyone', 'unexpected')`,
+	)
+
+	if err := migrateTouchProfilePolicyColumns(rds); err != nil {
+		t.Fatalf("migrate existing contact policies: %v", err)
+	}
+	if rds.Migrator().HasColumn("touch_actor_meta", "message_permission") {
+		t.Fatal("legacy message_permission column remains after migration")
+	}
+
+	var policies []string
+	if err := rds.Table("touch_actor_meta").
+		Order("actor_id ASC").
+		Pluck("contact_request_policy", &policies).Error; err != nil {
+		t.Fatalf("read existing contact policies: %v", err)
+	}
+	want := []string{"anyone", "federations", "nobody", "nobody"}
+	if len(policies) != len(want) {
+		t.Fatalf("migrated policy count = %d, want %d", len(policies), len(want))
+	}
+	for i := range policies {
+		if policies[i] != want[i] {
+			t.Fatalf("policy %d = %q, want %q", i, policies[i], want[i])
+		}
+	}
+}
+
 func TestMigrateAccessGateIdentityBackfillsLegacyAttempt(t *testing.T) {
 	rds := openIdentityMigrationDB(t, "access_gate_preserves_attempt")
 	mustExecuteMigrationSQL(t, rds,

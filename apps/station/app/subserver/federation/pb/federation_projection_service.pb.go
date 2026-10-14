@@ -66,12 +66,13 @@ func (x *ListFederationContextsResponse) GetContexts() []*FederationContext {
 }
 
 type FederationContext struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	FederationId  string                 `protobuf:"bytes,1,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	FederationId          string                 `protobuf:"bytes,1,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
+	Name                  string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Status                string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	LocalDirectoryEnabled bool                   `protobuf:"varint,4,opt,name=local_directory_enabled,json=localDirectoryEnabled,proto3" json:"local_directory_enabled,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *FederationContext) Reset() {
@@ -123,6 +124,13 @@ func (x *FederationContext) GetStatus() string {
 		return x.Status
 	}
 	return ""
+}
+
+func (x *FederationContext) GetLocalDirectoryEnabled() bool {
+	if x != nil {
+		return x.LocalDirectoryEnabled
+	}
+	return false
 }
 
 type ListFederationsResponse struct {
@@ -678,12 +686,13 @@ func (x *CreateFederationResponse) GetFederation() *FederationSummary {
 }
 
 type JoinFederationRequest struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	FederationEndpoint string                 `protobuf:"bytes,1,opt,name=federation_endpoint,json=federationEndpoint,proto3" json:"federation_endpoint,omitempty"`
-	FederationId       string                 `protobuf:"bytes,2,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
-	Message            string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	FederationEndpoint     string                 `protobuf:"bytes,1,opt,name=federation_endpoint,json=federationEndpoint,proto3" json:"federation_endpoint,omitempty"`
+	FederationId           string                 `protobuf:"bytes,2,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
+	Message                string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	SequencerStationPeerId string                 `protobuf:"bytes,4,opt,name=sequencer_station_peer_id,json=sequencerStationPeerId,proto3" json:"sequencer_station_peer_id,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *JoinFederationRequest) Reset() {
@@ -733,6 +742,13 @@ func (x *JoinFederationRequest) GetFederationId() string {
 func (x *JoinFederationRequest) GetMessage() string {
 	if x != nil {
 		return x.Message
+	}
+	return ""
+}
+
+func (x *JoinFederationRequest) GetSequencerStationPeerId() string {
+	if x != nil {
+		return x.SequencerStationPeerId
 	}
 	return ""
 }
@@ -979,11 +995,12 @@ const file_domain_federation_federation_projection_service_proto_rawDesc = "" +
 	"\n" +
 	"5domain/federation/federation_projection_service.proto\x12\x1fpeers_touch.model.federation.v1\"p\n" +
 	"\x1eListFederationContextsResponse\x12N\n" +
-	"\bcontexts\x18\x01 \x03(\v22.peers_touch.model.federation.v1.FederationContextR\bcontexts\"d\n" +
+	"\bcontexts\x18\x01 \x03(\v22.peers_touch.model.federation.v1.FederationContextR\bcontexts\"\x9c\x01\n" +
 	"\x11FederationContext\x12#\n" +
 	"\rfederation_id\x18\x01 \x01(\tR\ffederationId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
-	"\x06status\x18\x03 \x01(\tR\x06status\"o\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x126\n" +
+	"\x17local_directory_enabled\x18\x04 \x01(\bR\x15localDirectoryEnabled\"o\n" +
 	"\x17ListFederationsResponse\x12T\n" +
 	"\vfederations\x18\x01 \x03(\v22.peers_touch.model.federation.v1.FederationSummaryR\vfederations\"\x9a\x03\n" +
 	"\x11FederationSummary\x12#\n" +
@@ -1035,11 +1052,12 @@ const file_domain_federation_federation_projection_service_proto_rawDesc = "" +
 	"\rfederation_id\x18\x01 \x01(\tR\ffederationId\x12R\n" +
 	"\n" +
 	"federation\x18\x02 \x01(\v22.peers_touch.model.federation.v1.FederationSummaryR\n" +
-	"federation\"\x87\x01\n" +
+	"federation\"\xc2\x01\n" +
 	"\x15JoinFederationRequest\x12/\n" +
 	"\x13federation_endpoint\x18\x01 \x01(\tR\x12federationEndpoint\x12#\n" +
 	"\rfederation_id\x18\x02 \x01(\tR\ffederationId\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage\"Q\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\x129\n" +
+	"\x19sequencer_station_peer_id\x18\x04 \x01(\tR\x16sequencerStationPeerId\"Q\n" +
 	"\x16JoinFederationResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1f\n" +
 	"\vproposal_id\x18\x02 \x01(\tR\n" +

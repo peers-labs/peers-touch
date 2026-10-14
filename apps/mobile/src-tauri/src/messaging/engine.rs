@@ -66,7 +66,8 @@ use messaging_core::proto::chat::{
     DeviceConsumptionReceipt, DeviceInboxPayloadType, DissolveConversationIntent,
     DurableDeviceInboxItem, MemberRole, MessagingMembershipAction, MlsLeaveIntent,
     PrepareConversationCommandRequest, PrepareConversationCommandResponse,
-    PreparedEndpointPayloadKind, PublicEventMarker, SubmitConversationReadCursorRequest,
+    PreparedEndpointPayloadKind, PublicEventMarker, MessageMention,
+    SubmitConversationReadCursorRequest,
     SubmitConversationTypingRequest, UpdateConversationIntent, VoiceNoteMetadata,
 };
 use messaging_core::proto::social::{
@@ -2095,6 +2096,8 @@ impl MobileMessagingEngine {
         reply_to_message_id: &str,
         thread_root_message_id: &str,
         attachment_stage_ids: &[String],
+        mentions: &[MessageMention],
+        mention_all: bool,
     ) -> Result<MessagingSubmitMessageOutcome, String> {
         let _guard = self
             .send_intent_lock
@@ -2113,6 +2116,8 @@ impl MobileMessagingEngine {
                 reply_to_message_id,
                 thread_root_message_id,
                 attachment_stage_ids,
+                mentions,
+                mention_all,
             );
         }
         let token = self.access_token()?;
@@ -2125,6 +2130,9 @@ impl MobileMessagingEngine {
             .map_err(|_| "mobile messaging conversation kind is invalid".to_string())?
         {
             ConversationKind::Direct => {
+                if !mentions.is_empty() || mention_all {
+                    return Err("mobile messaging direct messages cannot carry mentions".to_string());
+                }
                 let bootstraps = DirectSessionBootstrapper::new(
                     self.store.clone(),
                     self.core_endpoint(),
@@ -2167,6 +2175,8 @@ impl MobileMessagingEngine {
                         reply_to_message_id,
                         thread_root_message_id,
                         attachments: &[],
+                        mentions,
+                        mention_all,
                         client_timestamp_unix_ms: created_at_unix_ms,
                     },
                 )?;
@@ -2395,6 +2405,8 @@ impl MobileMessagingEngine {
                 &source.plaintext,
                 "",
                 "",
+                &[],
+                false,
                 created_at_unix_ms,
                 &mut uploads,
             )
@@ -2415,6 +2427,8 @@ impl MobileMessagingEngine {
         reply_to_message_id: &str,
         thread_root_message_id: &str,
         attachment_stage_ids: &[String],
+        mentions: &[MessageMention],
+        mention_all: bool,
     ) -> Result<MessagingSubmitMessageOutcome, String> {
         let conversation = self
             .store
@@ -2429,6 +2443,9 @@ impl MobileMessagingEngine {
             .map_err(|_| "mobile messaging conversation kind is invalid".to_string())?;
         if conversation_kind == ConversationKind::Unspecified {
             return Err("mobile messaging conversation kind is required".to_string());
+        }
+        if conversation_kind == ConversationKind::Direct && (!mentions.is_empty() || mention_all) {
+            return Err("mobile messaging direct messages cannot carry mentions".to_string());
         }
 
         let _source_guard = self
@@ -2478,6 +2495,8 @@ impl MobileMessagingEngine {
             plaintext,
             reply_to_message_id,
             thread_root_message_id,
+            mentions,
+            mention_all,
             created_at_unix_ms,
             &mut uploads,
         )?;
@@ -2497,6 +2516,8 @@ impl MobileMessagingEngine {
         plaintext: &str,
         reply_to_message_id: &str,
         thread_root_message_id: &str,
+        mentions: &[MessageMention],
+        mention_all: bool,
         created_at_unix_ms: i64,
         uploads: &mut Vec<PendingAttachmentUpload>,
     ) -> Result<MessagingSubmitMessageOutcome, String> {
@@ -2531,6 +2552,8 @@ impl MobileMessagingEngine {
                 reply_to_message_id: reply_to_message_id.to_string(),
                 thread_root_message_id: thread_root_message_id.to_string(),
                 attachments: Vec::new(),
+                mentions: mentions.to_vec(),
+                mention_all,
                 attempt_count: 0,
                 created_at_unix_ms,
             },
@@ -2560,13 +2583,17 @@ impl MobileMessagingEngine {
         {
             return Err("mobile messaging edit intent is incomplete".to_string());
         }
-        if self
+        let projection = self
             .store
-            .message_sender(conversation_id, message_id)?
-            .as_deref()
-            != Some(self.scope.actor_ptid.as_str())
-        {
+            .conversation_message_projections(conversation_id)?
+            .into_iter()
+            .find(|message| message.message_id == message_id)
+            .ok_or_else(|| "mobile messaging edit target projection is unavailable".to_string())?;
+        if projection.sender_ptid != self.scope.actor_ptid {
             return Err("mobile messaging edit target is not authored by this actor".to_string());
+        }
+        if projection.mention_all || !projection.mentions.is_empty() {
+            return Err("mobile messaging mentioned messages cannot be edited".to_string());
         }
         let token = self.access_token()?;
         let plan = self.prepare_send_plan(&token, conversation_id)?;
@@ -3437,6 +3464,9 @@ impl MobileMessagingEngine {
             .map_err(|_| "mobile messaging draft conversation kind is invalid".to_string())?
         {
             ConversationKind::Direct => {
+                if !draft.mentions.is_empty() || draft.mention_all {
+                    return Err("mobile messaging direct draft cannot carry mentions".to_string());
+                }
                 let bootstraps = DirectSessionBootstrapper::new(
                     self.store.clone(),
                     self.core_endpoint(),
@@ -3500,6 +3530,8 @@ impl MobileMessagingEngine {
                             reply_to_message_id: &draft.reply_to_message_id,
                             thread_root_message_id: &draft.thread_root_message_id,
                             attachments: &draft.attachments,
+                            mentions: &draft.mentions,
+                            mention_all: draft.mention_all,
                             client_timestamp_unix_ms: draft.created_at_unix_ms,
                         },
                     )?,

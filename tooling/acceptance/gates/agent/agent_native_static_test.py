@@ -20,7 +20,7 @@ CAPABILITY_SUPERVISOR = (
     / "desktop_executor_worker"
     / "supervisor.rs"
 )
-DESKTOP_APP_SCRIPT = ROOT / "tooling" / "scripts" / "dev-desktop-app.sh"
+DESKTOP_DEVCTL = ROOT / "tooling" / "devctl" / "desktop.mjs"
 AGENT_CAPABILITY_RUNTIME = (
     ROOT / "apps" / "desktop" / "src" / "runtimes" / "agentCapabilityRuntime.ts"
 )
@@ -57,8 +57,17 @@ TCP_FAULT_PROXY = (
 HOME_STATION_PROVISIONER = (
     ROOT / "tooling" / "acceptance" / "provisioners" / "home_station.py"
 )
-DESKTOP_HTTP_GATEWAY = (
-    ROOT / "apps" / "desktop" / "src-tauri" / "src" / "interface" / "http_gateway" / "mod.rs"
+DESKTOP_PROVIDER_COMMANDS = (
+    ROOT / "apps" / "desktop" / "src-tauri" / "src" / "interface" / "tauri_commands" / "provider.rs"
+)
+DESKTOP_OSS_COMMANDS = (
+    ROOT / "apps" / "desktop" / "src-tauri" / "src" / "interface" / "tauri_commands" / "oss.rs"
+)
+DESKTOP_RUNTIME_EVIDENCE_COMMANDS = (
+    ROOT / "apps" / "desktop" / "src-tauri" / "src" / "interface" / "tauri_commands" / "runtime_evidence.rs"
+)
+DESKTOP_AGENT_GROWTH_COMMANDS = (
+    ROOT / "apps" / "desktop" / "src-tauri" / "src" / "interface" / "tauri_commands" / "agent_growth.rs"
 )
 DESKTOP_RUNTIME_EVIDENCE = (
     ROOT
@@ -1976,29 +1985,8 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("agents_update(&actor_ptid, &token, input)", commands)
         self.assertNotIn('agents_list("")', commands)
 
-    def test_native_auth_binds_gateway_session_before_agent_commands(self) -> None:
-        gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
+    def test_native_auth_uses_desktop_session_class(self) -> None:
         auth_service = DESKTOP_AUTH_SERVICE.read_text(encoding="utf-8")
-
-        self.assertIn(
-            "bind_gateway_auth_result(state, app_auth::access_submit_login(input, state))",
-            gateway,
-        )
-        self.assertNotIn('"auth_login" =>', gateway)
-        self.assertIn(
-            '"station_binding_complete" =>',
-            gateway,
-        )
-        self.assertIn(
-            "station_binding_complete_authenticated(",
-            gateway,
-        )
-        self.assertIn(
-            'app_auth::auth_restore_session_for_device(state, "desktop-native")',
-            gateway,
-        )
-        self.assertIn('input.device_type = Some("desktop-native".to_string())', gateway)
-        self.assertIn("state.sessions.unbind(HTTP_GATEWAY_SESSION_LABEL)", gateway)
         self.assertIn('.unwrap_or("desktop-native")', auth_service)
         self.assertIn(
             'auth_restore_session_for_device(state, "desktop-native")',
@@ -2006,15 +1994,11 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertNotIn('"device_type": "desktop"', auth_service)
 
-    def test_gateway_model_delete_uses_station_provider_owner(self) -> None:
-        gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
-        start = gateway.index('"model_delete" =>')
-        end = gateway.index('"model_fetch_remote" =>', start)
-        model_delete = gateway[start:end]
-
-        self.assertIn("token_from_state(state)", model_delete)
-        self.assertIn("app_provider::model_delete(", model_delete)
-        self.assertNotIn("models module removed", model_delete)
+    def test_native_model_delete_uses_station_provider_owner(self) -> None:
+        commands = DESKTOP_PROVIDER_COMMANDS.read_text(encoding="utf-8")
+        self.assertIn("pub fn model_delete(", commands)
+        self.assertIn("resolve_auth(&state, &window)", commands)
+        self.assertIn("application_provider::model_delete(", commands)
 
     def test_harness_exposes_r6_production_actions_and_readback(self) -> None:
         for method in (
@@ -3258,10 +3242,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("receiverInteraction: historyAction", self.source)
         self.assertIn("openedUrlHash", self.source)
         self.assertNotIn("mockFoundationAttachment", self.source)
-        gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
-        self.assertIn('"oss_upload_agent_attachment_bytes"', gateway)
-        self.assertIn('"oss_resolve_url"', gateway)
-        self.assertIn('"oss_delete_file"', gateway)
+        commands = DESKTOP_OSS_COMMANDS.read_text(encoding="utf-8")
+        self.assertIn("pub fn oss_upload_agent_attachment_bytes", commands)
+        self.assertIn("pub fn oss_resolve_url", commands)
+        self.assertIn("pub fn oss_delete_file", commands)
 
     def test_attachment_rejection_precedes_generic_rust_error_code(self) -> None:
         error_code_start = self.source.index(
@@ -3428,10 +3412,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
 class AgentCapabilitySessionStaticTest(unittest.TestCase):
     def test_desktop_launcher_is_native_only(self) -> None:
-        self.assertIn(
-            "ensure_desktop_rust_ready",
-            DESKTOP_APP_SCRIPT.read_text(encoding="utf-8"),
-        )
+        source = DESKTOP_DEVCTL.read_text(encoding="utf-8")
+        self.assertIn("desktop-native-tauri", source)
+        self.assertIn("waitForDesktopFrontend", source)
+        self.assertNotIn("PT_GATEWAY_PORT", source)
 
     def test_capability_supervisor_is_native_only(self) -> None:
         source = CAPABILITY_SUPERVISOR.read_text(encoding="utf-8")
@@ -3444,8 +3428,10 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertNotIn("secondaryCapabilitySession", runtime)
         self.assertIn("CLIENT_PLATFORM_DESKTOP", runtime)
 
-    def test_gateway_exposes_native_runtime_evidence_commands(self) -> None:
-        gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
+    def test_tauri_exposes_native_runtime_evidence_commands(self) -> None:
+        commands = DESKTOP_RUNTIME_EVIDENCE_COMMANDS.read_text(encoding="utf-8")
+        growth = DESKTOP_AGENT_GROWTH_COMMANDS.read_text(encoding="utf-8")
+        main = DESKTOP_MAIN.read_text(encoding="utf-8")
         for command in (
             "agent_submit_feedback",
             "agent_list_turn_feedback",
@@ -3457,48 +3443,22 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
             "agent_capability_session_snapshot",
         ):
             with self.subTest(command=command):
-                self.assertIn(f'"{command}" =>', gateway)
-        self.assertNotIn("secondary_capability_session", gateway)
+                self.assertIn(command, main)
+        self.assertNotIn("secondary_capability_session", commands)
         self.assertIn(
             "app_runtime_evidence::set_client_executor_supervisor_available",
-            gateway,
+            commands,
         )
         self.assertIn(
             "app_runtime_evidence::capability_session_snapshot",
-            gateway,
+            commands,
         )
         self.assertIn(
             "app_runtime_evidence::capability_negative_control",
-            gateway,
+            commands,
         )
-        self.assertIn("app_agent_growth::agent_submit_feedback", gateway)
-        self.assertIn("app_agent_growth::agent_list_turn_feedback", gateway)
-
-    def test_native_gateway_isolates_long_lived_agent_stream_workers(self) -> None:
-        gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
-
-        self.assertIn("const COMMAND_POOL_SIZE: usize = 8;", gateway)
-        self.assertIn("const AGENT_STREAM_POOL_SIZE: usize = 8;", gateway)
-        self.assertIn(
-            "let command_pool = threadpool::ThreadPool::new(COMMAND_POOL_SIZE);",
-            gateway,
-        )
-        self.assertIn(
-            "threadpool::ThreadPool::new(AGENT_STREAM_POOL_SIZE);",
-            gateway,
-        )
-        self.assertIn(
-            'matches!(url, "/agent/turn/stream" | "/agent/turn/events")',
-            gateway,
-        )
-        self.assertIn(
-            "GatewayWorkerLane::Command => &command_pool",
-            gateway,
-        )
-        self.assertIn(
-            "GatewayWorkerLane::AgentStream => &agent_stream_pool",
-            gateway,
-        )
+        self.assertIn("app::agent_submit_feedback", growth)
+        self.assertIn("app::agent_list_turn_feedback", growth)
 
     def test_desktop_boot_ready_reaches_managed_runtime_log(self) -> None:
         desktop_index = DESKTOP_INDEX.read_text(encoding="utf-8")

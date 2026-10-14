@@ -98,6 +98,8 @@ export function projectMessagingMessage(
     reactions: message.reactions.map((reaction) => ({ ...reaction })),
     pinnedByPtid: message.pinnedByPtid,
     pinnedAtUnixMs: message.pinnedAtUnixMs,
+    mentions: message.mentions.map((mention) => ({ ...mention })),
+    mentionAll: message.mentionAll,
     editedAt: message.editedAtUnixMs
       ? timestampFromUnixMs(message.editedAtUnixMs)
       : undefined,

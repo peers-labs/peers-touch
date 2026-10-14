@@ -32,8 +32,8 @@ Current implemented behavior:
 - Station persists station trust policy in `social_station_moderation_policies`.
 - Timeline feed projection filters posts whose author home Station matches a blocked Station policy before building normal feed responses.
 - Profile, search, follow, comment, and reaction gates consult the same Station moderation policy source.
-- Desktop Rust and Desktop Web expose typed proto-byte bridges for station moderation commands / queries.
-- Desktop Web publishes `moment.resync_requested` after station moderation upsert / delete succeeds.
+- Desktop Rust and Desktop renderer expose typed proto-byte bridges for station moderation commands / queries.
+- Desktop renderer publishes `moment.resync_requested` after station moderation upsert / delete succeeds.
 - Returned feed objects currently carry `BLOCK_STATE_NOT_BLOCKED`.
 - `BLOCK_STATE_VIEWER_BLOCKED_AUTHOR`, `BLOCK_STATE_AUTHOR_BLOCKED_VIEWER`, and `BLOCK_STATE_STATION_BLOCKED` are protocol reservations.
 
@@ -85,7 +85,7 @@ Station block is not a relationship between two users. It is a Station policy th
 | Station application | Apply policy to timeline, profile, search, interaction gates | Timeline feed exclusion and minimal action gates done |
 | Station projection | Produce `BlockExplanation` and optional aggregate notice | Returned objects remain `NOT_BLOCKED`; aggregate notice still pending |
 | Desktop Rust | Bridge generated proto bytes | Done for upsert / delete / list |
-| Desktop Web | Render only Station-returned projection | Typed API wrappers done; no local station-block guessing |
+| Desktop renderer | Render only Station-returned projection | Typed API wrappers done; no local station-block guessing |
 | Tests | Actor block, station block, action gate, reconnect recovery | Focused TS runtime tests pass; Go test currently blocked by local module cache |
 
 ---

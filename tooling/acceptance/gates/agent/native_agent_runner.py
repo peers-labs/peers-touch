@@ -336,12 +336,11 @@ class AgentNativeJourney:
                 "approved profile is missing PT_AGENT_PROVIDER_API_KEY",
             )
 
-        self.gateway_port = int(self.client.get("gateway_port") or 0)
         self.renderer_port = int(self.client.get("renderer_port") or 0)
         self.webdriver_port = int(self.client.get("webdriver_port") or 0)
         self.storage_root = Path(str(self.client.get("storage_root") or ""))
         require(
-            all((self.gateway_port, self.renderer_port, self.webdriver_port)),
+            all((self.renderer_port, self.webdriver_port)),
             "runtime client ports are incomplete",
         )
         require(str(self.storage_root), "runtime client storage root is missing")
@@ -464,7 +463,6 @@ class AgentNativeJourney:
             "PT_STATION_HEALTH_URL": (
                 f"{self.station_transport_url}/app-meta/version"
             ),
-            "PT_DESKTOP_APP_GATEWAY_PORT": str(self.gateway_port),
             "PT_DESKTOP_APP_WEB_PORT": str(self.renderer_port),
             "PEERS_ACTOR_IDENTITY_ROOT": str(self.actor_identity_root),
         }
@@ -485,7 +483,6 @@ class AgentNativeJourney:
             "PT_DEV_PROFILE_FILE": str(self.runtime_profile),
             "PT_DEV_PROFILE_FILE_AUTHORITY": "acceptance-runtime-manifest",
             "PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT": str(self.run_root),
-            "PT_DESKTOP_APP_GATEWAY_PORT": str(self.gateway_port),
             "PT_DESKTOP_APP_WEB_PORT": str(self.renderer_port),
             "PT_STATION_MODE": "remote",
             "PT_STATION_URL": self.station_transport_url,
@@ -499,10 +496,9 @@ class AgentNativeJourney:
         self.tauri_driver = TauriSession(
             LocalTauriLauncher(
                 port=self.webdriver_port,
-                gateway_port=self.gateway_port,
                 profile=self.profile_env.get(
                     "PT_PROFILE",
-                    f"{self.approved_profile}-app",
+                    f"{self.approved_profile}-native",
                 ),
                 storage_root=str(self.storage_root),
                 environment=environment,
@@ -554,7 +550,6 @@ class AgentNativeJourney:
             lambda: all(
                 not port_open(port)
                 for port in (
-                    self.gateway_port,
                     self.renderer_port,
                     self.webdriver_port,
                 )
@@ -2676,7 +2671,6 @@ class AgentNativeJourney:
                 failures.append(f"desktop-log: {error}")
         shutil.rmtree(self.run_root, ignore_errors=True)
         ports = {
-            "gateway": not port_open(self.gateway_port),
             "renderer": not port_open(self.renderer_port),
             "webdriver": not port_open(self.webdriver_port),
             "faultProxy": (

@@ -7,7 +7,7 @@
       "docs/architecture/domains/chat/messaging/",
       "tooling/acceptance/",
       "tooling/scripts/messaging-platform-",
-      "tooling/scripts/dev-desktop-app.sh"
+      "tooling/devctl/desktop.mjs"
     ],
     "MP-W01": [
       "model/domain/chat/",
@@ -78,7 +78,7 @@
       "docs/architecture/domains/social/runtime/",
       "docs/architecture/shared/communication/event-stream.md",
       "apps/desktop/src/services/desktop_api.ts",
-      "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
+      "apps/desktop/src-tauri/src/interface/tauri_commands/",
       "apps/desktop/src-tauri/src/main.rs"
     ]
   }

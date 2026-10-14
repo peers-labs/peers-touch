@@ -1,6 +1,9 @@
 import type { FriendChatSession, GroupMember } from './socialProjection';
 import type { FederationResolveView } from '../gen/proto/domain/federation/federation_resolve_pb';
-import { ActorVisibility } from '../gen/proto/domain/actor/actor_pb';
+import {
+  ActorContactPolicy,
+  ActorVisibility,
+} from '../gen/proto/domain/actor/actor_pb';
 import type { AccountProfile } from '../services/desktop_api';
 
 export interface CurrentActorProfileProjection {
@@ -82,7 +85,15 @@ export function accountProfileFromFederationResolve(
     })),
     default_visibility: profile.defaultVisibility,
     manually_approves_followers: profile.manuallyApprovesFollowers,
-    message_permission: profile.messagePermission,
+    contact_policy: actorContactPolicyLabel(profile.contactPolicy),
+    federation_visibility: Object.fromEntries(
+      Object.entries(
+        profile.federationVisibility?.visibilityByFederation ?? {},
+      ).map(([federationId, value]) => [
+        federationId,
+        actorVisibilityLabel(value),
+      ]),
+    ),
     auto_expire_days: Number(profile.autoExpireDays),
     federated_handle: view.federatedHandle,
     home_station_peer_id: view.homeStationPeerId,
@@ -93,6 +104,20 @@ export function accountProfileFromFederationResolve(
       network_id: actorPtid,
     },
   };
+}
+
+function actorContactPolicyLabel(
+  policy: ActorContactPolicy,
+): AccountProfile['contact_policy'] {
+  switch (policy) {
+    case ActorContactPolicy.FEDERATIONS:
+      return 'federations';
+    case ActorContactPolicy.NOBODY:
+    case ActorContactPolicy.UNSPECIFIED:
+      return 'nobody';
+    case ActorContactPolicy.ANYONE:
+      return 'anyone';
+  }
 }
 
 function actorVisibilityLabel(

@@ -76,7 +76,6 @@ class _OAuth2ClientLocalProvisioner(EnvironmentProvisioner):
                         actor=client.actor,
                         runtime=client.runtime,
                         worktree=str(REPO_ROOT),
-                        gateway_port=0,
                         renderer_port=0,
                         webdriver_port=0,
                         profile="oauth2-client-local",

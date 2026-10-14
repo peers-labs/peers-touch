@@ -24,7 +24,7 @@ Examples:
 - Rebuild Agent capability with LobeHub as the blueprint.
 - Redesign a Desktop module that changes runtime ownership, persistence, service APIs, or page structure.
 - Migrate a Station capability into a new domain subserver.
-- Add a capability that spans Desktop Web, Desktop Rust, Station, and shared packages.
+- Add a capability that spans Desktop renderer, Desktop Rust, Station, and shared packages.
 
 Do not use this playbook for small bug fixes, local copy changes, or narrow component-only changes unless they modify module ownership or public contracts.
 

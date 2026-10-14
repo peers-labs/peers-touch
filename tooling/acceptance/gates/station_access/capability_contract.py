@@ -117,14 +117,6 @@ CLIENT_ACCESS_COMMAND_CONTRACTS = {
         "pattern": re.compile(r"\bauth::(access_[a-z0-9_]+)\b"),
         "allowed": CLIENT_ACCESS_COMMANDS["Desktop"],
     },
-    "Desktop HTTP gateway": {
-        "path": "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
-        "pattern": re.compile(
-            r"^\s*['\"](access_[a-z0-9_]+)['\"]\s*=>",
-            re.MULTILINE,
-        ),
-        "allowed": CLIENT_ACCESS_COMMANDS["Desktop"],
-    },
     "Mobile frontend": {
         "path": "apps/mobile/src/services/mobileCommands.ts",
         "pattern": re.compile(
