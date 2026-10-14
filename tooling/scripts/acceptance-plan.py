@@ -25,6 +25,7 @@ from tooling.acceptance.core.execution_plan import (  # noqa: E402
     changed_paths_for_plan,
     discover_active_plan,
     load_formal_plan,
+    repository_has_attached_head,
 )
 from tooling.acceptance.finalizers import load_strict_json_object  # noqa: E402
 
@@ -62,6 +63,8 @@ def changed_paths(diff_range: str) -> list[str]:
 
 def resolve_execution_plan(path: Path):
     explicit = path.resolve()
+    if not repository_has_attached_head(REPO_ROOT):
+        return load_formal_plan(explicit)
     try:
         mounted = discover_active_plan(REPO_ROOT)
     except ExecutionPlanError as error:
