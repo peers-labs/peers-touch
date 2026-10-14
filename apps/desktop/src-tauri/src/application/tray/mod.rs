@@ -18,6 +18,12 @@ const QUIT_ID: &str = "tray-quit";
 
 #[cfg(target_os = "macos")]
 const MACOS_TRAY_ICON_PNG: &[u8] = include_bytes!("../../../icons/tray-icon-macos.png");
+#[cfg(target_os = "macos")]
+const MACOS_MENU_TRACKING_DELAY_MS: u64 = 750;
+#[cfg(target_os = "macos")]
+const MACOS_FOCUS_RETRY_DELAY_MS: u64 = 100;
+#[cfg(target_os = "macos")]
+const MACOS_FOCUS_RETRY_LIMIT: u8 = 10;
 
 /// Build and install the system tray icon. Returns Err on platforms/builds
 /// where a tray is unavailable so the caller can degrade to close-to-quit.
@@ -73,7 +79,7 @@ pub fn restore_main_window<R: Runtime>(app: &AppHandle<R>) {
         let _ = window.unminimize();
         let _ = window.set_focus();
         #[cfg(target_os = "macos")]
-        focus_main_window_after_menu_tracking(&window);
+        focus_main_window_after_menu_tracking(app);
         if let Err(error) = host_events::emit_tray_open(app, "tray-click") {
             tracing::warn!(error = %error, "tray: failed to emit tray-open host event");
         }
@@ -81,27 +87,105 @@ pub fn restore_main_window<R: Runtime>(app: &AppHandle<R>) {
 }
 
 #[cfg(target_os = "macos")]
-fn focus_main_window_after_menu_tracking<R: Runtime>(window: &tauri::WebviewWindow<R>) {
-    use dispatch2::DispatchQueue;
+fn focus_main_window_after_menu_tracking<R: Runtime>(app: &AppHandle<R>) {
+    use dispatch2::{DispatchQueue, DispatchTime};
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSApplication, NSWindow};
+    use std::time::Duration;
 
-    let Ok(ns_window) = window.ns_window() else {
-        tracing::warn!("tray: native main window is unavailable for deferred focus");
-        return;
-    };
-    let ns_window = ns_window as usize;
-    DispatchQueue::main().exec_async(move || {
+    let app = app.clone();
+    let when = DispatchTime::try_from(Duration::from_millis(MACOS_MENU_TRACKING_DELAY_MS))
+        .expect("tray focus delay must fit dispatch time");
+    if let Err(error) = DispatchQueue::main().after(when, move || {
+        let Some(window) = app.get_webview_window("main") else {
+            tracing::warn!("tray: main window is unavailable for deferred focus");
+            return;
+        };
+        if let Err(error) = window.show() {
+            tracing::warn!(error = %error, "tray: deferred main-window show failed");
+        }
+        if let Err(error) = window.unminimize() {
+            tracing::warn!(error = %error, "tray: deferred main-window unminimize failed");
+        }
         let Some(main_thread) = MainThreadMarker::new() else {
             tracing::warn!("tray: deferred focus did not run on the AppKit main thread");
             return;
         };
+        let Ok(ns_window) = window.ns_window() else {
+            tracing::warn!("tray: native main window is unavailable for deferred focus");
+            return;
+        };
         let application = NSApplication::sharedApplication(main_thread);
-        NSApplication::activate(&application);
         let ns_window = unsafe { &*(ns_window as *mut NSWindow) };
+        ns_window.orderFrontRegardless();
+        application.unhide(None);
+        #[allow(deprecated)]
+        application.activateIgnoringOtherApps(true);
+        schedule_macos_key_window(app, MACOS_FOCUS_RETRY_LIMIT);
+    }) {
+        tracing::warn!(error = ?error, "tray: failed to schedule deferred AppKit focus");
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn schedule_macos_key_window<R: Runtime>(app: AppHandle<R>, attempts_remaining: u8) {
+    use dispatch2::{DispatchQueue, DispatchTime};
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSAccessibility, NSApplication, NSWindow};
+    use std::time::Duration;
+
+    let when = DispatchTime::try_from(Duration::from_millis(MACOS_FOCUS_RETRY_DELAY_MS))
+        .expect("tray focus retry delay must fit dispatch time");
+    if let Err(error) = DispatchQueue::main().after(when, move || {
+        let Some(window) = app.get_webview_window("main") else {
+            tracing::warn!("tray: main window is unavailable for key-window focus");
+            return;
+        };
+        let Some(main_thread) = MainThreadMarker::new() else {
+            tracing::warn!("tray: key-window focus did not run on the AppKit main thread");
+            return;
+        };
+        let Ok(ns_window) = window.ns_window() else {
+            tracing::warn!("tray: native main window is unavailable for key-window focus");
+            return;
+        };
+        let application = NSApplication::sharedApplication(main_thread);
+        let ns_window = unsafe { &*(ns_window as *mut NSWindow) };
+        ns_window.orderFrontRegardless();
+        if !application.isActive() {
+            #[allow(deprecated)]
+            application.activateIgnoringOtherApps(true);
+        }
+        ns_window.makeMainWindow();
         ns_window.makeKeyAndOrderFront(None);
         ns_window.makeKeyWindow();
-    });
+        ns_window.setAccessibilityFocused(true);
+
+        let active = application.isActive();
+        let visible = ns_window.isVisible();
+        let main = ns_window.isMainWindow();
+        let key = ns_window.isKeyWindow();
+        let accessibility_focused = ns_window.isAccessibilityFocused();
+        if active && visible && main && key && accessibility_focused {
+            tracing::info!("tray: restored main window with AppKit focus");
+            return;
+        }
+        if attempts_remaining > 0 {
+            schedule_macos_key_window(app.clone(), attempts_remaining - 1);
+            return;
+        }
+        tracing::warn!(
+            active,
+            visible,
+            main,
+            key,
+            accessibility_focused,
+            can_become_key = ns_window.canBecomeKeyWindow(),
+            "tray: AppKit focus retries exhausted"
+        );
+    }) {
+        tracing::warn!(error = ?error, "tray: failed to schedule AppKit focus retry");
+    }
 }
 
 #[cfg(all(test, target_os = "macos"))]
