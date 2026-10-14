@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tooling.acceptance.core import ENVIRONMENTS_DIR
 from tooling.acceptance.gates.desktop.shell_tray_e2e import (
@@ -10,6 +11,7 @@ from tooling.acceptance.gates.desktop.shell_tray_e2e import (
     CAPABILITY_ID,
     GATE_ID,
     inspect_rgba_png,
+    main,
 )
 
 
@@ -33,6 +35,8 @@ class DesktopShellTrayGateTests(unittest.TestCase):
         source = SOURCE_PATH.read_text(encoding="utf-8")
 
         self.assertIn("EphemeralGateClient.from_environment()", source)
+        self.assertIn("with client:", source)
+        self.assertIn("DesktopShellTrayGate(client).execute()", source)
         self.assertIn(CAPABILITY_ID, source)
         for forbidden in (
             "import AppKit",
@@ -43,6 +47,31 @@ class DesktopShellTrayGateTests(unittest.TestCase):
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
+
+    def test_main_closes_ephemeral_client_after_gate_execution(self) -> None:
+        events: list[str] = []
+        client = mock.MagicMock()
+        client.__enter__.side_effect = lambda: events.append("enter")
+        client.__exit__.side_effect = lambda *_: events.append("exit")
+        gate = mock.Mock()
+        gate.execute.side_effect = lambda: events.append("execute") or 0
+
+        with (
+            mock.patch(
+                "tooling.acceptance.gates.desktop.shell_tray_e2e."
+                "EphemeralGateClient.from_environment",
+                return_value=client,
+            ),
+            mock.patch(
+                "tooling.acceptance.gates.desktop.shell_tray_e2e."
+                "DesktopShellTrayGate",
+                return_value=gate,
+            ) as gate_type,
+        ):
+            self.assertEqual(main(), 0)
+
+        gate_type.assert_called_once_with(client)
+        self.assertEqual(events, ["enter", "execute", "exit"])
 
     def test_catalog_declares_native_cell_and_ephemeral_capability(self) -> None:
         gates = json.loads(

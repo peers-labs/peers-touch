@@ -153,7 +153,7 @@ class DesktopShellTrayGate(AcceptanceGate):
     report_path = REPORT_PATH
     evidence_dir = EVIDENCE_DIR
 
-    def __init__(self) -> None:
+    def __init__(self, client: EphemeralGateClient) -> None:
         super().__init__()
         manifest_path = os.environ.get(
             "PT_ACCEPTANCE_RUNTIME_MANIFEST",
@@ -174,11 +174,7 @@ class DesktopShellTrayGate(AcceptanceGate):
         self.cell_manifest = json.loads(
             Path(cell_manifest_path).read_text(encoding="utf-8")
         )
-        self.client = EphemeralGateClient.from_environment()
-        if self.client is None:
-            raise GateError(
-                "Desktop shell status-item capability is unavailable"
-            )
+        self.client = client
         self.report.manifest = self.manifest
 
     def _invoke(self, operation: str) -> dict[str, Any]:
@@ -320,5 +316,15 @@ class DesktopShellTrayGate(AcceptanceGate):
         }
 
 
+def main() -> int:
+    client = EphemeralGateClient.from_environment()
+    if client is None:
+        raise GateError(
+            "Desktop shell status-item capability is unavailable"
+        )
+    with client:
+        return DesktopShellTrayGate(client).execute()
+
+
 if __name__ == "__main__":
-    raise SystemExit(DesktopShellTrayGate().execute())
+    raise SystemExit(main())
