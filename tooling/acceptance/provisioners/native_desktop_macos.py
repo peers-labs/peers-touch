@@ -118,6 +118,8 @@ point = Quartz.CGEventGetLocation(event)
 print(json.dumps({"x": float(point.x), "y": float(point.y)}, sort_keys=True))
 """
 
+_PRIMARY_DISPLAY_WINDOW_ORIGIN = (0.0, 32.0)
+
 
 def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
@@ -388,6 +390,10 @@ class NativeDesktopMacOSProvisioner:
                     "macOS runtime-cell probe process identity is unavailable"
                 )
             adapter = MacOSNativeDesktopAdapter()
+            adapter.position_main_window(
+                process_id,
+                _PRIMARY_DISPLAY_WINDOW_ORIGIN,
+            )
             bounds = self._await_window_bounds(process_id)
             point, pointer, stack, input_probe, attempted_points = (
                 self._probe_owned_point(

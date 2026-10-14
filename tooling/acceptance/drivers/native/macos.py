@@ -913,6 +913,22 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
                 f"Native actor process {process_id} did not become frontmost"
             )
 
+    def position_main_window(
+        self,
+        process_id: int,
+        point: tuple[float, float],
+    ) -> None:
+        process_id = self._validated_process_id(process_id)
+        x, y = (float(value) for value in point)
+        script = f"""
+        tell application "System Events"
+          set targetProcess to first application process whose unix id is {process_id}
+          if (count of windows of targetProcess) = 0 then error "main window is absent"
+          set position of window 1 of targetProcess to {{{x}, {y}}}
+        end tell
+        """
+        self._run_osascript(script, "main-window positioning")
+
     def status_item_snapshot(
         self,
         process_id: int,

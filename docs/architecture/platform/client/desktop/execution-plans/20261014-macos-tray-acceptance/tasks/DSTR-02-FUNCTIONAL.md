@@ -28,8 +28,10 @@
     "tooling/acceptance/gates/desktop",
     "tooling/acceptance/provisioners/__init__.py",
     "tooling/acceptance/provisioners/desktop_shell_native.py",
+    "tooling/acceptance/provisioners/native_desktop_macos.py",
     "tooling/acceptance/drivers/native",
     "tooling/acceptance/registry.yaml",
+    "tooling/acceptance/tests/test_native_desktop_macos.py",
     "tooling/scripts/acceptance-plan.py",
     "tooling/scripts/acceptance-plan-test.py"
   ],
@@ -51,7 +53,7 @@
     },
     {
       "id": "desktop-shell-tray-driver-source",
-      "command": "python3 -m unittest tooling.acceptance.drivers.native.macos_test tooling.acceptance.gates.desktop.shell_tray_e2e_test tooling.acceptance.provisioners.desktop_shell_native_test",
+      "command": "python3 -m unittest tooling.acceptance.drivers.native.macos_test tooling.acceptance.gates.desktop.shell_tray_e2e_test tooling.acceptance.provisioners.desktop_shell_native_test tooling.acceptance.tests.test_native_desktop_macos",
       "verificationClass": "SOURCE_CHECK"
     },
     {

@@ -223,11 +223,11 @@ fn configure_acceptance_window(
     }
 
     let monitor = window
-        .primary_monitor()
+        .current_monitor()
         .map_err(|error| {
-            std::io::Error::other(format!("acceptance primary monitor lookup failed: {error}"))
+            std::io::Error::other(format!("acceptance monitor lookup failed: {error}"))
         })?
-        .ok_or_else(|| std::io::Error::other("acceptance window has no primary monitor"))?;
+        .ok_or_else(|| std::io::Error::other("acceptance window has no current monitor"))?;
     let scale = monitor.scale_factor();
     let monitor_size = monitor.size();
     let monitor_position = monitor.position();

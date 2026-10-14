@@ -47,6 +47,20 @@ class MacOSStatusItemAdapterTests(unittest.TestCase):
             ),
         )
 
+    def test_position_main_window_targets_exact_process(self) -> None:
+        with mock.patch.object(
+            self.adapter,
+            "_run_osascript",
+            return_value="",
+        ) as run:
+            self.adapter.position_main_window(123, (0.0, 32.0))
+
+        script, operation = run.call_args.args
+        self.assertIn("unix id is 123", script)
+        self.assertIn("set position of window 1", script)
+        self.assertIn("{0.0, 32.0}", script)
+        self.assertEqual(operation, "main-window positioning")
+
     def test_window_state_parses_hidden_and_visible_states(self) -> None:
         with mock.patch.object(
             self.adapter,

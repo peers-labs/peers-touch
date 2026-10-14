@@ -61,8 +61,46 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
 
     def test_probe_launcher_places_window_on_primary_display(self) -> None:
         launcher = Mock(log_path=None)
-        session = Mock()
-        session.start.side_effect = RuntimeError("stop after launch")
+        session = Mock(process_id=42, log_path=None)
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        events: list[str] = []
+        adapter.position_main_window.side_effect = (
+            lambda *_: events.append("position")
+        )
+        adapter.capture_screenshot.side_effect = (
+            lambda path: path.write_bytes(b"screenshot")
+        )
+        bounds = {
+            "left": 0.0,
+            "top": 32.0,
+            "width": 1280.0,
+            "height": 720.0,
+        }
+        stack = NativeWindowStack(
+            windows=(
+                NativeWindowSnapshot(
+                    index=0,
+                    owner_pid=42,
+                    owner_name="peers-touch-desktop",
+                    window_name="Peers",
+                    layer=0,
+                    alpha=1.0,
+                    bounds=NativeWindowBounds(
+                        left=0.0,
+                        top=32.0,
+                        width=1280.0,
+                        height=720.0,
+                    ),
+                ),
+            ),
+        )
+        point_probe = (
+            (640.0, 392.0),
+            {"x": 640.0, "y": 392.0},
+            stack,
+            True,
+            ((640.0, 392.0),),
+        )
         lifecycle = NativeDesktopMacOSProvisioner()
 
         with patch(
@@ -81,10 +119,34 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             "tooling.acceptance.provisioners.native_desktop_macos."
             "TauriSession",
             return_value=session,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "MacOSNativeDesktopAdapter",
+            return_value=adapter,
+        ), patch.object(
+            NativeDesktopMacOSProvisioner,
+            "_await_window_bounds",
+            side_effect=lambda *_: events.append("bounds") or bounds,
+        ), patch.object(
+            NativeDesktopMacOSProvisioner,
+            "_probe_owned_point",
+            side_effect=(point_probe, point_probe),
+        ), patch.object(
+            NativeDesktopMacOSProvisioner,
+            "_await_focused_process",
+            return_value=NativeControlSnapshot(
+                window_count=1,
+                frontmost=True,
+                actual_frontmost_pid=42,
+            ),
         ):
-            with self.assertRaisesRegex(RuntimeError, "stop after launch"):
-                lifecycle._probe_native_adapter()
+            probes, webdriver_port = lifecycle._probe_native_adapter()
 
+        self.assertEqual(webdriver_port, 45123)
+        self.assertTrue(probes.input_probe)
+        self.assertTrue(probes.focus_probe)
+        self.assertTrue(probes.point_ownership_probe)
+        self.assertTrue(probes.screenshot_probe)
         launcher_type.assert_called_once_with(
             app_binary="/tmp/peers-touch-desktop",
             port=45123,
@@ -94,6 +156,11 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
                 "PT_ACCEPTANCE_WINDOW_COUNT": "1",
             },
         )
+        adapter.position_main_window.assert_called_once_with(
+            42,
+            (0.0, 32.0),
+        )
+        self.assertEqual(events[:2], ["position", "bounds"])
         session.stop.assert_called_once_with()
 
     def test_window_bounds_wait_retries_transient_visibility(self) -> None:
