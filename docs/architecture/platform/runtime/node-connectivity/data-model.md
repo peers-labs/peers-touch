@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-10-10 | **Updated**: 2026-10-13
+> **Created**: 2026-10-10 | **Updated**: 2026-10-14
 > **Owner**: Architecture Team
 
 ## 1. Contract Roots
@@ -112,25 +112,33 @@ StationConnectionGrantStatement
 RedeemConnectionGrantRequest
   grant
   challenge_nonce: bytes[32]
-  source_peer_id
+  source_public_key
   source_signature
 
 RelayConnectionPermit
-  permit_id
+  redemption_id
   source_peer_id / destination_node_peer_id / relay_peer_id
   route_id / route_generation
   expires_at_unix_ms
-  max_active_circuits / quota_policy_id
+  quota_policy_id
 ```
 
 Grant issuance authorizes discovery/admission only. It is not a Station Session.
-Redemption uses the authenticated source libp2p control connection, verifies its
-PeerID proof and Station/node signature, atomically consumes grant use, and
-creates the source-to-destination permit. The ACL reads that projection during
-Circuit CONNECT. It must not expect custom grant bytes inside standard HOP.
-Permit lifetime is bounded by grant lifetime; initial maximum is five minutes.
-Duplicate redemption uses a stable redemption idempotency key; a retry cannot
-consume another use or create an unbound permit.
+Redemption uses the reviewed Relay control endpoint and carries a proof signed
+by the exact libp2p source transport key. The proof binds the request challenge,
+canonical grant digest, Relay PeerID and protocol version; Relay derives
+`source_peer_id` from the proof key. Relay verifies the Station/node grant,
+atomically consumes one grant use, and creates the source-to-destination permit.
+
+The stable redemption idempotency key is `grant_digest + source_peer_id`.
+Retrying the same redemption cannot consume another use or create another
+permit. A different source consumes a separate grant use. The ACL only reads
+the bounded permit during Circuit CONNECT; it never consumes it because the
+library invokes ACL before reservation, circuit quota and STOP-stream success.
+Failed CONNECT attempts therefore do not burn authorization. The standard
+Circuit service owns active source/destination circuit quotas after ACL. Permit
+lifetime is bounded by grant lifetime; initial maximum is five minutes. No
+custom grant bytes enter standard HOP.
 
 Encoded `ptc1:` material remains a carrier convention, not an identity or extra
 wire protocol version. It contains signed routes, delegation and optional grant.
@@ -196,7 +204,7 @@ RouteLease
   node_peer_id
   relay_peer_id?
   addresses[]
-  inner_tls_spki_sha256?
+  inner_tls_spki_sha256
   traffic_class: INTERACTIVE | REALTIME | BULK
   cancellation
 
@@ -225,8 +233,14 @@ InlineResourceData
   base64_payload
 
 StationTransportState
+  lifecycle_generations[station_peer_id]: monotonic tombstone retained after remove
   CREATED -> RUNNING -> DRAINING -> STOPPED
                      -> FAILED
+
+EventStreamRuntime
+  workers[actor_ptid]
+  cancellation
+  join_handle
 ```
 
 Transport identity is endpoint-scoped and persisted for the installation. It is
@@ -246,6 +260,11 @@ returns `station_no_route`. Only `AUTO` may consume a verified failover
 candidate after a real transport failure. The replacement lease preserves the
 logical Station and lifecycle generation, advances route revision, and cancels
 the prior lease before replay.
+
+A same-route signed refresh is committed before the current attestation
+expires, using the same route-revision and cancellation transition. Explicit
+Station removal retains the highest lifecycle generation outside the removable
+entry; re-add allocates the next value after restart.
 
 Station Access is the sole producer of `RouteLease`. Transport may reject or
 cancel a lease but cannot select or persist another route. A lifecycle-generation

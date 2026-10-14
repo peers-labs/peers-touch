@@ -99,6 +99,11 @@ func TestSignAccessEndpointRejectsGrantUnsupportedVersionAndWrongNode(
 			ConnectionGrant:       []byte("private"),
 			ClientProtocolVersion: accessProtocolVersion,
 		},
+		{
+			Challenge:             challenge,
+			ClientProtocolVersion: accessProtocolVersion,
+			SourceProof:           &peerpb.AccessEndpointSourceProof{},
+		},
 	}
 	for index := range tests {
 		if _, err := signAccessEndpoint(

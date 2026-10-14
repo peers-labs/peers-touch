@@ -101,7 +101,7 @@ class NodeConnectivityJourneyTest(unittest.TestCase):
             ):
                 self.assertEqual(JOURNEY.main(), 0)
 
-        self.assertEqual(len(observed_environments), 3)
+        self.assertEqual(len(observed_environments), 4)
         expected_target = str((work_root / "cargo-target").resolve())
         self.assertTrue(
             all(

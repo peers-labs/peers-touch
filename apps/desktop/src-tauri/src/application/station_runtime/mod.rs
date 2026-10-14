@@ -14,8 +14,12 @@ use crate::application::station_runtime::resource::StationResourceHandle;
 use crate::infrastructure::station::{
     StationTransportHandle, StationTransportOwner, TransportIdentityScope,
 };
-use crate::infrastructure::station_registry::{StationEntry, StationRegistry, StationRouteType};
+use crate::infrastructure::station_registry::{
+    route_attestation_is_current, StationEntry, StationRegistry, StationRouteHealth,
+    StationRouteType,
+};
 use serde::Serialize;
+use station_libp2p_http::TransportIdentityProof;
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -140,7 +144,6 @@ impl StationBindingHooks for RuntimeBindingHooks<'_> {
         _previous: Option<&StationEntry>,
         _target: &StationEntry,
     ) -> Result<(), StationBindingError> {
-        crate::infrastructure::event_stream::stop_all();
         if let Some(before_commit) = self.before_commit {
             before_commit(true)?;
         }
@@ -389,6 +392,137 @@ impl StationRequestExecutor for RuntimeRequestExecutor {
         }
     }
 
+    fn execute_for_station(
+        &self,
+        station_peer_id: &str,
+        mut request: StationRequest,
+    ) -> Result<StationResponse, StationTransportError> {
+        if self.stopped.load(Ordering::Acquire) {
+            return Err(StationTransportError::new(
+                StationTransportErrorKind::Shutdown,
+                "Station runtime is shutting down",
+                false,
+            ));
+        }
+        let entry = self.registry.entry(station_peer_id).ok_or_else(|| {
+            StationTransportError::new(
+                StationTransportErrorKind::Unavailable,
+                "Target Station route is unavailable",
+                false,
+            )
+        })?;
+        let pin = self
+            .registry
+            .federation_signing_key_pin(station_peer_id)
+            .map_err(|error| {
+                StationTransportError::new(
+                    StationTransportErrorKind::InvalidRoute,
+                    format!("Target Station pin is invalid: {error}"),
+                    false,
+                )
+            })?
+            .ok_or_else(|| {
+                StationTransportError::new(
+                    StationTransportErrorKind::InvalidRoute,
+                    "Target Station route is not Federation-pinned",
+                    false,
+                )
+            })?;
+        if pin.station_peer_id != station_peer_id {
+            return Err(StationTransportError::new(
+                StationTransportErrorKind::InvalidRoute,
+                "Target Station pin binding mismatch",
+                false,
+            ));
+        }
+        let route = entry.active_route().ok_or_else(|| {
+            StationTransportError::new(
+                StationTransportErrorKind::Unavailable,
+                "Target Station has no active route",
+                false,
+            )
+        })?;
+        if !route_attestation_is_current(route, current_unix_ms())
+            || matches!(
+                route.health,
+                StationRouteHealth::Unavailable | StationRouteHealth::Revoked
+            )
+        {
+            return Err(StationTransportError::new(
+                StationTransportErrorKind::StaleRoute,
+                "Target Station route is expired or unavailable",
+                false,
+            ));
+        }
+        if !route_policy_permits(request.route_policy, route.route_type)
+            || !request.route_security.permits(&route.endpoint_origin)
+        {
+            return Err(StationTransportError::new(
+                StationTransportErrorKind::InvalidRoute,
+                "Target Station route violates request transport policy",
+                false,
+            ));
+        }
+        let expected_scope = StationRequestScope {
+            station_peer_id: entry.station_peer_id.clone(),
+            lifecycle_generation: entry.lifecycle_generation,
+        };
+        if request
+            .expected_scope
+            .as_ref()
+            .is_some_and(|expected| expected != &expected_scope)
+        {
+            return Err(StationTransportError::new(
+                StationTransportErrorKind::StaleRoute,
+                "Target Station request belongs to a stale lifecycle",
+                false,
+            ));
+        }
+        request.expected_scope = Some(expected_scope);
+        prepare_entry_transport(&self.transport, &entry).map_err(|error| {
+            StationTransportError::new(StationTransportErrorKind::Unavailable, error, false)
+        })?;
+        let lease = route_lease::RouteLease::from_entry(
+            &entry,
+            request.traffic_class,
+            request.cancellation.clone(),
+        )
+        .ok_or_else(|| {
+            StationTransportError::new(
+                StationTransportErrorKind::Unavailable,
+                "Target Station route lease is unavailable",
+                false,
+            )
+        })?;
+        let request_path = request
+            .path_and_query
+            .split_once('?')
+            .map_or(request.path_and_query.as_str(), |(path, _)| path)
+            .to_string();
+        match self.transport.execute(&lease, request) {
+            Ok(response) => {
+                self.record_attempt(
+                    &lease,
+                    StationRoutePolicy::Auto,
+                    &request_path,
+                    "connected",
+                    None,
+                );
+                Ok(response)
+            }
+            Err(error) => {
+                self.record_attempt(
+                    &lease,
+                    StationRoutePolicy::Auto,
+                    &request_path,
+                    "failed",
+                    Some(error.kind),
+                );
+                Err(error)
+            }
+        }
+    }
+
     fn active_scope(&self) -> Option<StationRequestScope> {
         RuntimeRequestExecutor::active_scope(self)
     }
@@ -420,31 +554,6 @@ impl StationRequestExecutor for RuntimeRequestExecutor {
                             == origin.trim_end_matches('/')
                 })
             })
-    }
-
-    fn authority_endpoint_origin(&self, station_peer_id: &str) -> Result<String, String> {
-        let matches = self
-            .registry
-            .list()
-            .into_iter()
-            .filter(|entry| entry.station_peer_id == station_peer_id)
-            .collect::<Vec<_>>();
-        if matches.len() != 1 {
-            return Err("messaging authority Station route is unavailable".to_string());
-        }
-        let endpoint_origin = matches[0]
-            .active_route()
-            .map(|route| route.endpoint_origin.clone())
-            .ok_or_else(|| "messaging authority Station route is unavailable".to_string())?;
-        let pin = self
-            .registry
-            .federation_signing_key_pin(station_peer_id)
-            .map_err(|error| format!("messaging authority Station pin is invalid: {error}"))?
-            .ok_or_else(|| "messaging authority Station route is not pinned".to_string())?;
-        if pin.station_peer_id != station_peer_id {
-            return Err("messaging authority Station pin binding mismatch".to_string());
-        }
-        Ok(endpoint_origin)
     }
 }
 
@@ -521,9 +630,9 @@ impl StationRuntime {
     #[cfg(feature = "acceptance-webdriver")]
     pub fn set_acceptance_direct_route_override(
         &self,
-        endpoint_origin: Option<&str>,
+        dial_multiaddr: Option<&str>,
     ) -> Result<(), String> {
-        let Some(endpoint_origin) = endpoint_origin else {
+        let Some(dial_multiaddr) = dial_multiaddr else {
             return self
                 .transport
                 .clear_acceptance_direct_route_overrides()
@@ -542,9 +651,12 @@ impl StationRuntime {
             .set_acceptance_direct_route_override(
                 &lease.station_peer_id,
                 &lease.route_id,
-                endpoint_origin,
+                &lease.route.node_peer_id,
+                dial_multiaddr,
             )
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        self.transport.close_route(&lease);
+        Ok(())
     }
 
     pub fn active_station_peer_id(&self) -> Option<String> {
@@ -671,12 +783,13 @@ impl StationRuntime {
         Ok(result)
     }
 
-    pub fn prepare_transport_identity(
+    pub fn sign_transport_identity_proof(
         &self,
         scope: TransportIdentityScope,
-    ) -> Result<String, String> {
+        message: &[u8],
+    ) -> Result<TransportIdentityProof, String> {
         self.transport
-            .prepare_identity(scope)
+            .sign_identity_proof(scope, message)
             .map_err(|error| error.to_string())
     }
 
@@ -691,9 +804,43 @@ impl StationRuntime {
                 true,
             )
         })?;
-        let result = self.binding.store_verified_routes(&self.registry, routes);
+        let mut result = self.binding.store_verified_routes(&self.registry, routes)?;
+        let current = self.binding.state();
+        if let (Some(station_peer_id), Some(route_id)) = (
+            current.station_peer_id.as_deref(),
+            current.active_route_id.as_deref(),
+        ) {
+            if let Some(entry) = result
+                .iter()
+                .find(|entry| entry.station_peer_id == station_peer_id)
+            {
+                let refreshed = entry
+                    .selection_view(route_id)
+                    .filter(|candidate| !entry.has_same_active_contract(candidate));
+                if refreshed.is_some() {
+                    let hooks = RuntimeBindingHooks {
+                        transport: &self.transport,
+                        before_commit: None,
+                    };
+                    self.binding.switch_with_hooks(
+                        &self.registry,
+                        station_peer_id,
+                        Some(route_id),
+                        &hooks,
+                    )?;
+                    if let Some(committed) = self.registry.entry(station_peer_id) {
+                        if let Some(slot) = result
+                            .iter_mut()
+                            .find(|entry| entry.station_peer_id == station_peer_id)
+                        {
+                            *slot = committed;
+                        }
+                    }
+                }
+            }
+        }
         retire_inactive_transport(&self.binding, &self.transport);
-        result
+        Ok(result)
     }
 
     pub fn shutdown(&self) -> Result<(), String> {
@@ -726,6 +873,11 @@ fn binding_transport_error(error: StationBindingError) -> StationTransportError 
         error.message,
         false,
     )
+}
+
+fn current_unix_ms() -> i64 {
+    i64::try_from(time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000)
+        .unwrap_or(i64::MAX)
 }
 
 fn closed_policy_transport_error(
@@ -777,28 +929,33 @@ fn prepare_entry_transport(
     let Some(route) = entry.active_route() else {
         return Err("The Station has no active route".to_string());
     };
-    if route.route_type == StationRouteType::Relay {
-        let relay_peer_id = route
-            .relay_peer_id
-            .clone()
-            .ok_or_else(|| "Circuit route has no Relay identity".to_string())?;
-        transport
-            .prepare_route(TransportIdentityScope::Relay(relay_peer_id))
-            .map_err(|error| error.to_string())?;
-    }
-    Ok(())
+    let scope = match route.route_type {
+        StationRouteType::Direct => {
+            TransportIdentityScope::DirectStation(entry.station_peer_id.clone())
+        }
+        StationRouteType::Relay => TransportIdentityScope::Relay(
+            route
+                .relay_peer_id
+                .clone()
+                .ok_or_else(|| "Circuit route has no Relay identity".to_string())?,
+        ),
+    };
+    transport
+        .prepare_route(scope)
+        .map_err(|error| error.to_string())
 }
 
 fn entry_transport_scope(entry: &StationEntry) -> Option<TransportIdentityScope> {
     let route = entry.active_route()?;
-    (route.route_type == StationRouteType::Relay)
-        .then(|| {
-            route
-                .relay_peer_id
-                .clone()
-                .map(TransportIdentityScope::Relay)
-        })
-        .flatten()
+    match route.route_type {
+        StationRouteType::Direct => Some(TransportIdentityScope::DirectStation(
+            entry.station_peer_id.clone(),
+        )),
+        StationRouteType::Relay => route
+            .relay_peer_id
+            .clone()
+            .map(TransportIdentityScope::Relay),
+    }
 }
 
 fn retire_inactive_transport(binding: &StationBindingService, transport: &StationTransportHandle) {
@@ -820,11 +977,11 @@ mod tests {
     use crate::application::station_runtime::client::{StationRequestBody, StationRouteSecurity};
     use crate::infrastructure::station_discovery::VerifiedStationRoute;
     use reqwest::Method;
-    use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::path::PathBuf;
-    use std::thread;
     use tokio_util::sync::CancellationToken;
+
+    const TEST_NODE_PEER_ID: &str = "12D3KooWGo2HxmjfSQZKTheDEbgDBpSuhUxTNsr8DnTkXCDzdaZL";
 
     fn temp_dir(name: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(
@@ -837,9 +994,13 @@ mod tests {
     }
 
     fn direct_route(route_id: &str, origin: String) -> VerifiedStationRoute {
+        let port = reqwest::Url::parse(&origin)
+            .unwrap()
+            .port_or_known_default()
+            .unwrap();
         VerifiedStationRoute {
             station_peer_id: "station-one".to_string(),
-            node_peer_id: format!("station-one-{route_id}"),
+            node_peer_id: TEST_NODE_PEER_ID.to_string(),
             station_root_public_key: vec![1, 2, 3],
             node_authorization_digest: [4; 32],
             authorization_epoch: 1,
@@ -847,39 +1008,119 @@ mod tests {
             route_generation: 1,
             endpoint_origin: origin.clone(),
             relay_peer_id: None,
-            inner_tls_spki_sha256: None,
-            addresses: vec![origin],
-            attestation_bytes: None,
+            inner_tls_spki_sha256: Some([7; 32]),
+            addresses: vec![format!("/ip4/127.0.0.1/tcp/{port}/p2p/{TEST_NODE_PEER_ID}")],
+            attestation_bytes: Some(vec![8, 9]),
             connection_grant: None,
-            expires_at_unix_ms: None,
+            expires_at_unix_ms: Some(i64::MAX),
         }
     }
 
-    fn serve_empty_response_once() -> (String, thread::JoinHandle<()>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let origin = format!("http://{}", listener.local_addr().unwrap());
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 4096];
-            let _ = stream.read(&mut request);
-            stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-                .unwrap();
-        });
-        (origin, server)
+    #[test]
+    fn same_route_refresh_is_committed_before_the_old_lease_expires() {
+        let runtime = StationRuntime::start(&temp_dir("same-route-refresh")).unwrap();
+        let current = direct_route("route-a", "http://127.0.0.1:4101".to_string());
+        runtime
+            .store_verified_routes(std::slice::from_ref(&current))
+            .unwrap();
+        runtime
+            .switch_station_with_teardown("station-one", Some("route-a"), &|_| Ok(()))
+            .unwrap();
+        runtime.binding().mark_bound().unwrap();
+        let before = runtime.binding().state();
+        let old_lease = runtime
+            .binding()
+            .route_lease(TrafficClass::Interactive)
+            .unwrap();
+
+        let mut refreshed = current;
+        refreshed.authorization_epoch = 2;
+        refreshed.route_generation = 2;
+        refreshed.node_authorization_digest = [9; 32];
+        refreshed.attestation_bytes = Some(vec![10, 11]);
+        let entries = runtime
+            .store_verified_routes(std::slice::from_ref(&refreshed))
+            .unwrap();
+
+        let after = runtime.binding().state();
+        assert_eq!(after.station_peer_id, before.station_peer_id);
+        assert_eq!(after.active_route_id, before.active_route_id);
+        assert_eq!(after.lifecycle_generation, before.lifecycle_generation);
+        assert_eq!(after.route_revision, before.route_revision + 1);
+        assert!(old_lease.is_cancelled());
+        assert_eq!(
+            entries[0].active_route().unwrap().authorization_epoch,
+            refreshed.authorization_epoch
+        );
+        assert_eq!(
+            runtime
+                .binding()
+                .committed_entry()
+                .unwrap()
+                .active_route()
+                .unwrap()
+                .node_authorization_digest,
+            refreshed.node_authorization_digest
+        );
     }
 
     #[test]
-    fn automatic_failover_replays_sse_without_cancelling_caller_scope() {
+    fn target_station_request_uses_verified_route_without_switching_binding() {
+        let runtime = StationRuntime::start(&temp_dir("target-station-request")).unwrap();
+        let active = direct_route("route-a", "http://127.0.0.1:4101".to_string());
+        let mut authority = direct_route("route-b", "http://127.0.0.1:4102".to_string());
+        authority.station_peer_id = "station-two".to_string();
+        authority.station_root_public_key = vec![5, 6, 7];
+        runtime.store_verified_routes(&[active, authority]).unwrap();
+        runtime
+            .registry
+            .pin_or_verify_federation_signing_key("station-two", "station-two-key", [0x22; 32])
+            .unwrap();
+        runtime
+            .switch_station_with_teardown("station-one", Some("route-a"), &|_| Ok(()))
+            .unwrap();
+        runtime.binding().mark_bound().unwrap();
+        let before = runtime.binding().state();
+
+        let result = runtime
+            .client()
+            .request_proto_for_actor_at_station::<
+                crate::model::chat::GetConversationPublicHeadRequest,
+                crate::model::chat::GetConversationPublicHeadResponse,
+            >(
+                "station-two",
+                Method::GET,
+                "/conversation/public-head",
+                "token",
+                Some(&[("conversation_id", "conversation-a".to_string())]),
+                None,
+            );
+
+        assert!(result.is_err());
+        assert_eq!(runtime.binding().state(), before);
+        let attempt = runtime
+            .diagnostics()
+            .attempts
+            .last()
+            .cloned()
+            .expect("target Station route attempt");
+        assert_eq!(attempt.station_peer_id, "station-two");
+        assert_eq!(attempt.route_id, "route-b");
+    }
+
+    #[test]
+    fn automatic_failover_adopts_verified_replacement_before_second_transport_failure() {
         let unavailable_listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let unavailable_origin = format!("http://{}", unavailable_listener.local_addr().unwrap());
         drop(unavailable_listener);
-        let (available_origin, server) = serve_empty_response_once();
+        let replacement_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let replacement_origin = format!("http://{}", replacement_listener.local_addr().unwrap());
+        drop(replacement_listener);
         let runtime = StationRuntime::start(&temp_dir("sse-failover")).unwrap();
         runtime
             .store_verified_routes(&[
                 direct_route("route-a", unavailable_origin),
-                direct_route("route-b", available_origin),
+                direct_route("route-b", replacement_origin),
             ])
             .unwrap();
         runtime
@@ -888,31 +1129,29 @@ mod tests {
         runtime.binding().mark_bound().unwrap();
         let before = runtime.binding().state();
 
-        let actor_ptid = format!("ptid:test:sse-failover-{}", std::process::id());
         let cancellation = CancellationToken::new();
-        crate::infrastructure::event_stream::register_test_control(
-            &actor_ptid,
-            cancellation.clone(),
-        );
-        let response = runtime
-            .client()
-            .execute_raw(StationRequest {
-                method: Method::GET,
-                path_and_query: "/events/stream".to_string(),
-                headers: Default::default(),
-                body: StationRequestBody::Empty,
-                timeout: Duration::from_secs(5),
-                admission_timeout: Duration::from_secs(1),
-                traffic_class: TrafficClass::Realtime,
-                route_security: StationRouteSecurity::VerifiedRoute,
-                route_policy: client::StationRoutePolicy::Auto,
-                replay_policy: ReplayPolicy::SafeRead,
-                cancellation: cancellation.clone(),
-                expected_scope: None,
-            })
-            .expect("SSE request must replay on the replacement route");
+        let error = match runtime.client().execute_raw(StationRequest {
+            method: Method::GET,
+            path_and_query: "/events/stream".to_string(),
+            headers: Default::default(),
+            body: StationRequestBody::Empty,
+            timeout: Duration::from_secs(5),
+            admission_timeout: Duration::from_secs(1),
+            traffic_class: TrafficClass::Realtime,
+            route_security: StationRouteSecurity::VerifiedRoute,
+            route_policy: client::StationRoutePolicy::Auto,
+            replay_policy: ReplayPolicy::SafeRead,
+            cancellation: cancellation.clone(),
+            expected_scope: None,
+        }) {
+            Err(error) => error,
+            Ok(_) => panic!("replacement transport failure must remain visible"),
+        };
 
-        assert_eq!(response.status, 200);
+        assert!(matches!(
+            error.kind,
+            client::StationClientErrorKind::Network
+        ));
         assert!(!cancellation.is_cancelled());
         assert_eq!(
             runtime.binding().state().active_route_id.as_deref(),
@@ -923,7 +1162,7 @@ mod tests {
         assert_eq!(diagnostics.attempts[0].route_id, "route-a");
         assert_eq!(diagnostics.attempts[0].outcome, "failed");
         assert_eq!(diagnostics.attempts[1].route_id, "route-b");
-        assert_eq!(diagnostics.attempts[1].outcome, "connected");
+        assert_eq!(diagnostics.attempts[1].outcome, "failed");
         assert!(diagnostics.attempts[0].sequence < diagnostics.attempts[1].sequence);
         let transition = diagnostics
             .transitions
@@ -936,10 +1175,6 @@ mod tests {
         assert_eq!(transition.lifecycle_generation, before.lifecycle_generation);
         assert!(transition.next_route_revision > before.route_revision);
         assert!(transition.previous_lease_cancelled);
-
-        drop(response);
-        crate::infrastructure::event_stream::stop(&actor_ptid);
-        server.join().unwrap();
     }
 
     #[test]

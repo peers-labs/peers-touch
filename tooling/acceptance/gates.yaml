@@ -433,14 +433,14 @@
       "timeout_seconds": 180,
       "environment": "local",
       "tier": "local-evidence",
-      "description": "Prove bounded standard Circuit admission: enrolled reservation, public route, source-bound one-use permit, same-generation renewal, expiry, and revoke fail closed."
+      "description": "Prove bounded standard Circuit admission: enrolled reservation, public route, proof-bound idempotent grant redemption, short-lived source permit, same-generation renewal, expiry, and revoke fail closed."
     },
     "NCP-G08": {
       "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-native-cut --gate NCP-G08",
       "timeout_seconds": 420,
       "environment": "local",
       "tier": "local-evidence",
-      "description": "Aggregate Rust-Go Circuit interop, Relay ACL semantics, and the zero-old-data-plane inventory for the atomic native transport cut."
+      "description": "Aggregate Rust-Go Circuit interop, Relay ACL semantics, Mobile Rust contract build, and the source-owned zero-old-data-plane inventory for the atomic native transport cut."
     },
     "station-access-capability-contract": {
       "command": "python3 -m tooling.acceptance.gates.station_access.capability_contract",

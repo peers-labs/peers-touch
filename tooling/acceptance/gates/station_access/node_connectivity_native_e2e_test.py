@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import http.server
 import json
+import socket
 import threading
 import unittest
-import urllib.error
-import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -24,19 +22,6 @@ from tooling.acceptance.gates.station_access.node_connectivity_native_e2e import
 from tooling.acceptance.node_connectivity_native_support import (
     DirectRouteFaultProxy,
 )
-
-
-class _VersionHandler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self) -> None:
-        body = b'{"version":"test"}'
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, _format: str, *_args: object) -> None:
-        return
 
 
 class NodeConnectivityNativeGateTest(unittest.TestCase):
@@ -221,46 +206,72 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
         self.assertEqual(gate.journey_id, JOURNEY_ID)
         self.assertTrue(gate.verify_fixture_ready())
 
-    def test_direct_route_fault_proxy_drops_only_armed_version_probe(
+    def test_direct_route_fault_proxy_forwards_opaque_tcp_and_drops_when_armed(
         self,
     ) -> None:
-        upstream = http.server.ThreadingHTTPServer(
-            ("127.0.0.1", 0),
-            _VersionHandler,
-        )
+        upstream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        upstream.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        upstream.bind(("127.0.0.1", 0))
+        upstream.listen()
+        upstream.settimeout(0.2)
+        stop = threading.Event()
+
+        def echo() -> None:
+            while not stop.is_set():
+                try:
+                    connection, _ = upstream.accept()
+                except TimeoutError:
+                    continue
+                except OSError:
+                    return
+                with connection:
+                    while not stop.is_set():
+                        try:
+                            payload = connection.recv(4096)
+                        except OSError:
+                            break
+                        if not payload:
+                            break
+                        connection.sendall(payload)
+
         upstream_thread = threading.Thread(
-            target=upstream.serve_forever,
+            target=echo,
             daemon=True,
         )
         upstream_thread.start()
-        host, port = upstream.server_address
-        proxy = DirectRouteFaultProxy(f"http://{host}:{port}")
+        host, port = upstream.getsockname()
+        peer_id = "12D3KooWGo2HxmjfSQZKTheDEbgDBpSuhUxTNsr8DnTkXCDzdaZL"
+        proxy = DirectRouteFaultProxy(
+            f"/ip4/{host}/tcp/{port}/p2p/{peer_id}"
+        )
         proxy.start()
         try:
-            with urllib.request.urlopen(
-                f"{proxy.url}/app-meta/version",
+            first = socket.create_connection(
+                ("127.0.0.1", proxy.port),
                 timeout=2,
-            ) as response:
-                self.assertEqual(response.status, 200)
+            )
+            first.sendall(b"opaque-before")
+            self.assertEqual(first.recv(64), b"opaque-before")
             proxy.arm()
-            with self.assertRaises(
-                (urllib.error.URLError, ConnectionError),
-            ):
-                urllib.request.urlopen(
-                    f"{proxy.url}/app-meta/version",
-                    timeout=2,
-                )
+            try:
+                dropped = first.recv(64)
+            except OSError:
+                dropped = b""
+            self.assertEqual(dropped, b"")
+            first.close()
             proxy.disarm()
-            with urllib.request.urlopen(
-                f"{proxy.url}/app-meta/version",
+            second = socket.create_connection(
+                ("127.0.0.1", proxy.port),
                 timeout=2,
-            ) as response:
-                self.assertEqual(response.status, 200)
+            )
+            second.sendall(b"opaque-after")
+            self.assertEqual(second.recv(64), b"opaque-after")
+            second.close()
             self.assertEqual(proxy.evidence()["failureCount"], 1)
         finally:
             proxy.stop()
-            upstream.shutdown()
-            upstream.server_close()
+            stop.set()
+            upstream.close()
             upstream_thread.join(timeout=2)
 
     def test_validator_requires_routes_read_and_exact_attachment(self) -> None:

@@ -92,6 +92,10 @@ class DesktopRelayNativeGateTest(unittest.TestCase):
         self.assertEqual(snapshot["activeRouteId"], "relay-route")
         self.assertEqual(snapshot["routeRevision"], 3)
         self.assertEqual(snapshot["route"]["route_type"], "relay")
+        self.assertEqual(
+            [route["route_type"] for route in snapshot["routes"]],
+            ["direct", "relay"],
+        )
 
     def test_registry_snapshot_rejects_url_keyed_legacy_shape(self) -> None:
         session = Mock(spec=TauriSession)

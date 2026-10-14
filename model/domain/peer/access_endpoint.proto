@@ -21,6 +21,7 @@ enum AccessEndpointOutcome {
   ACCESS_ENDPOINT_OUTCOME_GRANT_REPLAYED = 5;
   ACCESS_ENDPOINT_OUTCOME_GRANT_WRONG_RELAY = 6;
   ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION = 7;
+  ACCESS_ENDPOINT_OUTCOME_SOURCE_PROOF_INVALID = 8;
 }
 
 enum StationRouteVisibility {
@@ -35,11 +36,26 @@ enum StationRouteKind {
   STATION_ROUTE_KIND_CIRCUIT = 2;
 }
 
+message AccessEndpointSourceProofStatement {
+  bytes challenge = 1;
+  bytes connection_grant_digest = 2;
+  string relay_peer_id = 3;
+  reserved 4;
+  uint32 client_protocol_version = 5;
+}
+
+message AccessEndpointSourceProof {
+  bytes statement_bytes = 1;
+  bytes source_public_key = 2;
+  bytes source_signature = 3;
+}
+
 message AccessEndpointRequest {
   bytes challenge = 1;
   bytes connection_grant = 2;
   uint32 client_protocol_version = 3;
-  string source_peer_id = 4;
+  reserved 4;
+  AccessEndpointSourceProof source_proof = 5;
 }
 
 message AccessEndpointStatement {

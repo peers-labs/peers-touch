@@ -195,14 +195,16 @@ func (s *Service) DiscoverEndpoint(
 		route, grantOutcome := s.consumeConnectionGrant(
 			ctx,
 			req.GetConnectionGrant(),
-			req.GetSourcePeerId(),
+			req.GetSourceProof(),
+			req.GetChallenge(),
+			req.GetClientProtocolVersion(),
 			now,
 		)
 		outcome = grantOutcome
 		if route != nil {
 			routes = append(routes, route)
 		}
-	} else {
+	} else if req.GetSourceProof() == nil {
 		routes = s.publicStationRoutes(ctx, now)
 		switch len(routes) {
 		case 0:
@@ -212,6 +214,8 @@ func (s *Service) DiscoverEndpoint(
 		default:
 			outcome = peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_MULTIPLE_CANDIDATES
 		}
+	} else {
+		return nil, ErrInvalidRequest
 	}
 
 	statement := &peerpb.AccessEndpointStatement{
@@ -275,13 +279,11 @@ func (s *Service) publicStationRoutes(
 func (s *Service) consumeConnectionGrant(
 	ctx context.Context,
 	raw []byte,
-	sourcePeerIDValue string,
+	sourceProof *peerpb.AccessEndpointSourceProof,
+	challenge []byte,
+	clientProtocolVersion uint32,
 	now time.Time,
 ) (*peerpb.StationRouteAttestation, peerpb.AccessEndpointOutcome) {
-	sourcePeerID, err := peer.Decode(strings.TrimSpace(sourcePeerIDValue))
-	if err != nil {
-		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
-	}
 	grant := &peerpb.StationConnectionGrant{}
 	if err := proto.Unmarshal(raw, grant); err != nil {
 		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
@@ -290,6 +292,8 @@ func (s *Service) consumeConnectionGrant(
 	if err != nil || !bytes.Equal(canonical, raw) {
 		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
 	}
+	grantDigestBytes := sha256.Sum256(raw)
+	grantDigest := hex.EncodeToString(grantDigestBytes[:])
 	statement := &peerpb.StationConnectionGrantStatement{}
 	if err := proto.Unmarshal(grant.GetStatementBytes(), statement); err != nil {
 		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
@@ -297,6 +301,21 @@ func (s *Service) consumeConnectionGrant(
 	if statement.GetRelayPeerId() != s.authority.RelayPeerID() {
 		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_GRANT_WRONG_RELAY
 	}
+	verifiedSource, err := peerpb.VerifyAccessEndpointSourceProof(sourceProof)
+	if err != nil ||
+		!bytes.Equal(
+			verifiedSource.Statement.GetChallenge(),
+			challenge,
+		) ||
+		!bytes.Equal(
+			verifiedSource.Statement.GetConnectionGrantDigest(),
+			grantDigestBytes[:],
+		) ||
+		verifiedSource.Statement.GetRelayPeerId() != s.authority.RelayPeerID() ||
+		verifiedSource.Statement.GetClientProtocolVersion() != clientProtocolVersion {
+		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_SOURCE_PROOF_INVALID
+	}
+	sourcePeerID := verifiedSource.SourcePeerID
 	issuedAt := time.UnixMilli(statement.GetIssuedAtUnixMs()).UTC()
 	expiresAt := time.UnixMilli(statement.GetExpiresAtUnixMs()).UTC()
 	if !expiresAt.After(now) {
@@ -313,16 +332,11 @@ func (s *Service) consumeConnectionGrant(
 		expiresAt.Sub(issuedAt) > domain.MaxConnectionGrantLifetime {
 		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
 	}
-	digest, err := domain.DigestGrant(grant)
-	if err != nil {
-		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
-	}
-
 	s.discoveryMu.Lock()
 	defer s.discoveryMu.Unlock()
 	s.removeExpiredDiscoveryStateLocked(now)
-	record, ok := s.grants[digest]
-	if !ok || record.RemainingUses == 0 {
+	record, ok := s.grants[grantDigest]
+	if !ok {
 		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_GRANT_REPLAYED
 	}
 	if record.GrantID != statement.GetGrantId() ||
@@ -334,26 +348,92 @@ func (s *Service) consumeConnectionGrant(
 		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
 	}
 	route, ok := s.routes[record.RouteID]
-	if !ok || !s.routeIsCurrent(ctx, route) {
+	if !ok ||
+		route.Visibility !=
+			peerpb.StationRouteVisibility_STATION_ROUTE_VISIBILITY_GRANT_ONLY ||
+		route.NodePeerID != statement.GetNodePeerId() ||
+		!s.routeIsCurrent(ctx, route) {
+		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
+	}
+	attestation := &peerpb.StationRouteAttestation{}
+	if err := proto.Unmarshal(route.AttestationBytes, attestation); err != nil {
+		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
+	}
+	routeStatement := &peerpb.StationRouteStatement{}
+	if err := proto.Unmarshal(
+		attestation.GetStatementBytes(),
+		routeStatement,
+	); err != nil ||
+		!bytes.Equal(
+			routeStatement.GetNodeAuthorizationDigest(),
+			statement.GetNodeAuthorizationDigest(),
+		) {
 		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
 	}
 	destinationPeerID, err := peer.Decode(route.NodePeerID)
-	if err != nil || s.admission.Permit(nativeRelay.ConnectPermit{
+	if err != nil {
+		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
+	}
+	redemptionID := connectionGrantRedemptionID(
+		grantDigestBytes,
+		sourcePeerID,
+	)
+	if redemption, redeemed := s.redemptions[redemptionID]; redeemed {
+		if redemption.GrantDigest != grantDigest ||
+			redemption.StationPeerID != record.StationPeerID ||
+			redemption.SourcePeerID != sourcePeerID.String() ||
+			redemption.RouteID != route.RouteID ||
+			redemption.RouteGeneration != route.RouteGeneration ||
+			!redemption.ExpiresAt.Equal(record.ExpiresAt) {
+			return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
+		}
+		if s.admission.Permit(nativeRelay.ConnectPermit{
+			PermitID:          redemption.RedemptionID,
+			SourcePeerID:      sourcePeerID,
+			DestinationPeerID: destinationPeerID,
+			Generation:        route.RouteGeneration,
+			ExpiresAt:         record.ExpiresAt,
+		}) != nil {
+			return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
+		}
+		return attestation, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_READY
+	}
+	if record.RemainingUses == 0 {
+		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_GRANT_REPLAYED
+	}
+	if s.admission.Permit(nativeRelay.ConnectPermit{
+		PermitID:          redemptionID,
 		SourcePeerID:      sourcePeerID,
 		DestinationPeerID: destinationPeerID,
 		Generation:        route.RouteGeneration,
-		RemainingUses:     1,
 		ExpiresAt:         record.ExpiresAt,
 	}) != nil {
 		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
 	}
 	record.RemainingUses--
-	s.grants[digest] = record
-	attestation := &peerpb.StationRouteAttestation{}
-	if err := proto.Unmarshal(route.AttestationBytes, attestation); err != nil {
-		return nil, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION
+	s.grants[grantDigest] = record
+	s.redemptions[redemptionID] = domain.GrantRedemptionRecord{
+		RedemptionID:    redemptionID,
+		GrantDigest:     grantDigest,
+		StationPeerID:   record.StationPeerID,
+		SourcePeerID:    sourcePeerID.String(),
+		RouteID:         route.RouteID,
+		RouteGeneration: route.RouteGeneration,
+		ExpiresAt:       record.ExpiresAt,
 	}
 	return attestation, peerpb.AccessEndpointOutcome_ACCESS_ENDPOINT_OUTCOME_READY
+}
+
+func connectionGrantRedemptionID(
+	grantDigest [sha256.Size]byte,
+	sourcePeerID peer.ID,
+) string {
+	digest := sha256.New()
+	_, _ = digest.Write([]byte("peers-touch/connection-grant-redemption/v1\x00"))
+	_, _ = digest.Write(grantDigest[:])
+	_, _ = digest.Write([]byte{0})
+	_, _ = digest.Write([]byte(sourcePeerID))
+	return hex.EncodeToString(digest.Sum(nil))
 }
 
 func (s *Service) InvalidateStationRoutes(stationPeerID string) {
@@ -367,6 +447,11 @@ func (s *Service) InvalidateStationRoutes(stationPeerID string) {
 	for digest, grant := range s.grants {
 		if grant.StationPeerID == stationPeerID {
 			delete(s.grants, digest)
+		}
+	}
+	for redemptionID, redemption := range s.redemptions {
+		if redemption.StationPeerID == stationPeerID {
+			delete(s.redemptions, redemptionID)
 		}
 	}
 }
@@ -391,6 +476,14 @@ func (s *Service) InvalidateNodeRoutes(
 				continue
 			}
 			delete(s.grants, digest)
+		}
+	}
+	for redemptionID, redemption := range s.redemptions {
+		if redemption.StationPeerID != stationPeerID {
+			continue
+		}
+		if _, revoked := revokedRouteIDs[redemption.RouteID]; revoked {
+			delete(s.redemptions, redemptionID)
 		}
 	}
 }
@@ -421,6 +514,11 @@ func (s *Service) removeExpiredDiscoveryStateLocked(now time.Time) {
 	for digest, grant := range s.grants {
 		if !grant.ExpiresAt.After(now) {
 			delete(s.grants, digest)
+		}
+	}
+	for redemptionID, redemption := range s.redemptions {
+		if !redemption.ExpiresAt.After(now) {
+			delete(s.redemptions, redemptionID)
 		}
 	}
 }

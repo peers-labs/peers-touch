@@ -152,7 +152,10 @@ def _route_matches_bound_service(
 ) -> bool:
     endpoint = str(route.get("endpoint_origin") or "").rstrip("/")
     if service_id != "station-via-relay":
-        return endpoint == expected_url
+        return (
+            route.get("route_type") == "direct"
+            and endpoint == expected_url
+        )
 
     locator = urlsplit(expected_url)
     transport = urlsplit(endpoint)
@@ -283,7 +286,11 @@ class NativeDesktopRuntimeBinding(ABC):
             session.start()
             session.wait_for_acceptance_harness(30)
             if not options.restore_session:
-                self._configure_session_station(session, station_url)
+                self._configure_session_station(
+                    session,
+                    station_url,
+                    station_service_id,
+                )
             runtime_identity = self._client_runtime_identity(
                 client_id,
                 generation,
@@ -460,7 +467,11 @@ class NativeDesktopRuntimeBinding(ABC):
                 binding_role,
                 "bound client session is not live",
             )
-        self._configure_session_station(session, override.endpoint)
+        self._configure_session_station(
+            session,
+            override.endpoint,
+            override.service_id,
+        )
 
     def apply_verified_direct_route_override(
         self,
@@ -484,7 +495,7 @@ class NativeDesktopRuntimeBinding(ABC):
             "acceptance_station_direct_route_override",
             {
                 "input": {
-                    "endpoint_origin": override.endpoint,
+                    "dial_multiaddr": override.endpoint,
                 }
             },
         )
@@ -506,7 +517,7 @@ class NativeDesktopRuntimeBinding(ABC):
             try:
                 session.invoke_app_result(
                     "acceptance_station_direct_route_override",
-                    {"input": {"endpoint_origin": None}},
+                    {"input": {"dial_multiaddr": None}},
                 )
             except Exception as error:
                 command_error = error
@@ -528,7 +539,7 @@ class NativeDesktopRuntimeBinding(ABC):
         )
         if self._runtime_manifest is None:
             raise DriverError("Runtime Binding manifest is not set")
-        _, service = require_runtime_client_service(
+        service_id, service = require_runtime_client_service(
             self._runtime_manifest,
             client_id,
             binding_role,
@@ -538,6 +549,7 @@ class NativeDesktopRuntimeBinding(ABC):
             self._configure_session_station(
                 session,
                 str(service.get("endpoint") or ""),
+                service_id,
             )
         self._transport_overrides.pop(handle._token, None)
         self._release_transport_endpoint(override.endpoint_lease_id)
@@ -600,6 +612,7 @@ class NativeDesktopRuntimeBinding(ABC):
     def _configure_session_station(
         session: TauriSession,
         station_url: str,
+        station_service_id: str,
     ) -> None:
         if not station_url:
             raise DriverError("Runtime Binding Station endpoint is empty")
@@ -634,6 +647,11 @@ class NativeDesktopRuntimeBinding(ABC):
                 len(entries) == 1
                 and len(routes) == 1
                 and isinstance(routes[0], dict)
+                and _route_matches_bound_service(
+                    station_service_id,
+                    expected_url,
+                    routes[0],
+                )
                 and routes[0].get("health") != "unavailable"
             ):
                 route_id = str(routes[0].get("route_id") or "").strip()
@@ -642,8 +660,11 @@ class NativeDesktopRuntimeBinding(ABC):
             for route in routes:
                 if (
                     isinstance(route, dict)
-                    and str(route.get("endpoint_origin") or "").rstrip("/")
-                    == expected_url
+                    and _route_matches_bound_service(
+                        station_service_id,
+                        expected_url,
+                        route,
+                    )
                 ):
                     route_id = str(route.get("route_id") or "").strip()
                     health = str(route.get("health") or "")

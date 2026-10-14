@@ -54,14 +54,14 @@ var (
 
 // Resolved is the return shape: the verified envelope plus the locator
 // record that authenticated it. Callers may inspect the locator for
-// origin / mounts / seq metadata.
+// origin and sequence metadata.
 type Resolved struct {
 	Envelope *profilepb.ActorProfileEnvelope
 	Locator  *locatorpb.ActorLocatorRecord
 
 	// IsLocal indicates the handle resolved to this station's own
 	// PeerID — the resolver bypassed both the federation cache and the
-	// opaque Relay tunnel leg.
+	// remote Node Connectivity route.
 	IsLocal bool
 
 	// FromCache is true when the resolver served the envelope from the
@@ -529,28 +529,6 @@ func (r *Resolver) resolveLocal(
 	return &Resolved{Envelope: env, Locator: rec, IsLocal: true}, nil
 }
 
-// relayMountMatches reports whether `localBase` appears in the
-// locator-advertised mount list. Comparison is trailing-slash-
-// tolerant — the locator hook publishes the trimmed form, but a
-// standard Relay runtime that publishes its active reservation
-// list might not be as careful, so we trim both sides at compare
-// time. Case-sensitive: relay base URLs are URL-typed strings, and
-// the host portion is the only part that's case-insensitive in
-// strict RFC reading; in practice all our relays normalize to
-// lowercase host so an EqualFold here would buy nothing.
-func relayMountMatches(mounts []string, localBase string) bool {
-	want := strings.TrimRight(strings.TrimSpace(localBase), "/")
-	if want == "" {
-		return false
-	}
-	for _, m := range mounts {
-		if strings.TrimRight(strings.TrimSpace(m), "/") == want {
-			return true
-		}
-	}
-	return false
-}
-
 // resolveRemote sends GET /actor/federation/profile?handle=<canon> through
 // the local standard Circuit route. The Relay carries only encrypted
 // ciphertext and the target Station identity.
@@ -562,29 +540,6 @@ func (r *Resolver) resolveRemote(
 	rc := fednode.RelayAccessSnapshot()
 	if rc == nil || !rc.Available() {
 		return nil, ErrRelayUnavailable
-	}
-	base := strings.TrimRight(strings.TrimSpace(rc.RelayOrigin()), "/")
-	if base == "" {
-		return nil, ErrRelayUnavailable
-	}
-
-	// Tier B2 — soft hint. The locator record can advertise the
-	// relay base-URLs the home station publishes through. If our
-	// local relay's base does NOT appear in that list, our forward
-	// is at the mercy of relay-to-relay federation (not yet
-	// implemented) and most likely will fail with 404 at the relay's
-	// mount table.
-	//
-	// We attempt the tunnel anyway — the proto explicitly marks
-	// inbox_relay_mounts as a hint, and the relay's live mount table
-	// is the authoritative answer. A misconfigured but recoverable
-	// hint must not turn into a hard outage. Log loudly so an
-	// operator sees the cross-relay split during testing.
-	if mounts := rec.GetInboxRelayMounts(); len(mounts) > 0 && !relayMountMatches(mounts, base) {
-		logger.Warnf(ctx,
-			"[resolver] handle=%s home_relays=%v local_relay=%s no overlap; "+
-				"attempting tunnel via local relay, expect unavailable if relays do not federate",
-			canon, mounts, base)
 	}
 
 	target := (&url.URL{
@@ -605,7 +560,7 @@ func (r *Resolver) resolveRemote(
 
 	resp, err := rc.RoundTrip(reqCtx, rec.GetHomeStationPeerId(), req)
 	if err != nil {
-		return nil, fmt.Errorf("resolver: tunnel GET: %w", err)
+		return nil, fmt.Errorf("resolver: Station route GET: %w", err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))

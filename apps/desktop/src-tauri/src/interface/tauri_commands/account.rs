@@ -139,7 +139,12 @@ pub fn account_switch(
                     .map_err(|error| {
                         account_transition_failure("detach_old_secure_content", error)
                     })?;
-                crate::infrastructure::event_stream::stop(&previous.actor.ptid);
+                state
+                    .event_streams
+                    .stop(&previous.actor.ptid)
+                    .map_err(|error| {
+                        account_transition_failure("detach_old_event_stream", error)
+                    })?;
                 auth_service::deactivate_messaging_profile(state.inner(), &previous.account_id)
                     .map_err(|error| account_transition_failure("detach_old_messaging", error))?;
             }
@@ -188,7 +193,12 @@ pub fn account_switch(
                 &prepared.token,
             ) {
                 state.sessions.unbind(window.label());
-                crate::infrastructure::event_stream::stop(&prepared.actor_ptid);
+                if let Err(stop_error) = state.event_streams.stop(&prepared.actor_ptid) {
+                    tracing::warn!(
+                        error = %stop_error,
+                        "event stream teardown failed after messaging activation failure"
+                    );
+                }
                 let _ =
                     auth_service::deactivate_messaging_profile(state.inner(), &prepared.account_id);
                 return Err(account_transition_failure("activate_new_messaging", error));

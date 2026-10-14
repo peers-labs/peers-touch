@@ -161,7 +161,7 @@ fn is_session_revoked(result: &AppResult<AuthSessionPayload>) -> bool {
 fn unbind_for_logout(state: &Arc<AppState>, window: &Window) -> Result<(), String> {
     if let Some(session) = state.sessions.unbind(window.label()) {
         let teardown = state.secure_content.teardown_actor(&session.actor.ptid);
-        crate::infrastructure::event_stream::stop(&session.actor.ptid);
+        state.event_streams.stop(&session.actor.ptid)?;
         teardown?;
     }
     Ok(())

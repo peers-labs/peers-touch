@@ -1000,7 +1000,10 @@ pub(crate) fn detach_for_station_switch(
         .deactivate_all()
         .map_err(|error| AppResult::fail(ErrorCode::InternalError, error, None))?;
     for session in state.sessions.clear() {
-        crate::infrastructure::event_stream::stop(&session.actor.ptid);
+        state
+            .event_streams
+            .stop(&session.actor.ptid)
+            .map_err(|error| AppResult::fail(ErrorCode::InternalError, error, None))?;
     }
     Ok(())
 }

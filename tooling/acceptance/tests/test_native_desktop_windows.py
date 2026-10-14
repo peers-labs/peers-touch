@@ -10,7 +10,7 @@ import sys
 import tempfile
 import unittest
 import zlib
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import Mock
 
 from tooling.acceptance.core import (
@@ -101,7 +101,7 @@ class WindowsCellProfileTest(unittest.TestCase):
 
         self.assertEqual(
             _normalized_windows_path(candidate),
-            Path(root, "storage", "attachment-cache", "attachment-1"),
+            PureWindowsPath(root, "storage", "attachment-cache", "attachment-1"),
         )
         self.assertTrue(_windows_path_is_descendant(candidate, root))
         self.assertEqual(_windows_verbatim_path(candidate), candidate)
@@ -256,6 +256,32 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         )
         self.assertEqual(result["url"], "http://127.0.0.1:61234/fault")
         self.assertEqual(result["tunnelPid"], 4321)
+
+    def test_orchestrator_endpoint_preserves_direct_peer_identity(self) -> None:
+        provisioner = NativeDesktopWindowsProvisioner.__new__(
+            NativeDesktopWindowsProvisioner
+        )
+        provisioner._endpoints = {}
+        provisioner.transport = Mock()
+        provisioner.transport.available_remote_port.return_value = 61235
+        tunnel = Mock()
+        tunnel.process_id = 4322
+        provisioner.transport.start_reverse_forward.return_value = tunnel
+        peer_id = "12D3KooWGo2HxmjfSQZKTheDEbgDBpSuhUxTNsr8DnTkXCDzdaZL"
+
+        result = provisioner.expose_orchestrator_endpoint(
+            "direct-fault-proxy",
+            f"/ip4/127.0.0.1/tcp/58058/p2p/{peer_id}",
+        )
+
+        provisioner.transport.start_reverse_forward.assert_called_once_with(
+            local_port=58058,
+            remote_port=61235,
+        )
+        self.assertEqual(
+            result["url"],
+            f"/ip4/127.0.0.1/tcp/61235/p2p/{peer_id}",
+        )
 
     def test_screenshot_probe_geometry_uses_validated_metadata(self) -> None:
         content = bytearray(128)

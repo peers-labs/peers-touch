@@ -1234,12 +1234,29 @@ fn main() {
                         "presence: AppShutdown deadline reached, abandoning remaining reconciles"
                     );
                 }
-                infrastructure::event_stream::stop_all();
+                let event_stream_shutdown_failed =
+                    if let Err(error) = state.event_streams.stop_all() {
+                        tracing::warn!(
+                            error = %error,
+                            "event stream runtime did not drain before transport shutdown"
+                        );
+                        true
+                    } else {
+                        false
+                    };
                 if let Err(error) = state.station.shutdown() {
                     tracing::warn!(
                         error = %error,
                         "Station runtime shutdown failed"
                     );
+                }
+                if event_stream_shutdown_failed {
+                    if let Err(error) = state.event_streams.stop_all() {
+                    tracing::warn!(
+                        error = %error,
+                            "event stream runtime shutdown failed after transport drain"
+                    );
+                    }
                 }
             }
         });

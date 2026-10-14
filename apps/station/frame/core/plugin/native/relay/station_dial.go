@@ -6,9 +6,11 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
@@ -20,6 +22,8 @@ import (
 )
 
 const accessEndpointDomain = "peers-touch/access-endpoint/v1\x00"
+
+const maxStationRouteClients = 16
 
 func (r *Runtime) Available() bool {
 	return r != nil && r.control != nil &&
@@ -81,28 +85,30 @@ func (c *StationControl) roundTrip(
 			lastError = err
 			continue
 		}
-		client, err := securehttp.NewClient(securehttp.ClientConfig{
-			Host:         c.host,
-			TargetPeerID: route.nodePeerID,
-			ExpectedSPKI: route.innerSPKI,
-		})
+		key, session, err := c.routeClientLocked(route)
 		if err != nil {
 			lastError = err
 			continue
 		}
 		attempt, err := relayRequestAttempt(ctx, request, &bodySent)
 		if err != nil {
-			client.CloseIdleConnections()
 			return nil, err
 		}
-		response, err := client.RoundTrip(attempt)
+		response, err := session.client.RoundTrip(attempt)
 		if err != nil {
-			client.CloseIdleConnections()
+			c.retireRouteClientLocked(key, session)
 			lastError = err
 			if !relayRequestAllowsAutomaticRetry(request.Method) {
 				return nil, err
 			}
 			continue
+		}
+		session.activeResponses++
+		response.Body = &stationRouteResponseBody{
+			inner: response.Body,
+			release: func() {
+				c.releaseRouteClientResponse(session)
+			},
 		}
 		return response, nil
 	}
@@ -152,9 +158,146 @@ func relayRequestAttempt(
 }
 
 type verifiedCircuitRoute struct {
-	nodePeerID peer.ID
-	innerSPKI  [sha256.Size]byte
-	address    string
+	relayPeerID peer.ID
+	nodePeerID  peer.ID
+	routeID     string
+	generation  uint64
+	innerSPKI   [sha256.Size]byte
+	address     string
+}
+
+type stationRouteClientKey struct {
+	relayPeerID peer.ID
+	nodePeerID  peer.ID
+	routeID     string
+	generation  uint64
+	innerSPKI   [sha256.Size]byte
+	address     string
+}
+
+type stationRouteClient struct {
+	client          *securehttp.Client
+	lastUsed        uint64
+	activeResponses int
+	retired         bool
+}
+
+type stationRouteResponseBody struct {
+	inner   io.ReadCloser
+	release func()
+	once    sync.Once
+}
+
+func (b *stationRouteResponseBody) Read(output []byte) (int, error) {
+	count, err := b.inner.Read(output)
+	if err != nil {
+		b.once.Do(b.release)
+	}
+	return count, err
+}
+
+func (b *stationRouteResponseBody) Close() error {
+	err := b.inner.Close()
+	b.once.Do(b.release)
+	return err
+}
+
+func (c *StationControl) routeClientLocked(
+	route verifiedCircuitRoute,
+) (stationRouteClientKey, *stationRouteClient, error) {
+	key := stationRouteClientKey{
+		relayPeerID: route.relayPeerID,
+		nodePeerID:  route.nodePeerID,
+		routeID:     route.routeID,
+		generation:  route.generation,
+		innerSPKI:   route.innerSPKI,
+		address:     route.address,
+	}
+	c.routeClientSequence++
+	if session := c.routeClients[key]; session != nil && !session.retired {
+		session.lastUsed = c.routeClientSequence
+		return key, session, nil
+	}
+	client, err := securehttp.NewClient(securehttp.ClientConfig{
+		Host:         c.host,
+		TargetPeerID: route.nodePeerID,
+		ExpectedSPKI: route.innerSPKI,
+	})
+	if err != nil {
+		return stationRouteClientKey{}, nil, err
+	}
+	session := &stationRouteClient{
+		client:   client,
+		lastUsed: c.routeClientSequence,
+	}
+	if c.routeClients == nil {
+		c.routeClients = make(map[stationRouteClientKey]*stationRouteClient)
+	}
+	c.routeClients[key] = session
+	for len(c.routeClients) > maxStationRouteClients {
+		var oldestKey stationRouteClientKey
+		var oldest *stationRouteClient
+		for candidateKey, candidate := range c.routeClients {
+			if candidate == session {
+				continue
+			}
+			if oldest == nil || candidate.lastUsed < oldest.lastUsed {
+				oldestKey = candidateKey
+				oldest = candidate
+			}
+		}
+		if oldest == nil {
+			break
+		}
+		c.retireRouteClientLocked(oldestKey, oldest)
+	}
+	return key, session, nil
+}
+
+func (c *StationControl) retireRouteClientLocked(
+	key stationRouteClientKey,
+	session *stationRouteClient,
+) {
+	if session == nil {
+		return
+	}
+	if current := c.routeClients[key]; current == session {
+		delete(c.routeClients, key)
+	}
+	session.retired = true
+	if session.activeResponses == 0 {
+		session.client.CloseIdleConnections()
+	}
+}
+
+func (c *StationControl) releaseRouteClientResponse(
+	session *stationRouteClient,
+) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if session.activeResponses > 0 {
+		session.activeResponses--
+	}
+	if session.retired && session.activeResponses == 0 {
+		session.client.CloseIdleConnections()
+	}
+}
+
+func (c *StationControl) close() {
+	if c == nil {
+		return
+	}
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	for key, session := range c.routeClients {
+		c.retireRouteClientLocked(key, session)
+	}
+	for key, client := range c.clients {
+		if closer, ok := client.Transport.(interface{ CloseIdleConnections() }); ok {
+			closer.CloseIdleConnections()
+		}
+		delete(c.clients, key)
+	}
 }
 
 func (c *StationControl) discoverRouteLocked(
@@ -175,7 +318,6 @@ func (c *StationControl) discoverRouteLocked(
 		&peerpb.AccessEndpointRequest{
 			Challenge:             challenge,
 			ClientProtocolVersion: 1,
-			SourcePeerId:          c.host.ID().String(),
 		},
 		response,
 	); err != nil {
@@ -264,9 +406,12 @@ func (c *StationControl) discoverRouteLocked(
 		for _, address := range verified.Statement.GetAddresses() {
 			if strings.Contains(address, "/p2p-circuit/") {
 				return verifiedCircuitRoute{
-					nodePeerID: nodePeerID,
-					innerSPKI:  expectedSPKI,
-					address:    address,
+					relayPeerID: target.RelayPeerID,
+					nodePeerID:  nodePeerID,
+					routeID:     verified.Statement.GetRouteId(),
+					generation:  verified.Statement.GetRouteGeneration(),
+					innerSPKI:   expectedSPKI,
+					address:     address,
 				}, nil
 			}
 		}

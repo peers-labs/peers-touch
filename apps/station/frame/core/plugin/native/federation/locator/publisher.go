@@ -56,8 +56,7 @@ func NewPublisher(cfg PublisherConfig) (*Publisher, error) {
 
 // PublishInput is the actor-row-derived view the publisher needs.
 type PublishInput struct {
-	Handle           string
-	InboxRelayMounts []string
+	Handle string
 	// Seq is the monotonic counter from touch_actor.locator_seq; the
 	// caller pre-increments before invoking Publish.
 	Seq uint64
@@ -121,7 +120,6 @@ func (p *Publisher) put(ctx context.Context, in PublishInput, tombstone bool) er
 		Handle:            canon,
 		HomeStationPeerID: id.StationPeerID.String(),
 		HomeStationDomain: id.StationDomain,
-		InboxRelayMounts:  in.InboxRelayMounts,
 		Tombstone:         tombstone,
 		Seq:               in.Seq,
 		Now:               p.now(),

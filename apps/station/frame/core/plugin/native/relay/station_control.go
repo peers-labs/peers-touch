@@ -74,10 +74,12 @@ type StationControl struct {
 	innerSPKI  [sha256.Size]byte
 	liveRoutes func(time.Time) []CircuitRoute
 
-	lock        sync.Mutex
-	credentials map[string]relayCredential
-	clients     map[string]*http.Client
-	persist     func(string, relayCredential) error
+	lock                sync.Mutex
+	credentials         map[string]relayCredential
+	clients             map[string]*http.Client
+	routeClients        map[stationRouteClientKey]*stationRouteClient
+	routeClientSequence uint64
+	persist             func(string, relayCredential) error
 }
 
 func NewStationControl(
@@ -101,7 +103,11 @@ func NewStationControl(
 		liveRoutes:  liveRoutes,
 		credentials: make(map[string]relayCredential, len(pool.Targets)),
 		clients:     make(map[string]*http.Client, len(pool.Targets)),
-		persist:     persistRelayCredential,
+		routeClients: make(
+			map[stationRouteClientKey]*stationRouteClient,
+			len(pool.Targets),
+		),
+		persist: persistRelayCredential,
 	}, nil
 }
 
@@ -292,6 +298,7 @@ func (c *StationControl) publishRouteLocked(
 			Addresses:          circuitRouteAddressStrings(route),
 			InnerTlsSpkiSha256: c.innerSPKI[:],
 			Visibility:         visibility,
+			Kind:               peerpb.StationRouteKind_STATION_ROUTE_KIND_CIRCUIT,
 			IssuedAtUnixMs:     now.UnixMilli(),
 			ExpiresAtUnixMs:    expiresAt.UnixMilli(),
 		},

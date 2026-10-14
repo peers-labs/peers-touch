@@ -55,6 +55,16 @@ RUST_GO_CIRCUIT_INTEROP_COMMAND = [
     "--",
     "--nocapture",
 ]
+MOBILE_CONTRACT_BUILD_COMMAND = [
+    "cargo",
+    "check",
+    "--manifest-path",
+    "apps/mobile/src-tauri/Cargo.toml",
+]
+NODE_CONNECTIVITY_HARD_CUT_COMMAND = [
+    "python3",
+    "tooling/scripts/check-node-connectivity-hard-cut.py",
+]
 NATIVE_CUT_COMMANDS = {
     "NCP-G07": [
         "go",
@@ -1775,21 +1785,11 @@ def main() -> int:
                         REPO_ROOT / "apps/station/frame/core/plugin/native",
                     ),
                     (
-                        [
-                            "python3",
-                            "-c",
-                            (
-                                "from pathlib import Path; import sys; "
-                                "root=Path('.'); "
-                                "paths=[root/'apps/station/frame/core/plugin/native/"
-                                "subserver/relay-client',root/'model/domain/"
-                                "federation/relay_transport.proto']; "
-                                "sys.exit(1 if any(path.is_file() or "
-                                "(path.is_dir() and any(item.is_file() "
-                                "for item in path.rglob('*'))) "
-                                "for path in paths) else 0)"
-                            ),
-                        ],
+                        MOBILE_CONTRACT_BUILD_COMMAND,
+                        REPO_ROOT,
+                    ),
+                    (
+                        NODE_CONNECTIVITY_HARD_CUT_COMMAND,
                         REPO_ROOT,
                     ),
                 ]

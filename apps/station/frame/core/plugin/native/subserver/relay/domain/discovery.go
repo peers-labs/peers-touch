@@ -1,12 +1,9 @@
 package domain
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"time"
 
 	peerpb "github.com/peers-labs/peers-touch/station/frame/touch/model/peer"
-	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -44,11 +41,12 @@ type GrantRecord struct {
 	ExpiresAt       time.Time
 }
 
-func DigestGrant(grant *peerpb.StationConnectionGrant) (string, error) {
-	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(grant)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:]), nil
+type GrantRedemptionRecord struct {
+	RedemptionID    string
+	GrantDigest     string
+	StationPeerID   string
+	SourcePeerID    string
+	RouteID         string
+	RouteGeneration uint64
+	ExpiresAt       time.Time
 }

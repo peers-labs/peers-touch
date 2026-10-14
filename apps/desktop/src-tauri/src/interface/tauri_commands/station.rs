@@ -43,7 +43,7 @@ pub struct AcceptanceStationRouteProbeInput {
 #[derive(Debug, Deserialize)]
 pub struct AcceptanceStationDirectRouteOverrideInput {
     #[serde(default)]
-    pub endpoint_origin: Option<String>,
+    pub dial_multiaddr: Option<String>,
 }
 
 #[cfg(feature = "acceptance-webdriver")]
@@ -129,7 +129,7 @@ pub fn acceptance_station_direct_route_override(
 ) -> AppResult<StubPayload> {
     if let Err(error) = state
         .station
-        .set_acceptance_direct_route_override(input.endpoint_origin.as_deref())
+        .set_acceptance_direct_route_override(input.dial_multiaddr.as_deref())
     {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
@@ -142,7 +142,7 @@ pub fn acceptance_station_direct_route_override(
     AppResult::success(StubPayload {
         command: "acceptance_station_direct_route_override".to_string(),
         status: serde_json::json!({
-            "active": input.endpoint_origin.is_some(),
+            "active": input.dial_multiaddr.is_some(),
         })
         .to_string(),
     })
@@ -306,24 +306,12 @@ fn discover_and_store(command: &str, input: &str, state: &AppState) -> AppResult
     if input.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "input is required", None);
     }
-    let identity_scope = match station_discovery::discovery_identity_scope(input) {
-        Ok(scope) => scope,
-        Err(error) => return discovery_error(error),
-    };
-    let source_peer_id = match state.station.prepare_transport_identity(identity_scope) {
-        Ok(peer_id) => peer_id,
-        Err(error) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                "Could not prepare the scoped Station transport identity",
-                Some(serde_json::json!({
-                    "code": "station_discovery_unavailable",
-                    "reason": error,
-                })),
-            )
-        }
-    };
-    let endpoint = match station_discovery::discover_station_input(input, source_peer_id) {
+    let endpoint = match station_discovery::discover_station_input(input, |scope, message| {
+        state
+            .station
+            .sign_transport_identity_proof(scope, message)
+            .map(|proof| (proof.public_key, proof.signature))
+    }) {
         Ok(endpoint) => endpoint,
         Err(error) => return discovery_error(error),
     };
@@ -412,6 +400,7 @@ fn discovery_error(error: StationDiscoveryError) -> AppResult<StubPayload> {
         | "station_connection_grant_replayed"
         | "station_connection_grant_wrong_relay"
         | "station_discovery_rejected"
+        | "station_source_proof_invalid"
         | "station_route_invalid" => ErrorCode::Forbidden,
         _ => ErrorCode::InvalidArgument,
     };

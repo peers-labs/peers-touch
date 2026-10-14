@@ -12,7 +12,66 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/peer/access_endpoint.proto.
  */
 export const file_domain_peer_access_endpoint: GenFile = /*@__PURE__*/
-  fileDesc("CiFkb21haW4vcGVlci9hY2Nlc3NfZW5kcG9pbnQucHJvdG8SGXBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEifQoVQWNjZXNzRW5kcG9pbnRSZXF1ZXN0EhEKCWNoYWxsZW5nZRgBIAEoDBIYChBjb25uZWN0aW9uX2dyYW50GAIgASgMEh8KF2NsaWVudF9wcm90b2NvbF92ZXJzaW9uGAMgASgNEhYKDnNvdXJjZV9wZWVyX2lkGAQgASgJIrECChdBY2Nlc3NFbmRwb2ludFN0YXRlbWVudBIRCgljaGFsbGVuZ2UYASABKAwSRAoNZW5kcG9pbnRfcm9sZRgCIAEoDjItLnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuQWNjZXNzRW5kcG9pbnRSb2xlEhgKEGVuZHBvaW50X3BlZXJfaWQYAyABKAkSGAoQY2Fub25pY2FsX29yaWdpbhgEIAEoCRIZChFwcm90b2NvbF92ZXJzaW9ucxgFIAMoDRIUCgxjYXBhYmlsaXRpZXMYBiADKAkSGQoRaXNzdWVkX2F0X3VuaXhfbXMYByABKAMSGgoSZXhwaXJlc19hdF91bml4X21zGAggASgDEiEKGW5vZGVfYXV0aG9yaXphdGlvbl9kaWdlc3QYCSABKAwitAMKFVN0YXRpb25Sb3V0ZVN0YXRlbWVudBIXCg9zdGF0aW9uX3BlZXJfaWQYASABKAkSFQoNcmVsYXlfcGVlcl9pZBgCIAEoCRIQCghyb3V0ZV9pZBgDIAEoCRIYChByb3V0ZV9nZW5lcmF0aW9uGAQgASgEEh0KFWlubmVyX3Rsc19zcGtpX3NoYTI1NhgFIAEoDBIbChNjYXBhYmlsaXRpZXNfZGlnZXN0GAYgASgMEkUKCnZpc2liaWxpdHkYByABKA4yMS5wZWVyc190b3VjaC5tb2RlbC5wZWVyLnYxLlN0YXRpb25Sb3V0ZVZpc2liaWxpdHkSGQoRaXNzdWVkX2F0X3VuaXhfbXMYCCABKAMSGgoSZXhwaXJlc19hdF91bml4X21zGAkgASgDEhQKDG5vZGVfcGVlcl9pZBgKIAEoCRIhChlub2RlX2F1dGhvcml6YXRpb25fZGlnZXN0GAsgASgMEjkKBGtpbmQYDCABKA4yKy5wZWVyc190b3VjaC5tb2RlbC5wZWVyLnYxLlN0YXRpb25Sb3V0ZUtpbmQSEQoJYWRkcmVzc2VzGA0gAygJIqcBChdTdGF0aW9uUm91dGVBdHRlc3RhdGlvbhIXCg9zdGF0ZW1lbnRfYnl0ZXMYASABKAwSFgoObm9kZV9zaWduYXR1cmUYBCABKAwSTwoSbm9kZV9hdXRob3JpemF0aW9uGAUgASgLMjMucGVlcnNfdG91Y2gubW9kZWwucGVlci52MS5TdGF0aW9uTm9kZUF1dGhvcml6YXRpb25KBAgCEANKBAgDEAQikQIKH1N0YXRpb25Db25uZWN0aW9uR3JhbnRTdGF0ZW1lbnQSEAoIZ3JhbnRfaWQYASABKAkSFwoPc3RhdGlvbl9wZWVyX2lkGAIgASgJEhUKDXJlbGF5X3BlZXJfaWQYAyABKAkSEAoIcm91dGVfaWQYBCABKAkSGAoQcm91dGVfZ2VuZXJhdGlvbhgFIAEoBBIQCghtYXhfdXNlcxgGIAEoDRIZChFpc3N1ZWRfYXRfdW5peF9tcxgHIAEoAxIaChJleHBpcmVzX2F0X3VuaXhfbXMYCCABKAMSFAoMbm9kZV9wZWVyX2lkGAkgASgJEiEKGW5vZGVfYXV0aG9yaXphdGlvbl9kaWdlc3QYCiABKAwipgEKFlN0YXRpb25Db25uZWN0aW9uR3JhbnQSFwoPc3RhdGVtZW50X2J5dGVzGAEgASgMEhYKDm5vZGVfc2lnbmF0dXJlGAQgASgMEk8KEm5vZGVfYXV0aG9yaXphdGlvbhgFIAEoCzIzLnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuU3RhdGlvbk5vZGVBdXRob3JpemF0aW9uSgQIAhADSgQIAxAEIucBChlTdGF0aW9uQ29ubmVjdGlvbkVudmVsb3BlEhgKEHByb3RvY29sX3ZlcnNpb24YASABKA0SFAoMcmVsYXlfb3JpZ2luGAIgASgJEk0KEXJvdXRlX2F0dGVzdGF0aW9uGAMgASgLMjIucGVlcnNfdG91Y2gubW9kZWwucGVlci52MS5TdGF0aW9uUm91dGVBdHRlc3RhdGlvbhJLChBjb25uZWN0aW9uX2dyYW50GAQgASgLMjEucGVlcnNfdG91Y2gubW9kZWwucGVlci52MS5TdGF0aW9uQ29ubmVjdGlvbkdyYW50IpcBCiVJc3N1ZVN0YXRpb25Db25uZWN0aW9uTWF0ZXJpYWxSZXF1ZXN0EhAKCHJvdXRlX2lkGAEgASgJEh4KFnJvdXRlX2xpZmV0aW1lX3NlY29uZHMYBCABKA0SHgoWZ3JhbnRfbGlmZXRpbWVfc2Vjb25kcxgFIAEoDRIQCghtYXhfdXNlcxgGIAEoDUoECAIQA0oECAMQBCJlCiZJc3N1ZVN0YXRpb25Db25uZWN0aW9uTWF0ZXJpYWxSZXNwb25zZRIMCgRjb2RlGAEgASgJEhEKCWRlZXBfbGluaxgCIAEoCRIaChJleHBpcmVzX2F0X3VuaXhfbXMYAyABKAMi0wIKFkFjY2Vzc0VuZHBvaW50UmVzcG9uc2USQQoHb3V0Y29tZRgBIAEoDjIwLnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuQWNjZXNzRW5kcG9pbnRPdXRjb21lEiAKGGVuZHBvaW50X3N0YXRlbWVudF9ieXRlcxgCIAEoDBIbChNlbmRwb2ludF9wdWJsaWNfa2V5GAMgASgMEhoKEmVuZHBvaW50X3NpZ25hdHVyZRgEIAEoDBJKCg5zdGF0aW9uX3JvdXRlcxgFIAMoCzIyLnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuU3RhdGlvblJvdXRlQXR0ZXN0YXRpb24STwoSbm9kZV9hdXRob3JpemF0aW9uGAYgASgLMjMucGVlcnNfdG91Y2gubW9kZWwucGVlci52MS5TdGF0aW9uTm9kZUF1dGhvcml6YXRpb24iawoaUHVibGlzaFN0YXRpb25Sb3V0ZVJlcXVlc3QSTQoRcm91dGVfYXR0ZXN0YXRpb24YASABKAsyMi5wZWVyc190b3VjaC5tb2RlbC5wZWVyLnYxLlN0YXRpb25Sb3V0ZUF0dGVzdGF0aW9uIkkKG1B1Ymxpc2hTdGF0aW9uUm91dGVSZXNwb25zZRIQCghyb3V0ZV9pZBgBIAEoCRIYChByb3V0ZV9nZW5lcmF0aW9uGAIgASgEIqkBCiVSZWdpc3RlclN0YXRpb25Db25uZWN0aW9uR3JhbnRSZXF1ZXN0EhQKDGdyYW50X2RpZ2VzdBgBIAEoDBIQCghncmFudF9pZBgCIAEoCRIQCghyb3V0ZV9pZBgDIAEoCRIYChByb3V0ZV9nZW5lcmF0aW9uGAQgASgEEhAKCG1heF91c2VzGAUgASgNEhoKEmV4cGlyZXNfYXRfdW5peF9tcxgGIAEoAyJSCiZSZWdpc3RlclN0YXRpb25Db25uZWN0aW9uR3JhbnRSZXNwb25zZRIQCghncmFudF9pZBgBIAEoCRIWCg5yZW1haW5pbmdfdXNlcxgCIAEoDSqDAQoSQWNjZXNzRW5kcG9pbnRSb2xlEiQKIEFDQ0VTU19FTkRQT0lOVF9ST0xFX1VOU1BFQ0lGSUVEEAASJwojQUNDRVNTX0VORFBPSU5UX1JPTEVfRElSRUNUX1NUQVRJT04QARIeChpBQ0NFU1NfRU5EUE9JTlRfUk9MRV9SRUxBWRACKv4CChVBY2Nlc3NFbmRwb2ludE91dGNvbWUSJwojQUNDRVNTX0VORFBPSU5UX09VVENPTUVfVU5TUEVDSUZJRUQQABIhCh1BQ0NFU1NfRU5EUE9JTlRfT1VUQ09NRV9SRUFEWRABEikKJUFDQ0VTU19FTkRQT0lOVF9PVVRDT01FX05PX0NBTkRJREFURVMQAhIvCitBQ0NFU1NfRU5EUE9JTlRfT1VUQ09NRV9NVUxUSVBMRV9DQU5ESURBVEVTEAMSKQolQUNDRVNTX0VORFBPSU5UX09VVENPTUVfR1JBTlRfRVhQSVJFRBAEEioKJkFDQ0VTU19FTkRQT0lOVF9PVVRDT01FX0dSQU5UX1JFUExBWUVEEAUSLQopQUNDRVNTX0VORFBPSU5UX09VVENPTUVfR1JBTlRfV1JPTkdfUkVMQVkQBhI3CjNBQ0NFU1NfRU5EUE9JTlRfT1VUQ09NRV9JTlZBTElEX1NUQVRJT05fQVRURVNUQVRJT04QByqQAQoWU3RhdGlvblJvdXRlVmlzaWJpbGl0eRIoCiRTVEFUSU9OX1JPVVRFX1ZJU0lCSUxJVFlfVU5TUEVDSUZJRUQQABIjCh9TVEFUSU9OX1JPVVRFX1ZJU0lCSUxJVFlfUFVCTElDEAESJwojU1RBVElPTl9ST1VURV9WSVNJQklMSVRZX0dSQU5UX09OTFkQAip1ChBTdGF0aW9uUm91dGVLaW5kEiIKHlNUQVRJT05fUk9VVEVfS0lORF9VTlNQRUNJRklFRBAAEh0KGVNUQVRJT05fUk9VVEVfS0lORF9ESVJFQ1QQARIeChpTVEFUSU9OX1JPVVRFX0tJTkRfQ0lSQ1VJVBACQkdaRWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL3BlZXI7cGVlcmIGcHJvdG8z", [file_domain_peer_station_identity]);
+  fileDesc("CiFkb21haW4vcGVlci9hY2Nlc3NfZW5kcG9pbnQucHJvdG8SGXBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEilgEKIkFjY2Vzc0VuZHBvaW50U291cmNlUHJvb2ZTdGF0ZW1lbnQSEQoJY2hhbGxlbmdlGAEgASgMEh8KF2Nvbm5lY3Rpb25fZ3JhbnRfZGlnZXN0GAIgASgMEhUKDXJlbGF5X3BlZXJfaWQYAyABKAkSHwoXY2xpZW50X3Byb3RvY29sX3ZlcnNpb24YBSABKA1KBAgEEAUiaQoZQWNjZXNzRW5kcG9pbnRTb3VyY2VQcm9vZhIXCg9zdGF0ZW1lbnRfYnl0ZXMYASABKAwSGQoRc291cmNlX3B1YmxpY19rZXkYAiABKAwSGAoQc291cmNlX3NpZ25hdHVyZRgDIAEoDCK3AQoVQWNjZXNzRW5kcG9pbnRSZXF1ZXN0EhEKCWNoYWxsZW5nZRgBIAEoDBIYChBjb25uZWN0aW9uX2dyYW50GAIgASgMEh8KF2NsaWVudF9wcm90b2NvbF92ZXJzaW9uGAMgASgNEkoKDHNvdXJjZV9wcm9vZhgFIAEoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuQWNjZXNzRW5kcG9pbnRTb3VyY2VQcm9vZkoECAQQBSKxAgoXQWNjZXNzRW5kcG9pbnRTdGF0ZW1lbnQSEQoJY2hhbGxlbmdlGAEgASgMEkQKDWVuZHBvaW50X3JvbGUYAiABKA4yLS5wZWVyc190b3VjaC5tb2RlbC5wZWVyLnYxLkFjY2Vzc0VuZHBvaW50Um9sZRIYChBlbmRwb2ludF9wZWVyX2lkGAMgASgJEhgKEGNhbm9uaWNhbF9vcmlnaW4YBCABKAkSGQoRcHJvdG9jb2xfdmVyc2lvbnMYBSADKA0SFAoMY2FwYWJpbGl0aWVzGAYgAygJEhkKEWlzc3VlZF9hdF91bml4X21zGAcgASgDEhoKEmV4cGlyZXNfYXRfdW5peF9tcxgIIAEoAxIhChlub2RlX2F1dGhvcml6YXRpb25fZGlnZXN0GAkgASgMIrQDChVTdGF0aW9uUm91dGVTdGF0ZW1lbnQSFwoPc3RhdGlvbl9wZWVyX2lkGAEgASgJEhUKDXJlbGF5X3BlZXJfaWQYAiABKAkSEAoIcm91dGVfaWQYAyABKAkSGAoQcm91dGVfZ2VuZXJhdGlvbhgEIAEoBBIdChVpbm5lcl90bHNfc3BraV9zaGEyNTYYBSABKAwSGwoTY2FwYWJpbGl0aWVzX2RpZ2VzdBgGIAEoDBJFCgp2aXNpYmlsaXR5GAcgASgOMjEucGVlcnNfdG91Y2gubW9kZWwucGVlci52MS5TdGF0aW9uUm91dGVWaXNpYmlsaXR5EhkKEWlzc3VlZF9hdF91bml4X21zGAggASgDEhoKEmV4cGlyZXNfYXRfdW5peF9tcxgJIAEoAxIUCgxub2RlX3BlZXJfaWQYCiABKAkSIQoZbm9kZV9hdXRob3JpemF0aW9uX2RpZ2VzdBgLIAEoDBI5CgRraW5kGAwgASgOMisucGVlcnNfdG91Y2gubW9kZWwucGVlci52MS5TdGF0aW9uUm91dGVLaW5kEhEKCWFkZHJlc3NlcxgNIAMoCSKnAQoXU3RhdGlvblJvdXRlQXR0ZXN0YXRpb24SFwoPc3RhdGVtZW50X2J5dGVzGAEgASgMEhYKDm5vZGVfc2lnbmF0dXJlGAQgASgMEk8KEm5vZGVfYXV0aG9yaXphdGlvbhgFIAEoCzIzLnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuU3RhdGlvbk5vZGVBdXRob3JpemF0aW9uSgQIAhADSgQIAxAEIpECCh9TdGF0aW9uQ29ubmVjdGlvbkdyYW50U3RhdGVtZW50EhAKCGdyYW50X2lkGAEgASgJEhcKD3N0YXRpb25fcGVlcl9pZBgCIAEoCRIVCg1yZWxheV9wZWVyX2lkGAMgASgJEhAKCHJvdXRlX2lkGAQgASgJEhgKEHJvdXRlX2dlbmVyYXRpb24YBSABKAQSEAoIbWF4X3VzZXMYBiABKA0SGQoRaXNzdWVkX2F0X3VuaXhfbXMYByABKAMSGgoSZXhwaXJlc19hdF91bml4X21zGAggASgDEhQKDG5vZGVfcGVlcl9pZBgJIAEoCRIhChlub2RlX2F1dGhvcml6YXRpb25fZGlnZXN0GAogASgMIqYBChZTdGF0aW9uQ29ubmVjdGlvbkdyYW50EhcKD3N0YXRlbWVudF9ieXRlcxgBIAEoDBIWCg5ub2RlX3NpZ25hdHVyZRgEIAEoDBJPChJub2RlX2F1dGhvcml6YXRpb24YBSABKAsyMy5wZWVyc190b3VjaC5tb2RlbC5wZWVyLnYxLlN0YXRpb25Ob2RlQXV0aG9yaXphdGlvbkoECAIQA0oECAMQBCLnAQoZU3RhdGlvbkNvbm5lY3Rpb25FbnZlbG9wZRIYChBwcm90b2NvbF92ZXJzaW9uGAEgASgNEhQKDHJlbGF5X29yaWdpbhgCIAEoCRJNChFyb3V0ZV9hdHRlc3RhdGlvbhgDIAEoCzIyLnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuU3RhdGlvblJvdXRlQXR0ZXN0YXRpb24SSwoQY29ubmVjdGlvbl9ncmFudBgEIAEoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuU3RhdGlvbkNvbm5lY3Rpb25HcmFudCKXAQolSXNzdWVTdGF0aW9uQ29ubmVjdGlvbk1hdGVyaWFsUmVxdWVzdBIQCghyb3V0ZV9pZBgBIAEoCRIeChZyb3V0ZV9saWZldGltZV9zZWNvbmRzGAQgASgNEh4KFmdyYW50X2xpZmV0aW1lX3NlY29uZHMYBSABKA0SEAoIbWF4X3VzZXMYBiABKA1KBAgCEANKBAgDEAQiZQomSXNzdWVTdGF0aW9uQ29ubmVjdGlvbk1hdGVyaWFsUmVzcG9uc2USDAoEY29kZRgBIAEoCRIRCglkZWVwX2xpbmsYAiABKAkSGgoSZXhwaXJlc19hdF91bml4X21zGAMgASgDItMCChZBY2Nlc3NFbmRwb2ludFJlc3BvbnNlEkEKB291dGNvbWUYASABKA4yMC5wZWVyc190b3VjaC5tb2RlbC5wZWVyLnYxLkFjY2Vzc0VuZHBvaW50T3V0Y29tZRIgChhlbmRwb2ludF9zdGF0ZW1lbnRfYnl0ZXMYAiABKAwSGwoTZW5kcG9pbnRfcHVibGljX2tleRgDIAEoDBIaChJlbmRwb2ludF9zaWduYXR1cmUYBCABKAwSSgoOc3RhdGlvbl9yb3V0ZXMYBSADKAsyMi5wZWVyc190b3VjaC5tb2RlbC5wZWVyLnYxLlN0YXRpb25Sb3V0ZUF0dGVzdGF0aW9uEk8KEm5vZGVfYXV0aG9yaXphdGlvbhgGIAEoCzIzLnBlZXJzX3RvdWNoLm1vZGVsLnBlZXIudjEuU3RhdGlvbk5vZGVBdXRob3JpemF0aW9uImsKGlB1Ymxpc2hTdGF0aW9uUm91dGVSZXF1ZXN0Ek0KEXJvdXRlX2F0dGVzdGF0aW9uGAEgASgLMjIucGVlcnNfdG91Y2gubW9kZWwucGVlci52MS5TdGF0aW9uUm91dGVBdHRlc3RhdGlvbiJJChtQdWJsaXNoU3RhdGlvblJvdXRlUmVzcG9uc2USEAoIcm91dGVfaWQYASABKAkSGAoQcm91dGVfZ2VuZXJhdGlvbhgCIAEoBCKpAQolUmVnaXN0ZXJTdGF0aW9uQ29ubmVjdGlvbkdyYW50UmVxdWVzdBIUCgxncmFudF9kaWdlc3QYASABKAwSEAoIZ3JhbnRfaWQYAiABKAkSEAoIcm91dGVfaWQYAyABKAkSGAoQcm91dGVfZ2VuZXJhdGlvbhgEIAEoBBIQCghtYXhfdXNlcxgFIAEoDRIaChJleHBpcmVzX2F0X3VuaXhfbXMYBiABKAMiUgomUmVnaXN0ZXJTdGF0aW9uQ29ubmVjdGlvbkdyYW50UmVzcG9uc2USEAoIZ3JhbnRfaWQYASABKAkSFgoOcmVtYWluaW5nX3VzZXMYAiABKA0qgwEKEkFjY2Vzc0VuZHBvaW50Um9sZRIkCiBBQ0NFU1NfRU5EUE9JTlRfUk9MRV9VTlNQRUNJRklFRBAAEicKI0FDQ0VTU19FTkRQT0lOVF9ST0xFX0RJUkVDVF9TVEFUSU9OEAESHgoaQUNDRVNTX0VORFBPSU5UX1JPTEVfUkVMQVkQAiqwAwoVQWNjZXNzRW5kcG9pbnRPdXRjb21lEicKI0FDQ0VTU19FTkRQT0lOVF9PVVRDT01FX1VOU1BFQ0lGSUVEEAASIQodQUNDRVNTX0VORFBPSU5UX09VVENPTUVfUkVBRFkQARIpCiVBQ0NFU1NfRU5EUE9JTlRfT1VUQ09NRV9OT19DQU5ESURBVEVTEAISLworQUNDRVNTX0VORFBPSU5UX09VVENPTUVfTVVMVElQTEVfQ0FORElEQVRFUxADEikKJUFDQ0VTU19FTkRQT0lOVF9PVVRDT01FX0dSQU5UX0VYUElSRUQQBBIqCiZBQ0NFU1NfRU5EUE9JTlRfT1VUQ09NRV9HUkFOVF9SRVBMQVlFRBAFEi0KKUFDQ0VTU19FTkRQT0lOVF9PVVRDT01FX0dSQU5UX1dST05HX1JFTEFZEAYSNwozQUNDRVNTX0VORFBPSU5UX09VVENPTUVfSU5WQUxJRF9TVEFUSU9OX0FUVEVTVEFUSU9OEAcSMAosQUNDRVNTX0VORFBPSU5UX09VVENPTUVfU09VUkNFX1BST09GX0lOVkFMSUQQCCqQAQoWU3RhdGlvblJvdXRlVmlzaWJpbGl0eRIoCiRTVEFUSU9OX1JPVVRFX1ZJU0lCSUxJVFlfVU5TUEVDSUZJRUQQABIjCh9TVEFUSU9OX1JPVVRFX1ZJU0lCSUxJVFlfUFVCTElDEAESJwojU1RBVElPTl9ST1VURV9WSVNJQklMSVRZX0dSQU5UX09OTFkQAip1ChBTdGF0aW9uUm91dGVLaW5kEiIKHlNUQVRJT05fUk9VVEVfS0lORF9VTlNQRUNJRklFRBAAEh0KGVNUQVRJT05fUk9VVEVfS0lORF9ESVJFQ1QQARIeChpTVEFUSU9OX1JPVVRFX0tJTkRfQ0lSQ1VJVBACQkdaRWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL3BlZXI7cGVlcmIGcHJvdG8z", [file_domain_peer_station_identity]);
+
+/**
+ * @generated from message peers_touch.model.peer.v1.AccessEndpointSourceProofStatement
+ */
+export type AccessEndpointSourceProofStatement = Message<"peers_touch.model.peer.v1.AccessEndpointSourceProofStatement"> & {
+  /**
+   * @generated from field: bytes challenge = 1;
+   */
+  challenge: Uint8Array;
+
+  /**
+   * @generated from field: bytes connection_grant_digest = 2;
+   */
+  connectionGrantDigest: Uint8Array;
+
+  /**
+   * @generated from field: string relay_peer_id = 3;
+   */
+  relayPeerId: string;
+
+  /**
+   * @generated from field: uint32 client_protocol_version = 5;
+   */
+  clientProtocolVersion: number;
+};
+
+/**
+ * Describes the message peers_touch.model.peer.v1.AccessEndpointSourceProofStatement.
+ * Use `create(AccessEndpointSourceProofStatementSchema)` to create a new message.
+ */
+export const AccessEndpointSourceProofStatementSchema: GenMessage<AccessEndpointSourceProofStatement> = /*@__PURE__*/
+  messageDesc(file_domain_peer_access_endpoint, 0);
+
+/**
+ * @generated from message peers_touch.model.peer.v1.AccessEndpointSourceProof
+ */
+export type AccessEndpointSourceProof = Message<"peers_touch.model.peer.v1.AccessEndpointSourceProof"> & {
+  /**
+   * @generated from field: bytes statement_bytes = 1;
+   */
+  statementBytes: Uint8Array;
+
+  /**
+   * @generated from field: bytes source_public_key = 2;
+   */
+  sourcePublicKey: Uint8Array;
+
+  /**
+   * @generated from field: bytes source_signature = 3;
+   */
+  sourceSignature: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.peer.v1.AccessEndpointSourceProof.
+ * Use `create(AccessEndpointSourceProofSchema)` to create a new message.
+ */
+export const AccessEndpointSourceProofSchema: GenMessage<AccessEndpointSourceProof> = /*@__PURE__*/
+  messageDesc(file_domain_peer_access_endpoint, 1);
 
 /**
  * @generated from message peers_touch.model.peer.v1.AccessEndpointRequest
@@ -34,9 +93,9 @@ export type AccessEndpointRequest = Message<"peers_touch.model.peer.v1.AccessEnd
   clientProtocolVersion: number;
 
   /**
-   * @generated from field: string source_peer_id = 4;
+   * @generated from field: peers_touch.model.peer.v1.AccessEndpointSourceProof source_proof = 5;
    */
-  sourcePeerId: string;
+  sourceProof?: AccessEndpointSourceProof | undefined;
 };
 
 /**
@@ -44,7 +103,7 @@ export type AccessEndpointRequest = Message<"peers_touch.model.peer.v1.AccessEnd
  * Use `create(AccessEndpointRequestSchema)` to create a new message.
  */
 export const AccessEndpointRequestSchema: GenMessage<AccessEndpointRequest> = /*@__PURE__*/
-  messageDesc(file_domain_peer_access_endpoint, 0);
+  messageDesc(file_domain_peer_access_endpoint, 2);
 
 /**
  * @generated from message peers_touch.model.peer.v1.AccessEndpointStatement
@@ -101,7 +160,7 @@ export type AccessEndpointStatement = Message<"peers_touch.model.peer.v1.AccessE
  * Use `create(AccessEndpointStatementSchema)` to create a new message.
  */
 export const AccessEndpointStatementSchema: GenMessage<AccessEndpointStatement> = /*@__PURE__*/
-  messageDesc(file_domain_peer_access_endpoint, 1);
+  messageDesc(file_domain_peer_access_endpoint, 3);
 
 /**
  * @generated from message peers_touch.model.peer.v1.StationRouteStatement
@@ -178,7 +237,7 @@ export type StationRouteStatement = Message<"peers_touch.model.peer.v1.StationRo
  * Use `create(StationRouteStatementSchema)` to create a new message.
  */
 export const StationRouteStatementSchema: GenMessage<StationRouteStatement> = /*@__PURE__*/
-  messageDesc(file_domain_peer_access_endpoint, 2);
+  messageDesc(file_domain_peer_access_endpoint, 4);
 
 /**
  * @generated from message peers_touch.model.peer.v1.StationRouteAttestation
@@ -205,7 +264,7 @@ export type StationRouteAttestation = Message<"peers_touch.model.peer.v1.Station
  * Use `create(StationRouteAttestationSchema)` to create a new message.
  */
 export const StationRouteAttestationSchema: GenMessage<StationRouteAttestation> = /*@__PURE__*/
-  messageDesc(file_domain_peer_access_endpoint, 3);
+  messageDesc(file_domain_peer_access_endpoint, 5);
 
 /**
  * @generated from message peers_touch.model.peer.v1.StationConnectionGrantStatement
@@ -267,7 +326,7 @@ export type StationConnectionGrantStatement = Message<"peers_touch.model.peer.v1
  * Use `create(StationConnectionGrantStatementSchema)` to create a new message.
  */
 export const StationConnectionGrantStatementSchema: GenMessage<StationConnectionGrantStatement> = /*@__PURE__*/
-  messageDesc(file_domain_peer_access_endpoint, 4);
+  messageDesc(file_domain_peer_access_endpoint, 6);
 
 /**
  * @generated from message peers_touch.model.peer.v1.StationConnectionGrant
@@ -294,7 +353,7 @@ export type StationConnectionGrant = Message<"peers_touch.model.peer.v1.StationC
  * Use `create(StationConnectionGrantSchema)` to create a new message.
  */
 export const StationConnectionGrantSchema: GenMessage<StationConnectionGrant> = /*@__PURE__*/
-  messageDesc(file_domain_peer_access_endpoint, 5);
+  messageDesc(file_domain_peer_access_endpoint, 7);
 
 /**
  * @generated from message peers_touch.model.peer.v1.StationConnectionEnvelope
@@ -326,7 +385,7 @@ export type StationConnectionEnvelope = Message<"peers_touch.model.peer.v1.Stati
  * Use `create(StationConnectionEnvelopeSchema)` to create a new message.
  */
 export const StationConnectionEnvelopeSchema: GenMessage<StationConnectionEnvelope> = /*@__PURE__*/
-  messageDesc(file_domain_peer_access_endpoint, 6);
+  messageDesc(file_domain_peer_access_endpoint, 8);
 
 /**
  * @generated from message peers_touch.model.peer.v1.IssueStationConnectionMaterialRequest
@@ -358,7 +417,7 @@ export type IssueStationConnectionMaterialRequest = Message<"peers_touch.model.p
  * Use `create(IssueStationConnectionMaterialRequestSchema)` to create a new message.
  */
 export const IssueStationConnectionMaterialRequestSchema: GenMessage<IssueStationConnectionMaterialRequest> = /*@__PURE__*/
-  messageDesc(file_domain_peer_access_endpoint, 7);
+  messageDesc(file_domain_peer_access_endpoint, 9);
 
 /**
  * @generated from message peers_touch.model.peer.v1.IssueStationConnectionMaterialResponse
@@ -385,7 +444,7 @@ export type IssueStationConnectionMaterialResponse = Message<"peers_touch.model.
  * Use `create(IssueStationConnectionMaterialResponseSchema)` to create a new message.
  */
 export const IssueStationConnectionMaterialResponseSchema: GenMessage<IssueStationConnectionMaterialResponse> = /*@__PURE__*/
-  messageDesc(file_domain_peer_access_endpoint, 8);
+  messageDesc(file_domain_peer_access_endpoint, 10);
 
 /**
  * @generated from message peers_touch.model.peer.v1.AccessEndpointResponse
@@ -427,7 +486,7 @@ export type AccessEndpointResponse = Message<"peers_touch.model.peer.v1.AccessEn
  * Use `create(AccessEndpointResponseSchema)` to create a new message.
  */
 export const AccessEndpointResponseSchema: GenMessage<AccessEndpointResponse> = /*@__PURE__*/
-  messageDesc(file_domain_peer_access_endpoint, 9);
+  messageDesc(file_domain_peer_access_endpoint, 11);
 
 /**
  * @generated from message peers_touch.model.peer.v1.PublishStationRouteRequest
@@ -444,7 +503,7 @@ export type PublishStationRouteRequest = Message<"peers_touch.model.peer.v1.Publ
  * Use `create(PublishStationRouteRequestSchema)` to create a new message.
  */
 export const PublishStationRouteRequestSchema: GenMessage<PublishStationRouteRequest> = /*@__PURE__*/
-  messageDesc(file_domain_peer_access_endpoint, 10);
+  messageDesc(file_domain_peer_access_endpoint, 12);
 
 /**
  * @generated from message peers_touch.model.peer.v1.PublishStationRouteResponse
@@ -466,7 +525,7 @@ export type PublishStationRouteResponse = Message<"peers_touch.model.peer.v1.Pub
  * Use `create(PublishStationRouteResponseSchema)` to create a new message.
  */
 export const PublishStationRouteResponseSchema: GenMessage<PublishStationRouteResponse> = /*@__PURE__*/
-  messageDesc(file_domain_peer_access_endpoint, 11);
+  messageDesc(file_domain_peer_access_endpoint, 13);
 
 /**
  * @generated from message peers_touch.model.peer.v1.RegisterStationConnectionGrantRequest
@@ -508,7 +567,7 @@ export type RegisterStationConnectionGrantRequest = Message<"peers_touch.model.p
  * Use `create(RegisterStationConnectionGrantRequestSchema)` to create a new message.
  */
 export const RegisterStationConnectionGrantRequestSchema: GenMessage<RegisterStationConnectionGrantRequest> = /*@__PURE__*/
-  messageDesc(file_domain_peer_access_endpoint, 12);
+  messageDesc(file_domain_peer_access_endpoint, 14);
 
 /**
  * @generated from message peers_touch.model.peer.v1.RegisterStationConnectionGrantResponse
@@ -530,7 +589,7 @@ export type RegisterStationConnectionGrantResponse = Message<"peers_touch.model.
  * Use `create(RegisterStationConnectionGrantResponseSchema)` to create a new message.
  */
 export const RegisterStationConnectionGrantResponseSchema: GenMessage<RegisterStationConnectionGrantResponse> = /*@__PURE__*/
-  messageDesc(file_domain_peer_access_endpoint, 13);
+  messageDesc(file_domain_peer_access_endpoint, 15);
 
 /**
  * @generated from enum peers_touch.model.peer.v1.AccessEndpointRole
@@ -601,6 +660,11 @@ export enum AccessEndpointOutcome {
    * @generated from enum value: ACCESS_ENDPOINT_OUTCOME_INVALID_STATION_ATTESTATION = 7;
    */
   INVALID_STATION_ATTESTATION = 7,
+
+  /**
+   * @generated from enum value: ACCESS_ENDPOINT_OUTCOME_SOURCE_PROOF_INVALID = 8;
+   */
+  SOURCE_PROOF_INVALID = 8,
 }
 
 /**

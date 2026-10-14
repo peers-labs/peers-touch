@@ -342,7 +342,6 @@ impl StationBindingService {
             )
         })?;
         if was_selected {
-            crate::infrastructure::event_stream::stop_all();
             self.replace_state(StationBindingState::from_persisted_entry(None));
         }
         Ok((self.state(), was_selected))
@@ -695,9 +694,14 @@ mod tests {
     }
 
     fn route(station_peer_id: &str, route_id: &str, origin: &str) -> VerifiedStationRoute {
+        let node_peer_id = "12D3KooWGo2HxmjfSQZKTheDEbgDBpSuhUxTNsr8DnTkXCDzdaZL".to_string();
+        let port = reqwest::Url::parse(origin)
+            .unwrap()
+            .port_or_known_default()
+            .unwrap();
         VerifiedStationRoute {
             station_peer_id: station_peer_id.to_string(),
-            node_peer_id: format!("{station_peer_id}-node"),
+            node_peer_id: node_peer_id.clone(),
             station_root_public_key: vec![1, 2, 3],
             node_authorization_digest: [4; 32],
             authorization_epoch: 1,
@@ -705,11 +709,11 @@ mod tests {
             route_generation: 1,
             endpoint_origin: origin.to_string(),
             relay_peer_id: None,
-            inner_tls_spki_sha256: None,
-            addresses: vec![origin.to_string()],
-            attestation_bytes: None,
+            inner_tls_spki_sha256: Some([7; 32]),
+            addresses: vec![format!("/ip4/127.0.0.1/tcp/{port}/p2p/{node_peer_id}")],
+            attestation_bytes: Some(vec![8, 9]),
             connection_grant: None,
-            expires_at_unix_ms: None,
+            expires_at_unix_ms: Some(i64::MAX),
         }
     }
 

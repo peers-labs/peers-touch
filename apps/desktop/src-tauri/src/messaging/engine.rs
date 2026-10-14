@@ -1522,16 +1522,14 @@ impl MessagingEngine {
                     "messaging recovery reconciliation authority snapshot source is invalid"
                         .to_string()
                 })?;
-            let authority_url = if source == ConversationPublicHeadSource::Follower {
-                let authority_url = self
+            let authority_station_id = if source == ConversationPublicHeadSource::Follower {
+                let authority_response = self
                     .station_client
-                    .authority_endpoint_origin(&conversation.authority_station_id)
-                    .map_err(|error| error.to_string())?;
-                let authority_response = self.station_client.request_proto_for_actor_at::<
-                    GetConversationPublicHeadRequest,
-                    GetConversationPublicHeadResponse,
-                >(
-                    &authority_url,
+                    .request_proto_for_actor_at_station::<
+                        GetConversationPublicHeadRequest,
+                        GetConversationPublicHeadResponse,
+                    >(
+                    &conversation.authority_station_id,
                     Method::GET,
                     "/conversation/public-head",
                     token,
@@ -1547,7 +1545,7 @@ impl MessagingEngine {
                 source = ConversationPublicHeadSource::try_from(target.source).map_err(|_| {
                     "messaging recovery authority Station snapshot source is invalid".to_string()
                 })?;
-                Some(authority_url)
+                Some(conversation.authority_station_id.clone())
             } else {
                 None
             };
@@ -1579,12 +1577,14 @@ impl MessagingEngine {
                         ("after_seq", after_sequence.to_string()),
                         ("limit", limit.to_string()),
                     ];
-                    let response = match authority_url.as_deref() {
-                        Some(authority_url) => self.station_client.request_proto_for_actor_at::<
-                            ListConversationEventsRequest,
-                            ListConversationEventsResponse,
-                        >(
-                            authority_url,
+                    let response = match authority_station_id.as_deref() {
+                        Some(authority_station_id) => self
+                            .station_client
+                            .request_proto_for_actor_at_station::<
+                                ListConversationEventsRequest,
+                                ListConversationEventsResponse,
+                            >(
+                            authority_station_id,
                             Method::GET,
                             "/conversation/events",
                             token,

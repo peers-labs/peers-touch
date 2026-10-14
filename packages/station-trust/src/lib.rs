@@ -500,6 +500,37 @@ mod tests {
         }
     }
 
+    fn direct_route_attestation(root: &Keypair, node: &Keypair) -> StationRouteAttestation {
+        let authorization = authorization(root, node, 7);
+        let authorization_digest: [u8; 32] = Sha256::digest(authorization.encode_to_vec()).into();
+        let statement = StationRouteStatement {
+            station_peer_id: root.public().to_peer_id().to_string(),
+            route_id: format!("direct-{}", node.public().to_peer_id()),
+            route_generation: 7,
+            inner_tls_spki_sha256: vec![7; 32],
+            capabilities_digest: station_capabilities_digest(&capabilities())
+                .unwrap()
+                .to_vec(),
+            visibility: StationRouteVisibility::Public as i32,
+            issued_at_unix_ms: NOW,
+            expires_at_unix_ms: NOW + 60_000,
+            node_peer_id: node.public().to_peer_id().to_string(),
+            node_authorization_digest: authorization_digest.to_vec(),
+            kind: StationRouteKind::Direct as i32,
+            addresses: vec![format!(
+                "/ip4/127.0.0.1/tcp/4001/p2p/{}",
+                node.public().to_peer_id()
+            )],
+            ..Default::default()
+        };
+        let statement_bytes = statement.encode_to_vec();
+        StationRouteAttestation {
+            statement_bytes: statement_bytes.clone(),
+            node_signature: sign(node, STATION_ROUTE_DOMAIN, &statement_bytes),
+            node_authorization: Some(authorization),
+        }
+    }
+
     fn sign(key: &Keypair, domain: &[u8], statement: &[u8]) -> Vec<u8> {
         let mut input = domain.to_vec();
         input.extend_from_slice(statement);
@@ -628,6 +659,25 @@ mod tests {
         assert!(verify_station_route_attestation_bytes(
             &wrong_spki.encode_to_vec(),
             Some(&relay),
+            NOW,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn direct_route_binds_node_multiaddr_and_tls_spki_without_relay_identity() {
+        let root = Keypair::generate_ed25519();
+        let node = Keypair::generate_ed25519();
+        let route = direct_route_attestation(&root, &node);
+
+        let verified =
+            verify_station_route_attestation_bytes(&route.encode_to_vec(), None, NOW).unwrap();
+        assert_eq!(verified.relay_peer_id, None);
+        assert_eq!(verified.inner_tls_spki_sha256, [7; 32]);
+        assert!(verified.addresses[0].ends_with(&format!("/p2p/{}", verified.node_peer_id)));
+        assert!(verify_station_route_attestation_bytes(
+            &route.encode_to_vec(),
+            Some("unexpected-relay"),
             NOW,
         )
         .is_err());

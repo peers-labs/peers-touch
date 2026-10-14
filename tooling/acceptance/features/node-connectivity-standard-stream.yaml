@@ -10,6 +10,9 @@
     "apps/desktop/src-tauri/src/application/station_runtime/**",
     "apps/desktop/src-tauri/src/infrastructure/station/**",
     "apps/mobile/src-tauri/src/runtime/station_route.rs",
+    "model/domain/federation/locator.proto",
+    "apps/station/frame/core/plugin/native/federation/locator/**",
+    "apps/station/frame/touch/federation/resolver/**",
     "apps/station/frame/core/plugin/server/hertz/**",
     "apps/station/frame/core/server/**",
     "apps/station/app/subserver/events/**",
@@ -17,6 +20,7 @@
     "apps/station/frame/touch/model/peer/station_trust.go",
     "apps/station/frame/touch/model/peer/station_route_trust.go",
     "tooling/acceptance/gates/station_access/node_connectivity_native_e2e.py",
+    "tooling/scripts/check-node-connectivity-hard-cut.py",
     "tooling/scripts/node-connectivity-journey.py"
   ],
   "truth_sources": [
@@ -61,7 +65,8 @@
       "two Events processes allocate one gap-free per-Actor sequence and deliver committed rows through PostgreSQL wake hints plus bounded reconciliation",
       "subscriber restart replays through a captured high-watermark without leaking another device's targeted payload",
       "Relay ACL admits only enrolled nodes, current public routes, or source-bound private permits",
-      "custom Relay WSS and mount-framing production paths are absent"
+      "custom Relay WSS, mount-framing, and locator mount-hint production contracts are absent",
+      "Mobile Rust consumes the same generated route contract and builds in the cutover Gate"
     ],
     "surface": []
   },

@@ -16,7 +16,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
 
 from tooling.acceptance.core import (
     AppLaunchMetadata,
@@ -38,6 +37,9 @@ from tooling.acceptance.core.provisioner import load_env_file
 from tooling.acceptance.core.source_sync import (
     RemoteSourceSynchronizer,
     SourceSyncRequest,
+)
+from tooling.acceptance.provisioners.transport_endpoint import (
+    parse_orchestrator_endpoint,
 )
 from tooling.acceptance.transports.ssh import (
     SshTarget,
@@ -1033,27 +1035,8 @@ class NativeDesktopLinuxProvisioner:
             raise ProvisioningError(
                 f"Linux runtime-cell endpoint {normalized_id!r} is already exposed"
             )
-        parsed = urlsplit(url)
-        if (
-            parsed.scheme not in {"http", "https"}
-            or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
-            or parsed.username is not None
-            or parsed.password is not None
-        ):
-            raise ProvisioningError(
-                "orchestrator endpoint must be an HTTP(S) loopback URL "
-                "without credentials"
-            )
-        try:
-            local_port = parsed.port
-        except ValueError as error:
-            raise ProvisioningError(
-                "orchestrator endpoint port is invalid"
-            ) from error
-        if local_port is None:
-            raise ProvisioningError(
-                "orchestrator endpoint must declare an explicit port"
-            )
+        endpoint = parse_orchestrator_endpoint(url)
+        local_port = endpoint.local_port
         tunnel = self.transport.start_reverse_forward(
             local_port=local_port,
             remote_port=local_port,
@@ -1068,15 +1051,7 @@ class NativeDesktopLinuxProvisioner:
         self._endpoints[normalized_id] = runtime
         return {
             "endpointId": normalized_id,
-            "url": urlunsplit(
-                (
-                    parsed.scheme,
-                    f"127.0.0.1:{runtime.remote_port}",
-                    parsed.path,
-                    parsed.query,
-                    parsed.fragment,
-                )
-            ),
+            "url": endpoint.render(runtime.remote_port),
             "tunnelPid": runtime.tunnel_pid,
             "localPort": runtime.local_port,
             "remotePort": runtime.remote_port,

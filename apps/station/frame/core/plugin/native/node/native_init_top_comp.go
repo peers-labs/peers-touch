@@ -250,8 +250,10 @@ func (s *native) initComponents(ctx context.Context) (err error) {
 							kernel.DHT(),
 						),
 						bootstrapNative.WithStationRootKey(rootKey),
-						bootstrapNative.WithCircuitRoutes(
+						bootstrapNative.WithInnerTLSSPKI(
 							nodeIdentity.SPKISHA256(),
+						),
+						bootstrapNative.WithCircuitRoutes(
 							relayRuntime.LiveRoutes,
 						),
 					)

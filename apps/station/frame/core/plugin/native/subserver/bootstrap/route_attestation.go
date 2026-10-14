@@ -67,9 +67,6 @@ func bindNodeRouteStatement(
 			verified.Statement.GetStationPeerId() {
 		return fmt.Errorf("Station route logical identity does not match authorization")
 	}
-	if statement.GetRelayPeerId() == "" {
-		return fmt.Errorf("Station circuit route Relay identity is missing")
-	}
 	statement.StationPeerId = verified.Statement.GetStationPeerId()
 	statement.NodePeerId = verified.Statement.GetNodePeerId()
 	statement.NodeAuthorizationDigest = verified.Digest[:]
@@ -77,7 +74,18 @@ func bindNodeRouteStatement(
 		[]byte(nil),
 		verified.Statement.GetCapabilitiesDigest()...,
 	)
-	statement.Kind = peerpb.StationRouteKind_STATION_ROUTE_KIND_CIRCUIT
+	switch statement.GetKind() {
+	case peerpb.StationRouteKind_STATION_ROUTE_KIND_DIRECT:
+		if statement.GetRelayPeerId() != "" {
+			return fmt.Errorf("Station Direct route must not carry a Relay identity")
+		}
+	case peerpb.StationRouteKind_STATION_ROUTE_KIND_CIRCUIT:
+		if statement.GetRelayPeerId() == "" {
+			return fmt.Errorf("Station Circuit route Relay identity is missing")
+		}
+	default:
+		return fmt.Errorf("Station route kind is invalid")
+	}
 	statement.Addresses = append([]string(nil), statement.GetAddresses()...)
 	sort.Strings(statement.Addresses)
 	if statement.GetExpiresAtUnixMs()-statement.GetIssuedAtUnixMs() >

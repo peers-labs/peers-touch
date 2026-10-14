@@ -70,9 +70,14 @@ class SyntheticRemoteNativeLifecycle:
         url: str,
     ) -> dict[str, object]:
         self.calls.append(("expose_orchestrator_endpoint", (endpoint_id, url)))
+        if url.startswith("/"):
+            peer_id = url.rsplit("/p2p/", 1)[1]
+            exposed = f"/ip4/127.0.0.1/tcp/40123/p2p/{peer_id}"
+        else:
+            exposed = "http://127.0.0.1:40123/proxy"
         return {
             "endpointId": endpoint_id,
-            "url": "http://127.0.0.1:40123/proxy",
+            "url": exposed,
         }
 
     def release_endpoint(self, endpoint_id: str) -> dict[str, object]:
@@ -263,10 +268,22 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                                 "station_peer_id": "station-peer-four",
                                 "routes": [
                                     {
-                                        "route_id": "relay-primary",
+                                        "route_id": "direct-primary",
+                                        "route_type": "direct",
                                         "endpoint_origin": (
                                             "http://station.example"
                                         ),
+                                        "attestation_expires_at_unix_ms": 10,
+                                        "route_generation": 1,
+                                    },
+                                    {
+                                        "route_id": "relay-newer",
+                                        "route_type": "relay",
+                                        "endpoint_origin": (
+                                            "http://station.example"
+                                        ),
+                                        "attestation_expires_at_unix_ms": 20,
+                                        "route_generation": 2,
                                     }
                                 ],
                             }
@@ -279,6 +296,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         binding._configure_session_station(
             session,
             "http://station.example",
+            "station-four",
         )
 
         self.assertEqual(
@@ -293,7 +311,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                     {
                         "input": {
                             "station_peer_id": "station-peer-four",
-                            "route_id": "relay-primary",
+                            "route_id": "direct-primary",
                         }
                     },
                 ),
@@ -320,6 +338,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                                 "routes": [
                                     {
                                         "route_id": "relay-expired",
+                                        "route_type": "relay",
                                         "endpoint_origin": (
                                             "https://relay.example:18443"
                                         ),
@@ -331,6 +350,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                                     },
                                     {
                                         "route_id": "relay-unavailable",
+                                        "route_type": "relay",
                                         "endpoint_origin": (
                                             "https://relay.example:18443"
                                         ),
@@ -342,6 +362,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                                     },
                                     {
                                         "route_id": "relay-current",
+                                        "route_type": "relay",
                                         "endpoint_origin": (
                                             "https://relay.example:18443"
                                         ),
@@ -362,6 +383,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         binding._configure_session_station(
             session,
             "https://relay.example:18443",
+            "station-via-relay",
         )
 
         self.assertEqual(
@@ -397,6 +419,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                                 "routes": [
                                     {
                                         "route_id": "relay-primary",
+                                        "route_type": "relay",
                                         "endpoint_origin": (
                                             "https://relay.example:18443"
                                         ),
@@ -412,6 +435,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         binding._configure_session_station(
             session,
             "http://relay.example:18081",
+            "station-via-relay",
         )
 
         self.assertEqual(
@@ -456,6 +480,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                                 "routes": [
                                     {
                                         "route_id": "relay-primary",
+                                        "route_type": "direct",
                                         "endpoint_origin": (
                                             "http://station.example"
                                         ),
@@ -846,7 +871,8 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         handle = binding.create_transport_override(
             "alice",
             "station",
-            "http://127.0.0.1:39000",
+            "/ip4/127.0.0.1/tcp/39000/p2p/"
+            "12D3KooWGo2HxmjfSQZKTheDEbgDBpSuhUxTNsr8DnTkXCDzdaZL",
         )
 
         binding.apply_verified_direct_route_override(
@@ -867,15 +893,16 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                     "acceptance_station_direct_route_override",
                     {
                         "input": {
-                            "endpoint_origin": (
-                                "http://127.0.0.1:40123/proxy"
+                            "dial_multiaddr": (
+                                "/ip4/127.0.0.1/tcp/40123/p2p/"
+                                "12D3KooWGo2HxmjfSQZKTheDEbgDBpSuhUxTNsr8DnTkXCDzdaZL"
                             )
                         }
                     },
                 ),
                 call(
                     "acceptance_station_direct_route_override",
-                    {"input": {"endpoint_origin": None}},
+                    {"input": {"dial_multiaddr": None}},
                 ),
             ],
         )
@@ -943,7 +970,11 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             session = binding.create_bound_session("alice")
 
         self.assertIsNotNone(session)
-        configure.assert_called_once_with(session, "http://station.example")
+        configure.assert_called_once_with(
+            session,
+            "http://station.example",
+            "station-four",
+        )
         observe.assert_called_once()
         persist.assert_called_once()
         self.assertEqual(binding.proof_refs(), (reference,))

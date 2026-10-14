@@ -559,10 +559,6 @@ mod tests {
             None
         }
 
-        fn authority_endpoint_origin(&self, _station_peer_id: &str) -> Result<String, String> {
-            Err("resource tests do not expose route origins".to_string())
-        }
-
         fn owns_resource_origin(&self, origin: &str) -> bool {
             self.owned_origins.iter().any(|value| value == origin)
         }

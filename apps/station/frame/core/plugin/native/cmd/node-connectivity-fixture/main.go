@@ -22,9 +22,10 @@ import (
 )
 
 type fixtureProjection struct {
-	NodePeerID string `json:"nodePeerId"`
-	Route      string `json:"route"`
-	SPKISHA256 string `json:"spkiSha256"`
+	NodePeerID   string `json:"nodePeerId"`
+	DirectRoute  string `json:"directRoute"`
+	CircuitRoute string `json:"circuitRoute"`
+	SPKISHA256   string `json:"spkiSha256"`
 }
 
 func main() {
@@ -161,7 +162,12 @@ func main() {
 	defer ingress.Close()
 
 	relayAddress := relayHost.Addrs()[0].String()
-	route := fmt.Sprintf(
+	directRoute := fmt.Sprintf(
+		"%s/p2p/%s",
+		stationHost.Addrs()[0],
+		stationHost.ID(),
+	)
+	circuitRoute := fmt.Sprintf(
 		"%s/p2p/%s/p2p-circuit/p2p/%s",
 		relayAddress,
 		relayHost.ID(),
@@ -169,9 +175,10 @@ func main() {
 	)
 	spki := identity.SPKISHA256()
 	projection := fixtureProjection{
-		NodePeerID: stationHost.ID().String(),
-		Route:      route,
-		SPKISHA256: hex.EncodeToString(spki[:]),
+		NodePeerID:   stationHost.ID().String(),
+		DirectRoute:  directRoute,
+		CircuitRoute: circuitRoute,
+		SPKISHA256:   hex.EncodeToString(spki[:]),
 	}
 	must(json.NewEncoder(os.Stdout).Encode(projection))
 	_ = os.Stdout.Sync()

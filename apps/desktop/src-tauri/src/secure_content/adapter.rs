@@ -1443,13 +1443,6 @@ mod tests {
                 .to_string(),
             )
         }
-
-        fn authority_endpoint_origin(&self, station_peer_id: &str) -> Result<String, String> {
-            if self.active_station_peer_id().as_deref() != Some(station_peer_id) {
-                return Err("unknown Station".to_string());
-            }
-            Ok(self.active_endpoint_origin().unwrap())
-        }
     }
 
     fn transport_session(executor: Arc<SwitchingStationExecutor>) -> Arc<SecureContentSession> {
