@@ -1139,9 +1139,19 @@ func friendRequestTransactionFromDelivery(
 			"must expose a database and outbox",
 		)
 	}
+	afterCommit, ok := transaction.(delivery.AfterCommitRegistrar)
+	if !ok {
+		return nil, domain.NewFederationError(
+			domain.FederationErrorInvalidArgument,
+			"social.bind_delivery_transaction",
+			"transaction",
+			"must expose post-commit callbacks",
+		)
+	}
 	return &federatedFriendRequestTransaction{
-		db:     transaction.DB(),
-		outbox: transaction.Outbox(),
+		db:          transaction.DB(),
+		outbox:      transaction.Outbox(),
+		afterCommit: afterCommit,
 	}, nil
 }
 
