@@ -28,8 +28,9 @@ function SessionNotificationBell() {
       <Popover
         open={open && !expanded} onOpenChange={setOpen}
         trigger="click" placement="rightBottom" arrow={false}
+        destroyOnHidden
         styles={{ container: { padding: 0 } }}
-        content={open ? <NotificationCenter expanded={false} onExpand={expand} /> : null}
+        content={<NotificationCenter expanded={false} onExpand={expand} />}
         align={{ offset: [8, 0] }}
       >
         <div ref={triggerRef}>
@@ -41,7 +42,7 @@ function SessionNotificationBell() {
       </Popover>
       <Modal open={expanded} centered width={760} footer={null} destroyOnHidden
         title={t('layout.notifications.all')} onCancel={() => setExpanded(false)}
-        afterClose={() => triggerRef.current?.querySelector<HTMLElement>('button')?.focus()}>
+        afterClose={() => triggerRef.current?.querySelector<HTMLElement>('[role="button"]')?.focus()}>
         <NotificationCenter expanded onExpand={expand} />
       </Modal>
     </>

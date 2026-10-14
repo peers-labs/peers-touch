@@ -95,15 +95,17 @@ def native_click(
     )
     window = session.driver.get_window_rect()
     session.execute_script(
-        """window.__PT_POINTER_PROBE__ = {events: [], listener: event => {
+        """const selector = arguments[0];
+        window.__PT_POINTER_PROBE__ = {events: [], listener: event => {
           window.__PT_POINTER_PROBE__.events.push({
             type: event.type, x: event.clientX, y: event.clientY, trusted: event.isTrusted,
-            target: event.target.outerHTML.slice(0, 700)
+            hitsTrigger: Boolean(event.target.closest(selector))
           });
         }};
         for (const type of ['pointerdown', 'pointerup', 'click']) {
           document.addEventListener(type, window.__PT_POINTER_PROBE__.listener, true);
         }""",
+        selector,
     )
     origin = binding.native_adapter.content_origin(pid)
     if origin is None:
@@ -480,6 +482,9 @@ def run_notifications_journey(
                     delete window.__PT_POINTER_PROBE__;
                     return probe.events;""",
                 )
+            if not any(event["type"] == "click" and event["trusted"] and event["hitsTrigger"]
+                       for event in result["nativeInput"]["events"]):
+                raise GateError("Native notification click did not reach the trigger")
             row = receiver.find_element(f'[data-shell-notification="{item["id"]}"]', 30)
             if f"{marker}-{index}" not in row.text:
                 raise GateError("receiver notification body differs from the production command")
