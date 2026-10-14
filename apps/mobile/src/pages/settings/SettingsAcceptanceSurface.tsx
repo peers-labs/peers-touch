@@ -45,6 +45,15 @@ import { MobileNotice } from '../../components/MobileNotice';
 
 const { Text } = Typography;
 
+const FIXTURE_ACCOUNT_INITIALS = 'AC';
+const FIXTURE_ACCOUNT_NAME = 'Alice Chen';
+const FIXTURE_CONVERSATION_NAME = 'Launch Readiness';
+const FIXTURE_LANGUAGE_NAMES = {
+  en: 'English',
+  'zh-CN': '简体中文',
+} as const;
+const FIXTURE_STATION_NAME = 'Product Station';
+
 const SETTING_LABELS: Record<MobileSettingDetailId, string> = {
   'account-info': 'mobile.settings.accountInfo',
   notifications: 'mobile.settings.section.notifications',
@@ -71,9 +80,9 @@ const SUMMARY_DETAILS: ReadonlyArray<{
   { id: 'blocked-users', icon: <Ban size={17} />, value: '2' },
   { id: 'chat-settings', icon: <MessageCircle size={17} /> },
   { id: 'chat-background', icon: <ImageIcon size={17} /> },
-  { id: 'station-connection', icon: <Server size={17} />, value: 'Product Station' },
+  { id: 'station-connection', icon: <Server size={17} />, value: FIXTURE_STATION_NAME },
   { id: 'encryption', icon: <ShieldCheck size={17} /> },
-  { id: 'language', icon: <Globe size={17} />, value: 'English' },
+  { id: 'language', icon: <Globe size={17} />, value: FIXTURE_LANGUAGE_NAMES.en },
   { id: 'about', icon: <ShieldCheck size={17} />, value: '1.0.0' },
 ];
 
@@ -158,9 +167,13 @@ function SettingsFixtureSummary({
           <>
             <Card className="settings-profile-header-card" variant="borderless">
               <div className="settings-profile-header">
-                <Avatar className="settings-fixture-avatar" size={64}>AC</Avatar>
+                <Avatar className="settings-fixture-avatar" size={64}>
+                  {FIXTURE_ACCOUNT_INITIALS}
+                </Avatar>
                 <div className="settings-profile-info">
-                  <Text strong className="settings-profile-name">Alice Chen</Text>
+                  <Text strong className="settings-profile-name">
+                    {FIXTURE_ACCOUNT_NAME}
+                  </Text>
                   <Text type="secondary" className="settings-profile-subtitle">
                     {t('mobile.settings.connected')}
                   </Text>
@@ -495,7 +508,7 @@ function SettingsFixtureContent({
         </div>
         <div className="settings-row">
           <span className="settings-fixture-person">
-            <Text strong>Product Station</Text>
+            <Text strong>{FIXTURE_STATION_NAME}</Text>
             <Text type="secondary">{t('mobile.settings.connected')}</Text>
           </span>
           <Tag color="green">{t('mobile.launch.verified')}</Tag>
@@ -522,8 +535,8 @@ function SettingsFixtureContent({
           value="en"
           onChange={() => undefined}
         >
-          <option value="en">English</option>
-          <option value="zh-CN">简体中文</option>
+          <option value="en">{FIXTURE_LANGUAGE_NAMES.en}</option>
+          <option value="zh-CN">{FIXTURE_LANGUAGE_NAMES['zh-CN']}</option>
         </select>
       </Card>
     );
@@ -615,13 +628,13 @@ function SettingsFixtureStorage({
           {managing ? (
             <Checkbox
               aria-label={t('mobile.settings.storage.batchSelectConversation', {
-                name: 'Launch Readiness',
+                name: FIXTURE_CONVERSATION_NAME,
               })}
               checked
             />
           ) : null}
           <span className="settings-fixture-person">
-            <Text strong>Launch Readiness</Text>
+            <Text strong>{FIXTURE_CONVERSATION_NAME}</Text>
             <Text type="secondary">48 MB</Text>
           </span>
           {managing && !confirming && !progress ? (
@@ -753,7 +766,7 @@ function SettingsFixtureOverlay({
             <div className="settings-fixture-station-choice">
               <Server size={18} />
               <span className="settings-fixture-person">
-                <Text strong>Product Station</Text>
+                <Text strong>{FIXTURE_STATION_NAME}</Text>
                 <Text type="secondary">{t('mobile.launch.verified')}</Text>
               </span>
               <Check size={18} />

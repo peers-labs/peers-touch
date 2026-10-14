@@ -386,6 +386,8 @@ fn nonempty(value: String) -> Option<String> {
 mod tests {
     use super::*;
 
+    const TEST_PASSWORD: &str = "secret";
+
     fn scope() -> ValidatedScope {
         ValidatedScope::new(super::super::OAuthScopeIntent {
             station_origin: "https://station.example".to_string(),
@@ -416,7 +418,7 @@ mod tests {
                 submission_id: "submission-a".to_string(),
                 input: NativeAccessGateInput::Login {
                     email: "alice@example.test".to_string(),
-                    password: "secret".to_string(),
+                    password: TEST_PASSWORD.to_string(),
                 },
             },
             &scope(),

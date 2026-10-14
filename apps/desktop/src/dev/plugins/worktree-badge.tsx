@@ -7,6 +7,8 @@ import { useSessionStore } from '../../store/session';
 declare const __PT_DEV_WORKTREE__: string;
 declare const __PT_DEV_BRANCH__: string;
 
+const WORKTREE_BADGE_PREFIX = 'wt:';
+
 function WorktreeBadge() {
   const worktree = __PT_DEV_WORKTREE__ || 'unknown';
   const branch = __PT_DEV_BRANCH__ || '';
@@ -68,7 +70,7 @@ function WorktreeBadge() {
           userSelect: 'none',
         }}
       >
-        <span style={{ color: '#8f8' }}>wt:</span>
+        <span style={{ color: '#8f8' }}>{WORKTREE_BADGE_PREFIX}</span>
         <span>{worktree}</span>
         {branch && branch !== worktree && (
           <>

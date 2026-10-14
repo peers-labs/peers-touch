@@ -19,6 +19,24 @@ import { MobileNotice } from '../../components/MobileNotice';
 
 const { Text } = Typography;
 
+const FIXTURE_CONTACTS = {
+  alexandria: {
+    avatar: 'A',
+    handle: '@alexandria@design.peers',
+    name: 'Alexandria Montgomery-Santos',
+    note: 'Product design, accessibility, and launch readiness.',
+  },
+  jordan: {
+    avatar: 'J',
+    name: 'Jordan Kim',
+  },
+  morgan: {
+    avatar: 'M',
+    handle: '@morgan@design.peers',
+    name: 'Morgan Lee',
+  },
+} as const;
+
 const LIST_SURFACES = new Set<ContactsSurfaceFixtureId>([
   'contacts.list',
   'contacts.list-loading',
@@ -184,12 +202,12 @@ function ContactsFixtureList({
                   <span>{t('mobile.contacts.friends')}</span>
                 </div>
                 <FixtureContact
-                  name="Alexandria Montgomery-Santos"
+                  name={FIXTURE_CONTACTS.alexandria.name}
                   status={t('mobile.social.online')}
                 />
                 {surfaceId !== 'contacts.local-search' ? (
                   <FixtureContact
-                    name="Morgan Lee"
+                    name={FIXTURE_CONTACTS.morgan.name}
                     status={t('mobile.social.offline')}
                   />
                 ) : null}
@@ -210,9 +228,9 @@ function FixtureRequest({
   const { t } = useMobileI18n();
   return (
     <div className="contacts-fixture-request" aria-busy={state === 'pending'}>
-      <span className="contacts-fixture-avatar">J</span>
+      <span className="contacts-fixture-avatar">{FIXTURE_CONTACTS.jordan.avatar}</span>
       <span className="contacts-fixture-copy">
-        <Text strong>Jordan Kim</Text>
+        <Text strong>{FIXTURE_CONTACTS.jordan.name}</Text>
         <Text type="secondary">{t('mobile.contacts.defaultRequestMessage')}</Text>
       </span>
       {state === 'pending' ? (
@@ -289,7 +307,7 @@ function ContactsFixtureProfile({
           <h1 className="header-title compact">
             {unavailable
               ? t('mobile.contacts.profile')
-              : 'Alexandria Montgomery-Santos'}
+              : FIXTURE_CONTACTS.alexandria.name}
           </h1>
         </header>
         <section className="contacts-fixture-profile">
@@ -307,14 +325,16 @@ function ContactsFixtureProfile({
             />
           ) : (
             <>
-              <span className="contacts-fixture-profile-avatar">A</span>
+              <span className="contacts-fixture-profile-avatar">
+                {FIXTURE_CONTACTS.alexandria.avatar}
+              </span>
               <div className="contact-profile-copy">
                 <Text strong className="contact-profile-name">
-                  Alexandria Montgomery-Santos
+                  {FIXTURE_CONTACTS.alexandria.name}
                 </Text>
-                <Text type="secondary">@alexandria@design.peers</Text>
+                <Text type="secondary">{FIXTURE_CONTACTS.alexandria.handle}</Text>
                 <Text className="contact-profile-note">
-                  Product design, accessibility, and launch readiness.
+                  {FIXTURE_CONTACTS.alexandria.note}
                 </Text>
                 <span className="contacts-fixture-trust">
                   <ShieldCheck size={15} />
@@ -449,10 +469,12 @@ function ContactsFixturePeople({
           <Text type="secondary">{t('mobile.contacts.findPeopleHint')}</Text>
         ) : showResult ? (
           <div className="contacts-fixture-person">
-            <span className="contacts-fixture-avatar">A</span>
+            <span className="contacts-fixture-avatar">
+              {FIXTURE_CONTACTS.alexandria.avatar}
+            </span>
             <span className="contacts-fixture-copy">
-              <Text strong>Alexandria Montgomery-Santos</Text>
-              <Text type="secondary">@alexandria@design.peers</Text>
+              <Text strong>{FIXTURE_CONTACTS.alexandria.name}</Text>
+              <Text type="secondary">{FIXTURE_CONTACTS.alexandria.handle}</Text>
             </span>
             <Button
               type="primary"
@@ -536,18 +558,20 @@ function ContactsFixtureGroup({
           <Text type="secondary">2</Text>
         </div>
         <label className="contacts-fixture-member">
-          <span className="contacts-fixture-avatar">A</span>
+          <span className="contacts-fixture-avatar">
+            {FIXTURE_CONTACTS.alexandria.avatar}
+          </span>
           <span className="contacts-fixture-copy">
-            <Text strong>Alexandria Montgomery-Santos</Text>
-            <Text type="secondary">@alexandria@design.peers</Text>
+            <Text strong>{FIXTURE_CONTACTS.alexandria.name}</Text>
+            <Text type="secondary">{FIXTURE_CONTACTS.alexandria.handle}</Text>
           </span>
           <Checkbox checked disabled={pending || denied} />
         </label>
         <label className="contacts-fixture-member">
-          <span className="contacts-fixture-avatar">M</span>
+          <span className="contacts-fixture-avatar">{FIXTURE_CONTACTS.morgan.avatar}</span>
           <span className="contacts-fixture-copy">
-            <Text strong>Morgan Lee</Text>
-            <Text type="secondary">@morgan@design.peers</Text>
+            <Text strong>{FIXTURE_CONTACTS.morgan.name}</Text>
+            <Text type="secondary">{FIXTURE_CONTACTS.morgan.handle}</Text>
           </span>
           <Checkbox checked disabled={pending || denied} />
         </label>

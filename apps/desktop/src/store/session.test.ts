@@ -43,6 +43,8 @@ vi.mock('../services/identityPipeline', () => ({
 const { AuthCommandException } = await import('../services/desktop_api');
 const { useSessionStore } = await import('./session');
 
+const TEST_PASSWORD = 'password';
+
 const authenticatedResponse = {
   command: 'access_submit_login',
   status: 'authenticated',
@@ -115,8 +117,8 @@ describe('session authentication convergence', () => {
   });
 
   it.each([
-    ['password login', () => useSessionStore.getState().loginWithPassword('alice@p.t', 'password')],
-    ['access-gate login', () => useSessionStore.getState().accessSubmitLogin('attempt-1', loginGate, 'alice@p.t', 'password')],
+    ['password login', () => useSessionStore.getState().loginWithPassword('alice@p.t', TEST_PASSWORD)],
+    ['access-gate login', () => useSessionStore.getState().accessSubmitLogin('attempt-1', loginGate, 'alice@p.t', TEST_PASSWORD)],
     ['OAuth login', () => useSessionStore.getState().loginWithOAuth('github')],
   ])('activates the authenticated session before the identity pipeline for %s', async (_name, login) => {
     useSessionStore.getState().reset();
@@ -134,7 +136,7 @@ describe('session authentication convergence', () => {
   });
 
   it('routes password login through the Station access attempt', async () => {
-    await useSessionStore.getState().loginWithPassword('alice@p.t', 'password');
+    await useSessionStore.getState().loginWithPassword('alice@p.t', TEST_PASSWORD);
 
     expect(mocks.accessStart).toHaveBeenCalledOnce();
     expect(mocks.accessSubmitLogin).toHaveBeenCalledWith(
@@ -147,7 +149,7 @@ describe('session authentication convergence', () => {
         schema_digest: loginGate.schemaDigest,
         submission_id: expect.any(String),
         account: 'alice@p.t',
-        password: 'password',
+        password: TEST_PASSWORD,
       }),
     );
   });
@@ -195,7 +197,7 @@ describe('session authentication convergence', () => {
 
     await expect(
       useSessionStore.getState().accessSubmitLogin(
-        'attempt-1', loginGate, 'alice@p.t', 'password',
+        'attempt-1', loginGate, 'alice@p.t', TEST_PASSWORD,
       ),
     ).rejects.toThrow('station binding failed');
 
