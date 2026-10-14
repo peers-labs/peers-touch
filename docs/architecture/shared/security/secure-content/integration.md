@@ -255,6 +255,11 @@ decryption, local SQLCipher projection, and recovery. Web layers own plaintext
 composition/rendering but never cryptographic material or transfer state.
 
 Desktop has no browser runtime or browser-specific private-content branch.
+Desktop Secure Content also owns no Station endpoint transport. It captures the
+logical `station_peer_id + lifecycle_generation` at activation and sends every
+typed and object request through the app-scoped `StationClient`. Same-Station
+route replacement preserves the session; a different Station lifecycle is
+rejected before dispatch.
 
 Under accepted `SC-D20`, source-only W7A lands the Key Exchange routes,
 canonical protobuf/error projection, publication receipt and API registry
@@ -554,9 +559,13 @@ checks pass.
 
 ## 10. Federation Boundary
 
-Public Moment federation is unchanged. Private Social federation remains
-unsupported and fails before partial publish. No private ciphertext, envelope, or
-recovery material enters ActivityPub.
+Public Moment federation is unchanged. The current implementation keeps private
+Social federation disabled until the Native Desktop cross-Station cutover in
+[`../cross-station-social/`](../cross-station-social/README.md)
+passes. The target reuses Secure Content ciphertext, envelope, proof and
+recovery contracts through authenticated Federation delivery and peer routes.
+No private ciphertext, envelope or recovery material enters Federation Ledger
+or any public-content transport.
 
 ## 11. Verification Matrix
 

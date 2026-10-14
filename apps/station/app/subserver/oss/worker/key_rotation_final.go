@@ -86,6 +86,9 @@ func (w *KeyRotationFinalizer) Interval() time.Duration { return w.cfg.Interval 
 // RunOnce inspects the prev slot and clears it if the grace
 // window has elapsed.
 func (w *KeyRotationFinalizer) RunOnce(ctx context.Context) error {
+	if _, err := ValidateLeaseAuthority(ctx, w.Name()); err != nil {
+		return err
+	}
 	prev, err := w.cfg.Keys.Load(ctx, federation.SlotPrev)
 	if err != nil {
 		if errors.Is(err, federation.ErrNoLocalKey) {
@@ -108,6 +111,9 @@ func (w *KeyRotationFinalizer) RunOnce(ctx context.Context) error {
 		return nil
 	}
 
+	if _, err := ValidateLeaseAuthority(ctx, w.Name()); err != nil {
+		return err
+	}
 	cleared, err := w.cfg.Keys.ClearPrev(
 		ctx,
 		prev.Kid,

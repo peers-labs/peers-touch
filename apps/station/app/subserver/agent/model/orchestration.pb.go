@@ -3359,18 +3359,21 @@ func (x *TaskCheckpoint) GetCreatedAt() *timestamppb.Timestamp {
 }
 
 type ExecutorLease struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	LeaseId       string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
-	TaskId        string                 `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	StepId        string                 `protobuf:"bytes,3,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"`
-	ExecutorId    string                 `protobuf:"bytes,4,opt,name=executor_id,json=executorId,proto3" json:"executor_id,omitempty"`
-	ExecutorKind  ExecutorKind           `protobuf:"varint,5,opt,name=executor_kind,json=executorKind,proto3,enum=peers_touch.model.agent.v1.ExecutorKind" json:"executor_kind,omitempty"`
-	Status        string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
-	AcquiredAt    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=acquired_at,json=acquiredAt,proto3" json:"acquired_at,omitempty"`
-	HeartbeatAt   *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=heartbeat_at,json=heartbeatAt,proto3" json:"heartbeat_at,omitempty"`
-	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	LeaseId          string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	TaskId           string                 `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	StepId           string                 `protobuf:"bytes,3,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"`
+	ExecutorId       string                 `protobuf:"bytes,4,opt,name=executor_id,json=executorId,proto3" json:"executor_id,omitempty"`
+	ExecutorKind     ExecutorKind           `protobuf:"varint,5,opt,name=executor_kind,json=executorKind,proto3,enum=peers_touch.model.agent.v1.ExecutorKind" json:"executor_kind,omitempty"`
+	Status           string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
+	AcquiredAt       *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=acquired_at,json=acquiredAt,proto3" json:"acquired_at,omitempty"`
+	HeartbeatAt      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=heartbeat_at,json=heartbeatAt,proto3" json:"heartbeat_at,omitempty"`
+	ExpiresAt        *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	OwnerNodeId      string                 `protobuf:"bytes,10,opt,name=owner_node_id,json=ownerNodeId,proto3" json:"owner_node_id,omitempty"`
+	OwnerIncarnation string                 `protobuf:"bytes,11,opt,name=owner_incarnation,json=ownerIncarnation,proto3" json:"owner_incarnation,omitempty"`
+	FencingToken     uint64                 `protobuf:"varint,12,opt,name=fencing_token,json=fencingToken,proto3" json:"fencing_token,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ExecutorLease) Reset() {
@@ -3464,6 +3467,27 @@ func (x *ExecutorLease) GetExpiresAt() *timestamppb.Timestamp {
 		return x.ExpiresAt
 	}
 	return nil
+}
+
+func (x *ExecutorLease) GetOwnerNodeId() string {
+	if x != nil {
+		return x.OwnerNodeId
+	}
+	return ""
+}
+
+func (x *ExecutorLease) GetOwnerIncarnation() string {
+	if x != nil {
+		return x.OwnerIncarnation
+	}
+	return ""
+}
+
+func (x *ExecutorLease) GetFencingToken() uint64 {
+	if x != nil {
+		return x.FencingToken
+	}
+	return 0
 }
 
 type InterruptRequest struct {
@@ -6164,7 +6188,7 @@ const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"\rversions_json\x18\x05 \x01(\tR\fversionsJson\x122\n" +
 	"\x15pending_writes_cursor\x18\x06 \x01(\tR\x13pendingWritesCursor\x129\n" +
 	"\n" +
-	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x9b\x03\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x91\x04\n" +
 	"\rExecutorLease\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12\x17\n" +
@@ -6177,7 +6201,11 @@ const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"acquiredAt\x12=\n" +
 	"\fheartbeat_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\vheartbeatAt\x129\n" +
 	"\n" +
-	"expires_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xb7\x03\n" +
+	"expires_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\"\n" +
+	"\rowner_node_id\x18\n" +
+	" \x01(\tR\vownerNodeId\x12+\n" +
+	"\x11owner_incarnation\x18\v \x01(\tR\x10ownerIncarnation\x12#\n" +
+	"\rfencing_token\x18\f \x01(\x04R\ffencingToken\"\xb7\x03\n" +
 	"\x10InterruptRequest\x12!\n" +
 	"\finterrupt_id\x18\x01 \x01(\tR\vinterruptId\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12\x17\n" +

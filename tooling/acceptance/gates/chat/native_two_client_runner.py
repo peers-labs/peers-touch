@@ -101,6 +101,7 @@ RECONCILIATION_OUTCOMES = {
     "terminal_superseded",
 }
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
+STATION_BINDING_PROJECTION_TIMEOUT = 30
 REQUIRED_ASSERTIONS = {
     "native_runtime",
     "source_build_runtime_identity",
@@ -512,10 +513,13 @@ class NativeTwoClientGate(AcceptanceGate):
         runtime_binding: NativeDesktopRuntimeBinding,
         gate_id: str = GATE_ID,
         allow_existing_fixture: bool = False,
+        journey_id: str | None = None,
+        station_identity_url: str | None = None,
     ) -> None:
         self.gate_id = gate_id
         super().__init__()
         self.allow_existing_fixture = allow_existing_fixture
+        self.journey_id = journey_id or journey_for_gate(gate_id)
         self.manifest = manifest
         self.actor_manifest = actor_manifest
         self.runtime_binding = runtime_binding
@@ -523,6 +527,11 @@ class NativeTwoClientGate(AcceptanceGate):
         self.station_url = str(station.get("endpoint") or "").rstrip("/")
         if not self.station_url:
             raise GateError("runtime manifest Station URL is required")
+        self.station_identity_url = str(
+            station_identity_url or self.station_url
+        ).rstrip("/")
+        if not self.station_identity_url:
+            raise GateError("Station identity URL is required")
         self.client_specs = {
             str(client.get("id")): client
             for client in manifest.get("clients", [])
@@ -549,17 +558,18 @@ class NativeTwoClientGate(AcceptanceGate):
         self.steps: list[dict[str, Any]] = []
         self.clients: dict[str, TauriSession] = {}
         self.runtime_instances: list[TauriSession] = []
+        self.runtime_instance_actors: dict[int, str] = {}
         self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
         self.station_access: dict[str, dict[str, Any]] = {}
         self._reconciliation_target: dict[str, str] | None = None
-        self.report.station_url = self.station_url
+        self.report.station_url = self.station_identity_url
         self.report.manifest = self.manifest
         self.report.runtime.update(
             {
                 "runtimeCell": self.runtime_binding.cell_id,
-                "journey": journey_for_gate(self.gate_id),
+                "journey": self.journey_id,
                 "steps": self.steps,
                 "stationAccess": self.station_access,
                 "cleanup": {},
@@ -735,6 +745,7 @@ class NativeTwoClientGate(AcceptanceGate):
             ),
         )
         self.runtime_instances.append(client)
+        self.runtime_instance_actors[id(client)] = actor
         expected_ptid = str(
             self.actor_specs[actor].get("ptid") or ""
         )
@@ -764,12 +775,12 @@ class NativeTwoClientGate(AcceptanceGate):
             "bindingState",
             {},
             namespace="stationAccess",
-            script_timeout=10,
+            script_timeout=STATION_BINDING_PROJECTION_TIMEOUT,
         )
         if (
             not isinstance(bound_station, dict)
             or bound_station.get("phase") != "bound"
-            or str(bound_station.get("bound_url") or "").rstrip("/")
+            or str(bound_station.get("activeUrl") or "").rstrip("/")
             != str(
                 runtime_station_service(
                     self.manifest,
@@ -845,6 +856,7 @@ class NativeTwoClientGate(AcceptanceGate):
             ),
         )
         self.runtime_instances.append(client)
+        self.runtime_instance_actors[id(client)] = actor
         expected_ptid = self.ptids[actor]
         self.client_lifecycles.register(client, expected_ptid)
         self.client_lifecycles.transfer_preserved_session(
@@ -865,12 +877,12 @@ class NativeTwoClientGate(AcceptanceGate):
             "bindingState",
             {},
             namespace="stationAccess",
-            script_timeout=10,
+            script_timeout=STATION_BINDING_PROJECTION_TIMEOUT,
         )
         if (
             not isinstance(bound_station, dict)
             or bound_station.get("phase") != "bound"
-            or str(bound_station.get("bound_url") or "").rstrip("/")
+            or str(bound_station.get("activeUrl") or "").rstrip("/")
             != station_url
         ):
             raise GateError(
@@ -1188,7 +1200,9 @@ class NativeTwoClientGate(AcceptanceGate):
         return evidence
 
     def prove_demo_avatar_sources(self) -> dict[str, Any]:
-        allowed_station_urls = {self.station_url}
+        allowed_station_urls = {
+            getattr(self, "station_identity_url", self.station_url)
+        }
 
         def valid_evidence() -> dict[str, Any] | None:
             evidence = self.sample_demo_avatar_sources()
@@ -1513,12 +1527,27 @@ class NativeTwoClientGate(AcceptanceGate):
     def cleanup_clients(self) -> dict[str, Any]:
         cleanup_errors = self.client_lifecycles.release_all()
 
+        exported_client_ids: set[int] = set()
         for actor, client in self.clients.items():
+            exported_client_ids.add(id(client))
             if not self.save_app_log(client, actor):
                 cleanup_errors.append(
                     {
                         "resource": f"log:{client.profile}",
                         "error": "Native client log was not exported",
+                    }
+                )
+        instance_actors = getattr(self, "runtime_instance_actors", {})
+        for index, client in enumerate(self.runtime_instances, start=1):
+            if id(client) in exported_client_ids:
+                continue
+            actor = instance_actors.get(id(client), "unbound")
+            evidence_name = f"{actor}-runtime-{index}"
+            if not self.save_app_log(client, evidence_name):
+                cleanup_errors.append(
+                    {
+                        "resource": f"log:{client.profile}",
+                        "error": "Native runtime instance log was not exported",
                     }
                 )
 
@@ -1586,7 +1615,7 @@ class NativeTwoClientGate(AcceptanceGate):
         try:
             version = self.step(
                 "station.identity",
-                lambda: read_station_version(self.station_url),
+                lambda: read_station_version(self.station_identity_url),
             )
             self.step(
                 (
@@ -1823,7 +1852,7 @@ class NativeTwoClientGate(AcceptanceGate):
         return {
             "runtimeCell": self.runtime_binding.cell_id,
             "runtimeCellRunId": source_identity["runtimeCell"]["runId"],
-            "journey": journey_for_gate(self.gate_id),
+            "journey": self.journey_id,
             "conversationId": conversation_id,
             "sourceIdentity": source_identity,
             "launchOrder": order,

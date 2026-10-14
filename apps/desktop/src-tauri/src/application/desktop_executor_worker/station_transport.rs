@@ -1,24 +1,19 @@
 use super::fenced_executor::ReceiptReporter;
-use super::operation_executor::OperationEventReporter;
-use super::operation_worker::OperationTransport;
-use crate::infrastructure::station_client;
-use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
+use crate::application::station_runtime::client::{
+    StationClient, StationClientError, StationClientErrorKind,
+};
 use crate::model::agent::{
     ClientCapabilityAdvertisement, ClientCapabilityCommandDomain, ClientCapabilityCommandErrorCode,
     ClientCapabilityCommandProof, ClientCapabilityCommandSigningPayload, ClientCapabilityLease,
-    ClientCapabilityLeaseRevokeReason, ClientCapabilityReceipt, PullCapabilityOperationsRequest,
-    PullCapabilityOperationsResponse, PullClientCapabilityRequestsRequest,
-    PullClientCapabilityRequestsResponse, ReachCapabilityAcceptanceExecutorBarrierRequest,
-    ReachCapabilityAcceptanceExecutorBarrierResponse, ReconcileCapabilityOperationRequest,
-    ReconcileCapabilityOperationResponse, RegisterClientCapabilityLeaseRequest,
+    ClientCapabilityLeaseRevokeReason, ClientCapabilityReceipt,
+    PullClientCapabilityRequestsRequest, PullClientCapabilityRequestsResponse,
+    ReachCapabilityAcceptanceExecutorBarrierRequest,
+    ReachCapabilityAcceptanceExecutorBarrierResponse, RegisterClientCapabilityLeaseRequest,
     RegisterClientCapabilityLeaseResponse, RenewClientCapabilityLeaseRequest,
-    RenewClientCapabilityLeaseResponse, ReportCapabilityOperationEventRequest,
-    ReportCapabilityOperationEventResponse, RevokeClientCapabilityLeaseRequest,
+    RenewClientCapabilityLeaseResponse, RevokeClientCapabilityLeaseRequest,
     RevokeClientCapabilityLeaseResponse, SubmitClientCapabilityReceiptRequest,
     SubmitClientCapabilityReceiptResponse, SubmitClientCapabilityRecoveryReceiptRequest,
-    SubmitClientCapabilityRecoveryReceiptResponse, TakeOverCapabilityCleanupRequest,
-    TakeOverCapabilityCleanupResponse, TakeOverCapabilityOperationRequest,
-    TakeOverCapabilityOperationResponse,
+    SubmitClientCapabilityRecoveryReceiptResponse,
 };
 use prost::Message;
 use rand::RngCore;
@@ -32,12 +27,6 @@ const RENEW_PATH: &str = "/sub-agent/agent/capability/lease/renew";
 const REVOKE_PATH: &str = "/sub-agent/agent/capability/lease/revoke";
 const ACTIVE_RECEIPT_PATH: &str = "/sub-agent/agent/capability/receipt";
 const RECOVERY_RECEIPT_PATH: &str = "/sub-agent/agent/capability/receipt/recover";
-const OPERATION_PULL_PATH: &str = "/sub-agent/agent/capability/operation/pull";
-const OPERATION_EVENT_PATH: &str = "/sub-agent/agent/capability/operation/event";
-const OPERATION_RECONCILE_PATH: &str = "/sub-agent/agent/capability/operation/reconcile";
-const OPERATION_TAKEOVER_PATH: &str = "/sub-agent/agent/capability/operation/takeover";
-const OPERATION_CLEANUP_TAKEOVER_PATH: &str =
-    "/sub-agent/agent/capability/operation/cleanup/takeover";
 const ACCEPTANCE_SCENARIO_REACH_PATH: &str =
     "/sub-agent/agent/capability/acceptance/scenario/reach";
 
@@ -73,7 +62,7 @@ pub struct CapabilityNegativeControlStationFact {
 }
 
 pub struct CapabilityStationTransport<'a> {
-    station_url: &'a str,
+    station_client: &'a StationClient,
     actor_ptid: &'a str,
     device_id: &'a str,
     token: &'a str,
@@ -83,15 +72,14 @@ pub struct CapabilityStationTransport<'a> {
 
 impl<'a> CapabilityStationTransport<'a> {
     pub fn new(
-        station_url: &'a str,
+        station_client: &'a StationClient,
         actor_ptid: &'a str,
         device_id: &'a str,
         token: &'a str,
         signing_key_id: &'a str,
         signing_key: &'a ed25519_dalek::SigningKey,
     ) -> Result<Self, String> {
-        if station_url.trim().is_empty()
-            || !actor_ptid.starts_with("ptid:")
+        if !actor_ptid.starts_with("ptid:")
             || device_id.trim().is_empty()
             || token.trim().is_empty()
         {
@@ -101,7 +89,7 @@ impl<'a> CapabilityStationTransport<'a> {
             );
         }
         Ok(Self {
-            station_url,
+            station_client,
             actor_ptid,
             device_id,
             token,
@@ -125,9 +113,9 @@ impl<'a> CapabilityStationTransport<'a> {
             ClientCapabilityCommandDomain::RegisterLease,
             &request_without_register_proof(&request),
         )?);
-        let response: RegisterClientCapabilityLeaseResponse =
-            station_client::request_proto_for_device_at(
-                self.station_url,
+        let response: RegisterClientCapabilityLeaseResponse = self
+            .station_client
+            .request_proto_for_device(
                 Method::POST,
                 REGISTER_PATH,
                 self.token,
@@ -159,9 +147,9 @@ impl<'a> CapabilityStationTransport<'a> {
             ClientCapabilityCommandDomain::RenewLease,
             &request_without_renew_proof(&request),
         )?);
-        let response: RenewClientCapabilityLeaseResponse =
-            station_client::request_proto_for_device_at(
-                self.station_url,
+        let response: RenewClientCapabilityLeaseResponse = self
+            .station_client
+            .request_proto_for_device(
                 Method::POST,
                 RENEW_PATH,
                 self.token,
@@ -196,9 +184,9 @@ impl<'a> CapabilityStationTransport<'a> {
             ClientCapabilityCommandDomain::RevokeLease,
             &request_without_revoke_proof(&request),
         )?);
-        let response: RevokeClientCapabilityLeaseResponse =
-            station_client::request_proto_for_device_at(
-                self.station_url,
+        let response: RevokeClientCapabilityLeaseResponse = self
+            .station_client
+            .request_proto_for_device(
                 Method::POST,
                 REVOKE_PATH,
                 self.token,
@@ -235,9 +223,9 @@ impl<'a> CapabilityStationTransport<'a> {
             ClientCapabilityCommandDomain::PullRequests,
             &request_without_pull_proof(&request),
         )?);
-        let response: PullClientCapabilityRequestsResponse =
-            station_client::request_proto_for_device_at::<_, PullClientCapabilityRequestsResponse>(
-                self.station_url,
+        let response: PullClientCapabilityRequestsResponse = self
+            .station_client
+            .request_proto_for_device::<_, PullClientCapabilityRequestsResponse>(
                 Method::POST,
                 PULL_PATH,
                 self.token,
@@ -262,84 +250,6 @@ impl<'a> CapabilityStationTransport<'a> {
         Ok(response)
     }
 
-    pub fn pull_operations(
-        &self,
-        capability_session_id: &str,
-        after_sequence: u64,
-        limit: u32,
-    ) -> Result<PullCapabilityOperationsResponse, String> {
-        let mut request = PullCapabilityOperationsRequest {
-            capability_session_id: capability_session_id.to_string(),
-            device_id: self.device_id.to_string(),
-            after_sequence,
-            limit,
-            command_proof: None,
-        };
-        request.command_proof = Some(self.sign_command(
-            ClientCapabilityCommandDomain::PullOperations,
-            &request_without_operation_pull_proof(&request),
-        )?);
-        let response: PullCapabilityOperationsResponse =
-            station_client::request_proto_for_device_at(
-                self.station_url,
-                Method::POST,
-                OPERATION_PULL_PATH,
-                self.token,
-                None,
-                Some(&request),
-                self.device_id,
-            )
-            .map_err(|error| format!("pull Station capability operations: {error}"))?;
-        validate_command_response(response.error_code, "capability operation pull")?;
-        if response.operations.iter().any(|operation| {
-            operation.target_device_id != self.device_id
-                || operation.capability_session_id != capability_session_id
-        }) {
-            return Err("Station returned an untargeted capability operation".to_string());
-        }
-        Ok(response)
-    }
-
-    pub fn take_over_operation(
-        &self,
-        mut request: TakeOverCapabilityOperationRequest,
-    ) -> Result<TakeOverCapabilityOperationResponse, String> {
-        request.command_proof = Some(self.sign_command(
-            ClientCapabilityCommandDomain::TakeOverOperation,
-            &request_without_operation_takeover_proof(&request),
-        )?);
-        station_client::request_proto_for_device_at(
-            self.station_url,
-            Method::POST,
-            OPERATION_TAKEOVER_PATH,
-            self.token,
-            None,
-            Some(&request),
-            self.device_id,
-        )
-        .map_err(|error| format!("take over Station capability operation: {error}"))
-    }
-
-    pub fn take_over_cleanup(
-        &self,
-        mut request: TakeOverCapabilityCleanupRequest,
-    ) -> Result<TakeOverCapabilityCleanupResponse, String> {
-        request.command_proof = Some(self.sign_command(
-            ClientCapabilityCommandDomain::TakeOverCleanup,
-            &request_without_operation_cleanup_takeover_proof(&request),
-        )?);
-        station_client::request_proto_for_device_at(
-            self.station_url,
-            Method::POST,
-            OPERATION_CLEANUP_TAKEOVER_PATH,
-            self.token,
-            None,
-            Some(&request),
-            self.device_id,
-        )
-        .map_err(|error| format!("take over Station capability cleanup: {error}"))
-    }
-
     pub fn emit_negative_control(
         &self,
         control: CapabilityNegativeControl,
@@ -355,10 +265,13 @@ impl<'a> CapabilityStationTransport<'a> {
         let mut request = self.signed_pull_request(target_session_id, 0, 1)?;
         match control {
             CapabilityNegativeControl::Unauthorized => {
-                let result = station_client::request_proto_no_auth_at::<
-                    _,
-                    PullClientCapabilityRequestsResponse,
-                >(self.station_url, Method::POST, PULL_PATH, &request);
+                let result = self
+                    .station_client
+                    .request_proto_no_auth::<_, PullClientCapabilityRequestsResponse>(
+                        Method::POST,
+                        PULL_PATH,
+                        &request,
+                    );
                 Ok(negative_control_station_fact(result, None))
             }
             CapabilityNegativeControl::SignatureTamper => {
@@ -372,18 +285,15 @@ impl<'a> CapabilityStationTransport<'a> {
                     .ok_or_else(|| "AS_F10_COMMAND_SIGNATURE_UNAVAILABLE".to_string())?;
                 *first ^= 0x01;
                 Ok(negative_control_station_fact(
-                    station_client::request_proto_for_device_at::<
-                        _,
-                        PullClientCapabilityRequestsResponse,
-                    >(
-                        self.station_url,
-                        Method::POST,
-                        PULL_PATH,
-                        self.token,
-                        None,
-                        Some(&request),
-                        self.device_id,
-                    ),
+                    self.station_client
+                        .request_proto_for_device::<_, PullClientCapabilityRequestsResponse>(
+                            Method::POST,
+                            PULL_PATH,
+                            self.token,
+                            None,
+                            Some(&request),
+                            self.device_id,
+                        ),
                     None,
                 ))
             }
@@ -443,8 +353,7 @@ impl<'a> CapabilityStationTransport<'a> {
         &self,
         request: &PullClientCapabilityRequestsRequest,
     ) -> Result<PullClientCapabilityRequestsResponse, StationClientError> {
-        station_client::request_proto_for_device_at(
-            self.station_url,
+        self.station_client.request_proto_for_device(
             Method::POST,
             PULL_PATH,
             self.token,
@@ -466,16 +375,17 @@ impl<'a> CapabilityStationTransport<'a> {
             ClientCapabilityCommandDomain::SubmitActiveReceipt,
             &request_without_receipt_proof(&request),
         )?);
-        let response = station_client::request_proto_for_device_at::<_, _>(
-            self.station_url,
-            Method::POST,
-            ACTIVE_RECEIPT_PATH,
-            self.token,
-            None,
-            Some(&request),
-            self.device_id,
-        )
-        .map_err(|error| format!("submit active client capability receipt: {error}"))?;
+        let response = self
+            .station_client
+            .request_proto_for_device::<_, _>(
+                Method::POST,
+                ACTIVE_RECEIPT_PATH,
+                self.token,
+                None,
+                Some(&request),
+                self.device_id,
+            )
+            .map_err(|error| format!("submit active client capability receipt: {error}"))?;
         validate_receipt_response(response)
     }
 
@@ -484,19 +394,19 @@ impl<'a> CapabilityStationTransport<'a> {
         scenario_handle: &str,
         barrier: &str,
     ) -> Result<ReachCapabilityAcceptanceExecutorBarrierResponse, String> {
-        station_client::request_proto_for_device_at(
-            self.station_url,
-            Method::POST,
-            ACCEPTANCE_SCENARIO_REACH_PATH,
-            self.token,
-            None,
-            Some(&ReachCapabilityAcceptanceExecutorBarrierRequest {
-                scenario_handle: scenario_handle.to_string(),
-                barrier: barrier.to_string(),
-            }),
-            self.device_id,
-        )
-        .map_err(|error| format!("reach Station capability acceptance barrier: {error}"))
+        self.station_client
+            .request_proto_for_device(
+                Method::POST,
+                ACCEPTANCE_SCENARIO_REACH_PATH,
+                self.token,
+                None,
+                Some(&ReachCapabilityAcceptanceExecutorBarrierRequest {
+                    scenario_handle: scenario_handle.to_string(),
+                    barrier: barrier.to_string(),
+                }),
+                self.device_id,
+            )
+            .map_err(|error| format!("reach Station capability acceptance barrier: {error}"))
     }
 
     fn submit_recovery(
@@ -506,16 +416,14 @@ impl<'a> CapabilityStationTransport<'a> {
         let request = SubmitClientCapabilityRecoveryReceiptRequest {
             receipt: Some(receipt.clone()),
         };
-        let response = station_client::request_proto_no_auth_at::<
-            _,
-            SubmitClientCapabilityRecoveryReceiptResponse,
-        >(
-            self.station_url,
-            Method::POST,
-            RECOVERY_RECEIPT_PATH,
-            &request,
-        )
-        .map_err(|error| format!("submit recovery client capability receipt: {error}"))?;
+        let response = self
+            .station_client
+            .request_proto_no_auth::<_, SubmitClientCapabilityRecoveryReceiptResponse>(
+                Method::POST,
+                RECOVERY_RECEIPT_PATH,
+                &request,
+            )
+            .map_err(|error| format!("submit recovery client capability receipt: {error}"))?;
         validate_receipt_response(
             response
                 .result
@@ -587,69 +495,6 @@ impl ReceiptReporter for CapabilityStationTransport<'_> {
     }
 }
 
-impl OperationEventReporter for CapabilityStationTransport<'_> {
-    fn report(
-        &self,
-        mut request: ReportCapabilityOperationEventRequest,
-    ) -> Result<crate::model::agent::CapabilityOperation, String> {
-        request.command_proof = Some(self.sign_command(
-            ClientCapabilityCommandDomain::ReportOperationEvent,
-            &request_without_operation_event_proof(&request),
-        )?);
-        let response: ReportCapabilityOperationEventResponse =
-            station_client::request_proto_for_device_at(
-                self.station_url,
-                Method::POST,
-                OPERATION_EVENT_PATH,
-                self.token,
-                None,
-                Some(&request),
-                self.device_id,
-            )
-            .map_err(|error| format!("report Station capability operation event: {error}"))?;
-        response
-            .operation
-            .ok_or_else(|| "Station capability operation response is missing operation".to_string())
-    }
-}
-
-impl OperationTransport for CapabilityStationTransport<'_> {
-    fn pull_operations(
-        &self,
-        capability_session_id: &str,
-        after_sequence: u64,
-        limit: u32,
-    ) -> Result<PullCapabilityOperationsResponse, String> {
-        CapabilityStationTransport::pull_operations(
-            self,
-            capability_session_id,
-            after_sequence,
-            limit,
-        )
-    }
-
-    fn reconcile_operation(
-        &self,
-        operation_id: &str,
-        after_sequence: u64,
-    ) -> Result<ReconcileCapabilityOperationResponse, String> {
-        let request = ReconcileCapabilityOperationRequest {
-            operation_id: operation_id.to_string(),
-            after_sequence,
-        };
-        station_client::request_proto_for_device_at(
-            self.station_url,
-            Method::POST,
-            OPERATION_RECONCILE_PATH,
-            self.token,
-            None,
-            Some(&request),
-            self.device_id,
-        )
-        .map_err(|error| format!("reconcile Station capability operation: {error}"))
-    }
-}
-
 fn request_without_pull_proof(
     request: &PullClientCapabilityRequestsRequest,
 ) -> PullClientCapabilityRequestsRequest {
@@ -661,38 +506,6 @@ fn request_without_pull_proof(
 fn request_without_receipt_proof(
     request: &SubmitClientCapabilityReceiptRequest,
 ) -> SubmitClientCapabilityReceiptRequest {
-    let mut canonical = request.clone();
-    canonical.command_proof = None;
-    canonical
-}
-
-fn request_without_operation_pull_proof(
-    request: &PullCapabilityOperationsRequest,
-) -> PullCapabilityOperationsRequest {
-    let mut canonical = request.clone();
-    canonical.command_proof = None;
-    canonical
-}
-
-fn request_without_operation_event_proof(
-    request: &ReportCapabilityOperationEventRequest,
-) -> ReportCapabilityOperationEventRequest {
-    let mut canonical = request.clone();
-    canonical.command_proof = None;
-    canonical
-}
-
-fn request_without_operation_takeover_proof(
-    request: &TakeOverCapabilityOperationRequest,
-) -> TakeOverCapabilityOperationRequest {
-    let mut canonical = request.clone();
-    canonical.command_proof = None;
-    canonical
-}
-
-fn request_without_operation_cleanup_takeover_proof(
-    request: &TakeOverCapabilityCleanupRequest,
-) -> TakeOverCapabilityCleanupRequest {
     let mut canonical = request.clone();
     canonical.command_proof = None;
     canonical
@@ -768,6 +581,12 @@ fn station_error_kind_name(value: &StationClientErrorKind) -> &'static str {
         StationClientErrorKind::Network => "network",
         StationClientErrorKind::Decode => "decode",
         StationClientErrorKind::InvalidResponse => "invalidResponse",
+        StationClientErrorKind::Overloaded => "overloaded",
+        StationClientErrorKind::AmbiguousOutcome => "ambiguousOutcome",
+        StationClientErrorKind::Cancelled => "cancelled",
+        StationClientErrorKind::StaleRoute => "staleRoute",
+        StationClientErrorKind::NoRoute => "noRoute",
+        StationClientErrorKind::RoutePolicyConflict => "routePolicyConflict",
     }
 }
 
@@ -807,8 +626,9 @@ mod tests {
     #[test]
     fn expired_lease_replay_reuses_the_exact_signed_pull_request() {
         let signing_key = ed25519_dalek::SigningKey::from_bytes(&[7_u8; 32]);
+        let station_client = StationClient::testing_unavailable();
         let transport = CapabilityStationTransport::new(
-            "https://station.test",
+            &station_client,
             "ptid:test",
             "device-1",
             "token",

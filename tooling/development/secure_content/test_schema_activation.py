@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import io
 import json
 import os
 import signal
@@ -12,7 +13,8 @@ import textwrap
 import time
 import unittest
 from unittest import mock
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, redirect_stderr
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -20,6 +22,7 @@ from typing import Any, Mapping
 from tooling.development.secure_content.schema_activation import (
     AGGREGATE_RESULT_KIND,
     CANONICAL_PRIVATE_SCHEMA_ATTESTATION_FILENAME,
+    CROSS_STATION_SOCIAL_OWNER,
     DATABASE_TARGET_SPECS,
     JOURNAL_STATES,
     PLAN_ID,
@@ -27,6 +30,7 @@ from tooling.development.secure_content.schema_activation import (
     PROFILE_ORDER,
     PROFILE_TARGETS,
     SCHEMA_VERSION,
+    SECURE_CONTENT_OWNER,
     ArtifactConflict,
     BoundaryUnavailable,
     DevelopmentSessionSourceCheckpointRunner,
@@ -35,6 +39,7 @@ from tooling.development.secure_content.schema_activation import (
     SchemaActivationOwner,
     ValidationError,
     _LeaseWrappedSSHSession,
+    _parser,
     _require_timestamp,
     _resume_skips_quiescence,
     _timestamp,
@@ -67,6 +72,8 @@ def source_receipt(
     declaration_digest: str,
     *,
     source_commit: str = COMMIT,
+    plan_id: str = PLAN_ID,
+    task_id: str = "W12D",
 ) -> dict[str, Any]:
     return seal(
         {
@@ -74,8 +81,8 @@ def source_receipt(
             "state": "COMPLETE",
             "purpose": "SOURCE_OWNER_CHECKPOINT",
             "checkpoint_id": "w12d-source-checkpoint",
-            "plan_id": PLAN_ID,
-            "task_id": "W12D",
+            "plan_id": plan_id,
+            "task_id": task_id,
             "workspace_id": WORKSPACE_ID,
             "source_commit": source_commit,
             "source_tree": "8" * 40,
@@ -240,7 +247,11 @@ class FakeSourceRunner:
         if self.override is not None:
             return self.override
         self.requests[-1] = {**self.requests[-1], "observed_budget": budget_seconds}
-        return source_receipt(self.declaration_digest)
+        return source_receipt(
+            self.declaration_digest,
+            plan_id=str(request["plan_id"]),
+            task_id=str(request["task_id"]),
+        )
 
 
 class FakeSession(AbstractContextManager["FakeSession"]):
@@ -518,15 +529,17 @@ class SchemaActivationOwnerTest(unittest.TestCase):
         work_item_id: str,
         task_id: str,
         digest: str,
+        *,
+        owner=SECURE_CONTENT_OWNER,
     ) -> dict[str, Any]:
         return {
             "declarationId": f"{work_item_id}-{WORKSPACE_ID}",
             "declarationDigest": digest,
             "workItemId": work_item_id,
-            "planId": PLAN_ID,
-            "planPath": PLAN_PATH,
+            "planId": owner.plan_id,
+            "planPath": owner.plan_path,
             "taskId": task_id,
-            "journeyId": "sc-dj-canonical-schema-activation",
+            "journeyId": owner.journey_id,
             "workspaceId": WORKSPACE_ID,
             "branch": "feat/federation",
             "sourceHead": COMMIT,
@@ -540,9 +553,16 @@ class SchemaActivationOwnerTest(unittest.TestCase):
         task_id: str,
         digest: str,
         profile_id: str,
+        *,
+        owner=SECURE_CONTENT_OWNER,
     ) -> dict[str, Any]:
         target = PROFILE_TARGETS[profile_id]
-        value = self._declaration(work_item_id, task_id, digest)
+        value = self._declaration(
+            work_item_id,
+            task_id,
+            digest,
+            owner=owner,
+        )
         value["runtimeClaims"] = [
             {"kind": "profile", "resourceId": profile_id, "mode": "shared"},
             {
@@ -757,6 +777,171 @@ class SchemaActivationOwnerTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValidationError, "must not own runtime"):
             self._freeze()
+
+    def test_cross_station_owner_binds_css_activation_without_aliasing_w12(
+        self,
+    ) -> None:
+        descriptor = CROSS_STATION_SOCIAL_OWNER
+        declarations = {
+            descriptor.source_work_item_id: self._declaration(
+                descriptor.source_work_item_id,
+                descriptor.source_task_id,
+                "1" * 64,
+                owner=descriptor,
+            )
+        }
+        for profile_id, binding in descriptor.activation_bindings.items():
+            declarations[binding.work_item_id] = self._profile_declaration(
+                binding.work_item_id,
+                binding.task_id,
+                ("2" if profile_id == "four" else "3") * 64,
+                profile_id,
+                owner=descriptor,
+            )
+        source_runner = FakeSourceRunner("1" * 64)
+        owner = SchemaActivationOwner(
+            repo_root=self.repo_root,
+            result_root=self.result_root,
+            owner_descriptor=descriptor,
+            identity_loader=lambda: copy.deepcopy(self.identity),
+            declaration_loader=lambda item: copy.deepcopy(declarations[item]),
+            profile_declaration_loader=lambda item, _: copy.deepcopy(
+                declarations[item]
+            ),
+            clean_checker=lambda: None,
+            source_checkpoint_runner=source_runner,
+            maintenance_boundary=self.boundary,
+            station_deployment_runner=self.deployment_runner,
+            station_quiescence_runner=self.quiescence_runner,
+            clock=lambda: AT,
+            id_factory=lambda: next(self.ids),
+        )
+
+        source = owner.source_freeze(
+            generation_id=COMMIT,
+            budget_seconds=1800,
+        )
+        four = owner.run_profile(
+            workstream_id="CSS-SCHEMA-FOUR",
+            profile_id="four",
+            intent="SCHEMA_ACTIVATION",
+            generation_id=COMMIT,
+            budget_seconds=3600,
+        )
+        five_arm = owner.run_profile(
+            workstream_id="CSS-SCHEMA-FIVEARM",
+            profile_id="fiveArm",
+            intent="SCHEMA_ACTIVATION",
+            generation_id=COMMIT,
+            budget_seconds=3600,
+        )
+        aggregate = owner.aggregate(
+            intent="SCHEMA_ACTIVATION",
+            generation_id=COMMIT,
+            profiles=PROFILE_ORDER,
+        )
+
+        self.assertEqual(
+            descriptor.source_workstream_id,
+            source["workstream_id"],
+        )
+        self.assertEqual(
+            descriptor.plan_id,
+            source_runner.requests[0]["plan_id"],
+        )
+        self.assertEqual("CSS-SCHEMA-FOUR", four["workstream_id"])
+        self.assertEqual("CSS-SCHEMA-FIVEARM", five_arm["workstream_id"])
+        self.assertEqual("CSS-W-ACTIVATION", aggregate["workstream_id"])
+        self.assertEqual(descriptor.source_task_id, aggregate["task_id"])
+        self.assertTrue(
+            (
+                self.result_root
+                / descriptor.source_evidence_root
+                / "activation"
+                / COMMIT
+                / "aggregate"
+                / "result.json"
+            ).is_file()
+        )
+        self.assertFalse((self.result_root / "W12A").exists())
+        with self.assertRaisesRegex(
+            ValidationError,
+            "does not support reset intent",
+        ):
+            owner.run_profile(
+                workstream_id="W12F-FOUR",
+                profile_id="four",
+                intent="FINAL_CUT",
+                generation_id=COMMIT,
+                budget_seconds=3600,
+            )
+
+    def test_cross_station_owner_rejects_secure_content_declaration(self) -> None:
+        owner = SchemaActivationOwner(
+            repo_root=self.repo_root,
+            result_root=self.result_root,
+            owner_descriptor=CROSS_STATION_SOCIAL_OWNER,
+            identity_loader=lambda: copy.deepcopy(self.identity),
+            declaration_loader=lambda _: copy.deepcopy(
+                self.declarations["secure-content-w12d"]
+            ),
+            clean_checker=lambda: None,
+            source_checkpoint_runner=self.source_runner,
+            maintenance_boundary=self.boundary,
+            station_deployment_runner=self.deployment_runner,
+            station_quiescence_runner=self.quiescence_runner,
+            clock=lambda: AT,
+        )
+
+        with self.assertRaisesRegex(ValidationError, "declarationId"):
+            owner.source_freeze(
+                generation_id=COMMIT,
+                budget_seconds=1800,
+            )
+
+    def test_cli_owner_selection_is_closed(self) -> None:
+        self.assertEqual(
+            "cross-station-social",
+            _parser().parse_args(
+                [
+                    "--owner",
+                    "cross-station-social",
+                    "source-freeze",
+                    "--generation-id",
+                    COMMIT,
+                    "--budget-seconds",
+                    "1800",
+                ]
+            ).owner,
+        )
+        with redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                _parser().parse_args(
+                    [
+                        "--owner",
+                        "unknown",
+                        "source-freeze",
+                        "--generation-id",
+                        COMMIT,
+                        "--budget-seconds",
+                        "1800",
+                    ]
+                )
+
+    def test_owner_descriptor_must_match_the_closed_registry(self) -> None:
+        with self.assertRaisesRegex(
+            ValidationError,
+            "not registered exactly",
+        ):
+            SchemaActivationOwner(
+                repo_root=self.repo_root,
+                result_root=self.result_root,
+                owner_descriptor=replace(
+                    CROSS_STATION_SOCIAL_OWNER,
+                    plan_id="UNREVIEWED-PLAN",
+                ),
+                identity_loader=lambda: copy.deepcopy(self.identity),
+            )
 
     def test_four_profile_writes_complete_immutable_artifact_set(self) -> None:
         self._freeze()

@@ -50,6 +50,11 @@ fn identity_cache() -> &'static Mutex<HashMap<String, Zeroizing<[u8; 32]>>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn identity_migration_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 fn identity_key_file_name(identity_key_ref: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(identity_key_ref.as_bytes());
@@ -83,9 +88,10 @@ fn identity_file(identity_key_ref: &str) -> Option<PathBuf> {
     if let Some(path) = scoped_identity_file(identity_key_ref) {
         return Some(path);
     }
-    identity_file_root()
-        .get()
-        .map(|root| root.join("identity-keys").join(identity_key_file_name(identity_key_ref)))
+    identity_file_root().get().map(|root| {
+        root.join("identity-keys")
+            .join(identity_key_file_name(identity_key_ref))
+    })
 }
 
 fn keyring_entry(identity_key_ref: &str) -> Result<keyring::Entry, CryptoError> {
@@ -188,14 +194,142 @@ pub fn load_identity_key(identity_key_ref: &str) -> Result<Option<IdentityKeyPai
     load_keyring_identity(identity_key_ref)
 }
 
-pub fn get_or_create_identity(identity_key_ref: &str) -> Result<IdentityKeyPair, CryptoError> {
-    if let Some(kp) = load_identity_key(identity_key_ref)? {
-        return Ok(kp);
+enum IdentitySeedResolution {
+    KeepCanonical([u8; 32]),
+    PersistCanonical([u8; 32]),
+    GenerateCanonical,
+}
+
+impl std::fmt::Debug for IdentitySeedResolution {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::KeepCanonical(_) => "KeepCanonical",
+            Self::PersistCanonical(_) => "PersistCanonical",
+            Self::GenerateCanonical => "GenerateCanonical",
+        })
     }
-    let kp = IdentityKeyPair::generate();
-    let seed = Zeroizing::new(kp.seed_bytes());
-    store_identity_key(identity_key_ref, &seed)?;
-    Ok(kp)
+}
+
+impl PartialEq for IdentitySeedResolution {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::KeepCanonical(left), Self::KeepCanonical(right))
+            | (Self::PersistCanonical(left), Self::PersistCanonical(right)) => left == right,
+            (Self::GenerateCanonical, Self::GenerateCanonical) => true,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for IdentitySeedResolution {}
+
+fn identity_seed_fingerprint(seed: &[u8; 32]) -> [u8; 32] {
+    Sha256::digest(IdentityKeyPair::from_seed(seed).verifying_key().as_bytes()).into()
+}
+
+fn select_identity_seed(
+    canonical_seed: Option<[u8; 32]>,
+    legacy_seeds: &[[u8; 32]],
+    expected_fingerprint: Option<&[u8; 32]>,
+) -> Result<IdentitySeedResolution, CryptoError> {
+    let mut unique_legacy_seeds = Vec::new();
+    for seed in legacy_seeds {
+        if !unique_legacy_seeds.contains(seed) {
+            unique_legacy_seeds.push(*seed);
+        }
+    }
+
+    if let Some(expected_fingerprint) = expected_fingerprint {
+        if canonical_seed
+            .as_ref()
+            .is_some_and(|seed| identity_seed_fingerprint(seed) == *expected_fingerprint)
+        {
+            return Ok(IdentitySeedResolution::KeepCanonical(
+                canonical_seed.expect("checked canonical seed"),
+            ));
+        }
+        let matching_legacy = unique_legacy_seeds
+            .into_iter()
+            .filter(|seed| identity_seed_fingerprint(seed) == *expected_fingerprint)
+            .collect::<Vec<_>>();
+        return match matching_legacy.as_slice() {
+            [seed] => Ok(IdentitySeedResolution::PersistCanonical(*seed)),
+            [] => Err(CryptoError::IdentityContinuityConflict(
+                "no local identity seed matches the Station continuity record".to_string(),
+            )),
+            _ => Err(CryptoError::IdentityContinuityConflict(
+                "multiple local identity seeds match the Station continuity record".to_string(),
+            )),
+        };
+    }
+
+    if let Some(canonical_seed) = canonical_seed {
+        if unique_legacy_seeds
+            .iter()
+            .all(|legacy_seed| *legacy_seed == canonical_seed)
+        {
+            return Ok(IdentitySeedResolution::KeepCanonical(canonical_seed));
+        }
+        return Err(CryptoError::IdentityContinuityConflict(
+            "canonical and legacy identity seeds disagree without a Station continuity record"
+                .to_string(),
+        ));
+    }
+
+    match unique_legacy_seeds.as_slice() {
+        [] => Ok(IdentitySeedResolution::GenerateCanonical),
+        [seed] => Ok(IdentitySeedResolution::PersistCanonical(*seed)),
+        _ => Err(CryptoError::IdentityContinuityConflict(
+            "legacy identity seeds disagree without a Station continuity record".to_string(),
+        )),
+    }
+}
+
+pub fn get_or_migrate_identity(
+    canonical_identity_key_ref: &str,
+    legacy_identity_key_refs: &[String],
+    expected_fingerprint: Option<&[u8; 32]>,
+) -> Result<IdentityKeyPair, CryptoError> {
+    let _migration = identity_migration_lock()
+        .lock()
+        .map_err(|_| CryptoError::InternalError("identity migration lock poisoned".to_string()))?;
+    let canonical_seed =
+        load_identity_key(canonical_identity_key_ref)?.map(|identity| identity.seed_bytes());
+    if let (Some(canonical_seed), Some(expected_fingerprint)) =
+        (canonical_seed, expected_fingerprint)
+    {
+        if identity_seed_fingerprint(&canonical_seed) == *expected_fingerprint {
+            return Ok(IdentityKeyPair::from_seed(&canonical_seed));
+        }
+    }
+    let mut legacy_seeds = Vec::new();
+    for legacy_identity_key_ref in legacy_identity_key_refs {
+        if legacy_identity_key_ref == canonical_identity_key_ref {
+            continue;
+        }
+        if let Some(identity) = load_identity_key(legacy_identity_key_ref)? {
+            legacy_seeds.push(identity.seed_bytes());
+        }
+    }
+
+    match select_identity_seed(canonical_seed, &legacy_seeds, expected_fingerprint)? {
+        IdentitySeedResolution::KeepCanonical(seed) => Ok(IdentityKeyPair::from_seed(&seed)),
+        IdentitySeedResolution::PersistCanonical(seed) => {
+            let seed = Zeroizing::new(seed);
+            store_identity_key(canonical_identity_key_ref, &seed)?;
+            Ok(IdentityKeyPair::from_seed(&seed))
+        }
+        IdentitySeedResolution::GenerateCanonical => {
+            let identity = IdentityKeyPair::generate();
+            let seed = Zeroizing::new(identity.seed_bytes());
+            store_identity_key(canonical_identity_key_ref, &seed)?;
+            Ok(identity)
+        }
+    }
+}
+
+pub fn get_or_create_identity(identity_key_ref: &str) -> Result<IdentityKeyPair, CryptoError> {
+    get_or_migrate_identity(identity_key_ref, &[], None)
 }
 
 pub fn delete_identity_key(identity_key_ref: &str) -> Result<(), CryptoError> {
@@ -238,6 +372,71 @@ fn parse_hex_seed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn seed_fingerprint(seed: &[u8; 32]) -> [u8; 32] {
+        Sha256::digest(IdentityKeyPair::from_seed(seed).verifying_key().as_bytes()).into()
+    }
+
+    #[test]
+    fn identity_scope_migration_persists_legacy_seed_when_canonical_is_missing() {
+        let legacy_seed = [7u8; 32];
+
+        assert_eq!(
+            select_identity_seed(None, &[legacy_seed], None).unwrap(),
+            IdentitySeedResolution::PersistCanonical(legacy_seed),
+        );
+    }
+
+    #[test]
+    fn identity_scope_migration_repairs_bug_generated_canonical_from_station_continuity() {
+        let canonical_seed = [9u8; 32];
+        let legacy_seed = [7u8; 32];
+        let station_fingerprint = seed_fingerprint(&legacy_seed);
+
+        assert_eq!(
+            select_identity_seed(
+                Some(canonical_seed),
+                &[legacy_seed],
+                Some(&station_fingerprint),
+            )
+            .unwrap(),
+            IdentitySeedResolution::PersistCanonical(legacy_seed),
+        );
+    }
+
+    #[test]
+    fn identity_scope_migration_never_overwrites_station_matching_canonical_seed() {
+        let canonical_seed = [9u8; 32];
+        let legacy_seed = [7u8; 32];
+        let station_fingerprint = seed_fingerprint(&canonical_seed);
+
+        assert_eq!(
+            select_identity_seed(
+                Some(canonical_seed),
+                &[legacy_seed],
+                Some(&station_fingerprint),
+            )
+            .unwrap(),
+            IdentitySeedResolution::KeepCanonical(canonical_seed),
+        );
+    }
+
+    #[test]
+    fn identity_scope_migration_rejects_unanchored_conflicting_seeds() {
+        let error = select_identity_seed(Some([9u8; 32]), &[[7u8; 32]], None)
+            .expect_err("conflicting seeds require Station continuity");
+
+        assert!(matches!(error, CryptoError::IdentityContinuityConflict(_)));
+    }
+
+    #[test]
+    fn identity_scope_migration_rejects_generation_when_station_continuity_exists() {
+        let station_fingerprint = seed_fingerprint(&[7u8; 32]);
+        let error = select_identity_seed(None, &[], Some(&station_fingerprint))
+            .expect_err("established Station continuity requires its local seed");
+
+        assert!(matches!(error, CryptoError::IdentityContinuityConflict(_)));
+    }
 
     #[test]
     fn identity_keypair_round_trip() {

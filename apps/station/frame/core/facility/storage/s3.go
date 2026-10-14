@@ -34,6 +34,20 @@ type S3Backend struct {
 	useSSL    bool
 }
 
+func (b *S3Backend) ClusterShared() bool { return true }
+
+func (b *S3Backend) EnsureClusterBackingIdentity(
+	_ context.Context,
+) (string, error) {
+	digest := sha256.Sum256([]byte(
+		"s3-v1\x00" +
+			strings.ToLower(strings.TrimSpace(b.endpoint)) + "\x00" +
+			strings.TrimSpace(b.bucket) + "\x00" +
+			strings.Trim(b.keyPrefix, "/"),
+	))
+	return hex.EncodeToString(digest[:]), nil
+}
+
 // NewS3Backend constructs an `S3Backend` from a validated `S3Config`.
 // The constructor performs no network I/O — the first request the
 // caller makes is when connectivity / auth gets exercised. This is
@@ -102,48 +116,62 @@ func (b *S3Backend) Save(ctx context.Context, key string, r io.Reader) (string, 
 // `Range` header so the underlying store streams only the requested
 // slice — important for video scrubbing and resumable downloads.
 //
-// The returned int64 is ALWAYS the full object size (read from the
-// `Content-Range` total when ranged, or the body's `Content-Length`
-// otherwise). Callers compute the response Content-Length from the
-// supplied range themselves.
+// The returned int64 is ALWAYS the full object size from an independent
+// HEAD request. The body reader is explicitly bounded to the normalized
+// range so a non-compliant S3 implementation cannot overrun it.
 func (b *S3Backend) Open(ctx context.Context, key string, rng *Range) (io.ReadCloser, int64, string, error) {
 	full := b.fullKey(key)
+	st, err := b.client.StatObject(ctx, b.bucket, full, minio.StatObjectOptions{})
+	if err != nil {
+		return nil, 0, "", fmt.Errorf("storage.s3: stat %q: %w", full, err)
+	}
+
 	opts := minio.GetObjectOptions{}
-	if rng != nil {
-		// minio-go's SetRange takes (start, end) inclusive and
-		// matches HTTP semantics. End == -1 means "to EOF" in our
-		// API; minio-go expects 0 in that case which means
-		// "unbounded" via SetRange(start, 0). The driver itself
-		// uses 0 as "ignore", so we translate -1 to 0 explicitly.
-		end := rng.End
-		if end < 0 {
-			end = 0
+	if st.ETag != "" {
+		if err := opts.SetMatchETag(st.ETag); err != nil {
+			return nil, 0, "", fmt.Errorf("storage.s3: match etag %q: %w", full, err)
 		}
-		if err := opts.SetRange(rng.Start, end); err != nil {
+	}
+	var rangeLength int64
+	if rng != nil {
+		start, end, length, rangeErr := normaliseRange(*rng, st.Size)
+		if rangeErr != nil {
+			return nil, 0, "", fmt.Errorf(
+				"storage.s3: range %d-%d: %w",
+				rng.Start,
+				rng.End,
+				rangeErr,
+			)
+		}
+		if err := opts.SetRange(start, end); err != nil {
 			return nil, 0, "", fmt.Errorf("storage.s3: range %d-%d: %w", rng.Start, rng.End, err)
 		}
+		rangeLength = length
 	}
 	obj, err := b.client.GetObject(ctx, b.bucket, full, opts)
 	if err != nil {
 		return nil, 0, "", fmt.Errorf("storage.s3: get %q: %w", full, err)
 	}
-	st, err := obj.Stat()
-	if err != nil {
-		_ = obj.Close()
-		return nil, 0, "", fmt.Errorf("storage.s3: stat %q: %w", full, err)
+	if rng == nil {
+		return obj, st.Size, st.ContentType, nil
 	}
-	// When ranged, `st.Size` is the partial body length per minio-go.
-	// We reach for `st.Metadata`'s Content-Range header to recover
-	// the total. If absent (some S3-compat stores omit it on
-	// untruncated ranges) we fall back to `st.Size` — the caller
-	// noticing the discrepancy is preferable to silently lying.
-	totalSize := st.Size
-	if rng != nil {
-		if total := parseContentRangeTotal(st.Metadata.Get("Content-Range")); total > 0 {
-			totalSize = total
-		}
+
+	return &limitedReadCloser{
+		Reader: io.LimitReader(obj, rangeLength),
+		closer: obj,
+	}, st.Size, st.ContentType, nil
+}
+
+type limitedReadCloser struct {
+	io.Reader
+	closer io.Closer
+}
+
+func (r *limitedReadCloser) Close() error {
+	if r.closer == nil {
+		return nil
 	}
-	return obj, totalSize, st.ContentType, nil
+	return r.closer.Close()
 }
 
 // Stat issues a HEAD against `key` and returns the metadata triple
@@ -176,31 +204,6 @@ func (b *S3Backend) Healthz(ctx context.Context) error {
 		return fmt.Errorf("storage.s3: healthz: bucket %q does not exist", b.bucket)
 	}
 	return nil
-}
-
-// parseContentRangeTotal extracts the trailing `/N` from a
-// `Content-Range: bytes A-B/N` header. Returns 0 when the header is
-// absent or malformed — caller falls back to the partial-body size.
-func parseContentRangeTotal(h string) int64 {
-	if h == "" {
-		return 0
-	}
-	idx := strings.LastIndex(h, "/")
-	if idx < 0 || idx == len(h)-1 {
-		return 0
-	}
-	tail := h[idx+1:]
-	if tail == "*" {
-		return 0
-	}
-	var out int64
-	for _, c := range tail {
-		if c < '0' || c > '9' {
-			return 0
-		}
-		out = out*10 + int64(c-'0')
-	}
-	return out
 }
 
 // Delete removes the object at `key`. minio-go returns nil (not error)

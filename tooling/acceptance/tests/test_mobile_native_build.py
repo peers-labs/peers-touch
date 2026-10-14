@@ -21,7 +21,10 @@ from tooling.acceptance.provisioners.mobile_native_build import (
     ACCEPTANCE_CARGO_FEATURE,
     ACCEPTANCE_VARIANT,
     ANDROID_CARGO_GRADLE_PROJECTS,
+    ANDROID_GRADLE_LOCK_CONFIGURATION_REQUIREMENTS,
     ANDROID_GRADLE_LOCK_REQUIREMENTS,
+    ANDROID_LOCAL_GRADLE_PROJECTS,
+    ANDROID_TAURI_GENERATED_BUILD_OUTPUTS,
     ANDROIDX_GRADLE_PROPERTY,
     APPLICATION_ID,
     CARGO_CACHE_ROOT_FILES,
@@ -41,6 +44,7 @@ from tooling.acceptance.provisioners.mobile_native_build import (
     _assert_attested_protoc,
     _assert_cargo_wrapper_control,
     _assert_gradle_wrapper_control,
+    _assert_pnpm_shim_control,
     _assert_protoc_on_sanitized_path,
     _assert_run_scoped_gradle_properties,
     _build_isolation,
@@ -48,6 +52,7 @@ from tooling.acceptance.provisioners.mobile_native_build import (
     _generate_run_scoped_gradle_settings,
     _install_cargo_frozen_wrapper,
     _install_offline_gradle_wrapper,
+    _install_pnpm_shim,
     _preseed_dependency_caches,
     _prepend_controlled_path,
     _producer_commands,
@@ -74,6 +79,7 @@ from tooling.acceptance.provisioners.mobile_native_build import (
     orchestrate_source_bound_build,
     parse_build_identity,
     produce_build_attestation,
+    produce_scenario_build_attestation,
     require_tool_native_offline_controls,
     resolver_arguments,
     resolver_digest,
@@ -146,7 +152,8 @@ class FakeRunner:
 class FakeRun:
     run_id = RUN_ID
 
-    def __init__(self) -> None:
+    def __init__(self, gate_id: str = "mobile-native-access-e2e") -> None:
+        self.gate_id = gate_id
         self.values: dict[str, bytes | dict[str, Any]] = {}
 
     def write_bytes(
@@ -274,6 +281,7 @@ def write_tauri_codegen_asset(
     profile: str,
     identity_bytes: bytes,
     *,
+    address: str | None = None,
     representation: bytes | None = None,
 ) -> bytes:
     embedded_bytes = (
@@ -281,7 +289,7 @@ def write_tauri_codegen_asset(
         if representation is None
         else representation
     )
-    digest = hashlib.sha256(identity_bytes).hexdigest()
+    digest = address or hashlib.sha256(identity_bytes).hexdigest()
     cache = (
         target
         / profile
@@ -394,11 +402,22 @@ def fake_toolchain(root: Path) -> ToolchainIdentity:
     bin_root = root / "tools"
     bin_root.mkdir(parents=True)
     executables: dict[str, str] = {}
-    for name in ("pnpm", "cargo", "gradle", "protoc"):
+    for name in (
+        "node",
+        "keytool",
+        "cargo",
+        "gradle",
+        "protoc",
+        "rustc",
+    ):
         path = bin_root / name
         path.write_text(name, encoding="utf-8")
         path.chmod(0o700)
         executables[name] = str(path)
+    pnpm = bin_root / "pnpm.cjs"
+    pnpm.write_text("pnpm", encoding="utf-8")
+    pnpm.chmod(0o700)
+    executables["pnpm"] = str(pnpm)
     executables["sh"] = "/bin/sh"
     sdk = root / "android-sdk"
     java = root / "java-home"
@@ -406,6 +425,14 @@ def fake_toolchain(root: Path) -> ToolchainIdentity:
     pnpm_cache = root / "pnpm-cache"
     gradle_cache = root / "gradle-cache"
     sdk.mkdir()
+    ranlib = (
+        sdk
+        / "ndk/27.0.11902837/toolchains/llvm/prebuilt/darwin-arm64/bin/"
+        "llvm-ranlib"
+    )
+    ranlib.parent.mkdir(parents=True)
+    ranlib.write_text("ranlib", encoding="utf-8")
+    ranlib.chmod(0o700)
     java.mkdir()
     cargo_cache.mkdir()
     pnpm_cache.mkdir()
@@ -445,18 +472,30 @@ def fake_toolchain(root: Path) -> ToolchainIdentity:
             f"// {crate_name} {crate_version}\n",
             encoding="utf-8",
         )
-    local_plugin = (
-        root / "apps/mobile/src-tauri/plugins/secure-storage/android"
-    )
-    local_plugin.mkdir(parents=True)
-    (local_plugin / "build.gradle.kts").write_text(
-        "// local secure storage plugin\n",
-        encoding="utf-8",
-    )
+    for plugin, marker in (
+        ("platform-permissions", "platform permissions"),
+        ("secure-input", "secure input"),
+        ("secure-storage", "secure storage"),
+    ):
+        local_plugin = (
+            root / f"apps/mobile/src-tauri/plugins/{plugin}/android"
+        )
+        local_plugin.mkdir(parents=True)
+        (local_plugin / "build.gradle.kts").write_text(
+            f"// local {marker} plugin\n",
+            encoding="utf-8",
+        )
     android_app = root / "apps/mobile/src-tauri/gen/android/app"
     android_app.mkdir(parents=True, exist_ok=True)
     (android_app / "build.gradle.kts").write_text(
         "// controlled Android application\n",
+        encoding="utf-8",
+    )
+    manifest = android_app / "src/main/AndroidManifest.xml"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+        "<application /></manifest>\n",
         encoding="utf-8",
     )
     (android_app.parent / "gradle.properties").write_text(
@@ -539,6 +578,14 @@ def android_build_effect(
     release_bytes = release_payload or (lambda: b"release-package-native-content")
 
     def effect(command: tuple[str, ...], environment: Mapping[str, str]) -> None:
+        if command and Path(command[0]).name == "keytool":
+            keystore = Path(command[command.index("-keystore") + 1])
+            keystore.parent.mkdir(parents=True, exist_ok=True)
+            keystore.write_bytes(b"run-scoped-acceptance-keystore")
+        if len(command) > 1 and Path(command[0]).name == "apksigner" and command[1] == "sign":
+            signed_apk = Path(command[command.index("--out") + 1])
+            unsigned_apk = Path(command[command.index("--in") + 1])
+            shutil.copyfile(unsigned_apk, signed_apk)
         if len(command) >= 2 and command[-2:] == ("run", "build"):
             dist = root / "apps/mobile/dist"
             dist.mkdir(parents=True, exist_ok=True)
@@ -562,7 +609,71 @@ def android_build_effect(
             (dist / WEB_BUILD_IDENTITY_ASSET).write_bytes(
                 identity_json.encode("ascii")
             )
-        if ":app:assembleArm64Debug" in command:
+        is_tauri_android_build = (
+            "tauri" in command
+            and "android" in command
+            and "build" in command
+            and "--target" in command
+        )
+        if is_tauri_android_build:
+            cargo_home = Path(environment["CARGO_HOME"])
+            settings_lines = [
+                "// THIS IS AN AUTOGENERATED FILE. DO NOT EDIT THIS FILE DIRECTLY."
+            ]
+            dependency_lines = [
+                "// THIS IS AN AUTOGENERATED FILE. DO NOT EDIT THIS FILE DIRECTLY.",
+                "val implementation by configurations",
+                "dependencies {",
+            ]
+            for project_id, crate_name, crate_version, relative_project in (
+                ANDROID_CARGO_GRADLE_PROJECTS
+            ):
+                project = (
+                    cargo_home
+                    / "registry/src/controlled-index"
+                    / f"{crate_name}-{crate_version}"
+                    / relative_project
+                ).resolve()
+                settings_lines.extend(
+                    (
+                        f"include '{project_id}'",
+                        f"project('{project_id}').projectDir = new File({json.dumps(str(project))})",
+                    )
+                )
+                dependency_lines.append(
+                    f'  implementation(project("{project_id}"))'
+                )
+            for project_id, relative_project in ANDROID_LOCAL_GRADLE_PROJECTS:
+                project = (root / relative_project).resolve()
+                settings_lines.extend(
+                    (
+                        f"include '{project_id}'",
+                        f"project('{project_id}').projectDir = new File({json.dumps(str(project))})",
+                    )
+                )
+                dependency_lines.append(
+                    f'  implementation(project("{project_id}"))'
+                )
+            dependency_lines.append("}")
+            android_root = root / "apps/mobile/src-tauri/gen/android"
+            (android_root / "tauri.settings.gradle").write_text(
+                "\n".join(settings_lines) + "\n",
+                encoding="utf-8",
+            )
+            (android_root / "app/tauri.build.gradle.kts").write_text(
+                "\n".join(dependency_lines) + "\n",
+                encoding="utf-8",
+            )
+            manifest = android_root / "app/src/main/AndroidManifest.xml"
+            manifest.write_text(
+                manifest.read_text(encoding="utf-8").replace(
+                    "</manifest>",
+                    "\n\n</manifest>",
+                ),
+                encoding="utf-8",
+            )
+
+        if is_tauri_android_build and "--debug" in command:
             payload = acceptance_payload()
             if include_native_marker:
                 payload += b":" + NATIVE_ACCEPTANCE_HARNESS_MARKER
@@ -600,7 +711,7 @@ def android_build_effect(
             )
             self_target = Path(environment["CARGO_TARGET_DIR"])
             self_target.mkdir(parents=True, exist_ok=True)
-        if ":app:assembleArm64Release" in command:
+        if is_tauri_android_build and "--debug" not in command:
             web_identity = environment["PT_MOBILE_BUILD_IDENTITY_JSON"]
             identity_bytes = web_identity.encode("ascii")
             write_tauri_codegen_asset(
@@ -638,6 +749,8 @@ def orchestrate_fake_android(
     root: Path,
     run_root: Path,
     runner: FakeRunner,
+    runtime_cache: Path | None = None,
+    toolchain: ToolchainIdentity | None = None,
 ) -> SuccessfulBuildReceipt:
     with (
         patch(
@@ -662,7 +775,7 @@ def orchestrate_fake_android(
         patch(
             "tooling.acceptance.provisioners.mobile_native_build."
             "resolve_toolchain_identity",
-            return_value=fake_toolchain(root),
+            return_value=toolchain or fake_toolchain(root),
         ),
         patch(
             "tooling.acceptance.provisioners.mobile_native_build."
@@ -674,6 +787,7 @@ def orchestrate_fake_android(
             root=root,
             platform="android",
             run_root=run_root,
+            runtime_cache=runtime_cache or run_root.parent / "runtime-cache",
         )
 
 
@@ -714,6 +828,49 @@ class MobileNativeBuildTest(unittest.TestCase):
         }
         self.assertTrue(expected.issubset(paths), expected - paths)
         self.assertFalse(any("/build/" in path or "/.gradle/" in path for path in paths))
+        self.assertFalse(
+            any(
+                path == generated or path.startswith(f"{generated}/")
+                for path in paths
+                for generated in ANDROID_TAURI_GENERATED_BUILD_OUTPUTS
+            )
+        )
+
+    def test_canonical_inputs_exclude_tauri_android_generated_outputs(self) -> None:
+        from tooling.acceptance.provisioners.mobile_native_build import (
+            _collect_input_tree,
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            tracked = (
+                root
+                / "apps/mobile/src-tauri/gen/android/app/src/main/"
+                "AndroidManifest.xml"
+            )
+            tracked.parent.mkdir(parents=True)
+            tracked.write_text("<manifest />", encoding="utf-8")
+            for generated in ANDROID_TAURI_GENERATED_BUILD_OUTPUTS:
+                output = root / generated / "generated-output"
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text("generated", encoding="utf-8")
+
+            paths = _collect_input_tree(
+                root,
+                "apps/mobile/src-tauri/gen/android",
+            )
+
+        self.assertIn(
+            "apps/mobile/src-tauri/gen/android/app/src/main/AndroidManifest.xml",
+            paths,
+        )
+        self.assertFalse(
+            any(
+                path == generated or path.startswith(f"{generated}/")
+                for path in paths
+                for generated in ANDROID_TAURI_GENERATED_BUILD_OUTPUTS
+            )
+        )
 
     def test_canonical_inputs_reject_a_symlink_escape(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -738,12 +895,27 @@ class MobileNativeBuildTest(unittest.TestCase):
             tools.mkdir()
             sdk.mkdir()
             java.mkdir()
+            ranlib = (
+                sdk
+                / "ndk/27.0.11902837/toolchains/llvm/prebuilt/darwin-arm64/bin/"
+                "llvm-ranlib"
+            )
+            ranlib.parent.mkdir(parents=True)
+            llvm_ar = ranlib.with_name("llvm-ar")
+            llvm_ar.write_text("ar", encoding="utf-8")
+            ranlib.symlink_to(llvm_ar.name)
+            resolved_llvm_ar = str(llvm_ar.resolve(strict=True))
             executable = tools / "tool"
             executable.write_text("tool", encoding="utf-8")
+            rustc = tools / "rustc"
+            rustc.write_text("rustc", encoding="utf-8")
             environment = construct_build_environment(
                 platform="android",
                 run_root=root / "run",
-                executable_paths={"tool": str(executable)},
+                executable_paths={
+                    "rustc": str(rustc),
+                    "tool": str(executable),
+                },
                 sdk_paths={
                     "ANDROID_HOME": str(sdk),
                     "ANDROID_SDK_ROOT": str(sdk),
@@ -756,19 +928,118 @@ class MobileNativeBuildTest(unittest.TestCase):
             {
                 "ANDROID_HOME",
                 "ANDROID_SDK_ROOT",
+                "CARGO_BUILD_RUSTC",
+                "CARGO_BUILD_RUSTC_WRAPPER",
                 "CARGO_HOME",
                 "CARGO_TARGET_DIR",
+                "GRADLE_OPTS",
                 "GRADLE_USER_HOME",
                 "HOME",
                 "JAVA_HOME",
+                "NDK_HOME",
                 "PATH",
                 "PT_MOBILE_BUILD_IDENTITY_JSON",
                 "RUSTUP_HOME",
+                "RUSTUP_TOOLCHAIN",
+                "TARGET_RANLIB",
                 "TMPDIR",
                 "VITE_ACCEPTANCE_HARNESS",
             },
         )
+        self.assertEqual(Path(environment["TARGET_RANLIB"]).name, "llvm-ranlib")
+        self.assertEqual(
+            str(Path(environment["TARGET_RANLIB"]).with_name("llvm-ar")),
+            resolved_llvm_ar,
+        )
+        self.assertNotEqual(
+            environment["TARGET_RANLIB"],
+            resolved_llvm_ar,
+        )
+        self.assertEqual(
+            environment["GRADLE_OPTS"],
+            "-Dorg.gradle.offline=true "
+            "-Dorg.gradle.daemon=false "
+            "-Dkotlin.compiler.execution.strategy=in-process",
+        )
         self.assertRegex(allowlisted_environment_digest(environment), r"^sha256:[0-9a-f]{64}$")
+
+    def test_environment_digest_normalizes_the_controlled_run_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            toolchain = fake_toolchain(root)
+            first = construct_build_environment(
+                platform="android",
+                run_root=root / "run-a",
+                executable_paths=toolchain.executable_paths,
+                sdk_paths=toolchain.environment_paths,
+            )
+            second = construct_build_environment(
+                platform="android",
+                run_root=root / "run-b",
+                executable_paths=toolchain.executable_paths,
+                sdk_paths=toolchain.environment_paths,
+            )
+
+            self.assertEqual(
+                allowlisted_environment_digest(first),
+                allowlisted_environment_digest(second),
+            )
+
+    def test_android_build_identity_and_signer_are_stable_across_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            root.mkdir()
+            runtime_cache = Path(temporary) / "runtime-cache"
+            toolchain = fake_toolchain(root)
+            first_runner = android_runner(
+                effect=android_build_effect(root, lambda: b"stable-package")
+            )
+            second_runner = android_runner(
+                effect=android_build_effect(root, lambda: b"stable-package")
+            )
+
+            first = orchestrate_fake_android(
+                root=root,
+                run_root=Path(temporary) / "run-a",
+                runner=first_runner,
+                runtime_cache=runtime_cache,
+                toolchain=toolchain,
+            )
+            second = orchestrate_fake_android(
+                root=root,
+                run_root=Path(temporary) / "run-b",
+                runner=second_runner,
+                runtime_cache=runtime_cache,
+                toolchain=toolchain,
+            )
+
+            self.assertEqual(first._build_identity, second._build_identity)
+            self.assertEqual(
+                first._artifact_inspection.sha256,
+                second._artifact_inspection.sha256,
+            )
+            self.assertEqual(
+                sum(
+                    Path(command[0]).name == "keytool"
+                    for command in first_runner.commands
+                    if command
+                ),
+                1,
+            )
+            self.assertFalse(
+                any(
+                    Path(command[0]).name == "keytool"
+                    for command in second_runner.commands
+                    if command
+                )
+            )
+            keystore = (
+                runtime_cache
+                / "mobile-native/android-acceptance-signing"
+                / "acceptance-debug.keystore"
+            )
+            self.assertTrue(keystore.is_file())
+            self.assertEqual(keystore.stat().st_mode & 0o777, 0o600)
 
     def test_protoc_must_be_resolved_attested_and_present_on_sanitized_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1039,6 +1310,15 @@ class MobileNativeBuildTest(unittest.TestCase):
                 lockfile.write_text(
                     "\n".join(
                         [f"{module}=controlled" for module in required_modules]
+                        + [
+                            f"{module}={','.join(configurations)}"
+                            for module, configurations in (
+                                ANDROID_GRADLE_LOCK_CONFIGURATION_REQUIREMENTS.get(
+                                    relative,
+                                    {},
+                                ).items()
+                            )
+                        ]
                         + ["empty="]
                     )
                     + "\n",
@@ -1083,6 +1363,40 @@ class MobileNativeBuildTest(unittest.TestCase):
                 + "\n",
                 encoding="utf-8",
             )
+            app_lock_relative, configuration_requirements = next(
+                iter(ANDROID_GRADLE_LOCK_CONFIGURATION_REQUIREMENTS.items())
+            )
+            app_lock = root / app_lock_relative
+            app_lock_contents = app_lock.read_text(encoding="utf-8")
+            module, configurations = next(iter(configuration_requirements.items()))
+            app_lock.write_text(
+                app_lock_contents.replace(
+                    f"{module}={','.join(configurations)}",
+                    f"{module}={configurations[0]}",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                MobileNativeBuildError,
+                "lock configuration",
+            ):
+                _require_dependency_manager_locks(root, "android")
+            app_lock.write_text(app_lock_contents, encoding="utf-8")
+            app_lock.write_text(
+                app_lock_contents
+                + (
+                    "androidx.activity:activity-ktx:1.7.0="
+                    "arm64ReleaseCompileClasspath\n"
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                MobileNativeBuildError,
+                "release dependency versions conflict",
+            ):
+                _require_dependency_manager_locks(root, "android")
+            app_lock.write_text(app_lock_contents, encoding="utf-8")
+
             build_src.write_text("plugins { `kotlin-dsl` }\n", encoding="utf-8")
             with self.assertRaisesRegex(
                 MobileNativeBuildError,
@@ -1145,63 +1459,10 @@ class MobileNativeBuildTest(unittest.TestCase):
             )
             _assert_run_scoped_gradle_properties(settings)
 
-            cargo = _install_cargo_frozen_wrapper(
-                run_root=run_root,
-                real_cargo=toolchain.executable_paths["cargo"],
-                shell="/bin/sh",
-                injected_features=(ACCEPTANCE_CARGO_FEATURE,),
-            )
-            gradle = _install_offline_gradle_wrapper(
-                root=root,
-                run_root=run_root,
-                source_gradle_home=Path(toolchain.cache_paths["gradle"]),
-            )
-            commands = _producer_commands(
-                root,
-                "android",
-                toolchain,
-                run_root,
-                copied,
-                gradle,
-                settings,
-            )
-            self.assertEqual(
-                Path(
-                    commands["gradle"][
-                        commands["gradle"].index("--settings-file") + 1
-                    ]
-                ).resolve(),
-                settings.resolve(),
-            )
-            self.assertFalse(
-                any(
-                    argument.startswith("-Pandroid.useAndroidX")
-                    for argument in commands["gradle"]
-                )
-            )
-
             properties = settings.parent / "gradle.properties"
             properties.write_text("android.useAndroidX=false\n", encoding="utf-8")
             with self.assertRaisesRegex(MobileNativeBuildError, "AndroidX"):
-                _validate_variant_command_contract(
-                    root=root,
-                    platform="android",
-                    variant=ACCEPTANCE_VARIANT,
-                    commands=commands,
-                    environment=_prepend_controlled_path(
-                        construct_build_environment(
-                            platform="android",
-                            run_root=run_root,
-                            executable_paths=toolchain.executable_paths,
-                            sdk_paths=toolchain.environment_paths,
-                            identity_json=canonical_json_bytes(
-                                identity("android")
-                            ).decode(),
-                        ),
-                        cargo.path.parent,
-                    ),
-                    cargo_wrapper=cargo,
-                )
+                _assert_run_scoped_gradle_properties(settings)
 
     def test_real_offline_gradle_dependencies_uses_run_scoped_androidx_property(
         self,
@@ -1288,6 +1549,14 @@ class MobileNativeBuildTest(unittest.TestCase):
                     )
                     sdk = run_root / "sdk"
                     sdk.mkdir()
+                    if platform == "android":
+                        ranlib = (
+                            sdk
+                            / "ndk/27.0.11902837/toolchains/llvm/prebuilt/"
+                            "darwin-arm64/bin/llvm-ranlib"
+                        )
+                        ranlib.parent.mkdir(parents=True)
+                        ranlib.write_text("ranlib", encoding="utf-8")
                     sdk_paths = (
                         {"DEVELOPER_DIR": str(sdk), "SDKROOT": str(sdk)}
                         if platform == "ios"
@@ -1300,7 +1569,10 @@ class MobileNativeBuildTest(unittest.TestCase):
                     environment = construct_build_environment(
                         platform=platform,
                         run_root=run_root,
-                        executable_paths={"cargo": str(real_cargo)},
+                        executable_paths={
+                            "cargo": str(real_cargo),
+                            "rustc": str(real_cargo),
+                        },
                         sdk_paths=sdk_paths,
                     )
                     environment = _prepend_controlled_path(
@@ -1345,7 +1617,10 @@ class MobileNativeBuildTest(unittest.TestCase):
                     release_environment = construct_build_environment(
                         platform=platform,
                         run_root=release_root,
-                        executable_paths={"cargo": str(real_cargo)},
+                        executable_paths={
+                            "cargo": str(real_cargo),
+                            "rustc": str(real_cargo),
+                        },
                         sdk_paths=sdk_paths,
                         acceptance_harness=False,
                     )
@@ -1409,6 +1684,7 @@ class MobileNativeBuildTest(unittest.TestCase):
         identity_value = identity("android")
         environment = {
             "PATH": "/controlled/bin",
+            "CARGO_HOME": "/controlled/cargo-home",
             "PT_MOBILE_BUILD_IDENTITY_JSON": canonical_json_bytes(identity_value).decode(),
         }
         with tempfile.TemporaryDirectory() as temporary:
@@ -1962,6 +2238,7 @@ time.sleep(60)
             root = Path(temporary) / "repo"
             root.mkdir()
             run_root = Path(temporary) / "run"
+            runtime_cache = Path(temporary) / "runtime-cache"
             toolchain = fake_toolchain(root)
             package_payload = [b"oauth_acceptance_negative_callback"]
             runner = android_runner(
@@ -2002,6 +2279,7 @@ time.sleep(60)
                     root=root,
                     platform="android",
                     run_root=run_root,
+                    runtime_cache=runtime_cache,
                 )
                 run = FakeRun()
                 payload, reference = produce_build_attestation(
@@ -2140,13 +2418,54 @@ time.sleep(60)
                 debug_index = next(
                     index
                     for index, command in enumerate(runner.commands)
-                    if ":app:assembleArm64Debug" in command
+                    if "tauri" in command
+                    and "android" in command
+                    and "build" in command
+                    and "--debug" in command
                 )
                 release_index = next(
                     index
                     for index, command in enumerate(runner.commands)
-                    if ":app:assembleArm64Release" in command
+                    if "tauri" in command
+                    and "android" in command
+                    and "build" in command
+                    and "--debug" not in command
                 )
+                keytool_index = next(
+                    index
+                    for index, command in enumerate(runner.commands)
+                    if command and Path(command[0]).name == "keytool"
+                )
+                signing_index = next(
+                    index
+                    for index, command in enumerate(runner.commands)
+                    if len(command) > 1
+                    and Path(command[0]).name == "apksigner"
+                    and command[1] == "sign"
+                )
+                signing_command = runner.commands[signing_index]
+                self.assertIn("--v2-signing-enabled", signing_command)
+                self.assertIn("--v3-signing-enabled", signing_command)
+                self.assertFalse(
+                    (
+                        run_root
+                        / ACCEPTANCE_VARIANT
+                        / "signing/acceptance-debug.keystore"
+                    ).exists()
+                )
+                retained_keystore = (
+                    runtime_cache
+                    / "mobile-native/android-acceptance-signing"
+                    / "acceptance-debug.keystore"
+                )
+                self.assertTrue(retained_keystore.is_file())
+                self.assertEqual(
+                    retained_keystore.stat().st_mode & 0o777,
+                    0o600,
+                )
+                self.assertLess(debug_index, keytool_index)
+                self.assertLess(keytool_index, signing_index)
+                self.assertLess(signing_index, release_index)
                 self.assertLess(
                     next(
                         index
@@ -2249,6 +2568,56 @@ time.sleep(60)
                         receipt=receipt,
                         created_at="2026-08-29T12:00:00Z",
                     )
+
+    def test_scenario_attestation_accepts_android_social_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            artifact = Path(temporary) / "mobile.apk"
+            artifact.write_bytes(b"android-application")
+            run = FakeRun("mobile-social-android-native")
+
+            with patch(
+                "tooling.acceptance.provisioners.mobile_native_build."
+                "SuccessfulBuildReceipt",
+                BuildReceiptStub,
+            ):
+                payload, reference = produce_scenario_build_attestation(
+                    run=run,  # type: ignore[arg-type]
+                    receipt=BuildReceiptStub(artifact, "android"),  # type: ignore[arg-type]
+                    created_at="2026-10-06T23:00:00Z",
+                )
+
+            self.assertEqual(payload["gateId"], "mobile-social-android-native")
+            self.assertEqual(
+                payload["artifactKind"],
+                "mobile-native-scenario-build-attestation",
+            )
+            self.assertEqual(
+                reference.path,
+                "runtime/mobile/builds/android.json",
+            )
+
+    def test_scenario_attestation_rejects_access_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            artifact = Path(temporary) / "mobile.apk"
+            artifact.write_bytes(b"android-application")
+            run = FakeRun()
+
+            with (
+                patch(
+                    "tooling.acceptance.provisioners.mobile_native_build."
+                    "SuccessfulBuildReceipt",
+                    BuildReceiptStub,
+                ),
+                self.assertRaisesRegex(
+                    MobileNativeBuildError,
+                    "requires a non-access physical Gate",
+                ),
+            ):
+                produce_scenario_build_attestation(
+                    run=run,  # type: ignore[arg-type]
+                    receipt=BuildReceiptStub(artifact, "android"),  # type: ignore[arg-type]
+                    created_at="2026-10-06T23:00:00Z",
+                )
 
     def test_real_run_registers_both_platform_attestations_by_canonical_path(
         self,
@@ -2360,6 +2729,12 @@ time.sleep(60)
                 shell="/bin/sh",
                 injected_features=(ACCEPTANCE_CARGO_FEATURE,),
             )
+            pnpm = _install_pnpm_shim(
+                run_root=run_root,
+                real_pnpm=toolchain.executable_paths["pnpm"],
+                node=toolchain.executable_paths["node"],
+                shell=toolchain.executable_paths["sh"],
+            )
             gradle = _install_offline_gradle_wrapper(
                 root=root,
                 run_root=run_root,
@@ -2380,11 +2755,7 @@ time.sleep(60)
                 run_root,
                 {"pnpm": root / "pnpm-cache", "gradle": run_root / "gradle-home"},
                 gradle,
-                _generate_run_scoped_gradle_settings(
-                    root=root,
-                    run_root=run_root,
-                    cargo_home=Path(toolchain.cache_paths["cargo"]),
-                ),
+                pnpm,
             )
             _validate_variant_command_contract(
                 root=root,
@@ -2393,10 +2764,12 @@ time.sleep(60)
                 commands=commands,
                 environment=environment,
                 cargo_wrapper=cargo,
+                pnpm_shim=pnpm,
             )
 
             wrong_target = {name: list(command) for name, command in commands.items()}
-            wrong_target["gradle"][-1] = ":app:assembleX86Debug"
+            target_index = wrong_target["gradle"].index("aarch64")
+            wrong_target["gradle"][target_index] = "x86_64"
             with self.assertRaisesRegex(MobileNativeBuildError, "target/configuration"):
                 _validate_variant_command_contract(
                     root=root,
@@ -2405,6 +2778,7 @@ time.sleep(60)
                     commands=wrong_target,
                     environment=environment,
                     cargo_wrapper=cargo,
+                    pnpm_shim=pnpm,
                 )
 
             with self.assertRaisesRegex(MobileNativeBuildError, "feature policy"):
@@ -2415,6 +2789,7 @@ time.sleep(60)
                     commands=commands,
                     environment=environment,
                     cargo_wrapper=cargo,
+                    pnpm_shim=pnpm,
                 )
 
     def test_ios_commands_and_cleanup_exclude_repository_rust_reuse(self) -> None:
@@ -2962,6 +3337,7 @@ time.sleep(60)
                         target,
                         "debug",
                         identity_bytes,
+                        address=("a" * 64 if platform == "android" else None),
                     )
                     writer(
                         artifact,
@@ -3093,7 +3469,7 @@ time.sleep(60)
             }
             with self.assertRaisesRegex(
                 MobileNativeBuildError,
-                "missing the digest-bound Web identity representation",
+                "missing a content-addressed Web identity representation",
             ):
                 _scan_packaged_web_identity(
                     apk,
@@ -3288,6 +3664,7 @@ time.sleep(60)
                         root=root,
                         platform="android",
                         run_root=Path(temporary) / "run",
+                        runtime_cache=Path(temporary) / "runtime-cache",
                     )
 
     def test_noop_build_cannot_reuse_stale_repository_outputs(self) -> None:
@@ -3350,6 +3727,7 @@ time.sleep(60)
                         root=root,
                         platform="android",
                         run_root=Path(temporary) / "run",
+                        runtime_cache=Path(temporary) / "runtime-cache",
                     )
             self.assertFalse(stale_apk.exists())
             self.assertFalse(stale_dist.exists())
@@ -3453,6 +3831,7 @@ time.sleep(60)
                             root=root,
                             platform="android",
                             run_root=Path(temporary) / "run",
+                            runtime_cache=Path(temporary) / "runtime-cache",
                         )
 
     def test_fresh_install_and_runtime_inputs_are_artifact_ref_bound(self) -> None:

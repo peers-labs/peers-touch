@@ -1,6 +1,6 @@
 # Mobile Shell — 架构设计
 
-> **Status**: active; iOS simulator-canonical Acceptance amendment accepted
+> **Status**: active; whole-product usability and Mobile call amendments accepted
 > **Version**: v1.5
 > **Created**: 2026-08-27 | **Updated**: 2026-10-12
 > **Owner**: Mobile Architecture Team
@@ -37,6 +37,7 @@
 | Legacy session-secret-derived v1 persistence cannot be attributed safely after credential deletion or rotation | verified_fact | MS-D15 migration boundary and canonical v1 quarantine | high | retain fail-closed quarantine; never infer ownership |
 | Generated scope-keyed v2 reliability persistence replaces the retired skeleton | accepted_decision | MS-D15, `data-model.md` §4-§5; Owner approval on 2026-09-11 | accepted | source complete; simulator recovery evidence pending |
 | Prototype defines the confirmed target experience | verified_fact | confirmed core journey plus reviewed recovery/destructive-state screenshots and L3 audit | high | production acceptance is separate |
+| Current production Mobile can pass a narrow Session-class Gate while exposing raw PTIDs, oversized hierarchy, an app-obstructing deferred-capability notice, and a compromised composer | verified_fact | `station-access-session-class-suite-e2e` screenshot `20261007T160348590278Z-5b01a4419595e44a6832808b0ebc46d0/runtime/mobile-simulator/evidence/same-station-chat/sim-ios/screenshot.png` | high | complete foreground route/state inventory and remediation |
 | Mobile hard-cut has zero executable legacy Group/Social callers | verified_fact | production scan over Mobile TypeScript and Rust; current hard-cut gate | high | keep zero-reference checks green |
 | Conversation member update and owner transfer have one accepted authority contract and one Mobile consumer | verified_fact | AO-D10, `conversation_api.proto`, `command.proto`, `features/chat/groupCommandState.ts`, `runtimes/messagingRuntime.ts` | high | simulator runtime proof |
 | Social directional block has canonical generated mutation/list/status/result/event contracts and Mobile durable-command cutover | verified_fact | Social relationship authority, shared Federation delivery, `relationship.proto`, Mobile relationship resolver | high | same-Station simulator proof required now; cross-Station/Relay proof deferred |
@@ -511,10 +512,19 @@ Forbidden:
 
 ## 11. Architecture Quality Gates
 
-`acceptance-matrix.md` defines normative MS-AG01..MS-AG11 runtime cells,
+`acceptance-matrix.md` defines normative MS-AG01..MS-AG14 runtime cells,
 workloads, thresholds, attribution metrics, and evidence paths. Execution
 planning must register the concrete Acceptance plan; missing native evidence
 remains `UNPROVEN`.
+
+MS-AG12 is the release-level
+`mobile-simulator-whole-product-usability-e2e` composition Gate. It derives its inventory from
+pre-shell lifecycle states, navigation descriptors, registered overlays, and
+product-owned recovery projections. It must operate the visible iOS Simulator,
+capture every inventory row, and fail when technical identifiers, untranslated
+copy, module-wide notices, clipping, overlap, occlusion, missing actions, or
+prototype drift make a surface unfit for normal human use. A scenario-specific
+business Gate cannot substitute for this composition Gate.
 
 If MS-D15 is accepted, MS-AG04/MS-AG09/MS-AG10 must additionally prove:
 
@@ -541,7 +551,7 @@ If MS-D15 is accepted, MS-AG04/MS-AG09/MS-AG10 must additionally prove:
 ### 12.1 Scope Boundary
 
 This amendment originally preserved required `MS-C01..MS-C10`, degraded
-`MS-C14`, and excluded `MS-C11..MS-C13`. The later `MS-D28` product/architecture
+`MS-C14`, and excluded `MS-C11..MS-C13`. The later `MS-D29` product/architecture
 amendment activates one-to-one voice/video calls (`MS-C12`) under the accepted
 Chat lifecycle and Realtime resolution contracts. WeChat OAuth (`MS-C11`) and
 Chat Docs (`MS-C13`) remain excluded.
@@ -549,7 +559,7 @@ Chat Docs (`MS-C13`) remain excluded.
 `MS-C12` uses a shell-owned call overlay and a Mobile call runtime that survives
 Chat page navigation. Source presence is not readiness: native media,
 direct/TURN, reconnect, teardown, cross-Station behavior, and mixed-client
-resolution remain `UNPROVEN` until `MS-PA28` and `MS-PA29` pass.
+resolution remain `UNPROVEN` until `MS-PA30` and `MS-PA31` pass.
 
 The target state has one owner for each business fact and one authenticated
 native transport boundary. Mobile may cache, render, schedule, and recover, but
@@ -890,3 +900,26 @@ change required completion state.
 This section supersedes earlier statements in this document that made physical
 device or live provider evidence a required proof boundary. Those statements
 continue to describe the optional diagnostic scope only.
+
+## 14. Whole-Product Foreground Usability
+
+MS-D28 makes foreground product composition a distinct owner concern without
+changing Station, Model, runtime, or projection authority.
+
+- Navigation descriptors own the route inventory.
+- Lifecycle and recovery projections own pre-shell and degraded-state
+  inventory.
+- Each page or overlay owns its content, action, trust, floating, and recovery
+  bounds.
+- Friendly identity projection is mandatory for primary labels. Raw PTID,
+  Station URL, runtime ID, command ID, and exception text are diagnostic
+  details only.
+- A module-degradable failure remains inside the owning module. Only a failure
+  that makes the complete authenticated scope unsafe may use a global blocking
+  surface.
+- The foreground iOS runner records route/state coverage, screenshot, DOM/AX,
+  interaction trace, viewport/text-size cell, and an agent-reviewed usability
+  verdict for every inventory row.
+- Whole-product readiness requires zero unresolved blocker or major usability
+  findings across the complete inventory. Functional command/readback success
+  remains necessary but is not sufficient.

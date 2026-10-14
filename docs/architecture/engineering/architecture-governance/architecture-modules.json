@@ -170,7 +170,6 @@
         "DWF-D23",
         "DWF-D24",
         "DWF-D25",
-        "DWF-D26",
         "DWF-D27",
         "DWF-D28",
         "DWF-D29",
@@ -185,7 +184,9 @@
         "DWF-D40",
         "DWF-D41",
         "DWF-D42",
-        "DWF-D43"
+        "DWF-D43",
+        "DWF-D44",
+        "DWF-D45"
       ],
       "governedPaths": [
         "docs/architecture/engineering/development-workflow",
@@ -517,16 +518,23 @@
         "SAL-D02",
         "SAL-D03",
         "SAL-D04",
-        "SAL-D05",
         "SAL-D06",
-        "SAL-D07"
+        "SAL-D07",
+        "SAL-D08",
+        "SAL-D12",
+        "SAL-D14",
+        "SAL-D15"
       ],
       "governedPaths": [
+        "apps/desktop/src/components/common/StationPicker.tsx",
+        "apps/desktop/src-tauri/src/application/station_binding",
+        "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
         "apps/desktop/src/services/desktop_api.ts",
         "apps/desktop/src-tauri/src/application/auth",
         "apps/desktop/src-tauri/src/application/federation",
         "apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs",
         "apps/desktop/src-tauri/src/interface/tauri_commands/federation.rs",
+        "apps/mobile/src/features/station",
         "apps/mobile/src/services/gateways/gatewayTypes.ts",
         "apps/mobile/src/services/gateways/profileGateway.ts",
         "apps/mobile/src/services/mobileCommands.ts",
@@ -534,10 +542,13 @@
         "apps/mobile/src-tauri/src/commands/oauth.rs",
         "apps/mobile/src-tauri/src/runtime/oauth",
         "apps/mobile/src-tauri/src/runtime/station_transport",
+        "apps/station/app/main.go",
+        "apps/station/frame/core/plugin/native/node",
+        "apps/station/frame/peers.go",
         "apps/station/frame/touch",
         "docs/architecture/platform/station/access",
         "model/domain/access_gate",
-        "model/domain/peer/station_identity.proto",
+        "model/domain/peer",
         "tooling/acceptance/gates/station_access"
       ],
       "capabilities": [],
@@ -554,6 +565,135 @@
           "gate": "station-api-ownership"
         }
       ]
+    },
+    {
+      "id": "node-connectivity",
+      "root": "docs/architecture/platform/runtime/node-connectivity",
+      "status": "active",
+      "owner": "Architecture Team",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "NCP-D01",
+        "NCP-D02",
+        "NCP-D03",
+        "NCP-D04",
+        "NCP-D05",
+        "NCP-D06",
+        "NCP-D07",
+        "NCP-D08",
+        "NCP-D09",
+        "NCP-D10",
+        "NCP-D11",
+        "NCP-D12",
+        "NCP-D13",
+        "NCP-D14",
+        "NCP-D15",
+        "NCP-D16",
+        "NCP-D17",
+        "NCP-D18"
+      ],
+      "governedPaths": [
+        "apps/station/frame/core/federation",
+        "apps/station/frame/core/plugin/native/relay",
+        "apps/station/frame/core/plugin/native/subserver/relay",
+        "apps/station/frame/core/plugin/native/transport",
+        "apps/station/frame/core/plugin/native/registry",
+        "apps/station/frame/core/plugin/native/subserver/bootstrap",
+        "apps/station/frame/core/runtime/role",
+        "apps/desktop/src-tauri/src/application/station_runtime",
+        "apps/desktop/src-tauri/src/infrastructure/station",
+        "apps/mobile/src-tauri/src/runtime/station_route.rs",
+        "docs/architecture/platform/runtime/node-connectivity",
+        "packages/station-libp2p-http"
+      ],
+      "capabilities": [
+        {
+          "id": "relay.control.enrollment",
+          "owner": "node.connectivity",
+          "contractRoots": [
+            "apps/station/frame/core/plugin/native/subserver/relay/domain",
+            "apps/station/frame/core/plugin/native/subserver/relay/application",
+            "docs/architecture/platform/runtime/node-connectivity"
+          ],
+          "consumers": [
+            "apps/station/frame/core/plugin/native/relay/station_control.go"
+          ],
+          "allowedDependencies": [
+            "model.domain.peer",
+            "station.logical-identity",
+            "station.node-authorization"
+          ],
+          "evidenceGates": [
+            "NCP-G07",
+            "relay-role-security-contract"
+          ]
+        },
+        {
+          "id": "relay.transport.circuit",
+          "owner": "node.connectivity",
+          "contractRoots": [
+            "apps/station/frame/core/plugin/native/transport/securehttp",
+            "packages/station-libp2p-http",
+            "docs/architecture/platform/runtime/node-connectivity"
+          ],
+          "consumers": [
+            "apps/station/frame/core/federation",
+            "apps/desktop/src-tauri/src/infrastructure/station",
+            "apps/mobile/src-tauri/src/runtime/station_route.rs"
+          ],
+          "allowedDependencies": [
+            "model.domain.peer",
+            "station.canonical-router",
+            "tls.1.3",
+            "libp2p.circuit-v2",
+            "http2"
+          ],
+          "evidenceGates": [
+            "NCP-G02",
+            "NCP-G03",
+            "NCP-G07",
+            "NCP-G08"
+          ]
+        },
+        {
+          "id": "station.connectivity.node-authorization",
+          "owner": "node.connectivity",
+          "contractRoots": [
+            "docs/architecture/platform/runtime/node-connectivity"
+          ],
+          "consumers": [
+            "apps/station/frame/core/plugin/native/subserver/bootstrap",
+            "apps/station/frame/core/plugin/native/transport",
+            "apps/station/frame/core/plugin/native/registry"
+          ],
+          "allowedDependencies": [
+            "model.domain.peer",
+            "station.logical-identity",
+            "station.canonical-router"
+          ],
+          "evidenceGates": [
+            "NCP-G01",
+            "NCP-G08"
+          ]
+        }
+      ],
+      "externalCapabilityRegistries": []
     },
     {
       "id": "chat-storage-governance",
@@ -633,6 +773,226 @@
           ]
         }
       ],
+      "externalCapabilityRegistries": []
+    },
+    {
+      "id": "api-ownership",
+      "root": "docs/architecture/engineering/api-governance",
+      "status": "active",
+      "owner": "Architecture Team",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": false,
+        "persistence": false,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": false,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "AO-D01",
+        "AO-D02",
+        "AO-D03",
+        "AO-D04",
+        "AO-D05",
+        "AO-D06",
+        "AO-D07",
+        "AO-D10",
+        "AO-D10A"
+      ],
+      "governedPaths": [
+        "docs/architecture/engineering/api-governance"
+      ],
+      "capabilities": [],
+      "externalCapabilityRegistries": []
+    },
+    {
+      "id": "cross-station-social",
+      "root": "docs/architecture/domains/social/cross-station",
+      "status": "active",
+      "owner": "Social / Federation",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": false,
+        "moduleLayout": false,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "CSS-D01",
+        "CSS-D02",
+        "CSS-D03",
+        "CSS-D04",
+        "CSS-D05",
+        "CSS-D06",
+        "CSS-D07",
+        "CSS-D08",
+        "CSS-D09",
+        "CSS-D10",
+        "CSS-D11"
+      ],
+      "governedPaths": [
+        "docs/architecture/domains/social/cross-station"
+      ],
+      "capabilities": [],
+      "externalCapabilityRegistries": []
+    },
+    {
+      "id": "mobile-social-parity",
+      "root": "docs/architecture/platform/client/mobile/social-parity",
+      "status": "active",
+      "owner": "Mobile / Social / Client Architecture",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "MPS-D01",
+        "MPS-D02",
+        "MPS-D03",
+        "MPS-D04",
+        "MPS-D05",
+        "MPS-D06",
+        "MPS-D07",
+        "MPS-D08",
+        "MPS-D09",
+        "MPS-D10",
+        "MPS-D11",
+        "MPS-D12",
+        "MPS-D13"
+      ],
+      "governedPaths": [
+        "apps/mobile/src/features/social",
+        "apps/mobile/src/pages/MomentsPage.tsx",
+        "apps/mobile/src/pages/moments",
+        "apps/mobile/src/runtimes/momentsProjectionDescriptor.ts",
+        "apps/mobile/src/runtimes/privateMomentsRuntime.ts",
+        "apps/mobile/src-tauri/plugins/secure-input",
+        "apps/mobile/src-tauri/src/platform/secure_input.rs",
+        "apps/mobile/src-tauri/src/social",
+        "docs/architecture/platform/client/mobile/social-parity"
+      ],
+      "capabilities": [
+        {
+          "id": "mobile.social.native-parity",
+          "owner": "mobile.social.runtime",
+          "contractRoots": [
+            "docs/architecture/platform/client/mobile/social-parity"
+          ],
+          "consumers": [
+            "apps/mobile/src/features/social",
+            "apps/mobile/src/pages/MomentsPage.tsx",
+            "apps/mobile/src/pages/moments",
+            "apps/mobile/src/runtimes/momentsProjectionDescriptor.ts",
+            "apps/mobile/src/runtimes/privateMomentsRuntime.ts",
+            "apps/mobile/src-tauri/plugins/secure-input",
+            "apps/mobile/src-tauri/src/platform/secure_input.rs",
+            "apps/mobile/src-tauri/src/social"
+          ],
+          "allowedDependencies": [
+            "mobile.lifecycle",
+            "mobile.navigation",
+            "mobile.reliability",
+            "secure-content",
+            "social.station",
+            "federation.delivery"
+          ],
+          "evidenceGates": [
+            "mobile-social-ios-native",
+            "mobile-social-android-native",
+            "mobile-social-cross-platform"
+          ]
+        }
+      ],
+      "externalCapabilityRegistries": []
+    },
+    {
+      "id": "secure-content",
+      "root": "docs/architecture/shared/security/secure-content",
+      "status": "active",
+      "owner": "Architecture Team",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": false,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "SC-D01",
+        "SC-D02",
+        "SC-D03",
+        "SC-D04",
+        "SC-D05",
+        "SC-D06",
+        "SC-D07",
+        "SC-D08",
+        "SC-D09",
+        "SC-D10",
+        "SC-D11",
+        "SC-D12",
+        "SC-D13",
+        "SC-D14",
+        "SC-D15",
+        "SC-D16",
+        "SC-D17",
+        "SC-D18",
+        "SC-D19",
+        "SC-D20",
+        "SC-D21",
+        "SC-D22",
+        "SC-D23",
+        "SC-D24",
+        "SC-D25",
+        "SC-D26",
+        "SC-D27",
+        "SC-D28",
+        "SC-D29"
+      ],
+      "governedPaths": [
+        "docs/architecture/shared/security/secure-content"
+      ],
+      "capabilities": [],
       "externalCapabilityRegistries": []
     }
   ]

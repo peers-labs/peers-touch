@@ -1,7 +1,7 @@
 use crate::application::key_exchange::device_install;
 use crate::application::session_resolver;
+use crate::application::station_runtime::client as station_client;
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::state::AppState;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
@@ -66,7 +66,7 @@ pub fn conversation_list_events(
         ("after_seq", input.after_seq.unwrap_or(0).to_string()),
         ("limit", input.limit.unwrap_or(50).to_string()),
     ];
-    match station_client::request_json_auth(
+    match state.station.client().request_json_auth(
         Method::GET,
         "/conversation/events",
         &token,
@@ -89,7 +89,7 @@ pub fn conversation_get_members(
         Err(e) => return e,
     };
     let query = vec![("conversation_id", input.conversation_id)];
-    match station_client::request_json_auth(
+    match state.station.client().request_json_auth(
         Method::GET,
         "/conversation/members",
         &token,
@@ -113,7 +113,11 @@ pub fn device_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResult
         Ok(t) => t,
         Err(e) => return e,
     };
-    match station_client::request_json_auth(Method::GET, "/device/list", &token, None, None) {
+    match state
+        .station
+        .client()
+        .request_json_auth(Method::GET, "/device/list", &token, None, None)
+    {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "device list failed"),
     }
@@ -146,7 +150,7 @@ pub fn device_revoke(
         "device_id": context.device_id,
         "observed_profile_version": input.observed_profile_version,
     });
-    match station_client::request_json_auth_with_device_id(
+    match state.station.client().request_json_auth_with_device_id(
         Method::POST,
         "/device/revoke",
         &context.token,
@@ -214,7 +218,7 @@ pub fn dkx_send(
         "kind": input.kind,
         "opaque_key_material": input.opaque_key_material,
     });
-    match station_client::request_json_auth_with_device_id(
+    match state.station.client().request_json_auth_with_device_id(
         Method::POST,
         "/key-exchange/dkx/send",
         &token,
@@ -253,7 +257,7 @@ pub fn conversation_list_messages(
         ("after_seq", input.after_seq.unwrap_or(0).to_string()),
         ("limit", input.limit.unwrap_or(50).to_string()),
     ];
-    match station_client::request_json_auth(
+    match state.station.client().request_json_auth(
         Method::GET,
         "/conversation/messages",
         &token,
@@ -289,7 +293,7 @@ pub fn conversation_list_thread_messages(
         ("after_seq", input.after_seq.unwrap_or(0).to_string()),
         ("limit", input.limit.unwrap_or(50).to_string()),
     ];
-    match station_client::request_json_auth(
+    match state.station.client().request_json_auth(
         Method::GET,
         "/conversation/thread/messages",
         &token,
@@ -324,7 +328,7 @@ pub fn conversation_sync_from_station(
         ("after_seq", "0".to_string()),
         ("limit", limit.to_string()),
     ];
-    match station_client::request_json_auth(
+    match state.station.client().request_json_auth(
         Method::GET,
         "/conversation/messages",
         &token,

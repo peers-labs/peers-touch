@@ -3210,6 +3210,17 @@ type canonicalIndexExpectation struct {
 	Unique  bool
 }
 
+type postgresCanonicalIndexRow struct {
+	IndexName  string  `gorm:"column:index_name"`
+	ColumnName *string `gorm:"column:column_name"`
+	Ordinal    int     `gorm:"column:ordinal"`
+	IsUnique   bool    `gorm:"column:is_unique"`
+	IsPrimary  bool    `gorm:"column:is_primary"`
+	IsPartial  bool    `gorm:"column:is_partial"`
+	IsValid    bool    `gorm:"column:is_valid"`
+	IsReady    bool    `gorm:"column:is_ready"`
+}
+
 func validateCanonicalPrivateContentSchema(database *gorm.DB) error {
 	for _, model := range canonicalPrivateSchemaModels() {
 		if err := validateCanonicalModelColumns(database, model, nil); err != nil {
@@ -3231,7 +3242,8 @@ func validateCanonicalPrivateContentSchema(database *gorm.DB) error {
 
 func canonicalPrivateSchemaModels() []any {
 	models := append([]any(nil), dbmodel.SocialPrivateContentModels()...)
-	return append(models, &dbmodel.SocialReaction{})
+	models = append(models, &dbmodel.SocialReaction{})
+	return append(models, RemotePrivateContentModels()...)
 }
 
 func validateCanonicalModelColumns(
@@ -3466,48 +3478,25 @@ func validateCanonicalModelIndexes(
 		}
 	}
 
-	indexes, err := database.Migrator().GetIndexes(model)
+	indexes, err := canonicalModelIndexes(
+		database,
+		model,
+		statement.Schema.Table,
+	)
 	if err != nil {
-		return resetError(
-			ResetCodeSchemaTargetUnreviewed,
-			"inspect canonical indexes for %s: %v",
-			statement.Schema.Table,
-			err,
-		)
+		return err
 	}
 	seen := make(map[string]struct{}, len(indexes))
-	for _, index := range indexes {
-		primary, primaryKnown := index.PrimaryKey()
-		if !primaryKnown {
-			return resetError(
-				ResetCodeSchemaTargetUnreviewed,
-				"primary-key status for index %s.%s is unknown",
-				statement.Schema.Table,
-				index.Name(),
-			)
-		}
-		if primary {
-			continue
-		}
-		columns := lowerStrings(index.Columns())
-		unique, uniqueKnown := index.Unique()
-		if !uniqueKnown {
-			return resetError(
-				ResetCodeSchemaTargetUnreviewed,
-				"unique status for index %s.%s is unknown",
-				statement.Schema.Table,
-				index.Name(),
-			)
-		}
-		wanted, ok := expected[index.Name()]
+	for name, index := range indexes {
+		wanted, ok := expected[name]
 		if !ok {
-			if allowed, found := allowedExtraIndexes[index.Name()]; found &&
-				unique == allowed.Unique &&
-				slices.Equal(columns, allowed.Columns) {
+			if allowed, found := allowedExtraIndexes[name]; found &&
+				index.Unique == allowed.Unique &&
+				slices.Equal(index.Columns, allowed.Columns) {
 				continue
 			}
 			if allowedExtraColumns != nil &&
-				indexTouchesRetiredColumn(columns, allowedExtraColumns) {
+				indexTouchesRetiredColumn(index.Columns, allowedExtraColumns) {
 				continue
 			}
 
@@ -3515,19 +3504,23 @@ func validateCanonicalModelIndexes(
 				ResetCodeSchemaTargetUnreviewed,
 				"index %s.%s is not canonical",
 				statement.Schema.Table,
-				index.Name(),
+				name,
 			)
 		}
-		if unique != wanted.Unique ||
-			!slices.Equal(columns, wanted.Columns) {
+		if index.Unique != wanted.Unique ||
+			!slices.Equal(index.Columns, wanted.Columns) {
 			return resetError(
 				ResetCodeSchemaTargetUnreviewed,
-				"index %s.%s shape or uniqueness does not match the canonical model",
+				"index %s.%s shape or uniqueness does not match the canonical model: got columns=%v unique=%t, want columns=%v unique=%t",
 				statement.Schema.Table,
-				index.Name(),
+				name,
+				index.Columns,
+				index.Unique,
+				wanted.Columns,
+				wanted.Unique,
 			)
 		}
-		seen[index.Name()] = struct{}{}
+		seen[name] = struct{}{}
 	}
 	if requireAll {
 		for name := range expected {
@@ -3543,6 +3536,133 @@ func validateCanonicalModelIndexes(
 	}
 
 	return nil
+}
+
+func canonicalModelIndexes(
+	database *gorm.DB,
+	model any,
+	table string,
+) (map[string]canonicalIndexExpectation, error) {
+	if database.Dialector.Name() == "postgres" {
+		return postgresCanonicalModelIndexes(database, table)
+	}
+
+	indexes, err := database.Migrator().GetIndexes(model)
+	if err != nil {
+		return nil, resetError(
+			ResetCodeSchemaTargetUnreviewed,
+			"inspect canonical indexes for %s: %v",
+			table,
+			err,
+		)
+	}
+	result := make(map[string]canonicalIndexExpectation, len(indexes))
+	for _, index := range indexes {
+		primary, primaryKnown := index.PrimaryKey()
+		if !primaryKnown {
+			return nil, resetError(
+				ResetCodeSchemaTargetUnreviewed,
+				"primary-key status for index %s.%s is unknown",
+				table,
+				index.Name(),
+			)
+		}
+		if primary {
+			continue
+		}
+		unique, uniqueKnown := index.Unique()
+		if !uniqueKnown {
+			return nil, resetError(
+				ResetCodeSchemaTargetUnreviewed,
+				"unique status for index %s.%s is unknown",
+				table,
+				index.Name(),
+			)
+		}
+		result[index.Name()] = canonicalIndexExpectation{
+			Columns: lowerStrings(index.Columns()),
+			Unique:  unique,
+		}
+	}
+
+	return result, nil
+}
+
+func postgresCanonicalModelIndexes(
+	database *gorm.DB,
+	table string,
+) (map[string]canonicalIndexExpectation, error) {
+	var rows []postgresCanonicalIndexRow
+	if err := database.Raw(`
+SELECT
+  index_relation.relname AS index_name,
+  table_column.attname AS column_name,
+  index_column.ordinality AS ordinal,
+  index_definition.indisunique AS is_unique,
+  index_definition.indisprimary AS is_primary,
+  index_definition.indpred IS NOT NULL AS is_partial,
+  index_definition.indisvalid AS is_valid,
+  index_definition.indisready AS is_ready
+FROM pg_catalog.pg_index AS index_definition
+JOIN pg_catalog.pg_class AS index_relation
+  ON index_relation.oid = index_definition.indexrelid
+JOIN pg_catalog.pg_class AS table_relation
+  ON table_relation.oid = index_definition.indrelid
+JOIN pg_catalog.pg_namespace AS table_namespace
+  ON table_namespace.oid = table_relation.relnamespace
+CROSS JOIN LATERAL unnest(index_definition.indkey)
+  WITH ORDINALITY AS index_column(attnum, ordinality)
+LEFT JOIN pg_catalog.pg_attribute AS table_column
+  ON table_column.attrelid = table_relation.oid
+ AND table_column.attnum = index_column.attnum
+LEFT JOIN pg_catalog.pg_constraint AS table_constraint
+  ON table_constraint.conindid = index_definition.indexrelid
+WHERE table_namespace.nspname = current_schema()
+  AND table_relation.relname = ?
+  AND table_constraint.oid IS NULL
+  AND index_column.ordinality <= index_definition.indnkeyatts
+ORDER BY index_relation.relname, index_column.ordinality
+`, table).Scan(&rows).Error; err != nil {
+		return nil, resetError(
+			ResetCodeSchemaTargetUnreviewed,
+			"inspect canonical indexes for %s: %v",
+			table,
+			err,
+		)
+	}
+
+	result := make(map[string]canonicalIndexExpectation)
+	ordinals := make(map[string]int)
+	for _, row := range rows {
+		if row.IsPrimary {
+			continue
+		}
+		if row.IsPartial || !row.IsValid || !row.IsReady ||
+			row.ColumnName == nil ||
+			row.Ordinal != ordinals[row.IndexName]+1 {
+			return nil, resetError(
+				ResetCodeSchemaTargetUnreviewed,
+				"index %s.%s is partial, invalid, not ready, expression-based, or unordered",
+				table,
+				row.IndexName,
+			)
+		}
+		index, found := result[row.IndexName]
+		if found && index.Unique != row.IsUnique {
+			return nil, resetError(
+				ResetCodeSchemaTargetUnreviewed,
+				"index %s.%s has inconsistent uniqueness metadata",
+				table,
+				row.IndexName,
+			)
+		}
+		index.Unique = row.IsUnique
+		index.Columns = append(index.Columns, strings.ToLower(*row.ColumnName))
+		result[row.IndexName] = index
+		ordinals[row.IndexName] = row.Ordinal
+	}
+
+	return result, nil
 }
 
 func primaryKeyColumns(

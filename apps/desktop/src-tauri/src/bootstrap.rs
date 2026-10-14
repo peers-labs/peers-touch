@@ -1,8 +1,8 @@
 use tracing_appender::non_blocking::WorkerGuard;
 
+use crate::application::station_runtime::StationRuntime;
 use crate::infrastructure::i18n::I18nService;
 use crate::infrastructure::logger;
-use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind, StorageLayout};
 use crate::state::AppState;
 
@@ -38,9 +38,9 @@ pub fn run() -> BootstrapResult {
         .cloned()
         .unwrap_or_else(|| layout.root.join("config"));
 
-    // Initialize global station registry before any station_client calls.
-    station_client::init_station_registry(&config_dir);
-    tracing::info!("StationRegistry initialized");
+    let station = StationRuntime::start(&config_dir)
+        .expect("[bootstrap] Failed to initialize app-scoped Station runtime");
+    tracing::info!("App-scoped Station runtime initialized");
 
     let i18n = I18nService::new(&config_dir);
     tracing::info!("I18nService initialized");
@@ -48,7 +48,7 @@ pub fn run() -> BootstrapResult {
     configure_debug_identity_store(&layout);
 
     let result = BootstrapResult {
-        app_state: AppState::new(layout, i18n),
+        app_state: AppState::new(layout, i18n, station),
         _log_guard: log_guard,
     };
 

@@ -24,13 +24,13 @@ Implementation order:
 
 Button roles:
 
-| Role | Meaning | Visual intent |
-| --- | --- | --- |
-| Primary | main user commitment | strong but not visually alien |
-| Secondary | normal navigation/action | quiet, readable |
-| Ghost | low-emphasis surface action | visible on hover or subtle background |
-| Danger | destructive action | scoped, explicit, recoverable |
-| Icon | compact repeated action | accessible label required |
+| Role      | Meaning                     | Visual intent                         |
+| --------- | --------------------------- | ------------------------------------- |
+| Primary   | main user commitment        | strong but not visually alien         |
+| Secondary | normal navigation/action    | quiet, readable                       |
+| Ghost     | low-emphasis surface action | visible on hover or subtle background |
+| Danger    | destructive action          | scoped, explicit, recoverable         |
+| Icon      | compact repeated action     | accessible label required             |
 
 Rules:
 
@@ -39,6 +39,7 @@ Rules:
 - Danger text must not sit inline with ordinary links unless the action is low-risk and reversible.
 - Icon-only buttons need accessible labels and clear hover/focus states.
 - Disabled buttons must explain why when the disabled state blocks task completion.
+- User-facing icon buttons use rounded-square geometry. Circular icon buttons are not part of the Peers Touch product language.
 - Buttons come from one canonical size scale, never bespoke per-surface
   numbers: 24 (inline icon), 28 (compact text), 30 (relationship decision
   icon pair), 32 (standard text), 34 (chat chrome), 36 (header icon),
@@ -117,8 +118,18 @@ Rules:
 - Composer input, attachment controls, audience selector, and publish action form one action surface.
 - Placeholder text should guide the task, not replace labels.
 - Error and loading states belong to the composer surface before child controls show local state.
+- Inputs use bounded rounded rectangles, never full pills. Adjacent send/tool buttons use the same radius family rather than circular geometry.
 
-## 8. Popovers And Menus
+## 8. User Identity And Avatars
+
+Rules:
+
+- Every person avatar uses the shared platform avatar primitive and rounded-square geometry.
+- Avatar radius is derived from size and remains visibly below half the avatar dimension.
+- The same canonical actor identity must project the same display name, avatar asset, and deterministic fallback color across feeds, comments, chat, contacts, and notifications.
+- Feature code may supply a DTO fallback, but it must not create a second avatar primitive or display a raw PTID when a canonical profile is available.
+
+## 9. Popovers And Menus
 
 Rules:
 
@@ -134,7 +145,7 @@ Rules:
   with one dialog and retains the same data and row components. Search and
   pagination preserve the dialog's bounds; closing restores source focus.
 
-## 9. Empty, Loading, And Error States
+## 10. Empty, Loading, And Error States
 
 Rules:
 
@@ -198,3 +209,4 @@ Out of scope:
 - [ ] Are tabs, CTA, and page header aligned as one system?
 - [ ] Are popovers anchored, bounded, and keyboard-recoverable?
 - [ ] Are empty/loading/error states designed, localized, and recoverable?
+- [ ] Do all user avatars use the shared rounded-square primitive and canonical identity projection?

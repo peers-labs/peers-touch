@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use crate::application::session_resolver;
+use crate::application::station_runtime::client as station_client;
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::state::AppState;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
@@ -93,7 +93,7 @@ pub fn ice_get_servers(state: State<'_, Arc<AppState>>, window: Window) -> AppRe
         Err(e) => return e,
     };
 
-    let resp = match station_client::request_json(
+    let resp = match state.station.client().request_json(
         Method::GET,
         "/api/v1/turn/ice-servers",
         &token,

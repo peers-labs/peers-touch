@@ -30,6 +30,7 @@ import {
   LIVE_STATES,
   SCHEMA_VERSION,
   canonicalize,
+  declarationPlanSchema,
   digestDeclaration,
   fail,
   isObject,
@@ -38,6 +39,7 @@ import {
   parseSourceClaims,
   requiredIdentifier,
   requiredText,
+  validateCoordinationDeclaration,
   validateDeclaration,
   validateSourcePathContainment,
 } from './dev-work-schema.mjs';
@@ -191,7 +193,7 @@ export function readLedger(file, now = new Date()) {
     fail('MACHINE_WORK_LEDGER_INVALID', 'work ledger schema is invalid');
   }
   for (const [id, declaration] of Object.entries(ledger.declarations)) {
-    validateDeclaration(declaration);
+    validateCoordinationDeclaration(declaration);
     if (id !== declaration.declarationId) {
       fail(
         'MACHINE_WORK_LEDGER_INVALID',
@@ -674,10 +676,11 @@ function isLive(declaration, now) {
   );
 }
 
-function reconcileExpired(ledger, now) {
+function reconcileExpired(ledger, now, workspaceId = null) {
   let changed = false;
   for (const declaration of Object.values(ledger.declarations)) {
     if (
+      (workspaceId === null || declaration.workspaceId === workspaceId) &&
       LIVE_STATES.has(declaration.state) &&
       Date.parse(declaration.expiresAt) <= now.getTime()
     ) {
@@ -1079,7 +1082,12 @@ function mutateLedgerUnderFence(options, mutation) {
   });
   try {
     const ledger = readLedger(file, now);
-    reconcileExpired(ledger, now);
+    const workspaceId =
+      options.workspaceId ??
+      workspaceIdForRoot(
+        path.resolve(options.workspaceRoot ?? repoRoot),
+      );
+    reconcileExpired(ledger, now, workspaceId);
     const output = mutation(ledger, now);
     ledger.updatedAt = now.toISOString();
     writeLedgerAtomic(file, ledger);
@@ -1188,6 +1196,13 @@ export function startOrUpdateDeclaration(
     }
     const id = declarationId(workItemId, workspaceId);
     const existing = ledger.declarations[id];
+    if (existing && declarationPlanSchema(existing) === 'legacy') {
+      fail(
+        'PLAN_STATE_MIGRATION_REQUIRED',
+        'the current workspace declaration uses the retired Plan Version schema; close its live work and run plan-state-migrate',
+        { declarationId: id, workspaceId },
+      );
+    }
     if (requireExisting && !existing) {
       fail('WORK_DECLARATION_MISSING', 'declaration does not exist', {
         declarationId: id,
@@ -1269,6 +1284,7 @@ function ownedDeclaration(options, ledger) {
       declarationId: id,
     });
   }
+  validateDeclaration(declaration);
   if (options.sessionId && declaration.sessionId !== options.sessionId) {
     fail('WORK_DECLARATION_OWNER_MISMATCH', 'session does not own declaration', {
       declarationId: id,
@@ -1281,11 +1297,24 @@ function ownedDeclaration(options, ledger) {
       actual: options.owner,
     });
   }
-  assertWorkflowOwnerMatch(
-    declaration.workflowOwner,
-    options.workflowOwner,
-    { declarationId: id },
-  );
+  if (options.allowOwnerlessLegacyRecovery === true) {
+    if (
+      declaration.workflowOwner !== undefined ||
+      !['STALE', 'RELEASED'].includes(declaration.state)
+    ) {
+      fail(
+        'WORK_DECLARATION_OWNER_MISMATCH',
+        'ownerless legacy recovery requires a stale ownerless declaration',
+        { declarationId: id, state: declaration.state },
+      );
+    }
+  } else {
+    assertWorkflowOwnerMatch(
+      declaration.workflowOwner,
+      options.workflowOwner,
+      { declarationId: id },
+    );
+  }
   return declaration;
 }
 

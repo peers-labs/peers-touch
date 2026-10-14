@@ -1,9 +1,9 @@
 use crate::application::desktop_executor_worker::supervisor::{
     CapabilityWorkerSnapshot, CapabilityWorkerSupervisor, RequestedCapabilityNegativeControl,
 };
+use crate::application::station_runtime::client::{self as station_client, StationClient};
 use crate::contracts::{AgentRuntimeActivityInput, AgentRuntimeProfileInput, StubPayload};
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::model::agent;
 use reqwest::Method;
 use serde::Deserialize;
@@ -69,19 +69,21 @@ fn local_counter_epoch() -> &'static str {
 }
 
 pub fn effective_runtime_profile(
+    station_client: &StationClient,
     input: AgentRuntimeProfileInput,
     token: &str,
 ) -> AppResult<StubPayload> {
     let request = agent::GetEffectiveRuntimeProfileRequest {
         agent_id: input.agent_id.trim().to_string(),
     };
-    let response = match station_client::request_proto::<_, agent::GetEffectiveRuntimeProfileResponse>(
-        Method::POST,
-        "/sub-agent/agent/runtime/profile/effective",
-        token,
-        None,
-        Some(&request),
-    ) {
+    let response = match station_client
+        .request_proto::<_, agent::GetEffectiveRuntimeProfileResponse>(
+            Method::POST,
+            "/sub-agent/agent/runtime/profile/effective",
+            token,
+            None,
+            Some(&request),
+        ) {
         Ok(response) => response,
         Err(error) => return error.into_app_result("agent.runtimeProfileReadbackFailed"),
     };
@@ -108,18 +110,21 @@ pub fn effective_runtime_profile(
     )
 }
 
-pub fn station_capability_sessions(token: &str) -> AppResult<StubPayload> {
-    let response =
-        match station_client::request_proto::<_, agent::ListClientCapabilitySessionsResponse>(
+pub fn station_capability_sessions(
+    station_client: &StationClient,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let response = match station_client
+        .request_proto::<_, agent::ListClientCapabilitySessionsResponse>(
             Method::POST,
             "/sub-agent/agent/capability/session/list",
             token,
             None,
             Some(&agent::ListClientCapabilitySessionsRequest {}),
         ) {
-            Ok(response) => response,
-            Err(error) => return error.into_app_result("agent.capabilitySessionReadbackFailed"),
-        };
+        Ok(response) => response,
+        Err(error) => return error.into_app_result("agent.capabilitySessionReadbackFailed"),
+    };
     success_payload(
         "agent_capability_sessions",
         json!({
@@ -129,6 +134,7 @@ pub fn station_capability_sessions(token: &str) -> AppResult<StubPayload> {
 }
 
 pub fn station_runtime_activity(
+    station_client: &StationClient,
     input: AgentRuntimeActivityInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -136,7 +142,7 @@ pub fn station_runtime_activity(
         Ok(request) => request,
         Err(error) => return error,
     };
-    let response = match request_station_activity(&request, token) {
+    let response = match request_station_activity(station_client, &request, token) {
         Ok(response) => response,
         Err(error) => return error.into_app_result("agent.runtimeActivityReadbackFailed"),
     };
@@ -154,6 +160,7 @@ pub fn station_runtime_activity(
 }
 
 pub fn local_runtime_activity(
+    station_client: &StationClient,
     input: AgentRuntimeActivityInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -161,7 +168,7 @@ pub fn local_runtime_activity(
         Ok(request) => request,
         Err(error) => return error,
     };
-    let station = match request_station_activity(&request, token) {
+    let station = match request_station_activity(station_client, &request, token) {
         Ok(response) => response,
         Err(error) => return error.into_app_result("agent.runtimeActivityActorBindingFailed"),
     };
@@ -394,10 +401,11 @@ fn runtime_activity_request(
 }
 
 fn request_station_activity(
+    station_client: &StationClient,
     request: &agent::GetRuntimeActivityRequest,
     token: &str,
 ) -> Result<agent::GetRuntimeActivityResponse, station_client::StationClientError> {
-    station_client::request_proto(
+    station_client.request_proto(
         Method::POST,
         "/sub-agent/agent/runtime/activity",
         token,

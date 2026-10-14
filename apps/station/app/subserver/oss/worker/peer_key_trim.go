@@ -86,6 +86,9 @@ func (w *PeerKeyTrim) Interval() time.Duration { return w.cfg.Interval }
 
 // RunOnce performs a single bulk trim.
 func (w *PeerKeyTrim) RunOnce(ctx context.Context) error {
+	if _, err := ValidateLeaseAuthority(ctx, w.Name()); err != nil {
+		return err
+	}
 	cutoff := w.now().Add(-w.cfg.MaxIdle)
 	deleted, err := w.cfg.Peers.DeleteUnpinnedOlderThan(ctx, cutoff)
 	if err != nil {

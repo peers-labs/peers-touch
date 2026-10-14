@@ -1,16 +1,23 @@
 use super::EngineEndpoint;
-use crate::infrastructure::station_client::{self, StationClientError};
+use crate::application::station_runtime::client::{
+    self as station_client, StationClient, StationClientError,
+};
 use crate::model::chat::{PrepareConversationGroupRequest, PrepareConversationGroupResponse};
 use messaging_core::proto::{actor_device_ref, actor_ref};
 use reqwest::Method;
 
 pub struct StationGroupGenesisTransport {
+    station_client: StationClient,
     token: String,
     endpoint: EngineEndpoint,
 }
 
 impl StationGroupGenesisTransport {
-    pub fn new(token: String, endpoint: EngineEndpoint) -> Result<Self, StationClientError> {
+    pub fn new(
+        station_client: StationClient,
+        token: String,
+        endpoint: EngineEndpoint,
+    ) -> Result<Self, StationClientError> {
         if token.trim().is_empty()
             || endpoint.ptid.trim().is_empty()
             || endpoint.device_id.trim().is_empty()
@@ -21,7 +28,11 @@ impl StationGroupGenesisTransport {
                 None,
             ));
         }
-        Ok(Self { token, endpoint })
+        Ok(Self {
+            station_client,
+            token,
+            endpoint,
+        })
     }
 
     pub fn prepare(
@@ -42,7 +53,7 @@ impl StationGroupGenesisTransport {
                 None,
             ));
         }
-        station_client::request_proto_for_device::<
+        self.station_client.request_proto_for_device::<
             PrepareConversationGroupRequest,
             PrepareConversationGroupResponse,
         >(

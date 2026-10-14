@@ -166,7 +166,7 @@ func TestBucketReconciler_RewritesOnDriftAndAudits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBucketReconciler: %v", err)
 	}
-	if err := rec.RunOnce(context.Background()); err != nil {
+	if err := rec.RunOnce(testWorkerContext(context.Background(), rec.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
@@ -210,7 +210,7 @@ func TestBucketReconciler_CountDriftAlwaysRewrites(t *testing.T) {
 	rec, _ := NewBucketReconciler(BucketReconcilerConfig{
 		Buckets: buckets, Files: files, Audit: &recordingAudit{},
 	})
-	if err := rec.RunOnce(context.Background()); err != nil {
+	if err := rec.RunOnce(testWorkerContext(context.Background(), rec.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 	if len(buckets.setCalls) != 1 {
@@ -233,7 +233,7 @@ func TestBucketReconciler_SumErrorAuditedAndContinues(t *testing.T) {
 	rec, _ := NewBucketReconciler(BucketReconcilerConfig{
 		Buckets: buckets, Files: files, Audit: audit,
 	})
-	if err := rec.RunOnce(context.Background()); err != nil {
+	if err := rec.RunOnce(testWorkerContext(context.Background(), rec.Name())); err != nil {
 		t.Fatalf("RunOnce should swallow per-row failures: %v", err)
 	}
 	if len(buckets.setCalls) != 0 {
@@ -258,7 +258,7 @@ func TestBucketReconciler_ListAllErrorBubbles(t *testing.T) {
 		Files:   &reconcileFakeFiles{},
 		Audit:   &recordingAudit{},
 	})
-	if err := rec.RunOnce(context.Background()); err == nil {
+	if err := rec.RunOnce(testWorkerContext(context.Background(), rec.Name())); err == nil {
 		t.Fatalf("ListAll error should propagate")
 	}
 }

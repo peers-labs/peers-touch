@@ -8,9 +8,8 @@ import (
 )
 
 // MigrateCanonicalSchema installs the single Conversation authority schema.
-// Existing incompatible v1 development schemas fail later validation and must
-// be reset as one deployment operation; this function never preserves a
-// parallel authority layout.
+// Retired columns are removed as part of the hard cut; incompatible authority
+// layouts still fail validation and must be reset as one deployment operation.
 func MigrateCanonicalSchema(ctx context.Context, db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("conversation persistence: database is required")

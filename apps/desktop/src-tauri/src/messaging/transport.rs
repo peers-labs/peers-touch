@@ -2,7 +2,7 @@ use super::{
     CommandResultTransport, CommandSubmitFailure, CommandTransport, QueueAcknowledger,
     QueueTransport, COMMAND_RECONCILIATION_BATCH_LIMIT,
 };
-use crate::infrastructure::station_client::{self, StationClientErrorKind};
+use crate::application::station_runtime::client::{StationClient, StationClientErrorKind};
 use crate::model::chat::{
     chat_command, submit_conversation_authority_command_request,
     transfer_conversation_ownership_request, update_conversation_member_request,
@@ -54,28 +54,39 @@ impl CommandSubmissionRoute {
 }
 
 pub struct StationQueueTransport {
+    station_client: StationClient,
     token: String,
     device: ActorDeviceRef,
 }
 
 impl StationQueueTransport {
-    pub fn new(token: String, device: ActorDeviceRef) -> Result<Self, String> {
+    pub fn new(
+        station_client: StationClient,
+        token: String,
+        device: ActorDeviceRef,
+    ) -> Result<Self, String> {
         if token.trim().is_empty()
             || actor_device_ptid(&device).is_err()
             || device.device_id.trim().is_empty()
         {
             return Err("messaging queue transport requires token and device ID".to_string());
         }
-        Ok(Self { token, device })
+        Ok(Self {
+            station_client,
+            token,
+            device,
+        })
     }
 }
 
 pub struct StationDeviceTransport {
+    station_client: StationClient,
     token: String,
     device_id: String,
 }
 
 pub struct StationCommandTransport {
+    station_client: StationClient,
     token: String,
     device_id: String,
     remote_identity: Option<RemoteCommandIdentity>,
@@ -89,18 +100,27 @@ struct RemoteCommandIdentity {
 }
 
 pub struct StationDeliveryReceiptTransport {
+    station_client: StationClient,
     token: String,
     device_id: String,
 }
 
 impl StationDeliveryReceiptTransport {
-    pub fn new(token: String, device_id: String) -> Result<Self, String> {
+    pub fn new(
+        station_client: StationClient,
+        token: String,
+        device_id: String,
+    ) -> Result<Self, String> {
         if token.trim().is_empty() || device_id.trim().is_empty() {
             return Err(
                 "messaging delivery receipt transport requires token and device ID".to_string(),
             );
         }
-        Ok(Self { token, device_id })
+        Ok(Self {
+            station_client,
+            token,
+            device_id,
+        })
     }
 
     pub fn submit(&self, receipt: &DeviceConsumptionReceipt) -> Result<(), String> {
@@ -120,7 +140,7 @@ impl StationDeliveryReceiptTransport {
         {
             return Err("messaging delivery receipt endpoint mismatch".to_string());
         }
-        station_client::request_proto_for_device::<
+        self.station_client.request_proto_for_device::<
             SubmitConversationDeliveryReceiptRequest,
             SubmitConversationDeliveryReceiptResponse,
         >(
@@ -139,11 +159,16 @@ impl StationDeliveryReceiptTransport {
 }
 
 impl StationCommandTransport {
-    pub fn new(token: String, device_id: String) -> Result<Self, String> {
+    pub fn new(
+        station_client: StationClient,
+        token: String,
+        device_id: String,
+    ) -> Result<Self, String> {
         if token.trim().is_empty() || device_id.trim().is_empty() {
             return Err("messaging command transport requires token and device ID".to_string());
         }
         Ok(Self {
+            station_client,
             token,
             device_id,
             remote_identity: None,
@@ -186,15 +211,16 @@ impl StationCommandTransport {
         {
             return Err("messaging send preparation endpoint mismatch".to_string());
         }
-        station_client::request_proto_for_device(
-            Method::POST,
-            "/conversation/command/prepare",
-            &self.token,
-            None,
-            Some(request),
-            &self.device_id,
-        )
-        .map_err(|error| error.to_string())
+        self.station_client
+            .request_proto_for_device(
+                Method::POST,
+                "/conversation/command/prepare",
+                &self.token,
+                None,
+                Some(request),
+                &self.device_id,
+            )
+            .map_err(|error| error.to_string())
     }
 
     pub fn submit_typing(&self, request: &SubmitConversationTypingRequest) -> Result<(), String> {
@@ -209,7 +235,7 @@ impl StationCommandTransport {
         {
             return Err("messaging typing endpoint binding mismatch".to_string());
         }
-        station_client::request_proto_for_device::<
+        self.station_client.request_proto_for_device::<
             SubmitConversationTypingRequest,
             SubmitConversationTypingResponse,
         >(
@@ -225,7 +251,7 @@ impl StationCommandTransport {
     }
 
     fn submit_group_creation(&self, command: &ChatCommand) -> Result<(), CommandSubmitFailure> {
-        let response = station_client::request_proto_for_device::<
+        let response = self.station_client.request_proto_for_device::<
             CreateGroupConversationRequest,
             CreateGroupConversationResponse,
         >(
@@ -256,7 +282,7 @@ impl StationCommandTransport {
                 self.build_remote_command_proposal(command, identity)?,
             )
         };
-        let response = station_client::request_proto_for_device::<
+        let response = self.station_client.request_proto_for_device::<
             SubmitConversationAuthorityCommandRequest,
             SubmitConversationAuthorityCommandResponse,
         >(
@@ -293,7 +319,7 @@ impl StationCommandTransport {
         identity: &RemoteCommandIdentity,
     ) -> Result<ConversationCommandProposal, CommandSubmitFailure> {
         let query = [("conversation_id", command.conversation_id.clone())];
-        let response = station_client::request_proto_for_device::<
+        let response = self.station_client.request_proto_for_device::<
             GetConversationPublicHeadRequest,
             GetConversationPublicHeadResponse,
         >(
@@ -397,7 +423,7 @@ impl StationCommandTransport {
                         update_conversation_member_request::Submission::Command(command.clone())
                     }
                 };
-                let response = station_client::request_proto_for_device::<
+                let response = self.station_client.request_proto_for_device::<
                     UpdateConversationMemberRequest,
                     UpdateConversationMemberResponse,
                 >(
@@ -427,7 +453,7 @@ impl StationCommandTransport {
                         command.clone(),
                     ),
                 };
-                let response = station_client::request_proto_for_device::<
+                let response = self.station_client.request_proto_for_device::<
                     TransferConversationOwnershipRequest,
                     TransferConversationOwnershipResponse,
                 >(
@@ -460,7 +486,7 @@ impl StationCommandTransport {
         identity: &RemoteCommandIdentity,
     ) -> Result<ConversationCommandProposal, CommandSubmitFailure> {
         let query = [("conversation_id", command.conversation_id.clone())];
-        let response = station_client::request_proto_for_device::<
+        let response = self.station_client.request_proto_for_device::<
             GetConversationPublicHeadRequest,
             GetConversationPublicHeadResponse,
         >(
@@ -500,7 +526,7 @@ impl CommandResultTransport for StationCommandTransport {
         {
             return Err("messaging command result request is invalid".to_string());
         }
-        station_client::request_proto_for_device::<
+        self.station_client.request_proto_for_device::<
             ResolveConversationCommandResultsRequest,
             ResolveConversationCommandResultsResponse,
         >(
@@ -838,7 +864,7 @@ fn validate_group_creation_response(
 }
 
 fn classify_command_transport_error(
-    error: crate::infrastructure::station_client::StationClientError,
+    error: crate::application::station_runtime::client::StationClientError,
 ) -> CommandSubmitFailure {
     match error.kind {
         StationClientErrorKind::Network => CommandSubmitFailure::Retryable {
@@ -857,6 +883,16 @@ fn classify_command_transport_error(
         StationClientErrorKind::SessionRevoked => CommandSubmitFailure::Retryable {
             code: "session_revoked".to_string(),
         },
+        StationClientErrorKind::Overloaded
+        | StationClientErrorKind::Cancelled
+        | StationClientErrorKind::StaleRoute
+        | StationClientErrorKind::NoRoute => CommandSubmitFailure::Retryable {
+            code: "station_unavailable".to_string(),
+        },
+        StationClientErrorKind::RoutePolicyConflict => CommandSubmitFailure::Terminal {
+            code: "station_route_policy_conflict".to_string(),
+        },
+        StationClientErrorKind::AmbiguousOutcome => CommandSubmitFailure::Ambiguous,
         StationClientErrorKind::Decode | StationClientErrorKind::InvalidResponse => {
             CommandSubmitFailure::Retryable {
                 code: "invalid_response".to_string(),
@@ -866,11 +902,19 @@ fn classify_command_transport_error(
 }
 
 impl StationDeviceTransport {
-    pub fn new(token: String, device_id: String) -> Result<Self, String> {
+    pub fn new(
+        station_client: StationClient,
+        token: String,
+        device_id: String,
+    ) -> Result<Self, String> {
         if token.trim().is_empty() || device_id.trim().is_empty() {
             return Err("messaging device transport requires token and device ID".to_string());
         }
-        Ok(Self { token, device_id })
+        Ok(Self {
+            station_client,
+            token,
+            device_id,
+        })
     }
 
     pub fn enroll(
@@ -889,15 +933,16 @@ impl StationDeviceTransport {
         if device.device_id != self.device_id {
             return Err("messaging enrollment device does not match engine endpoint".to_string());
         }
-        station_client::request_proto_for_device(
-            Method::POST,
-            "/device/enroll",
-            &self.token,
-            None,
-            Some(request),
-            &self.device_id,
-        )
-        .map_err(|error| error.to_string())
+        self.station_client
+            .request_proto_for_device(
+                Method::POST,
+                "/device/enroll",
+                &self.token,
+                None,
+                Some(request),
+                &self.device_id,
+            )
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -915,22 +960,23 @@ impl QueueTransport for StationQueueTransport {
         if request.device.as_ref() != Some(&self.device) {
             return Err("messaging claim device does not match engine endpoint".to_string());
         }
-        station_client::request_proto_for_device(
-            Method::POST,
-            "/device/inbox/claim",
-            &self.token,
-            None,
-            Some(&request),
-            &self.device.device_id,
-        )
-        .map_err(|error| error.to_string())
+        self.station_client
+            .request_proto_for_device(
+                Method::POST,
+                "/device/inbox/claim",
+                &self.token,
+                None,
+                Some(&request),
+                &self.device.device_id,
+            )
+            .map_err(|error| error.to_string())
     }
 
     fn acknowledge(&self, request: AcknowledgeDeviceInboxItemRequest) -> Result<(), String> {
         if request.device.as_ref() != Some(&self.device) {
             return Err("messaging ACK device does not match engine endpoint".to_string());
         }
-        station_client::request_proto_for_device::<
+        self.station_client.request_proto_for_device::<
             AcknowledgeDeviceInboxItemRequest,
             AcknowledgeDeviceInboxItemResponse,
         >(
@@ -1165,7 +1211,7 @@ mod tests {
         ] {
             assert_eq!(
                 classify_command_transport_error(
-                    crate::infrastructure::station_client::StationClientError {
+                    crate::application::station_runtime::client::StationClientError {
                         kind,
                         message: "ambiguous response".to_string(),
                         details: None,

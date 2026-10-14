@@ -98,13 +98,13 @@ Non-knowledge files (`README.md`, `_TEMPLATE.md`, `glossary.md`) are exempt.
 
 ## 4. Lifecycle
 
-| Event | Action |
-|-------|--------|
-| Bug shipped, root cause identified | Add a `pitfall/` entry in the same PR as the fix |
-| Invariant discovered (e.g. during review) | Add an `invariant/` entry, link it from any subsystem `CONSTRAINTS.md` |
-| Same task done ≥ 2× with the same shape | Promote the procedure to a `playbook/` |
-| Knowledge becomes obsolete | Mark `status: superseded-by:<path>` and link to the replacement; never delete |
-| New term coined for the domain | Add to `glossary.md` |
+| Event                                     | Action                                                                        |
+| ----------------------------------------- | ----------------------------------------------------------------------------- |
+| Bug shipped, root cause identified        | Add a `pitfall/` entry in the same PR as the fix                              |
+| Invariant discovered (e.g. during review) | Add an `invariant/` entry, link it from any subsystem `CONSTRAINTS.md`        |
+| Same task done ≥ 2× with the same shape   | Promote the procedure to a `playbook/`                                        |
+| Knowledge becomes obsolete                | Mark `status: superseded-by:<path>` and link to the replacement; never delete |
+| New term coined for the domain            | Add to `glossary.md`                                                          |
 
 Promotion path:
 
@@ -151,6 +151,8 @@ Pick one based on intent:
 ### Invariants (active)
 
 - [`invariants/relay-readloop-discipline.md`](invariants/relay-readloop-discipline.md) — readLoop goroutines must dispatch blocking work asynchronously.
+- [`invariants/relay-runtime-role-is-minimal.md`](invariants/relay-runtime-role-is-minimal.md) — Relay composition is deny-by-default and fails closed on missing transport/operator security.
+- [`invariants/circuit-relay-control-plane-boundary.md`](invariants/circuit-relay-control-plane-boundary.md) — Circuit Relay stays an opaque standard data plane with fenced admission and independent reservations.
 - [`invariants/locator-publisher-symmetry.md`](invariants/locator-publisher-symmetry.md) — `PublishVisibility` callers split into "user-driven" (broadcast) and "maintenance" (no broadcast); no third category.
 - [`invariants/chat-message-boundaries.md`](invariants/chat-message-boundaries.md) — Chat message content must not be covered by actions, metadata, composers, safe areas, or floating layers.
 - [`invariants/mobile-chat-layout-boundaries.md`](invariants/mobile-chat-layout-boundaries.md) — Mobile Chat bottom layers must participate in one bottom clearance model.
@@ -162,17 +164,20 @@ Pick one based on intent:
 - [`invariants/actor-presence-ownership.md`](invariants/actor-presence-ownership.md) — actor presence belongs to the global presence owner, not chat subservers or chat proto models.
 - [`invariants/direct-receipt-endpoint-truth.md`](invariants/direct-receipt-endpoint-truth.md) — Direct receipt aggregation uses immutable event commitments, not Group/MLS device rows.
 - [`invariants/dev-resource-declaration-before-write.md`](invariants/dev-resource-declaration-before-write.md) — non-trivial work publishes machine-visible source/runtime intent before mutation and releases it after cleanup.
+- [`invariants/machine-ledger-workspace-isolation.md`](invariants/machine-ledger-workspace-isolation.md) — machine ledgers provide one conflict view while schema and lifecycle mutation remain scoped to the selected workspace.
 - [`invariants/stable-plan-amendments.md`](invariants/stable-plan-amendments.md) — one stable Plan absorbs ordinary execution corrections through audited amendments without remounting.
 - [`invariants/bound-plan-acceptance-impact-is-scoped.md`](invariants/bound-plan-acceptance-impact-is-scoped.md) — a bound Plan computes Acceptance impact only from its exclusive-write source closure.
 - [`invariants/workspace-active-work-is-local.md`](invariants/workspace-active-work-is-local.md) — workflow code is distributed, while each consuming worktree exclusively owns its own machine-local active-work record.
 - [`invariants/continuous-plan-run.md`](invariants/continuous-plan-run.md) — one authorized Plan Run continues across Task, Goal, review, Anchor, and context boundaries until completion or a true hard stop.
 - [`invariants/host-neutral-agent-execution.md`](invariants/host-neutral-agent-execution.md) — project scheduling, runtime verification, Session, evidence, and cleanup semantics remain independent of TRAE, Cursor, Codex, or future hosts.
 - [`invariants/user-skill-overlays-are-interaction-only.md`](invariants/user-skill-overlays-are-interaction-only.md) — machine-local user overlays may shape interaction only and cannot alter project execution semantics.
-- [`invariants/conversation-bound-workflow-kernel.md`](invariants/conversation-bound-workflow-kernel.md) — one host conversation has one immutable execution root; tool subject roots cannot silently change write authority.
+- [`invariants/owner-rooted-workflow-binding.md`](invariants/owner-rooted-workflow-binding.md) — one host conversation has stable OWNER identity; each mutation selects one workspace and assigned children remain workspace-bound.
 - [`invariants/worktree-observation-is-diagnostic.md`](invariants/worktree-observation-is-diagnostic.md) — each worktree owns its opportunity report while Dev UI discovery and freshness remain non-authoritative.
 - [`invariants/desktop-vite-entry-readiness.md`](invariants/desktop-vite-entry-readiness.md) — Desktop startup and reuse require the Vite renderer entry module to respond successfully.
 - [`invariants/acceptance-suite-runtime-reuse.md`](invariants/acceptance-suite-runtime-reuse.md) — multi-scenario Acceptance provisions expensive resources once at Suite scope and keeps Scenarios attach-only.
 - [`invariants/desktop-sqlite-path-budget.md`](invariants/desktop-sqlite-path-budget.md) — Desktop database paths compact oversized identity-derived scopes without changing encryption identity or existing short paths.
+- [`invariants/desktop-actor-identity-scope-migration.md`](invariants/desktop-actor-identity-scope-migration.md) — Desktop Actor identity scope changes migrate the Station-anchored seed and preserve the local device identity.
+- [`invariants/mobile-user-identity-visual-consistency.md`](invariants/mobile-user-identity-visual-consistency.md) — Mobile user identities use one rounded-square avatar primitive and one canonical actor projection across Social surfaces.
 
 ### Pitfalls
 

@@ -250,45 +250,36 @@ The source of truth is always the `.proto`, never the generated file.
   - `docs/client/mobile/base.md`
 - Project identity:
   - `docs/global/project-identity.md`
+- Node connectivity and Relay:
+  - `docs/architecture/platform/runtime/node-connectivity/README.md`
 
 ### Mobile Relay Security
-- **TLS**: Production Mobile ↔ Station communication uses TLS. Plain HTTP is
-  permitted only by an explicit development profile and cannot establish
-  production credential/OAuth trust.
-- **Station identity (proposed Mobile amendment)**: Client scope is pinned to a
-  signed `station_peer_id`; URL is a connection hint, not identity. This becomes
-  active with explicit Mobile PRODUCT/DESIGN acceptance.
-- **Station Relay Authentication**: Relay messages authenticated via JWT
-- **No direct peer exposure**: Mobile clients never expose network endpoints
+- **Station identity**: Client scope is pinned to logical `station_peer_id`;
+  authorized Node PeerID, URL and Relay identity are route hints only.
+- **End-to-end TLS**: When Mobile uses Relay, TLS 1.3 terminates at Station and
+  its SPKI is pinned by the Station-signed route attestation.
+- **Relay opacity**: Relay sees Circuit metadata and bounded ciphertext, not
+  Station Session credentials or business payload.
+- **No general peer mesh**: the target Mobile transport uses a dial-only Host;
+  it exposes no application listener, Relay service or Federation authority.
 
 ---
 
 ## 📡 Network Topology
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                   Federation Network                     │
-│                                                           │
-│  ┌─────────┐         ┌─────────┐         ┌─────────┐  │
-│  │Station 1│◄───────►│Station 2│◄───────►│Station 3│  │
-│  └────┬────┘         └────┬────┘         └────┬────┘  │
-│       │                   │                   │         │
-│       │  ActivityPub      │                   │         │
-│       │  Federation       │                   │         │
-└───────┼───────────────────┼───────────────────┼─────────┘
-        │                   │                   │
-        │                   │                   │
-   ┌────▼────┐         ┌────▼────┐         ┌────▼────┐
-   │ Desktop │◄───────►│ Desktop │◄───────►│ Desktop │
-   │ (Alice) │  P2P    │  (Bob)  │  P2P    │(Charlie)│
-   └─────────┘  libp2p └─────────┘  libp2p └─────────┘
-        ▲                   ▲                   ▲
-        │ Station            │ Station            │ Station
-        │ Relay              │ Relay              │ Relay
-   ┌────┴────┐         ┌────┴────┐         ┌────┴────┐
-   │ Mobile  │         │ Mobile  │         │ Mobile  │
-   │ (Alice) │         │  (Bob)  │         │(Charlie)│
-   └─────────┘         └─────────┘         └─────────┘
+Desktop / Mobile
+        │
+        │ direct HTTPS or secure libp2p Direct / Circuit v2
+        ▼
+   Home Station
+        │
+        │ typed Station-to-Station delivery
+        ▼
+  Remote Station
+
+Optional Relay roles provide opaque routes for both client and peer traffic.
+They do not own Station identity, Federation membership or business payload.
 ```
 
 ---
@@ -322,10 +313,11 @@ The source of truth is always the `.proto`, never the generated file.
 - Subservers are independent
 - Easy to add/remove modules
 
-### 6. **Mobile: Station Relay, No P2P**
-- Mobile 端不内置 libp2p，不参与 P2P mesh
-- 所有实时消息通过 Station Relay 中转，降低移动端复杂度与功耗
-- Desktop 端保留 P2P + Relay 混合策略
+### 6. **Mobile: Station Access, No Peer Mesh**
+- Mobile 的目标 Native transport 使用 dial-only libp2p Host，不参与公共 P2P mesh
+- Mobile 通过 direct Station API 或已验证 Node 的 Circuit route 接入同一逻辑 Station
+- Relay 不终止 Station Session 或业务 TLS
+- Desktop/Mobile route 差异不改变 shared business scope
 
 ### 7. **Applet Container: Lynx**
 - Applet / 小程序运行时以 [Lynx](https://github.com/lynx-family/lynx) 为跨端容器方向
@@ -351,11 +343,11 @@ Developer Machine
 User's Home Network
 ├── Station (Docker container on NAS/Raspberry Pi)
 │   ├── PostgreSQL (data)
-│   ├── Frame + Subservers
-│   └── Relay service (for mobile clients)
+│   └── Frame + Subservers
+├── Optional external Relay role (same binary, isolated process)
 └── Clients
-    ├── Desktop app — P2P + Station API
-    └── Mobile app (Android / iOS) — Station Relay + Station API
+    ├── Desktop app — direct or standard Relay Circuit Station transport
+    └── Mobile app — direct or standard Relay Circuit Station transport
 ```
 
 ### Federated Network
@@ -363,9 +355,15 @@ User's Home Network
 Internet
 ├── Station A (alice.peers.com)
 ├── Station B (bob.peers.org)
-└── Station C (charlie.peers.net)
-    └── All federate via ActivityPub
+├── Station C (charlie.peers.net)
+└── Optional Relay roles for private/NAT Station reachability
 ```
+
+One logical Station may contain one or multiple physical Station nodes. Every
+node has its own PeerID and signed root authorization; N>1 requires shared
+database/object state, durable events and domain fencing. Ingress stays inside
+Frame. Target contracts and outstanding proof are defined by Node Connectivity;
+this topology is not a claim that cluster deployment has already been verified.
 
 ---
 

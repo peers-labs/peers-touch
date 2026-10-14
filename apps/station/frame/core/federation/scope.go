@@ -32,37 +32,47 @@ const (
 	KeyExchangeMLSFetchScope = "key-exchange-mls-key-package-fetch"
 	// KeyExchangeMLSClaimScope authenticates irreversible MLS KeyPackage claims.
 	KeyExchangeMLSClaimScope = "key-exchange-mls-key-package-claim"
+	// KeyExchangeContentPreKeyClaimScope authenticates irreversible Content PreKey claims.
+	KeyExchangeContentPreKeyClaimScope = "key-exchange-content-prekey-claim"
+	// KeyExchangeContentPreKeyValidateScope authenticates read-only Content PreKey validation.
+	KeyExchangeContentPreKeyValidateScope = "key-exchange-content-prekey-validate"
 	// RealtimeSignalScope authenticates cross-Station realtime signal forwarding.
 	RealtimeSignalScope = "realtime-signal-forward"
 	// RealtimeCallResolutionScope authenticates caller readback at the callee Home Station.
 	RealtimeCallResolutionScope = "realtime-call-resolution-read"
 	// GroupCallAuthorityJoinScope authenticates Conversation Authority token issuance.
 	GroupCallAuthorityJoinScope = "group-call-authority-join"
+	// SocialPrivateObjectReadScope authenticates one bounded private-object range read.
+	SocialPrivateObjectReadScope = "social-private-object-read"
 
-	ClaimFrameID               = "frame_id"
-	ClaimIdempotencyKey        = "idempotency_key"
-	ClaimSourceStationPeerID   = "source_station_peer_id"
-	ClaimTargetStationPeerID   = "target_station_peer_id"
-	ClaimConversationID        = "conversation_id"
-	ClaimFollowerRequestSHA256 = "request_sha256"
-	ClaimFederationID          = "federation_id"
-	ClaimActorPTID             = "actor_ptid"
-	ClaimDeviceID              = "device_id"
-	ClaimIntentID              = "intent_id"
-	ClaimAuthorityEpoch        = "authority_epoch"
-	ClaimAttachmentAction      = "attachment_action"
-	ClaimAttachmentResourceID  = "attachment_resource_id"
-	ClaimTargetDeviceID        = "target_device_id"
-	ClaimRequestID             = "request_id"
-	ClaimRequesterPTID         = "requester_ptid"
-	ClaimRequesterDeviceID     = "requester_device_id"
-	ClaimAuthorityPlanID       = "authority_plan_id"
-	ClaimPlanExpiresAt         = "plan_expires_at"
-	ClaimPresenceRequestSHA256 = "presence_request_sha256"
-	ClaimSenderPTID            = "sender_ptid"
-	ClaimRecipientPTID         = "recipient_ptid"
-	ClaimSessionULID           = "session_ulid"
-	ClaimCallID                = "call_id"
+	ClaimFrameID                 = "frame_id"
+	ClaimIdempotencyKey          = "idempotency_key"
+	ClaimSourceStationPeerID     = "source_station_peer_id"
+	ClaimTargetStationPeerID     = "target_station_peer_id"
+	ClaimConversationID          = "conversation_id"
+	ClaimFollowerRequestSHA256   = "request_sha256"
+	ClaimFederationID            = "federation_id"
+	ClaimActorPTID               = "actor_ptid"
+	ClaimDeviceID                = "device_id"
+	ClaimIntentID                = "intent_id"
+	ClaimAuthorityEpoch          = "authority_epoch"
+	ClaimAttachmentAction        = "attachment_action"
+	ClaimAttachmentResourceID    = "attachment_resource_id"
+	ClaimTargetDeviceID          = "target_device_id"
+	ClaimRequestID               = "request_id"
+	ClaimRequesterPTID           = "requester_ptid"
+	ClaimRequesterDeviceID       = "requester_device_id"
+	ClaimAuthorityPlanID         = "authority_plan_id"
+	ClaimPlanExpiresAt           = "plan_expires_at"
+	ClaimPlanRequestSHA256       = "plan_request_sha256"
+	ClaimCanonicalRequestSHA256  = "canonical_request_sha256"
+	ClaimCanonicalResponseSHA256 = "canonical_response_sha256"
+	ClaimCallID                  = "call_id"
+	ClaimPresenceRequestSHA256   = "presence_request_sha256"
+	ClaimSenderPTID              = "sender_ptid"
+	ClaimRecipientPTID           = "recipient_ptid"
+	ClaimSessionULID             = "session_ulid"
+	ClaimObjectID                = "object_id"
 )
 
 var peerScopes = []scope.Scope{
@@ -234,6 +244,39 @@ var peerScopes = []scope.Scope{
 		},
 	},
 	{
+		Name:        KeyExchangeContentPreKeyClaimScope,
+		Description: "irreversibly claim Content PreKeys from their Home Station",
+		Policy: scope.Policy{
+			TTLMax:           time.Minute,
+			AudienceRequired: true,
+			AllowedClaimKeys: []string{
+				ClaimFederationID,
+				ClaimAuthorityPlanID,
+				ClaimPlanRequestSHA256,
+				ClaimCanonicalRequestSHA256,
+				ClaimSourceStationPeerID,
+				ClaimTargetStationPeerID,
+			},
+		},
+	},
+	{
+		Name:        KeyExchangeContentPreKeyValidateScope,
+		Description: "validate exact Content PreKey claims at their Home Station",
+		Policy: scope.Policy{
+			TTLMax:           time.Minute,
+			AudienceRequired: true,
+			AllowedClaimKeys: []string{
+				ClaimFederationID,
+				ClaimAuthorityPlanID,
+				ClaimPlanRequestSHA256,
+				ClaimCanonicalRequestSHA256,
+				ClaimCanonicalResponseSHA256,
+				ClaimSourceStationPeerID,
+				ClaimTargetStationPeerID,
+			},
+		},
+	},
+	{
 		Name:        RealtimeSignalScope,
 		Description: "forward a realtime call signal to a recipient's Home Station",
 		Policy: scope.Policy{
@@ -275,6 +318,23 @@ var peerScopes = []scope.Scope{
 				ClaimAuthorityEpoch,
 				ClaimSourceStationPeerID,
 				ClaimTargetStationPeerID,
+			},
+		},
+	},
+	{
+		Name:        SocialPrivateObjectReadScope,
+		Description: "read one bounded source-authorized Social private-object range",
+		Policy: scope.Policy{
+			TTLMax:           time.Minute,
+			AudienceRequired: true,
+			AllowedClaimKeys: []string{
+				ClaimFederationID,
+				ClaimSourceStationPeerID,
+				ClaimTargetStationPeerID,
+				ClaimActorPTID,
+				ClaimDeviceID,
+				ClaimObjectID,
+				ClaimCanonicalRequestSHA256,
 			},
 		},
 	},

@@ -8,6 +8,7 @@ import (
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Bootstrap migrates the OSS database to the current schema version
@@ -72,10 +73,15 @@ func Bootstrap(ctx context.Context, deps BootstrapDeps) (*BootstrapResult, error
 	if err := db.AutoMigrate(
 		&ossmodel.Audit{},
 		&ossmodel.Blob{},
+		&ossmodel.BlobGCGeneration{},
 		&ossmodel.Bucket{},
 		&ossmodel.FileMeta{},
 		&ossmodel.Meta{},
+		&ossmodel.WorkerLease{},
 	); err != nil {
+		return nil, err
+	}
+	if err := MigrateBlobGenerations(db); err != nil {
 		return nil, err
 	}
 	// Drop legacy OSS-owned federation table if it lingers from
@@ -127,6 +133,27 @@ func Bootstrap(ctx context.Context, deps BootstrapDeps) (*BootstrapResult, error
 	return &BootstrapResult{ElapsedMs: time.Since(start).Milliseconds()}, nil
 }
 
+// MigrateBlobGenerations gives pre-NCP rows an explicit immutable
+// generation without moving or deleting bytes.
+func MigrateBlobGenerations(db *gorm.DB) error {
+	if db == nil || !db.Migrator().HasTable((&ossmodel.Blob{}).TableName()) {
+		return nil
+	}
+	if err := db.Model(&ossmodel.Blob{}).
+		Where("generation = 0").
+		Update("generation", 1).Error; err != nil {
+		return err
+	}
+	if err := db.Model(&ossmodel.Blob{}).
+		Where("storage_key = '' OR storage_key IS NULL").
+		Update("storage_key", gorm.Expr("key")).Error; err != nil {
+		return err
+	}
+	return db.Model(&ossmodel.Blob{}).
+		Where("lifecycle_state = '' OR lifecycle_state IS NULL").
+		Update("lifecycle_state", ossmodel.BlobLifecycleLive).Error
+}
+
 // MigratePTIDColumns performs the one-way W1 identity schema cut before
 // AutoMigrate sees the canonical models. It is safe to call repeatedly.
 func MigratePTIDColumns(db *gorm.DB) error {
@@ -168,20 +195,17 @@ func readSchemaVersion(db *gorm.DB) (string, error) {
 }
 
 func writeSchemaVersion(db *gorm.DB, now time.Time, version string) error {
-	res := db.Model(&ossmodel.Meta{}).
-		Where("key = ?", ossmodel.MetaKeySchemaVersion).
-		Updates(map[string]any{"value": version, "updated_at": now})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return db.Create(&ossmodel.Meta{
-			Key:       ossmodel.MetaKeySchemaVersion,
-			Value:     version,
-			UpdatedAt: now,
-		}).Error
-	}
-	return nil
+	return db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "key"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"value":      version,
+			"updated_at": now,
+		}),
+	}).Create(&ossmodel.Meta{
+		Key:       ossmodel.MetaKeySchemaVersion,
+		Value:     version,
+		UpdatedAt: now,
+	}).Error
 }
 
 // ensureCapabilityVersion mints a fresh ULID into
@@ -198,7 +222,10 @@ func ensureCapabilityVersion(db *gorm.DB, now time.Time) error {
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
-	return db.Create(&ossmodel.Meta{
+	return db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "key"}},
+		DoNothing: true,
+	}).Create(&ossmodel.Meta{
 		Key:       ossmodel.MetaKeyCapabilityVersion,
 		Value:     newULID(now),
 		UpdatedAt: now,

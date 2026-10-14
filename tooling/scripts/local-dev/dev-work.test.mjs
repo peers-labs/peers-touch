@@ -158,6 +158,51 @@ test('publishes a closed declaration with owner-only storage', () => {
   }
 });
 
+test('coordinates with a foreign legacy declaration without mutating it', () => {
+  const scope = fixture();
+  try {
+    const foreign = startOrUpdateDeclaration(
+      options(scope, {
+        workspaceRoot: scope.workspaceB,
+        workItemId: 'foreign-work',
+        sessionId: 'foreign-session',
+        branch: 'foreign-branch',
+        sourceClaims: 'exclusive-write:apps/mobile',
+        runtimeClaims: 'exclusive:profile:foreign-profile',
+      }),
+    );
+    const ledgerFile = path.join(scope.home, '.peers-touch', 'dev', 'work.json');
+    const seeded = JSON.parse(readFileSync(ledgerFile, 'utf8'));
+    const legacy = seeded.declarations[foreign.declarationId];
+    legacy.planVersionDigest = legacy.planDigest;
+    delete legacy.planDigest;
+    legacy.declarationDigest = digestDeclaration(legacy);
+    writeFileSync(ledgerFile, `${JSON.stringify(seeded, null, 2)}\n`);
+
+    const current = startOrUpdateDeclaration(options(scope));
+    const persisted = JSON.parse(readFileSync(ledgerFile, 'utf8'));
+
+    assert.equal(current.workspaceId === foreign.workspaceId, false);
+    assert.deepEqual(persisted.declarations[foreign.declarationId], legacy);
+    assert.equal(
+      Object.hasOwn(
+        persisted.declarations[current.declarationId],
+        'planVersionDigest',
+      ),
+      false,
+    );
+    assert.equal(
+      Object.hasOwn(
+        persisted.declarations[current.declarationId],
+        'planDigest',
+      ),
+      true,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
 test('persists the verified main-session owner on a declaration', () => {
   const scope = fixture();
   try {
@@ -753,6 +798,59 @@ test('heartbeat, activation, release, and restart obey lifecycle ownership', () 
         }),
       ).sessionId,
       'session-b',
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('ownerless legacy recovery releases only stale ownerless declarations', () => {
+  const scope = fixture();
+  try {
+    const created = startOrUpdateDeclaration(
+      options(scope, { expiresMinutes: 1 }),
+    );
+    const ledgerFile = path.join(
+      scope.home,
+      '.peers-touch',
+      'dev',
+      'work.json',
+    );
+    const ledger = JSON.parse(readFileSync(ledgerFile, 'utf8'));
+    const legacy = ledger.declarations[created.declarationId];
+    legacy.state = 'STALE';
+    delete legacy.workflowOwner;
+    legacy.declarationDigest = digestDeclaration(legacy);
+    writeFileSync(ledgerFile, `${JSON.stringify(ledger, null, 2)}\n`);
+
+    const released = releaseDeclaration({
+      home: scope.home,
+      workspaceRoot: scope.workspaceA,
+      workItemId: created.workItemId,
+      owner: created.owner,
+      allowOwnerlessLegacyRecovery: true,
+      clock: clock('2026-09-16T12:02:00.000Z'),
+    });
+    assert.equal(released.state, 'RELEASED');
+
+    const ownerBound = startOrUpdateDeclaration(
+      options(scope, {
+        workspaceRoot: scope.workspaceB,
+        workItemId: 'owner-bound',
+        sessionId: 'owner-bound-session',
+        branch: 'owner-bound-branch',
+        sourceHead: '8'.repeat(40),
+      }),
+    );
+    expectCode('WORK_DECLARATION_OWNER_MISMATCH', () =>
+      releaseDeclaration({
+        home: scope.home,
+        workspaceRoot: scope.workspaceB,
+        workItemId: ownerBound.workItemId,
+        owner: ownerBound.owner,
+        allowOwnerlessLegacyRecovery: true,
+        clock: clock('2026-09-16T12:02:00.000Z'),
+      }),
     );
   } finally {
     scope.close();

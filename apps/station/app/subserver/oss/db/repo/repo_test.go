@@ -59,6 +59,8 @@ func initStore(t *testing.T) *gorm.DB {
 			&ossmodel.Audit{},
 			&ossmodel.Meta{},
 			&ossmodel.Blob{},
+			&ossmodel.BlobGCGeneration{},
+			&ossmodel.WorkerLease{},
 		)
 		if storeErr != nil {
 			return
@@ -79,7 +81,7 @@ func initStore(t *testing.T) *gorm.DB {
 // shared cache.
 func reset(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	for _, table := range []string{"oss_files", "oss_buckets", "oss_audit", "oss_meta", "oss_blobs"} {
+	for _, table := range []string{"oss_files", "oss_buckets", "oss_audit", "oss_meta", "oss_blobs", "oss_blob_gc_generations", "oss_worker_leases"} {
 		if err := db.Exec("DELETE FROM " + table).Error; err != nil {
 			t.Fatalf("reset %s: %v", table, err)
 		}
@@ -525,21 +527,38 @@ func TestBootstrap_StampsSchemaVersionAndIsIdempotent(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// BlobRepository tests — Touch / Release / GC candidate semantics.
+// BlobRepository tests — staged reference / Release / GC semantics.
 // ---------------------------------------------------------------------------
 
-func TestBlobRepo_TouchInsertsThenIncrementsRefCount(t *testing.T) {
+func commitBlobReference(
+	t *testing.T,
+	repository BlobRepository,
+	ctx context.Context,
+	backend string,
+	key string,
+	size int64,
+	digest string,
+) *ossmodel.Blob {
+	t.Helper()
+	write, err := repository.StageWrite(ctx, backend, key, size, digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := repository.CommitWrite(ctx, *write)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return row
+}
+
+func TestBlobRepo_StageCommitInsertsThenIncrementsRefCount(t *testing.T) {
 	db := initStore(t)
 	reset(t, db)
 
 	r := NewBlobRepository("default")
 	ctx := context.Background()
 
-	// First Touch is an insert.
-	row, err := r.Touch(ctx, "local", "cas/aa/abc", 42, "deadbeef")
-	if err != nil {
-		t.Fatalf("touch insert: %v", err)
-	}
+	row := commitBlobReference(t, r, ctx, "local", "cas/aa/abc", 42, "deadbeef")
 	if row.RefCount != 1 {
 		t.Fatalf("expected ref_count=1 on insert, got %d", row.RefCount)
 	}
@@ -547,12 +566,7 @@ func TestBlobRepo_TouchInsertsThenIncrementsRefCount(t *testing.T) {
 		t.Fatalf("insert payload mismatch: %+v", row)
 	}
 
-	// Second Touch increments. Size + sha bytes are *not* mutated
-	// on the increment path — same content, by definition.
-	row2, err := r.Touch(ctx, "local", "cas/aa/abc", 999, "ignored")
-	if err != nil {
-		t.Fatalf("touch increment: %v", err)
-	}
+	row2 := commitBlobReference(t, r, ctx, "local", "cas/aa/abc", 42, "deadbeef")
 	if row2.RefCount != 2 {
 		t.Fatalf("expected ref_count=2 after increment, got %d", row2.RefCount)
 	}
@@ -570,15 +584,72 @@ func TestBlobRepo_TouchInsertsThenIncrementsRefCount(t *testing.T) {
 	}
 }
 
+func TestBlobRepo_ConcurrentFirstStageConverges(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	repository := NewBlobRepository("default")
+	start := make(chan struct{})
+	type stageResult struct {
+		write *BlobWrite
+		err   error
+	}
+	results := make(chan stageResult, 2)
+	for range 2 {
+		go func() {
+			<-start
+			write, err := repository.StageWrite(
+				context.Background(),
+				"local",
+				"cas/aa/concurrent-first",
+				42,
+				"concurrent-digest",
+			)
+			results <- stageResult{write: write, err: err}
+		}()
+	}
+	close(start)
+
+	first := <-results
+	second := <-results
+	if first.err != nil || second.err != nil {
+		t.Fatalf(
+			"concurrent first stage errors: first=%v second=%v",
+			first.err,
+			second.err,
+		)
+	}
+	if first.write == nil || second.write == nil ||
+		first.write.Generation != second.write.Generation ||
+		first.write.StorageKey != second.write.StorageKey {
+		t.Fatalf(
+			"concurrent stages diverged: first=%+v second=%+v",
+			first.write,
+			second.write,
+		)
+	}
+	var count int64
+	if err := db.Model(&ossmodel.Blob{}).
+		Where(
+			"backend = ? AND key = ?",
+			"local",
+			"cas/aa/concurrent-first",
+		).
+		Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("concurrent first stage created %d rows", count)
+	}
+}
+
 func TestBlobRepo_ReleaseDecrementsToZeroAndStops(t *testing.T) {
 	db := initStore(t)
 	reset(t, db)
 
 	r := NewBlobRepository("default")
 	ctx := context.Background()
-	if _, err := r.Touch(ctx, "local", "cas/bb/xyz", 7, "feedface"); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
+	commitBlobReference(t, r, ctx, "local", "cas/bb/xyz", 7, "feedface")
 
 	// First Release — counter goes 1 -> 0, dropped flag fires.
 	count, dropped, err := r.Release(ctx, "local", "cas/bb/xyz")
@@ -626,12 +697,8 @@ func TestBlobRepo_ListGCCandidatesFiltersByRefAndAge(t *testing.T) {
 	ctx := context.Background()
 
 	// Seed two rows with different refcount + last_seen_at.
-	if _, err := r.Touch(ctx, "local", "cas/old/zero", 1, "h1"); err != nil {
-		t.Fatalf("seed old: %v", err)
-	}
-	if _, err := r.Touch(ctx, "local", "cas/young/one", 1, "h2"); err != nil {
-		t.Fatalf("seed young: %v", err)
-	}
+	commitBlobReference(t, r, ctx, "local", "cas/old/zero", 1, "h1")
+	commitBlobReference(t, r, ctx, "local", "cas/young/one", 1, "h2")
 	// Drop the first to ref_count=0 and back-date its last_seen_at.
 	if _, _, err := r.Release(ctx, "local", "cas/old/zero"); err != nil {
 		t.Fatalf("release: %v", err)
@@ -652,6 +719,134 @@ func TestBlobRepo_ListGCCandidatesFiltersByRefAndAge(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Key != "cas/old/zero" {
 		t.Fatalf("expected only old/zero; got %+v", got)
+	}
+}
+
+func TestBlobRepo_ReplacementGenerationRejectsStaleGCCompletion(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+	ctx := context.Background()
+	repository := NewBlobRepository("default")
+
+	initial := commitBlobReference(
+		t, repository, ctx, "local", "cas/aa/generation-race", 12, "old-digest",
+	)
+	if _, _, err := repository.Release(ctx, initial.Backend, initial.Key); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().UTC().Add(-2 * time.Hour)
+	if err := db.Model(&ossmodel.Blob{}).
+		Where("backend = ? AND key = ?", initial.Backend, initial.Key).
+		Update("last_seen_at", old).Error; err != nil {
+		t.Fatal(err)
+	}
+	leaseNow := time.Now().UTC()
+	authority := BlobGCAuthority{
+		WorkerName:       "blob_gc",
+		OwnerNodePeerID:  "node-a",
+		OwnerIncarnation: "incarnation-a",
+		FencingToken:     1,
+	}
+	if err := db.Create(&ossmodel.WorkerLease{
+		WorkerName:       authority.WorkerName,
+		OwnerNodePeerID:  authority.OwnerNodePeerID,
+		OwnerIncarnation: authority.OwnerIncarnation,
+		FencingToken:     authority.FencingToken,
+		Status:           "held",
+		AcquiredAt:       leaseNow,
+		HeartbeatAt:      leaseNow,
+		ExpiresAt:        leaseNow.Add(time.Minute),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := repository.Get(ctx, initial.Backend, initial.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := repository.ClaimGC(
+		ctx,
+		*candidate,
+		time.Now().UTC().Add(-time.Hour),
+		authority,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	replacement, err := repository.StageWrite(
+		ctx,
+		initial.Backend,
+		initial.Key,
+		15,
+		"replacement-digest",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replacement.Generation != claim.Generation+1 ||
+		replacement.StorageKey == claim.StorageKey ||
+		!replacement.RequiresWrite {
+		t.Fatalf("replacement generation did not advance immutably: claim=%+v write=%+v", claim, replacement)
+	}
+	if _, err := repository.CommitWrite(ctx, *replacement); err != nil {
+		t.Fatal(err)
+	}
+	takeoverAuthority := BlobGCAuthority{
+		WorkerName:       authority.WorkerName,
+		OwnerNodePeerID:  "node-b",
+		OwnerIncarnation: "incarnation-b",
+		FencingToken:     authority.FencingToken + 1,
+	}
+	if result := db.Model(&ossmodel.WorkerLease{}).
+		Where("worker_name = ? AND fencing_token = ?", authority.WorkerName, authority.FencingToken).
+		Updates(map[string]any{
+			"owner_node_peer_id": takeoverAuthority.OwnerNodePeerID,
+			"owner_incarnation":  takeoverAuthority.OwnerIncarnation,
+			"fencing_token":      takeoverAuthority.FencingToken,
+			"expires_at":         time.Now().UTC().Add(time.Minute),
+		}); result.Error != nil || result.RowsAffected != 1 {
+		t.Fatalf("take over worker lease: rows=%d err=%v", result.RowsAffected, result.Error)
+	}
+	if err := repository.CompleteGC(ctx, *claim); !errors.Is(err, ErrBlobGCClaimStale) {
+		t.Fatalf("stale GC completion error = %v, want %v", err, ErrBlobGCClaimStale)
+	}
+	takeoverClaim, err := repository.ClaimGC(
+		ctx,
+		*candidate,
+		time.Now().UTC().Add(-time.Hour),
+		takeoverAuthority,
+	)
+	if err != nil {
+		t.Fatalf("take over old generation cleanup: %v", err)
+	}
+	if takeoverClaim.FencingToken != takeoverAuthority.FencingToken {
+		t.Fatalf("takeover claim token=%d want=%d", takeoverClaim.FencingToken, takeoverAuthority.FencingToken)
+	}
+	if err := repository.CompleteGC(ctx, *takeoverClaim); !errors.Is(err, ErrBlobGCClaimStale) {
+		t.Fatalf("replacement-aware cleanup completion error=%v want=%v", err, ErrBlobGCClaimStale)
+	}
+	var generationClaims int64
+	if err := db.Model(&ossmodel.BlobGCGeneration{}).Count(&generationClaims).Error; err != nil {
+		t.Fatal(err)
+	}
+	if generationClaims != 0 {
+		t.Fatalf("old generation cleanup record leaked: %d", generationClaims)
+	}
+	storageKey, err := repository.ResolveStorageKey(ctx, initial.Backend, initial.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storageKey != replacement.StorageKey {
+		t.Fatalf("resolved storage key = %q, want %q", storageKey, replacement.StorageKey)
+	}
+	current, err := repository.Get(ctx, initial.Backend, initial.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Generation != replacement.Generation ||
+		current.RefCount != 1 ||
+		current.LifecycleState != ossmodel.BlobLifecycleLive {
+		t.Fatalf("replacement generation was corrupted: %+v", current)
 	}
 }
 

@@ -226,7 +226,7 @@ YAML keys (`peers.node.server.subserver.oss.*`):
 | `host-override` | `""` | Public origin to advertise / embed in `cid`. |
 | `max-file-size` | `33554432` (32 MiB) | Per-file upload cap, bytes. |
 | `max-files-per-message` | `9` | Advisory client-side limit. |
-| `backend` | `local` | Storage driver: `local`, `s3`. |
+| `backend` | `local` | Storage driver: `local`, `shared-fs`, `s3`. `local` is never cluster-ready. |
 | `presigned-upload-threshold` | `8388608` (8 MiB) | Files ≥ this go through presigned PUT (S3 only). |
 | `multipart-upload-threshold` | `104857600` (100 MiB) | Files ≥ this go through multipart (S3 only). |
 | `audit-retention-days` | `90` | `AuditTrim` worker window. |
@@ -288,13 +288,19 @@ to expire at X" even when the metadata DB is unreachable.
 | Driver | `Backend` | `Presigned` | `Multipart` | `Lifecycle` |
 | --- | --- | --- | --- | --- |
 | `LocalBackend` | ✓ | — | — | ✓ (sidecar `.expires` files; the TTL sweeper still runs as the source of truth) |
+| `SharedFSBackend` | ✓ | — | — | ✓ (explicit NAS/NFS shared namespace; atomic temp-file publish) |
 | `S3Backend` | ✓ | ✓ | ✓ | ✓ (S3-side lifecycle policy mirrors `expires_at`) |
 
-Per-row dispatch: `oss_files.backend` is the routing key. Both drivers
+Per-row dispatch: `oss_files.backend` is the routing key. All drivers
 stay registered for the lifetime of the process so an operator who
-flips `local → s3` keeps reading legacy local rows. Unknown backend
+flips `local → shared-fs|s3` keeps reading legacy local rows. This
+configuration change does not migrate bytes. Unknown backend
 name on a row → 410 Gone with a clear log line; the file is
 unrecoverable from the active driver and the operator is told so.
+
+`ClusterSharedBackend.ClusterShared()` is the cluster-admission contract:
+`shared-fs` and `s3` return true; `local` returns false even if two test
+processes happen to receive the same path.
 
 `signed_url == true` (HMAC config) and `backend == "s3"` both flip the
 client into "do not mirror" mode: the renderer hits the absolute URL
@@ -323,8 +329,9 @@ directly because caching short-lived signed bytes locally is wasteful.
                          │ AND ref_count == 0
                          │ AND last_seen_at < now - blob-gc-grace
                          ▼
-                    backend.Delete(key)
-                    DROP oss_blobs row
+                    claim(generation, worker fencing token)
+                    backend.Delete(storage_key[generation])
+                    conditional DROP oss_blobs row
                     audit(action=blob_gc)
 ```
 
@@ -335,18 +342,22 @@ directly because caching short-lived signed bytes locally is wasteful.
 2. Atomically `bucket.used_bytes += size, object_count++` with quota
    predicate (`quota_bytes = 0 OR used_bytes + size ≤ quota_bytes`)
    — fails with `quota_exceeded` if the predicate trips.
-3. `backend.Save` → on success, upsert `oss_blobs` (insert or
-   `ref_count++`).
-4. Insert `oss_files` with:
+3. Stage the current immutable `oss_blobs.generation`. A live matching
+   generation reuses bytes; a generation already claimed by GC advances
+   and receives a distinct physical `storage_key`.
+4. When bytes are required, atomically publish them to the staged
+   `storage_key`, then conditionally mark that generation live and
+   increment `ref_count`.
+5. Insert `oss_files` with:
    - `expires_at = now + bucket.ttl_days × 24h` if `ttl_days > 0` and
      the upload didn't pass an explicit override; else NULL.
    - `(owner_actor_id, key)` unique — duplicate from the same actor
      short-circuits to the existing row (CAS dedup).
-5. `audit(action=upload, outcome=ok, size_bytes=...)`.
+6. `audit(action=upload, outcome=ok, size_bytes=...)`.
 
-If step 4 fails after step 3 succeeded, undo: `oss_blobs.ref_count--`
-(may delete the row if it was just created); `bucket` usage rollback;
-`backend.Delete` only when `oss_blobs.ref_count == 0`.
+If metadata insertion fails after the generation commit, undo:
+`oss_blobs.ref_count--` and `bucket` usage rollback. Physical cleanup
+remains exclusively owned by fenced `BlobGC`.
 
 ### Patch
 
@@ -389,11 +400,18 @@ Per-actor CAS means two actors can share one on-disk blob; deleting
 one actor's metadata must not orphan the bytes the other still uses.
 `oss_blobs.ref_count` is the authoritative counter. `BlobGC` runs
 hourly with `WHERE ref_count = 0 AND last_seen_at < now() -
-blob-gc-grace-hours`, calls `backend.Delete(key)`, drops the
-`oss_blobs` row, and writes `audit(action=blob_gc)`.
+blob-gc-grace-hours`. It first atomically claims the immutable
+`generation + storage_key` under the current database worker fencing
+token. Physical deletion targets only that `storage_key`; metadata
+completion conditionally checks generation, claim identity, zero
+references, and the still-current worker lease.
 
-The grace window prevents a delete-then-immediate-reupload race from
-churning S3 objects.
+A replacement upload advances generation and writes a different physical
+key. A resumed stale worker may idempotently delete only its old generation;
+it cannot remove replacement bytes, and its metadata completion is rejected.
+`oss_blob_gc_generations` retains the old immutable cleanup claim independently
+from the current blob row, so a later lease holder can finish cleanup even when
+the original worker never resumes.
 
 ## 8. Permission model
 
@@ -616,9 +634,10 @@ healthz_check  worker_run
 | `KeyRotationFinalizer` | hourly | `federation_rotated_at < now-24h` → clear `*_prev` |
 | `AuditTrim` | daily | `ts < now - audit-retention-days` → soft delete |
 
-All workers share an advisory-lock abstraction (Postgres
-`pg_try_advisory_lock`, SQLite test fallback to in-memory mutex) so
-multi-instance deployments elect a single leader. Each run writes
+All production workers use the existing scheduler lock port backed by
+`oss_worker_leases`. Database time owns expiry; node PeerID, process
+incarnation, and a monotonic fencing token bind acquire, renewal, release,
+GC claim, and completion. Tests may use the in-process `MemLock`. Each run writes
 `audit(action=worker_run, outcome=ok|error, reason=<worker_name>[:err])`.
 The `oss_audit` table is the durable heartbeat source — the
 `worker.Scheduler` also keeps an in-process snapshot (last run /

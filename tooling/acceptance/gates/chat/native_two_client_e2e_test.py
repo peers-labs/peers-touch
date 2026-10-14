@@ -27,6 +27,7 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
     CURRENT_PROFILE_REQUIRED_ASSERTIONS,
     CURRENT_PROFILE_GATE_ID,
     NativeTwoClientGate,
+    STATION_BINDING_PROJECTION_TIMEOUT,
     SUBMITTED_COMMAND_RECOVERY_GATE_ID,
     SUBMITTED_COMMAND_RECOVERY_REQUIRED_ASSERTIONS,
     avatar_evidence_is_valid,
@@ -342,8 +343,24 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             source.index("transfer_preserved_session("),
         )
         self.assertIn('"bindingState"', source)
+        self.assertIn('bound_station.get("activeUrl")', source)
+        self.assertNotIn('bound_station.get("bound_url")', source)
         self.assertIn('"getRealtimeDevice"', source)
         self.assertIn("self.client_lifecycles.mark_authenticated(client)", source)
+
+    def test_station_binding_projection_uses_runtime_boot_timeout(self) -> None:
+        self.assertEqual(STATION_BINDING_PROJECTION_TIMEOUT, 30)
+        for method in (
+            NativeTwoClientGate.start_client,
+            NativeTwoClientGate.restart_client,
+        ):
+            source = inspect.getsource(method)
+            binding_state = source.index('"bindingState"')
+            timeout = source.index(
+                "script_timeout=STATION_BINDING_PROJECTION_TIMEOUT",
+                binding_state,
+            )
+            self.assertGreater(timeout, binding_state)
 
     def test_avatar_evidence_requires_each_actor_on_a_remote_client(self) -> None:
         alice = "data:image/svg+xml;base64,alice"
@@ -1067,6 +1084,46 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertTrue(gate.verify_fixture_ready())
         self.assertEqual(gate.direction_order, ["bob", "alice"])
 
+    def test_gate_accepts_explicit_journey_and_station_identity_origin(
+        self,
+    ) -> None:
+        manifest = self.valid_report()["manifest"]
+        actors = {
+            "initialState": "existing",
+            "actors": [
+                {
+                    "role": actor,
+                    "accountRef": f"station-account:{actor}@p.t",
+                    "ptid": f"ptid:{actor}",
+                }
+                for actor in ("alice", "bob")
+            ],
+            "reset": {"authorized": False, "targetVerified": True},
+        }
+        gate = NativeTwoClientGate(
+            manifest=manifest,
+            actor_manifest=actors,
+            runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
+            gate_id="synthetic-relay-gate",
+            allow_existing_fixture=True,
+            journey_id="synthetic-relay-journey",
+            station_identity_url="http://station-identity.example",
+        )
+
+        self.assertEqual(gate.station_url, "http://station-four")
+        self.assertEqual(
+            gate.station_identity_url,
+            "http://station-identity.example",
+        )
+        self.assertEqual(
+            gate.report.station_url,
+            "http://station-identity.example",
+        )
+        self.assertEqual(
+            gate.report.runtime["journey"],
+            "synthetic-relay-journey",
+        )
+
     def test_submitted_recovery_uses_current_profile_contract(self) -> None:
         manifest = self.valid_report()["manifest"]
         actors = {
@@ -1569,6 +1626,55 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertEqual(
             self.store.resolve(reference).read_text(encoding="utf-8"),
             "remote native log\n",
+        )
+        self.assertFalse(cleanup["cleanupErrors"])
+
+    def test_cleanup_exports_log_for_client_that_failed_before_authentication(
+        self,
+    ) -> None:
+        log_path = self.root / "alice-login-failure.log"
+
+        class FailedLoginClient:
+            profile = "alice"
+            gateway_port = 3030
+
+            def __init__(self, path: Path) -> None:
+                self.log_path = path
+
+            def stop(self) -> None:
+                self.log_path.write_text(
+                    "station proxy request failed\n",
+                    encoding="utf-8",
+                )
+
+        client = FailedLoginClient(log_path)
+        gate = object.__new__(NativeTwoClientGate)
+        gate.runtime_instances = [client]
+        gate.runtime_instance_actors = {id(client): "alice"}
+        gate.client_lifecycles = NativeClientLifecycleLedger()
+        gate.client_lifecycles.register(
+            client,
+            "ptid:v1:actor:alice",
+        )
+        gate.client_lifecycles.mark_live(client)
+        gate.clients = {}
+        gate.client_specs = {}
+        gate.runtime_binding = SyntheticRuntimeBinding()
+        gate.report = EvidenceReport(
+            gate_id=self.module.GATE_ID,
+            status="RUNNING",
+            started_at="2026-08-28T00:00:00Z",
+            duration_ms=0,
+        )
+
+        cleanup = gate.cleanup_clients()
+
+        reference = ArtifactRef.from_dict(
+            gate.report.evidence["alice-runtime-1-app-log"]
+        )
+        self.assertEqual(
+            self.store.resolve(reference).read_text(encoding="utf-8"),
+            "station proxy request failed\n",
         )
         self.assertFalse(cleanup["cleanupErrors"])
 

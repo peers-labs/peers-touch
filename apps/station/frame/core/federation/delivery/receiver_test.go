@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 	"gorm.io/gorm/clause"
 )
@@ -108,6 +109,68 @@ func TestReceiverAtomicallyDispatchesAndDeduplicates(t *testing.T) {
 			inboxCount,
 			outboxCount,
 			domainRows,
+		)
+	}
+}
+
+func TestFederatedPrivateReplayRestoresSignedTraceAtReceiver(t *testing.T) {
+	fixture := newFrameFixture(t)
+	_, repository := newSQLiteRepository(t, fixture.clock)
+	registry := delivery.NewRegistry()
+	var observedTraceID string
+	if err := delivery.RegisterProtoReceiver(
+		registry,
+		delivery.PayloadKindSocialPrivateResource,
+		func() *wrapperspb.StringValue { return &wrapperspb.StringValue{} },
+		func(
+			ctx context.Context,
+			_ delivery.Transaction,
+			_ *wrapperspb.StringValue,
+			_ *delivery.Frame,
+		) (delivery.Result, error) {
+			observedTraceID = logger.GetTraceID(ctx)
+			return delivery.AcceptedResult(), nil
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	receiver, err := delivery.NewReceiver(delivery.ReceiverConfig{
+		Policy:     fixture.policy,
+		Verifier:   fixture.verifier,
+		Registry:   registry,
+		UnitOfWork: repository,
+		Clock:      fixture.clock,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := fixture.signedFrame(
+		t,
+		"private-trace-frame",
+		"private-trace-idempotency",
+		delivery.PayloadKindSocialPrivateResource,
+		"private-trace-payload",
+		wrapperspb.String("private"),
+	)
+	frame.TraceId = "trace-private-receiver"
+	if err := delivery.SignFrame(
+		context.Background(),
+		frame,
+		fixture.policy,
+		fixture.signer,
+	); err != nil {
+		t.Fatal(err)
+	}
+	result, err := receiver.Receive(context.Background(), frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != delivery.AcceptedResult() ||
+		observedTraceID != frame.GetTraceId() {
+		t.Fatalf(
+			"receiver result=%+v trace=%q",
+			result,
+			observedTraceID,
 		)
 	}
 }

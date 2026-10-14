@@ -84,6 +84,9 @@ func (w *AuditTrim) Interval() time.Duration { return w.cfg.Interval }
 // error so the scheduler heartbeat surfaces it; per-row failures
 // are not a concept here (the DELETE is set-shaped).
 func (w *AuditTrim) RunOnce(ctx context.Context) error {
+	if _, err := ValidateLeaseAuthority(ctx, w.Name()); err != nil {
+		return err
+	}
 	cutoff := w.now().Add(-w.cfg.Retention)
 	deleted, err := w.cfg.Audit.Trim(ctx, cutoff)
 	if err != nil {

@@ -26,9 +26,11 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	nativeRelay "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/relay"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	gate "github.com/peers-labs/peers-touch/station/frame/touch/accessgate"
 	gatepb "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate"
+	peerpb "github.com/peers-labs/peers-touch/station/frame/touch/model/peer"
 )
 
 // ---------------------------------------------------------------------------
@@ -67,6 +69,9 @@ const (
 	routeAccessPolicy      = "/dashboard/api/access-gates/policy"
 	routeAccessInviteCodes = "/dashboard/api/access-gates/invite-codes"
 	routeAccessInviteCode  = "/dashboard/api/access-gates/invite-codes/:id"
+
+	// Relay access
+	routeRelayConnectionMaterial = "/dashboard/api/relay/connection-material"
 
 	// System
 	routeSystemInfo       = "/dashboard/api/system/info"
@@ -182,6 +187,16 @@ func (h *dashboardHandler) handlers() []server.Handler {
 			h.handleCreateInviteCode, auth),
 		server.NewTypedHandler("dashboard-access-invite-code-revoke", routeAccessInviteCode, server.DELETE,
 			h.handleRevokeInviteCode, auth),
+
+		// -- Relay access --
+		server.NewStrictTypedHandler(
+			"dashboard-relay-connection-material",
+			routeRelayConnectionMaterial,
+			server.POST,
+			h.handleIssueRelayConnectionMaterial,
+			auth,
+			h.connectionMaterialResponseWrapper(),
+		),
 
 		// -- System --
 		server.NewTypedHandler("dashboard-system-info", routeSystemInfo, server.GET,
@@ -731,6 +746,71 @@ func (h *dashboardHandler) handleRevokeInviteCode(ctx context.Context, _ *domain
 	}
 
 	return &gatepb.RevokeInviteCodeResponse{InviteCode: gate.ToProtoInviteCode(row)}, nil
+}
+
+// handleIssueRelayConnectionMaterial exposes the Station Relay runtime's
+// narrow issuance capability to authenticated Dashboard operators.
+func (h *dashboardHandler) handleIssueRelayConnectionMaterial(
+	ctx context.Context,
+	req *peerpb.IssueStationConnectionMaterialRequest,
+) (*peerpb.IssueStationConnectionMaterialResponse, error) {
+	issuer := h.sub.getConnectionMaterialIssuer()
+	if issuer == nil {
+		return nil, serviceUnavailable(
+			"Relay connection material issuer is unavailable",
+		)
+	}
+
+	routeID := strings.TrimSpace(req.GetRouteId())
+	if routeID != req.GetRouteId() ||
+		len(routeID) > 128 ||
+		strings.ContainsRune(routeID, '\x00') {
+		return nil, server.BadRequest("route_id is invalid")
+	}
+
+	material, err := issuer.IssueConnectionMaterial(
+		ctx,
+		nativeRelay.ConnectionMaterialRequest{
+			RouteID: routeID,
+			RouteLifetime: time.Duration(req.GetRouteLifetimeSeconds()) *
+				time.Second,
+			GrantLifetime: time.Duration(req.GetGrantLifetimeSeconds()) *
+				time.Second,
+			MaxUses: req.GetMaxUses(),
+		},
+	)
+	if err != nil {
+		if errors.Is(
+			err,
+			nativeRelay.ErrInvalidConnectionMaterialRequest,
+		) {
+			return nil, server.BadRequest(
+				"Relay connection material request is invalid",
+			)
+		}
+		log.Errorf(ctx, "[dashboard] issue Relay connection material: %v", err)
+		return nil, serviceUnavailable(
+			"Relay connection material is unavailable",
+		)
+	}
+
+	if claims := getClaims(ctx); claims != nil && h.sub.authSvc != nil {
+		h.sub.authSvc.RecordAudit(
+			ctx,
+			claims.AdminID,
+			claims.Username,
+			"relay_connection_material_issue",
+			"relay_route",
+			"",
+			getClientIP(ctx),
+			getUserAgent(ctx),
+		)
+	}
+	return &peerpb.IssueStationConnectionMaterialResponse{
+		Code:            material.Code,
+		DeepLink:        material.DeepLink,
+		ExpiresAtUnixMs: material.ExpiresAt.UnixMilli(),
+	}, nil
 }
 
 // ===========================================================================

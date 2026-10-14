@@ -97,7 +97,7 @@
       "description": "Validate only acceptance_core_self_validation capabilities and generic Infra closure without consuming business Domain injection."
     },
     "acceptance-runtime-provisioning-self": {
-      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'python3 -m unittest tooling.acceptance.tests.test_tauri_smoke tooling.acceptance.tests.test_native_desktop_macos tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_profile_lease tooling.acceptance.tests.test_launch_context && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-report-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py && python3 tooling/scripts/quality-evidence-test.py'",
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'python3 -m unittest tooling.acceptance.tests.test_tauri_smoke tooling.acceptance.tests.test_native_desktop_macos tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_station_access_relay_role tooling.acceptance.tests.test_posix_service_runtime tooling.acceptance.tests.test_profile_lease tooling.acceptance.tests.test_launch_context && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-report-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py && python3 tooling/scripts/quality-evidence-test.py'",
       "timeout_seconds": 180,
       "environment": "local",
       "tier": "ci-cheap",
@@ -352,12 +352,169 @@
       "tier": "ci-structure",
       "description": "Parse Station handler registrations with Go AST and fail closed on API ownership, canonical route, owner root, superseded proto, and forbidden truth-store violations."
     },
+    "NCP-G01": {
+      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-standard-stream --gate NCP-G01",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove two authorized Station node keys under one logical root, exact libp2p PeerID and TLS SPKI binding, direct and Circuit authentication, pre-credential spoof rejection, and borrowed Host lifecycle."
+    },
+    "NCP-G02": {
+      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-standard-stream --gate NCP-G02",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove standard TLS 1.3 HTTP/2 over direct and Circuit libp2p streams reaches the existing Hertz router with route parameters, wrappers, canonical protobuf errors, SSE Flush, streamed attachment bodies, cancellation, and untrusted peer-header stripping."
+    },
+    "NCP-G03": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.node_connectivity_native_e2e"
+      ],
+      "timeout_seconds": 3600,
+      "environment": "station-access-relay-role",
+      "provisioner": "station-access-relay-role",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Run two exact-source Native Desktop actors through Direct-only and Relay-only canonical requests, prove typed closed-policy failures and ordered Auto failover after a real Direct fault with Session/lease fencing, then prove canonical Profile readback, receiver-visible text, READ receipt, and receiver-opened 32 MiB Circuit attachment byte identity."
+    },
+    "NCP-G04": {
+      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-durable-events --gate NCP-G04",
+      "timeout_seconds": 420,
+      "environment": "node-connectivity-durable-events",
+      "provisioner": "node-connectivity-durable-events",
+      "tier": "env-evidence",
+      "description": "Prove two independent Events processes over one source-attested PostgreSQL runtime preserve per-Actor order, committed-only delivery, durable device isolation, high-water replay after process exit, and bounded missed-wake repair."
+    },
+    "NCP-G05": {
+      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-shared-access --gate NCP-G05",
+      "timeout_seconds": 420,
+      "environment": "node-connectivity-shared-access",
+      "provisioner": "node-connectivity-shared-access",
+      "tier": "env-evidence",
+      "description": "Prove two independent Station processes over one source-attested PostgreSQL runtime share Access, OAuth acknowledgement, Session class activation, revocation, and the Station access keyring."
+    },
+    "NCP-G06-AGENT": {
+      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-agent-fencing --gate NCP-G06-AGENT",
+      "timeout_seconds": 420,
+      "environment": "node-connectivity-agent-fencing",
+      "provisioner": "node-connectivity-agent-fencing",
+      "tier": "env-evidence",
+      "description": "Prove two independent Agent worker processes over one source-attested PostgreSQL runtime preserve healthy foreign work, advance the fencing token on expired takeover, reject stale completion, and retain external-effect recovery state."
+    },
+    "NCP-G06-OSS": {
+      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-shared-objects --gate NCP-G06-OSS",
+      "timeout_seconds": 420,
+      "environment": "node-connectivity-oss-fencing",
+      "provisioner": "node-connectivity-oss-fencing",
+      "tier": "env-evidence",
+      "description": "Prove two independent OSS processes over one source-attested PostgreSQL runtime and one shared-fs object backend provide cross-node authorized readback, fenced worker takeover, immutable generation deletion, stale completion rejection, and valid quota/refcount state."
+    },
+    "NCP-G06": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.node_connectivity_cluster_native_e2e"
+      ],
+      "timeout_seconds": 3600,
+      "environment": "node-connectivity-cluster",
+      "provisioner": "node-connectivity-cluster",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Run two exact-source Native Desktop actors against two admitted nodes of one logical Station, prove cross-node text, READ receipt and 32 MiB attachment identity, kill node A, recover route and durable cursor through node B within 30 seconds without login, and retain one durable mutation."
+    },
+    "NCP-G07": {
+      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-native-cut --gate NCP-G07",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove bounded standard Circuit admission: enrolled reservation, public route, proof-bound idempotent grant redemption, short-lived source permit, same-generation renewal, expiry, and revoke fail closed."
+    },
+    "NCP-G08": {
+      "command": "python3 tooling/scripts/node-connectivity-journey.py --closure ncp-native-cut --gate NCP-G08",
+      "timeout_seconds": 420,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Aggregate Rust-Go Circuit interop, Relay ACL semantics, Mobile Rust contract build, and the source-owned zero-old-data-plane inventory for the atomic native transport cut."
+    },
     "station-access-capability-contract": {
       "command": "python3 -m tooling.acceptance.gates.station_access.capability_contract",
       "timeout_seconds": 180,
       "environment": "local",
       "tier": "ci-cheap",
       "description": "Validate signed Station identity ownership, the complete generated-protobuf Access route inventory, shared Desktop/Mobile consumers, typed outcomes, and scope fields."
+    },
+    "relay-role-security-contract": {
+      "command": "python3 -m tooling.acceptance.gates.station_access.relay_role_security_contract",
+      "timeout_seconds": 1200,
+      "environment": "station-access-relay-role",
+      "provisioner": "station-access-relay-role",
+      "tier": "env-evidence",
+      "description": "Validate explicit Station/Relay composition and attach to exact-source Linux/POSIX owner-managed runtimes to prove isolated processes, live route inventory, TLS 1.3-only negotiation, dedicated operator protection, restricted secret modes, positive quotas, deployment wiring, and zero hardcoded debug egress."
+    },
+    "station-access-desktop-relay-native-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.desktop_relay_native_e2e"
+      ],
+      "timeout_seconds": 3600,
+      "environment": "station-access-relay-role",
+      "provisioner": "station-access-relay-role",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Prove installed macOS Desktop discovers a Relay, binds its Station identity, exposes Via Relay, preserves scope across Direct and Relay route switches, and recovers the persisted Relay route."
+    },
+    "station-access-desktop-relay-windows-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.desktop_relay_native_e2e"
+      ],
+      "timeout_seconds": 3600,
+      "environment": "station-access-relay-role",
+      "provisioner": "station-access-relay-role",
+      "requiredRuntimeCells": [
+        "desktop-windows-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Prove exact-source sixwin Windows Desktop uses the same Station-keyed discovery, route switching, visible Via Relay state, and persisted route recovery contract through the one Linux Relay."
+    },
+    "station-access-mobile-relay-native-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.mobile_relay_native_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.simulator.appium-session"
+      ],
+      "timeout_seconds": 5400,
+      "environment": "mobile-relay-simulator",
+      "provisioner": "mobile-relay-simulator",
+      "tier": "env-evidence",
+      "description": "Prove exact-source iOS Simulator Mobile discovers a Relay, retains one Station identity across Direct and Relay routes, preserves its Session during explicit route switching, and restores the Relay route after restart."
+    },
+    "station-access-relay-security-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.station_access.relay_aggregate",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Require current-source DONE and PROVEN evidence for Relay role isolation, enrollment, signed discovery, standard Circuit admission, and native route security."
+    },
+    "unified-relay-station-access-aggregate-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.station_access.relay_aggregate",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Require current-source DONE and PROVEN evidence for all Relay server, Dashboard, Desktop, Mobile, and security closure Gates."
     },
     "station-access-auth-e2e": {
       "argv": [
@@ -413,6 +570,21 @@
       "environment": "local",
       "tier": "ci-cheap",
       "description": "Require current-source native receiver proof for Desktop-Mobile coexistence and independent Desktop and Mobile same-class takeover."
+    },
+    "station-access-session-class-suite-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.session_class_suite_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.simulator.appium-session"
+      ],
+      "timeout_seconds": 5400,
+      "environment": "chat-mixed-native",
+      "provisioner": "chat-mixed-native",
+      "tier": "env-evidence",
+      "description": "Prove same-Station Chat, Desktop-Mobile coexistence, Desktop takeover, and Mobile takeover in one exact-source reusable Suite Runtime with UI and receiver-visible evidence."
     },
     "station-access-federation-boundary-e2e": {
       "argv": [
@@ -725,6 +897,69 @@
       "environment": "local",
       "tier": "env-evidence",
       "description": "Prove Desktop Private Moments with one reusable Alice/Bob/Eve Native Suite while leaving Mobile unproven."
+    },
+    "social-cross-station-contract": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-contract",
+      "timeout_seconds": 1200,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate canonical cross-Station Social, Federation, Key Exchange, and generated-client contracts."
+    },
+    "social-cross-station-eventbus-contract": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-eventbus-contract",
+      "timeout_seconds": 900,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate typed Social wake events, one momentsRuntime projection owner, reconciliation, and teardown."
+    },
+    "social-cross-station-prekey": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-prekey",
+      "timeout_seconds": 1200,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate authenticated remote Content PreKey admission and exact replay."
+    },
+    "social-cross-station-delivery": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-delivery",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate source-atomic viewer-scoped delivery and receiver-atomic projection."
+    },
+    "social-cross-station-interaction": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-interaction",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate source-authoritative remote Comment and Reaction command/result lifecycles."
+    },
+    "social-cross-station-revocation-recovery": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-revocation-recovery",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate monotonic revocation, replay resilience, and trusted replacement-device recovery."
+    },
+    "social-cross-station-desktop-functional": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-desktop-functional",
+      "timeout_seconds": 10800,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Run the source-only development two-Station Native Social Suite and retain its non-formal evidence."
+    },
+    "social-cross-station-native-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-native-e2e",
+      "timeout_seconds": 10800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Attach formal proof to the exact-source CSS-09 Native Suite for AS17 through AS24 and same-Station regression."
+    },
+    "browser-social-zero-registration": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate browser-social-zero-registration",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Prove browser-gateway registers no Social page, runtime, module, navigation item, or action."
     },
     "social-domain-validation": {
       "command": "python3 tooling/scripts/acceptance-validate.py --domain social --require-proven",
@@ -1549,6 +1784,71 @@
       "tier": "ci-structure",
       "description": "Validate Mobile Acceptance IDs, typed service topology, Auth UI identity, contract wiring, and source-level Moments/Profile projection fencing without claiming native product behavior."
     },
+    "mobile-social-facade-contract": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.social_facade_contract",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove the generation-scoped Mobile Social facade, one typed intent family, Social-owned Tauri adapter mapping, stale-completion teardown, and retired page/runtime ownership removal without claiming a native user journey."
+    },
+    "mobile-social-feed-native": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.social_feed_native",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove one bounded Mobile Home/Explore projection, canonical Post-ID private composition, Station-owned Explore ranking, scope anchors, seven content kinds, and bounded feed states without claiming native device behavior."
+    },
+    "mobile-social-search-profile-native": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.social_search_profile_native",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove descriptor-owned Mobile Social Search/Profile, canonical PTID and Federation identity, authored timeline, authoritative relationship readback, Direct handoff, restoration metadata, and projection invalidation without claiming native device behavior."
+    },
+    "mobile-social-circles-native": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.social_circles_native",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove Station-owned Mobile Circle lifecycle, canonical protobuf identity, session-fenced pagination, authoritative member readback convergence, remote lookup failure preservation, and descriptor-owned Circle routes without claiming native device behavior."
+    },
+    "mobile-social-audience-composer-native": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.social_audience_composer_native",
+      "timeout_seconds": 2100,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove complete generated Audience selection, exact draft restoration, one public/private facade route, Native staged-media privacy, and authoritative publish completion without claiming native device behavior."
+    },
+    "mobile-social-thread-media-native": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.social_thread_media_native",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove one lazy inline comment thread, public/private comment authority separation, runtime-owned private pagination, and temporary public/private media lifecycle without claiming native device behavior."
+    },
+    "mobile-social-ios-native": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario ios-social-parity",
+      "timeout_seconds": 7200,
+      "environment": "mobile-social-ios-simulator",
+      "provisioner": "mobile-social-ios-simulator",
+      "tier": "env-evidence",
+      "description": "Prove the MPS-RC01 same-Station Social suite on one source-bound pair of isolated iOS Simulators, with reusable Home/Explore, Search/Profile, Circles/Audience/Publish, Thread/Reaction, Recovery/Lifecycle, native-quality, receiver-visible, and cleanup evidence."
+    },
+    "mobile-social-android-native": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.mobile.android_social_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.native.appium-session"
+      ],
+      "timeout_seconds": 10800,
+      "environment": "mobile-android-physical",
+      "provisioner": "mobile-android-physical",
+      "tier": "env-evidence",
+      "description": "Prove the MPS-RC02 same-Station Social suite through one USB-authorized physical Android device, sequential non-destructive Alice/Bob/Eve sessions, exact-source build and Station attestation, real UI actions, receiver-visible assertions, native evidence, and deterministic lease cleanup."
+    },
     "mobile-identity-contract": {
       "command": "python3 -m tooling.acceptance.gates.mobile.identity_contract",
       "timeout_seconds": 120,
@@ -1601,6 +1901,14 @@
       "provisioner": "mobile-ios-layout-simulator",
       "tier": "env-evidence",
       "description": "Prove the current iPhone 17 Simulator launch-surface layout, keyboard avoidance, localization, accessible naming, orientation, and cleanup."
+    },
+    "mobile-simulator-whole-product-usability-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e",
+      "timeout_seconds": 10800,
+      "environment": "mobile-direct-simulator",
+      "provisioner": "mobile-direct-simulator",
+      "tier": "env-evidence",
+      "description": "Walk the complete registered Mobile surface inventory in a foreground iOS Simulator and prove human-readable identity, valid actions, accessibility, viewport containment, and non-occlusion."
     },
     "mobile-simulator-social-convergence-e2e": {
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario social-convergence",

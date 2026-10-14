@@ -37,6 +37,7 @@ func TestPrivateContentRequiresCanonicalULID(t *testing.T) {
 
 func TestCanonicalGroupRecipientSnapshotRoundTrip(t *testing.T) {
 	snapshot := GroupRecipientSnapshot{
+		FederationID:        "federation-canonical-snapshot",
 		ConversationID:      "group-canonical-snapshot",
 		AuthorPTID:          "ptid:alice",
 		MembershipEpoch:     7,
@@ -56,9 +57,22 @@ func TestCanonicalGroupRecipientSnapshotRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !bytes.Contains(
+		encoded,
+		[]byte(`"federation_id":"federation-canonical-snapshot"`),
+	) {
+		t.Fatalf("canonical Group snapshot omits Federation ID: %s", encoded)
+	}
 	decoded, err := ParseCanonicalGroupRecipientSnapshot(encoded)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if decoded.FederationID != snapshot.FederationID {
+		t.Fatalf(
+			"decoded Federation ID = %q, want %q",
+			decoded.FederationID,
+			snapshot.FederationID,
+		)
 	}
 	reencoded, err := CanonicalGroupRecipientSnapshotBytes(decoded)
 	if err != nil {
@@ -67,6 +81,15 @@ func TestCanonicalGroupRecipientSnapshotRoundTrip(t *testing.T) {
 	if !bytes.Equal(encoded, reencoded) {
 		t.Fatal("Group recipient snapshot did not round-trip canonically")
 	}
+	otherFederation := snapshot
+	otherFederation.FederationID = "federation-other"
+	otherEncoded, err := CanonicalGroupRecipientSnapshotBytes(otherFederation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(encoded, otherEncoded) {
+		t.Fatal("Federation ID did not change canonical Group snapshot bytes")
+	}
 
 	nonCanonical := append([]byte(" "), encoded...)
 	if _, err := ParseCanonicalGroupRecipientSnapshot(nonCanonical); !IsPrivateContentCode(
@@ -74,6 +97,58 @@ func TestCanonicalGroupRecipientSnapshotRoundTrip(t *testing.T) {
 		PrivateContentIntegrityFailed,
 	) {
 		t.Fatalf("non-canonical Group snapshot error = %v", err)
+	}
+
+	withoutFederation := snapshot
+	withoutFederation.FederationID = ""
+	if _, err := CanonicalGroupRecipientSnapshotBytes(
+		withoutFederation,
+	); !IsPrivateContentCode(err, PrivateContentInvalidArgument) {
+		t.Fatalf("missing Group Federation ID error = %v", err)
+	}
+}
+
+func TestCanonicalRecipientLocalitiesRoundTrip(t *testing.T) {
+	localities := []RecipientLocality{
+		{
+			ActorPTID:         "ptid:carol",
+			HomeStationPeerID: "station-remote",
+			FederationID:      "federation-one",
+		},
+		{
+			ActorPTID:         "ptid:bob",
+			HomeStationPeerID: "station-local",
+		},
+	}
+	encoded, err := CanonicalRecipientLocalitiesBytes(localities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := ParseCanonicalRecipientLocalities(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded) != 2 ||
+		decoded[0].ActorPTID != "ptid:bob" ||
+		decoded[1].FederationID != "federation-one" {
+		t.Fatalf("decoded recipient localities = %+v", decoded)
+	}
+	reencoded, err := CanonicalRecipientLocalitiesBytes(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(encoded, reencoded) {
+		t.Fatal("recipient localities did not round-trip canonically")
+	}
+	if _, err := ParseCanonicalRecipientLocalities(
+		append([]byte(" "), encoded...),
+	); !IsPrivateContentCode(err, PrivateContentIntegrityFailed) {
+		t.Fatalf("non-canonical recipient localities error = %v", err)
+	}
+	if _, err := CanonicalRecipientLocalitiesBytes(
+		append(localities, localities[0]),
+	); !IsPrivateContentCode(err, PrivateContentConflict) {
+		t.Fatalf("duplicate recipient locality error = %v", err)
 	}
 }
 

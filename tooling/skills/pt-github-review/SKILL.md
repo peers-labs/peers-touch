@@ -61,6 +61,55 @@ git diff <base>...<head>
 
 Verify range endpoints before trusting any report derived from them.
 
+### 1.1 Cross-Branch Preservation Review
+
+When the target branch has advanced since the reviewed branch diverged, or when
+the PR overlaps behavior already present on the target, review the prospective merge tree
+rather than treating the PR's three-dot diff as the final product:
+
+```bash
+base_sha="$(gh pr view <pr-number> --json baseRefOid --jq .baseRefOid)"
+head_sha="$(gh pr view <pr-number> --json headRefOid --jq .headRefOid)"
+merge_base="$(git merge-base "$base_sha" "$head_sha")"
+git merge-tree "$merge_base" "$base_sha" "$head_sha"
+git diff --name-status "$merge_base..$base_sha"
+git diff --name-status "$merge_base..$head_sha"
+```
+
+For every overlapping behavior, owner, contract, test, Gate, registry entry, or
+generated source, classify the prospective result as exactly one of:
+
+- `PRESERVED`: the target behavior and its proof remain intact;
+- `INTENTIONALLY_SUPERSEDED`: an accepted higher-level source explicitly
+  replaces it, with complete consumer migration, deletion and regression proof;
+- `UNPROVEN`: preservation or supersession cannot be established from current
+  source and evidence.
+
+The review must detect both directions of integration damage:
+
+- **coverage loss**: a previously landed owner, consumer, failure path, test,
+  Gate, documentation contract, or generated projection is missing from the
+  merged result;
+- **false kill**: code, tests, Gates, registrations, or evidence are deleted,
+  weakened, bypassed, or reverted without an accepted supersession contract.
+
+A clean textual merge is not preservation evidence. Passing checks obtained by
+deleting or weakening the check are blocking findings. Generated artifacts are
+judged from their authoritative source and regenerated result, never by keeping
+both generated variants.
+
+After an actual rebase or cherry-pick, compare the old and rewritten series:
+
+```bash
+git range-diff <old-base>..<old-head> <new-base>..<new-head>
+```
+
+Invoke `pt-branch-conflict-guardian` when the merge map contains semantic
+conflicts or the rewritten series cannot be explained mechanically. Any
+`UNPROVEN` overlap prevents approval. This review applies to tracked and
+standalone PRs and does not create a Plan, infer a global worktree order, or
+become a scheduler.
+
 ### 2. Collect Quality Evidence
 
 Run the review route first. When it includes `code-structure`, invoke
@@ -168,17 +217,28 @@ verify:
 - stable Plan changes preserve one `planId`, append exactly one auditable
   amendment, fence the complete manifest/Task byte set before switching the
   ExecutionRun, and invalidate affected Task closures without remounting;
+- machine-wide work and Plan-mount ledgers remain coordination projections:
+  schema/lifecycle mutation is scoped to the selected workspace, unrelated
+  workspace liveness never becomes a migration gate, foreign legacy records
+  remain validated conflict inputs, mixed Plan indexes remain disjoint with
+  one workspace-occupancy union and a mechanical removal trigger, legacy
+  mounts accept only explicitly authorized exact-owner `owner-unmount` rather
+  than executable or terminal-trust compatibility paths, and stale writers
+  fail schema/CAS fences instead of overwriting newer state;
 - CI validates explicit Plan source without consulting machine-local mounts and
   accepts completion only from an immutable repository
   `completions/<planDigest>.json` attestation;
 - TRAE multi-root integration projects equivalent ingress into the selected
   source root, descriptor bootstrap root, and existing TRAE-participating
   roots, never treats Hook location or folder order as execution authority,
-  and rejects task/target disagreement with `WORKTREE_SELECTION_REQUIRED`;
+  selects one workspace per OWNER mutation with target precedence, and rejects
+  only multi-root mutation or undeclared selection with
+  `WORKTREE_SELECTION_REQUIRED`;
 - ordinary integration projection is non-destructive, requires no Hook-issued
-  grant or global idle, and deletes no workflow state; only exact OWNER
-  `skills-hard-cut` and `skills-gc` grants may perform their bounded
-  global-idle cleanup, with no compatibility reader or dual writer;
+  grant, global idle, or parsing of Plan/declaration/Session state, and deletes
+  no workflow state; its projection-only audit cannot claim workflow health.
+  Only exact OWNER `skills-hard-cut` and `skills-gc` grants may perform their
+  bounded global-idle cleanup, with no compatibility reader or dual writer;
 - execution mode is justified by dependencies, write sets, generated outputs,
   shared runtime resources, verification isolation, and integration order;
 - parallel lanes reserve non-overlapping write sets and keep shared files under
@@ -401,6 +461,27 @@ Check:
 - errors use typed codes and include context;
 - persistence changes include migration or compatibility reasoning.
 
+### Node Connectivity And Relay Review
+
+Check:
+
+- `station_peer_id` remains logical Station identity; Node PeerID, URL, Direct,
+  and Circuit endpoints remain transport routes;
+- one process owns one libp2p Host and Frame adapts standard Direct/Circuit v2
+  streams into the canonical HTTP/protobuf/SSE router;
+- Relay owns bounded admission and control only, never Station credentials,
+  Session, Federation membership, business APIs, or a custom payload data plane;
+- Desktop `AppState` owns one `StationRuntime`; Station Access alone selects
+  routes and publishes immutable `RouteLease` values to transport;
+- same-Station route changes preserve Session scope, advance route revision,
+  cancel the old lease, and never blindly replay an ambiguous mutation;
+- private Relay TLS health uses the reviewed trust anchor and rejects insecure
+  verification bypass, endpoint drift, and substituted Relay identity;
+- cutovers delete old WSS/mount framing, duplicate route owners, stale runtime
+  docs, registrations, and compatibility fallbacks in the same change;
+- runtime claims use exact-source NCP Gates and preserve explicit unproven
+  cluster or Mobile cells instead of generalizing from source checks.
+
 ### Desktop Review
 
 Check:
@@ -475,6 +556,26 @@ manifest, carry `DONE` / `PROVEN` result semantics, and pass artifact identity
 and digest verification. Native Desktop claims must bind the requested runtime
 cell, clean source commit, Station commit, binary digest, platform probes, and
 reverse-order cleanup; evidence from one platform cannot prove another.
+
+For Desktop Social changes that affect Post, Comment, Reaction, relationship,
+revocation, notification, or resync freshness, the following checks are
+mandatory:
+
+- trace each committed fact through a typed producer, Station EventBus or
+  durable wake, Desktop Rust bridge, desktop-web kernel `eventBus`, the single
+  owning `momentsRuntime`, and the resulting store effect;
+- reject orphan producers, orphan consumers, dropped enum arms, duplicate
+  subscriptions, overlapping runtime owners, page/component polling used as
+  primary freshness, and module-private Tauri-to-store listeners that bypass
+  the typed kernel event catalog;
+- require both immediate event consumption and Station-backed periodic
+  reconcile; an event is only a wake/invalidation hint and must not become a
+  second business truth;
+- verify actor/session/Station scope fencing, dedup/order behavior, and teardown
+  on logout, actor switch, Station switch, runtime teardown, and failed tests;
+- require receiver-visible Native evidence while the Moments page is unopened
+  or hidden, plus duplicate-event idempotence and disconnect/missed-event
+  recovery. Static wiring checks cannot substitute for the live receiver path.
 
 ## Severity Levels
 

@@ -35,11 +35,31 @@ type Claim struct {
 	Frame        *Frame
 	Lease        Lease
 	AttemptCount uint32
+	EnqueuedAt   time.Time
+}
+
+// OutboxStatus is the bounded delivery lifecycle projection exposed to domain owners.
+type OutboxStatus struct {
+	FrameID       string
+	State         OutboxState
+	AttemptCount  uint32
+	NextAttemptAt time.Time
+	ExpiresAt     time.Time
+	LastFailure   FailureCode
 }
 
 // OutboxWriter appends an immutable frame in the caller's transaction.
 type OutboxWriter interface {
 	Enqueue(ctx context.Context, frame *Frame, now time.Time) (EnqueueResult, error)
+}
+
+// OutboxStatusReader reads immutable-frame lifecycle without transferring ownership.
+type OutboxStatusReader interface {
+	ReadOutboxStatuses(
+		ctx context.Context,
+		frameIDs []string,
+		now time.Time,
+	) ([]OutboxStatus, error)
 }
 
 // AfterCommitFunc runs only after the shared inbox transaction commits.

@@ -393,7 +393,7 @@
         "apps/desktop/src-tauri/src/interface/tauri_commands/presence.rs",
         "apps/station/app/subserver/conversation/application/command/projections.go",
         "packages/messaging-core/src/store/schema.rs",
-        "apps/desktop/src-tauri/src/infrastructure/station_client.rs",
+        "apps/desktop/src-tauri/src/application/station_runtime/client.rs",
         "apps/desktop/src-tauri/src/messaging/group_genesis.rs",
         "apps/desktop/src-tauri/src/messaging/engine.rs",
         "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",

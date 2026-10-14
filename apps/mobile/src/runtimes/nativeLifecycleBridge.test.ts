@@ -109,6 +109,7 @@ describe('nativeLifecycleBridge', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -207,7 +208,7 @@ describe('nativeLifecycleBridge', () => {
     expect(bridgeMocks.clearDeviceLocalFlag)
       .toHaveBeenCalledExactlyOnceWith('session-expired');
 
-    installation.teardown();
+    await installation.teardown();
   });
 
   it('tears down resolved and late listeners without skipping failures', async () => {
@@ -231,10 +232,15 @@ describe('nativeLifecycleBridge', () => {
       }));
 
     const installation = installNativeLifecycleBridge();
+    const readiness = installation.ready.catch(() => undefined);
     await flushPromises();
-    installation.teardown();
+    const teardown = installation.teardown();
     resolveReconciliation?.(reconciliationUnlisten);
-    await flushPromises();
+    await teardown;
+    await readiness;
+    await vi.waitFor(() => {
+      expect(pluginUnregister).toHaveBeenCalledTimes(4);
+    });
 
     expect(lifecycleUnlisten).toHaveBeenCalledOnce();
     expect(reconciliationUnlisten).toHaveBeenCalledOnce();
@@ -243,7 +249,6 @@ describe('nativeLifecycleBridge', () => {
       operation: 'listener-teardown',
       message: 'MOBILE_NATIVE_LISTENER_TEARDOWN_FAILED:listener-teardown',
     });
-    expect(pluginUnregister).toHaveBeenCalledTimes(4);
   });
 
   it('rejects readiness when a canonical listener installation fails', async () => {
@@ -263,7 +268,7 @@ describe('nativeLifecycleBridge', () => {
       operation: 'listen-lifecycle',
       message: 'MOBILE_NATIVE_LISTENER_INSTALL_FAILED:listen-lifecycle',
     });
-    installation.teardown();
+    await installation.teardown();
   });
 
   it('rejects readiness when a native plugin listener installation fails', async () => {
@@ -280,7 +285,57 @@ describe('nativeLifecycleBridge', () => {
     emitInitialNetworkObservation(pluginHandlers);
 
     await readiness;
-    installation.teardown();
+    await installation.teardown();
+  });
+
+  it('serializes native plugin listener registration', async () => {
+    const firstRegistration = Promise.withResolvers<void>();
+    let activeRegistrations = 0;
+    let maximumActiveRegistrations = 0;
+    let registrationCount = 0;
+
+    bridgeMocks.addPluginListener.mockImplementation(
+      async (
+        pluginName: string,
+        eventName: string,
+        handler: (payload: unknown) => void,
+      ) => {
+        registrationCount += 1;
+        activeRegistrations += 1;
+        maximumActiveRegistrations = Math.max(
+          maximumActiveRegistrations,
+          activeRegistrations,
+        );
+        if (registrationCount === 1) {
+          await firstRegistration.promise;
+        }
+        pluginHandlers.set(`${pluginName}:${eventName}`, handler);
+        activeRegistrations -= 1;
+        return { unregister: pluginUnregister };
+      },
+    );
+
+    const installation = installNativeLifecycleBridge();
+    await flushPromises();
+    const registrationsBeforeRelease =
+      bridgeMocks.addPluginListener.mock.calls.length;
+    firstRegistration.resolve();
+    await flushPromises();
+    const registrationsBeforeCallbackRelease =
+      bridgeMocks.addPluginListener.mock.calls.length;
+    await installation.ready;
+    await installation.teardown();
+
+    expect(registrationsBeforeRelease).toBe(1);
+    expect(registrationsBeforeCallbackRelease).toBe(1);
+    expect(maximumActiveRegistrations).toBe(1);
+    expect(bridgeMocks.addPluginListener.mock.calls.map((call) => call[1]))
+      .toEqual([
+        'lifecycle',
+        'network',
+        'pushAvailable',
+        'scheduledAvailable',
+      ]);
   });
 
   it('rejects readiness when initial network observation does not start', async () => {
@@ -299,7 +354,7 @@ describe('nativeLifecycleBridge', () => {
       code: 'MOBILE_NATIVE_READBACK_INVALID',
       operation: 'network-start-observation',
     });
-    installation.teardown();
+    await installation.teardown();
   });
 
   it('rejects readiness when initial network observation fails', async () => {
@@ -316,7 +371,7 @@ describe('nativeLifecycleBridge', () => {
       code: 'MOBILE_NATIVE_INVOKE_FAILED',
       operation: 'network_start_observation',
     });
-    installation.teardown();
+    await installation.teardown();
   });
 
   it('routes typed native callbacks through Rust before canonical delivery', async () => {
@@ -336,7 +391,7 @@ describe('nativeLifecycleBridge', () => {
       },
       onNativeListenerReady,
     });
-    await flushPromises();
+    await installation.ready;
 
     expect(onNativeListenerReady).toHaveBeenCalledOnce();
     const nativeHandler = pluginHandlers.get(
@@ -373,7 +428,7 @@ describe('nativeLifecycleBridge', () => {
     await flushPromises();
 
     expect(canonicalEvents).toEqual([canonical]);
-    installation.teardown();
+    await installation.teardown();
   });
 
   it('rejects malformed native callback payloads before invoking Rust', async () => {
@@ -401,7 +456,7 @@ describe('nativeLifecycleBridge', () => {
       operation: 'native-lifecycle-sequence',
       message: 'MOBILE_NATIVE_READBACK_INVALID:native-lifecycle-sequence',
     });
-    installation.teardown();
+    await installation.teardown();
   });
 
   it('routes typed native network observations through Rust', async () => {
@@ -431,8 +486,9 @@ describe('nativeLifecycleBridge', () => {
       onNetworkStateChange,
       onNativeNetworkListenerReady,
     });
-    await flushPromises();
-    expect(onNativeNetworkListenerReady).toHaveBeenCalledOnce();
+    await vi.waitFor(() => {
+      expect(onNativeNetworkListenerReady).toHaveBeenCalledOnce();
+    });
 
     pluginHandlers.get('peers-platform-permissions:network')?.({
       platform: 'ios',
@@ -466,7 +522,7 @@ describe('nativeLifecycleBridge', () => {
     });
     await expect(installation.ready).resolves.toBeUndefined();
     expect(onNativeNetworkListenerReady).toHaveBeenCalledOnce();
-    installation.teardown();
+    await installation.teardown();
   });
 
   it('drops a network result from an older lifecycle generation', async () => {
@@ -513,7 +569,7 @@ describe('nativeLifecycleBridge', () => {
     await flushPromises();
 
     expect(onNetworkStateChange).not.toHaveBeenCalled();
-    installation.teardown();
+    await installation.teardown();
     await installation.ready;
   });
 
@@ -552,7 +608,7 @@ describe('nativeLifecycleBridge', () => {
       'network_ingest_native_signal',
       expect.anything(),
     );
-    installation.teardown();
+    await installation.teardown();
   });
 
   it('preserves Harness-facing permission command names and result shapes', async () => {

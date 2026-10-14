@@ -3,14 +3,25 @@ from __future__ import annotations
 import unittest
 from unittest.mock import Mock, patch
 
-from tooling.acceptance.core import DriverError, GateError
+from tooling.acceptance.core import (
+    DriverError,
+    GateError,
+    SuiteRuntimeAction,
+    SuiteRuntimeLedger,
+)
 from tooling.acceptance.gates.mobile.simulator_social_e2e import (
     ENVIRONMENT_ID,
+    IOS_SOCIAL_ENVIRONMENT_ID,
+    IOS_SOCIAL_PARITY_SCENARIOS,
+    IOS_SOCIAL_RUNTIME_REUSE,
     SCENARIO_GATES,
     SimulatorSocialGate,
 )
 from tooling.acceptance.gates.mobile.simulator_e2e import SimulatorGateBlocked
 from tooling.acceptance.gates.mobile.messaging_journey import MessagingActor
+from tooling.acceptance.provisioners.mobile_simulator import (
+    MobileSocialIOSSimulatorProvisioner,
+)
 
 
 class Artifacts:
@@ -45,6 +56,19 @@ class Artifacts:
 
 
 class SimulatorSocialGateTests(unittest.TestCase):
+    @staticmethod
+    def _actor(client_id: str, role: str) -> MessagingActor:
+        return MessagingActor(
+            client_id=client_id,
+            role=role,
+            station_url="https://station.example.test",
+            station_peer_id="station-peer",
+            ptid=f"ptid:{role}",
+            account_ref=f"station-account:{role}",
+            federated_handle=f"@{role}@station.example.test",
+            federation_id="federation-1",
+        )
+
     def test_capture_rejects_chat_render_error_after_preserving_evidence(self) -> None:
         artifacts = Mock()
         artifact_ref = Mock()
@@ -170,6 +194,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertEqual(
             SCENARIO_GATES,
             {
+                "ios-social-parity": "mobile-social-ios-native",
                 "social-convergence": (
                     "mobile-simulator-social-convergence-e2e"
                 ),
@@ -191,6 +216,142 @@ class SimulatorSocialGateTests(unittest.TestCase):
             SimulatorSocialGate("social-convergence").gate_id,
             SimulatorSocialGate("chat-contacts").gate_id,
         )
+
+    def test_ios_social_parity_declares_one_reusable_runtime(self) -> None:
+        self.assertEqual(
+            IOS_SOCIAL_RUNTIME_REUSE.scenario_ids,
+            IOS_SOCIAL_PARITY_SCENARIOS,
+        )
+        self.assertEqual(
+            IOS_SOCIAL_RUNTIME_REUSE.max_provisioning_runs,
+            1,
+        )
+        self.assertEqual(
+            IOS_SOCIAL_RUNTIME_REUSE.max_client_launches,
+            2,
+        )
+        self.assertGreaterEqual(
+            IOS_SOCIAL_RUNTIME_REUSE.min_warm_reuse_rate,
+            0.8,
+        )
+        self.assertEqual(
+            MobileSocialIOSSimulatorProvisioner
+            .additional_fixture_roles_by_gate["mobile-social-ios-native"],
+            ("eve",),
+        )
+        self.assertFalse(
+            MobileSocialIOSSimulatorProvisioner.requires_actor_reset,
+        )
+        self.assertEqual(
+            SimulatorSocialGate("ios-social-parity").environment_id,
+            IOS_SOCIAL_ENVIRONMENT_ID,
+        )
+
+    def test_active_scenario_cleanup_preserves_failed_suite_report(self) -> None:
+        gate = SimulatorSocialGate("ios-social-parity")
+        ledger = SuiteRuntimeLedger(
+            IOS_SOCIAL_RUNTIME_REUSE,
+            suite_runtime_id="mps-09-test",
+            source_digest="a" * 40,
+            fixture_epoch="fixture-test",
+        )
+        ledger.record(
+            SuiteRuntimeAction.PROVISION,
+            resource_id="mobile-social-ios-simulator:test",
+        )
+        ledger.record(
+            SuiteRuntimeAction.SCENARIO_START,
+            scenario_id=IOS_SOCIAL_PARITY_SCENARIOS[0],
+        )
+        gate.suite_runtime_ledger = ledger
+
+        report, cleanup_error = gate._finalize_suite_runtime(
+            cleanup_failed=False,
+        )
+
+        self.assertIsNotNone(report)
+        assert report is not None
+        self.assertEqual(report["result"], "FAIL")
+        self.assertEqual(
+            report["events"][-1]["action"],
+            SuiteRuntimeAction.SCENARIO_START.value,
+        )
+        self.assertIn("SUITE_RUNTIME_CLEANUP_INVALID", cleanup_error)
+        self.assertEqual(
+            report["findings"][-1]["code"],
+            "SUITE_CLEANUP_INCOMPLETE",
+        )
+
+    def test_ios_social_parity_records_each_scenario_once(self) -> None:
+        gate = SimulatorSocialGate("ios-social-parity")
+        result = {
+            "uiAction": "ui",
+            "receiverAssertion": "receiver",
+            "supportingObservation": "supporting",
+        }
+        with (
+            patch.object(
+                gate,
+                "_run_ios_home_explore",
+                return_value=result,
+            ),
+            patch.object(
+                gate,
+                "_run_ios_search_profile",
+                return_value=result,
+            ),
+            patch.object(
+                gate,
+                "_run_ios_circles_publish",
+                return_value=result,
+            ),
+            patch.object(
+                gate,
+                "_run_ios_thread_reaction",
+                return_value=result,
+            ),
+            patch.object(
+                gate,
+                "_run_ios_recovery_lifecycle",
+                return_value=result,
+            ),
+            patch.object(
+                gate,
+                "_run_ios_native_quality",
+                return_value=result,
+            ),
+        ):
+            suite = gate._run_ios_social_parity_suite(
+                manifest={"runId": "fixture-epoch"},
+                source_identity={"commit": "a" * 40},
+                sessions={
+                    "sim-ios": object(),
+                    "sim-ios-peer": object(),
+                },
+                actors={
+                    "sim-ios": self._actor("sim-ios", "alice"),
+                    "sim-ios-peer": self._actor(
+                        "sim-ios-peer",
+                        "bob",
+                    ),
+                    "fixture-eve": self._actor("sim-ios", "eve"),
+                },
+                journey=object(),  # type: ignore[arg-type]
+                journey_id="journey",
+            )
+
+        self.assertEqual(
+            [entry["scenarioId"] for entry in suite["scenarios"]],
+            list(IOS_SOCIAL_PARITY_SCENARIOS),
+        )
+        self.assertIsNotNone(gate.suite_runtime_ledger)
+        gate.suite_runtime_ledger.record(
+            SuiteRuntimeAction.CLEANUP_COMPLETE,
+        )
+        report = gate.suite_runtime_ledger.require_valid()
+        self.assertEqual(report["metrics"]["provisioningRuns"], 1)
+        self.assertEqual(report["metrics"]["clientLaunches"], 2)
+        self.assertEqual(report["metrics"]["completedScenarios"], 6)
 
     def test_missing_runtime_manifest_blocks_before_journey(self) -> None:
         artifacts = Artifacts()
@@ -279,6 +440,38 @@ class SimulatorSocialGateTests(unittest.TestCase):
                 ENVIRONMENT_ID,
             ):
                 gate._load_social_manifest()
+
+    def test_ios_social_parity_requires_non_destructive_environment(
+        self,
+    ) -> None:
+        gate = SimulatorSocialGate("ios-social-parity")
+
+        with (
+            patch.dict(
+                "os.environ",
+                {"PT_ACCEPTANCE_RUNTIME_MANIFEST": "/tmp/ios-social.json"},
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "load_runtime_manifest",
+                return_value={"environmentId": IOS_SOCIAL_ENVIRONMENT_ID},
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "require_runtime_service",
+            ) as require_service,
+        ):
+            manifest = gate._load_social_manifest()
+
+        self.assertEqual(
+            manifest["environmentId"],
+            IOS_SOCIAL_ENVIRONMENT_ID,
+        )
+        require_service.assert_called_once_with(
+            manifest,
+            "station",
+            "station",
+        )
 
     def test_unknown_scenario_fails_before_runtime_allocation(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported"):

@@ -13,7 +13,6 @@ import (
 
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
-	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -48,6 +47,22 @@ type PeerStreamResponse struct {
 	StatusCode int
 	Headers    http.Header
 	Body       io.ReadCloser
+}
+
+// PeerResponseError preserves one bounded non-success response so the domain
+// owner can decode its canonical error contract without Federation learning
+// business error semantics.
+type PeerResponseError struct {
+	StatusCode int
+	Headers    http.Header
+	Body       []byte
+}
+
+func (e *PeerResponseError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("Federation peer returned HTTP %d", e.StatusCode)
 }
 
 type peerClient struct {
@@ -209,7 +224,7 @@ func (c *peerClient) Open(
 			err,
 		)
 	}
-	endpoint, relayToken, viaRelay, err := c.resolveEndpoint(
+	endpoint, viaRelay, err := c.resolveEndpoint(
 		ctx,
 		call.TargetStationPeerID,
 		routePath,
@@ -231,8 +246,7 @@ func (c *peerClient) Open(
 		)
 	}
 	for name, value := range call.Headers {
-		if strings.EqualFold(name, "Authorization") ||
-			strings.EqualFold(name, nativefed.ForwardAuthorizationHeader) {
+		if strings.EqualFold(name, "Authorization") {
 			return nil, delivery.NewError(
 				delivery.FailureInvalidArgument,
 				"build Federation peer request",
@@ -241,13 +255,17 @@ func (c *peerClient) Open(
 		}
 		request.Header.Set(name, value)
 	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	var response *http.Response
 	if viaRelay {
-		request.Header.Set("Authorization", "Bearer "+relayToken)
-		request.Header.Set(nativefed.ForwardAuthorizationHeader, "Bearer "+token)
+		response, err = c.relay.RoundTrip(
+			ctx,
+			call.TargetStationPeerID,
+			request,
+		)
 	} else {
-		request.Header.Set("Authorization", "Bearer "+token)
+		response, err = c.client.Do(request)
 	}
-	response, err := c.client.Do(request)
 	if err != nil {
 		return nil, delivery.NewError(
 			delivery.FailureTransportUnavailable,
@@ -257,37 +275,38 @@ func (c *peerClient) Open(
 	}
 	if response.StatusCode < http.StatusOK ||
 		response.StatusCode >= http.StatusMultipleChoices {
-		// #region debug-point K:federated-attachment-error-body
-		var diagnosticBody []byte
-		if call.Route == PeerRouteConversationAttachmentObject {
-			diagnosticBody, _ = io.ReadAll(io.LimitReader(response.Body, 1024))
-		}
-		// #endregion
-		_, _ = io.Copy(
-			io.Discard,
-			io.LimitReader(
-				response.Body,
-				int64(peerResponseLimit)-int64(len(diagnosticBody)),
-			),
+		responseBody, readErr := io.ReadAll(
+			io.LimitReader(response.Body, peerResponseLimit+1),
 		)
 		_ = response.Body.Close()
-
-		detail := fmt.Errorf("peer returned HTTP %d", response.StatusCode)
-		// #region debug-point K:federated-attachment-error-body
-		if call.Route == PeerRouteConversationAttachmentObject {
-			detail = fmt.Errorf(
-				"peer returned HTTP %d code=%q details=%q body=%s",
-				response.StatusCode,
-				response.Header.Get("X-Peers-Error-Code"),
-				response.Header.Get("X-Peers-Error-Details"),
-				strings.TrimSpace(string(diagnosticBody)),
+		if readErr != nil {
+			return nil, delivery.NewError(
+				delivery.FailureTransportUnavailable,
+				"read Federation peer error response",
+				readErr,
 			)
 		}
-		// #endregion
+		if len(responseBody) > peerResponseLimit {
+			return nil, delivery.NewError(
+				delivery.FailureInvalidResult,
+				"read Federation peer error response",
+				errors.New("peer error response exceeds the configured limit"),
+			)
+		}
+		failureCode := delivery.FailureTransportUnavailable
+		if response.StatusCode >= http.StatusBadRequest &&
+			response.StatusCode < http.StatusInternalServerError &&
+			response.StatusCode != http.StatusTooManyRequests {
+			failureCode = delivery.FailureDomainRejected
+		}
 		return nil, delivery.NewError(
-			delivery.FailureTransportUnavailable,
+			failureCode,
 			"call Federation peer",
-			detail,
+			&PeerResponseError{
+				StatusCode: response.StatusCode,
+				Headers:    response.Header.Clone(),
+				Body:       responseBody,
+			},
 		)
 	}
 
@@ -337,21 +356,13 @@ func (c *peerClient) resolveEndpoint(
 	ctx context.Context,
 	targetStationPeerID string,
 	routePath string,
-) (endpoint string, relayToken string, viaRelay bool, err error) {
-	if c.relay != nil {
-		baseURL := strings.TrimRight(strings.TrimSpace(c.relay.BaseURL()), "/")
-		token := strings.TrimSpace(c.relay.Token())
-		if baseURL != "" && token != "" {
-			return fmt.Sprintf(
-				"%s/relay/forward/%s%s",
-				baseURL,
-				url.PathEscape(targetStationPeerID),
-				routePath,
-			), token, true, nil
-		}
+) (endpoint string, viaRelay bool, err error) {
+	if c.relay != nil && c.relay.Available() {
+		return "https://" + targetStationPeerID + ".station.invalid" +
+			routePath, true, nil
 	}
 	if c.stationURLResolver == nil {
-		return "", "", false, delivery.NewError(
+		return "", false, delivery.NewError(
 			delivery.FailureTransportUnavailable,
 			"resolve Federation peer route",
 			errors.New("no direct or relay route is available"),
@@ -362,7 +373,7 @@ func (c *peerClient) resolveEndpoint(
 		targetStationPeerID,
 	)
 	if err != nil {
-		return "", "", false, delivery.NewError(
+		return "", false, delivery.NewError(
 			delivery.FailureTransportUnavailable,
 			"resolve Federation peer route",
 			err,
@@ -370,14 +381,14 @@ func (c *peerClient) resolveEndpoint(
 	}
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
-		return "", "", false, delivery.NewError(
+		return "", false, delivery.NewError(
 			delivery.FailureTransportUnavailable,
 			"resolve Federation peer route",
 			errors.New("resolved Station URL is empty"),
 		)
 	}
 
-	return baseURL + routePath, "", false, nil
+	return baseURL + routePath, false, nil
 }
 
 func peerRouteSpecFor(route PeerRoute) (peerRouteSpec, bool) {

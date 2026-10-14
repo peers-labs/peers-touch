@@ -1,0 +1,96 @@
+# SAL-REL-01-ROLE-SECURITY - Relay 最小角色与安全基线
+
+## Task Slice
+
+```json
+{
+  "kind": "peers-touch-task-slice",
+  "planId": "SAL-RELAY-20261006",
+  "taskId": "SAL-REL-01-ROLE-SECURITY",
+  "workstreamId": "SAL-RELAY-FOUNDATION",
+  "title": "建立 Relay 最小运行角色、强制安全配置与无未声明出站基线",
+  "workClass": "infrastructure",
+  "completionClass": "functional",
+  "executionMode": "fix",
+  "closureId": "sal-relay-role-security",
+  "journeyId": "SAL-J08-ROLE",
+  "runtimeClass": "service",
+  "writeSet": [
+    "apps/station/app/conf",
+    "apps/station/app/main.go",
+    "apps/station/app/subserver/events/bus.go",
+    "apps/station/frame/peers.go",
+    "apps/station/frame/core/federation",
+    "apps/station/frame/core/plugin/native/node",
+    "apps/station/frame/core/plugin/native/subserver/relay",
+    "apps/station/frame/core/runtime/role",
+    "docs/architecture/engineering/architecture-governance/architecture-modules.json",
+    "docs/architecture/engineering/api-governance",
+    "docs/architecture/domains/federation",
+    "docs/knowledge",
+    "tooling/acceptance",
+    "tooling/docker",
+    "tooling/scripts/deploy",
+    "tooling/scripts/local-dev"
+  ],
+  "readSet": [
+    "apps/station/app/subserver/federation",
+    "apps/station/frame/core/plugin/native/subserver/relay-client",
+    "docs/architecture/platform/station/access",
+    "model/domain/federation"
+  ],
+  "budgets": {
+    "focusedCheckSeconds": 1200,
+    "functionalRunSeconds": 1800,
+    "cleanupSeconds": 180
+  },
+  "checks": [
+    {
+      "id": "relay-role-source",
+      "command": "cd apps/station && go test -race -count=1 ./frame/core/plugin/native/subserver/relay/... && cd ../.. && python3 -m unittest tooling.scripts.deploy.test_source_sync tooling.scripts.deploy.test_windows_runtime tooling.scripts.deploy.test_posix_relay_runtime tooling.acceptance.tests.test_posix_service_runtime",
+      "verificationClass": "SOURCE_CHECK"
+    },
+    {
+      "id": "relay-role-functional",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate relay-role-security-contract",
+      "verificationClass": "FUNCTIONAL_CHECK"
+    },
+    {
+      "id": "relay-role-proof",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate relay-role-security-contract",
+      "verificationClass": "ACCEPTANCE_PROOF"
+    }
+  ],
+  "doneWhen": [
+    "Relay and Station are explicit runtime roles assembled from one repository and binary",
+    "Relay role exposes only health, signed discovery, operator admin, mount, tunnel, and metrics",
+    "Production Relay deployment fails without a reviewed outer TLS boundary, signing key, operator policy, and quotas",
+    "Relay admin rejects Station app JWTs and requires dedicated audience and scope",
+    "Hardcoded 192.0.2.12 debug egress and every undeclared outbound endpoint are removed",
+    "Role route inventory and secret-redaction tests pass",
+    "The reviewed one profile deploys the exact-source Relay and NGINX TLS sidecar on Linux/POSIX with isolated PostgreSQL/data ownership, persistent logs, health, status, and stop ownership",
+    "Windows Relay configuration and runtime dispatch fail closed because Windows is not a Relay service host"
+  ],
+  "failureBehavior": [
+    "Do not create a separate Relay repository, binary fork, or business handler copy",
+    "Do not use a denylist that exposes newly added Station handlers by default",
+    "Do not allow production plaintext or insecure TLS verification",
+    "Do not log credentials, grants, payloads, or high-cardinality route identifiers"
+  ],
+  "updatedAt": "2026-10-08T14:28:33.000Z"
+}
+```
+
+## Objective
+
+先把 Relay 变成可审计的最小公网运行单元，再允许任何 enrollment 或客户端接入。
+
+## Current Snapshot
+
+- Source checkpoint `e7c3ecf74` 已建立显式 role allowlist、生产安全启动校验，
+  dedicated operator auth、secret redaction 与零 debug egress。
+- v8 曾把 `sixwin` Windows-native Station/Relay 纳入实现与证明；SAL-D13 已
+  supersede 该宿主选择，相关 snapshot 仅在 frozen v1-v8 中保留。
+- v9 必须删除 Windows Relay role dispatch、配置、profile 和 Gate 绑定，并把
+  `relay-role-security-contract` 改绑 `one` 上的 exact-source Linux runtime。
+- Windows Desktop runtime cell 保留，但只能作为客户端连接 Linux Relay。

@@ -14,8 +14,11 @@ use std::time::Duration;
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use secure_content_core::object::ObjectTransferControl;
 use tauri::Manager;
+use tokio_util::sync::CancellationToken;
 use ulid::Ulid;
 use zeroize::Zeroize;
+
+use crate::application::station_runtime::client::{StationClient, StationRequestScope};
 
 use self::station_trust::TrustedStationSigningKey;
 use self::store::SecureContentStore;
@@ -25,6 +28,7 @@ const TEARDOWN_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SecureContentSessionKey {
     pub station_peer_id: String,
+    pub station_lifecycle_generation: u64,
     pub actor_ptid: String,
     pub device_id: String,
     pub jwt_session_id: String,
@@ -35,10 +39,11 @@ pub struct SecureContentSessionKey {
 pub struct SecureContentSession {
     pub key: SecureContentSessionKey,
     pub account_id: String,
-    pub station_url: String,
     pub signing_key_id: String,
     pub profile_version: u64,
     pub trusted_station_signing_key: TrustedStationSigningKey,
+    station_client: StationClient,
+    request_cancellation: CancellationToken,
     cancellation_requested: AtomicBool,
     secrets: RwLock<SecureContentSessionSecrets>,
     requests: Mutex<SecureContentRequestState>,
@@ -113,7 +118,7 @@ impl SecureContentSession {
     pub fn new(
         key: SecureContentSessionKey,
         account_id: String,
-        station_url: String,
+        station_client: StationClient,
         token: String,
         signing_key_id: String,
         profile_version: u64,
@@ -123,10 +128,11 @@ impl SecureContentSession {
         Self {
             key,
             account_id,
-            station_url,
             signing_key_id,
             profile_version,
             trusted_station_signing_key,
+            station_client,
+            request_cancellation: CancellationToken::new(),
             cancellation_requested: AtomicBool::new(false),
             secrets: RwLock::new(SecureContentSessionSecrets {
                 token,
@@ -138,6 +144,21 @@ impl SecureContentSession {
             }),
             requests_drained: Condvar::new(),
         }
+    }
+
+    pub(crate) fn station_client(&self) -> &StationClient {
+        &self.station_client
+    }
+
+    pub(crate) fn station_scope(&self) -> StationRequestScope {
+        StationRequestScope {
+            station_peer_id: self.key.station_peer_id.clone(),
+            lifecycle_generation: self.key.station_lifecycle_generation,
+        }
+    }
+
+    pub(crate) fn request_cancellation(&self) -> CancellationToken {
+        self.request_cancellation.child_token()
     }
 
     pub fn begin_request(&self) -> Result<SecureContentRequestGuard<'_>, String> {
@@ -213,6 +234,7 @@ impl SecureContentSession {
                 .unwrap_or_else(|error| error.into_inner());
             requests.accepting = false;
             self.cancellation_requested.store(true, Ordering::Release);
+            self.request_cancellation.cancel();
         }
         let mut secrets = self
             .secrets
@@ -269,6 +291,7 @@ impl SecureContentSession {
 impl Drop for SecureContentSession {
     fn drop(&mut self) {
         self.cancellation_requested.store(true, Ordering::Release);
+        self.request_cancellation.cancel();
         let secrets = self
             .secrets
             .get_mut()
@@ -429,6 +452,8 @@ impl SecureContentSupervisor {
         let window_label = session.key.window_label.clone();
         if let Some(runtime) = active.get(&window_label) {
             if runtime.lease.session.key.station_peer_id == session.key.station_peer_id
+                && runtime.lease.session.key.station_lifecycle_generation
+                    == session.key.station_lifecycle_generation
                 && runtime.lease.session.key.actor_ptid == session.key.actor_ptid
                 && runtime.lease.session.key.device_id == session.key.device_id
                 && runtime.lease.session.key.jwt_session_id == session.key.jwt_session_id
@@ -805,10 +830,19 @@ mod tests {
     }
 
     fn session_for_window(actor: &str, window_label: &str) -> SecureContentSession {
+        session_for_scope(actor, window_label, 1)
+    }
+
+    fn session_for_scope(
+        actor: &str,
+        window_label: &str,
+        station_lifecycle_generation: u64,
+    ) -> SecureContentSession {
         let trusted_station_signing_key = SigningKey::from_bytes(&[8; 32]);
         SecureContentSession::new(
             SecureContentSessionKey {
                 station_peer_id: "station-1".to_string(),
+                station_lifecycle_generation,
                 actor_ptid: actor.to_string(),
                 device_id: "device-1".to_string(),
                 jwt_session_id: "session-1".to_string(),
@@ -816,7 +850,7 @@ mod tests {
                 session_generation: 0,
             },
             "account-1".to_string(),
-            "https://station.invalid".to_string(),
+            StationClient::testing_scoped("station-1", station_lifecycle_generation),
             "secret-token".to_string(),
             "signing-key-1".to_string(),
             1,
@@ -826,6 +860,25 @@ mod tests {
                 verifying_key: trusted_station_signing_key.verifying_key(),
             },
         )
+    }
+
+    #[test]
+    fn secure_content_supervisor_retires_reselected_station_lifecycle() {
+        let supervisor = SecureContentSupervisor::new();
+        let store = Arc::new(SecureContentStore::in_memory().unwrap());
+        let first = supervisor
+            .activate_with_store(session_for_scope("ptid:alice", "main", 1), 1, store.clone())
+            .unwrap();
+        let second = supervisor
+            .activate_with_store(session_for_scope("ptid:alice", "main", 2), 1, store)
+            .unwrap();
+
+        assert_ne!(
+            first.session.key.station_lifecycle_generation,
+            second.session.key.station_lifecycle_generation
+        );
+        assert!(first.session.is_cancelled());
+        assert!(supervisor.is_current(&second.session.key));
     }
 
     #[test]

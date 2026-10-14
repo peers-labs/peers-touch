@@ -111,8 +111,8 @@ export const demoMoments: Moment[] = [
   {
     id: 'mo1', name: 'Carol Li', avatar: 'CL', avatarUrl: demoAvatarUrls.carol, avatarGradient: GRADIENTS[3], time: '2 hours ago',
     text: 'Just shipped the new onboarding flow. The team did an amazing job tightening up every interaction.',
-    likes: 24, myReaction: 'like',
-    reactionCounts: { like: 20, love: 3, celebrate: 1 },
+    likes: 24, myReaction: 'love',
+    reactionCounts: { love: 24 },
     comments: [
       { id: 'c1', name: 'Alice Chen', avatar: 'AC', avatarUrl: demoAvatarUrls.alice, avatarGradient: GRADIENTS[0], text: 'Looks great! The flow is so smooth now.', time: '1h' },
       { id: 'c2', name: 'Bob Zhang', avatar: 'BZ', avatarUrl: demoAvatarUrls.bob, avatarGradient: GRADIENTS[2], text: 'Congrats on shipping!', time: '45m' },
@@ -121,7 +121,8 @@ export const demoMoments: Moment[] = [
   {
     id: 'mo2', name: 'Bob Zhang', avatar: 'BZ', avatarUrl: demoAvatarUrls.bob, avatarGradient: GRADIENTS[2], time: '5 hours ago',
     text: 'Sunset from the office rooftop today. Never gets old.', likes: 56,
-    reactionCounts: { like: 30, love: 22, wow: 4 },
+    reactionCounts: { love: 56 },
+    images: [GRADIENTS[4]],
     comments: [
       { id: 'c3', name: 'Emma Liu', avatar: 'EL', avatarUrl: demoAvatarUrls.emma, avatarGradient: GRADIENTS[7], text: 'Stunning view!', time: '4h' },
       { id: 'c4', name: 'David Wu', avatar: 'DW', avatarUrl: demoAvatarUrls.david, avatarGradient: GRADIENTS[5], text: 'Need to get up there sometime', time: '3h' },
@@ -130,7 +131,8 @@ export const demoMoments: Moment[] = [
   {
     id: 'mo3', name: 'Emma Liu', avatar: 'EL', avatarUrl: demoAvatarUrls.emma, avatarGradient: GRADIENTS[7], time: 'Yesterday',
     text: 'Exploring color palettes for the next release. Leaning warm and muted.', likes: 31,
-    reactionCounts: { like: 25, love: 6 },
+    reactionCounts: { love: 31 },
+    images: [GRADIENTS[5], GRADIENTS[6], GRADIENTS[0]],
     comments: [
       { id: 'c5', name: 'Carol Li', avatar: 'CL', avatarUrl: demoAvatarUrls.carol, avatarGradient: GRADIENTS[3], text: 'The middle one is gorgeous', time: '20h' },
     ],
@@ -138,14 +140,15 @@ export const demoMoments: Moment[] = [
   {
     id: 'mo4', name: 'David Wu', avatar: 'DW', avatarUrl: demoAvatarUrls.david, avatarGradient: GRADIENTS[5], time: '2 days ago',
     text: 'New blog post: Building resilient federated networks. Link in bio.', likes: 18,
-    reactionCounts: { like: 18 },
+    reactionCounts: { love: 18 },
     comments: [],
   },
   {
     id: 'mo5', name: 'Design Systems', avatar: 'DS', avatarGradient: GRADIENTS[6], time: '3 days ago',
     text: 'Token documentation is live. Components are now fully themeable through the new token pipeline.',
-    likes: 42, myReaction: 'celebrate',
-    reactionCounts: { like: 30, love: 8, celebrate: 4 },
+    likes: 42, myReaction: 'love',
+    reactionCounts: { love: 42 },
+    images: [GRADIENTS[1], GRADIENTS[3]],
     comments: [
       { id: 'c6', name: 'Alice Chen', avatar: 'AC', avatarUrl: demoAvatarUrls.alice, avatarGradient: GRADIENTS[0], text: 'This is huge for the team.', time: '3d' },
     ],

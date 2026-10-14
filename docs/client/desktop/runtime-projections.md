@@ -77,6 +77,8 @@ login:
 - periodically reconcile friendship, profiles, presence, and notifications;
 - keep UI components as pure readers of the owning stores whenever possible.
 
+Chat/Messaging event consumption (messages, receipts, typing, mutations, group membership, group federation, conversation settings, cold resync) has been extracted to the `messaging` runtime (see §4.x Messaging Runtime Contract below).
+
 Friend request handling specifically belongs here. A notification saying "User B sent a friend request" must cause the social projection to refresh friend requests and related counters without waiting for Contacts to remount.
 
 Peer public profile is also part of this projection. The chat layer needs the rich public profile (display name, bio, avatar/header, region, tags, links, counts) of any peer it can converse with. The cache lives in `socialChat.peerProfiles` and is filled by `loadPeerProfile(did)`; UI panels (Contacts detail, Chat detail) call it lazily on view, while authoritative invalidation must come from the runtime — when an `actor.profile.updated` realtime signal lands (or, until then, on supervisor resync) `socialRealtime` must call `loadPeerProfile(did, true)` for every peer currently visible in `sessions`/`groupMembers` so the next render sees the new profile.
@@ -203,7 +205,7 @@ Prefetch is **not** a substitute for a runtime — runtimes own *long-lived* pro
 | `settings` | `pages/SettingsPage.descriptor.tsx` | `settings` | migrated |
 | `applets` | `pages/AppletsPage.descriptor.tsx` | `applets` | migrated |
 | `applet:*` | `pages/AppletRuntimePage.descriptor.tsx` | `applets` | migrated dynamic route; `appletsRuntime` owns `acquirePage/releasePage` session lease |
-| `moments` | `pages/moments/MomentsApp.descriptor.tsx` | `moments` | migrated |
+| `moments` | `pages/moments/MomentsApp.descriptor.tsx` | `moments`, `social`, `messaging` | migrated |
 | `agent` | `pages/AgentChatPage.descriptor.tsx` | `agent-capability`, `agent-topic`, `agent-tool`, `social` | migrated (`preload: idle`, `keepAlive: forever`); page is a pure `AgentWorkbench` renderer |
 | `home` | `pages/HomePage.descriptor.tsx` | `home` | migrated (`preload: eager`, `keepAlive: forever`); page renders the Station Home projection |
 | `evaluation` | `pages/EvaluationPage.descriptor.tsx` | `evaluation`, `agent-capability` | migrated (`preload: on-visit`, `keepAlive: lru(1)`); page renders Station-owned Evaluation truth and runtime recovery |

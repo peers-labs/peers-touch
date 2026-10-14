@@ -24,7 +24,7 @@ describe('Mobile navigation descriptor lifetimes', () => {
     expect(primaryTabDescriptors.every((descriptor) => (
       descriptor.layout === 'primary' && descriptor.keepAlive === false
     ))).toBe(true);
-    expect(detailDescriptors).toHaveLength(5);
+    expect(detailDescriptors).toHaveLength(10);
     expect(detailDescriptors.every((descriptor) => (
       descriptor.layout === 'detail' && descriptor.keepAlive === false
     ))).toBe(true);
@@ -32,6 +32,20 @@ describe('Mobile navigation descriptor lifetimes', () => {
     expect(overlayDescriptors.every((descriptor) => (
       descriptor.layout === 'overlay' && descriptor.keepAlive === false
     ))).toBe(true);
+  });
+
+  it('binds Group routes to the registered Messaging runtime owner', () => {
+    const groupRoutes = [...detailDescriptors, ...overlayDescriptors].filter(
+      (descriptor) => descriptor.routeId.includes('group'),
+    );
+
+    expect(groupRoutes).toHaveLength(2);
+    expect(groupRoutes.every(
+      (descriptor) => descriptor.ownerRuntimeId === 'messaging',
+    )).toBe(true);
+    expect([...detailDescriptors, ...overlayDescriptors].some(
+      (descriptor) => descriptor.ownerRuntimeId === 'group',
+    )).toBe(false);
   });
 
   it('owns primary and detail route identity independently of business stores', () => {
@@ -106,6 +120,46 @@ describe('Mobile navigation descriptor lifetimes', () => {
       routeId: 'detail:setting',
       settingId: 'privacy-security',
     });
+  });
+
+  it('owns Social search and canonical profile route state', () => {
+    const navigation = useMobileNavigationStore.getState();
+    navigation.pushDetail({ routeId: 'detail:social-search' });
+    navigation.pushDetail({
+      routeId: 'detail:social-profile',
+      actorPtid: 'ptid:bob',
+      federationId: 'federation-1',
+    });
+
+    expect(navigationLocationKey(activeMobileDetailRoute(
+      useMobileNavigationStore.getState(),
+    )!)).toBe(
+      'detail:social-profile:ptid:bob:federation-1',
+    );
+
+    navigation.popDetail();
+    expect(activeMobileDetailRoute(useMobileNavigationStore.getState())).toEqual({
+      routeId: 'detail:social-search',
+    });
+  });
+
+  it('owns Circle list, editor, and member picker route identity', () => {
+    const navigation = useMobileNavigationStore.getState();
+    navigation.pushDetail({ routeId: 'detail:social-circles' });
+    navigation.pushDetail({
+      routeId: 'detail:social-circle',
+      circleId: '42',
+    });
+    navigation.pushDetail({
+      routeId: 'detail:social-circle-members',
+      circleId: '42',
+    });
+
+    expect(useMobileNavigationStore.getState().detailStack.map(navigationLocationKey)).toEqual([
+      'detail:social-circles',
+      'detail:social-circle:42',
+      'detail:social-circle-members:42',
+    ]);
   });
 
   it('owns one selected-only overlay and clears it before detail navigation', () => {

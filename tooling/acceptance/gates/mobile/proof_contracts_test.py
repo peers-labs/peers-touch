@@ -21,6 +21,7 @@ from tooling.acceptance.gates.mobile.proof_contracts import (
     protected_path_snapshot,
     validate_artifact_roles,
     validate_contract_payload,
+    validate_historical_lease_acquisition_payload,
     validate_redaction,
     verify_protected_paths,
     verify_version_policy,
@@ -395,7 +396,11 @@ def browser_session_lease(
     }
 
 
-def physical_device_lease(client_id: str = "alice-ios") -> dict[str, Any]:
+def physical_device_lease(
+    client_id: str = "alice-ios",
+    *,
+    gate_id: str = GATE_ID,
+) -> dict[str, Any]:
     platform = proof_contracts.CLIENT_PLATFORM[client_id]
     return {
         "artifactKind": "physical-device-lease",
@@ -404,7 +409,7 @@ def physical_device_lease(client_id: str = "alice-ios") -> dict[str, Any]:
         "holderRunId": RUN_ID,
         "fenceToken": 9,
         "runId": RUN_ID,
-        "gateId": GATE_ID,
+        "gateId": gate_id,
         "clientId": client_id,
         "platform": platform,
         "physicalDeviceRef": f"device-ref/{client_id}",
@@ -582,13 +587,17 @@ def lease_outcome(
     outcome: dict[str, Any] = {
         "artifactKind": "mobile-lease-outcome",
         "runId": RUN_ID,
-        "gateId": GATE_ID,
+        "gateId": lease["gateId"],
         "leaseId": lease_id,
         "leaseKind": lease_kind,
         "resourceKey": lease["resourceKey"],
         "holderRunId": lease["holderRunId"],
         "fenceToken": lease["fenceToken"],
-        "acquisition": artifact_ref(acquisition_path, payload=lease),
+        "acquisition": artifact_ref(
+            acquisition_path,
+            gate_id=lease["gateId"],
+            payload=lease,
+        ),
         "finalState": "RELEASED",
         "cleanupCompleted": True,
         "baselineRestored": True,
@@ -646,6 +655,33 @@ class ProofPayloadContractTests(unittest.TestCase):
                 )
                 self.assertEqual(validated, payload)
                 self.assertIsNot(validated, payload)
+
+    def test_android_social_gate_accepts_device_lease_lifecycle(self) -> None:
+        gate_id = "mobile-social-android-native"
+        lease = physical_device_lease(
+            "alice-android",
+            gate_id=gate_id,
+        )
+        outcome = lease_outcome(
+            lease,
+            "physical-device",
+            "runtime/mobile/leases/devices/alice-android.json",
+        )
+
+        for kind, payload in (
+            ("physical-device-lease", lease),
+            ("mobile-lease-outcome", outcome),
+        ):
+            with self.subTest(kind=kind):
+                self.assertEqual(
+                    validate_contract_payload(
+                        payload,
+                        expected_kind=kind,
+                        expected_run_id=RUN_ID,
+                        expected_gate_id=gate_id,
+                    ),
+                    payload,
+                )
 
     def test_required_nested_fields_fail_closed(self) -> None:
         required_paths = {
@@ -921,6 +957,38 @@ class E20AContractTests(unittest.TestCase):
         for payload in payloads:
             with self.subTest(kind=payload["artifactKind"]):
                 validate_contract_payload(payload, expected_run_id=RUN_ID)
+
+    def test_expired_acquisition_is_history_only_after_full_validation(self) -> None:
+        payload = physical_device_lease()
+        payload.update(
+            {
+                "heartbeatAt": "2000-01-01T00:00:00Z",
+                "renewBefore": "2000-01-01T00:05:00Z",
+                "expiresAt": "2000-01-01T00:10:00Z",
+            }
+        )
+
+        with self.assertRaisesRegex(
+            ProofContractError,
+            "expiresAt must be in the future",
+        ):
+            validate_contract_payload(payload, expected_run_id=RUN_ID)
+
+        self.assertEqual(
+            validate_historical_lease_acquisition_payload(
+                payload,
+                expected_run_id=RUN_ID,
+            ),
+            payload,
+        )
+
+        malformed = copy.deepcopy(payload)
+        malformed["renewBefore"] = malformed["heartbeatAt"]
+        with self.assertRaisesRegex(ProofContractError, "timestamps must satisfy"):
+            validate_historical_lease_acquisition_payload(
+                malformed,
+                expected_run_id=RUN_ID,
+            )
 
     def test_e20a_physical_device_lease_is_opaque_physical_and_fenced(self) -> None:
         mutations = (

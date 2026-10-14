@@ -167,6 +167,41 @@ def _source_plan_status(path: Path) -> dict[str, Any]:
     return _planctl_projection(path, "source-status")
 
 
+def repository_has_attached_head(root: Path) -> bool:
+    try:
+        _git(
+            root,
+            "symbolic-ref",
+            "--quiet",
+            "--short",
+            "HEAD",
+        )
+    except ExecutionPlanError:
+        return False
+    return True
+
+
+def _plan_status_for_context(path: Path) -> dict[str, Any]:
+    try:
+        repository_root = Path(
+            _git(path.parent, "rev-parse", "--show-toplevel")
+        )
+    except ExecutionPlanError:
+        return _source_plan_status(path)
+    if not repository_has_attached_head(repository_root):
+        return _source_plan_status(path)
+    try:
+        mount = _workspace_plan_mount(repository_root)
+    except ExecutionPlanError as error:
+        if error.code == PLAN_BINDING_REQUIRED:
+            return _source_plan_status(path)
+        raise
+    mounted_path = (repository_root / mount["planPath"]).resolve(strict=True)
+    if mounted_path != path:
+        return _source_plan_status(path)
+    return _mounted_plan_status(path)
+
+
 def _load_plan(path: Path, payload: dict[str, Any]) -> FormalExecutionPlan:
     acceptance = payload.get("acceptance")
     if not isinstance(acceptance, dict):
@@ -267,7 +302,7 @@ def load_formal_plan(path: Path) -> FormalExecutionPlan:
             PLAN_INVALID,
             f"execution plan does not use the current stable Plan contract: {resolved}",
         )
-    return _load_plan(resolved, _source_plan_status(resolved))
+    return _load_plan(resolved, _plan_status_for_context(resolved))
 
 
 def _workspace_plan_mount(root: Path) -> dict[str, str]:

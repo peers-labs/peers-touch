@@ -1,0 +1,52 @@
+package domain
+
+import (
+	"time"
+
+	peerpb "github.com/peers-labs/peers-touch/station/frame/touch/model/peer"
+)
+
+const (
+	AccessEndpointDomain  = "peers-touch/access-endpoint/v1\x00"
+	StationRouteDomain    = peerpb.StationRouteDomain
+	ConnectionGrantDomain = peerpb.ConnectionGrantDomain
+
+	AccessProtocolVersion       = uint32(1)
+	DiscoveryChallengeSize      = 32
+	MaxRouteAttestationLifetime = peerpb.MaxRouteAttestationLifetime
+	MaxConnectionGrantLifetime  = peerpb.MaxConnectionGrantLifetime
+	MaxConnectionGrantUses      = peerpb.MaxConnectionGrantUses
+)
+
+type RouteRecord struct {
+	RouteID          string
+	StationPeerID    string
+	NodePeerID       string
+	RelayPeerID      string
+	RouteGeneration  uint64
+	Visibility       peerpb.StationRouteVisibility
+	ExpiresAt        time.Time
+	AttestationBytes []byte
+}
+
+type GrantRecord struct {
+	GrantID         string
+	GrantDigest     string
+	StationPeerID   string
+	RelayPeerID     string
+	RouteID         string
+	RouteGeneration uint64
+	MaxUses         uint32
+	RemainingUses   uint32
+	ExpiresAt       time.Time
+}
+
+type GrantRedemptionRecord struct {
+	RedemptionID    string
+	GrantDigest     string
+	StationPeerID   string
+	SourcePeerID    string
+	RouteID         string
+	RouteGeneration uint64
+	ExpiresAt       time.Time
+}

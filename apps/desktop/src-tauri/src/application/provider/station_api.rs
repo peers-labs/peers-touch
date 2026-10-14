@@ -2,7 +2,9 @@ use reqwest::Method;
 use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 
-use crate::infrastructure::station_client::{self, StationClientError};
+use crate::application::station_runtime::client::{
+    self as station_client, StationClient, StationClientError,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StationProvider {
@@ -87,8 +89,11 @@ impl From<StationClientError> for StationApiError {
     }
 }
 
-pub fn list_providers(token: &str) -> Result<Value, StationApiError> {
-    Ok(station_client::request_json_auth(
+pub fn list_providers(
+    station_client: &StationClient,
+    token: &str,
+) -> Result<Value, StationApiError> {
+    Ok(station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/provider/list",
         token,
@@ -97,8 +102,12 @@ pub fn list_providers(token: &str) -> Result<Value, StationApiError> {
     )?)
 }
 
-pub fn get_providers(token: &str, _scope: &str) -> Result<Vec<StationProvider>, StationApiError> {
-    let resp = station_client::request_json_auth(
+pub fn get_providers(
+    station_client: &StationClient,
+    token: &str,
+    _scope: &str,
+) -> Result<Vec<StationProvider>, StationApiError> {
+    let resp = station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/provider/list",
         token,
@@ -114,8 +123,12 @@ pub fn get_providers(token: &str, _scope: &str) -> Result<Vec<StationProvider>, 
     .map_err(|e| StationApiError::Internal(format!("decode providers: {}", e)))
 }
 
-pub fn get_provider(token: &str, provider_id: &str) -> Result<Value, StationApiError> {
-    Ok(station_client::request_json_auth(
+pub fn get_provider(
+    station_client: &StationClient,
+    token: &str,
+    provider_id: &str,
+) -> Result<Value, StationApiError> {
+    Ok(station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/provider/get",
         token,
@@ -125,14 +138,18 @@ pub fn get_provider(token: &str, provider_id: &str) -> Result<Value, StationApiE
 }
 
 pub fn get_provider_record(
+    station_client: &StationClient,
     token: &str,
     provider_id: &str,
 ) -> Result<StationProvider, StationApiError> {
-    parse_provider_from_response(get_provider(token, provider_id)?)
+    parse_provider_from_response(get_provider(station_client, token, provider_id)?)
 }
 
-pub fn list_available_models(token: &str) -> Result<Value, StationApiError> {
-    Ok(station_client::request_json_auth(
+pub fn list_available_models(
+    station_client: &StationClient,
+    token: &str,
+) -> Result<Value, StationApiError> {
+    Ok(station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/model/available",
         token,
@@ -142,6 +159,7 @@ pub fn list_available_models(token: &str) -> Result<Value, StationApiError> {
 }
 
 pub fn update_provider_full(
+    station_client: &StationClient,
     token: &str,
     provider_id: &str,
     enabled: bool,
@@ -161,7 +179,7 @@ pub fn update_provider_full(
         }
     }
 
-    Ok(station_client::request_json_auth(
+    Ok(station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/provider/update",
         token,
@@ -171,6 +189,7 @@ pub fn update_provider_full(
 }
 
 pub fn create_model(
+    station_client: &StationClient,
     token: &str,
     provider_id: &str,
     model_id: &str,
@@ -189,7 +208,7 @@ pub fn create_model(
     if let Some(value) = capabilities {
         body["capabilities"] = value.clone();
     }
-    Ok(station_client::request_json_auth(
+    Ok(station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/model/create",
         token,
@@ -199,6 +218,7 @@ pub fn create_model(
 }
 
 pub fn create_provider(
+    station_client: &StationClient,
     token: &str,
     provider_id: &str,
     display_name: &str,
@@ -216,7 +236,7 @@ pub fn create_provider(
         body["config_json"] = cfg.clone();
     }
 
-    let resp = station_client::request_json_auth(
+    let resp = station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/provider/create",
         token,
@@ -228,6 +248,7 @@ pub fn create_provider(
 }
 
 pub fn update_provider(
+    station_client: &StationClient,
     token: &str,
     provider_id: &str,
     version: i64,
@@ -253,7 +274,7 @@ pub fn update_provider(
         body["config_json"] = v.clone();
     }
 
-    let resp = station_client::request_json_auth(
+    let resp = station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/provider/update",
         token,
@@ -265,11 +286,12 @@ pub fn update_provider(
 }
 
 pub fn delete_provider(
+    station_client: &StationClient,
     token: &str,
     provider_id: &str,
     version: i64,
 ) -> Result<(), StationApiError> {
-    station_client::request_json_auth(
+    station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/provider/delete",
         token,
@@ -282,8 +304,12 @@ pub fn delete_provider(
     Ok(())
 }
 
-pub fn list_models(token: &str, provider_id: &str) -> Result<Vec<StationModel>, StationApiError> {
-    let resp = station_client::request_json_auth(
+pub fn list_models(
+    station_client: &StationClient,
+    token: &str,
+    provider_id: &str,
+) -> Result<Vec<StationModel>, StationApiError> {
+    let resp = station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/model/list",
         token,
@@ -299,6 +325,7 @@ pub fn list_models(token: &str, provider_id: &str) -> Result<Vec<StationModel>, 
 }
 
 pub fn update_model(
+    station_client: &StationClient,
     token: &str,
     provider_id: &str,
     model_id: &str,
@@ -326,7 +353,7 @@ pub fn update_model(
         body["capabilities"] = value.clone();
     }
 
-    let resp = station_client::request_json_auth(
+    let resp = station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/model/update",
         token,
@@ -342,11 +369,12 @@ pub fn update_model(
 }
 
 pub fn set_credential(
+    station_client: &StationClient,
     token: &str,
     provider_id: &str,
     api_key: &str,
 ) -> Result<CredentialStatus, StationApiError> {
-    let resp = station_client::request_json_auth(
+    let resp = station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/credential/set",
         token,
@@ -362,11 +390,12 @@ pub fn set_credential(
 }
 
 pub fn delete_credential(
+    station_client: &StationClient,
     token: &str,
     provider_id: &str,
     version: i64,
 ) -> Result<(), StationApiError> {
-    station_client::request_json_auth(
+    station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/credential/delete",
         token,
@@ -380,10 +409,11 @@ pub fn delete_credential(
 }
 
 pub fn credential_status(
+    station_client: &StationClient,
     token: &str,
     provider_id: &str,
 ) -> Result<CredentialStatus, StationApiError> {
-    let resp = station_client::request_json_auth(
+    let resp = station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/credential/status",
         token,
@@ -404,10 +434,11 @@ pub struct ResolvedCredential {
 }
 
 pub fn resolve_credential(
+    station_client: &StationClient,
     token: &str,
     provider_id: &str,
 ) -> Result<ResolvedCredential, StationApiError> {
-    let resp = station_client::request_json_auth(
+    let resp = station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/credential/resolve",
         token,
@@ -424,8 +455,13 @@ fn parse_provider_from_response(resp: Value) -> Result<StationProvider, StationA
         .map_err(|e| StationApiError::Internal(format!("decode provider: {}", e)))
 }
 
-pub fn hide_model(token: &str, provider_id: &str, model_id: &str) -> Result<(), StationApiError> {
-    station_client::request_json_auth(
+pub fn hide_model(
+    station_client: &StationClient,
+    token: &str,
+    provider_id: &str,
+    model_id: &str,
+) -> Result<(), StationApiError> {
+    station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/provider/model/hide",
         token,
@@ -435,8 +471,12 @@ pub fn hide_model(token: &str, provider_id: &str, model_id: &str) -> Result<(), 
     Ok(())
 }
 
-pub fn get_hidden_models(token: &str, provider_id: &str) -> Result<Vec<String>, StationApiError> {
-    let resp = station_client::request_json_auth(
+pub fn get_hidden_models(
+    station_client: &StationClient,
+    token: &str,
+    provider_id: &str,
+) -> Result<Vec<String>, StationApiError> {
+    let resp = station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/provider/model/hidden",
         token,

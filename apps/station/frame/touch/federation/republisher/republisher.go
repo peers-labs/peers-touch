@@ -171,15 +171,7 @@ func (r *Republisher) runOnce(parent context.Context) {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(parent, r.cfg.PerRowTimeout)
-		// WithoutBroadcast: the periodic republish bumps locator_seq
-		// purely to keep the DHT entry from expiring; the underlying
-		// envelope content is identical to the previous round, so
-		// firing a Tier C1 invalidation broadcast on every actor every
-		// Interval would flood the relay channel with no propagation
-		// value. Real content changes go through the user-driven path
-		// (UpdateProfile / UpdateVisibility / SignUp), which DOES
-		// broadcast.
-		err := touchactor.PublishVisibility(ctx, row.ID, touchactor.WithoutBroadcast())
+		err := touchactor.RepublishVisibility(ctx, row.ID)
 		cancel()
 		if err != nil {
 			info.failed++

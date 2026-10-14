@@ -1,19 +1,13 @@
-import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
-
 import {
-  verifyStationIdentityProof,
+  activateStationRouteBinding,
+  discoverStationEndpoint,
+  fetchActiveStationIdentity,
+  readStationRouteBinding,
+  restoreStationRouteBinding,
+  type NativeStationRouteCandidate,
+  type StationEndpointDiscovery,
   type VerifiedStationIdentity,
 } from '../../services/mobileCommands';
-import {
-  StationIdentityRequestSchema,
-  StationIdentityResponseSchema,
-} from '../../gen/proto/domain/peer/station_identity_pb';
-
-const REQUIRED_STATION_CAPABILITIES = [
-  'access-gate',
-  'actor-ptid',
-  'station-identity',
-] as const;
 
 export interface StationProbeResult {
   url: string;
@@ -28,6 +22,12 @@ export interface StationIdentityResult {
   canonicalOrigin: string;
   verifiedAt: number;
   identityVerified: boolean;
+  routeId: string;
+  routeType: 'direct' | 'relay';
+}
+
+export interface ConnectedStationIdentity extends StationIdentityResult {
+  route: NativeStationRouteCandidate;
 }
 
 // Probe the station via an actual HTTP(S) request. This validates the full
@@ -64,37 +64,90 @@ export async function probeStation(url: string): Promise<StationProbeResult> {
   }
 }
 
-export async function verifyStationIdentity(url: string): Promise<StationIdentityResult> {
-  const requestedOrigin = canonicalOrigin(url);
-  const challenge = crypto.getRandomValues(new Uint8Array(32));
-  const request = create(StationIdentityRequestSchema, { challenge });
-  const response = await fetch(`${requestedOrigin}/sub-bootstrap/station-identity`, {
-    method: 'POST',
-    redirect: 'error',
-    cache: 'no-store',
-    headers: {
-      Accept: 'application/x-protobuf',
-      'Content-Type': 'application/x-protobuf',
-    },
-    body: toBinary(StationIdentityRequestSchema, request),
-  });
-  if (!response.ok) {
-    throw new Error('mobile.launch.stationIdentityUnavailable');
+export async function verifyStationIdentity(url: string): Promise<ConnectedStationIdentity> {
+  const discovery = await discoverStationConnection(url);
+  if (discovery.routes.length !== 1) {
+    throw new Error('mobile.launch.stationRouteSelectionRequired');
   }
+  return activateAndVerifyStationRoute(discovery.routes[0], 1);
+}
 
-  const proof = fromBinary(
-    StationIdentityResponseSchema,
-    new Uint8Array(await response.arrayBuffer()),
-  );
-  const verified = await verifyStationIdentityProof({
-    requestedOrigin,
-    challenge: Array.from(challenge),
-    statementBytes: Array.from(proof.statementBytes),
-    hostPublicKey: Array.from(proof.hostPublicKey),
-    signature: Array.from(proof.signature),
-    requiredCapabilities: [...REQUIRED_STATION_CAPABILITIES],
+export async function discoverStationConnection(
+  input: string,
+): Promise<StationEndpointDiscovery> {
+  const value = input.trim();
+  if (!value) throw new Error('mobile.launch.stationIdentityInvalid');
+  const discovery = await discoverStationEndpoint(value);
+  if (!discovery.routes.length) {
+    throw new Error('mobile.launch.stationRouteUnavailable');
+  }
+  return discovery;
+}
+
+export async function activateAndVerifyStationRoute(
+  route: NativeStationRouteCandidate,
+  routeRevision: number,
+): Promise<ConnectedStationIdentity> {
+  const binding = await activateStationRouteBinding({
+    stationPeerId: route.stationPeerId,
+    routeId: route.routeId,
+    routeRevision,
   });
-  if (!verified.stationPeerId.trim() || !verified.canonicalOrigin.trim()) {
+  const verified = await fetchActiveStationIdentity();
+  return {
+    ...requireRouteIdentity(binding.stationPeerId, binding.routeId, verified),
+    route,
+  };
+}
+
+export async function restoreAndVerifyStationRoute(input: {
+  stationPeerId: string;
+  routeId: string;
+  routeGeneration: number;
+  routeRevision: number;
+  sourceRef: string;
+  endpointOrigin: string;
+}): Promise<StationIdentityResult> {
+  const binding = await restoreStationRouteBinding(input);
+  const verified = await fetchActiveStationIdentity();
+  return requireRouteIdentity(binding.stationPeerId, binding.routeId, verified);
+}
+
+export async function verifyBoundStationRoute(input: {
+  stationPeerId: string;
+  routeId: string;
+  routeGeneration: number;
+  routeRevision: number;
+  sourceRef: string;
+  endpointOrigin: string;
+}): Promise<StationIdentityResult> {
+  const current = await readStationRouteBinding();
+  if (
+    current?.stationPeerId === input.stationPeerId
+    && current.routeId === input.routeId
+    && current.routeGeneration === input.routeGeneration
+    && current.routeRevision === input.routeRevision
+  ) {
+    return requireRouteIdentity(
+      current.stationPeerId,
+      current.routeId,
+      await fetchActiveStationIdentity(),
+    );
+  }
+  return restoreAndVerifyStationRoute(input);
+}
+
+function requireRouteIdentity(
+  stationPeerId: string,
+  routeId: string,
+  verified: VerifiedStationIdentity,
+): StationIdentityResult {
+  if (
+    !verified.stationPeerId.trim()
+    || !verified.canonicalOrigin.trim()
+    || verified.stationPeerId !== stationPeerId
+    || verified.routeId !== routeId
+  ) {
     throw new Error('mobile.launch.stationIdentityInvalid');
   }
   return {
@@ -102,15 +155,9 @@ export async function verifyStationIdentity(url: string): Promise<StationIdentit
     canonicalOrigin: verified.canonicalOrigin.replace(/\/+$/, ''),
     verifiedAt: verified.verifiedAt,
     identityVerified: true,
+    routeId,
+    routeType: verified.routeType ?? 'direct',
   };
-}
-
-function canonicalOrigin(value: string): string {
-  const parsed = new URL(value);
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    throw new Error('mobile.launch.stationIdentityInvalid');
-  }
-  return parsed.origin;
 }
 
 async function extractLabelFromResponse(response: Response, fallbackUrl: string): Promise<string> {

@@ -42,7 +42,12 @@ def runtime_reuse() -> dict[str, object]:
     }
 
 
-def write_plan(root: Path, *, include_contract: bool = True) -> Path:
+def write_plan(
+    root: Path,
+    *,
+    include_contract: bool = True,
+    heading: str = "Plan Package",
+) -> Path:
     plan_dir = root / "plan"
     task_dir = plan_dir / "tasks"
     task_dir.mkdir(parents=True)
@@ -114,7 +119,7 @@ def write_plan(root: Path, *, include_contract: bool = True) -> Path:
             (
                 "# Audit Test",
                 "",
-                "## Plan Package",
+                f"## {heading}",
                 "",
                 "```json",
                 json.dumps(manifest),
@@ -166,6 +171,19 @@ def valid_report() -> dict[str, object]:
 
 
 class AcceptancePipelineAuditTests(unittest.TestCase):
+    def test_current_stable_plan_heading_is_supported(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plan_path = write_plan(
+                Path(temp_dir),
+                heading="Plan",
+            )
+            result = AUDIT.audit_pipeline(
+                plan_path=plan_path,
+                task_ids=("T1",),
+            )
+
+        self.assertEqual(result["result"], "PASS")
+
     def test_plan_contract_passes_without_claiming_runtime_proof(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             plan_path = write_plan(Path(temp_dir))

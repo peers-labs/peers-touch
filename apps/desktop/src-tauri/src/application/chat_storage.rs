@@ -2,7 +2,7 @@
 //! CCU-03 (Chat Client Unification); all group operations now go through the
 //! unified conversation engine.
 
-use crate::infrastructure::station_client;
+use crate::application::station_runtime::client::{self as station_client, StationClient};
 use crate::model;
 use reqwest::Method;
 use serde_json::{json, Value};
@@ -27,22 +27,30 @@ fn presence_update_response_to_value(resp: &model::presence::PresenceUpdateRespo
     })
 }
 
-pub fn presence_heartbeat(token: &str, reason: &str) -> StationResult<Value> {
+pub fn presence_heartbeat(
+    station_client: &StationClient,
+    token: &str,
+    reason: &str,
+) -> StationResult<Value> {
     let req = model::presence::PresenceHeartbeatRequest {
         reason: reason.to_string(),
     };
-    let resp = station_client::request_proto::<
+    let resp = station_client.request_proto::<
         model::presence::PresenceHeartbeatRequest,
         model::presence::PresenceUpdateResponse,
     >(Method::POST, "/presence/heartbeat", token, None, Some(&req))?;
     Ok(presence_update_response_to_value(&resp))
 }
 
-pub fn presence_offline(token: &str, reason: &str) -> StationResult<Value> {
+pub fn presence_offline(
+    station_client: &StationClient,
+    token: &str,
+    reason: &str,
+) -> StationResult<Value> {
     let req = model::presence::PresenceOfflineRequest {
         reason: reason.to_string(),
     };
-    let resp = station_client::request_proto::<
+    let resp = station_client.request_proto::<
         model::presence::PresenceOfflineRequest,
         model::presence::PresenceUpdateResponse,
     >(Method::POST, "/presence/offline", token, None, Some(&req))?;

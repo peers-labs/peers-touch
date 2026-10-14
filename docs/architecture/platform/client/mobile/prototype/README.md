@@ -1,7 +1,7 @@
 # Mobile Prototype
 
 > **Status**: confirmed
-> **Version**: v1.0
+> **Version**: v1.2
 > **Created**: 2026-07-08 | **Updated**: 2026-10-12
 > **Owner**: Mobile Product Team
 > **Module**: `packages/prototypes/mobile/chat/`
@@ -118,8 +118,78 @@ The prototype covers:
 - Me/profile and selected-only settings details.
 - Evidence scenarios for Station identity mismatch, OAuth expiry, session
   revocation, unknown write outcome, ledger capacity, and restored drafts.
+- The Mobile Social Desktop Parity amendment: Home/Explore, Search/Profile,
+  Circles, full Audience selection, Feed-local comments, temporary media overlays,
+  composer and private trust/recovery states.
 - Cross-platform `CHAT-CRAFT-J01` delivery failure and recovery, backed by the
   shared fixture at `packages/prototypes/shared/chat-journey.ts`.
+
+## 2026-10-08 Station Entry Amendment
+
+The Owner rejected the oversized logo, framed Station card, detached add
+button, and dominant offline recovery card on the physical Android entry
+surface. The confirmed Station entry contract is now:
+
+```yaml
+surface: mobile.station.entry
+scenario: compact-station-selection
+given:
+  - the app is in station-selection
+  - Station history may be empty
+  - device connectivity may be offline
+when:
+  - the user enters or selects one Station
+then:
+  - one composite address field owns protocol, host and add
+  - one primary action opens the selected Station
+  - offline recovery remains actionable without becoming a second page
+visual_invariants:
+  - brand mark is 52px and does not create a hero region
+  - no outer Station card frames the task
+  - address field and primary action share one content rail
+  - offline recovery is at most 112px tall and does not overlap the task
+forbidden:
+  - oversized centered logo
+  - nested card treatment
+  - independently bordered protocol control
+  - detached square add button
+  - recovery surface occupying the lower third of the viewport
+evidence:
+  - prototype layout captures
+  - physical Android screenshot
+```
+
+`?scenario=station-offline` exposes the compact recovery state. Production and
+prototype keep the pre-shell tree `on-visit + none`; no page lifetime or
+runtime owner changes.
+
+## 2026-10-06 Mobile Social Parity Amendment
+
+The previously confirmed Mobile Shell baseline remains historical evidence. The
+material Social amendment was confirmed by the Owner on 2026-10-06 and may now
+serve as the UI/interaction reference for implementation planning.
+
+Design source:
+
+- `../social-parity/README.md`
+- `../social-parity/prototype/README.md`
+
+The amendment adds direct scenarios:
+
+- `social-parity`
+- `social-content-types`
+- `social-private-pending`
+- `social-recovery-required`
+- `social-source-unavailable`
+- `social-revoked`
+
+Portal build and Mobile prototype build pass. L2/L3 captured 35 inspected Social
+states and 6 density/continuity assertions at 390x844 and 1440x1100 with zero geometry,
+overflow, unexpected clipping, continuity or console defects. Evidence lives under
+`../social-parity/prototype/evidence-l2/`. Prototype evidence does not establish
+Native, Station, crypto, lifecycle or cross-platform readiness.
+
+Owner confirmation covers the current Social UI and interaction behavior only.
 
 ## Source Alignment
 
@@ -135,7 +205,7 @@ The prototype covers:
 | Moments feed and composer | MS-C08 / MS-J05 / MS-PA11 / MS-PA20 / MS-PA23 |
 | Me and settings details | MS-C09 / MS-J06 / MS-PA12 / MS-PA21 |
 | Runtime recovery sheets | MS-C10 / MS-J07 / MS-PA08 / MS-PA23 / MS-PA26 |
-| One-to-one call surface | MS-C12 / MS-J03 / MS-PA28 / MS-PA29 |
+| One-to-one call surface | MS-C12 / MS-J03 / MS-PA30 / MS-PA31 |
 | Deferred/local-only affordances | MS-C11, MS-C13, MS-C14 / MS-PA22 / MS-PA27 |
 
 ## Run
@@ -218,7 +288,7 @@ Verification:
 This amendment is `pending-review`. It proves browser interaction intent only.
 Native iOS media, production styling/i18n, permission and device selection,
 direct/TURN routing, reconnect/cleanup, cross-Station behavior, and exact-source
-Desktop/Mobile arbitration remain `UNPROVEN` under MS-PA28/MS-PA29.
+Desktop/Mobile arbitration remain `UNPROVEN` under MS-PA30/MS-PA31.
 
 ### 2026-10-11 Chat Delivery Recovery
 
@@ -263,22 +333,20 @@ Station proof.
 The prototype package build passes. Fresh L2/L3 visual evidence for these
 action-sheet states remains `UNPROVEN` until the Portal render checks are run.
 
-### 2026-09-19 Settings Owner Parity
+### 2026-10-08 Settings Owner Parity
 
-The confirmed Me/Settings prototype now shows the canonical Social blocked-user
-list with readable actor identity, full PTID/Station context, and an explicit
-Unblock action. The undefined additional account-preference section is removed;
-Profile/privacy, Notification, Social, and device settings remain independent
-owners.
+The confirmed Me/Settings prototype mirrors the selected-only Mobile Settings
+tree and its existing owners: Station Profile/privacy and Notification
+preferences, Social blocked users, device appearance/language/storage, Station
+selection, and session logout. Summary and detail identity now remain
+human-readable; raw PTIDs and Station URLs are not used as primary identity.
+Ownerless Safety Number, Chat Background, and Encryption surfaces are explicitly
+unavailable instead of presenting invented configuration or an "Active" claim.
 
-This is product/prototype alignment only. `MS-D22A` is accepted; the
-Profile/Notification cross-client CAS hard cut remains source work in W6C, and
-native second-device conflict evidence remains in `W6C-PROOF`.
-
-Prototype verification passes the package build and all 51 layout captures
-with zero defects. The inspected 390px blocked-user detail is
-`apps/mobile/src-tauri/target/w6c-prototype/390-blocked-users-clean.png`;
-its two identity rows have no horizontal overflow or action overlap.
+Editable owner-backed details expose one local dirty/save surface. Storage,
+Station change, cache clearing, and logout use explicit confirmation surfaces.
+This is product/prototype alignment only; native foreground proof remains owned
+by `MWPU-07-SETTINGS`.
 
 Evidence captured on 2026-08-27 at the Portal mobile preview:
 
@@ -366,32 +434,32 @@ module contract govern these samples; native Mobile behavior remains separately
 unproven. Render verification does not confirm the additions or establish full
 pixel parity with native Mobile.
 
-### 2026-09-13 Auth Identity Parity
+### 2026-10-08 Auth Entry Density
 
 Desktop/shared Auth is the visual source for Mobile Auth. The prototype and
 production now share the exact Desktop 512x512 icon, one dominant 400px-wide
-card with 24px radius, a 72x72 in-card logo, compact header and segmented login
-mode, and the same GitHub/Google action hierarchy. The Mobile-only wordmark and
-`PEERS TOUCH MOBILE` kicker are removed. Station context uses a friendly label
-instead of a raw host/URL.
+card with 8px radius, a compact 44x44 horizontal brand header, segmented login
+mode, and the same GitHub/Google action hierarchy. Login modes render their
+actual content height instead of reserving the tallest form height. The
+Mobile-only wordmark and `PEERS TOUCH MOBILE` kicker remain removed. Station
+context uses a friendly label instead of a raw host/URL, and known login gates
+use localized client copy instead of unlocalized Station descriptions.
 
 `?scenario=session-revoked` renders the expired-session notice inside the Auth
 card. It does not mount a second recovery panel or cover the sign-in controls.
 `check-layout.mjs` now asserts one Auth card, brand containment, exact logo
 geometry, zero brand-to-card gap, no duplicate recovery, no Mobile kicker, no
-raw Station address, and no vertical overflow.
+raw Station address, no vertical overflow, and a card height no greater than
+76% of the available Auth viewport.
 
 Current-source verification:
 
-- all 51 captures pass at 1440x1100, 554x954, and 390x844 with zero defects;
-- evidence is under
-  `apps/mobile/src-tauri/target/auth-parity-20260913/prototype-current-source/`;
-- the inspected narrow expired-session capture is
-  `390-auth-session-revoked.png`;
-- the exact-current-source native normal Auth capture is
-  `apps/mobile/src-tauri/target/auth-parity-20260913/final-current-source.png`;
-- native 402x874 geometry proves one card, 72x72 logo, zero gap/overlap, no
-  kicker, no raw Station address, and no viewport overflow.
+- all 57 captures pass at 1440x1100, 554x954, and 390x844 with zero defects;
+- 390x844 expired-session geometry proves one card at 514px high inside a
+  720px Auth viewport, a 44x44 logo, zero gap/overlap, no kicker, no raw
+  Station address, and no viewport overflow;
+- the physical Android build must preserve the same compact hierarchy at its
+  320 CSS px viewport before Auth entry work is considered complete.
 
 The native expired-session state was not recreated by mutating retained client
 state. Its production composition is covered by focused tests and the direct

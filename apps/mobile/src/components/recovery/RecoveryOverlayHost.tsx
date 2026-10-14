@@ -11,10 +11,16 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   getMobileLifecycleKernel,
   useLifecycleKernel,
+  type LifecycleKernelState,
   type MobileLaunchState,
 } from '../../app/lifecycle';
 import { useMobileI18n } from '../../app/mobileI18n';
 import { useMobileNavigationStore } from '../../app/navigation';
+import {
+  recoveryStateForFixture,
+  setRecoverySurfaceFixture,
+  useRecoverySurfaceFixture,
+} from '../../acceptance/recoverySurfaceFixture';
 import {
   applyReliabilityCommandRecoveryAction,
   applyLegacyReliabilityDisposition,
@@ -28,7 +34,9 @@ import {
   type RecoveryState,
   type SessionMismatchState,
 } from '../../runtimes/recoveryProjection';
+import { recoverActiveMessagingIdentity } from '../../runtimes/messagingRuntime';
 
+import { ActorIdentityRecoveryOverlay } from './ActorIdentityRecoveryOverlay';
 import { DraftRestoreOverlay } from './DraftRestoreOverlay';
 import {
   CommandRecoveryPanel,
@@ -42,6 +50,7 @@ import { CapacityWarning } from './CapacityWarning';
 import { SessionMismatchOverlay } from './SessionMismatchOverlay';
 import { DeviceLocalBar } from './DeviceLocalBar';
 import { WriteRevocationNotice } from './WriteRevocationNotice';
+import { SessionRestoreNotice } from './SessionRestoreNotice';
 
 interface RecoveryOverlayHostProps {
   readonly onReAuthenticate: (
@@ -57,6 +66,10 @@ export function visibleRecoveryStates(
   states: readonly RecoveryState[],
   launchState: MobileLaunchState,
 ): readonly RecoveryState[] {
+  const actorIdentityRecovery = states.find(
+    (state) => state.kind === 'actor-identity-recovery',
+  );
+  if (actorIdentityRecovery) return [actorIdentityRecovery];
   const appLevelStates = states.filter((state) => !(
     state.kind === 'event-overflow-reconcile'
     || state.kind === 'deferred-capability'
@@ -75,6 +88,16 @@ export function visibleRecoveryStates(
   return eligibleStates;
 }
 
+export function bindDeferredCapabilityProjection(
+  getState: () => LifecycleKernelState,
+  subscribe: (listener: () => void) => () => void,
+  report: (state: LifecycleKernelState) => void,
+): () => void {
+  const sync = () => report(getState());
+  sync();
+  return subscribe(sync);
+}
+
 export function RecoveryOverlayHost({
   onReAuthenticate,
   onSwitchStation,
@@ -82,6 +105,7 @@ export function RecoveryOverlayHost({
 }: RecoveryOverlayHostProps) {
   const { t } = useMobileI18n();
   const lifecycle = useLifecycleKernel();
+  const fixture = useRecoverySurfaceFixture();
   const tabBarVisible = useMobileNavigationStore(
     (state) => state.detailStack.length === 0,
   );
@@ -92,15 +116,20 @@ export function RecoveryOverlayHost({
   );
 
   useEffect(() => {
+    const kernel = getMobileLifecycleKernel();
     const projection = getRecoveryProjection();
-    const unsubscribe = projection.subscribe(setSnapshot);
+    const unsubscribeProjection = projection.subscribe(setSnapshot);
     setSnapshot(projection.getSnapshot());
-    return unsubscribe;
+    const unsubscribeLifecycle = bindDeferredCapabilityProjection(
+      () => kernel.getState(),
+      (listener) => kernel.subscribe(listener),
+      (state) => projection.reportDeferredCapabilities(state),
+    );
+    return () => {
+      unsubscribeLifecycle();
+      unsubscribeProjection();
+    };
   }, [lifecycle.generation, recoveryRuntimeStatus]);
-
-  useEffect(() => {
-    getRecoveryProjection().reportDeferredCapabilities(lifecycle);
-  }, [lifecycle]);
 
   const handleLegacyReliabilityAction = useCallback(
     async (action: LegacyReliabilityRecoveryAction) => {
@@ -147,13 +176,22 @@ export function RecoveryOverlayHost({
     [],
   );
 
+  const recoverActorIdentity = useCallback(async () => {
+    await recoverActiveMessagingIdentity();
+    getRecoveryProjection().clearActorIdentityRecovery();
+    await getMobileLifecycleKernel().restartRuntimeGraph('app-resume');
+  }, []);
+
   const renderState = useCallback(
     (state: RecoveryState) => {
+      const key = fixture.surfaceId
+        ? `${state.kind}:${fixture.revision}`
+        : state.kind;
       switch (state.kind) {
         case 'legacy-reliability-recovery':
           return (
             <LegacyReliabilityRecoveryOverlay
-              key={state.kind}
+              key={key}
               state={state}
               t={t}
               onAction={handleLegacyReliabilityAction}
@@ -162,38 +200,56 @@ export function RecoveryOverlayHost({
         case 'reliability-reset-recovery':
           return (
             <ReliabilityResetRecoveryOverlay
-              key={state.kind}
+              key={key}
               t={t}
               onRetry={retryInterruptedReliabilityReset}
             />
           );
         case 'draft-restore-pending':
-          return <DraftRestoreOverlay key={state.kind} state={state} t={t} />;
+          return (
+            <DraftRestoreOverlay
+              key={key}
+              state={state}
+              t={t}
+              forceActionFailed={
+                fixture.surfaceId === 'recovery.draft-restore-failed'
+              }
+            />
+          );
         case 'command-recovery':
           return (
             <CommandRecoveryPanel
-              key={state.kind}
+              key={key}
               state={state}
               t={t}
               onAction={(action) => handleCommandRecoveryAction(state, action)}
             />
           );
         case 'capacity-read-only':
-          return <CapacityWarning key={state.kind} state={state} t={t} />;
+          return <CapacityWarning key={key} state={state} t={t} />;
         case 'session-mismatch':
           return (
             <SessionMismatchOverlay
-              key={state.kind}
+              key={key}
               state={state}
               t={t}
               onReAuthenticate={onReAuthenticate}
               onSwitchStation={onSwitchStation}
             />
           );
+        case 'actor-identity-recovery':
+          return (
+            <ActorIdentityRecoveryOverlay
+              key={key}
+              t={t}
+              onRecover={recoverActorIdentity}
+              onSwitchStation={onSwitchStation}
+            />
+          );
         case 'device-local-flag':
           return (
             <DeviceLocalBar
-              key={state.kind}
+              key={key}
               state={state}
               t={t}
               onRetry={onRetryDeviceLocal}
@@ -201,7 +257,7 @@ export function RecoveryOverlayHost({
             />
           );
         case 'write-revocation':
-          return <WriteRevocationNotice key={state.kind} t={t} />;
+          return <WriteRevocationNotice key={key} t={t} />;
         default:
           return null;
       }
@@ -209,18 +265,39 @@ export function RecoveryOverlayHost({
     [
       handleLegacyReliabilityAction,
       handleCommandRecoveryAction,
+      fixture.revision,
+      fixture.surfaceId,
       onReAuthenticate,
       onRetryDeviceLocal,
       onSwitchStation,
       retryInterruptedReliabilityReset,
+      recoverActorIdentity,
       t,
     ],
   );
 
-  const visibleStates = visibleRecoveryStates(
-    snapshot.states,
-    lifecycle.launchState,
-  );
+  if (fixture.surfaceId === 'recovery.session-valid-restore') {
+    return (
+      <div
+        className="recovery-overlay-host"
+        data-launch-state={lifecycle.launchState}
+        data-tabbar-visible={tabBarVisible}
+      >
+        <SessionRestoreNotice
+          t={t}
+          onContinue={() => setRecoverySurfaceFixture(null)}
+        />
+      </div>
+    );
+  }
+
+  const fixtureState = recoveryStateForFixture(fixture.surfaceId);
+  const visibleStates = fixture.surfaceId
+    ? (fixtureState ? [fixtureState] : [])
+    : visibleRecoveryStates(
+        snapshot.states,
+        lifecycle.launchState,
+      );
   if (visibleStates.length === 0) return null;
 
   return (

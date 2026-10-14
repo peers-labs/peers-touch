@@ -48,6 +48,9 @@ from tooling.acceptance.drivers.tauri import (
 )
 
 
+NATIVE_WINDOW_READY_TIMEOUT_SECONDS = 30.0
+
+
 _WINDOW_BOUNDS_PROBE = r"""
 import json
 import sys
@@ -262,6 +265,21 @@ class NativeDesktopMacOSProvisioner:
     def _source_identity(self) -> CellSourceIdentity:
         commit = self._git("rev-parse", "HEAD")
         tree = self._git("rev-parse", "HEAD^{tree}")
+        self._require_clean_source()
+        binary = self._build_acceptance_binary()
+        self._require_clean_source()
+        return CellSourceIdentity(
+            mode="local-worktree",
+            commit=commit,
+            workspace_digest="clean",
+            remote_source_digest=_sha256_text(
+                f"{self.source_root}:{commit}:{tree}"
+            ),
+            remote_checkout_clean=True,
+            binary_sha256=_file_sha256(binary),
+        )
+
+    def _require_clean_source(self) -> None:
         dirty = subprocess.run(
             (
                 "git",
@@ -286,22 +304,31 @@ class NativeDesktopMacOSProvisioner:
                 ),
                 resource="source-identity:worktree-cleanliness",
             )
+
+    def _build_acceptance_binary(self) -> Path:
+        completed = subprocess.run(
+            ("make", "acceptance-driver-build"),
+            cwd=self.source_root,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=1800,
+        )
+        if completed.returncode != 0:
+            raise BlockedError(
+                reason=(
+                    "desktop-macos-native could not build its exact-source "
+                    "Acceptance binary"
+                ),
+                resource="desktop-acceptance-binary",
+            )
         binary = Path(find_app_binary()).resolve()
         if not binary.is_file():
             raise BlockedError(
                 reason=f"macOS Acceptance binary is missing: {binary}",
                 resource="desktop-acceptance-binary",
             )
-        return CellSourceIdentity(
-            mode="local-worktree",
-            commit=commit,
-            workspace_digest="clean",
-            remote_source_digest=_sha256_text(
-                f"{self.source_root}:{commit}:{tree}"
-            ),
-            remote_checkout_clean=True,
-            binary_sha256=_file_sha256(binary),
-        )
+        return binary
 
     def _host_identity(
         self,
@@ -382,6 +409,7 @@ class NativeDesktopMacOSProvisioner:
             session.start()
             session.wait_for_ready()
             session.wait_for_acceptance_harness()
+            session.driver.set_window_rect(x=100, y=100)
             process_id = session.process_id
             if process_id is None:
                 raise ProvisioningError(
@@ -570,7 +598,7 @@ class NativeDesktopMacOSProvisioner:
         cls,
         process_id: int,
         *,
-        timeout_seconds: float = 5.0,
+        timeout_seconds: float = NATIVE_WINDOW_READY_TIMEOUT_SECONDS,
         interval_seconds: float = 0.1,
     ) -> dict[str, Any]:
         deadline = time.monotonic() + max(0.0, timeout_seconds)

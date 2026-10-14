@@ -23,6 +23,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/handler"
@@ -50,6 +51,7 @@ type ossFileServiceProvider interface {
 }
 
 type agentSubServer struct {
+	lifecycleMu            sync.RWMutex
 	opts                   *Options
 	addrs                  []string
 	status                 server.Status
@@ -61,6 +63,8 @@ type agentSubServer struct {
 	externalRuntimeService *service.ExternalRuntimeService
 	deviceKeys             *touchactor.DeviceStore
 	agentDB                *gorm.DB
+	nodeID                 string
+	nodeIncarnation        string
 }
 
 func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error {
@@ -92,7 +96,13 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 	if err = persistence.MigrateEvaluationAggregate(rds); err != nil {
 		return err
 	}
+	if err = persistence.MigrateExecutorLeaseFencing(rds); err != nil {
+		return err
+	}
 	if err = rds.AutoMigrate(persistence.AllModels()...); err != nil {
+		return err
+	}
+	if err = persistence.MigrateExecutorLeaseFencing(rds); err != nil {
 		return err
 	}
 	if err = service.MigrateRuntimeSnapshotThinkingModes(rds); err != nil {
@@ -121,6 +131,19 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 		return err
 	}
 	s.deviceKeys = touchactor.NewDeviceStore(identityRDS)
+	serverOptions := server.GetOptions()
+	s.nodeID = strings.TrimSpace(serverOptions.Metadata["node_peer_id"])
+	if s.nodeID == "" {
+		return fmt.Errorf("initialize Agent executor fencing: Station Node identity is unavailable")
+	}
+	s.nodeIncarnation = strings.TrimSpace(
+		serverOptions.Metadata["node_incarnation"],
+	)
+	if s.nodeIncarnation == "" {
+		s.nodeIncarnation = service.NewChatTaskExecutorIdentity(
+			s.nodeID,
+		).Incarnation
+	}
 
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
@@ -131,6 +154,8 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 }
 
 func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
 	workerCtx := ctx
 	if s.turnService != nil {
 		workerCtx = s.turnService.SetExecutionLifecycle(ctx)
@@ -170,6 +195,8 @@ func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error
 		}
 		if !s.turnService.RunExecutionWorker(s.turnService.RunToolContinuationWorker) ||
 			!s.turnService.RunExecutionWorker(s.turnService.RunTurnQueueWorker) ||
+			(s.chatTaskService != nil &&
+				!s.turnService.RunExecutionWorker(s.chatTaskService.RunRecoveryWorker)) ||
 			(s.operationService != nil &&
 				!s.turnService.RunExecutionWorker(s.operationService.RunDeadlineSweeper)) ||
 			(s.evaluationService != nil &&
@@ -183,6 +210,8 @@ func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error
 }
 
 func (s *agentSubServer) Stop(ctx context.Context) error {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
 	s.status = server.StatusStopping
 	if s.turnService != nil {
 		if err := s.turnService.StopExecutionLifecycle(ctx); err != nil {
@@ -194,7 +223,36 @@ func (s *agentSubServer) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (s *agentSubServer) Status() server.Status { return s.status }
+func (s *agentSubServer) Status() server.Status {
+	s.lifecycleMu.RLock()
+	defer s.lifecycleMu.RUnlock()
+	return s.status
+}
+
+// ClusterReadiness verifies that Agent execution is using the shared
+// PostgreSQL authority and a process-scoped fencing identity.
+func (s *agentSubServer) ClusterReadiness(
+	ctx context.Context,
+) (string, error) {
+	s.lifecycleMu.RLock()
+	status := s.status
+	agentDB := s.agentDB
+	nodeID := s.nodeID
+	nodeIncarnation := s.nodeIncarnation
+	s.lifecycleMu.RUnlock()
+	if status != server.StatusRunning ||
+		agentDB == nil ||
+		strings.TrimSpace(nodeID) == "" ||
+		strings.TrimSpace(nodeIncarnation) == "" {
+		return "", fmt.Errorf("agent: cluster runtime is not running")
+	}
+	if !agentDB.Migrator().HasTable(
+		&persistence.ExecutorLease{},
+	) {
+		return "", fmt.Errorf("agent: executor lease schema is unavailable")
+	}
+	return store.PostgresClusterIdentity(ctx, agentDB)
+}
 
 func (s *agentSubServer) Name() string { return "agent" }
 
@@ -307,13 +365,17 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	// Scheduler — autonomous learning: periodic SILENT reviews + dogfood runs.
 	schedulerSvc := service.NewSchedulerService(reviewSvc, dogfoodSvc, memorySvc, growthMetricsSvc)
 	orchestrationSvc := service.NewOrchestrationService(agentSvc, turnSvc, toolRegistrySvc)
+	orchestrationSvc.SetExecutorNodeIdentity(s.nodeID, s.nodeIncarnation)
 	schedulerSvc.SetOrchestrationService(orchestrationSvc)
 	orchestrationSvc.SetEventBus(eventBus)
 	orchestrationSvc.StartTaskRecovery(context.Background())
 
 	// Chat root task: Station owns the Chat surface as a long-lived task so a
 	// turn outlives the client connection. Reclaim interrupted steps on boot.
-	chatTaskSvc := service.NewChatTaskService(eventBus)
+	chatTaskSvc := service.NewChatTaskService(eventBus, service.ChatTaskExecutorIdentity{
+		NodeID:      s.nodeID,
+		Incarnation: s.nodeIncarnation,
+	})
 
 	agentHandlers := handler.NewAgentHandlers(agentSvc, eventBus)
 	turnHandlers := handler.NewTurnHandlers(turnSvc, toolRegistrySvc, chatTaskSvc, convSvc)

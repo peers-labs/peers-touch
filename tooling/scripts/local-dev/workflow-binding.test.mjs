@@ -31,6 +31,8 @@ test('binding CLI issues one bounded child assignment from the current owner', (
       'review-1',
       '--lease-seconds',
       '60',
+      '--execution-root',
+      process.cwd(),
     ],
     {
       readWorkflowBindingContextByActor: () => ({
@@ -55,6 +57,7 @@ test('binding CLI issues one bounded child assignment from the current owner', (
   );
   assert.equal(result.status, 'PASS');
   assert.equal(result.assignment.digest, 'b'.repeat(64));
+  assert.equal(calls[0][0].executionRoot, process.cwd());
   assert.equal(calls[0][1].role, 'REVIEWER');
   assert.equal(calls[0][1].leaseMs, 60_000);
 });
