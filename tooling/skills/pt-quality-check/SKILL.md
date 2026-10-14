@@ -74,8 +74,10 @@ If no target is available, ask for one. Do not produce a generic checklist.
    python3 tooling/scripts/acceptance-plan.py --range <base>...<head>
    ```
 
-7. Resolve the current formal plan and run only its completion Gates that are
-   deterministic and cheap. Environment availability is not authorization:
+7. If an explicit Plan Version was supplied, read only that version and select
+   its completion Gates. Without a Plan, derive Gates from the exact diff and
+   stated completion obligations. Run only deterministic cheap Gates.
+   Environment availability is not authorization:
    do not run environment/full Gates unless the user explicitly requested
    release/full Acceptance or the accepted Plan Run authorization names the
    exact environment and Gate scope.

@@ -25,10 +25,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from tooling.scripts.plan.acceptance_admission import (  # noqa: E402
-    AcceptanceAdmissionError,
-    require_acceptance_admission,
-)
+from tooling.acceptance.core.errors import EvidenceError  # noqa: E402
 
 SCAN_TYPE_TO_GATE = {
     "path-absent": "chat-w11-forbidden-scan",
@@ -584,7 +581,6 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--changed-file", action="append", default=[])
     parser.add_argument("--plan")
     parser.add_argument("--run")
-    parser.add_argument("--session")
     parser.add_argument("--require-gate", action="append", default=[])
     parser.add_argument(
         "--contract",
@@ -603,11 +599,7 @@ def main() -> int:
     args = parse_arguments()
 
     try:
-        require_acceptance_admission(
-            REPO_ROOT,
-            args.session,
-            "gap",
-        )
+        paths = resolve_changed_paths(args.diff_range, args.changed_file)
         store = EvidenceStore.from_environment(
             repo_root=REPO_ROOT,
             worktree=REPO_ROOT,
@@ -634,7 +626,6 @@ def main() -> int:
             if contract_path.exists():
                 contract = _load_contract(contract_path)
         source_commit, workspace_digest = current_source_identity()
-        paths = resolve_changed_paths(args.diff_range, args.changed_file)
         report = detect(
             claim=args.claim,
             paths=paths,
@@ -650,7 +641,7 @@ def main() -> int:
                 else None
             ),
         )
-    except (AcceptanceAdmissionError, DetectorError) as error:
+    except (DetectorError, EvidenceError) as error:
         sys.stderr.write(f"acceptance gap detector failed closed: {error}\n")
         return 2
 

@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-07-23 | **Updated**: 2026-10-06
+> **Created**: 2026-07-23 | **Updated**: 2026-10-05
 > **Owner**: Platform Team
 
 ---
@@ -69,29 +69,16 @@ every current Git worktree uses the canonical root, the old directory is
 deleted, and the live registry plus active docs remove their legacy fields and
 migration branches.
 
-Development task intent is separately published at:
+Complex work may optionally keep repository-local recovery state at:
 
 ```text
-~/.peers-touch/dev/work.json
+.dev-workflow/tasks/<taskId>/
 ```
 
-It is machine-visible source/runtime intent owned by Development Workflow, not
-Profile allocation or a live lease. Read-only intake may precede it; non-trivial
-tasks must publish and confirm it before the first write or runtime acquisition.
-
-Tracked Plan occupancy is stored separately from both environment allocation
-and mutable intent:
-
-```text
-~/.peers-touch/dev/plan-mounts/
-```
-
-`make plan-mount PLAN=<path>` binds one stable Plan to the selected
-execution worktree for the complete run. A second live Plan is rejected until
-completion, cancellation, or explicit owner unmount. Repository/PR
-synchronization never changes the mount. `make plan-amend` records ordinary
-execution-model changes and advances the current immutable snapshot while
-retaining the same Plan, mount, and run identities.
+It is task-local progress for recovery, not Profile allocation, a live lease,
+write permission, or runtime authorization. Ordinary work creates no record.
+Formal Plans are read directly from explicit paths and never occupy a
+worktree.
 
 ---
 
@@ -304,23 +291,17 @@ registered and its binding must resolve.
 | `make profile <name>` | Explicitly select a reviewed Profile; on first use, register with the lowest free slot and minimum operational capabilities without reset |
 | `make env-register ...` | Explicitly register this verified workspace and allocate profile, slot, and allowed capabilities |
 | `make env-update ...` | Update requested binding fields and current registered branch while no lease is held |
-| `make worktree-create WORKTREE=<absolute-path> BRANCH=<new-branch> PURPOSE='<text>' [START=<ref>]` | Create an explicitly authorized Agent worktree and persist its originating main-session provenance |
-| `make worktree-creation-status` | Read the current worktree's immutable creation provenance |
-| `make env-unregister [WORKSPACE_ID=<id>]` | Remove an idle registration after coordinated Development close; rejects live declaration, active-work, PlanMount, or lease |
+| `make env-unregister [WORKSPACE_ID=<id>]` | Remove the exact owned idle registration; rejects a live OS-held lease |
 | `make env-check ...` | Verify stable workspace binding, current Git source, tracked-clean topology, slot, capabilities, target match, and budget |
 | `make env-status-all` | Report all registrations and observed OS-held leases |
-| `make dev-start ...` | Publish and conflict-check this task's source/runtime intent |
-| `make dev-update WORK_ITEM=<id>` | Replace supplied scope or refresh the declared branch/HEAD |
-| `make dev-status [WORK_ITEM=<id>]` | Show declarations for the current worktree |
-| `make dev-status-all` | Show machine-wide task declarations |
-| `make dev-check WORK_ITEM=<id>` | Verify current declaration before mutation |
-| `make dev-heartbeat WORK_ITEM=<id>` | Extend the current declaration expiry |
-| `make dev-release WORK_ITEM=<id>` | Low-level declaration release owner; normal workflow close uses `make dev-close` |
-| `make dev-close WORK_ITEM=<id> MODE=<tracked|standalone> CLOSE_REASON=<completed|cancelled|owner-abandon> ...` | Resume-safe cross-owner cleanup and close receipt |
-| `make plan-mount PLAN=<path>` | Mount one stable Plan to this workspace |
-| `make plan-mount-status` | Resolve and validate the workspace's mount and run |
-| `make plan-amend PLAN=<path> REASON='<why>' CHANGE='<what>'` | Append an in-place Plan amendment and advance the current snapshot |
-| `make plan-state-migrate` | One-time hard cut of idle machine ledgers; refuses live declarations or mounts |
+| `make dev-start TASK=<id> ...` | Optionally create task-local recovery state |
+| `make dev-update TASK=<id> EXPECTED_REVISION=<n> ...` | Update one explicit task with revision/CAS |
+| `make dev-status TASK=<id>` | Read one explicit task |
+| `make dev-status-all` | Read this worktree's task records and isolate corrupt tasks |
+| `make dev-close TASK=<id> ...` | Close only the selected task and its owned resources |
+| `make plan-validate PLAN=<path>` | Validate one explicit frozen Plan Version |
+| `make plan-inspect PLAN=<path>` | Inspect one explicit Plan without workspace occupancy |
+| `make plan-task PLAN=<path> TASK=<id>` | Read one explicit Plan task |
 | `make station` | Reuse a healthy source-matched Station, otherwise deploy the current commit and verify its live build identity |
 | `make desktop` | Start Desktop Tauri app |
 | `make desktop-install` | Build the current source and atomically install `~/Applications/Peers Dev.app` |
@@ -350,15 +331,13 @@ make env-check \
 
 For an explicit human `make station`, the command owns one bounded
 `make.station` deployment intent and acquires the exact `station.deploy` lease
-it needs. No separate `make dev-start` is required. Agent-driven tracked work
-still declares runtime intent through Dev Workflow, and no direct owner action
-can acquire `station.reset`.
+it needs. No task record is required. Agent-driven runtime work uses the same
+operation-specific admission and lease path.
 
 After a normal commit, merge, rebase, or pull on the same branch, every command
 immediately uses the new Git HEAD without mutating the machine registration.
-Root or branch changes remain explicit binding changes. Agent workflow must
-still update its Development declaration before another mutation or runtime
-acquisition so the declared `sourceHead` equals the live worktree HEAD.
+Root or branch changes remain explicit binding changes. Runtime admission
+captures the current source and revalidates it after lock acquisition.
 
 `make desktop` is self-preparing. It resolves ports,
 Station topology, and runtime settings from the selected Profile; resolve
@@ -522,16 +501,15 @@ SELECT id, conversation_id, created_at FROM device_queue_lanes ORDER BY created_
    profile metadata, basename, or branch.
 8. **Local creation consumes authorization** — `profile-init` requires one
    unexpired exact-tuple machine grant and produces a digest-bound receipt.
-9. **Declare intent, then lease** — a matching active `work.json` declaration
-   is required before `local.slot`, `station.deploy`, or `station.reset`
-   acquisition. The declaration does not replace the OS-held lease.
+9. **Operation admission, then lease** — each runtime operation validates the
+   authoritative binding, current source, target, Profile policy, exact scope,
+   and operation-specific authorization before acquiring its OS-held lease.
 10. **Station deploy lease covers the closure** — `make station` holds
     `station.deploy` across deploy, restart, and health readback, and releases
     on success, failure, signal, or timeout.
 11. **Apply Profile-ID reset policy once** — non-stable Profiles may be reset by
     the Agent without human confirmation; stable Profiles fail before lease
     acquisition. Runtime scope and ownership guards still apply.
-12. **Close before unregister** — normal completion retains the registration.
-    Explicit worktree removal uses `dev-close
-    ENVIRONMENT_POLICY=unregister`; unregister fails while any declaration,
-    active-work, PlanMount, or OS-held lease remains.
+12. **Explicit unregister** — normal task completion retains the registration.
+    Explicit worktree removal invokes unregister separately; it fails while an
+    OS-held lease remains or the exact caller/root ownership does not match.

@@ -29,9 +29,9 @@
 | LDCP-D15 | Derive reset protection from the canonical Profile ID | accepted |
 | LDCP-D16 | Bootstrap minimum registration from explicit Profile selection | accepted |
 | LDCP-D17 | Separate durable workspace binding from current Git HEAD | accepted |
-| LDCP-D18 | Require committed resource-plan provenance for planner-owned leases | accepted |
+| LDCP-D18 | Require committed resource-plan provenance for planner-owned leases | superseded by DWF-D42 |
 | LDCP-D19 | Retire the Peers Dev browser service and keep Workflow Snapshot read-only | accepted |
-| LDCP-D20 | Unregister environments only through coordinated Development close | accepted |
+| LDCP-D20 | Unregister environments only through coordinated Development close | superseded by DWF-D42 |
 
 ## LDCP-D01: Machine Control-Plane Root
 
@@ -631,8 +631,6 @@ choose and bind `station.reset` without human involvement.
 Reset execution still requires all independent runtime guards:
 
 - `station.reset` in the current workspace binding;
-- one live Development declaration for the same Profile and exact exclusive
-  reset scope;
 - the same scope at the command boundary;
 - matching tracked-clean remote topology and source identity;
 - one OS-held reset lease.
@@ -708,13 +706,11 @@ path, whose result is verified again after health recovery. Typed downstream
 failures are preserved; only a real elapsed timeout is reported as
 `DEVCTL_START_TIMEOUT`.
 
-An explicit operator invocation of `make station` is itself a bounded
-`make.station` owner action. When deployment is required, that action may
-acquire only the exact bound `station.deploy` lease without a separately
-authored Development declaration. Registry capability, deploy-target matching,
-post-lock source validation, and OS lease exclusion remain mandatory. This
-exception never applies to `station.reset`; Agent-driven Plan work still
-declares runtime intent before invoking the command.
+When deployment is required, `make station` acquires only the exact bound
+`station.deploy` lease. Registry capability, deploy-target matching, prepared
+source identity, post-lock revalidation, and OS lease exclusion remain
+mandatory. Task declarations, PlanMount, resource-plan receipts, OWNER
+bindings, and Hook receipts are not runtime admission inputs.
 
 `make desktop` is the complete Native Desktop developer entrypoint. It resolves
 runtime values from the selected Profile, prepares missing workspace packages
@@ -768,9 +764,9 @@ registered branch, Profile, slot, capabilities, and Owner metadata.
 
 Every operation captures current Git branch and HEAD directly from the
 worktree. Root, workspace ID, and registered branch remain fail-closed binding
-checks. Development declarations, Plan/Session records, and deployment
-`build_commit` remain the source-version authorities for Agent mutation and
-exact-source runtime verification.
+checks. Runtime acquisition snapshots branch and HEAD before lock acquisition
+and revalidates them after the OS lock is held; deployment `build_commit`
+remains the exact-source runtime readback.
 
 Runtime accepts only the corrected schema-v1 shape and does not migrate or
 silently normalize incompatible registrations. Machine-local files produced by
@@ -797,16 +793,19 @@ Stable workspace identity and advancing source identity change independently and
 
 - Same-branch Git updates require no machine-registry write and immediately work
   across config, check, status, Station, Desktop, and Mobile entrypoints.
-- Agent runtime acquisition still fails when its declaration `sourceHead` does
-  not equal the current worktree HEAD.
+- Runtime acquisition fails when the prepared branch or HEAD no longer equals
+  the current worktree identity.
 - Root or branch drift still returns `WORKTREE_IDENTITY_MISMATCH`.
 - `env-update` changes explicit binding fields; it no longer refreshes source
   commit identity.
 
 ## LDCP-D18: Require Committed Resource-Plan Provenance For Planner-Owned Leases
 
-**Status**: accepted
+**Status**: superseded by DWF-D42
 **Date**: 2026-09-30
+
+This decision is retained as historical context only. Runtime admission no
+longer reads Development declarations or PlanResourcePlan receipts.
 
 ### Context
 
@@ -902,8 +901,12 @@ keeps authority with the underlying workflow stores.
 
 ## LDCP-D20: Unregister Environments Only Through Coordinated Development Close
 
-**Status**: accepted
+**Status**: superseded by DWF-D42
 **Date**: 2026-10-05
+
+This decision is retained as historical context only. Unregister now checks
+the exact registration owner and actual live OS leases; optional task,
+active-work, PlanMount, and close records do not occupy a workspace binding.
 
 ### Context
 

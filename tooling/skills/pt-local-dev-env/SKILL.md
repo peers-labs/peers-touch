@@ -103,9 +103,9 @@ that identity check, derive reset policy from the canonical ID:
 
 There is no reset-policy field or legacy fallback. Resettable does not mean
 unbounded: `station.reset` must still be present in the workspace binding and
-live Development declaration, the declaration and command must name the same
-exact scope, topology and source identity must match, and the OS lease must be
-held. Profile creation and renaming remain human-reviewed.
+the command must name the exact scope, topology and current source identity
+must match, and the OS lease must be held. Profile creation and renaming remain
+human-reviewed.
 
 One profile is bound per registered worktree in
 `~/.peers-touch/dev/registry.json`, keyed by canonical `workspaceId`.
@@ -379,20 +379,15 @@ When the user says "set up environment for X" or "I want to debug against Y":
    allowed capabilities, remote mode, non-loopback URL, and exact deploy-host
    match. Current Git HEAD is read from the worktree and is not part of the
    durable registration; root or registered-branch drift remains fail-closed.
-8. **Declare runtime intent**: the active Development declaration must contain
-   the exact profile and exclusive runtime resource before an Agent acquires
-   the lease. A human invoking `make station` directly uses its bounded
-   `make.station` owner action and does not run this internal step.
-9. **Execute**: only after preflight may the agent run `make station`,
+8. **Execute**: only after preflight may the agent run `make station`,
    `make desktop`, `make mobile`, or related lifecycle/Acceptance commands.
    Desktop startup automatically installs missing workspace packages from the
    committed lockfile and runs the source-aware Station ready closure.
-10. **Report**: include workspace ID, slot, capabilities, derived reset policy,
+9. **Report**: include workspace ID, slot, capabilities, derived reset policy,
     Station URL, deploy environment, and lease result.
-11. **Remove only after close**: when the user explicitly authorizes worktree
-    removal, run `make dev-close ... ENVIRONMENT_POLICY=unregister`. Do not
-    unregister a workspace while its declaration, active-work, PlanMount, or
-    lease is live, and do not delete registry rows by hand.
+10. **Remove explicitly**: when the user explicitly authorizes worktree
+    removal, unregister the exact owned binding only after its OS-held leases
+    are released. Do not delete registry rows by hand.
 
 ## Remote Deployment
 
@@ -478,9 +473,9 @@ Source modes:
   `stable` substring blocks autonomous reset; every other reviewed Profile is
   Agent-resettable.
 - Non-stable reset requires an exact user or accepted Plan
-  `destructiveResetScopes` grant, the binding capability, live declaration,
-  exact scope, matching topology/source identity, and live lease. Once every
-  guard matches, execute without another approval prompt.
+  `destructiveResetScopes` grant, the binding capability, exact scope,
+  matching topology/source identity, and live lease. Once every guard matches,
+  execute without another approval prompt.
 - An accepted Plan `authorization.runtime.deployProfiles` entry is explicit
   deploy authorization for that existing reviewed profile. It must be consumed
   directly and never converted into another user confirmation.
@@ -492,24 +487,21 @@ Source modes:
 - `make env-register` is an explicit workspace registration, not permission to
   create or edit a profile.
 - `make env-unregister` is a terminal cleanup operation. It requires the exact
-  registration owner and rejects any live declaration, active-work, PlanMount,
-  or OS-held lease. Deleted-worktree recovery uses the exact `WORKSPACE_ID`
-  through `dev-close`, not a guessed root.
+  registration owner and rejects any OS-held lease. Deleted-worktree recovery
+  uses the exact `WORKSPACE_ID`, not a guessed root.
 - Legacy `.local/dev/active/` pointers never select a runtime profile.
 - Runtime PIDs/logs/data live under
   `~/.peers-touch/dev/workspaces/<workspaceId>/runtime/<profile>/`.
 - `local.slot`, `station.deploy`, and `station.reset` possession requires the
   canonical OS-held lease plus matching PID/process-start metadata.
-- Agent-driven runtime work requires a live Development declaration before
-  lease acquisition. A direct human `make station` invocation may acquire only
-  the exact `station.deploy` lease through the bounded `make.station` owner
-  action. Neither path substitutes for the OS-held lease, and no owner action
-  bypass exists for `station.reset`. The owner action remains attached to the
-  inherited lease and its post-lock `verify-held` validation.
+- Runtime work requires the authoritative workspace capability, exact reviewed
+  Profile and target or reset scope, prepared current source identity, and the
+  OS-held lease. Task declarations, PlanMount, resource-plan receipts, OWNER
+  bindings, and Hook receipts neither grant nor block acquisition.
 - The machine registration never stores Git HEAD. Normal same-branch Git
   updates therefore need no `make env-update`; branch or root drift still
-  fails closed. Agent runtime acquisition independently requires its
-  declaration `sourceHead` to equal the live worktree HEAD.
+  fails closed. Runtime acquisition snapshots branch and HEAD before locking
+  and revalidates both after the OS lease is held.
 - `make station` is idempotent — it reuses an already healthy Station only when
   `/app-meta/version` reports a build commit matching the current local HEAD;
   stale or missing build identity triggers exact-source deployment

@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-15
-covered_docs_hash: d1588fbb22b8d93cb5a085c4a57b56471b7782eba9cfcfec55a267a36d9355fb
+covered_docs_hash: a08f3350cda2a4872d9e12d2dcca366a1aea059e2b3461a35f1efd0d94a59e7f
 
 covered_docs:
   - AGENTS.md
@@ -31,82 +31,20 @@ covered_docs:
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
 
+## 2026-10-14 Lightweight Development Flow Review
+
+DWF-D42 now uses one optional atomic task snapshot, runner-owned Acceptance
+scope, advisory Hook output, and one public task-close entrypoint. Review keeps
+current-source evidence, real runtime admission, fixture coverage, and Skill
+freshness, but does not require event sourcing, host capture, or cryptographic
+review receipts for trusted internal development.
+
 ## 2026-10-15 Public API Documentation Index Review
 
-`docs/README.md` now routes external callers to the canonical `docs/api/`
-contracts and states that public HTTP contracts are defined there once. This
-clarifies documentation ownership without changing review severity, evidence
-requirements, or implementation boundaries. Existing single-source,
-API-contract, and documentation-consistency rules already cover the change, so
-no `SKILL.md` update, generic review fixture, or knowledge entry is required.
-
-## 2026-10-07 Integrated Ownership Review
-
-The stable-Plan and main-session ownership hardening from `master`, the
-canonical Chat ownership hard cut, and the Federation managed-domain cleanup
-were reviewed together. The merged contracts retain the new Plan and worktree
-ownership rules while keeping retired Chat and `fedp5` paths deleted.
-
-## 2026-10-07 Canonical Chat Ownership Review
-
-Desktop and Station coding guides now reflect the completed Chat hard cut:
-`messagingRuntime` and the Device Messaging Engine own Chat lifecycle and
-projection freshness, `socialRealtime` is limited to Social projections, and
-Conversation-owned persistence replaces the retired Friend/Group store
-families. The governing runtime-projection Skill was updated with the same
-boundary.
-
-Existing GitHub Review rules already require one business truth, proto-first
-contracts, generated-output integrity, runtime-owned freshness, and complete
-consumer migration. The nine-dimensional Chat zero-reference Gate provides the
-specific old-path regression coverage. No `pt-github-review/SKILL.md`, generic
-review fixture, or new knowledge entry is required.
-
-## 2026-10-07 Plan And Ownership Hardening Review
-
-DWF-D42 and DWF-D43 now require source-only CI Plan validation, immutable
-digest-bound completion attestations, full-source amendment fences, exact root
-OWNER receipts, and recoverable worktree creation transactions. Review rejects
-machine-state-dependent CI checks, child-session OWNER substitution,
-ownerless lifecycle mutation, unvalidated legacy migration input, and
-non-transactional provenance publication.
-
-## 2026-10-07 Main-Session Worktree Provenance Review
-
-DWF-D43 requires explicitly authorized Agent-created worktrees to persist the
-creating main-session reference independently from current Development Run
-ownership. Review now rejects raw Git creation presented as a supported Agent
-path, Git actor substitution, Action Receipt substitution for user
-authorization, guessed legacy provenance, owner mutation across declaration,
-Session, or active-work, and active ownerless legacy state. The review Skill,
-workflow invariant, installation fixture, and focused owner/worktree tests
-cover these boundaries; no generic review fixture is required.
-
-## 2026-10-07 Explicit North Star Approval Review
-
-DWF-D42 now treats generated North Stars as non-executable candidates.
-Review must reject missing or stale digest-bound user approval, incomplete
-criterion-to-Task/closure/Gate coverage, and any attempt to publish a changed
-North Star without the matching owner amendment decision. Plan mount/CLI
-fixtures and the stable-plan invariant cover these boundaries; no generic
-review fixture is required.
-
-## 2026-10-06 Stable Plan Amendment Review
-
-DWF-D42 replaces frozen Plan versions with one stable Plan identity and an
-append-only amendment trail. Review must reject unrecorded Plan mutation,
-rewritten amendment history, stale snapshot execution, silent North Star
-changes, and authorization expansion without an owner decision. The new
-stable-plan invariant and Plan mount/CLI regressions cover these boundaries; no
-generic review fixture is required.
-
-## 2026-10-06 Knowledge Index Review
-
-The Knowledge index now links the Conversation production schema migration
-single-source pitfall. The entry documents Station migration ownership and does
-not change GitHub Review behavior, severity, or evidence contracts. Existing
-review rules already reject split ownership and duplicate authority, so no
-`SKILL.md` update or review fixture is required.
+`docs/README.md` routes external callers to the canonical `docs/api/`
+contracts and defines each public HTTP contract once. Existing single-source,
+API-contract, and documentation-consistency rules cover the change; no generic
+review fixture or additional review rule is required.
 
 ## 2026-10-05 Architecture Taxonomy Review
 

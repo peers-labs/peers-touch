@@ -199,7 +199,7 @@
       "requiresSeparateTaskFromProduct": true
     },
     {
-      "id": "workflow-acceptance-admission",
+      "id": "development-workflow-tooling",
       "patterns": [
         "tooling/scripts/acceptance-gap-detect.py",
         "tooling/scripts/acceptance-gap-detect-test.py",

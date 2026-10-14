@@ -1,68 +1,36 @@
 # Workflow Snapshot - Product State Model
 
 > **Status**: active
-> **Version**: v3.0
-> **Created**: 2026-09-23 | **Updated**: 2026-10-04
+> **Version**: v4.0
+> **Updated**: 2026-10-14
 > **Owner**: Platform Team
-> **Module**: `tooling/scripts/local-dev/`
 
----
-
-## 1. Invocation State
+## Invocation
 
 ```text
-requested
-  -> reading
-  -> emitted
-  -> exited
-
-reading
-  -> partial     one or more typed source failures
-  -> failed      root projection cannot be produced
+requested -> reading -> emitted -> exited
+                    \-> partial
+                    \-> failed
 ```
 
 There is no serving, refreshing, connected-client, or resident state.
 
-## 2. Worktree Visibility
+## Workspace Projection
 
-| State | Condition | Allowed Claim |
-|---|---|---|
-| discovered | Current `git worktree list` contains the root | Current Git identity |
-| observed-only | Observation exists without registration | Observation freshness only |
-| managed | Machine registration exists | Profile and slot binding |
-| mounted | One live PlanMount targets the workspace | Plan occupancy |
-| historical | Only released/terminal owner records remain | History only |
-| missing | Owner history exists but Git no longer discovers the root | Diagnostic only |
+- `current`: canonical root and current Git source are readable.
+- `partial`: source is readable but one or more optional tasks are corrupt.
+- `unavailable`: the selected workspace cannot be read.
 
-## 3. Workflow Consistency
+## Task Projection
 
-| State | Condition |
-|---|---|
-| consistent | Mount, snapshot, run, declaration, Session, active-work, and Git identities agree |
-| stale | An expiring projection is old but does not claim a live resource |
-| blocked | A required owner is absent or malformed |
-| conflict | Multiple live owners or identity mismatch |
-| unavailable | A bounded read failed |
+- `current`: the atomic snapshot checksum is valid.
+- `source-stale`: source changed and prior evidence was invalidated.
+- `corrupt`: snapshot JSON or checksum is invalid; only this task is affected.
+- `none`: no task was explicitly selected or stored.
 
-Snapshot never repairs or infers an owner.
+## Durable Readback
 
-## 4. Environment Health
-
-| State | Condition |
-|---|---|
-| ready | Required profile and observed runtime state agree |
-| warning | Non-authoritative observation is stale or unavailable |
-| blocked | Required registration, capability, or topology is absent |
-| conflict | Slot, lease, process, or source identity conflicts |
-| unregistered | Git worktree has no machine registration |
-
-Environment health cannot change ExecutionRun or Task state.
-
-## 5. Durable Readback
-
-- Git facts are captured per invocation and are not persisted as authority.
-- Mount, run, declaration, Session, active-work, registry, and lease owners
-  retain their own schemas and stores.
-- Workflow Snapshot has no ticket, browser selection, service identity, PID,
-  endpoint, lease, or cache owner.
-- Output is a disposable redacted projection.
+Git facts are captured per invocation. Task snapshots remain task-local.
+Registry, Profile, runtime, lease, and evidence owners retain their own stores.
+Workflow Snapshot has no ticket, service identity, endpoint, lease, or cache
+owner.

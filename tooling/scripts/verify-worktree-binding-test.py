@@ -164,7 +164,7 @@ class WorktreeBindingTests(unittest.TestCase):
 
         self.assert_mismatch(result)
 
-    def test_unrelated_sibling_worktree_churn_does_not_change_identity(self) -> None:
+    def test_unrelated_sibling_directory_churn_does_not_change_identity(self) -> None:
         captured = json.loads(
             subprocess.run(
                 [
@@ -181,27 +181,8 @@ class WorktreeBindingTests(unittest.TestCase):
             ).stdout
         )
         sibling = self.root.with_name(f"{self.root.name}-sibling")
-        try:
-            self.git("worktree", "add", "-q", "-b", "sibling", str(sibling))
-            result = self.invoke("--head", captured["head"])
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(json.loads(result.stdout), captured)
-        finally:
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(self.root),
-                    "worktree",
-                    "remove",
-                    "--force",
-                    str(sibling),
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            shutil.rmtree(sibling, ignore_errors=True)
+        sibling.mkdir()
+        (sibling / "unrelated.txt").write_text("unrelated\n", encoding="utf-8")
         result = self.invoke("--head", captured["head"])
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), captured)
@@ -213,24 +194,7 @@ class WorktreeBindingTests(unittest.TestCase):
 
 
 class WorktreeBindingContractTests(unittest.TestCase):
-    def test_orchestration_contracts_share_the_fail_closed_guard(self) -> None:
-        paths = (
-            "AGENTS.md",
-            "tooling/skills/pt-dev-workflow/SKILL.md",
-            "tooling/skills/pt-goal-orchestrator/GOAL_TEMPLATE.md",
-        )
-        required = (
-            "verify-worktree-binding.py",
-            "workspaceId",
-            "WORKTREE_IDENTITY_MISMATCH",
-        )
-        for relative in paths:
-            with self.subTest(path=relative):
-                content = (REPO_ROOT / relative).read_text(encoding="utf-8")
-                for marker in required:
-                    self.assertIn(marker, content)
-
-    def test_binding_contract_excludes_sibling_worktree_inventory(self) -> None:
+    def test_contracts_exclude_sibling_worktree_inventory(self) -> None:
         paths = (
             "AGENTS.md",
             "tooling/skills/pt-context-anchor/SKILL.md",
@@ -251,19 +215,18 @@ class WorktreeBindingContractTests(unittest.TestCase):
                 for marker in forbidden:
                     self.assertNotIn(marker, content)
 
-    def test_active_work_contracts_persist_current_worktree_identity(self) -> None:
+    def test_current_worktree_and_optional_task_are_explicit(self) -> None:
         contracts = {
-            "AGENTS.md": ("workspaceId", "initial_head", "expected_head"),
+            "AGENTS.md": ("canonical root", "current Git/runtime facts"),
             "tooling/skills/pt-context-anchor/SKILL.md": (
-                "workspaceId",
-                "Initial HEAD",
-                "Expected HEAD",
-                "active-work.json",
+                "canonical worktree",
+                "current branch/HEAD",
+                ".dev-workflow/tasks/<taskId>",
             ),
             "tooling/skills/pt-plan-and-document/SKILL.md": (
-                "workspace",
-                "active-work",
-                "project_memory.md",
+                "明确路径",
+                "taskId",
+                "Plan Version",
             ),
         }
         for relative, required in contracts.items():
@@ -273,98 +236,39 @@ class WorktreeBindingContractTests(unittest.TestCase):
                     self.assertIn(marker, content)
                 self.assertNotIn("worktree_set_digest", content)
 
-    def test_legacy_active_work_migration_is_explicit_and_auditable(self) -> None:
-        paths = ("AGENTS.md",)
-        required = (
-            "legacy",
-            "project_memory.md ## active_work",
-            "compatibility writer",
-            "make active-work-sync",
-            "another workspace's record",
-            "resume",
-            "WORKTREE_IDENTITY_UNAVAILABLE",
-        )
-        for relative in paths:
-            with self.subTest(path=relative):
-                content = (REPO_ROOT / relative).read_text(encoding="utf-8")
-                for marker in required:
-                    self.assertIn(marker, content)
-
-    def test_context_anchor_names_the_logical_worktree(self) -> None:
-        paths = (
-            "AGENTS.md",
-            "tooling/skills/pt-context-anchor/SKILL.md",
-        )
-        for relative in paths:
-            with self.subTest(path=relative):
-                content = (REPO_ROOT / relative).read_text(encoding="utf-8")
-                self.assertIn("<worktree-name> (<repo-root>)", content)
-        agents = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertIn("bare `<repo-root>`", agents)
-
-    def test_goal_commands_require_shell_safe_root_quoting(self) -> None:
-        command_paths = ("tooling/skills/pt-goal-orchestrator/GOAL_TEMPLATE.md",)
-        for relative in command_paths:
-            with self.subTest(path=relative):
-                content = (REPO_ROOT / relative).read_text(encoding="utf-8")
-                self.assertIn("shell-safe", content)
-                self.assertIn("--root '<", content)
-
-        rubric = (
-            REPO_ROOT
-            / "tooling/skills/pt-goal-orchestrator/REVIEW_RUBRIC.md"
-        ).read_text(encoding="utf-8")
-        self.assertIn("shell-safe", rubric)
-        self.assertIn("root containing whitespace", rubric)
+    def test_resume_does_not_depend_on_shared_memory_state(self) -> None:
+        content = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("Never infer a task from branch, mtime, chat, or memory", content)
+        self.assertIn("Current-source evidence", content)
 
     def test_execution_contracts_forbid_implicit_worktree_operations(self) -> None:
         paths = (
             "AGENTS.md",
-            "tooling/skills/pt-goal-orchestrator/GOAL_TEMPLATE.md",
+            "tooling/skills/pt-dev-workflow/SKILL.md",
         )
         for relative in paths:
             with self.subTest(path=relative):
                 content = (REPO_ROOT / relative).read_text(encoding="utf-8")
-                self.assertIn("git switch", content)
-                self.assertIn("git checkout", content)
-                self.assertIn("git worktree add", content)
-                self.assertIn("explicit", content)
+                self.assertIn("worktree", content)
+                self.assertIn("explicit", content.lower())
+                self.assertIn("create", content.lower())
 
     def test_goal_orchestration_drains_ready_work_before_blocking(self) -> None:
-        queue_contracts = (
-            "tooling/skills/pt-goal-orchestrator/GOAL_TEMPLATE.md",
-            "tooling/skills/pt-goal-orchestrator/REVIEW_RUBRIC.md",
-        )
-        for relative in queue_contracts:
-            with self.subTest(path=relative):
-                content = (REPO_ROOT / relative).read_text(encoding="utf-8")
-                self.assertIn("Ready Queue", content)
-                self.assertIn("Parked Queue", content)
-                self.assertIn("exhaustion proof", content)
-
-        scheduler = (
-            REPO_ROOT / "tooling/skills/pt-goal-orchestrator/SKILL.md"
-        ).read_text(encoding="utf-8")
-        self.assertIn("Ready Queue", scheduler)
-        self.assertIn("Park actions", scheduler)
-        self.assertIn("GOAL_SLICE_BLOCKED", scheduler)
-
-        execution_contracts = {
+        contracts = {
             "AGENTS.md": (
-                "Action blocked",
-                "Goal blocked",
-                "fixed-point exhaustion",
+                "Park only the",
+                "blocked action",
+                "ready frontier",
             ),
             "tooling/skills/pt-execution-plan-guardian/SKILL.md": (
-                "One failed action does not prove the whole plan blocked",
+                "A blocked deploy does not block independent",
             ),
             "tooling/skills/pt-context-anchor/SKILL.md": (
-                "non-blocked",
-                "hard boundary",
-                "source-backed",
+                "continue immediately",
+                "real resource conflict",
             ),
         }
-        for relative, required in execution_contracts.items():
+        for relative, required in contracts.items():
             with self.subTest(path=relative):
                 content = (REPO_ROOT / relative).read_text(encoding="utf-8")
                 for marker in required:

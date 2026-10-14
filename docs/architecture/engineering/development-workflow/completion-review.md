@@ -1,184 +1,57 @@
-# Completion Review 产品合同
+# 完成审查合同
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-10-04
+> **Created**: 2026-09-26 | **Updated**: 2026-10-14
 > **Owner**: Platform Team
 
----
+## 1. 审查什么
 
-## 1. Scope
+完成审查判断本次约定的结果是否成立：范围有没有遗漏，改动是否在正确层，替换的旧路径是否清完，文档是否一致，验证是否真实且匹配当前源码。
+它还要检查本次贡献是否确实推进了继承的产品或工程北极星，防止用流程完成、
+任务数量、Gate 数量或局部技术指标冒充最终结果。
 
-Completion Review 是成功实现证据与 Task/Plan completion 之间的独立、
-current-source Gate。它必须识别遗漏义务、残留 forbidden path、stale evidence
-和 overclaim。
+审查不替代源码检查、真实功能验证、正式 Acceptance 或 PR 审查。通过也不授权提交、发布或重置。
 
-它不替代 focused check、functional verification、Acceptance 或 PR review。
+本文定义当前审查合同。审查工具直接读取当前 Git、明确义务和证据引用，不依赖
+成功 Session、OWNER、PlanMount 或通用关闭回执。
 
-本能力由 canonical 决策 DWF-D28 和 DWF-D37 定义。决策接受不构成实现落地或
-当前 proof。
+## 2. 明确输入
 
-## 2. Ownership
+调用者提供本次 worktree、修改范围、完成义务和证据引用。义务来自明确需求及已接受方案；有实施计划时显式引用，无 Plan 时不制造计划。
 
-| Concern | Owner |
-|---|---|
-| Required completion obligations | Plan 和 Task |
-| Current source identity | Git workspace inspector |
-| Review request/receipt | Completion Review owner |
-| Task lifecycle mutation | `planctl` |
-| Source invalidation and reopen | DWF-D24 Plan-declared invalidation owner |
-| Review projection | DWF-D27 Workflow Snapshot |
-| Human merge judgment | PR reviewer |
+工具从当前 Git 与实际文件计算源码身份，核对产物、义务、检查实现和证据摘要。不能由调用者自报 `clean`、当前源码摘要、审查通过或正式 PASS 来替代读取。
 
-Review owner 从当前成功 Development Session 派生 implementation provenance，
-并签发 create-once、review-scoped capability。Dev Workflow 必须把 immutable
-request 和 capability 交给独立 reviewer 进行判断；机器 owner 只证明 delegated
-capability、request 和 assessment provenance，不能密码学证明 reviewer 的认知
-独立性。调用者不能提供或覆盖 delegation digest。
+复杂任务记录可提供引用，但记录不可读不阻止对代码和现有证据的直接审查。无法重建的目标或完成义务应明确列为审查缺口。
 
-## 3. Request And Receipt
+## 3. 评审怎样产生
 
-内部 Development Workflow 遵循 DWF-D23，不发布产品化的 `vN` 阶段。下述
-machine record 的 `schemaVersion` 仅是 closed-shape 完整性字段，不是 workflow
-release label。
+Agent 执行一次独立的、先列问题再裁决的评审；使用独立 reviewer 时需遵守宿主调用权限。不同 sessionId 本身不能证明判断独立。Agent 不得自发伪造、补写或重标证据；本项目不为内部可信协作增加签名、HMAC 或 reviewer receipt 链。
 
-```ts
-interface CompletionReviewRequest {
-  schemaVersion: 3;
-  kind: 'peers-touch-completion-review-request';
-  reviewId: string;
-  scope: 'task' | 'plan';
-  planId: string;
-  taskId: string | null;
-  workItemId: string;
-  implementationSessionIds: string[];
-  implementationContextDigests: string[];
-  reviewerCapabilityDigest: string;
-  source: {
-    branch: string;
-    commit: string;
-    tree: string;
-    workspaceDigest: 'clean' | `sha256:${string}`;
-  };
-  obligationsDigest: string;
-  candidatePlanDigest: string;
-  evidenceDigest: string;
-  createdAt: string;
-  requestDigest: string;
-}
+现有不可变请求、摘要验证和委托能力中有价值的实现继续复用。身份用于核对谁提交了该次评审，不能成为普通修改的写权限。
 
-interface CompletionReviewReceipt {
-  schemaVersion: 3;
-  kind: 'peers-touch-completion-review-receipt';
-  reviewId: string;
-  requestDigest: string;
-  reviewerDelegationDigest: string;
-  reviewerCapabilityDigest: string;
-  assessmentDigest: string;
-  proofDigest: string;
-  verdict: 'PASS' | 'FAIL';
-  findings: Array<{
-    id: string;
-    blocking: boolean;
-    status: 'OPEN' | 'RESOLVED';
-    evidenceRefs: string[];
-  }>;
-  reviewedAt: string;
-  receiptDigest: string;
-}
-```
+评审至少覆盖：
 
-Schema v3 records live only under
-`~/.peers-touch/dev/workspaces/<workspaceId>/workflow/completion-reviews-v3/`.
-`completion-reviews/` and `completion-reviews-v2/` are retained as inert
-history: the canonical owner never reads, imports, migrates, or rewrites them.
+- 需求和约定范围的完整性；
+- 继承的北极星、本次贡献和实际可观察结果是否一致；
+- 改动路径、生成目标和无关变动；
+- 架构边界与被替换模块的所有调用方；
+- 当前文档、Skill、Gate 与实现一致性；
+- 必要检查及实际功能证据；
+- 证据来源、摘要、新鲜度和未验证范围；
+- 本次真实资源释放或明确保留情况。
 
-Request 和 receipt 都是 create-once。`obligationsDigest` 覆盖 Task 的
-`doneWhen`、`failureBehavior`、checks、read/write set、Acceptance closure
-以及 Plan-level deletion/quality obligations。
+机器工具根据实际 findings 判断结果，不接受仅传 `PASS` 的结论。未解决阻断问题保持有问题；来源不明或未运行保持未验证。
 
-`prepare` 从 successful Development Session、current source 和 obligation
-material 派生 implementation context，创建 immutable request 和 owner-private
-capability。`submit` 必须读取显式 capability path，验证 exact review/digest，
-再从 capability 与 assessment 内部派生 delegation digest 和 HMAC proof。
-调用者不能注入 delegation provenance；Completion Review 不读取 Action
-Receipt、Workflow Binding 或 host session。Capability possession 不等于独立
-判断，独立 reviewer launch 是 Dev Workflow 的编排义务。
+## 4. 新鲜度与完成
 
-Reviewer 提交 owner-only assessment。至少包含以下 mandatory finding：
+审查结果关联本次源码、产物、义务和证据。任一相关输入改变后，受影响结论过期，重做相应检查与审查，不自动读取历史成功回执填绿。
 
-- `plan-task-schema`
-- `declared-evidence`
-- `changed-file-containment`
-- `forbidden-reference-inventory`
-- `docs-source-consistency`
-- `required-check-results`
-- `generated-evidence-trust`
+小改动可以在交付说明中记录自查与针对性结果；不强制为每次普通工作建立机器 review receipt。正式 Acceptance 仍按其严格证据合同处理。
 
-Review owner 从 blocking finding state 派生 `PASS` 或 `FAIL`。调用者提交的
-verdict 只能与派生结果一致，不能覆盖结果。
+复杂任务标为完成前检查已约定的结果和交付。尚待用户验证或未经授权发布不算已发布；需要保留的运行资源列出去向，不能用总关闭回执代替现场核对。
 
-## 4. State And Invalidation
+## 5. 必须覆盖的回归
 
-```text
-MISSING -> PENDING -> PASS
-                  \-> FAIL
-PASS|FAIL -- source/obligation drift --> STALE
-STALE -> PENDING
-```
+计划声明已替换某机制，但调用方、测试或安装脚本仍使用旧路径时，其他测试成功也不能使审查通过。扫描范围由实际调用 inventory 支撑，不只查预先列出的几个文件。
 
-Receipt 仅在以下条件全部成立时为 current：
-
-- Plan、Task、work item 和 implementation Session identity 匹配；
-- Reviewer capability、delegation digest、assessment digest 和 proof 与
-  request 精确匹配；
-- Branch、commit、tree 和 workspace digest 与当前 Git state 匹配；
-- Obligation digest 与当前 Plan/Task/Acceptance source 匹配；
-- Implementation source 和 obligation digest 与 reviewed request 匹配；
-- Closure transaction 的 post-transition candidate Plan、Session 和 evidence
-  digest 与 request 精确匹配；
-- 所有 blocking finding 已关闭。
-
-Source digest 只能排除 Plan lifecycle 文件及其 transient lock；
-`candidatePlanDigest` 覆盖精确 post-transition Plan bytes。后续正常 Task
-transition 不追溯性地使已关闭 Task 的 immutable Session evidence stale；
-implementation source 或 obligation drift 会使其 stale。
-
-Closure owner 必须拒绝没有 current `PASS` receipt 的 done transition。已完成
-Task 或 Plan 的 receipt 失效后，projection 不得继续显示完成；只有需要 source
-invalidation 时，lifecycle 重置才通过 DWF-D24 的 invalidation owner 完成。
-
-当前 Task 完成后若没有 dependency-ready successor、但已有 blocked Task，
-Completion Review 必须审查同一个 fixed-point blocked 候选状态。该候选的
-`recordedAt` 取成功 Session 的最终更新时间，`decisionRefs` 取 Plan 已声明架构
-决策，`evidenceRefs` 取现有 Task blocker；`planctl advance` 必须使用相同字段，
-否则候选摘要不匹配并拒绝关闭。prepare 输出同时返回该
-`candidateTransition`，调用方不得再次实现候选状态推导。
-
-## 5. Review Checks
-
-每次 review 包含：
-
-- Plan/Task schema 和 dependency closure；
-- 已声明的 focused、functional 和 Acceptance evidence；
-- Changed-file containment；
-- Target-state deletion 和 forbidden-reference search；
-- Docs 与 implementation consistency；
-- 不存在 hidden skipped 或 failed required check；
-- 不使用 untracked generated output 作为证据。
-
-Domain Plan 可以增加 review check 和 forbidden-path fixture，但不能删除通用检查。
-
-## 6. Required Regression
-
-必须覆盖以下 omission regression：
-
-1. Plan 声明某项 consolidation 已完成；
-2. 一个被声明禁止的 legacy source 仍存在，但旧 search scope 未覆盖；
-3. 其他 Session evidence 均成功；
-4. Completion Review 返回 `FAIL`；
-5. Closure owner 拒绝 done transition 且不修改 manifest。
-
-Fixture 必须由当前 Plan 声明 forbidden inventory，不得依赖其他 worktree 的领域
-路径、branch、workspace identity 或历史执行结果。Generated、test、script 和
-显式 deletion inventory 不得被静默排除；任何 exclusion 都是 Plan-owned 且必须
-经过 review 的规则。
+无 Plan、无 Hook 和无开发登记的任务可以审查；伪造证据、旧源码证据、隐藏失败和遗漏职责仍必须发现。具体场景见 FLOW-A09、A16—A19 的[验收清单](./acceptance-matrix.md)。

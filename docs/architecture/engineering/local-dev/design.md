@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Architecture Design
 
 > **Status**: active
-> **Version**: v1.4
-> **Created**: 2026-09-13 | **Updated**: 2026-10-06
+> **Version**: v1.5
+> **Created**: 2026-09-13 | **Updated**: 2026-10-13
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -34,20 +34,16 @@
 10. **Profile-ID reset policy**: the canonical Profile ID is the only reset
     policy source. A case-insensitive `stable` substring protects the Profile
     from autonomous reset; every other reviewed Profile is Agent-resettable.
-    The policy never replaces declarations, capabilities, exact reset scope,
+    The policy never replaces capabilities, exact reset scope,
     leases, topology validation, or source identity.
 11. **One read-only development projection**: Workflow Snapshot joins each
-    worktree's requirements and Journeys with topology, mounts, declarations,
-    leases, and observations without becoming a mutation or truth owner.
+    worktree's optional task facts with topology, leases, and observations
+    without becoming a mutation or truth owner.
 12. **No dashboard runtime**: the projection is an on-demand CLI/library call;
     it starts no server, opens no browser, and reserves no fixed port.
-13. **Explicit Plan occupancy**: Project Ledger PlanMount, not repository
-    discovery or a workspace binding file, selects the stable Plan
-    executed by a worktree.
-14. **Stable binding, live source**: the registry owns durable root, branch,
+13. **Stable binding, live source**: the registry owns durable root, branch,
     profile, slot, and capability binding only. Current Git HEAD is read from
-    the worktree for each operation and fenced by Development intent and
-    runtime build identity where mutation occurs.
+    the worktree for each operation and revalidated after OS-lock acquisition.
 
 ## 2. System Architecture
 
@@ -62,8 +58,6 @@ Sibling env repository
 Machine Dev Control Plane
   ~/.peers-touch/dev/
   - workspace registry
-  - Project Ledger Plan mounts
-  - public development work declarations
   - human environment-creation authorizations
   - local slot allocation
   - Station capability leases
@@ -105,14 +99,11 @@ not remain as a symlink, fallback, or second read owner.
 | Worktree registration identity | Canonical filesystem path + registered branch | `workspaceId = sha256(realpath(root))[0:16]` |
 | Current worktree source identity | Git | Current branch and HEAD captured at operation time |
 | Worktree profile selection | Machine Dev Control Plane | `bindings[workspaceId].profile` |
-| Worktree Plan occupancy | Development Workflow | Project Ledger `PlanMount` |
-| Development source/runtime intent | Development Workflow | `~/.peers-touch/dev/work.json` |
-| Development close transaction | Development Workflow | Per-work-item `DevelopmentCloseReceipt` |
 | Local port slot | Machine Dev Control Plane | `bindings[workspaceId].slot` |
 | Station connection/deploy/reset permission | Machine Dev Control Plane | capability lease |
 | Live process and port state | OS observation | PID identity + listening socket |
 | Runtime evidence | Acceptance Evidence Store | `~/.peers-touch/dev/acceptance/` |
-| Read-only workflow projection | Development Workflow | `workflow-snapshot-core.mjs` |
+| Read-only workflow projection | Development Workflow | `workflow-snapshot.mjs` |
 
 Profile files may describe remote topology defaults, but they must not remain
 the authority for machine-local slot allocation.
@@ -147,11 +138,10 @@ has no reader. Renaming a Profile across the `stable` boundary is therefore a
 reviewed topology change, not a runtime toggle.
 
 For a non-stable Profile, reset still requires `station.reset` in the workspace
-binding, one live Development declaration with the same Profile and exact
-exclusive reset scope, the same scope on the command boundary, remote
-tracked-clean topology, matching source identity, and the OS-held reset lease.
-These are intent, scope, topology, identity, and concurrency guards; none is a
-human-permission prompt. A stable Profile fails with
+binding, the same exact reset scope on the command boundary, remote
+tracked-clean topology, matching current source identity, and the OS-held
+reset lease. These are scope, topology, identity, and concurrency guards; none
+is a human-permission prompt. A stable Profile fails with
 `PROFILE_RESET_PROTECTED` before lease acquisition.
 
 Existing-profile deploy authorization remains resolved from exact user grants
@@ -175,28 +165,21 @@ Owns durable machine-local declarations:
 - Allowed Station capability mode.
 - Detected conflicts.
 
-It does not own Plan selection. Development Workflow stores the stable
-PlanMount and current immutable snapshot in the workspace workflow namespace
-beside, not inside, the mutable environment registration. The registry must
-not contain credentials, JWTs, passwords, private keys, user messages, or
-Acceptance artifacts.
+It does not own Plan selection. Development Workflow stores the immutable Plan
+binding in the workspace workflow namespace beside, not inside, the mutable
+environment registration. The registry must not contain credentials, JWTs,
+passwords, private keys, user messages, or Acceptance artifacts.
 
 Registration is explicit. Discovery through `git worktree list`, a branch name,
 an existing directory, a project `active_work` row, or a legacy profile pointer
 must not register a worktree automatically.
 
-Agent-created worktrees use `make worktree-create` after explicit user
-authorization. The command associates the new `workspaceId` with the creating
-main-session OWNER and the creation Action Receipt in
-`worktree-creation.json`. Raw `git worktree add` remains outside the supported
-Agent lifecycle because Git metadata has no conversation provenance.
-
 Registration is reusable machine allocation and remains after normal task
 completion. It is removed only for an explicitly authorized worktree removal.
-Unregister requires the exact registration owner and no live declaration,
-active-work, PlanMount, or OS-held lease. Deleted-worktree cleanup uses the
-exact workspace identity through the Development close coordinator; no
-registry row is removed by path guessing or direct file edits.
+Unregister requires the exact registration owner and no OS-held lease.
+Deleted-worktree cleanup uses the exact workspace identity; no registry row is
+removed by path guessing or direct file edits. Optional task records do not
+occupy the registration.
 
 Worktree activity is a derived runtime fact:
 
@@ -234,20 +217,12 @@ reports, and reproduction notes. A session must be deleted after closure.
 Reusable conclusions move to the governing design, operational knowledge, or
 Acceptance Evidence Store; transient files do not move into the repository.
 
-### 4.5 Development Work Ledger
+### 4.5 Optional Task Records
 
-`~/.peers-touch/dev/work.json` is the machine-wide public intent projection
-owned by Development Workflow. It advertises work item, workspace, branch,
-source write scope and planned runtime resources before mutation.
-
-The ledger does not allocate resources and cannot grant deploy/reset authority.
-Local Dev Control Plane leases remain the live exclusivity owner. A work
-declaration and lease may reference the same resource, but they answer different
-questions: planned use versus current possession.
-
-A tracked declaration must match the live PlanMount, immutable snapshot,
-ExecutionRun, and current Task. Once mounted, the workspace cannot publish
-untracked declarations.
+Development Workflow may keep task-local progress and recovery records, but
+Local Dev does not read them for runtime admission, binding changes, or
+unregister. Historical `work.json`, PlanMount, Session, active-work, close, and
+resource-plan files are diagnostic history only during removal.
 
 ### 4.6 Lease Manager
 
@@ -267,7 +242,7 @@ durable binding.
 The canonical implementation is split by responsibility:
 
 - `machine-dev-registry.mjs` owns registration, binding, topology validation,
-  slot allocation, capability checks, Development-intent matching, and status
+  slot allocation, capability checks, current-source validation, and status
   projection.
 - `machine-dev-lease.py` owns the OS advisory-lock file descriptor and the
   bounded child process group; the mutation child inherits that descriptor and
@@ -281,20 +256,12 @@ This is one control plane, not a Secure Content lease implementation.
 that same value as run-scoped authorization input. `local.slot` is keyed by the
 machine binding's slot.
 
-Lease acquisition also requires one live Development declaration for the same
-workspace, current branch, current HEAD, profile, and exclusive runtime claim.
-The registry does not cache that HEAD: the declaration proves source intent,
-the worktree supplies current source, and the OS lock proves possession.
-The binding and intent are revalidated after OS-lock acquisition under the
-registry update lock, closing the registration-update/acquisition race.
-
-When a DWF-D32 `PlanResourcePlan` introduced the claim, admission additionally
-requires a source-current `COMMITTED` receipt for that exact claim. A
-`RESERVING` receipt is recoverable but non-authorizing. The receipt keeps
-pre-existing declaration claims in `baseRuntimeClaims`; those claims retain
-their original declaration authority and are not removed by replanning. A
-shared `resource.plan:<workItemId>` claim marks planner provenance, so a missing
-receipt fails closed instead of falling back to declaration-only admission.
+Lease acquisition snapshots the current branch and HEAD from the exact
+canonical worktree. After acquiring the OS lock, it revalidates that source,
+the authoritative binding, capability, reviewed Profile, normalized target,
+reset policy, and exact scope under the lifecycle and registry locks. This
+closes registration/source-change races without treating task records as
+permission.
 
 ### 4.7 Runtime Observer
 
@@ -310,20 +277,15 @@ as running.
 
 ### 4.8 Workflow Snapshot
 
-`workflow-snapshot-core.mjs` assembles one bounded, redacted, read-only view
-from reviewed profile definitions, machine registry bindings, Plan mounts and
-runs, active Development declarations, Sessions, active-work, runtime leases,
-and observations.
+`workflow-snapshot.mjs` assembles one bounded read-only view of current Git
+source, explicitly stored task progress, task-local corruption, and an
+optional runtime status supplied by its caller. The primary key is
+`workspaceId`, never basename.
 
-The primary key is `workspaceId`, never basename. Work execution and
-environment readiness remain separate projections. A stale declaration may be
-visible but contributes no runtime intent, occupancy, or authorization.
-
-The core never reads credentials, raw profile values, product data, logs,
-canonical roots, or Acceptance payloads. Missing or malformed sources remain
-typed unavailable/conflict states. `workflow-snapshot.mjs` prints the result
-and exits; there is no HTTP endpoint, browser asset, refresh loop, source
-freshness server, mutation endpoint, or resident owner.
+The projection does not infer a selected task, join retired workflow ledgers,
+or decide runtime authorization. Missing or malformed sources remain local
+typed findings. The command prints one result and exits; it has no HTTP
+endpoint, browser asset, refresh loop, mutation endpoint, or resident owner.
 
 ## 5. Resolution Contract
 
@@ -348,13 +310,12 @@ or whichever `.local` directory happens to contain a file.
 
 Allowed:
 
-- Multiple worktrees observe the same public Development work ledger.
 - Multiple worktrees share one remote Station with `station.connect`.
 - One worktree holds `station.deploy` while other clients remain connected,
   provided the deployment policy explicitly allows it.
 - An exact user grant or accepted Plan `deployProfiles` entry authorizes direct
   deploy operation of the matching existing reviewed remote profile.
-- An Agent may add `station.reset` to the current binding and declare an exact
+- An Agent may add `station.reset` to the current binding and request an exact
   reset scope for any non-stable reviewed Profile without human confirmation.
 - Each worktree has its own profile and slot binding.
 - A human-authorized machine-local compose profile has one consumed,
@@ -364,8 +325,6 @@ Allowed:
 
 Forbidden:
 
-- A private worktree declaration replaces the machine public ledger.
-- A Development declaration is treated as a held runtime lease.
 - Two live worktrees use the same local slot.
 - Two owners hold `station.deploy` or `station.reset` for the same resource.
 - A profile's static `PT_DEV_SLOT` silently overrides the machine allocation.
@@ -377,8 +336,7 @@ Forbidden:
   the canonical Profile ID reset policy.
 - An existing non-stable Profile reset is converted into a user authorization
   request.
-- A non-stable Profile bypasses exact reset
-  declaration/capability/scope/lease checks.
+- A non-stable Profile bypasses exact reset capability/scope/lease checks.
 - A stable Profile is granted `station.reset` or reaches reset lease
   acquisition.
 - Workflow Snapshot writes registry, mount ledger, work ledger, lease, profile,
@@ -428,7 +386,8 @@ The target implementation must prove:
 - Every reviewed profile derives exactly one reset policy from its canonical
   ID and the resolved status projection exposes it.
 - Mixed-case `stable` IDs reject `station.reset`; IDs without `stable` admit it
-  only when binding capability, declaration, exact scope, and lease all match.
+  only when binding capability, exact scope, current source, and lease all
+  match.
 - Workflow Snapshot joins every worktree's active requirements/Journeys and
   declared/held resources without exposing secret-bearing profile fields or
   providing mutation controls.
@@ -446,5 +405,5 @@ The target implementation must prove:
 - No runtime command defaults to loopback, slot 0, or an arbitrary profile when
   a binding is missing.
 - Existing non-stable Profile reset never requests human authorization; missing
-  capability, declaration, scope, topology, identity, and lease failures remain
-  separately typed and fail closed.
+  capability, scope, topology, identity, and lease failures remain separately
+  typed and fail closed.

@@ -1,246 +1,58 @@
-# Host-Neutral Agent Integration
+# IDE 与 Agent 提示接入
 
-> **Status**: accepted
-> **Created**: 2026-09-19 | **Updated**: 2026-10-06
+> **Status**: active
+> **Created**: 2026-09-19 | **Updated**: 2026-10-14
 > **Owner**: Platform Team
 
-## Goal
+## 1. 接入目标
 
-Roll out DWF-D21 to independent worktrees without raw-patch assumptions,
-split-brain Skill ownership, or interruption of an active Development Run.
+TRAE、Cursor、Codex 使用仓库内同一组规范和 Skill，宿主 adapter 仅处理事件及输出格式。Hook 可选，负责补充上下文；宿主不提供身份或阻断能力时，仍可按项目规范开发。
 
-## Unit Of Rollout
+本文描述当前接入合同。各宿主现场观察是支持性诊断，不因某宿主离线回调成功就宣称所有 IDE 可用。
 
-One verified worktree is one rollout unit. Branches may contain different
-Plans, Acceptance registries, and local governance changes, so rollout is a
-semantic integration, not filesystem copying.
+## 2. 项目归属
 
-The `peers-dev-workflow` repository owns the canonical implementation and
-distribution contract. It is not the runtime-state source for consuming
-worktrees. Each installed adapter contributes a canonical integration candidate.
-Equivalent Hooks in participating multi-root folders dispatch to the selected
-source root's same canonical integration. The Kernel resolves the explicit
-target worktree before the first blockable event creates the immutable OWNER
-`executionRoot`.
+从结构化任务根、工具工作目录和文件目标核对 canonical worktree；多根冲突时跳过可能归属错误的自动提示，保留简短诊断。
 
-The Hook's own filesystem location is never an execution-root hint. The
-first `PreToolUse` uses a host-provided task root only when it matches one
-declared workspace root. Without that field, every mutation target must map to
-the same single workspace root. Missing or conflicting evidence returns
-`WORKTREE_SELECTION_REQUIRED`; folder order and active-editor guesses are not
-authority.
+安装源目录、Hook 文件所在位置、活动编辑器和 folder 顺序不构成任务工作区。明确任务工作区仍是 Agent 的执行范围；Hook 不提供任意 shell 的强制跨目录写保护。
 
-The canonical source includes repository-owned `tooling/skills/pt-*` and the
-thin `tooling/plugins/pt-ew-plugin/` adapter. Machine-local user Overlays are
-installed and resolved by
-`skill-overlay-control.py`; they never enter the host discovery directories
-managed by this integration.
+会话字段可用于脱敏诊断。缺少字段不伪造身份，不创建 OWNER，不领取 grant，也不要求另开会话才能使用 Skill。
 
-## Kernel Model
+## 3. 提示输出
 
-The adapter and Kernel deliberately distinguish five identities:
+保留现有事件归一化和各宿主支持的上下文格式。只注入相关规范、知识和明确选定任务的简短进度；无 task 选择不记录任务轨迹。
 
-| Identity | Meaning | Mutability |
-|---|---|---|
-| root chat | one visible development chat, persisted only as a hash | stable |
-| execution session | host-internal owner/worker/reviewer invocation, persisted only for assigned children | per invocation |
-| binding role | `OWNER`, `WORKER`, or `REVIEWER` | assignment-bound |
-| binding lineage | root, parent, and assignment digests | create-once |
-| `executionRoot` | the worktree authorized for writes by the OWNER lineage | create-once |
-| `subjectRoot` | the repository targeted by one read/write/tool invocation | per event |
+未知事件、未知工具、输入错误、知识缺失或内部异常采用中性输出并安全退出，不能产生普通工具 DENY 或 Stop 阻断。输出有大小和耗时上限，诊断不得带原始 prompt、凭据、会话 ID 或命令日志。
 
-`SessionStart` is optional prewarming. It cannot establish authority. Cursor
-Cloud has no `sessionStart`, so local and cloud correctness both begin at the
-first `preToolUse`. If the host has no host-specific root-chat identity or
-cannot block that event, the mode is `OBSERVE_ONLY`.
+宿主不支持上下文输出时，报告该提示能力不可用。不得把提示伪装成已经执行的验证或授权。
 
-Cross-worktree reads are legal. A write whose subject root differs from the
-conversation execution root fails with `CROSS_WORKTREE_WRITE_DENIED`.
+## 4. 安装与审计
 
-| Host | OWNER identity key | Assigned-child identity key | Blocking boundary |
-|---|---|---|---|
-| TRAE | `chat_session_id` | `session_id` | `PreToolUse` |
-| Cursor local/cloud | `conversation_id` | `conversation_id` | `preToolUse` + `failClosed` |
-| Codex plugin | `session_id` | `session_id` | `PreToolUse` |
+复用现有 `make skills IDE=<host>` 入口。只更新明确选定 worktree 的 Skill 与项目配置，不写全局 Hook，不自动修改共享 workspace descriptor 或其他窗口。
 
-Adapters read only the named fields for their host. Missing identity never
-falls back to another host's alias, `ICUBE_CODEMAIN_SESSION`, a process-global
-value, or a mutable workspace pointer.
+安装流程核对源与目标真实路径、符号链接边界和配置合并范围；保留非项目条目。Skill 投影和 Hook 状态分开，不用机器开发总账、OWNER 或 Action Receipt 授权安装。
 
-An execution session without an assignment uses the OWNER projection for
-admission and cannot claim child independence. WORKER/REVIEWER assignment is
-create-once, carries root/parent binding digests plus the Development Session
-and operation IDs, and has a bounded lease. Creation requires the exact current
-`active-work.json` and `session.json` identity. Terminal receipts close child
-liveness; expired or terminal children never participate in current owner
-selection.
+发现本机解释器后，写入正确引号包裹的绝对命令；自检使用落盘命令原文及受限 PATH。不能重拼 argv 或继承完整终端 PATH 来代替。
 
-TRAE `SubagentStart` and `SubagentStop` are the lifecycle boundaries for
-assignment claim and terminalization. `PreCompact` records the current
-projection into a bounded receipt keyed by `bindingDigest`; concurrent lineage
-members never share that slot. `PostCompact` re-resolves the actor and requires
-the same root, parent, assignment, Session, workspace, and execution root before
-restoring context. Task changes update only the projected Development Session
-identity; they do not create another OWNER.
+解释器缺失或 Hook 失败时说明提示不可用；Skill 仍可安装和使用。配置未加载时只说明提示待生效，不停止正常研发。
 
-Completion Review is repository-native and does not consume host bindings or
-Action Receipts. Schema v3 uses only the `completion-reviews-v3` machine
-namespace with a request-scoped reviewer capability. Earlier review records
-remain untouched and are never loaded, translated, or copied into current
-authority.
+审计只检查目标 worktree 的源、投影、配置和命令，不枚举或评估目标外 worktree，
+不修复其他记录，也不要求 PlanMount、Session 或工作登记。
 
-## Required Sequence
+## 5. 切换和回退
 
-1. Reach a durable Task or Context Anchor boundary. Do not replace Skills while
-   an agent action or runtime result commit is in flight.
-2. Integrate the canonical governance commit into the selected worktree using
-   normal Git conflict handling. Preserve unrelated branch work.
-3. Migrate branch-owned references:
-   - active Plan `scope.sourceClaims`;
-   - Task write/read sets;
-   - Acceptance registry path matchers;
-   - local review scripts and worktree-binding fixtures;
-   - docs that route to `pt-trae-goal-orchestrator`.
-4. Run:
+当前工作区的源码、Skill 和消费者完成一致迁移后，才更新该工作区安装。仍在执行同路径的旧实例需先到安全边界；不能强杀其他任务或删除其机器记录。
 
-   ```bash
-   make agent-integration-audit ROOT=<worktree-root>
-   ```
+临时目录验证配置安装、移除和恢复。真实安装需明确选定范围，额外 worktree 按批准列表逐个验证；原范围授权不扩展为全机 rollout。
 
-   This source audit must report `PASS`. It fails closed on missing canonical
-   Skills, missing canonical Acceptance registry matchers, legacy source/live
-   references, and workflow identity mismatches. A bound workspace requires a
-   tracked declaration locator; only an unbound pre-Plan workspace may carry an
-   untracked declaration during this source-only audit.
-5. Install the current non-destructive host projection without prompting. This
-   step does not release the active declaration and does not depend on a Hook
-   grant:
+回退恢复已知源码与该次配置，不重置环境、数据库或锁。历史 OWNER、grant 和 work.json 不参与新流程；它们的清理不作为安装前提。
 
-   ```bash
-   make skills IDE=<trae|cursor|codex>
-   make skills IDE=trae WORKSPACE=<absolute-.code-workspace-path>
-   ```
+## 6. 验证结果如何报告
 
-   The installer moves a real legacy Skill directory under the host's
-   `retired-project-skills/` directory, outside the discovery root, and links
-   every canonical `pt-*` Skill. Codex additionally receives
-   `.agents/plugins/pt-ew-plugin`; Cursor receives merged project-native
-   `.cursor/hooks.json` entries for `sessionStart`, `beforeSubmitPrompt`,
-   `preToolUse`, and `stop`, all with `failClosed: true`; TRAE receives
-   equivalent canonical Hooks in the selected source root, descriptor
-   bootstrap root, and descriptor roots with an existing real `.trae`
-   directory, including `SubagentStart`, `SubagentStop`, `PreCompact`, and
-   `PostCompact`. Descriptor roots without `.trae` remain untouched. No
-   user-global hook file is modified.
-   Ordinary install never deletes conversation or workflow-action stores. It
-   runs while holding the machine work-ledger lock and does not require a
-   grant from the Hook it installs. Canonical source, host-root, workspace,
-   Hook-merge, symlink-boundary, and callback-proof checks remain fail closed.
-   Unrelated live declarations, child assignments, workflow actions, and
-   Action Store activity do not participate in projection admission.
-   `skills-hard-cut` and `skills-gc` use separate OWNER_CONTROL labels and
-   create-once OWNER grants. Only those cleanup commands reject every live machine
-   declaration, child assignment, unrelated canonical workflow action, and
-   Action Store lock as `GLOBAL_WORKFLOW_NOT_IDLE`. The control plane validates
-   the ledger, binding, and Action stores through their canonical owners while
-   holding the lock,
-   never reclaims another owner's stale ledger lock, waits while a live ledger
-   owner holds an inode-bound recovery claim, reclaims only a dead recovery
-   owner through PID/start identity, rejects host-root, retirement-root, reset,
-   and canonical-source symlink escape, and validates every reset target before
-   deleting any store. It completes fallible path, workspace, catalog, and hook
-   planning before consuming a grant. After consumption it immediately writes
-   one strict current machine receipt for the selected operation, performs
-   only that operation's bounded mutation,
-   reset inside the guarded lifecycle, runs the host-aware audit and exact
-   installed callback proof, then publishes `INSTALLED` or `BLOCKED`. A reset
-   failure therefore cannot leave an absent or stale lifecycle receipt. The
-   receipt binds the recursive canonical Skill and plugin catalog, file modes,
-   dirty status, branch, HEAD, and callback proof.
-6. Run the read-only audit at any later boundary:
+离线检查分别说明命令能执行、输出格式正确、工作区选择正确。真实宿主还要确认工具调用是否发生、宿主是否接受上下文，以及关闭提示后同任务能否继续。
 
-   ```bash
-   make agent-integration-audit IDE=<trae|cursor|codex> ROOT=<worktree-root>
-   ```
+尚未真实验证的宿主显示未验证；不能用“已安装”合并这些结果。验收见 FLOW-A03—A06、A20 的[清单](./acceptance-matrix.md)。
 
-   There is no acknowledgement command or session-hash bypass. Restart the IDE
-   only when changed hooks cannot be reloaded by the current host, then rerun
-   the audit. The audit verifies receipt schema/kind, workspace descriptor and
-   participating Hook roots, branch, HEAD,
-   recursive catalog identity, dirty catalog status, callback proof, and every
-   projected symlink's exact canonical target before it reports `PASS`. It also
-   invokes the canonical
-   Plan mount and stable Plan validators, checks the current Task and source
-   claims, and propagates malformed or blocked Acceptance registry state.
-7. Resume from the persisted Plan, Task, Session, workspace active-work record,
-   and Context Anchor under the refreshed host catalog, then publish the new
-   Development declaration.
-8. Verify the first resumed action is scheduled by `pt-goal-orchestrator` and
-   executed by `pt-dev-workflow`. Do not replace or unmount an unfinished Plan.
-
-## Fleet Audit
-
-Before and after rollout, run:
-
-```bash
-make agent-integration-audit-all IDE=<trae|cursor|codex>
-```
-
-The canonical audit enumerates Git worktrees and reports each branch's missing
-Skills, plugin/hook drift, legacy source/references, and host projection gaps.
-Repeat the integration
-sequence independently for every active worktree. A worktree that
-cannot integrate the canonical commit remains on the old governance set and is
-reported `AGENT_INTEGRATION_BLOCKED`; it must not receive only the new host projection or
-only the old Skill deletion.
-
-Required report fields:
-
-- worktree, branch, workspace ID, expected HEAD;
-- active Plan ID/path and current Task;
-- semantic integration commit;
-- audit before/after;
-- selected host and installed projection;
-- old session closed, new session resumed;
-- first post-rollout Goal Slice and result.
-
-## Failure Semantics
-
-- `LEGACY_SKILL_REFERENCE`: migrate the named Plan/registry/doc source.
-- `MISSING_CANONICAL_SKILL`: integrate the canonical governance source first.
-- `HOST_PROJECTION_INCOMPLETE`: rerun the non-interactive installer.
-- `SOURCE_CONFLICT`: resolve semantically in that branch; never use a raw patch
-  as the rollout authority.
-- `GLOBAL_WORKFLOW_NOT_IDLE`: close or expire every live declaration, child
-  assignment, and workflow action other than the current exact OWNER installer
-  action, then retry the hard cut.
-- `MACHINE_WORK_LEDGER_LOCKED`: do not reclaim the lock from the rollout path;
-  let the Development ledger owner verify or recover it.
-- `AGENT_RESTART_NOT_OBSERVED`: end the installing host session and ACK only
-  from a new session identity.
-- `HOST_PROJECTION_ESCAPE`: replace the external/symlinked host root with a
-  real worktree-local directory before installation.
-- `CANONICAL_SKILL_SOURCE_INVALID`: integrate real worktree-local Skill sources;
-  do not project a symlinked external implementation.
-- `CANONICAL_PLUGIN_SOURCE_INVALID`: restore the current worktree's canonical
-  `tooling/plugins/pt-ew-plugin` source.
-- `TRAE_WORKSPACE_BOOTSTRAP_INVALID`: repair the descriptor or participating
-  canonical Hook projections without replacing unrelated hook entries.
-- `CURSOR_HOOKS_INVALID`: repair the project hook file without replacing
-  unrelated hook entries.
-- `WORKFLOW_BINDING_INVALID`: repair the owner-controlled current binding
-  store; never infer a replacement execution root from the current tool `cwd`
-  or read a legacy conversation record.
-- `CROSS_WORKTREE_WRITE_DENIED`: execute the write from a conversation bound
-  to that worktree; a read from the current conversation remains legal.
-
-## Completion
-
-Fleet integration is complete only when every selected active worktree reports
-audit `PASS`, no host discovery root exposes the legacy scheduler, the
-multi-root workspace has one exact managed Hook per event in every participating
-root, each owner lineage
-proves immutable execution-root binding and cross-root write denial, global
-hooks remain unchanged, and each resumed Plan advances at least one legal
-owner-controlled action. Stop proof additionally requires the exact
-machine-rendered Anchor and its create-once OWNER release receipt.
+真实宿主观察不进入整体完成 Gate，也不需要仓库内捕获器。需要排查宿主差异时，
+开发者可在已授权的目标配置中手动启用或移除 Hook，核对上下文与工作连续性；
+结果明确标为现场观察，不能替代当前源码测试、运行准入或产品 Acceptance。

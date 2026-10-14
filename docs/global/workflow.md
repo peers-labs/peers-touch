@@ -1,581 +1,209 @@
-# Development Workflow
+# Peers-Touch 规范研发流程
 
-This is the operating guide for Peers-Touch development. It describes the
-commands that exist now, their state owners, and the failure states a developer
-must act on.
+> **Status**: active
+> **Created**: 2026-09-13 | **Updated**: 2026-10-13
+> **Owner**: Platform Team
 
----
+这份文档规定一个研发需求从提出到交付应该怎么做。开发者决定目标、范围和需要确认的事项，Agent 负责调研、实现、验证和整理交付材料。
 
-## Start Here
+## 北极星目标
 
-For a new or updated worktree integration:
+北极星目标位于流程所有步骤的上游，不是第八个阶段，也不是任务状态。它说明最终
+要改善的用户结果或工程结果，接单时把当前需求映射到它，方案、实现、验证和交付
+始终用它判断有没有偏离。
 
-```bash
-make skills IDE=trae
-make workflow-doctor
+本研发流程自身的北极星是：
+
+> 在用户选择的既有 worktree 中，以尽量少的机械前置，把每个已授权需求持续转化为
+> 当前源码上可验证的实际结果，同时不降低真实权限、数据和共享资源保护。
+
+每项需求还要继承对应产品或工程领域的北极星。小改动直接引用已有产品、架构或用户
+目标，不额外制造文档；非平凡产品工作如果无法说明目标用户、最终结果和本次贡献，
+先回到 PRODUCT 阶段补齐，不能直接用功能清单或流程完成度代替。
+
+整个过程按以下顺序推进：
+
+```mermaid
+flowchart LR
+    N[北极星：最终用户或工程结果] --> A[接单：明确本次贡献]
+    A --> B[调研：查清现状]
+    B --> C[方案：确定做法]
+    C --> D[开工：准备工作区和环境]
+    D --> E[实现：完成改动]
+    E --> F[验证：证明结果]
+    F --> G[交付：审查、合并和收尾]
+    F -->|发现问题| E
+    E -->|原方案无法解决| C
+    N -.-> C
+    N -.-> F
+    N -.-> G
 ```
 
-When upgrading from the retired frozen-version contract, first close every live
-Development Run and then run `make plan-state-migrate` once. The migration
-refuses live work and does not install a legacy runtime fallback.
+每一步都要给下一步留下明确依据：北极星限定本次要改善的结果，任务目标决定调研
+范围，调研结果支撑方案，方案限定实现范围，验证结果决定能否交付。小改动可以把
+几步连续做完；复杂需求需要把方案和工作安排写下来。
 
-The installer projects repository-owned Skills and supported blockable hooks
-into the current worktree. The Doctor verifies the public promises below. A
-`BLOCKED` result names the owner that must be repaired; it is not permission to
-bypass the workflow or create another worktree.
+本文是研发流程的唯一正文。编码细则见[编码规范](./coding-standards.md)和
+[coding-guide](./coding-guide/)，流程工具的实现说明见[开发工作流目录](../architecture/engineering/development-workflow/README.md)。
+规范、工具和 Gate 必须同步维护；文档生效或命令退出成功都不能单独证明流程合同。
 
-For a TRAE multi-root workspace, install with
-`make skills IDE=trae WORKSPACE=<absolute-.code-workspace-path>`. The
-selected source root, descriptor bootstrap root, and existing TRAE-participating
-roots receive equivalent ingress to one canonical Kernel; Hook location never
-selects execution authority. Normal installation is non-destructive and does
-not require machine-wide workflow quiescence. Explicit `skills-hard-cut` and
-`skills-gc` own separately authorized global-idle cleanup.
+## 1. 接单：先明确要解决什么
 
-| Promise ID | What must be true | Normal recovery |
-|---|---|---|
-| `dev.integration.installed` | The selected host has the exact current Skill and hook projection, callback proof, and install receipt. | Run `make skills IDE=<host>` at a durable boundary. |
-| `dev.plan.mount` | Tracked work resolves one stable Plan mount, current immutable execution snapshot, and mutable Execution Run; explicit standalone work remains unmounted. | Mount the Plan for tracked work, record source changes with `plan-amend`, resolve a typed identity failure, or preserve the user's explicit no-Plan standalone policy. |
-| `dev.workflow.current` | Plan, current Task, Development Session, declaration, active-work, and reduced Action Receipt state agree. | Repair the typed owner mismatch; never edit machine state directly. |
-| `dev.review.current` | Active work has no failed or stale review; completed work has a current independent `PASS`. | Run a fresh independent Completion Review after source or obligation drift. |
-| `dev.docs.executable` | This guide declares each public Workflow Doctor promise exactly once. | Update the executable contract and this guide in the same change. |
+收到需求后，先确认它继承哪个产品或工程北极星、当前问题是什么、期望变成什么样、
+这次贡献什么、做到哪里算完成。开发者已说明的内容直接沿用；只有缺失信息会影响
+结果或导致改错地方时，才补问。流程不能把“创建了计划、跑完了步骤、测试数量增加”
+当成北极星结果。
 
+例如，“修复切换账号后看到上一账号消息”首先要明确账号切换后的消息隔离要求。“增加群管理”则要先明确哪些角色可以操作、支持哪些操作，以及被操作成员会看到什么结果。不能只凭功能名称开始写代码。
+
+接着判断需要做到多深，依据是影响范围和是否需要新决策，不按文件数量判断：
+
+- 小改动：沿用已确定的产品和架构规则，改动集中在局部。调研、简短修复说明、实现、自查和针对性验证可以连续完成，不另建正式计划，不要求任务登记和整套状态记录。
+- 常规需求：改动涉及多个模块，或改变现有功能行为。先列清影响模块、实现顺序和验证场景；已有规则足够时，不重新设计整套架构。
+- 复杂需求：新增用户操作流程，或改变模块职责、协议、存储、安全和发布方式。先确定产品和技术方案，再安排分步实施。
+
+用户明确要求“不建 Plan”时，不创建计划文件、任务单或替代它们的记录。若现有规则无法决定关键行为，指出缺失的决定；不能为满足工具要求偷偷补一份计划。
+
+这一步结束时，应能说清继承的北极星、本次贡献、完成标准、改动范围和工作区。
+纯问答或只读排查可以在调研结果交付后结束，不进入编码流程。
+
+## 2. 调研：让方案建立在实际情况上
+
+目标明确后，先读相关产品和架构文档，再沿实际调用关系查代码。通过 [docs 入口](../README.md)和对应平台的 [Agent 入口](../.agent/)找到当前规则，并查阅管辖这些路径的[项目知识](../knowledge/README.md)。相关经验能帮助缩小排查范围，不能代替当前代码和运行结果。
+
+修 Bug 时，先复现或找到足以定位问题的证据，确认问题出在哪一层、由哪个模块负责。桌面聊天、联系人和通知的状态问题，要先查负责维护状态的运行模块；不能用页面刷新掩盖更新链路断裂。
+
+开发新功能时，先查已有接口、组件、SDK 和工具是否能复用，再检查依赖模块是否具备所需能力。外部案例只用于比较做法，不等于已经获准引入其实现，也不能据此改写本项目约束。本项目研发流程保持仓库内自包含。
+
+调研结论要分清已确认的事实和仍待验证的判断。每个关键判断说明来源；拿不准的部分写明下一步如何验证，不把推测写成根因。
+
+这一步结束时，应知道为什么要改、应该在哪一层改、会影响哪些调用方，以及还有哪些问题没有查清。调查发现的无关问题可以单独记录，不自动加入本次需求。
+
+## 3. 方案：把做法和验收办法一起确定
+
+根据调研结果确定改动方式，同时确定怎样验证它达到目标。方案必须说明具体行为、各模块负责什么、接口或数据如何变化，以及失败情况如何处理。不能只写“优化架构、完善测试、提升体验”。
+
+小改动可以用一段说明交代问题原因、修复位置和验证方法。涉及产品或架构新决定的需求，要写入对应正式文档；复杂需求再按依赖顺序拆成可以分别验证的工作。
+
+已有产品和架构文档只更新受本次改动影响的部分。界面变化需要原型确认时，复用项目已有原型库；原型用于确认外观和交互，不能作为功能已实现的证明。
+
+Agent 先调用相关方法论和评审 Skill 检查方案。需要用户确认的产品、架构和实施方案，在确认后进入实现；例行自查、修正和重查由 Agent 完成，不反复把同一份方案交回用户。小改动按本次指令执行，不为了形式补出多轮审批。
+
+已经授权的事项在原范围内继续执行。新发现的问题如果改变需求范围、产品行为或技术边界，应回到方案说明差异；只有需要新决定的事项才暂停等待。需要单独授权的提交、部署、删除、发布和工作区操作，也不能从“方案通过”中推导权限。
+
+这一步结束时，做什么、为什么这样做、影响什么、怎样验证以及哪些操作已获授权都应明确。
+
+## 4. 开工：准备正确的工作区和必要环境
+
+方案确定后，核对当前 worktree、分支和已有改动，明确本次可以修改的路径。IDE 当前打开的文件、技能所在目录和终端默认目录都不能替代任务指定的工作区。
+
+默认只读取和处理本次目标 worktree，不把目标外 worktree 的实现或报错作为当前事实。
+只有用户明确要求跨分支比较、合并或冲突处理时，才读取指定的其他 worktree；
+写文件、生成代码和提交始终留在本次指定工作区。已有的无关改动保留，不能清理、
+覆盖或顺手提交。创建、切换或删除 worktree 必须有明确授权，不能用它绕过真实冲突。
+其中创建 worktree 只能来自用户对“创建 worktree”这一动作的显式要求；
+任务开始、计划存在、目标 worktree 有改动、并行冲突、验证需要或流程恢复都不能
+被解释成创建授权。没有这句显式要求时，流程和 Agent 必须继续使用用户选定的
+既有 worktree，或停下相关操作。
+
+并行开发要分别检查源码和环境：不同 worktree、不同分支可以分别改代码；同一目录内改动相同文件需要协调。同一文件在不同分支都有改动，也要在合并时逐项判断，不能用一方覆盖另一方。
+
+仅改代码时，不提前占用 Station、账号、设备或端口。需要运行验证时，选择已经评审的环境，核对目标主机、服务和数据范围；能复用的服务、客户端和登录状态优先复用。
+
+Station 通过 `make profile <name>` 选择环境，并通过 `make station` 启动；Desktop 调试通过 `make desktop` 使用原生 Tauri 应用。不要直接运行 Station 二进制，也不要把桌面验证改成浏览器验证。
+
+worktree 的源码隔离不等于环境隔离。两个工作区可以共享连接同一 Station，但部署、重启、重置数据或独占设备前必须检查实际占用和操作影响。真实资源冲突只影响依赖该资源的工作；其他可以独立完成的部分继续推进。旧任务记录异常本身不能证明当前有资源冲突。
+
+Agent 不得自行创建或复制开发环境。名称含 `stable` 的 Profile 禁止 Agent 自主重置；其他已评审环境的重置仍需满足对应权限、数据范围和资源占用检查。不能因为开发流程需要更轻，就取消这些安全要求。
+
+这一步结束时，工作区正确、已有改动已分清、需要的环境可用，运行验证所需的日志和观察位置已准备好。不需要运行环境的任务，只检查工作区和修改范围。
+
+## 5. 实现：按约定完成改动
+
+实现按依赖关系推进。涉及共享数据和跨应用通信时，先修改 `model/domain/` 中的 Proto，再按规定生成并接通服务和客户端；不手改生成代码、不另建同义模型。
+
+编码前使用 `pt-read-before-edit` 查相关知识，小改动使用 `pt-small-fix-discipline`；涉及架构或模块职责时使用对应方法论 Skill。Skill 按问题选用，不以建立任务登记、OWNER 回执或正式计划为使用编码标准的条件。
+
+代码遵守当前平台规范，包括模块边界、错误处理、日志和 i18n。不得用未经许可的假接口代替前后端联调，不硬编码凭据，不把调试语句和临时资料留在源码中。
+
+修复应落在负责该问题的模块，同时更新受影响的调用方。结构调整要检查并处理被替换的旧路径、无用引用和重复实现，并同步修改对应文档。必要改动做完整，无关清理不夹带。
+
+每完成一段可检查的改动，先做针对性检查，再接下一段。遇到原方案无法解释的问题，返回调研或方案补清依据；不能不断在症状旁边加补丁。
+
+开发中的例行检查、评审和修改继续自动推进。只有范围变更、新授权或关键决定缺失才需要用户介入。辅助提示、任务记录或 IDE Hook 出错，要报告工具故障，不能据此认定产品开发必须停止；实际权限不足或资源冲突仍需处理。
+
+这一步结束时，约定范围的代码和文档已完成，相关调用方已接通，并经过源码检查。此时只能报告“实现完成，待运行验证”，不能据此说功能已经修好。纯文档等不涉及运行行为的任务，按对应内容和格式要求检查。
+
+## 6. 验证：拿结果证明需求已经满足
+
+验证从方案中的完成标准开始。先做与改动有关的类型、编译、单元和接口检查，再在对应运行环境执行真实操作。测试数量多、构建通过或命令退出码为零，都不能单独证明用户功能可用。
+
+Agent 先自己验证，不把首次试用交给开发者。修 Bug 要重新执行原复现场景；涉及聊天或联邦投递时，要从接收方确认结果；涉及持久化、账号切换或恢复时，要验证重新进入后的状态。
+
+验证使用本次修改的源码和实际运行产物。源码变化使已有结果失效时，重跑受影响的场景，不能借另一分支、旧构建或旧截图证明当前结果。
+
+真实功能先跑通，再执行规定的正式验收。场景按改动涉及的行为、失败情况和风险选择；小改动也要证明正确，但不扩展成与本次需求无关的全平台测试。正式验收未执行时，不能把开发自测当作正式验收通过。
+
+### Route Acceptance work by ownership
+
+Acceptance 先按责任路由：业务 Domain 的 Feature、Capability、Journey、Fixture 与
+Gate 注入由 `pt-acceptance-engineering` 负责；通用 runner、证据、schema、runtime
+与 framework 工具由 `pt-acceptance-infra-engineering` 负责。Infra 发现缺少业务
+注入时返回 `BUSINESS_INJECTION_REQUIRED`，不能替业务补造 PASS、mock 或降低断言。
+Business Gate `FAILED`, `BLOCKED`, or `UNPROVEN` does not block
+Acceptance Infra 自身的独立修复与自验证；同样，Infra 结构通过也不证明业务能力。
+
+验证失败就定位失败步骤，返回实现修复并重验。环境、权限或设备缺失时，说清无法验证的范围，并继续不依赖它的工作；不能把“未运行”写成“通过”。
+
+Agent 不得自发伪造、补写、重标或选择性隐藏测试结果、现场观察、评审 findings、
+授权和 Acceptance evidence。缺失或过期证据保持未验证；内部协作流程不为此增加
+签名、HMAC 或 reviewer receipt 链。
+
+结果至少说明测试了哪个工作区和源码、在哪个环境执行、做了什么操作、期望与实际结果，以及日志或截图等证据位置。编码审查使用相应项目 Skill，发现问题后修正并重查。
+
+Agent 验证后，再按本次约定交给开发者亲自验证。若约定了亲自验证前不提 PR，就必须等这一步完成；人工确认和 Agent 自验不能互相代替。
+
+这一步结束时，已实现、已通过、未验证和仍失败的内容应分开列清。只有实际验证覆盖了本次完成标准，才能报告相应功能通过。
+
+## 7. 交付：让结果可审查，并完成收尾
+
+验证通过后，整理实际改动、原因、验证结果和剩余限制。提交范围仅包含本次工作；提交前检查差异、生成文件、忽略规则和敏感信息，不能把其他任务的改动一起带上。
+
+Commit、push、创建 PR、合并和发布分别按已有授权执行。已经授权的操作不重复询问；没有授权的操作不自动推进。PR 写明最终变化和证据，检查目标分支，并跟进 CI 与评审问题直至处理完成。
+
+审查结果和操作权限分别确认。评审通过说明改动具备交付条件；只有合并或发布获得授权后，才能执行对应操作。Git 冲突逐项理解和合并，不能直接覆盖一方。
+
+收尾时处理本次启动的进程、临时文件和占用资源，不关闭其他任务的服务。需要保留供用户测试的环境，说明位置和使用方式；长期可复用的环境不因一个需求结束而自动删除。记录到期或关闭回执存在，都不能代替检查实际资源是否已释放。
+
+最终交付说明保持简短：完成了什么、验证了什么、还有什么未完成，以及代码或文档位置。跨会话续作保存足以恢复的范围、进度、证据和待办，不用聊天摘要代替当前源码和实际运行状态。
+
+这一步结束时，交付结果、验证证据、合并或发布状态以及资源去向均应明确。取消或暂时无法完成的需求也要交代已做部分和收尾结果，不能标成全部完成。
+
+## 流程工具的边界与旧规则处理
+
+上述步骤定义研发要求，工具负责帮助执行这些要求。本项目保留自己的流程、方法论 Skill 和编码标准，不依赖外部流程引擎。不新增快任务专用的 Make 入口，优先在现有能力上简化。
+
+重构时必须解除以下通用前置依赖，替换相应工具和 Skill 中的旧要求：
+
+- 把首次修改前的任务登记作为统一门槛；小改动按正文执行，不要求登记。
+- 把 IDE Hook 的 OWNER 回执作为开工条件；缺少宿主身份或没有加载新 Hook，不能成为正常研发停工的理由。
+- 把正式计划挂载及其任务、会话和快照记录作为通用执行框架；正式计划按需使用，编码标准和局部改动不依赖它。
+- 因一条旧任务关闭记录异常，就阻止该 worktree 的全部新工作；应检查是否涉及当前修改路径或实际资源。
+- 把多份状态记录相互一致当作工作进度和验证结果的必要证明；结论依据本次代码、实际操作和相应证据，辅助记录用于追踪。
+
+这些规则撤下，不撤销工作区范围、实际权限、共享资源保护、当前源码验证和交付审查。任务记录用于恢复进度，不能替代授权；操作系统中的进程和监听端口能说明本机实际占用，也不能单独证明远端环境安全。
+
+Hook 只补充规范、相关知识和状态提醒。Hook 不可用时，Agent 仍须直接读取项目文档和相关 Skill；不能要求开发者先修好 Hook 才继续正常研发。真正的权限拒绝、数据保护和资源独占检查仍应由对应操作入口执行，不能靠关闭 Hook 绕过。
+
+普通工作、审查、状态和运行准入已不依赖 `dev-start`、`dev-check`、OWNER、
+PlanMount、Session、active-work 或全工作区关闭回执。复杂任务按需使用
+`.dev-workflow/tasks/<taskId>`；旧机器记录只保留历史，不参与新流程准入。
+任何清理仍需精确路径与授权，不能手改机器记录或释放其他任务资源。
+
+<!-- Already-authorized operations execute directly. -->
+<!-- Existing doctor markers are diagnostic references, not universal admission gates. -->
 <!-- workflow-doctor:dev.integration.installed -->
 <!-- workflow-doctor:dev.plan.mount -->
 <!-- workflow-doctor:dev.workflow.current -->
 <!-- workflow-doctor:dev.review.current -->
 <!-- workflow-doctor:dev.docs.executable -->
-
-## 1) Read before coding
-
-1. [project-identity.md](./project-identity.md)
-2. [architecture.md](./architecture.md)
-3. [domain-model.md](./domain-model.md)
-4. [docs/README.md](../README.md)
-
-Then select platform docs:
-- Desktop: `docs/client/desktop/`
-- Mobile: `docs/client/mobile/`
-- Station: `docs/station/`
-
-### Work depth
-
-Small, standard, and large work use the same binding, declaration, execution,
-review, delivery, and coordinated-close lifecycle. The depth changes required
-artifacts and proof, not ownership or cleanup:
-
-| Depth | Use when | Required depth |
-|---|---|---|
-| Small | The change is local, uses accepted contracts, and does not alter product or architecture decisions. | Exact source claim, focused checks, findings-first review, standalone or mounted delivery, and `dev-close`. |
-| Standard | The change crosses modules or changes an existing product/runtime behavior covered by accepted sources. | Affected `ModuleImpact` records, dependency-aware implementation, focused functional proof where product behavior changes, applicable Acceptance, review, and `dev-close`. |
-| Large | The change introduces or replaces product journeys, architecture boundaries, ownership, protocol, persistence, security, or rollout policy. | Accepted product and architecture contracts before implementation; a tracked stable Plan only when the owner explicitly accepts and mounts one; full required Journey and Acceptance evidence. |
-
-Work depth never overrides Plan policy. Explicit standalone no-Plan work remains
-standalone at every depth. If a large standalone request lacks an accepted
-product or architecture decision, report that missing decision instead of
-creating a Plan.
-
----
-
-## 2) Bind the active worktree
-
-When the user starts by saying which worktree to use, that worktree becomes the
-task's active worktree.
-
-The Workflow Kernel represents that authority as one canonical
-`BindingProjection`. One visible chat has one immutable `OWNER`; internal
-`WORKER` and `REVIEWER` sessions require create-once assignments with exact
-root/parent lineage and bounded leases. TRAE uses `chat_session_id` for OWNER
-and `session_id` only for execution-session identity. No host-field alias,
-legacy conversation record, process-global identity, or worktree-wide binding
-enumeration may select authority.
-
-The OWNER root ID is retained only in owner-controlled machine-local state.
-Registrations, Development declarations, Sessions, active-work, and Workflow
-Snapshot expose the same verified owner reference; Git author/email is never a
-conversation identity.
-
-Default rule:
-- All edits, generated files, staging, commits, and PR operations must stay
-  inside the active worktree.
-- Other worktrees are read-only unless the user explicitly grants write scope
-  for another path.
-- IDE-open files, search results, shell defaults, and previous conversation
-  context do not override the active worktree.
-- Before editing or staging, verify `pwd` and `git rev-parse --show-toplevel`
-  point to the active worktree.
-- If a required change appears to belong in another worktree, stop and ask
-  before writing.
-
-Cross-worktree comparison is allowed for investigation, conflict analysis, and
-PR review, but write scope remains bound to the active worktree.
-
-Agents must not create a worktree merely to bypass Plan mount, lifecycle, or
-resource conflicts. A worktree is created only when the user explicitly
-chooses isolation or concurrency. After that explicit choice, use the
-owner-aware command rather than raw `git worktree add`:
-
-```bash
-make worktree-create \
-  WORKTREE=<absolute-path> \
-  BRANCH=<new-branch> \
-  PURPOSE='<why this worktree exists>' \
-  [START=<ref>]
-```
-
-The command writes
-`~/.peers-touch/dev/workspaces/<workspaceId>/workflow/worktree-creation.json`
-with the creating main-session ID, its verified OWNER binding digest, the
-source workspace, initial branch/HEAD, purpose, and the creation Action
-Receipt. The receipt is execution provenance, not a substitute for the user's
-explicit authorization. `make worktree-creation-status` reads that record.
-
-Before an explicitly authorized worktree removal, stop its runtime resources
-and run the coordinated close with `ENVIRONMENT_POLICY=unregister`. Never
-release individual records or delete a machine registry row by hand:
-
-```bash
-make dev-close WORK_ITEM=<id> MODE=<tracked|standalone> \
-  CLOSE_REASON=<completed|cancelled|owner-abandon> \
-  ENVIRONMENT_POLICY=unregister [MOUNT=<mount-id>]
-```
-
-For tracked work, the Plan has one stable identity independent from execution
-placement. An explicit owner action mounts it to one selected execution
-worktree:
-
-```bash
-make plan-mount PLAN=<plan.md>
-make plan-mount-status
-```
-
-The worktree remains occupied until the run completes, is cancelled, or the
-owner explicitly unmounts it:
-
-```bash
-make plan-unmount MOUNT=<mount-id> \
-  REASON=<completed|cancelled|owner-unmount>
-```
-
-The command requires the exact mount owner. Agents cannot change the execution
-worktree or unmount an unfinished run without explicit `owner-unmount`
-authority. Repository discovery never replaces a mount. A deleted worktree is
-recoverable only through exact
-`workspaceId + mountId + mountedBy` identity.
-
-Plan authoring first produces a non-executable candidate. Review the
-source-backed objective, criteria, and criterion coverage, then record the
-user's explicit decision:
-
-```bash
-make plan-validate PLAN=<plan.md>
-make plan-approve-north-star PLAN=<plan.md> \
-  DECISION_REF=<durable-user-decision-ref>
-make plan-mount PLAN=<plan.md>
-```
-
-`plan-validate` reports `candidate`, `stale`, or `approved`; it never infers
-approval. Mount and execution fail as `NORTH_STAR_APPROVAL_REQUIRED` unless the
-stored approval matches the current `planId + northStar` digest.
-
-Ordinary execution discoveries are amended in place without changing
-`planId`, `mountId`, or `runId`:
-
-```bash
-make plan-amend PLAN=<plan.md> \
-  REASON='<why the current execution model changed>' \
-  CHANGE='<what changed>'
-```
-
-The command appends the audit record, derives affected Task and Gate IDs,
-publishes a new immutable internal snapshot, and atomically revalidates the
-Execution Run. Gate/write-set/dependency/check/task-order/implementation-path
-changes are Agent-owned. Only a change to the accepted `northStar` requires
-a fresh `plan-approve-north-star` record followed by
-`APPROVAL=owner DECISION_REF=<same-ref>` after the user receives the conflict,
-impacted goal, options/tradeoffs, and recommendation. `criterionCoverage`
-changes preserve approval while the North Star digest is unchanged. Expanding
-operation authorization remains a separate explicit authorization boundary.
-
-### Explicit standalone no-Plan work
-
-When the user explicitly says `no plan`, `不要 plan`, or otherwise directs the
-Agent to execute the current task without creating a Plan, that instruction is
-the Plan policy for the request:
-
-- do not invoke Plan modeling or persistence;
-- do not create a Plan, Task Slice, PlanMount, ExecutionPlanSnapshot,
-  ExecutionRun, Development Session, active-work record, or Context Anchor;
-- do not convert repository size, test requirements, or delivery tooling into
-  an implicit reason to create a Plan;
-- publish the normal untracked Development declaration before the first write,
-  preserve unrelated dirty files, run focused verification and review, and
-  deliver as a standalone change;
-- keep formal Acceptance explicitly `NOT RUN/UNPROVEN` when standalone
-  execution has no source-bound Acceptance session.
-
-The standalone lifecycle is:
-
-```text
-bind -> declare -> implement -> focused verification -> review
-     -> standalone delivery -> release
-```
-
-If accepted product or architecture sources are insufficient to execute safely,
-report the exact missing decision. Do not manufacture a Plan to satisfy the
-workflow.
-
----
-
-## 3) Declare development resources
-
-Read-only investigation may happen before declaration. Before the first
-repository write or runtime acquisition for any non-trivial task:
-
-```bash
-make dev-start \
-  WORK_ITEM=<stable-id> \
-  PURPOSE='<purpose>' \
-  SOURCE_CLAIMS='<shared-read|exclusive-write>:<repo-path>[;...]' \
-  RUNTIME_CLAIMS='<shared|exclusive>:<kind>:<resource-id>[;...]'
-```
-
-Rules:
-
-- The command atomically publishes intent to
-  `~/.peers-touch/dev/work.json`, checks cross-worktree conflicts, and reads the
-  declaration back.
-- Run `make dev-check WORK_ITEM=<id>` before each mutation slice.
-- Use `make dev-update` before growing source or runtime scope.
-- Refresh the declared source HEAD with `make dev-update` after an authorized
-  commit, rebase or merge.
-- Use `make dev-status-all` to inspect all worktree declarations.
-- A declaration is public intent, not a Profile/Station lease or operation
-  authorization.
-- Completion, cancellation and abandonment require `make dev-close`; a
-  declaration release alone is not complete cleanup.
-
-For a runtime-bearing Task, the Agent gathers one `ModuleImpact` from each
-affected module and prepares one combined resource plan before acquisition:
-
-```bash
-make dev-resources-prepare \
-  WORK_ITEM=<id> \
-  RESOURCE_INPUT=<plan-resource-request.json>
-```
-
-The Agent, not the developer, owns this command and its input. The result names
-the target dependency waves, peak resource demand, reused resources,
-build/restart/provision actions, and any parked target. Compatible accounts,
-services, clients, devices, Fixtures, and automation sessions are deduplicated
-across modules. One target's claims publish all-or-none; a conflict parks only
-that target and its dependents.
-
-Runtime and Acceptance Suite owners perform the physical lifecycle and return
-manifest-bound results through `make dev-resource-record`. Business Gates only
-attach to the prepared manifest. They never create accounts, launch clients,
-deploy services, or release resources.
-
-Architecture source:
-`docs/architecture/engineering/development-workflow/README.md`.
-
-### Tracked Task Command Path
-
-```text
-bind -> declare -> session -> implement -> functional proof
-     -> Acceptance -> independent review -> close -> release
-```
-
-Use owner commands rather than editing machine state or Plan lifecycle fields:
-
-```bash
-make dev-session-start \
-  WORK_ITEM=<stable-id> \
-  PLAN=<plan-version.md> \
-  TASK=<current-task-id> \
-  JOURNEY=<journey-id>
-
-make dev-check WORK_ITEM=<stable-id>
-make workflow-snapshot
-make completion-review-prepare WORK_ITEM=<stable-id> SCOPE=<task|plan>
-make completion-review-submit \
-  REVIEW=<review-id> \
-  VERDICT=PASS \
-  ASSESSMENT=<owner-only-json-file> \
-  CAPABILITY=<reviewer-capability-json-file>
-make dev-close WORK_ITEM=<stable-id> MODE=tracked \
-  CLOSE_REASON=completed ENVIRONMENT_POLICY=retain MOUNT=<mount-id>
-```
-
-`completion-review-prepare` binds the current successful Development Session,
-source, obligations, candidate Plan, and evidence into an immutable request
-and returns one owner-private reviewer capability path.
-`completion-review-submit` accepts only that exact capability and derives the
-delegation digest and assessment proof internally. This proves request-scoped
-delegation, not reviewer independence; Dev Workflow must launch the independent
-reviewer. Completion Review does not depend on an IDE Hook, Action Receipt,
-Workflow Binding, or caller-provided identity.
-
-`make plan-advance` closes or parks a Task only after the required journal-backed
-Session and current Completion Review pass. `make plan-reopen` reopens the
-earliest completed closure invalidated by source or obligation drift.
-
-`make plan-cancel PLAN=<plan.md>` is the exact-owner cancellation path.
-After delivery or cancellation, `dev-close` verifies no live lease remains,
-archives the Session, closes active-work, releases the declaration and mount,
-and writes a resumable `DevelopmentCloseReceipt`. New work is not admitted
-while that receipt is `CLOSING` or `BLOCKED`.
-
-### Development Skill responsibility chain
-
-```text
-pt-god-view routes
-  -> pt-dev-workflow owns one Development Run
-  -> pt-goal-orchestrator schedules WHAT is ready
-  -> pt-execution-plan-guardian decides whether one proposed action MAY run
-  -> pt-dev-workflow executes and persists through owner commands
-  -> pt-context-anchor renders read-only status
-```
-
-`pt-architecture-execution-methodology` defines the vertical dependency model;
-`pt-plan-and-document` only persists the accepted model. Router, scheduler,
-policy guard, and status projection do not write Plan/Task/Session/workspace
-active-work state.
-
-The workflow implementation is maintained as canonical source in
-`peers-dev-workflow`, then distributed to consuming worktrees. Every installed
-copy derives the consuming worktree's canonical root and `workspaceId`; mutable
-state stays under that workspace's machine directory. Project memory and chat
-never become a shared runtime-state service.
-
-### Continuous Plan Run
-
-An explicit `continue`, `resume`, `execute the plan`, or equivalent request
-authorizes Dev Workflow to drain the accepted Plan within its recorded
-authorization envelope:
-
-```text
-Task Goal Slice
-  -> focused verification
-  -> agent review and remediation
-  -> Task closure or parking
-  -> dependency-ready successor
-  -> repeat
-```
-
-Goal Slice remains one Task and one stage. Task closure, review success,
-Context Anchor output, and context compaction are internal checkpoints, not
-requests for another user confirmation.
-
-Already-authorized operations execute directly. An exact user grant or an
-explicit allowed field in the accepted Plan authorization envelope remains
-valid across Task/Goal transitions, retries, context compaction, and host
-changes. A sensitive operation category is not a reason to ask again.
-`OPERATION_AUTHORIZATION_REQUIRED` applies only when the proposed action is
-denied or outside every explicit grant. After admission, ask about permission
-only when the attempted operation returns an actual external permission,
-credential, or scope failure.
-
-The agent runs the applicable methodology review plus `pt-quality-check`,
-`pt-completion-auditor`, and `pt-github-review`; it fixes source-backed findings
-and reruns the affected review. Escalate only when the next step requires:
-
-- an operation the accepted Plan authorization explicitly denies or does not
-  grant;
-- destructive or irreversible work not already authorized;
-- force push, history rewrite, merge, release, production mutation, data
-  deletion/reset, environment creation, permission expansion, version/schema
-  bump, worktree add/remove/prune, or secret access;
-- a product, architecture, security, privacy, compatibility, or rollout choice
-  that would change, weaken, or abandon the accepted North Star and cannot be
-  resolved from accepted sources;
-- an unavailable external resource or credential; or
-- fixed-point exhaustion with no dependency-ready Task or legal remediation.
-
-An Anchor emitted during the Run reports the autonomous horizon and stop
-conditions. It never ends with `Continue?`.
-
-### Host-Neutral Runtime And Tool Dispatch
-
-Project owners do not depend on TRAE, Cursor, Codex, or another agent host:
-
-```text
-pt-dev-runtime-handoff -> repository-native command / product driver
-pt-goal-orchestrator -> Host Capability Request
-  -> Guardian ACTION_ALLOWED
-  -> pt-dev-workflow
-  -> pt-trae-host-adapter | pt-cursor-host-adapter | pt-codex-host-adapter
-```
-
-The generic owners define scheduling, Journey semantics, verification class,
-Session transition, and cleanup. A host adapter only invokes tools exposed by
-the detected host. It may not decide PASS, weaken a native Journey to browser
-or coordinate evidence, run the repository-native fallback, or become a Task
-blocker when a project-owned path can continue.
-
-The scheduler only projects the required host capability. Dev Workflow invokes
-the selected adapter after Guardian admission and owns retries, fallback,
-cleanup, parking, and durable result handling. An adapter never runs the
-repository-native fallback. Unavailable capability identity and attempted
-transports are persisted; only a new available observation can unblock the
-request. A failed cleanup has one bounded quarantine result, not a recursive
-cleanup loop; the current resource-dependent Task parks while independent ready
-Tasks continue. One post-expiry `inspect-quarantine` observation commits release
-or escalates the still-live external resource. Repeated and pre-expiry
-observations fail closed.
-
-Host identity comes from explicit runtime metadata, corroborated by tool
-inventory or host-injected environment markers. The presence of `.trae`,
-`.cursor`, `.agents`, or an installed CLI is not identity. A missing optional
-host capability returns a typed unavailable result and degrades to another
-project-owned path or serial execution.
-
----
-
-## 4) Route Acceptance work by ownership
-
-Before changing Acceptance code, classify responsibility:
-
-| Work | Required Skill | Ownership |
-|---|---|---|
-| Core contracts, planner, validator, runner, reporter, Evidence Store, generic lifecycle, registration mechanism, framework self-tests | `pt-acceptance-infra-engineering` | Acceptance Infra |
-| Domain, Feature, Capability, Registry rule, concrete Gate, Environment, Provisioner, Fixture, actor/client role, credential reference, product evidence | `pt-acceptance-engineering` | Business module injection |
-
-Rules:
-
-- Infra defines how business modules inject; business modules provide the
-  injected content.
-- A path under `tooling/acceptance/` is not automatically Infra-owned.
-- Missing business injection blocks only its Domain and is reported as
-  `BUSINESS_INJECTION_REQUIRED`.
-- Business Gate `FAILED`, `BLOCKED`, or `UNPROVEN` does not block Acceptance
-  Infra completion.
-- Mixed requests are split into separate work items and ownership contexts.
-- Infra Agents must not add placeholders, mocks, default identities, concrete
-  actor roles, or weakened product assertions to make framework checks pass.
-
-Architecture source:
-`docs/architecture/engineering/acceptance/decisions.md` D-12.
-
----
-
-## 5) Use correct paths
-
-- Desktop: `apps/desktop`
-- Mobile Android: `apps/mobile/android`
-- Mobile iOS: `apps/mobile/ios`
-- Station App: `apps/station/app`
-- Station Frame: `apps/station/frame`
-- Domain Model: `model/domain`
-
----
-
-## 6) Product-first implementation sequence
-
-For every dependency-ready workstream:
-
-1. Bind one product Journey or class-specific functional boundary.
-2. Reproduce once and record the first actionable failure.
-3. Define/adjust contracts (`model/domain` or Desktop Tauri contracts).
-4. Implement the root correction at the owning layer.
-5. Connect consumers and UI.
-6. Run focused unit/type/contract checks.
-7. Create an authorized checkpoint commit when exact-source runtime is needed.
-8. Deploy/start through Local Dev Control Plane and Make.
-9. Run the real Journey:
-   - `FAIL` → return the first failure to implementation;
-   - `BLOCKED` → park the environment or authorization edge;
-   - `PASS` → record `FUNCTIONAL_PASS`.
-10. Only after `FUNCTIONAL_PASS`, promote the same Journey into formal
-    Acceptance and run final exact-source proof.
-
-Acceptance scenarios are selected from product states, receiver outcomes,
-changed failure semantics, and concrete architecture risks. Do not impose a
-generic success/network/timeout/invalid/cancellation matrix on every closure.
-
-Before required product `FUNCTIONAL_PASS`, do not run coverage, Gap Detector,
-Completion Auditor `delivery-ready|close-ready`, cross-platform matrices,
-submit pipeline, or unrelated broad Gate bundles. The lifecycle-only
-`implementation-ready` claim remains available during source work.
-
----
-
-## 7) Verification commands
-
-### Desktop
-
-```bash
-cd apps/desktop
-pnpm run check
-pnpm run test
-pnpm run build
-```
-
-App-only check:
-
-```bash
-cd apps/desktop
-source ~/.cargo/env
-CI=false pnpm run tauri:build
-```
-
-### Mobile
-
-```bash
-pnpm mobile:check
-```
-
-### Station
-
-```bash
-cd apps/station/app
-gofmt -l .
-go test ./...
-```
-
----
-
-## 8) Verification classes
-
-| Class | Meaning |
-|---|---|
-| `SOURCE_CHECK` | unit, typecheck, build, or focused contract check |
-| `STRUCTURAL_CHECK` | source, registry, schema, or static relation |
-| `UX_REVIEW` | prototype or screenshot contract |
-| `FUNCTIONAL_CHECK` | exact-source real product Journey |
-| `ACCEPTANCE_PROOF` | formal capability proof |
-
-Only `FUNCTIONAL_CHECK` supports “this Journey works”. `PROVEN` is reserved for
-formal Acceptance.
-
----
-
-## 9) Completion criteria
-
-Only mark task done when:
-- Implementation is complete
-- Relevant lint/check passes
-- Build succeeds
-- Tests pass
-- Required exact-source Journeys have `FUNCTIONAL_CHECK`
-- Required formal capabilities have `ACCEPTANCE_PROOF`
-- Public resources are closed by `dev-close` and the exact
-  `DevelopmentCloseReceipt` is `CLOSED`
-
-Suggested report format:
-
-```markdown
-✅ Task Completed
-
-## Implementation
-- ...
-
-## Verification
-- ✅ check/lint
-- ✅ build
-- ✅ tests
-- ✅ functional validation
-
-## Files
-- [file](file:///absolute/path)
-```

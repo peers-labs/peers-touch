@@ -50,14 +50,6 @@ export function machineDevRoot(home) {
   return path.join(homedir(), '.peers-touch', 'dev');
 }
 
-export function developmentWorkLedgerPath(home = homedir()) {
-  return path.join(machineDevRoot(home), 'work.json');
-}
-
-export function developmentWorkLockPath(home = homedir()) {
-  return path.join(machineDevRoot(home), 'work.lock');
-}
-
 export function machineRegistryPath(home) {
   return path.join(machineDevRoot(home), 'registry.json');
 }
@@ -84,18 +76,6 @@ export function workspaceStatePath(options = {}) {
   return path.join(machineWorkspacesPath(options.home), resolveWorkspaceId(options));
 }
 
-export function workspaceWorkflowRootPath(options = {}) {
-  return path.join(workspaceStatePath(options), 'workflow');
-}
-
-export function workspaceActiveWorkPath(options = {}) {
-  return path.join(workspaceWorkflowRootPath(options), 'active-work.json');
-}
-
-export function workspaceActiveWorkLockPath(options = {}) {
-  return path.join(workspaceWorkflowRootPath(options), 'active-work.lock');
-}
-
 export function workspaceObservationsRootPath(options = {}) {
   return path.join(workspaceStatePath(options), 'observations');
 }
@@ -106,14 +86,6 @@ export function workspaceObservationPath(options = {}) {
 
 export function workspaceObservationLockPath(options = {}) {
   return path.join(workspaceObservationsRootPath(options), 'worktree.lock');
-}
-
-export function workspaceWorkflowPath(workItemId, options = {}) {
-  requireIdentifier(workItemId, 'development work item');
-  return path.join(
-    workspaceWorkflowRootPath(options),
-    workItemId,
-  );
 }
 
 export function workspaceRuntimePath(name, options = {}) {

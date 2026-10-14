@@ -1,15 +1,8 @@
 ---
 kind: invariant
 title: Plan identity survives execution amendments
-status: active
-owns:
-  - AGENTS.md
-  - tooling/acceptance/core/execution_plan.py
-  - tooling/scripts/local-dev/
-  - tooling/scripts/plan/
-  - tooling/skills/pt-dev-workflow/
-  - tooling/skills/pt-execution-plan-guardian/
-  - tooling/skills/pt-plan-and-document/
+status: superseded-by:DWF-D42
+owns: []
 referenced-by:
   - docs/architecture/engineering/development-workflow/decisions.md
 related:
@@ -19,6 +12,11 @@ detected: 2026-10-06
 ---
 
 # Plan identity survives execution amendments
+
+> Superseded by DWF-D42. Retained as historical context only. Plans are now
+> explicit frozen versions; they are read directly and never mounted into
+> machine-wide execution state. Optional task progress records implementation
+> state independently from Plan identity.
 
 ## What must hold
 
@@ -63,16 +61,11 @@ repository `completions/<planDigest>.json` attestation. Explicit-plan CI reads
 the validated Plan source plus that exact digest-bound record; a missing or
 stale completion record fails closed.
 
-## How to verify
+## Historical verification
 
-- `node --test tooling/scripts/plan/plan-mount.test.mjs tooling/scripts/plan/planctl.test.mjs`
-  and `node --test tooling/scripts/plan/plan-completion.test.mjs`
-  passes candidate rejection, explicit approval, stale digest, criterion
-  coverage, amendment, task invalidation, and snapshot-history cases.
-- `rg -n 'peers-touch-plan-version|versionId[": ]|\.planVersionDigest|planVersionDigest"\s*:|mountPlanVersion\(|\.liveMountsByPlanVersion|liveMountsByPlanVersion\s*:' tooling AGENTS.md docs/global docs/architecture/engineering --glob '!**/execution-plans/**' | rg -v "stable-plan-state-migration|plan-mount-is-run-bound|development-workflow/decisions.md"`
-  returns no live contract references.
-- `make plan-validate PLAN=docs/architecture/platform/client/mobile/execution-plans/20260827-mobile-shell-implementation/plan.md`
-  succeeds.
+The former implementation verified mounted mutable execution snapshots and
+repository completion receipts. Those owners have been deleted. Current Plan
+verification is defined by DWF-D42 and the explicit Plan reader.
 
 ## Crosswalks
 

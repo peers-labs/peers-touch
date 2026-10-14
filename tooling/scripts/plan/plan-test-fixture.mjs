@@ -3,8 +3,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { digestNorthStar } from './plan-package.mjs';
-
 const CREATED_AT = '2026-10-05T00:00:00.000Z';
 
 function writeJsonBlock(value) {
@@ -18,28 +16,10 @@ function writePlanPackage(repoRoot, slug, planId, taskId) {
 
   const closureId = `${slug}-closure`;
   const plan = {
-    kind: 'peers-touch-plan',
+    kind: 'peers-touch-plan-version',
     planId,
+    versionId: `${planId}-v1`,
     createdAt: CREATED_AT,
-    northStar: {
-      objective: 'Exercise stable Plan runtime ownership.',
-      successCriteria: [
-        {
-          id: 'FIXTURE-NS-01',
-          statement: 'The Plan can execute without version churn.',
-          sourceRefs: ['docs/architecture/source.md'],
-        },
-      ],
-    },
-    northStarApproval: null,
-    criterionCoverage: [
-      {
-        criterionId: 'FIXTURE-NS-01',
-        taskIds: [taskId],
-        closureIds: [closureId],
-        gateIds: [],
-      },
-    ],
     workClass: 'infrastructure',
     architecture: {
       sources: ['docs/architecture/source.md'],
@@ -65,6 +45,7 @@ function writePlanPackage(repoRoot, slug, planId, taskId) {
     authorization: {
       checkpoint: {
         localCommit: 'allowed',
+        amend: 'denied',
       },
       delivery: {
         push: 'denied',
@@ -78,13 +59,6 @@ function writePlanPackage(repoRoot, slug, planId, taskId) {
         rewrite: 'denied',
       },
     },
-    amendments: [],
-  };
-  plan.northStarApproval = {
-    northStarDigest: digestNorthStar(plan),
-    approvedBy: 'test-owner',
-    approvedAt: CREATED_AT,
-    decisionRef: 'USER-DECISION-FIXTURE',
   };
   const acceptance = {
     closures: {
@@ -131,9 +105,10 @@ function writePlanPackage(repoRoot, slug, planId, taskId) {
       `# ${planId}`,
       '',
       `> **Plan ID**: ${plan.planId}`,
+      `> **Version ID**: ${plan.versionId}`,
       `> **Created**: ${plan.createdAt}`,
       '',
-      '## Plan',
+      '## Plan Version',
       '',
       '```json',
       writeJsonBlock(plan),
@@ -181,13 +156,13 @@ export function createPlanRepository(t) {
       recursive: true,
       force: true,
       maxRetries: 5,
-      retryDelay: 50,
+      retryDelay: 100,
     });
     fs.rmSync(home, {
       recursive: true,
       force: true,
       maxRetries: 5,
-      retryDelay: 50,
+      retryDelay: 100,
     });
   });
 
@@ -216,6 +191,9 @@ export function createPlanRepository(t) {
     cwd: repoRoot,
   });
   execFileSync('git', ['config', 'user.email', 'plan-fixture@test.invalid'], {
+    cwd: repoRoot,
+  });
+  execFileSync('git', ['config', 'core.hooksPath', '/dev/null'], {
     cwd: repoRoot,
   });
   execFileSync('git', ['add', '.'], { cwd: repoRoot });

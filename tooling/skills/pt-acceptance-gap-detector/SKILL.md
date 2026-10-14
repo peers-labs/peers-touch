@@ -40,8 +40,7 @@ product code, Acceptance contracts, Gates, manifests, or reports.
    ```bash
    python3 tooling/scripts/acceptance-gap-detect.py \
      --claim "<exact claim>" \
-     --range <range> \
-     --session <development-session.json>
+     --range <range>
    ```
 
 4. Apply the four-layer review from the procedure:

@@ -1,18 +1,8 @@
 ---
 kind: invariant
 title: Development close is one coordinated transaction
-status: active
-owns:
-  - tooling/scripts/local-dev/development-close*.mjs
-  - tooling/scripts/local-dev/dev-work-ledger.mjs
-  - tooling/scripts/local-dev/active-work*.mjs
-  - tooling/scripts/local-dev/dev-session*.mjs
-  - tooling/scripts/local-dev/machine-dev*.mjs
-  - tooling/scripts/plan/plan-mount.mjs
-  - tooling/scripts/plan/planctl.mjs
-  - tooling/make/local-dev.mk
-  - tooling/skills/pt-dev-workflow/
-  - tooling/skills/pt-completion-auditor/
+status: superseded-by:DWF-D42
+owns: []
 referenced-by:
   - docs/architecture/engineering/development-workflow/decisions.md
 related:
@@ -23,6 +13,10 @@ detected: 2026-10-05
 ---
 
 # Development close is one coordinated transaction
+
+> Superseded by DWF-D42. Retained as historical context only. Closing a task
+> may summarize that task's own operations and release resources it actually
+> owns; there is no workspace-wide close transaction or admission guard.
 
 ## What must hold
 

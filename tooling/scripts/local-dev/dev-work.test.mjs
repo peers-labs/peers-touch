@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import {
-  chmodSync,
   existsSync,
   lstatSync,
-  mkdtempSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   rmSync,
   statSync,
@@ -15,1011 +14,266 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
 
 import {
-  DevWorkError,
-  checkDeclaration,
-  digestDeclaration,
-  heartbeatDeclaration,
-  processStartIdentity,
-  readLedger,
-  releaseDeclaration,
-  requireActiveDeclaration,
-  startOrUpdateDeclaration,
-  statusAll,
-  statusCurrent,
+  createTaskProgress,
+  listTaskProgress,
+  readTaskProgress,
+  runCli,
+  TaskProgressError,
+  updateTaskProgress,
 } from './dev-work.mjs';
 import {
-  parseRuntimeClaims,
-  RUNTIME_KINDS,
-} from './dev-work-schema.mjs';
-import {
-  hashWorkflowRootChatIdentity,
-  WORKFLOW_OWNER_REFERENCE_KIND,
-} from './workflow-owner-reference.mjs';
+  closeTaskProgress,
+  taskProgressPaths,
+} from './task-progress-store.mjs';
 
-const FIXED_NOW = new Date('2026-09-16T12:00:00.000Z');
-const CANONICAL_RUNTIME_KINDS = [
-  'account',
-  'automation.session',
-  'client',
-  'client.storage',
-  'database',
-  'device',
-  'fixture',
-  'local.slot',
-  'profile',
-  'relay.connect',
-  'relay.deploy',
-  'resource.plan',
-  'service',
-  'station.connect',
-  'station.deploy',
-  'station.reset',
-];
+function git(directory, ...args) {
+  return execFileSync('git', args, {
+    cwd: directory,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
 
 function fixture() {
-  const root = mkdtempSync(path.join(tmpdir(), 'pt-dev-work-'));
-  const home = path.join(root, 'home');
-  const workspaceA = path.join(root, 'workspace-a');
-  const workspaceB = path.join(root, 'workspace-b');
-  mkdirSync(home, { recursive: true });
-  mkdirSync(workspaceA);
-  mkdirSync(workspaceB);
+  const root = mkdtempSync(path.join(tmpdir(), 'pt-task-progress-'));
+  const workspace = path.join(root, 'workspace');
+  mkdirSync(workspace);
+  execFileSync('git', ['init', '-b', 'feat/task-progress'], { cwd: workspace });
+  git(workspace, 'config', 'user.email', 'task-progress@example.invalid');
+  git(workspace, 'config', 'user.name', 'Task Progress Test');
+  git(workspace, 'config', 'core.hooksPath', '/dev/null');
+  writeFileSync(path.join(workspace, 'README.md'), 'fixture\n');
+  git(workspace, 'add', 'README.md');
+  git(workspace, 'commit', '-m', 'test: initialize task fixture');
   return {
     root,
-    home,
-    workspaceA,
-    workspaceB,
+    workspace,
     close() {
-      rmSync(root, { recursive: true, force: true });
+      rmSync(root, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 100,
+      });
     },
   };
 }
 
-function clock(iso = FIXED_NOW.toISOString()) {
-  return () => new Date(iso);
-}
-
-function options(scope, overrides = {}) {
+function startOptions(scope, overrides = {}) {
   return {
-    home: scope.home,
-    workspaceRoot: scope.workspaceA,
-    workItemId: 'dwf-b1',
-    sessionId: 'session-a',
-    owner: 'lane-b',
-    purpose: 'test public work declarations',
-    journeyId: 'DWF-AS03',
-    branch: 'merge-desktop-prototype',
-    sourceHead: '7'.repeat(40),
-    sourceClaims:
-      'exclusive-write:tooling/scripts/local-dev;shared-read:docs/architecture',
-    runtimeClaims: 'shared:station.connect:station-four',
-    planExecution: null,
-    workflowOwner: workflowOwner(),
-    clock: clock(),
+    workspaceRoot: scope.workspace,
+    taskId: 'FLOW-TASK-1',
+    northStarRef: 'docs/architecture/engineering/development-workflow/design.md',
+    contribution: 'Make optional task recovery lightweight.',
+    goal: 'Prove one atomic task snapshot with CAS.',
+    scopePaths: ['tooling/scripts/local-dev'],
+    scopeExclusions: ['apps/station'],
+    nextAction: 'Implement the next bounded step.',
+    reason: 'Start the selected complex task.',
+    now: '2026-10-13T12:00:00.000Z',
     ...overrides,
   };
 }
 
 function expectCode(code, operation) {
   assert.throws(operation, (error) => {
-    assert.ok(error instanceof DevWorkError);
+    assert.ok(error instanceof TaskProgressError);
     assert.equal(error.code, code);
     return true;
   });
 }
 
-function workflowOwner() {
-  const rootChatId = 'main-chat-session';
-  return {
-    kind: WORKFLOW_OWNER_REFERENCE_KIND,
-    host: 'trae',
-    rootChatId,
-    rootChatHash: hashWorkflowRootChatIdentity('trae', rootChatId),
-    rootBindingDigest: 'a'.repeat(64),
-  };
-}
-
-test('resolves a stable process-start identity for the current platform', () => {
-  const identity = processStartIdentity();
-  assert.equal(typeof identity, 'string');
-  assert.notEqual(identity, '');
-});
-
-test('publishes a closed declaration with owner-only storage', () => {
+test('FLOW-A02 ordinary no-Plan work creates no task record', () => {
   const scope = fixture();
   try {
-    const declaration = startOrUpdateDeclaration(options(scope));
-    const ledgerFile = path.join(scope.home, '.peers-touch', 'dev', 'work.json');
-    assert.equal(declaration.state, 'DECLARED');
-    assert.equal(declaration.declarationDigest, digestDeclaration(declaration));
-    assert.equal(statSync(ledgerFile).mode & 0o777, 0o600);
-    assert.equal(statSync(path.dirname(ledgerFile)).mode & 0o777, 0o700);
+    const status = listTaskProgress({ workspaceRoot: scope.workspace });
+    assert.deepEqual(status.tasks, []);
+    assert.deepEqual(status.invalid, []);
+    assert.equal(existsSync(path.join(scope.workspace, '.dev-workflow')), false);
+  } finally {
+    scope.close();
+  }
+});
+
+test('FLOW-A07 selected tasks use independent atomic snapshots and short locks', () => {
+  const scope = fixture();
+  try {
+    const first = createTaskProgress(startOptions(scope));
+    const second = createTaskProgress(startOptions(scope, {
+      taskId: 'FLOW-TASK-2',
+      contribution: 'Keep another task independent.',
+      goal: 'Prove task-local storage.',
+    }));
+    const firstPaths = taskProgressPaths({
+      workspaceRoot: scope.workspace,
+      taskId: first.taskId,
+    });
+    const secondPaths = taskProgressPaths({
+      workspaceRoot: scope.workspace,
+      taskId: second.taskId,
+    });
+    assert.notEqual(firstPaths.lock, secondPaths.lock);
+    assert.equal(statSync(firstPaths.snapshot).mode & 0o777, 0o600);
+    assert.equal(statSync(firstPaths.directory).mode & 0o777, 0o700);
+    assert.equal(existsSync(path.join(firstPaths.directory, 'events.ndjson')), false);
+    assert.match(first.checksum, /^[0-9a-f]{64}$/u);
     assert.deepEqual(
-      statusCurrent({
-        home: scope.home,
-        workspaceRoot: scope.workspaceA,
-        clock: clock(),
-      }).declarations.map((item) => item.workItemId),
-      ['dwf-b1'],
-    );
-    assert.equal(
-      statusCurrent({
-        home: scope.home,
-        workspaceRoot: scope.workspaceB,
-        clock: clock(),
-      }).declarations.length,
-      0,
+      listTaskProgress({ workspaceRoot: scope.workspace }).tasks.map(
+        (item) => item.taskId,
+      ),
+      ['FLOW-TASK-1', 'FLOW-TASK-2'],
     );
   } finally {
     scope.close();
   }
 });
 
-test('persists the verified main-session owner on a declaration', () => {
+test('FLOW-A08 checksum corruption is local and never manufactures recovery', () => {
   const scope = fixture();
   try {
-    const owner = workflowOwner();
-    const declaration = startOrUpdateDeclaration(
-      options(scope, { workflowOwner: owner }),
+    createTaskProgress(startOptions(scope));
+    createTaskProgress(startOptions(scope, {
+      taskId: 'FLOW-TASK-BROKEN',
+      contribution: 'Exercise corruption isolation.',
+      goal: 'Keep unrelated task status readable.',
+    }));
+    const broken = taskProgressPaths({
+      workspaceRoot: scope.workspace,
+      taskId: 'FLOW-TASK-BROKEN',
+    });
+    const value = JSON.parse(readFileSync(broken.snapshot, 'utf8'));
+    writeFileSync(
+      broken.snapshot,
+      `${JSON.stringify({ ...value, state: 'completed' })}\n`,
     );
-    assert.deepEqual(declaration.workflowOwner, owner);
-    assert.deepEqual(
-      statusCurrent({
-        home: scope.home,
-        workspaceRoot: scope.workspaceA,
-        clock: clock(),
-      }).declarations[0].workflowOwner,
-      owner,
-    );
-    expectCode('WORK_DECLARATION_OWNER_MISMATCH', () =>
-      startOrUpdateDeclaration(
-        options(scope, {
-          workflowOwner: {
-            ...owner,
-            rootBindingDigest: 'b'.repeat(64),
-          },
-        }),
-        { requireExisting: true },
-      ),
-    );
-  } finally {
-    scope.close();
-  }
-});
-
-test('rejects a new declaration without a verified workflow OWNER', () => {
-  const scope = fixture();
-  try {
-    expectCode('WORK_DECLARATION_OWNER_REQUIRED', () =>
-      startOrUpdateDeclaration(
-        options(scope, { workflowOwner: null }),
-      ),
-    );
-  } finally {
-    scope.close();
-  }
-});
-
-test('publishes and validates an explicit closed Plan locator', () => {
-  const scope = fixture();
-  try {
-    const planStatus = {
-      planId: 'DWF-PLAN',
-      currentTaskId: 'DWF-T1',
-      workspaceId: 'unused',
-      branch: 'merge-desktop-prototype',
-      planDigest: 'a'.repeat(64),
-      mountId: 'mount-test',
-      runId: 'run-test',
-      status: 'active',
-      taskStatuses: { 'DWF-T1': 'in_progress' },
-    };
-    planStatus.workspaceId = startOrUpdateDeclaration(options(scope)).workspaceId;
-    const planExecution = {
-      mount: {
-        planId: planStatus.planId,
-        planPath: 'docs/architecture/example/execution-plans/test/plan.md',
-        mountId: planStatus.mountId,
-      },
-      run: { runId: planStatus.runId },
-      snapshot: { planDigest: planStatus.planDigest },
-    };
-    const legacy = statusCurrent({
-      home: scope.home,
-      workspaceRoot: scope.workspaceA,
-      clock: clock(),
-    }).declarations[0];
-    assert.equal(Object.hasOwn(legacy, 'planPath'), true);
-    assert.equal(legacy.planPath, null);
-
-    const tracked = startOrUpdateDeclaration(
-      options(scope, {
-        workItemId: 'tracked-task',
-        sessionId: 'tracked-session',
-        sourceClaims: 'exclusive-write:apps/desktop',
-        runtimeClaims: '',
-        planPath: 'docs/architecture/example/execution-plans/test/plan.md',
-        taskId: 'DWF-T1',
-        planStatus,
-        planExecution,
-      }),
-    );
-    assert.deepEqual(
-      {
-        planPath: tracked.planPath,
-        planId: tracked.planId,
-        taskId: tracked.taskId,
-      },
-      {
-        planPath:
-          'docs/architecture/example/execution-plans/test/plan.md',
-        planId: 'DWF-PLAN',
-        taskId: 'DWF-T1',
-      },
-    );
-    planStatus.planDigest = 'b'.repeat(64);
-    planExecution.snapshot.planDigest = planStatus.planDigest;
-    const amended = startOrUpdateDeclaration(
-      options(scope, {
-        workItemId: 'tracked-task',
-        sessionId: 'tracked-session',
-        sourceClaims: 'exclusive-write:apps/desktop',
-        runtimeClaims: '',
-        planPath: tracked.planPath,
-        planId: tracked.planId,
-        taskId: tracked.taskId,
-        planStatus,
-        planExecution,
-      }),
-      { requireExisting: true },
-    );
-    assert.equal(amended.planDigest, planStatus.planDigest);
-    assert.equal(amended.mountId, tracked.mountId);
-    assert.equal(amended.runId, tracked.runId);
-    const delivery = startOrUpdateDeclaration(
-      options(scope, {
-        workItemId: 'tracked-task',
-        sessionId: 'tracked-session',
-        sourceClaims: 'exclusive-write:apps/desktop',
-        runtimeClaims: '',
-        planPath: tracked.planPath,
-        planId: tracked.planId,
-        taskId: tracked.taskId,
-        planStatus: {
-          ...planStatus,
-          status: 'completed',
-          currentTaskId: null,
-          taskStatuses: { 'DWF-T1': 'done' },
-        },
-        planExecution,
-      }),
-      { requireExisting: true },
-    );
-    assert.equal(delivery.taskId, 'DWF-T1');
-
-    expectCode('PLAN_LOCATOR_MISMATCH', () =>
-      startOrUpdateDeclaration(
-        options(scope, {
-          workItemId: 'mismatched-task',
-          sessionId: 'mismatched-session',
-          sourceClaims: 'exclusive-write:model',
-          runtimeClaims: '',
-          planPath: 'docs/architecture/example/execution-plans/test/plan.md',
-          taskId: 'DWF-T2',
-          planStatus,
-          planExecution,
-        }),
-      ),
-    );
-
-    expectCode('PLAN_LOCATOR_MISMATCH', () =>
-      startOrUpdateDeclaration(
-        options(scope, {
-          workItemId: 'foreign-plan',
-          sessionId: 'foreign-plan-session',
-          sourceClaims: 'exclusive-write:packages',
-          runtimeClaims: '',
-          planPath: 'docs/architecture/example/execution-plans/foreign/plan.md',
-          planId: 'FOREIGN-PLAN',
-          taskId: 'DWF-T1',
-          planStatus: {
-            ...planStatus,
-            planId: 'FOREIGN-PLAN',
-          },
-          planExecution,
-        }),
-      ),
-    );
-  } finally {
-    scope.close();
-  }
-});
-
-test('a Plan-bound workspace cannot publish untracked work', () => {
-  const scope = fixture();
-  try {
-    expectCode('WORKSPACE_PLAN_DECLARATION_REQUIRED', () =>
-      startOrUpdateDeclaration(
-        options(scope, {
-          planExecution: {
-            mount: { mountId: 'mount-test' },
-            snapshot: { planId: 'DWF-PLAN' },
-            run: { runId: 'run-test', state: 'active' },
-          },
-        }),
-      ),
-    );
-  } finally {
-    scope.close();
-  }
-});
-
-test('reads prior declaration shapes while emitting only the current schema', () => {
-  const scope = fixture();
-  try {
-    const created = startOrUpdateDeclaration(options(scope));
-    const ledgerFile = path.join(scope.home, '.peers-touch', 'dev', 'work.json');
-    const ledger = JSON.parse(readFileSync(ledgerFile, 'utf8'));
-    const priorPlan = ledger.declarations[created.declarationId];
-    for (const field of ['planDigest', 'mountId', 'runId', 'workflowOwner']) {
-      delete priorPlan[field];
-    }
-    priorPlan.declarationDigest = digestDeclaration(priorPlan);
-    writeFileSync(ledgerFile, `${JSON.stringify(ledger)}\n`);
-
-    assert.equal(
-      statusAll({ home: scope.home, clock: clock() }).declarations.length,
-      1,
-    );
-
-    for (const field of ['planPath', 'planId', 'taskId']) {
-      delete priorPlan[field];
-    }
-    priorPlan.declarationDigest = digestDeclaration(priorPlan);
-    writeFileSync(ledgerFile, `${JSON.stringify(ledger)}\n`);
-
-    assert.equal(
-      statusAll({ home: scope.home, clock: clock() }).declarations.length,
-      1,
-    );
-
-    const current = startOrUpdateDeclaration(
-      options(scope, {
-        workspaceRoot: scope.workspaceB,
-        workItemId: 'current-shape',
-        sessionId: 'session-b',
-        branch: 'independent-branch',
-      }),
-    );
-    for (const field of ['planDigest', 'mountId', 'runId']) {
-      assert.equal(Object.hasOwn(current, field), true);
-    }
-    assert.deepEqual(current.workflowOwner, workflowOwner());
-  } finally {
-    scope.close();
-  }
-});
-
-test('accepts project runtime intent without granting physical leases', () => {
-  assert.deepEqual(
-    parseRuntimeClaims(
-      [
-        'shared:relay.connect:relay-1',
-        'exclusive:relay.deploy:relay-1',
-        'exclusive:database:chat-postgres',
-        'exclusive:service:oauth-broker',
-        'exclusive:account:alice',
-        'exclusive:client:desktop-alice',
-        'exclusive:device:ios-simulator-1',
-        'exclusive:automation.session:appium-1',
-        'shared:resource.plan:dwf-b1',
-      ].join(';'),
-    ),
-    [
-      {
-        kind: 'account',
-        resourceId: 'alice',
-        mode: 'exclusive',
-      },
-      {
-        kind: 'automation.session',
-        resourceId: 'appium-1',
-        mode: 'exclusive',
-      },
-      {
-        kind: 'client',
-        resourceId: 'desktop-alice',
-        mode: 'exclusive',
-      },
-      {
-        kind: 'database',
-        resourceId: 'chat-postgres',
-        mode: 'exclusive',
-      },
-      {
-        kind: 'device',
-        resourceId: 'ios-simulator-1',
-        mode: 'exclusive',
-      },
-      {
-        kind: 'relay.connect',
-        resourceId: 'relay-1',
-        mode: 'shared',
-      },
-      {
-        kind: 'relay.deploy',
-        resourceId: 'relay-1',
-        mode: 'exclusive',
-      },
-      {
-        kind: 'resource.plan',
-        resourceId: 'dwf-b1',
-        mode: 'shared',
-      },
-      {
-        kind: 'service',
-        resourceId: 'oauth-broker',
-        mode: 'exclusive',
-      },
-    ],
-  );
-});
-
-test('accepts every canonical runtime kind without granting leases', () => {
-  const parsed = parseRuntimeClaims(
-    CANONICAL_RUNTIME_KINDS
-      .map((kind) => `exclusive:${kind}:resource-${kind.replaceAll('.', '-')}`)
-      .join(';'),
-  );
-
-  assert.deepEqual(
-    [...RUNTIME_KINDS].sort(),
-    CANONICAL_RUNTIME_KINDS,
-  );
-  assert.deepEqual(
-    parsed.map((claim) => claim.kind),
-    CANONICAL_RUNTIME_KINDS,
-  );
-});
-
-test('rejects unknown runtime kinds', () => {
-  expectCode('INVALID_RUNTIME_CLAIM', () =>
-    parseRuntimeClaims('exclusive:unknown.resource:runtime'),
-  );
-});
-
-test('a conflicting resource bundle is rejected without partial publication', () => {
-  const scope = fixture();
-  try {
-    startOrUpdateDeclaration(
-      options(scope, {
-        runtimeClaims: 'exclusive:account:alice',
-      }),
-    );
-    expectCode('RESOURCE_DECLARATION_CONFLICT', () =>
-      startOrUpdateDeclaration(
-        options(scope, {
-          workspaceRoot: scope.workspaceB,
-          workItemId: 'parallel-suite',
-          sessionId: 'parallel-session',
-          branch: 'parallel-suite',
-          sourceHead: '8'.repeat(40),
-          sourceClaims: 'shared-read:apps/desktop',
-          runtimeClaims:
-            'exclusive:account:alice;exclusive:device:ios-simulator-1',
-        }),
-      ),
-    );
-    assert.deepEqual(
-      statusCurrent({
-        home: scope.home,
-        workspaceRoot: scope.workspaceB,
-        clock: clock(),
-      }).declarations,
-      [],
-    );
-  } finally {
-    scope.close();
-  }
-});
-
-test('rejects source and runtime conflicts but permits shared reads', () => {
-  const scope = fixture();
-  try {
-    startOrUpdateDeclaration(options(scope));
-    expectCode('RESOURCE_DECLARATION_CONFLICT', () =>
-      startOrUpdateDeclaration(
-        options(scope, {
-          workItemId: 'source-conflict',
-          sessionId: 'session-b',
-          branch: 'other-branch',
-          sourceHead: '8'.repeat(40),
-          sourceClaims: 'exclusive-write:tooling/scripts/local-dev/dev-work.mjs',
-          runtimeClaims: '',
-        }),
-      ),
-    );
-    startOrUpdateDeclaration(
-      options(scope, {
-        workspaceRoot: scope.workspaceB,
-        workItemId: 'reader',
-        sessionId: 'session-reader',
-        branch: 'reader-branch',
-        sourceHead: '8'.repeat(40),
-        sourceClaims: 'shared-read:docs/architecture',
-        runtimeClaims: '',
-      }),
-    );
-    expectCode('RESOURCE_DECLARATION_CONFLICT', () =>
-      startOrUpdateDeclaration(
-        options(scope, {
-          workspaceRoot: scope.workspaceB,
-          workItemId: 'runtime-conflict',
-          sessionId: 'session-runtime',
-          branch: 'runtime-branch',
-          sourceHead: '9'.repeat(40),
-          sourceClaims: 'shared-read:model',
-          runtimeClaims: 'exclusive:station.connect:station-four',
-        }),
-      ),
-    );
-  } finally {
-    scope.close();
-  }
-});
-
-test('warns but allows overlapping writes on independent branches', () => {
-  const scope = fixture();
-  try {
-    const first = startOrUpdateDeclaration(options(scope));
-    const warnings = [];
-    const second = startOrUpdateDeclaration(
-      options(scope, {
-        workspaceRoot: scope.workspaceB,
-        workItemId: 'independent-branch',
-        sessionId: 'session-b',
-        branch: 'independent-branch',
-        sourceHead: '8'.repeat(40),
-        sourceClaims: 'exclusive-write:tooling/scripts/local-dev',
-        runtimeClaims: '',
-      }),
-      { onWarning: (warning) => warnings.push(warning) },
-    );
-
-    assert.notEqual(second.workspaceId, first.workspaceId);
-    assert.deepEqual(warnings, [
-      {
-        declarationId: first.declarationId,
-        workspaceId: first.workspaceId,
-        branch: first.branch,
-        kind: 'SOURCE_OVERLAP_WARNING',
-        resource: 'tooling/scripts/local-dev',
-        otherPathPrefix: 'tooling/scripts/local-dev',
-      },
+    expectCode('TASK_PROGRESS_CHECKSUM_INVALID', () =>
+      readTaskProgress({
+        workspaceRoot: scope.workspace,
+        taskId: 'FLOW-TASK-BROKEN',
+      }));
+    const status = listTaskProgress({ workspaceRoot: scope.workspace });
+    assert.deepEqual(status.tasks.map((item) => item.taskId), ['FLOW-TASK-1']);
+    assert.deepEqual(status.invalid.map((item) => item.taskId), [
+      'FLOW-TASK-BROKEN',
     ]);
   } finally {
     scope.close();
   }
 });
 
-test('rejects disjoint writes to the same branch across workspaces', () => {
+test('FLOW-A10 source changes invalidate evidence and CAS rejects stale writers', () => {
   const scope = fixture();
   try {
-    startOrUpdateDeclaration(options(scope));
-    expectCode('RESOURCE_DECLARATION_CONFLICT', () =>
-      startOrUpdateDeclaration(
-        options(scope, {
-          workspaceRoot: scope.workspaceB,
-          workItemId: 'same-branch',
-          sessionId: 'session-b',
-          sourceHead: '8'.repeat(40),
-          sourceClaims: 'exclusive-write:apps/station',
-          runtimeClaims: '',
-        }),
-      ),
-    );
-  } finally {
-    scope.close();
-  }
-});
+    const started = createTaskProgress(startOptions(scope, {
+      evidenceRefs: [{ kind: 'SOURCE_CHECK', ref: 'evidence://initial' }],
+    }));
+    writeFileSync(path.join(scope.workspace, 'change.txt'), 'change\n');
+    git(scope.workspace, 'add', 'change.txt');
+    git(scope.workspace, 'commit', '-m', 'test: advance source');
 
-test('uses the injected current clock for expiry and successor admission', () => {
-  const scope = fixture();
-  try {
-    startOrUpdateDeclaration(options(scope, { expiresMinutes: 1 }));
-    assert.equal(
-      statusAll({
-        home: scope.home,
-        clock: clock('2026-09-16T12:00:30.000Z'),
-      }).declarations[0].state,
-      'DECLARED',
-    );
-    startOrUpdateDeclaration(
-      options(scope, {
-        workspaceRoot: scope.workspaceB,
-        workItemId: 'successor',
-        sessionId: 'session-b',
-        branch: 'successor-branch',
-        sourceHead: '8'.repeat(40),
-        clock: clock('2026-09-16T12:02:00.000Z'),
-      }),
-    );
-    const states = statusAll({
-      home: scope.home,
-      clock: clock('2026-09-16T12:02:00.000Z'),
-    }).declarations.map((item) => item.state);
-    assert.deepEqual(states.sort(), ['DECLARED', 'STALE']);
-  } finally {
-    scope.close();
-  }
-});
-
-test('heartbeat, activation, release, and restart obey lifecycle ownership', () => {
-  const scope = fixture();
-  try {
-    const currentRepo = path.resolve(
-      path.dirname(fileURLToPath(import.meta.url)),
-      '..',
-      '..',
-      '..',
-    );
-    const branch = execFileSync('git', ['branch', '--show-current'], {
-      cwd: currentRepo,
-      encoding: 'utf8',
-    }).trim();
-    const sourceHead = execFileSync('git', ['rev-parse', 'HEAD'], {
-      cwd: currentRepo,
-      encoding: 'utf8',
-    }).trim();
-    startOrUpdateDeclaration(
-      options(scope, {
-        workspaceRoot: currentRepo,
-        branch,
-        sourceHead,
-        expiresMinutes: 1,
-      }),
-    );
-    expectCode('WORK_DECLARATION_NOT_ACTIVE', () =>
-      requireActiveDeclaration({
-        home: scope.home,
-        workspaceRoot: currentRepo,
-        workItemId: 'dwf-b1',
-        workflowOwner: workflowOwner(),
-        clock: clock(),
-      }),
-    );
-    const active = checkDeclaration({
-      home: scope.home,
-      workspaceRoot: currentRepo,
-      workItemId: 'dwf-b1',
-      sessionId: 'session-a',
-      workflowOwner: workflowOwner(),
-      clock: clock('2026-09-16T12:00:10.000Z'),
+    const updated = updateTaskProgress({
+      workspaceRoot: scope.workspace,
+      taskId: started.taskId,
+      expectedRevision: started.revision,
+      stage: 'implement',
+      reason: 'Continue on the new source.',
+      now: '2026-10-13T12:01:00.000Z',
     });
-    assert.equal(active.state, 'ACTIVE');
-    const heartbeat = heartbeatDeclaration({
-      home: scope.home,
-      workspaceRoot: currentRepo,
-      workItemId: 'dwf-b1',
-      sessionId: 'session-a',
-      workflowOwner: workflowOwner(),
-      expiresMinutes: 10,
-      clock: clock('2026-09-16T12:00:30.000Z'),
-    });
-    assert.equal(heartbeat.expiresAt, '2026-09-16T12:10:30.000Z');
-    expectCode('WORK_DECLARATION_OWNER_MISMATCH', () =>
-      releaseDeclaration({
-        home: scope.home,
-        workspaceRoot: currentRepo,
-        workItemId: 'dwf-b1',
-        sessionId: 'other-session',
-        workflowOwner: workflowOwner(),
-        clock: clock('2026-09-16T12:01:00.000Z'),
-      }),
-    );
-    assert.equal(
-      releaseDeclaration({
-        home: scope.home,
-        workspaceRoot: currentRepo,
-        workItemId: 'dwf-b1',
-        sessionId: 'session-a',
-        workflowOwner: workflowOwner(),
-        clock: clock('2026-09-16T12:01:00.000Z'),
-      }).state,
-      'RELEASED',
-    );
-    expectCode('WORK_DECLARATION_NOT_ACTIVE', () =>
-      startOrUpdateDeclaration(
-        options(scope, {
-          workspaceRoot: currentRepo,
-          branch,
-          sourceHead,
-          clock: clock('2026-09-16T12:02:00.000Z'),
-        }),
-        { requireExisting: true },
-      ),
-    );
-    assert.equal(
-      startOrUpdateDeclaration(
-        options(scope, {
-          workspaceRoot: currentRepo,
-          branch,
-          sourceHead,
-          sessionId: 'session-b',
-          clock: clock('2026-09-16T12:02:00.000Z'),
-        }),
-      ).sessionId,
-      'session-b',
-    );
+    assert.notEqual(updated.currentSource, started.currentSource);
+    assert.deepEqual(updated.evidenceRefs, []);
+    expectCode('TASK_PROGRESS_REVISION_CONFLICT', () =>
+      updateTaskProgress({
+        workspaceRoot: scope.workspace,
+        taskId: started.taskId,
+        expectedRevision: started.revision,
+        stage: 'verify',
+        reason: 'Stale writer.',
+      }));
   } finally {
     scope.close();
   }
 });
 
-test('activation rejects branch and source identity drift', () => {
+test('FLOW-A15 close checks selected task evidence and owned resources', () => {
   const scope = fixture();
   try {
-    const currentRepo = path.resolve(
-      path.dirname(fileURLToPath(import.meta.url)),
-      '..',
-      '..',
-      '..',
-    );
-    startOrUpdateDeclaration(
-      options(scope, {
-        workspaceRoot: currentRepo,
-        branch: 'not-the-current-branch',
-      }),
-    );
-    expectCode('WORKTREE_IDENTITY_MISMATCH', () =>
-      checkDeclaration({
-        home: scope.home,
-        workspaceRoot: currentRepo,
-        workItemId: 'dwf-b1',
-        sessionId: 'session-a',
-        workflowOwner: workflowOwner(),
-        clock: clock(),
-      }),
+    const started = createTaskProgress(startOptions(scope, {
+      resourceRefs: [{ resourceKey: 'local.slot:5', state: 'running' }],
+    }));
+    expectCode('TASK_PROGRESS_EVIDENCE_MISSING', () =>
+      closeTaskProgress({
+        workspaceRoot: scope.workspace,
+        taskId: started.taskId,
+        expectedRevision: started.revision,
+        state: 'completed',
+        resourceRefs: [{ resourceKey: 'local.slot:5', state: 'released' }],
+      }));
+    expectCode('TASK_PROGRESS_RESOURCE_UNSETTLED', () =>
+      closeTaskProgress({
+        workspaceRoot: scope.workspace,
+        taskId: started.taskId,
+        expectedRevision: started.revision,
+        state: 'completed',
+        evidenceRefs: [{ kind: 'FUNCTIONAL_CHECK', ref: 'evidence://pass' }],
+      }));
+    const closed = closeTaskProgress({
+      workspaceRoot: scope.workspace,
+      taskId: started.taskId,
+      expectedRevision: started.revision,
+      state: 'completed',
+      evidenceRefs: [{ kind: 'FUNCTIONAL_CHECK', ref: 'evidence://pass' }],
+      resourceRefs: [{ resourceKey: 'local.slot:5', state: 'retained' }],
+      now: '2026-10-13T12:02:00.000Z',
+    });
+    assert.equal(closed.state, 'completed');
+    assert.equal(
+      createTaskProgress(startOptions(scope, {
+        taskId: 'FLOW-TASK-NEXT',
+        contribution: 'Start after another task completed.',
+        goal: 'Prove the worktree is not sealed.',
+      })).state,
+      'active',
     );
   } finally {
     scope.close();
   }
 });
 
-test('source claims reject symlink escape through the nearest existing parent', () => {
+test('dev-work has no duplicate close command', () => {
+  const scope = fixture();
+  try {
+    createTaskProgress(startOptions(scope));
+    expectCode('TASK_PROGRESS_INVALID', () =>
+      runCli([
+        'close',
+        '--workspace-root',
+        scope.workspace,
+        '--task',
+        'FLOW-TASK-1',
+      ], { output() {} }));
+  } finally {
+    scope.close();
+  }
+});
+
+test('task storage rejects a symlink escape', () => {
   const scope = fixture();
   try {
     const outside = path.join(scope.root, 'outside');
     mkdirSync(outside);
-    symlinkSync(outside, path.join(scope.workspaceA, 'escape'));
-    expectCode('INVALID_SOURCE_CLAIM', () =>
-      startOrUpdateDeclaration(
-        options(scope, {
-          sourceClaims: 'exclusive-write:escape/new-file.mjs',
-        }),
-      ),
+    symlinkSync(outside, path.join(scope.workspace, '.dev-workflow'));
+    assert.equal(
+      lstatSync(path.join(scope.workspace, '.dev-workflow')).isSymbolicLink(),
+      true,
     );
-  } finally {
-    scope.close();
-  }
-});
-
-test('rejects legacy root claims for terminal declarations', () => {
-  const scope = fixture();
-  try {
-    const declaration = startOrUpdateDeclaration(options(scope));
-    const ledgerFile = path.join(
-      scope.home,
-      '.peers-touch',
-      'dev',
-      'work.json',
+    expectCode('TASK_PROGRESS_PATH_ESCAPE', () =>
+      createTaskProgress(startOptions(scope)));
+    assert.equal(
+      readFileSync(path.join(scope.workspace, 'README.md'), 'utf8'),
+      'fixture\n',
     );
-    const ledger = JSON.parse(readFileSync(ledgerFile, 'utf8'));
-    const legacy = ledger.declarations[declaration.declarationId];
-    legacy.state = 'RELEASED';
-    legacy.sourceClaims = [
-      {
-        mode: 'exclusive-write',
-        pathPrefix: '.',
-      },
-    ];
-    legacy.declarationDigest = digestDeclaration(legacy);
-    writeFileSync(ledgerFile, `${JSON.stringify(ledger)}\n`);
-
-    expectCode('MACHINE_WORK_LEDGER_INVALID', () => readLedger(ledgerFile));
-  } finally {
-    scope.close();
-  }
-});
-
-test('malformed ledger and lock metadata fail closed without replacement', () => {
-  const ledgerScope = fixture();
-  try {
-    const ledgerFile = path.join(
-      ledgerScope.home,
-      '.peers-touch',
-      'dev',
-      'work.json',
-    );
-    mkdirSync(path.dirname(ledgerFile), { recursive: true });
-    writeFileSync(ledgerFile, '{"schemaVersion":1,"kind":"wrong"}\n');
-    const before = readFileSync(ledgerFile, 'utf8');
-    expectCode('MACHINE_WORK_LEDGER_INVALID', () => readLedger(ledgerFile));
-    expectCode('MACHINE_WORK_LEDGER_INVALID', () =>
-      startOrUpdateDeclaration(options(ledgerScope)),
-    );
-    assert.equal(readFileSync(ledgerFile, 'utf8'), before);
-  } finally {
-    ledgerScope.close();
-  }
-
-  const lockScope = fixture();
-  try {
-    const lockFile = path.join(
-      lockScope.home,
-      '.peers-touch',
-      'dev',
-      'work.lock',
-    );
-    mkdirSync(path.dirname(lockFile), { recursive: true });
-    const malformed = `${JSON.stringify({
-      pid: String(process.pid),
-      processStart: processStartIdentity(),
-      createdAt: FIXED_NOW.toISOString(),
-    })}\n`;
-    writeFileSync(lockFile, malformed);
-    expectCode('MACHINE_WORK_LEDGER_LOCK_INVALID', () =>
-      startOrUpdateDeclaration(
-        options(lockScope, {
-          lockTimeoutMs: 10,
-        }),
-      ),
-    );
-    assert.equal(readFileSync(lockFile, 'utf8'), malformed);
-  } finally {
-    lockScope.close();
-  }
-});
-
-test('stale ledger recovery is claimed before the lock inode is removed', () => {
-  const scope = fixture();
-  try {
-    const lockFile = path.join(
-      scope.home,
-      '.peers-touch',
-      'dev',
-      'work.lock',
-    );
-    const recoveryFile = `${lockFile}.recovery`;
-    mkdirSync(path.dirname(lockFile), { recursive: true });
-    const stale = `${JSON.stringify({
-      pid: 999999,
-      processStart: 'stale-process',
-      createdAt: FIXED_NOW.toISOString(),
-    })}\n`;
-    writeFileSync(lockFile, stale);
-    const lockStat = statSync(lockFile);
-    const recovery = `${JSON.stringify({
-      pid: process.pid,
-      processStart: processStartIdentity(),
-      createdAt: FIXED_NOW.toISOString(),
-      lockDev: lockStat.dev,
-      lockIno: lockStat.ino,
-    })}\n`;
-    writeFileSync(recoveryFile, recovery);
-    expectCode('MACHINE_WORK_LEDGER_LOCKED', () =>
-      startOrUpdateDeclaration(options(scope, { lockTimeoutMs: 10 })),
-    );
-    assert.equal(readFileSync(lockFile, 'utf8'), stale);
-    assert.equal(readFileSync(recoveryFile, 'utf8'), recovery);
-
-    rmSync(recoveryFile);
-    const declaration = startOrUpdateDeclaration(
-      options(scope, { lockTimeoutMs: 100 }),
-    );
-    assert.equal(declaration.workItemId, 'dwf-b1');
-    assert.equal(existsSync(lockFile), false);
-  } finally {
-    scope.close();
-  }
-});
-
-test('orphaned stale recovery metadata is reclaimed before lock acquisition', () => {
-  const scope = fixture();
-  try {
-    const lockFile = path.join(
-      scope.home,
-      '.peers-touch',
-      'dev',
-      'work.lock',
-    );
-    const recoveryFile = `${lockFile}.recovery`;
-    mkdirSync(path.dirname(lockFile), { recursive: true });
-    writeFileSync(
-      recoveryFile,
-      `${JSON.stringify({
-        pid: 999999,
-        processStart: 'stale-recovery',
-        createdAt: FIXED_NOW.toISOString(),
-        lockDev: 0,
-        lockIno: 0,
-      })}\n`,
-    );
-    const declaration = startOrUpdateDeclaration(
-      options(scope, { lockTimeoutMs: 100 }),
-    );
-    assert.equal(declaration.workItemId, 'dwf-b1');
-    assert.equal(existsSync(recoveryFile), false);
-    assert.equal(existsSync(lockFile), false);
-  } finally {
-    scope.close();
-  }
-});
-
-test('closed declaration fields and non-canonical stored claims fail closed', () => {
-  const scope = fixture();
-  try {
-    const created = startOrUpdateDeclaration(options(scope));
-    const ledgerFile = path.join(scope.home, '.peers-touch', 'dev', 'work.json');
-    const ledger = JSON.parse(readFileSync(ledgerFile, 'utf8'));
-    ledger.declarations[created.declarationId].unexpected = true;
-    writeFileSync(ledgerFile, `${JSON.stringify(ledger)}\n`);
-    expectCode('MACHINE_WORK_LEDGER_INVALID', () => readLedger(ledgerFile));
-  } finally {
-    scope.close();
-  }
-
-  const claimScope = fixture();
-  try {
-    const created = startOrUpdateDeclaration(options(claimScope));
-    const ledgerFile = path.join(
-      claimScope.home,
-      '.peers-touch',
-      'dev',
-      'work.json',
-    );
-    const ledger = JSON.parse(readFileSync(ledgerFile, 'utf8'));
-    const declaration = ledger.declarations[created.declarationId];
-    declaration.sourceClaims[0].pathPrefix = 'docs//architecture';
-    declaration.declarationDigest = digestDeclaration(declaration);
-    writeFileSync(ledgerFile, `${JSON.stringify(ledger)}\n`);
-    expectCode('MACHINE_WORK_LEDGER_INVALID', () => readLedger(ledgerFile));
-  } finally {
-    claimScope.close();
-  }
-});
-
-test('symlinked CLI invocation executes the real module', () => {
-  const scope = fixture();
-  try {
-    const cli = fileURLToPath(new URL('./dev-work.mjs', import.meta.url));
-    const link = path.join(scope.root, 'dev-work-link.mjs');
-    symlinkSync(cli, link);
-    assert.ok(lstatSync(link).isSymbolicLink());
-    const result = spawnSync(
-      process.execPath,
-      [link, 'status-all', '--home', scope.home],
-      { encoding: 'utf8' },
-    );
-    assert.equal(result.status, 0, result.stderr);
-    const payload = JSON.parse(result.stdout);
-    assert.equal(payload.declarations.length, 0);
-  } finally {
-    scope.close();
-  }
-});
-
-test('existing private directory modes are corrected on mutation', () => {
-  const scope = fixture();
-  try {
-    const devRoot = path.join(scope.home, '.peers-touch', 'dev');
-    mkdirSync(devRoot, { recursive: true });
-    chmodSync(devRoot, 0o755);
-    startOrUpdateDeclaration(options(scope));
-    assert.equal(statSync(devRoot).mode & 0o777, 0o700);
   } finally {
     scope.close();
   }

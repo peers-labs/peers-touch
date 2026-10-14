@@ -1,313 +1,88 @@
-# Development Workflow Control Plane - Module Layout
+# 现有模块如何调整
 
 > **Status**: active
-> **Created**: 2026-09-16 | **Updated**: 2026-10-07
+> **Created**: 2026-09-16 | **Updated**: 2026-10-14
 > **Owner**: Platform Team
 
----
+本文列出[重构设计](./design.md)涉及的现有模块，供实施与检查使用。不能按目录名把 `local-dev/` 全删；其中有实际运行入口、资源锁和正式验证依赖。
 
-## 1. Target Directory Tree
+## 1. 文档职责
 
-This is the accepted DWF-D42 target. PlanMount owns tracked execution placement;
-standalone work does not create Plan package or machine-local tracked state.
-The superseded workspace-binding path is deleted, and target paths are not by
-themselves implementation readiness claims.
+- `docs/global/workflow.md`：唯一规范研发流程。
+- 本目录 `design.md`：工具的职责、调用关系和失败处理。
+- `data-model.md`：可选任务记录、操作记录、证据与恢复要求。
+- `integration.md`：调用方清单、切换范围和具体保留检查。
+- `decisions.md`：目标设计决定及其理由，旧决定按状态区分。
+- `execution-plans/20261013-development-flow-rebuild-accepted/plan.md`：这次改造的冻结实施顺序与验收。
+- `local-dev/`：运行资源的独占、权限、Profile 与清理实现；实施时同步删除任务准入耦合。
+- `toolchain/`：跨平台运行入口和依赖约定，已有 `devctl` 继续使用。
 
-```text
-docs/architecture/engineering/development-workflow/
-├── README.md
-├── design.md
-├── decisions.md
-├── data-model.md
-├── integration.md
-├── module-layout.md
-└── execution-plans/
-    └── <date>-<slug>/
-        ├── plan.md
-        ├── completions/
-        │   └── <planDigest>.json
-        ├── tasks/
-        │   └── <task-id>.md
-        └── archive/
-            └── <historical-input>.md
+## 2. 工作组织与记录
 
-tooling/scripts/plan/
-├── plan-completion.mjs
-├── plan-completion.test.mjs
-├── plan-package.mjs
-├── planctl.mjs
-├── planctl.test.mjs
-├── plan-mount.mjs
-├── plan-mount.test.mjs
-├── stable-plan-state-migration.mjs
-└── stable-plan-state-migration.test.mjs
+**`dev-work.mjs`。** 只提供可选任务的 start、update、status 和 status-all；
+使用明确 task 选择、原子快照、checksum 与 revision/CAS，不创建通用资源登记，
+也不从 Hook 解析执行权限。
 
-tooling/scripts/local-dev/
-├── dev-work-schema.mjs
-├── dev-work-ledger.mjs
-├── dev-work.mjs
-├── dev-work.test.mjs
-├── development-close-store.mjs
-├── development-close.mjs
-├── development-close.test.mjs
-├── dev-resource-plan.mjs
-├── dev-resource-plan.test.mjs
-├── dev-session-schema.mjs
-├── dev-session-store.mjs
-├── dev-session.mjs
-├── dev-session.test.mjs
-├── completion-review.mjs
-├── completion-review.test.mjs
-├── workflow-action-store.mjs
-├── workflow-action-store.test.mjs
-├── workflow-anchor.mjs
-├── workflow-binding-projection.mjs
-├── workflow-binding-projection.test.mjs
-├── workflow-binding-store.mjs
-├── workflow-binding-store.test.mjs
-├── workflow-binding.mjs
-├── workflow-doctor.mjs
-├── workflow-host-adapters.mjs
-├── workflow-kernel.mjs
-├── workflow-owner-command-policy.mjs
-├── workflow-snapshot-core.mjs
-├── workflow-snapshot.mjs
-├── workflow-state-inspector.mjs
-├── workflow-tool-intent.mjs
-└── workflow-*.test.mjs
+**`development-close.mjs`。** 这是唯一公开关闭入口。收尾只检查本任务证据和资源，
+直接更新同一 `task.json`；没有独立 close store、关闭回执或 workspace 新任务守卫。
 
-tooling/plugins/pt-ew-plugin/
-├── .codex-plugin/plugin.json
-├── hooks.json
-└── scripts/
-    ├── hook-entry.mjs
-    └── hook-entry.test.mjs
+**处理 `active-work*`、`workflow-state-inspector.mjs`、`workflow-snapshot*`。** 删除独立 active-work 真源及多账本强一致准入；状态查询显式读取可选任务和实际运行事实，不能因一个工作区记录坏了屏蔽所有工作区。
 
-tooling/scripts/
-├── agent-integration-control.py
-├── agent-integration-audit.py
-├── agent-integration-audit-test.py
-├── install-agent-integration.sh
-├── skill-overlay-control.py
-└── skill-overlay-control-test.py
+**删除 `dev-work-ledger.mjs`、`dev-work-schema.mjs` 的通用任务登记责任。** 其中路径包含检查、冲突判断或工具函数有独立价值时移到唯一实际使用者；完成全部引用迁移后删除空壳，不保留同名兼容门禁。
 
-~/.peers-touch/dev/
-├── work.json
-├── work.lock
-├── plan-mounts/
-│   ├── ledger.json
-│   ├── ledger.lock
-│   └── mounts/<mountId>.json
-├── skill-overlays/
-│   ├── registry.json
-│   ├── registry.lock
-│   └── store/<name>/<digest>/
-│       ├── overlay.json
-│       └── SKILL.md
-└── workspaces/<workspaceId>/workflow/
-    ├── worktree-creation.json
-    ├── worktree-creation-transactions/<targetHash>.json
-    ├── active-work.json
-    ├── active-work.lock
-    ├── agent-integration.json
-    ├── <workItemId>/
-    │   ├── execution-plan-snapshots/<snapshotId>.json
-    │   ├── execution-run.json
-    │   ├── session.json
-    │   ├── events.ndjson
-    │   ├── resource-plan.json
-    │   ├── development-close.json
-    │   ├── session.lock
-    │   ├── checks/
-    │   └── artifacts/
+**新增 `development-flow-residue.mjs` 及测试。** 只检查当前非历史源码中的负清单：
+旧 ledger/mount/binding/grant 准入、普通工具 DENY、全机 idle 前置和未授权
+`git worktree add`。历史文档排除必须显式列出并受测试约束，不能用宽泛目录忽略隐藏残留。
 
-~/.peers-touch/dev/bindings/
-├── owners/<host>/<rootChatHash>/
-│   ├── owner-binding.json
-│   ├── anchor-receipt.json
-│   ├── assignments/<assignmentId>.json
-│   └── releases/<anchorDigest>.json
-└── children/<rootBindingDigest>/<host>/<executionSessionHash>/
-    ├── child-binding.json
-    └── terminal.json
-```
+## 3. 计划与评审
 
-## 2. File Responsibilities
+**改 `plan-package.mjs`、`planctl.mjs`。** 保留文档解析、依赖检查和显式计划选择；计划是需求实施安排，不占用整个 worktree。进度归可选任务记录；命令结果不能推导执行授权。
 
-Responsibilities below describe the NBI02 PlanMount cutover result.
+**删除 `plan-mount.mjs` 的机器占用职责。** 所有消费者改用明确计划引用与任务选择；不留隐式 mount 兼容读取。已存在的机器历史不在源码删除中顺手清理。
 
-| Path | Responsibility |
-|---|---|
-| `README.md` | Module scope, verified problem and navigation |
-| `design.md` | Ownership, boundaries, data flow, resume and cutover contracts |
-| `decisions.md` | DWF-D01..DWF-D43 ADR-lite decisions |
-| `data-model.md` | Closed schemas and state transition guards |
-| `integration.md` | Skill, Make, Acceptance, Quality and migration mapping |
-| `execution-plans/*/plan.md` | Stable Plan, digest-bound North Star approval, criterion coverage, Amendment Log, and Acceptance contract |
-| `execution-plans/*/tasks/*.md` | One immutable Task Slice specification |
-| `execution-plans/*/completions/*.json` | Immutable final-run attestation bound to one exact Plan digest for CI |
-| `execution-plans/*/archive/*` | Historical input excluded from all live parsing |
-| `plan-completion.mjs` | Repository completion attestation schema, validation, and create-once publication |
-| `plan-package.mjs` | Structured Markdown parser, schema validation, DAG, bounds, and Task-closure progress projection |
-| `planctl.mjs` | `validate/source-status/approve-north-star/amend/seal-completion/current/next/status/activate/advance/reopen/invalidate-source` CLI |
-| `planctl.test.mjs` | Package, DAG, bounds and CLI regression coverage |
-| `plan-mount.mjs` | Stable Plan mount/unmount owner, immutable snapshot history, amendment transition, live-worktree exclusion, and direct resolution |
-| `plan-mount.test.mjs` | Candidate approval, criterion coverage, idempotence, mount conflict, amendment, North Star invalidation, explicit unmount, snapshot, tamper, and concurrency regressions |
-| `stable-plan-state-migration.mjs` | Explicit global-idle hard cut for machine ledger field/index renames; normal readers contain no legacy fallback |
-| `dev-work-schema.mjs` | Resource declaration closed schema and digest |
-| `dev-work-ledger.mjs` | Machine-wide declaration lock, conflict and lifecycle |
-| `dev-work.mjs` | Resource declaration CLI |
-| `development-close-store.mjs` | Closed `DevelopmentCloseReceipt` schema, digest, atomic persistence, and new-work admission guard |
-| `development-close.mjs` | Idempotent runtime/Session/active-work/declaration/PlanMount/environment close coordinator and orphan recovery CLI |
-| `development-close.test.mjs` | Standalone/tracked close, interruption resume, admission, and owner-resource regressions |
-| `dev-resource-plan.mjs` | Standard ModuleImpact validation, target dependency closure, peak-capacity planning, concrete resource selection, declaration update, fencing, and Runtime Owner result receipt |
-| `dev-resource-plan.test.mjs` | Single/multi-module, reuse/build/restart, capacity parking, all-or-none reservation, replacement, idempotency, and fencing regressions |
-| `active-work-store.mjs` | Consuming-workspace active-work schema, revision/CAS, digest, lock and atomic storage |
-| `active-work.mjs` | Owner-derived active-work sync/status/close CLI |
-| `dev-session-schema.mjs` | Session, verification, failure and transition schemas |
-| `dev-session-store.mjs` | Atomic bounded event journal, multi-transition result commit, replay and snapshot materialization |
-| `dev-session.mjs` | Session `start/status/transition/functional-result` CLI |
-| `dev-session.test.mjs` | State, identity, guard, clock and symlink regressions |
-| `completion-review.mjs` | Repository-native current-source review request, reviewer capability, assessment proof, receipt, and freshness owner |
-| `workflow-action-store.mjs` | Bounded redacted Action Receipt chain and activity reduction |
-| `workflow-owner-command-policy.mjs` | Canonical OWNER command registry, receipt identity, and persisted-owner admission guards |
-| `workflow-owner-reference.mjs` | Validated host-neutral main-session reference and root identity hash |
-| `workflow-owner-context.mjs` | Resolve the current main-session OWNER from the live Hook Action Receipt |
-| `workflow-host-adapters.mjs` | TRAE/Cursor/Codex event normalization and native response rendering; no cross-host identity aliases |
-| `workflow-binding-projection.mjs` | Pure host-specific root/execution identity projection plus role, lineage and subject/tool/target roots |
-| `workflow-binding-store.mjs` | Atomic OWNER binding with machine-local root chat ID, child assignment/claim/lease/terminal lifecycle, Anchor receipt and OWNER release |
-| `worktree-create.mjs` | Authorized Git worktree creation plus immutable main-session provenance |
-| `workflow-binding.mjs` | OWNER-authorized child assignment, terminalization, status, and hard-cut reset CLI |
-| `workflow-tool-intent.mjs` | Structured shell/tool intent parsing without regex command admission |
-| `workflow-anchor.mjs` | Deterministic Context Anchor rendering and response/transcript verification |
-| `workflow-state-inspector.mjs` | Read-only mount, snapshot, run, declaration, active-work, Session, Git and terminal-state validation |
-| `workflow-kernel.mjs` | Host-neutral binding, subject-root, owner-state, source-scope, Stop and release policy |
-| `workflow-snapshot-core.mjs` | Canonical read-only owner join consumed by workflow projections |
-| `workflow-snapshot.mjs` | Thin CLI over Workflow Snapshot core |
-| `workflow-doctor.mjs` | Executable truth matrix for public workflow promises |
-| `tooling/plugins/pt-ew-plugin/` | Thin stdin/stdout adapter into the host-neutral Workflow Kernel |
-| `tooling/scripts/acceptance-run.py` | Shared Journey/provisioning execution with explicit non-publishing development and formal Acceptance policies |
-| `session.json` | Replayable current Development transition projection |
-| `active-work.json` | One consuming workspace's resumable locator projection; never shared across workspace IDs |
-| `worktree-creation.json` | Immutable target-worktree creator session, source workspace, purpose, initial branch/HEAD, and creation Action Receipt |
-| `events.ndjson` | Bounded transition transaction journal |
-| `migration.json` | Reviewed crosswalk/reference inventory, source identity, registry-backed `active_work` observation, prepared replacements and recovery state |
-| `migration.json.reviewed` | Exact B4-reviewed PREPARED journal snapshot retained for commit/recovery lineage checks |
-| `migration.lock` | Owner-token plan migration exclusion |
-| `migration.lock.recovery` | Exclusive abandoned-lock recovery claim |
-| `checks/` | Structured check records |
-| `artifacts/` | Bounded transient diagnostics |
-| `development-close.json` | Resumable cross-owner close receipt; only `CLOSED` supports `close-ready` |
-| `tooling/skills/pt-completion-auditor/scripts/completion-audit.mjs` | Exact selector/mode/claim lifecycle validator |
-| `tooling/skills/pt-goal-orchestrator/` | Host-neutral Goal scheduling contract, template, and review rubric |
-| `tooling/skills/pt-dev-runtime-handoff/` | Project runtime, Journey, Session result, and cleanup owner |
-| `tooling/skills/pt-{trae,cursor,codex}-host-adapter/` | Optional host tool transports with no project-state authority |
-| `tooling/scripts/install-agent-integration.sh` | Non-interactive dispatch for projection, hard-cut, and retired-projection GC |
-| `tooling/scripts/agent-integration-audit.py` | Fail-closed source, participating-root Hook, recursive catalog, binding-store, receipt, and projection audit |
-| `tooling/scripts/agent-integration-control.py` | Work-ledger-locked projection plus separately authorized global-idle hard-cut and retired-projection GC owners |
-| `tooling/scripts/skill-overlay-control.py` | Machine-local user Overlay install/list/enable/disable/uninstall/resolve owner with immutable-copy and digest validation |
-| `tooling/scripts/skill-overlay-control-test.py` | Overlay lifecycle, ordering, collision, symlink, registry, and tamper regression coverage |
-| `tooling/skills/pt-ew/` | Shared Overlay host and mandatory delegation boundary to `pt-god-view` |
-| `skill-overlays/registry.json` | User-owned Overlay enablement and deterministic resolution source |
-| `skill-overlays/store/<name>/<digest>/` | Immutable installed Overlay copy; never a canonical project Skill projection |
+**改 `completion-review.mjs` 与 Completion Auditor。** 审查直接接收明确范围、当前源码和证据，保留真实性与新鲜度检查；不要求由 Session/OWNER/mount 生成请求。多个审查记录不得变成普通编辑的启动门禁。
 
-Development-policy artifacts use the current Session's `artifacts/` directory
-and never enter the Acceptance Evidence Store namespace. Formal Acceptance
-continues to use its own immutable run layout and latest pointers.
+## 4. Hook 与安装
 
-## 3. Dependency Direction
+**改 `tooling/plugins/pt-ew-plugin/scripts/hook-entry.mjs` 及当前 host adapters。** 保留现有事件入口和上下文输出，删除通用工具拒绝、Stop 自动阻断、OWNER grant 和 authority 构造。未知事件或工具返回中性结果。
 
-```text
-planctl.mjs
-  -> plan-package.mjs
-  -> repository stable Plan files
+**删除 `workflow-binding*`、`workflow-action-store.mjs` 中会话权限与 grant 机制。** 可复用的诊断关联、耗时和事件字段留在观察实现，不以新名字重建同一权限链。
 
-plan-mount.mjs
-  -> plan-package.mjs
-  -> machine-dev-paths.mjs
-  -> project mount ledger
-  -> immutable ExecutionPlanSnapshot + mutable ExecutionRun
+**`workflow-kernel.mjs` 与 host adapters。** 只保留工作区选择、上下文生成和
+`ALLOW | CONTEXT | NOOP` 输出。`workflow-tool-intent.mjs` 没有剩余 owner，已连同
+测试删除；Hook 不解析 shell 权限，也不捕获真实宿主证明。
 
-dev-session.mjs
-  -> dev-session-store.mjs
-  -> dev-session-schema.mjs
-  -> plan-package.mjs
-  -> machine-dev-paths.mjs
+**改现有安装器、审计器、`install-agent-integration.sh`。** 解释器发现、正确引号和安装路径回放统一实现。Skill 投影不读机器任务账本，不要求 Hook 签发安装授权；保留路径安全与非项目配置。项目级安装不扩展为全局安装。
 
-dev-work.mjs
-  -> dev-work-ledger.mjs
-  -> dev-work-schema.mjs
-  -> plan-mount.mjs
-  -> machine-dev-paths.mjs
+## 5. 运行资源
 
-Module Skills
-  -> standard ModuleImpact
-  -> dev-resource-plan.mjs
-       -> target dependency graph + Runtime Owner inventory
-       -> dev-work-ledger.mjs atomic concrete claims
-       -> machine-local fenced PlanResourcePlan receipt
-  -> Local Dev / Acceptance Suite Runtime physical owner
+**保留并改 `machine-dev-registry.mjs`、`machine-dev.mjs`。** Profile、实际部署目标、slot 和 capability 继续判断；删除 `validateRuntimeIntent` 对开发登记和计划器回执的依赖，改由具体运行请求与实际授权判断。
 
-pt-dev-workflow
-  -> pt-goal-orchestrator
-  -> pt-execution-plan-guardian
-  -> pt-dev-runtime-handoff
-       -> repository-native driver
-  -> admitted Host Capability Request
-       -> detected pt-*-host-adapter when needed
+**保留 `machine-dev-lease.py`。** OS 锁、PID/启动时间、锁内复查及进程组终止属于真正资源保护。仅在实际接口变化时修改，不能把它一起退役。
 
-pt-ew
-  -> skill-overlay-control.py resolve
-  -> digest-verified installed SKILL.md
-  -> pt-god-view
+**改 `dev-resource-plan.mjs`。** 资源复用和依赖准备只为需要运行的任务服务，交给既有 Runtime/Suite 统一生命周期；删除全机 source claims 和 PlanMount 的前置条件。
 
-pt-ew-plugin
-  -> host payload adapter
-  -> host-specific root-chat / execution-session identity
-  -> canonical BindingProjection
-  -> ToolIntent AST + subject/tool/target roots
-  -> workflow-kernel.mjs
-       -> Plan mount / run / declaration / active-work / Session owner reads
-       -> machine-rendered Anchor + atomic release receipt
+**核对 `tooling/devctl/`、`station-dev.sh`、`desktop-dev.sh`、Mobile/Relay 与部署脚本。** 运行目标、权限、健康、源码/产物身份、数据范围和所有权清理不可删；如依赖旧 declaration/mount，迁移在对应能力切换中完成。
 
-Workflow Snapshot
-  -> mount / snapshot / run / declaration / active-work / Session / Git owner reads
-  -> Completion Review delegated receipt + bounded Action Receipt reduction
-  -> CLI / Context Anchor / Workflow Doctor
+## 6. Skill、Make 与 Acceptance
 
-Acceptance execution_plan.py
-  -> current workspace PlanMount
-  -> immutable ExecutionPlanSnapshot
-  -> ExecutionRun current Task status
-```
+- 改 `pt-dev-workflow`、`pt-god-view`：按规范组织工作，小改动直接选编码和小修 Skill；不再先跑登记。
+- 所有工作组织、调度和 host adapter Skill 保留 `git worktree add` 禁令：
+  只有用户显式要求创建 worktree 才能调用，计划、冲突、脏状态、验证或恢复均不能隐式授权。
+- 改 `pt-plan-and-document`、两类架构方法论：稳定方案与计划照常记录，不要求挂载才能使用。
+- 改调度、Guardian、Context Anchor 与 host adapters：调度按依赖及实际冲突；规范和授权由明确来源决定，不由 Hook receipt 决定。
+- 改 Runtime Handoff、Completion Auditor、Quality 和 Review：继续审查代码和真实证据，解除不相关的任务状态准入。
+- 保留小修纪律、结构审查、`pt-read-before-edit` 和业务开发 Skill；有机械流程耦合才修改，不为“收敛技能数”删除有用标准。
+- 改 `tooling/make/local-dev.mk`、`setup.mk`：保留既有启动和任务入口，删除无剩余使用者的低层 grant/mount/active-work 目标，不新增快任务入口。
+- Acceptance runner 直接解析显式 Gate、Plan、completion 或 full 范围后再创建 run；
+  Gap Detector 直接消费变更范围、Plan 和 run。独立 `acceptance-admission.*` owner
+  已删除；正式 Runtime、Evidence Store 和业务断言保持不变。
+- 改 `tooling/development/secure_content/schema_activation.py` 等现有消费者：不恢复旧准入；产品 schema 激活和权限仍按自身合同检查。
 
-Forbidden dependencies:
+## 7. 实施完成检查
 
-- plan parser -> machine Session store;
-- Plan discovery -> branch/repository active-Plan scan;
-- Task Slice -> `events.ndjson`;
-- Session store -> Acceptance Evidence Store;
-- Host adapter -> Plan, Task, Session, workspace active-work, or evidence mutation;
-- Host-specific scheduler -> project work graph or progress semantics;
-- user Overlay -> Plan, Task, Session, authorization, execution, evidence, or
-  Acceptance mutation;
-- canonical agent integration -> user Overlay registry or installed copies;
-- IDE plugin or hook -> Plan, Task, Session, declaration, active-work, or
-  evidence mutation;
-- tool `cwd`, target, or internal execution `session_id` -> OWNER execution-root rebinding;
-- unassigned child session -> WORKER/REVIEWER claim;
-- completion review -> worktree-wide unreleased binding enumeration;
-- current binding reader -> legacy conversation/action store;
-- archive parser -> current plan/task status;
-- Skills -> private parsing logic that bypasses `planctl`.
+上述清单是已查明的主要调用面。每批动手前从实际源码补齐直接和间接引用、测试、Gate、文档及 Skill；不能拿这份初始清单当作“全仓已经清干净”的证明。
 
-## 4. Shared-File Ownership
+共享 Make、registry、工具函数和安装入口由一个实施者负责集成。可并行的调查和评审保持只读；实现按互不重叠写范围拆分，最终调用迁移和运行验收由同一个集成步骤完成。
 
-During implementation:
-
-- the integrator exclusively owns manifest, active pointer, Make targets,
-  shared parser interfaces and final reconciliation;
-- plan tooling and Session tooling may be implemented in parallel only after
-  their schemas are frozen;
-- Mobile pilot migration starts only after both validators pass;
-- generated artifacts, commits, deployments and Acceptance runs remain serial.
+被删除模块的活引用必须为零。保留模块不允许导入旧会话权限或全机任务账本。知识条目废止用 superseded 标记保留来由，源码与当前正式文档不留双路实现。

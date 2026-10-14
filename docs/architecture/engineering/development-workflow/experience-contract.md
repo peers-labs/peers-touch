@@ -1,122 +1,73 @@
-# Development Workflow Experience Contract
+# 开发流程工具的操作合同
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-10-07
+> **Created**: 2026-09-26 | **Updated**: 2026-10-14
 > **Owner**: Platform Team
-> **Module**: `tooling/scripts/local-dev/`, `tooling/scripts/plan/`
 
----
+本文定义当前使用结果；具体命令以 Make 和脚本帮助为准。
 
-## DEV-J01: Install And Bind Agent Execution
+## DEV-J01：完成一次局部修改
 
-1. The developer runs `make skills IDE=<host>`.
-2. Installation verifies canonical source, projects supported host integration,
-   and proves one callback through the installed path.
-3. The first enforceable tool event creates one OWNER binding from the host's
-   root conversation identity.
-4. Internal worker/reviewer sessions use assigned child lineage and cannot
-   create peer owners.
+1. 用户明确目标和工作区；Agent 确认继承的产品或工程北极星、本次贡献，
+   并核对分支、范围和已有改动。
+2. 读取相关产品、架构、编码标准和小修 Skill。
+3. 在已有授权内完成修改、自查和针对性验证。
+4. 输出北极星结果是否实现、本次贡献、证据与未验证范围；提交及发布按各自授权处理。
 
-Missing host identity, blocking capability, callback proof, or root consistency
-returns a typed failure.
+无 Hook、无会话 ID、无 OWNER、无开发登记、无 PlanMount 均不影响该操作。新旧任务的真实文件重叠仍需协调。
+目标 worktree 不可用时报告具体原因；没有用户显式要求时，不创建替代 worktree。
 
-## DEV-J02: Inspect A Running Plan
+## DEV-J02：推进和恢复复杂任务
 
-1. The developer runs `make workflow-snapshot`.
-2. Snapshot lists discovered worktrees and joins PlanMount,
-   ExecutionPlanSnapshot, ExecutionRun, current Task, declaration, Session,
-   active-work, review, activity, and runtime health.
-3. Work state and environment health remain independent.
-4. Missing or conflicting owners are typed and never repaired by the
-   projection.
-5. The command emits one bounded redacted document and exits.
+1. 确定方案与分步实施安排，按本次要求确认。
+2. 需要跨会话恢复时，使用明确 taskId 保存北极星引用、本次贡献、进度与证据引用。
+3. 中断后先核对当前 worktree、源码和实际操作结果，再恢复记录。
+4. 源码改变时重评受影响步骤与证据；仍有效的工作继续。
 
-There is no browser UI, HTTP/SSE server, polling loop, fixed endpoint, or
-state-changing Snapshot operation.
+存在多份任务时要求明确选择。损坏记录不能阻止另一个不冲突的需求；不能为恢复伪造成功事件。部署或重置结果不明时仅暂停该操作。
 
-## DEV-J03: Review A Completion Claim
+## DEV-J03：安装和使用规范提示
 
-1. Implementation reaches its normal verification boundary.
-2. Completion Review captures current source and declared obligations.
-3. An independent reviewer receives an immutable request plus request-scoped
-   capability and records findings.
-4. Only a current `PASS` receipt can authorize Task or Plan completion.
-5. Source, Plan, Gate, or evidence drift makes the receipt `STALE`.
+1. 在选定 worktree 使用现有 `make skills IDE=<host>` 安装入口。
+2. 安装器核对目录与配置归属，分别验证 Skill 投影和可选 Hook。
+3. Hook 命令使用已发现的绝对解释器，在受限 PATH 下执行落盘原文。
+4. 宿主真实触发后，核对是否接受上下文及其工作区归属。
 
-Historical receipts remain audit data and cannot authorize completion.
+提示不可用时直接读取项目规范继续工作。未知工具、缺少身份及配置待加载不产生普通工具 DENY。实际 Hook 移除不影响运行入口的权限检查。
 
-## DEV-J04: Diagnose Workflow Truth
+## DEV-J04：准备和复用运行环境
 
-1. The developer runs `make workflow-doctor`.
-2. Doctor checks integration, BindingProjection, PlanMount, snapshot/run,
-   declaration, Session, active-work, Action Receipt, Completion Review, and
-   Workflow Snapshot.
-3. Every public operational promise maps to a machine check and typed result.
-4. Any required false promise produces non-zero exit.
+1. 使用既有 Profile 与运行入口选择已评审目标。
+2. 按本次操作核对连接、启动、部署、重启或重置权限。
+3. 从实际目标派生资源键，取得真实锁并在锁内复查。
+4. Runtime/Suite 统一准备资源，场景只附着共用 manifest 并创建自己的数据。
+5. 操作后核对健康、源码或产物、进程身份和实际资源持有。
 
-Doctor never exposes credentials, child execution-session identifiers,
-canonical roots, or raw command logs. It may expose the verified main-session
-root ID required for worktree attribution.
+缺少权限、stable 保护及真实资源竞争必须拒绝相关操作。部署目标的不同别名不能躲开同一把锁；不能拿 caller 自报资源名或 ownerAction 绕过。
 
-## DEV-J05: Mount And Amend A Stable Plan
+## DEV-J05：验证和审查结果
 
-1. Plan authoring produces one stable `planId`, a source-backed `northStar`,
-   complete criterion coverage, and `northStarApproval=null`.
-2. After review, the user explicitly approves the current North Star digest;
-   `planctl approve-north-star` records the actor, time, and decision reference.
-3. The owner explicitly selects an execution worktree.
-4. `make plan-mount PLAN=<path>` creates one live PlanMount and the initial
-   immutable ExecutionPlanSnapshot with `mountId`, `workspaceId`, branch, and
-   initial HEAD.
-5. Development Workflow creates the ExecutionRun and activates a ready Task.
-6. When execution details change, the Agent runs `make plan-amend`, which
-   appends the reason and impact, preserves mount/run identity, and advances the
-   current snapshot.
-7. The worktree remains occupied until completion, cancellation, or explicit
-   owner unmount.
+1. 检查接收明确范围、当前源码及约定完成标准。
+2. 执行针对性源码检查和真实功能场景。
+3. 功能跑通后，从正式入口执行需要的 Acceptance。
+4. 独立审查核对遗漏、旧路径、证据新鲜度和过度结论。
+5. 源码或义务改变后，受影响结论失效并重验。
 
-An unapproved or stale North Star cannot mount or execute. An Agent cannot
-change the North Star, change the worktree, expand operation authorization, or
-unmount an unfinished run without an explicit owner decision.
+审查不依赖 Hook、Session 或机器登记。无 Plan 时使用明确需求义务；不能为审核制造计划。框架自测不代替业务验证，评审通过不授权 push、合并或发布。
 
-## DEV-J06: Prepare Cross-Module Runtime Resources
+## DEV-J06：完成、取消和收尾
 
-1. Module owners return standard `ModuleImpact`.
-2. Dev Workflow merges impacts, resolves target dependencies, and computes
-   concurrent waves.
-3. Resource planning deduplicates accounts, services, clients, devices,
-   Fixtures, and automation sessions.
-4. Claims are acquired all-or-none; unavailable capacity parks only dependent
-   targets.
-5. Runtime owners build/restart/provision and return fenced manifests.
-6. Business Gates attach to prepared manifests.
+1. 确认本次承诺的结果以及已授权交付是否完成。
+2. 只释放本次持有的进程、锁、临时数据和设备。
+3. 需保留给用户测试的环境记录去向，不能默默关闭。
+4. 中断时记录尚未处理的资源，重新核对后继续安全收尾。
 
-## DEV-J07: Close Or Recover A Development Run
+无关关闭记录损坏不阻止新任务；尚占用的真实资源阻止相冲突的操作。资源结果不明不能报告全部关闭。
 
-1. Dev Workflow stops physical runtime owners and selects the exact workspace,
-   work item, mode, close reason, and environment policy.
-2. `make dev-close` verifies no live lease, then archives Session, closes
-   active-work, releases declaration and PlanMount, and optionally unregisters
-   the environment.
-3. Each stage advances one machine-local `DevelopmentCloseReceipt`.
-4. Interruption or owner failure leaves a resumable `CLOSING` or `BLOCKED`
-   receipt; a new task is not admitted until the exact close resumes.
-5. Completion audit accepts `close-ready` only after that receipt is `CLOSED`
-   with no pending resource.
+## DEV-J07：查询工作和工具状态
 
-Normal completion retains the environment registration. Explicit worktree
-removal uses `environmentPolicy=unregister`. If the worktree is already gone,
-recovery requires exact workspace, mount, and owner identity.
+使用现有状态与诊断入口，一次性读取 Git、选定任务、相关运行事实及证据，输出后退出。查询不创建任务、修复记录或占用环境。
 
-## Recovery Contract
+缺少可选任务显示“没有选择进度记录”；Hook 故障显示“自动提示不可用”；正式证据缺失显示“未验证”。不能把三种情况统一解释成“工作区无法开发”。
 
-- Missing mount/snapshot/run: report the exact missing owner; never discover a
-  Plan by branch or directory.
-- Hook unavailable: block mutation and report the host capability.
-- Source drift: stale the current review and follow DWF-D24.
-- Loop/stall: project activity without changing Task state.
-- Snapshot partial failure: retain valid owner projections and typed findings
-  for failed owners.
-- Overlay policy mutation: ignore it and return typed denial under DWF-D25.
-- Interrupted close: resume the exact receipt; never infer or manually delete
-  the remaining owner.
+场景编号的具体断言见[验收清单](./acceptance-matrix.md)。

@@ -12,7 +12,6 @@ owns:
 referenced-by:
   - docs/architecture/engineering/local-dev/decisions.md
 related:
-  - docs/knowledge/invariants/dev-resource-declaration-before-write.md
   - docs/knowledge/invariants/station-profile-only-start.md
 detected: 2026-09-21
 ---
@@ -29,8 +28,8 @@ reset policy is derived only from the canonical ID:
 
 No environment field, registry field, Plan field, Station mode, worktree name,
 or legacy cache may override this rule. Non-stable reset does not require human
-confirmation. It still requires the current binding capability, a live
-declaration for the same Profile and exact exclusive scope, matching source and
+confirmation. It still requires the authoritative workspace capability, exact
+reviewed Profile and reset scope, matching current Git identity and
 tracked-clean remote topology, and the OS-held reset lease.
 
 Failures remain distinct: stable protection is `PROFILE_RESET_PROTECTED`,
@@ -50,8 +49,8 @@ continuous Plan execution without adding a real safety boundary.
 - `rg -n 'AGENT_CONTROL|agentControl' AGENTS.md docs tooling` returns
   no reset-policy metadata readers.
 - Mixed-case `stable` Profile fixtures reject a reset capability.
-- Non-stable Profile fixtures accept reset only with matching binding,
-  declaration, scope, and lease.
+- Non-stable Profile fixtures accept reset only with matching workspace
+  binding, exact scope, current Git identity, and lease.
 - Machine Dev status projects `resetPolicy`, never a stored control mode.
 
 ## Crosswalks
