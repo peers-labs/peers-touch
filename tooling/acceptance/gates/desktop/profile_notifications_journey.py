@@ -93,9 +93,20 @@ def native_click(
           width: window.innerWidth, height: window.innerHeight, ratio: window.devicePixelRatio};""",
         element,
     )
+    window = session.driver.get_window_rect()
+    session.execute_script(
+        """window.__PT_POINTER_PROBE__ = {events: [], listener: event => {
+          window.__PT_POINTER_PROBE__.events.push({
+            type: event.type, x: event.clientX, y: event.clientY, trusted: event.isTrusted,
+            target: event.target.outerHTML.slice(0, 700)
+          });
+        }};
+        for (const type of ['pointerdown', 'pointerup', 'click']) {
+          document.addEventListener(type, window.__PT_POINTER_PROBE__.listener, true);
+        }""",
+    )
     origin = binding.native_adapter.content_origin(pid)
     if origin is None:
-        window = session.driver.get_window_rect()
         ratio = geometry["ratio"]
         origin = (
             window["x"] / ratio + max(0, (window["width"] / ratio - geometry["width"]) / 2),
@@ -105,7 +116,8 @@ def native_click(
     binding.native_adapter.post_mouse_to_process(
         pid, (MouseAction.LEFT_DOWN, MouseAction.LEFT_UP), point,
     )
-    return {"processId": pid, "selector": selector, "point": list(point)}
+    return {"processId": pid, "selector": selector, "point": list(point),
+            "geometry": geometry, "window": window}
 
 
 def select_native_image(
@@ -455,9 +467,19 @@ def run_notifications_journey(
             result["nativeInput"] = native_click(
                 receiver, binding, bell_selector, (receiver, sender),
             )
-            wait(receiver, lambda: receiver.find_element(bell_selector).get_attribute(
-                "aria-expanded",
-            ) == "true", "notification preview opens after Native click")
+            try:
+                wait(receiver, lambda: receiver.find_element(bell_selector).get_attribute(
+                    "aria-expanded",
+                ) == "true", "notification preview opens after Native click")
+            finally:
+                result["nativeInput"]["events"] = receiver.execute_script(
+                    """const probe = window.__PT_POINTER_PROBE__;
+                    for (const type of ['pointerdown', 'pointerup', 'click']) {
+                      document.removeEventListener(type, probe.listener, true);
+                    }
+                    delete window.__PT_POINTER_PROBE__;
+                    return probe.events;""",
+                )
             row = receiver.find_element(f'[data-shell-notification="{item["id"]}"]', 30)
             if f"{marker}-{index}" not in row.text:
                 raise GateError("receiver notification body differs from the production command")
