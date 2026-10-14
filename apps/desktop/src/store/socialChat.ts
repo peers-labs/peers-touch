@@ -76,7 +76,7 @@ import {
   normalizeConversations,
   type FriendRequestData,
 } from './socialNormalizers';
-import { currentAuthenticatedActorPtid } from './session';
+import { currentAuthenticatedActorPtid, useSessionStore } from './session';
 import {
   accountProfileFromFederationResolve,
   remoteProfileHandle,
@@ -1845,10 +1845,12 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   loadCurrentUserProfile: async () => {
     const actorPtid = currentAuthenticatedActorPtid();
+    const sessionEpoch = useSessionStore.getState().sessionEpoch;
     if (!actorPtid) return;
     try {
       const profile = await api.actorGetMyProfile();
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
+      if (currentAuthenticatedActorPtid() !== actorPtid
+        || useSessionStore.getState().sessionEpoch !== sessionEpoch) return;
       const profilePtid = profile?.actorPtid?.trim() || null;
       const persistedConversationLocalState =
         loadConversationLocalState(profilePtid);
@@ -1863,7 +1865,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         ),
       }));
     } catch (error) {
-      if (currentAuthenticatedActorPtid() !== actorPtid) return;
+      if (currentAuthenticatedActorPtid() !== actorPtid
+        || useSessionStore.getState().sessionEpoch !== sessionEpoch) return;
       if (isUnauthorizedError(error)) return;
       const message = error instanceof Error ? error.message : String(error);
       set((state) => ({ loadError: state.loadError || message }));

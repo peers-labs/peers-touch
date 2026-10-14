@@ -7896,6 +7896,11 @@ export const api = {
       'notification_preferences',
     ),
 
+  notificationPushDevices: () =>
+    invokeRustDataFromStatus<void, { registrations: NotificationPushDeviceData[] }>(
+      'notification_push_devices',
+    ),
+
   notificationPreferencesUpdate: async (input: NotificationPreferencesUpdateInput) => {
     const categories = new Set<number>();
     const invalidBatch = input.updates.length === 0 || input.updates.some((update) => {
@@ -8145,8 +8150,8 @@ export interface NotificationData {
   body: string;
   metadata: Record<string, string>;
   groupKey: string;
-  createdAt: string;
-  readAt?: string;
+  createdAt: string | null;
+  readAt?: string | null;
 }
 
 export interface NotificationListInput {
@@ -8174,12 +8179,24 @@ export interface NotificationPreferenceData {
   enabled: boolean;
   pushEnabled: boolean;
   soundEnabled: boolean;
-  updatedAt: string;
+  updatedAt: string | null;
 }
 
 export interface NotificationPreferencesSnapshotData {
   preferences: NotificationPreferenceData[];
   notificationPreferencesRevision: number;
+}
+
+/** Read-only Station projection; native provider bindings never enter the renderer. */
+export interface NotificationPushDeviceData {
+  registrationId: string;
+  actorPtid: string | null;
+  deviceId: string | null;
+  channel: number;
+  environment: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+  lastSuccessAt: string | null;
 }
 
 export interface NotificationPreferencePatchInput {

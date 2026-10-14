@@ -135,19 +135,21 @@ function Select({
 }
 
 /** Canonical switch — real button, switch role, keyboard operable. */
-function Toggle({ on, onToggle, label }: { on: boolean; onToggle: () => void; label?: string }) {
+function Toggle({ on, onToggle, label, disabled = false }: { on: boolean; onToggle: () => void; label?: string; disabled?: boolean }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={on}
       aria-label={label}
+      disabled={disabled}
       onClick={(e) => { e.stopPropagation(); onToggle(); }}
       style={{
         width: 40, height: 22, borderRadius: 11, padding: 0,
         border: 'none',
         backgroundColor: on ? T.primary : '#d9d9d9',
-        position: 'relative', cursor: 'pointer', flexShrink: 0,
+        position: 'relative', cursor: disabled ? 'not-allowed' : 'pointer', flexShrink: 0,
+        opacity: disabled ? 0.5 : 1,
         transition: 'background-color 0.15s ease',
       }}
     >
@@ -412,30 +414,12 @@ function SettingsItemCard({ children, onClick, active }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ── General · Account ────────────────────────────────────────────────────────
-const COVER_KEY = 'pt.profile.cover';
-const COVER_HISTORY_KEY = 'pt.profile.cover.history';
 const DEFAULT_COVER = 'linear-gradient(120deg,#6b5bd6 0%,#8b7df0 55%,#b794f6 100%)';
-const COVER_HISTORY_LIMIT = 8;
 const ACCOUNT_IDENTITY = {
   ptid: 'ptid:01HQX7K3M9VDGF2N8PWJRST6YZ',
   station: 'alpha.peers.social',
 } as const;
 const INITIAL_BLOCKED_USERS = ['Spam Bot', 'Old Contact', 'Noise Account'];
-
-function readCover(): string {
-  if (typeof window === 'undefined') return DEFAULT_COVER;
-  return window.localStorage.getItem(COVER_KEY) || DEFAULT_COVER;
-}
-function readCoverHistory(): string[] {
-  if (typeof window === 'undefined') return [DEFAULT_COVER];
-  try {
-    const raw = JSON.parse(window.localStorage.getItem(COVER_HISTORY_KEY) || '[]') as string[];
-    const list = raw.filter(Boolean);
-    return list.includes(DEFAULT_COVER) ? list : [DEFAULT_COVER, ...list];
-  } catch {
-    return [DEFAULT_COVER];
-  }
-}
 
 function CopyableIdentityRow({ label, value, copyLabel = `Copy ${label}` }: {
   label: string; value: string; copyLabel?: string;
@@ -495,37 +479,13 @@ function CopyableIdentityRow({ label, value, copyLabel = `Copy ${label}` }: {
 function AccountSection({ federations }: { federations: JoinedFederation[] }) {
   const [displayName, setDisplayName] = useState('Alice Chen');
   const [bio, setBio] = useState('Building decentralized social networks. Open-source advocate.');
-  const [region, setRegion] = useState('asia-east');
+  const [region, setRegion] = useState('Shanghai');
   const [timezone, setTimezone] = useState('Asia/Shanghai');
-  const [cover, setCover] = useState<string>(readCover);
-  const [coverHistory, setCoverHistory] = useState<string[]>(readCoverHistory);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [coverName, setCoverName] = useState('');
+  const [tags, setTags] = useState('open-source, design');
+  const [links, setLinks] = useState([{ label: 'Website', url: 'https://peers.social' }]);
+  const [savedProfile, setSavedProfile] = useState({ displayName, bio, region, timezone, tags, links });
   const [blockedOpen, setBlockedOpen] = useState(false);
   const [blockedUsers, setBlockedUsers] = useState(INITIAL_BLOCKED_USERS);
-
-  const applyCover = (value: string, name = '') => {
-    window.localStorage.setItem(COVER_KEY, value === DEFAULT_COVER ? '' : value);
-    if (value === DEFAULT_COVER) window.localStorage.removeItem(COVER_KEY);
-    setCover(value);
-    setCoverName(name);
-    setCoverHistory((prev) => {
-      const next = [value, ...prev.filter((v) => v !== value)].slice(0, COVER_HISTORY_LIMIT);
-      window.localStorage.setItem(COVER_HISTORY_KEY, JSON.stringify(next));
-      return next;
-    });
-  };
-
-  const pickCover = (file?: File) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => applyCover(String(reader.result), file.name);
-    reader.readAsDataURL(file);
-  };
-
-  const coverBackground = cover.startsWith('linear-gradient')
-    ? cover
-    : `center / cover url("${cover}")`;
 
   return (
     <SettingsContainer>
@@ -541,84 +501,23 @@ function AccountSection({ federations }: { federations: JoinedFederation[] }) {
         <div style={{ position: 'relative' }}>
           <div
             data-profile-cover-preview
-            style={{ height: 124, background: coverBackground }}
+            style={{ height: 124, background: DEFAULT_COVER }}
           />
-          {/* Change: upload new or pick a past background */}
           <div style={{ position: 'absolute', right: 10, bottom: 10 }}>
             <button
               type="button"
               data-profile-cover-change
-              aria-haspopup="menu"
-              aria-expanded={historyOpen}
-              onClick={() => setHistoryOpen((v) => !v)}
+              disabled
+              title="Native image picker and OSS upload are available in Desktop."
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 5,
                 height: 28, padding: '0 10px', borderRadius: 8,
                 border: 'none', background: 'rgba(255,255,255,0.92)',
-                color: T.text, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                color: T.textSecondary, fontSize: 12, fontWeight: 600, cursor: 'not-allowed',
               }}
             >
-              <ImageIcon size={13} /> Change
-              <ChevronDown size={12} style={{ transform: historyOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+              <ImageIcon size={13} /> Change cover in Desktop
             </button>
-            {historyOpen ? (
-              <>
-                <div onClick={() => setHistoryOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-                <div
-                  role="menu"
-                  data-profile-cover-menu
-                  style={{
-                    position: 'absolute', right: 0, top: 34, zIndex: 41, width: 248,
-                    background: T.white, border: `1px solid ${T.borderSoft}`, borderRadius: 10,
-                    boxShadow: '0 10px 32px rgba(15,23,42,0.16)', padding: 8,
-                  }}
-                >
-                  <label
-                    role="menuitem"
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
-                      padding: '8px 10px', borderRadius: 8, fontSize: 13, color: T.text,
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = T.surface)}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                  >
-                    <Upload size={14} /> Upload new
-                    <input type="file" accept="image/*" hidden onChange={(e) => {
-                      setHistoryOpen(false);
-                      pickCover(e.target.files?.[0]);
-                      e.currentTarget.value = '';
-                    }} />
-                  </label>
-                  {coverHistory.length > 1 ? (
-                    <div style={{ borderTop: `1px solid ${T.borderSoft}`, marginTop: 6, paddingTop: 6 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px 6px', fontSize: 11, color: T.textTertiary, fontWeight: 600 }}>
-                        <History size={12} /> Recent
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, padding: '0 6px 4px' }}>
-                        {coverHistory.map((value, i) => {
-                          const active = value === cover;
-                          return (
-                            <button
-                              key={i}
-                              type="button"
-                              role="menuitemradio"
-                              aria-checked={active}
-                              aria-label={`Use background ${i + 1}`}
-                              onClick={() => { applyCover(value, value.startsWith('linear-gradient') ? '' : coverName); setHistoryOpen(false); }}
-                              style={{
-                                height: 40, borderRadius: 8, padding: 0, cursor: 'pointer',
-                                background: value.startsWith('linear-gradient') ? value : `center / cover url("${value}")`,
-                                border: active ? `2px solid ${T.primary}` : `1px solid ${T.borderSoft}`,
-                              }}
-                            />
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </>
-            ) : null}
           </div>
         </div>
 
@@ -635,11 +534,11 @@ function AccountSection({ federations }: { federations: JoinedFederation[] }) {
               border: `4px solid ${T.white}`,
               boxShadow: '0 4px 14px rgba(15,23,42,0.16)',
             }}>
-              AC
+              {savedProfile.displayName.split(' ').map((part) => part[0]).join('').slice(0, 2)}
             </div>
           </div>
           <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 19, fontWeight: 700, color: T.text, letterSpacing: '-0.01em' }}>Alice Chen</div>
+            <div style={{ fontSize: 19, fontWeight: 700, color: T.text, letterSpacing: '-0.01em' }}>{savedProfile.displayName}</div>
             <div style={{ fontSize: 13.5, color: T.textSecondary, marginTop: 2 }}>@alice</div>
             <details data-profile-technical style={{ marginTop: 6 }}>
               <summary style={{ fontSize: 12, color: T.primary, cursor: 'pointer' }}>
@@ -650,6 +549,7 @@ function AccountSection({ federations }: { federations: JoinedFederation[] }) {
                 display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0,
               }}>
                 <CopyableIdentityRow label="PTID" value={ACCOUNT_IDENTITY.ptid} />
+                <CopyableIdentityRow label="Federated handle" value={`alice@${ACCOUNT_IDENTITY.station}`} />
                 <CopyableIdentityRow label="Home Station" value={ACCOUNT_IDENTITY.station} />
                 <div>
                   <dt style={{ fontSize: 11, color: T.textTertiary }}>Federations</dt>
@@ -672,20 +572,16 @@ function AccountSection({ federations }: { federations: JoinedFederation[] }) {
             </details>
           </div>
         </div>
-        {coverName ? (
-          <div style={{ padding: '0 18px 14px', fontSize: 12, color: T.textTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {coverName}
-          </div>
-        ) : null}
       </section>
 
       <SettingsSection icon={Pencil} title="Public profile" subtitle="Shown on your profile and in mutual conversations.">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <Field label="Display name">
-            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} style={inputStyle} />
+            <input aria-label="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} style={inputStyle} />
           </Field>
           <Field label="Bio" hint={`${bio.length}/280`}>
             <textarea
+              aria-label="Bio"
               value={bio}
               onChange={(e) => setBio(e.target.value.slice(0, 280))}
               rows={3}
@@ -694,21 +590,36 @@ function AccountSection({ federations }: { federations: JoinedFederation[] }) {
           </Field>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="Region">
-              <Select value={region} ariaLabel="Region" width="100%" options={[
-                { id: 'asia-east', label: 'Asia East' },
-                { id: 'asia-southeast', label: 'Asia Southeast' },
-                { id: 'us-west', label: 'US West' },
-                { id: 'eu-west', label: 'EU West' },
-              ]} onChange={setRegion} />
+              <input aria-label="Region" value={region} onChange={(event) => setRegion(event.target.value)} style={inputStyle} />
             </Field>
             <Field label="Timezone">
-              <Select value={timezone} ariaLabel="Timezone" width="100%" options={[
-                { id: 'Asia/Shanghai', label: 'Asia/Shanghai (UTC+8)' },
-                { id: 'Asia/Tokyo', label: 'Asia/Tokyo (UTC+9)' },
-                { id: 'America/Los_Angeles', label: 'America/Los_Angeles (UTC-7)' },
-                { id: 'Europe/London', label: 'Europe/London (UTC+1)' },
-              ]} onChange={setTimezone} />
+              <input aria-label="Timezone" list="profile-timezones" value={timezone}
+                onChange={(event) => setTimezone(event.target.value)} style={inputStyle} />
+              <datalist id="profile-timezones">{['UTC', 'Asia/Shanghai', 'Europe/London', 'America/Los_Angeles'].map((value) => <option key={value} value={value} />)}</datalist>
             </Field>
+          </div>
+          <Field label="Tags" hint="Separate tags with commas">
+            <input aria-label="Tags" value={tags} onChange={(event) => setTags(event.target.value)} style={inputStyle} />
+          </Field>
+          <Field label="Links">
+            {links.map((link, index) => <div key={index} data-profile-link-row style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <input aria-label={`Link ${index + 1} label`} value={link.label} style={{ ...inputStyle, flex: 1, width: 'auto', minWidth: 0 }}
+                onChange={(event) => setLinks((current) => current.map((row, at) => at === index ? { ...row, label: event.target.value } : row))} />
+              <input aria-label={`Link ${index + 1} URL`} value={link.url} style={{ ...inputStyle, flex: 1, width: 'auto', minWidth: 0 }}
+                onChange={(event) => setLinks((current) => current.map((row, at) => at === index ? { ...row, url: event.target.value } : row))} />
+              <div style={{ flexShrink: 0 }}>
+                <GhostBtn label="Remove" onClick={() => setLinks((current) => current.filter((_, at) => at !== index))} />
+              </div>
+            </div>)}
+            <GhostBtn label="Add link" icon={Plus} onClick={() => setLinks((current) => [...current, { label: '', url: '' }])} />
+          </Field>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <GhostBtn label="Discard changes" onClick={() => {
+              setDisplayName(savedProfile.displayName); setBio(savedProfile.bio);
+              setRegion(savedProfile.region); setTimezone(savedProfile.timezone);
+              setTags(savedProfile.tags); setLinks(savedProfile.links);
+            }} />
+            <PrimaryBtn label="Save profile" onClick={() => setSavedProfile({ displayName, bio, region, timezone, tags, links })} />
           </div>
         </div>
       </SettingsSection>
@@ -751,34 +662,40 @@ function AccountSection({ federations }: { federations: JoinedFederation[] }) {
 
 // ── General · Notifications ──────────────────────────────────────────────────
 function NotificationsSettingsSection() {
-  const [prefs, setPrefs] = useState({
-    mentions: true, invites: true, friendRequests: true, reactions: false, network: true,
-    inApp: true, sound: false,
+  const [prefs, setPrefs] = useState<Record<string, { enabled: boolean; push: boolean; sound: boolean }>>({
+    social: { enabled: true, push: true, sound: true },
+    chat: { enabled: true, push: true, sound: true },
+    system: { enabled: true, push: true, sound: true },
+    task: { enabled: true, push: true, sound: true },
   });
-  const flip = (k: keyof typeof prefs) => setPrefs((p) => ({ ...p, [k]: !p[k] }));
-  const rows: { k: keyof typeof prefs; label: string; desc: string }[] = [
-    { k: 'mentions', label: 'Mentions & replies', desc: 'When someone replies to you or uses your handle.' },
-    { k: 'invites', label: 'Group invites', desc: 'Invitations to join a group or channel.' },
-    { k: 'friendRequests', label: 'Friend requests', desc: 'New people asking to connect with you.' },
-    { k: 'reactions', label: 'Reactions', desc: 'Emoji reactions on your messages.' },
-    { k: 'network', label: 'Network events', desc: 'Station connectivity and federation changes.' },
+  const rows = [
+    { key: 'social', label: 'Social', desc: 'Activity on your posts and connections.' },
+    { key: 'chat', label: 'Chat', desc: 'Messages, mentions and invitations.' },
+    { key: 'system', label: 'System', desc: 'Security and service notices.' },
+    { key: 'task', label: 'Task', desc: 'Assignments, completion and reminders.' },
   ];
+  const flip = (category: string, field: 'enabled' | 'push' | 'sound') => (
+    setPrefs((current) => ({
+      ...current, [category]: { ...current[category], [field]: !current[category][field] },
+    }))
+  );
   return (
     <SettingsContainer>
-      <SettingsSection icon={Bell} title="What to notify me about" subtitle="Choose which events reach your notification center.">
+      <SettingsSection icon={Bell} title="Notifications" subtitle="Choose how each category reaches you.">
         {rows.map((r) => (
-          <SettingsRow key={r.k} label={r.label} desc={r.desc}>
-            <Toggle label={r.label} on={prefs[r.k]} onToggle={() => flip(r.k)} />
-          </SettingsRow>
+          <div key={r.key} data-notification-category={r.key} style={{ paddingBlock: 14, borderBottom: `1px solid ${T.borderSoft}` }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>{r.label}</div>
+            <SettingsRow label="Enabled" desc={r.desc}>
+              <Toggle label={`${r.label} enabled`} on={prefs[r.key].enabled} onToggle={() => flip(r.key, 'enabled')} />
+            </SettingsRow>
+            <SettingsRow label="Push notifications" desc="Deliver alerts to your registered mobile devices.">
+              <Toggle label={`${r.label} push`} disabled={!prefs[r.key].enabled} on={prefs[r.key].push} onToggle={() => flip(r.key, 'push')} />
+            </SettingsRow>
+            <SettingsRow label="Sound" desc="Play a short sound for this category.">
+              <Toggle label={`${r.label} sound`} disabled={!prefs[r.key].enabled} on={prefs[r.key].sound} onToggle={() => flip(r.key, 'sound')} />
+            </SettingsRow>
+          </div>
         ))}
-      </SettingsSection>
-      <SettingsSection icon={Bell} title="Delivery" subtitle="How notifications are delivered on this device.">
-        <SettingsRow label="In-app notifications" desc="Show the bell badge and the notification panel.">
-          <Toggle label="In-app notifications" on={prefs.inApp} onToggle={() => flip('inApp')} />
-        </SettingsRow>
-        <SettingsRow label="Sound" desc="Play a short sound for new notifications.">
-          <Toggle label="Sound" on={prefs.sound} onToggle={() => flip('sound')} />
-        </SettingsRow>
       </SettingsSection>
     </SettingsContainer>
   );

@@ -30,6 +30,7 @@ type FederatedFriendRequestService struct {
 	localStationID string
 	clock          delivery.Clock
 	actorKeys      infrastructure.FriendRequestActorKeyResolver
+	attention      *FriendRequestAttentionPublisher
 }
 
 // SubmitFriendRequestCommandResult reports local durable acceptance, not remote success.
@@ -69,6 +70,13 @@ func (s *FederatedFriendRequestService) WithActorDeviceKeyResolver(
 	resolver infrastructure.FriendRequestActorKeyResolver,
 ) *FederatedFriendRequestService {
 	s.actorKeys = resolver
+	return s
+}
+
+func (s *FederatedFriendRequestService) WithAttentionPublisher(
+	publisher *FriendRequestAttentionPublisher,
+) *FederatedFriendRequestService {
+	s.attention = publisher
 	return s
 }
 
@@ -627,6 +635,7 @@ func (s *FederatedFriendRequestService) ReceiveFriendRequestCommand(
 	if _, err := transaction.Outbox().Enqueue(ctx, resultFrame, now); err != nil {
 		return delivery.Result{}, err
 	}
+	s.attention.afterCommit(ctx, transaction, next, s.localStationID)
 	return delivery.AcceptedResult(), nil
 }
 
@@ -676,6 +685,7 @@ func (s *FederatedFriendRequestService) ReceiveFriendRequestEvent(
 			return delivery.Result{}, err
 		}
 	}
+	s.attention.afterCommit(ctx, transaction, next, s.localStationID)
 	return delivery.AcceptedResult(), nil
 }
 
@@ -797,6 +807,7 @@ func (s *FederatedFriendRequestService) ReceiveFriendRequestResult(
 	if duplicate {
 		return delivery.DuplicateResult(), nil
 	}
+	s.attention.afterCommit(ctx, transaction, next, s.localStationID)
 	return delivery.AcceptedResult(), nil
 }
 

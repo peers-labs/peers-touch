@@ -740,5 +740,15 @@
   "provider.editModel.displayNamePlaceholder": "Display name",
   "provider.editModel.maxContext": "Maximum Context Window",
   "provider.editModel.enabled": "Enabled",
-  "provider.editModel.saveChanges": "Save Changes"
+  "provider.editModel.saveChanges": "Save Changes",
+  "provider.account.profile.save": "Save profile",
+  "provider.account.profile.discard": "Discard changes",
+  "provider.account.profile.reload": "Use latest profile",
+  "provider.account.profile.conflict": "Your profile changed elsewhere. Your edits are preserved; load the latest profile before editing again.",
+  "provider.account.profile.identityMismatch": "The profile does not belong to the active account.",
+  "provider.account.profile.sessionUnavailable": "Sign in again before updating your profile.",
+  "provider.account.profile.savePending": "A profile update is already in progress.",
+  "provider.account.identity.handle": "Federated handle",
+  "provider.account.identity.homeStation": "Home Station",
+  "provider.account.identity.changeAvatar": "Change avatar"
 }

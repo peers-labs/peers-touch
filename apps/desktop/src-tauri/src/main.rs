@@ -1171,6 +1171,7 @@ fn main() {
             notification::notification_delete,
             notification::notification_preferences,
             notification::notification_preferences_update,
+            notification::notification_push_devices,
             host_events::desktop_native_event_emit,
             #[cfg(feature = "acceptance-webdriver")]
             station::acceptance_station_route_probe,

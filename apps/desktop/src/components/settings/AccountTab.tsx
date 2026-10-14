@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Tooltip, toast } from '@lobehub/ui';
 import {
   Empty,
+  Alert,
   Input,
   AutoComplete,
   Select,
@@ -27,10 +28,9 @@ import {
   api,
   type AccountProfile,
   type AccountProfileLink,
-  type ProfileUpdateResult,
 } from '../../services/desktop_api';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
-import { identityRuntime } from '../../kernel/identityRuntime';
+import { useProfileStore } from '../../store/profile';
 import { useAccountIdentityStore } from '../../store/accountIdentity';
 import { useSessionStore } from '../../store/session';
 import { useTranslation } from 'react-i18next';
@@ -128,17 +128,6 @@ function normalizeProfile(profile: AccountProfile): AccountProfile {
   };
 }
 
-function applyProfileMutationRevision(
-  current: AccountProfile | null,
-  result: ProfileUpdateResult,
-): AccountProfile | null {
-  if (!current) return current;
-  return {
-    ...current,
-    profile_revision: result.profile.profile_revision,
-  };
-}
-
 function createEmptyLink(): AccountProfileLink {
   return { label: '', url: '' };
 }
@@ -151,11 +140,7 @@ function copyToClipboard(text: string, t: (key: string, opts?: Record<string, un
 }
 
 async function pickImageFile(): Promise<string | null> {
-  try {
-    return await api.pickImageFile();
-  } catch {
-    return null;
-  }
+  return api.pickImageFile();
 }
 
 function EditableAvatar({
@@ -163,18 +148,25 @@ function EditableAvatar({
   fallbackText,
   size,
   uploading,
+  disabled,
+  label,
   onUpload,
 }: {
   src?: string;
   fallbackText: string;
   size: number;
   uploading: boolean;
+  disabled: boolean;
+  label: string;
   onUpload: () => void;
 }) {
   const { token } = theme.useToken();
 
   return (
-    <div
+    <button
+      type="button"
+      disabled={uploading || disabled}
+      aria-label={label}
       data-pt-account-avatar-url={src || ''}
       onClick={() => !uploading && onUpload()}
       style={{
@@ -183,6 +175,9 @@ function EditableAvatar({
         flexShrink: 0,
         width: size,
         height: size,
+        border: 0,
+        padding: 0,
+        background: 'transparent',
       }}
     >
       <UserSquareAvatar
@@ -237,25 +232,30 @@ function EditableAvatar({
       >
         {!uploading && <Pencil size={20} style={{ color: '#fff' }} />}
       </div>
-    </div>
+    </button>
   );
 }
 
 function EditableHeaderBanner({
   src,
   uploading,
+  disabled,
   onUpload,
   t,
 }: {
   src?: string;
   uploading: boolean;
+  disabled: boolean;
   onUpload: () => void;
   t: (key: string) => string;
 }) {
   const { token } = theme.useToken();
 
   return (
-    <div
+    <button
+      type="button"
+      disabled={uploading || disabled}
+      aria-label={t('provider.account.identity.changeHeader')}
       onClick={() => !uploading && onUpload()}
       style={{
         position: 'relative',
@@ -268,6 +268,7 @@ function EditableHeaderBanner({
           ? `url(${src}) center/cover no-repeat`
           : `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, ${token.colorBgLayout} 100%)`,
         border: `1px solid ${token.colorBorderSecondary}`,
+        padding: 0,
       }}
     >
       <div
@@ -300,7 +301,7 @@ function EditableHeaderBanner({
           </>
         )}
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -383,9 +384,27 @@ function StatChip({ label, value }: { label: string; value: number }) {
   );
 }
 
-const AUTO_SAVE_DELAY = 800;
-
 export function AccountTab() {
+  const { t } = useTranslation('provider');
+  const profile = useProfileStore((state) => state.profile);
+  const loading = useProfileStore((state) => state.loading);
+  const error = useProfileStore((state) => state.error);
+
+  if (!profile) {
+    return (
+      <Flexbox align="center" gap={12} style={{ padding: 64 }}>
+        {loading ? <Spin /> : <Empty description={t('provider.account.noProfile')} />}
+        {error && <Alert type="warning" message={t(error)} showIcon />}
+        <Button onClick={() => useProfileStore.getState().refresh()} disabled={loading}>
+          {t('provider.account.profile.reload')}
+        </Button>
+      </Flexbox>
+    );
+  }
+  return <AccountProfileEditor key={profile.peers_touch.network_id} canonicalProfile={profile} />;
+}
+
+function AccountProfileEditor({ canonicalProfile }: { canonicalProfile: AccountProfile }) {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const activeAccount = useAccountIdentityStore((state) => (
@@ -394,12 +413,13 @@ export function AccountTab() {
   const sessionLoginProvider = useSessionStore((state) => (
     state.currentUser?.loginProvider ?? state.currentUser?.loginMethod
   ));
-  const [profile, setProfile] = useState<AccountProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [profile, setProfile] = useState<AccountProfile>(() => normalizeProfile(canonicalProfile));
+  const [dirty, setDirty] = useState(false);
+  const [conflict, setConflict] = useState(false);
+  const saving = useProfileStore((state) => state.saving);
+  const error = useProfileStore((state) => state.error);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingHeader, setUploadingHeader] = useState(false);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const timezoneOptions = useMemo(() => buildTimezoneOptions(t), [t]);
   const loginProvider = resolveAccountLoginProvider({
@@ -409,176 +429,126 @@ export function AccountTab() {
   const loginProviderKey = accountLoginProviderLocaleKey(loginProvider);
   const loginProviderLabel = loginProviderKey ? t(loginProviderKey) : loginProvider;
 
-  const syncCurrentProfileIdentity = async (fallbackAvatar?: string) => {
-    await identityRuntime.refreshCurrentProfile(fallbackAvatar);
-  };
-
-  const loadProfile = async (silent = false) => {
-    if (!silent) setLoading(true);
-    try {
-      const next = normalizeProfile(await api.profileGet());
-      setProfile(next);
-
-      if (next.avatar) {
-        syncCurrentProfileIdentity(next.avatar).catch((error) => {
-          log.warn('settings', 'account profile identity sync failed', error);
-        });
-      }
-    } catch (error: any) {
-      if (!silent) toast.error(error?.message || t('provider.account.failedToLoad'));
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadProfile(false);
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
-  }, []);
+    if (!dirty) setProfile(normalizeProfile(canonicalProfile));
+  }, [canonicalProfile, dirty]);
 
-  const autoSave = (nextProfile: AccountProfile) => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(async () => {
-      setSaving(true);
-      try {
-        const result = await api.profileUpdate({
-          display_name: nextProfile.display_name.trim(),
-          note: nextProfile.note.trim(),
-          region: nextProfile.region.trim(),
-          timezone: nextProfile.timezone.trim(),
-          tags: nextProfile.tags.map((tg) => tg.trim()).filter(Boolean),
-          links: nextProfile.links
+  const saveProfile = async () => {
+    if (saving || !dirty || conflict) return;
+    try {
+        const result = await useProfileStore.getState().update({
+          display_name: profile.display_name.trim(),
+          note: profile.note.trim(),
+          region: profile.region.trim(),
+          timezone: profile.timezone.trim(),
+          tags: profile.tags.map((tg) => tg.trim()).filter(Boolean),
+          links: profile.links
             .map((l) => ({ label: l.label.trim(), url: l.url.trim() }))
             .filter((l) => l.label || l.url),
-          observed_revision: nextProfile.profile_revision,
+          observed_revision: profile.profile_revision,
         });
-        setProfile((current) => applyProfileMutationRevision(current, result));
         if (result.outcome === 'PROFILE_UPDATE_OUTCOME_CONFLICT') {
-          toast.error(t('provider.account.failedToUpdate'));
+          setConflict(true);
+          return;
         }
-        // Do not setProfile here — local state is already up-to-date.
-        // Overwriting with the server response causes controlled inputs
-        // to re-render and lose cursor position / focus (the "flicker" bug).
-      } catch (error: any) {
-        toast.error(error?.message || t('provider.account.failedToUpdate'));
-      } finally {
-        setSaving(false);
-      }
-    }, AUTO_SAVE_DELAY);
+        setProfile(normalizeProfile(result.profile));
+        setDirty(false);
+    } catch (failure) {
+      log.warn('settings', 'Account profile save failed', failure);
+      toast.error(t('provider.account.failedToUpdate'));
+    }
   };
 
   const onFieldChange = <K extends keyof AccountProfile>(key: K, value: AccountProfile[K]) => {
     setProfile((current) => {
-      if (!current) return current;
       const next = { ...current, [key]: value };
-      autoSave(next);
       return next;
     });
+    setDirty(true);
   };
 
   const onLinkChange = (index: number, key: keyof AccountProfileLink, value: string) => {
     setProfile((current) => {
-      if (!current) return current;
       const nextLinks = current.links.map((item, i) =>
         i === index ? { ...item, [key]: value } : item,
       );
       const next = { ...current, links: nextLinks };
-      autoSave(next);
       return next;
     });
+    setDirty(true);
   };
 
   const addLink = () => {
-    setProfile((current) =>
-      current ? { ...current, links: [...current.links, createEmptyLink()] } : current,
-    );
+    setProfile((current) => ({
+      ...current, links: [...current.links, createEmptyLink()],
+    }));
+    setDirty(true);
   };
 
   const removeLink = (index: number) => {
     setProfile((current) => {
-      if (!current) return current;
       const next = { ...current, links: current.links.filter((_, i) => i !== index) };
-      autoSave(next);
       return next;
     });
+    setDirty(true);
   };
 
   const handleUploadAvatar = async () => {
-    if (uploadingAvatar) return;
-    const path = await pickImageFile();
-    if (!path) return;
-
-    setUploadingAvatar(true);
+    if (saving || dirty || uploadingAvatar) return;
     try {
-      const result = await api.profileUploadAvatarOss({ file_path: path });
+      const path = await pickImageFile();
+      if (!path) return;
+      setUploadingAvatar(true);
+      const result = await useProfileStore.getState().upload('avatar', path);
       if (result.outcome === 'PROFILE_UPDATE_OUTCOME_CONFLICT') {
-        setProfile((current) => applyProfileMutationRevision(current, result));
+        setConflict(true);
         toast.error(t('provider.account.avatarHeader.failedToUploadAvatar'));
         return;
       }
       const next = normalizeProfile(result.profile);
       setProfile(next);
 
-      if (next.avatar) {
-        await syncCurrentProfileIdentity(next.avatar);
-      }
-
       toast.success(t('provider.account.avatarHeader.avatarUpdated'));
-    } catch (error: any) {
-      toast.error(error?.message || t('provider.account.avatarHeader.failedToUploadAvatar'));
+    } catch (failure) {
+      log.warn('settings', 'Account avatar upload failed', failure);
+      toast.error(t('provider.account.avatarHeader.failedToUploadAvatar'));
     } finally {
       setUploadingAvatar(false);
     }
   };
 
   const handleUploadHeader = async () => {
-    if (uploadingHeader) return;
-    const path = await pickImageFile();
-    if (!path) return;
-
-    setUploadingHeader(true);
+    if (saving || dirty || uploadingHeader) return;
     try {
-      const result = await api.profileUploadHeaderOss({ file_path: path });
+      const path = await pickImageFile();
+      if (!path) return;
+      setUploadingHeader(true);
+      const result = await useProfileStore.getState().upload('header', path);
       if (result.outcome === 'PROFILE_UPDATE_OUTCOME_CONFLICT') {
-        setProfile((current) => applyProfileMutationRevision(current, result));
+        setConflict(true);
         toast.error(t('provider.account.avatarHeader.failedToUploadHeader'));
         return;
       }
       const next = normalizeProfile(result.profile);
       setProfile(next);
       toast.success(t('provider.account.avatarHeader.headerUpdated'));
-    } catch (error: any) {
-      toast.error(error?.message || t('provider.account.avatarHeader.failedToUploadHeader'));
+    } catch (failure) {
+      log.warn('settings', 'Account cover upload failed', failure);
+      toast.error(t('provider.account.avatarHeader.failedToUploadHeader'));
     } finally {
       setUploadingHeader(false);
     }
   };
 
-  if (loading) {
-    return (
-      <Flexbox align="center" justify="center" style={{ padding: 64 }}>
-        <Spin />
-      </Flexbox>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <Flexbox align="center" justify="center" style={{ padding: 64 }}>
-        <Empty description={t('provider.account.noProfile')} />
-      </Flexbox>
-    );
-  }
-
   return (
     <SettingsContainer>
-      {saving && (
-        <Text type="secondary" style={{ fontSize: 11, textAlign: 'right' }}>
-          {t('provider.account.autoSaving', { defaultValue: 'Saving...' })}
-        </Text>
-      )}
+      {(error || conflict) && <Alert type="warning" showIcon
+        message={t(conflict ? 'provider.account.profile.conflict' : error || '')}
+        action={<Button size="small" onClick={() => {
+          setProfile(normalizeProfile(canonicalProfile));
+          setDirty(false);
+          setConflict(false);
+        }}>{t('provider.account.profile.reload')}</Button>} />}
       {/* ── Section 1: Identity Overview ── */}
       <SettingsSection
         title={t('provider.account.identity.title')}
@@ -588,6 +558,7 @@ export function AccountTab() {
         <EditableHeaderBanner
           src={profile.header || undefined}
           uploading={uploadingHeader}
+          disabled={saving || dirty}
           onUpload={handleUploadHeader}
           t={t}
         />
@@ -599,6 +570,8 @@ export function AccountTab() {
               fallbackText={profile.display_name || profile.username}
               size={80}
               uploading={uploadingAvatar}
+              disabled={saving || dirty}
+              label={t('provider.account.identity.changeAvatar')}
               onUpload={handleUploadAvatar}
             />
           </div>
@@ -644,9 +617,13 @@ export function AccountTab() {
             copiable
             t={t}
           />
+          <IdentityField identityKey="handle" label={t('provider.account.identity.handle')}
+            value={canonicalProfile.federated_handle || canonicalProfile.acct} copiable t={t} />
+          <IdentityField identityKey="home-station" label={t('provider.account.identity.homeStation')}
+            value={canonicalProfile.home_station_domain} copiable t={t} />
         </Flexbox>
       </SettingsSection>
-      {/* ── Section 2: Public Profile (editable, auto-save) ── */}
+      <fieldset disabled={saving || conflict} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <SettingsSection
         title={t('provider.account.profile.title')}
         subtitle={t('provider.account.profile.subtitle')}
@@ -805,6 +782,16 @@ export function AccountTab() {
           ))}
         </Flexbox>
       </SettingsSection>
+      </fieldset>
+      <Flexbox horizontal justify="flex-end" gap={8}>
+        <Button disabled={!dirty || saving} onClick={() => {
+          setProfile(normalizeProfile(canonicalProfile));
+          setDirty(false);
+          setConflict(false);
+        }}>{t('provider.account.profile.discard')}</Button>
+        <Button type="primary" loading={saving} disabled={!dirty || conflict}
+          onClick={saveProfile}>{t('provider.account.profile.save')}</Button>
+      </Flexbox>
 
     </SettingsContainer>
   );

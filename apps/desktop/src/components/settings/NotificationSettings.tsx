@@ -16,6 +16,7 @@ import type {
   NotificationPreferencePatchInput,
 } from '../../services/desktop_api';
 import { useActiveSettingsSlice } from './useActiveSettingsStores';
+import { NotificationPushDevices } from './NotificationPushDevices';
 import {
   SettingsContainer,
   SettingsRow,
@@ -167,6 +168,7 @@ export function NotificationSettings() {
                         <Switch
                           checked={preference.enabled}
                           loading={saving}
+                          disabled={savingCategory !== null}
                           onChange={(checked) => save(preference, 'enabled', checked)}
                           aria-label={t('settings.notifications.enabled')}
                         />
@@ -178,7 +180,7 @@ export function NotificationSettings() {
                         <Switch
                           checked={preference.pushEnabled}
                           loading={saving}
-                          disabled={!preference.enabled}
+                          disabled={!preference.enabled || savingCategory !== null}
                           onChange={(checked) => save(preference, 'pushEnabled', checked)}
                           aria-label={t('settings.notifications.push')}
                         />
@@ -190,7 +192,7 @@ export function NotificationSettings() {
                         <Switch
                           checked={preference.soundEnabled}
                           loading={saving}
-                          disabled={!preference.enabled}
+                          disabled={!preference.enabled || savingCategory !== null}
                           onChange={(checked) => save(preference, 'soundEnabled', checked)}
                           aria-label={t('settings.notifications.sound')}
                         />
@@ -207,6 +209,7 @@ export function NotificationSettings() {
           </Flexbox>
         )}
       </SettingsSection>
+      <NotificationPushDevices />
     </SettingsContainer>
   );
 }

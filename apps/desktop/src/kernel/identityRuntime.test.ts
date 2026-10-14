@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => {
   const session = {
     authenticated: true,
+    sessionEpoch: 1,
     currentUser: {
       actorPtid: 'ptid:person:old',
       name: 'Old',
@@ -26,6 +27,8 @@ const mocks = vi.hoisted(() => {
     stationSetActive: vi.fn(),
     accountListRestorable: vi.fn(),
     accountLoad: vi.fn(),
+    syncUserProfile: vi.fn(),
+    updateProfile: vi.fn(),
     accessStart: vi.fn(),
     accessSubmitLogin: vi.fn(),
     accessSubmitGeneric: vi.fn(),
@@ -85,7 +88,7 @@ vi.mock('../store/session', () => ({
       loginWithPassword: mocks.loginWithPassword,
       loginWithOAuth: mocks.loginWithOAuth,
       restoreSession: mocks.restoreSession,
-      updateProfile: vi.fn(),
+      updateProfile: mocks.updateProfile,
       logout: mocks.logout,
       reset: mocks.resetSession,
     }),
@@ -145,7 +148,7 @@ vi.mock('../services/desktop_api', () => ({
     stationList: mocks.stationList,
     stationRemove: mocks.stationRemove,
     stationSetActive: mocks.stationSetActive,
-    syncUserProfile: vi.fn(async () => ({ name: 'New', email: '', avatar_url: '' })),
+    syncUserProfile: mocks.syncUserProfile,
     accountListRestorable: mocks.accountListRestorable,
     stationBindingComplete: mocks.stationBindingComplete,
   },
@@ -195,6 +198,8 @@ describe('identityRuntime account switch ordering', () => {
     vi.clearAllMocks();
     mocks.order.length = 0;
     mocks.session.authenticated = true;
+    mocks.session.sessionEpoch = 1;
+    mocks.syncUserProfile.mockResolvedValue({ name: 'New', email: '', avatar_url: '' });
     mocks.session.currentUser = {
       actorPtid: 'ptid:person:old',
       name: 'Old',
@@ -743,5 +748,38 @@ describe('identityRuntime account switch ordering', () => {
         hasSession: true,
       }),
     ]);
+  });
+
+  it('drops a profile read from the previous session of the same actor', async () => {
+    await identityRuntime.completeCurrentSession();
+    mocks.updateProfile.mockClear();
+    let complete!: (value: { name: string; email: string; avatar_url: string }) => void;
+    mocks.syncUserProfile.mockReturnValueOnce(new Promise((resolve) => { complete = resolve; }));
+    const pending = identityRuntime.refreshCurrentProfile();
+    mocks.session.sessionEpoch += 1;
+    complete({ name: 'Stale', email: '', avatar_url: 'https://old.test/avatar' });
+    await pending;
+    expect(mocks.updateProfile).not.toHaveBeenCalled();
+  });
+
+  it('preserves the newest profile when read responses arrive out of order', async () => {
+    await identityRuntime.completeCurrentSession();
+    mocks.updateProfile.mockClear();
+    let complete!: (value: { name: string; email: string; avatar_url: string }) => void;
+    mocks.syncUserProfile.mockReturnValueOnce(new Promise((resolve) => { complete = resolve; }))
+      .mockResolvedValueOnce({ name: 'Newest', email: '', avatar_url: '' });
+    const oldRead = identityRuntime.refreshCurrentProfile();
+    await identityRuntime.refreshCurrentProfile();
+    complete({ name: 'Stale', email: '', avatar_url: 'https://old.test/avatar' });
+    await oldRead;
+    expect(mocks.updateProfile).toHaveBeenCalledTimes(1);
+    expect(mocks.updateProfile).toHaveBeenCalledWith(expect.objectContaining({ name: 'Newest' }));
+  });
+
+  it('represents a failed profile refresh in the lifecycle', async () => {
+    await identityRuntime.completeCurrentSession();
+    mocks.syncUserProfile.mockRejectedValueOnce(new Error('offline'));
+    await expect(identityRuntime.refreshCurrentProfile()).rejects.toThrow('offline');
+    expect(identityRuntime.getSnapshot().phase).toMatchObject({ readiness: { profile: 'failed' } });
   });
 });

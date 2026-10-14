@@ -39,6 +39,15 @@ The regression guard is [`docs/knowledge/invariants/desktop-identity-lifecycle-c
 Pages and popovers may render identity state. They must not become the owner of
 session/profile/account/avatar freshness.
 
+The editable Account profile is a revisioned Station snapshot in `profile`.
+`settingsRuntime` owns its reconciliation and observes successful revision
+changes to invoke the same identity runtime closure. Account forms own only
+their draft and explicit Save/Discard actions; they cannot patch shell identity.
+Both authenticated-edge reconciliation and explicit profile refresh capture
+actor, session epoch and request generation before awaiting native commands.
+Account-registry loads have the same session/reset fence. A delayed response
+from a replaced session cannot write any current identity projection.
+
 ## 3. Phase Model
 
 The top-level phase is `IdentityPhase`:

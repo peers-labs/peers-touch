@@ -17,9 +17,14 @@
 
 import { useSettingsStore } from '../store/settings';
 import { useSessionStore } from '../store/session';
+import { useProfileStore } from '../store/profile';
+import { usePushDevicesStore } from '../store/pushDevices';
+import { identityRuntime } from '../kernel/identityRuntime';
+import { log } from '../utils/logger';
 import type { RuntimeDescriptor } from '../kernel/runtime';
 
 let unsubscribeSession: (() => void) | null = null;
+let unsubscribeProfile: (() => void) | null = null;
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
 const SETTINGS_RECONCILE_INTERVAL_MS = 60_000;
 
@@ -30,6 +35,8 @@ async function refreshSessionProjection(): Promise<void> {
     store.refreshActiveAccount(),
     store.refreshDevices(),
     store.refreshNotificationPreferences(),
+    useProfileStore.getState().refresh(),
+    usePushDevicesStore.getState().refresh(),
   ]);
 }
 
@@ -46,15 +53,33 @@ export const settingsRuntime: RuntimeDescriptor = {
       lastSessionKey = sessionKey;
       const store = useSettingsStore.getState();
       store.clearSessionProjection();
+      useProfileStore.getState().reset();
+      usePushDevicesStore.getState().reset();
       if (actorPtid) {
         void refreshSessionProjection();
       }
+    });
+    let projectedRevision = '';
+    unsubscribeProfile = useProfileStore.subscribe((state) => {
+      const profile = state.profile;
+      if (!profile) {
+        projectedRevision = '';
+        return;
+      }
+      const revision = `${profile.peers_touch.network_id}\0${profile.profile_revision}`;
+      if (revision === projectedRevision) return;
+      projectedRevision = revision;
+      void identityRuntime.refreshCurrentProfile().catch((error) => {
+        log.warn('settings', 'Canonical profile identity reconciliation failed', error);
+      });
     });
     reconcileTimer = globalThis.setInterval(() => {
       void refreshSessionProjection();
     }, SETTINGS_RECONCILE_INTERVAL_MS);
   },
   teardown(): void {
+    unsubscribeProfile?.();
+    unsubscribeProfile = null;
     if (unsubscribeSession) {
       unsubscribeSession();
       unsubscribeSession = null;
@@ -69,6 +94,8 @@ export const settingsRuntime: RuntimeDescriptor = {
     const authenticated = useSessionStore.getState().authenticated;
     if (!authenticated) {
       store.clearSessionProjection();
+      useProfileStore.getState().reset();
+      usePushDevicesStore.getState().reset();
     }
     await Promise.allSettled([
       store.loadAgents(),
@@ -81,6 +108,8 @@ export const settingsRuntime: RuntimeDescriptor = {
     const session = useSessionStore.getState();
     if (!session.authenticated) {
       store.clearSessionProjection();
+      useProfileStore.getState().reset();
+      usePushDevicesStore.getState().reset();
     }
     await Promise.allSettled([
       store.loadAgents(),

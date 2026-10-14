@@ -40,6 +40,7 @@ Inside the embedded WebView renderer, long-lived runtimes own projection freshne
 | `agent-tool` | Station-authored ToolCall proposal, approval-decision, and result projections; user decision-intent submission through Desktop Rust |
 | `home` | Station-authored Home projection bootstrap, actor-scoped reset, exact recent-conversation handoff, and periodic reconciliation |
 | `evaluation` | Station-authored benchmark, dataset, case, run, result, metrics, and recovery projection; actor-scoped reset, event consumption, and periodic reconciliation |
+| `settings` | Canonical editable Account profile, authorized devices, category preference snapshot, and redacted push-device list; session reset and periodic reconciliation |
 | `notification` store | Notification list, unread counts, notification presentation state |
 | `navigationBadges` | Cross-surface unread and badge projection |
 | Page components | Rendering, selection, local interaction state only |
@@ -82,6 +83,31 @@ Chat/Messaging event consumption (messages, receipts, typing, mutations, group m
 Friend request handling specifically belongs here. A notification saying "User B sent a friend request" must cause the social projection to refresh friend requests and related counters without waiting for Contacts to remount.
 
 Peer public profile is also part of this projection. The chat layer needs the rich public profile (display name, bio, avatar/header, region, tags, links, counts) of any peer it can converse with. The cache lives in `socialChat.peerProfiles` and is filled by `loadPeerProfile(did)`; UI panels (Contacts detail, Chat detail) call it lazily on view, while authoritative invalidation must come from the runtime — when an `actor.profile.updated` realtime signal lands (or, until then, on supervisor resync) `socialRealtime` must call `loadPeerProfile(did, true)` for every peer currently visible in `sessions`/`groupMembers` so the next render sees the new profile.
+
+The notification preview and complete viewer are transient pure readers.
+`socialRealtime` owns notification polling, resets, reconnect reconciliation,
+and refreshes after existing Social/Moment signals. There is currently no
+Native Desktop notification-created event contract; the list/count refresh
+must not claim to consume one. Counts are always read from Station, including
+after category-wide marking. Refresh preserves the amount of loaded history;
+search explicitly covers loaded rows and pagination renders at most six.
+Session epoch and request generation fence list/count reads and mutations.
+
+### Account And Notification Settings
+
+`settingsRuntime` refreshes `profile`, authorized devices, category preferences,
+and `pushDevices` at bootstrap, session edges and periodic reconciliation.
+`AccountTab` renders the canonical revisioned profile and owns only an explicit
+Save/Discard draft. Conflicts keep the draft until the user loads the latest
+snapshot. Uploads use Native picker/OSS commands; browser prototypes expose
+that availability boundary rather than simulating an upload.
+
+Profile revision changes enter `identityRuntime.refreshCurrentProfile()` so
+shell and account-registry projections converge through identity reducer
+events. Actor/session epoch and read generation reject stale completion.
+The push-device list is read-only: native provider registration and unregister
+remain Mobile-owned. Provider credentials and binding fingerprints do not
+enter the Desktop renderer.
 
 ## 4.1 Moments Runtime Contract
 

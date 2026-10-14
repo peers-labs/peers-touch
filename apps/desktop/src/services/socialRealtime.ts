@@ -349,6 +349,7 @@ function onPresenceFlip(payload: RealtimePresenceFlipPayload): void {
 
 function onRealtimeConnectionState(payload: RealtimeConnectionStatePayload): void {
   if (!payload.connected) return;
+  reconcileNotifications();
   runDetached('realtime reconnect presence reconciliation', async () => {
     await api.presenceNotify('heartbeat');
     await refreshPeerPresence(collectKnownPresencePeerPtids());
@@ -356,6 +357,7 @@ function onRealtimeConnectionState(payload: RealtimeConnectionStatePayload): voi
 }
 
 function onSocialGraphEvent(payload: RealtimeSocialGraphEventPayload): void {
+  reconcileNotifications();
   const store = useSocialChatStore.getState();
   switch (payload.kind) {
     case 'friend_request_received':
@@ -420,25 +422,45 @@ function stopSocialReconcile(): void {
 export function installSocialRealtimeBridge(): void {
   if (teardownBridge) return;
 
+  let notificationScope: string | null = null;
+  const reconcileNotificationSession = () => {
+    const actorPtid = currentAuthenticatedActorPtid();
+    const scope = actorPtid ? `${actorPtid}\0${useSessionStore.getState().sessionEpoch}` : null;
+    if (scope === notificationScope) return;
+    notificationScope = scope;
+    const notifications = useNotificationStore.getState();
+    notifications.reset();
+    if (scope) {
+      notifications.startPolling();
+      reconcileNotifications();
+    }
+  };
   const unsubs = [
     useSessionStore.subscribe(reconcileAuthenticatedRuntime),
+    useSessionStore.subscribe(reconcileNotificationSession),
     eventBus.subscribe(EVENT.REALTIME_PRESENCE_FLIP, onPresenceFlip),
     eventBus.subscribe(EVENT.REALTIME_CONNECTION_STATE, onRealtimeConnectionState),
     eventBus.subscribe(EVENT.REALTIME_SOCIAL_GRAPH_EVENT, onSocialGraphEvent),
     eventBus.subscribe(EVENT.REALTIME_ACTOR_PROFILE_CHANGED, onActorProfileChanged),
     eventBus.subscribe(EVENT.RELATIONSHIP_CHANGED, onRelationshipChanged),
     eventBus.subscribe(EVENT.STATION_ACTIVE_CHANGED, restartRealtimeStreamForStationChange),
+    eventBus.subscribe(EVENT.REALTIME_RESYNC, reconcileNotifications),
+    eventBus.subscribe(EVENT.MOMENT_CREATED, reconcileNotifications),
+    eventBus.subscribe(EVENT.MOMENT_COMMENTED, reconcileNotifications),
+    eventBus.subscribe(EVENT.MOMENT_REACTED, reconcileNotifications),
     useNotificationStore.subscribe(onNotificationProjectionChanged),
   ];
 
   installServiceNotificationGate();
 
   reconcileAuthenticatedRuntime();
+  reconcileNotificationSession();
 
   teardownBridge = () => {
     unsubs.forEach((unsubscribe) => unsubscribe());
     teardownServiceNotificationGate();
     stopSocialReconcile();
+    useNotificationStore.getState().stopPolling();
     if (externalHostReconcileTimer) {
       window.clearTimeout(externalHostReconcileTimer);
       externalHostReconcileTimer = null;
@@ -452,4 +474,15 @@ export function installSocialRealtimeBridge(): void {
 export function teardownSocialRealtimeBridge(): void {
   if (!teardownBridge) return;
   teardownBridge();
+}
+
+function reconcileNotifications(): void {
+  if (!currentAuthenticatedActorPtid()) return;
+  runDetached('notification reconciliation', async () => {
+    const notifications = useNotificationStore.getState();
+    await Promise.all([
+      notifications.loadNotifications(),
+      notifications.refreshUnreadCounts(),
+    ]);
+  });
 }

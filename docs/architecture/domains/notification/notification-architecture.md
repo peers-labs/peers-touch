@@ -1855,6 +1855,24 @@ Scalability notes:
 
 ### 10.3 Desktop Changes
 
+The current Desktop implementation uses `NotificationBell` /
+`NotificationCenter` over a runtime-owned `notification` store, category
+preferences in `settings`, and the read-only `pushDevices` projection.
+Rust converts protobuf timestamps to RFC 3339 strings (or null for missing or
+invalid values). `notification_push_devices` returns only presentation
+identity/channel/environment/timestamps, without credentials or fingerprints.
+Mobile remains the registration/unregister owner; this Desktop list does not
+establish physical provider delivery.
+
+Social friend-request attention is generated only after the existing shared
+Federation transaction commits a new local recipient projection. Pending
+requests notify the receiver on its Home Station; accepted requests notify
+the original sender on its Home Station. Duplicate transitions generate no
+second callback. The notification bridge is best effort and callback failures
+cannot roll back or reject the committed Social transition. Existing Social
+stream events then invalidate client projections; dedicated Desktop
+notification-created events and push delivery remain separately unproven.
+
 | File | Change |
 |------|--------|
 | `kernel/events/catalog.ts` | Add notification event types |

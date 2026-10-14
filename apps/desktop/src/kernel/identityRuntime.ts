@@ -232,7 +232,7 @@ function userWithSyncedProfile(
     ...user,
     name: profile.name || user.name,
     email: profile.email || user.email,
-    avatar: profile.avatar_url || user.avatar,
+    avatar: profile.avatar_url || undefined,
   };
 }
 
@@ -282,6 +282,8 @@ class IdentityRuntime {
   private knownAccounts: SessionUser[] = [];
 
   private dataReady = false;
+
+  private profileSyncGeneration = 0;
 
   private bootStarted = false;
 
@@ -587,44 +589,15 @@ class IdentityRuntime {
   refreshCurrentProfile = async (fallbackAvatar?: string): Promise<void> => {
     const user = currentSessionUser();
     if (!user) return;
-    this.dispatch({ type: 'PROFILE_SYNC_STARTED' });
-    let refreshedUser = user;
-    try {
-      const profile = await api.syncUserProfile();
-      refreshedUser = userWithSyncedProfile(user, profile);
-      useSessionStore.getState().updateProfile({
-        name: refreshedUser.name,
-        email: refreshedUser.email,
-        avatarUrl: refreshedUser.avatar,
-      });
-      this.restoredUser = refreshedUser;
-      this.dispatch({ type: 'PROFILE_SYNC_SUCCEEDED', user: refreshedUser });
-    } catch (error) {
-      if (!fallbackAvatar) throw error;
-      await api.accountSyncAvatar(fallbackAvatar);
-      refreshedUser = { ...user, avatar: fallbackAvatar };
-      useSessionStore.getState().updateProfile({
-        name: refreshedUser.name,
-        email: refreshedUser.email,
-        avatarUrl: fallbackAvatar,
-      });
-      this.restoredUser = refreshedUser;
-      this.dispatch({ type: 'PROFILE_SYNC_SUCCEEDED', user: refreshedUser });
-    }
-
-    this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_STARTED' });
-    try {
-      await useAccountIdentityStore.getState().load();
-      const refreshedAccounts = await loadKnownAccountUsers();
-      this.knownAccounts = refreshedAccounts.length > 0 ? refreshedAccounts : [refreshedUser];
-      this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_SUCCEEDED', user: currentSessionUser() ?? refreshedUser });
-    } catch {
-      this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_FAILED' });
-    }
-    await useSocialChatStore.getState().loadCurrentUserProfile();
+    const applied = await this.reconcileAuthenticatedIdentity(user, 'completed_login', {
+      fallbackAvatar,
+      throwProfileFailure: true,
+    });
+    if (applied) await useSocialChatStore.getState().loadCurrentUserProfile();
   };
 
   revokeSession = async (): Promise<void> => {
+    this.profileSyncGeneration += 1;
     const actorPtid = useSessionStore.getState().currentUser?.actorPtid ?? null;
     this.dispatch({ type: 'SESSION_REVOKED', reason: 'revoked' });
     await runIdentityPipeline({
@@ -638,6 +611,7 @@ class IdentityRuntime {
   private logoutToAuthGate = async (
     afterSessionLogout?: () => Promise<void>,
   ): Promise<void> => {
+    this.profileSyncGeneration += 1;
     if (this.oauthAcknowledgementRetryTimer) {
       clearTimeout(this.oauthAcknowledgementRetryTimer);
       this.oauthAcknowledgementRetryTimer = null;
@@ -773,12 +747,26 @@ class IdentityRuntime {
   private reconcileAuthenticatedIdentity = async (
     seedUser: SessionUser,
     edgeKind: IdentityAuthenticatedEdge['kind'],
-  ): Promise<void> => {
+    options: { fallbackAvatar?: string; throwProfileFailure?: boolean } = {},
+  ): Promise<boolean> => {
+    const session = useSessionStore.getState();
+    const actorPtid = session.currentUser?.actorPtid;
+    if (!session.authenticated || !actorPtid) return false;
+    const generation = ++this.profileSyncGeneration;
+    const isCurrent = () => {
+      const current = useSessionStore.getState();
+      return current.authenticated
+        && current.currentUser?.actorPtid === actorPtid
+        && current.sessionEpoch === session.sessionEpoch
+        && generation === this.profileSyncGeneration;
+    };
     let reconciledUser = seedUser;
+    let profileFailure: unknown;
 
     this.dispatch({ type: 'PROFILE_SYNC_STARTED' });
     try {
       const profile = await api.syncUserProfile();
+      if (!isCurrent()) return false;
       reconciledUser = userWithSyncedProfile(reconciledUser, profile);
       useSessionStore.getState().updateProfile({
         name: reconciledUser.name,
@@ -788,22 +776,40 @@ class IdentityRuntime {
       this.restoredUser = reconciledUser;
       this.dispatch({ type: 'PROFILE_SYNC_SUCCEEDED', user: reconciledUser });
     } catch (error) {
+      if (!isCurrent()) return false;
       log.warn('identity', 'profile sync failed during authenticated reconciliation', {
         edge: edgeKind,
-        actorPtid: useSessionStore.getState().currentUser?.actorPtid,
+        actorPtid,
         error: String(error),
       });
       this.dispatch({ type: 'PROFILE_SYNC_FAILED' });
+      profileFailure = error;
+      if (options.fallbackAvatar) {
+        await api.accountSyncAvatar(options.fallbackAvatar);
+        if (!isCurrent()) return false;
+        reconciledUser = { ...seedUser, avatar: options.fallbackAvatar };
+        useSessionStore.getState().updateProfile({ avatarUrl: options.fallbackAvatar });
+        this.restoredUser = reconciledUser;
+        this.dispatch({ type: 'PROFILE_SYNC_SUCCEEDED', user: reconciledUser });
+        profileFailure = undefined;
+      }
     }
 
+    if (!isCurrent()) return false;
     this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_STARTED' });
     try {
       await useAccountIdentityStore.getState().load();
+      if (!isCurrent()) return false;
+      if (useAccountIdentityStore.getState().error) {
+        throw new Error(useAccountIdentityStore.getState().error);
+      }
       const refreshedAccounts = await loadKnownAccountUsers();
+      if (!isCurrent()) return false;
       this.knownAccounts = refreshedAccounts.length > 0 ? refreshedAccounts : [reconciledUser];
       const latestUser = currentSessionUser() ?? reconciledUser;
       this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_SUCCEEDED', user: latestUser });
     } catch (error) {
+      if (!isCurrent()) return false;
       log.warn('identity', 'account cache refresh failed during authenticated reconciliation', {
         edge: edgeKind,
         actorPtid: useSessionStore.getState().currentUser?.actorPtid,
@@ -811,12 +817,15 @@ class IdentityRuntime {
       });
       this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_FAILED' });
     }
+    if (profileFailure && options.throwProfileFailure) throw profileFailure;
+    return true;
   };
 
   private loadAuthGate = async (
     reason: IdentityAuthGateReason,
     runLogoutPipeline: boolean,
   ): Promise<void> => {
+    this.profileSyncGeneration += 1;
     clearWarmResume();
     clearRendererAuthenticated();
     this.restoredUser = null;

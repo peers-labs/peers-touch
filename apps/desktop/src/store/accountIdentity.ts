@@ -1,6 +1,7 @@
 import { createDesktopStore } from './createDesktopStore';
 import { api, type AccountIdentity } from '../services/desktop_api';
 import { EVENT, eventBus } from '../kernel/events';
+import { useSessionStore } from './session';
 
 const initialState = {
   accounts: [] as AccountIdentity[],
@@ -22,6 +23,8 @@ interface AccountIdentityStore {
 }
 
 let loadPromise: Promise<void> | null = null;
+let loadGeneration = 0;
+let loadSessionEpoch = -1;
 
 function accountsEqual(a: AccountIdentity[], b: AccountIdentity[]): boolean {
   if (a.length !== b.length) return false;
@@ -48,6 +51,7 @@ export const useAccountIdentityStore = createDesktopStore<AccountIdentityStore>(
   ...initialState,
 
   reset: () => {
+    loadGeneration += 1;
     loadPromise = null;
     set({ ...initialState });
   },
@@ -57,11 +61,17 @@ export const useAccountIdentityStore = createDesktopStore<AccountIdentityStore>(
   },
 
   load: async () => {
-    if (loadPromise) return loadPromise;
+    const sessionEpoch = useSessionStore.getState().sessionEpoch;
+    if (loadPromise && loadSessionEpoch === sessionEpoch) return loadPromise;
+    const generation = ++loadGeneration;
+    loadSessionEpoch = sessionEpoch;
+    const isCurrent = () => generation === loadGeneration
+      && useSessionStore.getState().sessionEpoch === sessionEpoch;
     loadPromise = (async () => {
       set({ loading: true, error: undefined });
       try {
         const [list, active] = await Promise.all([api.accountList(), api.accountGetActive()]);
+        if (!isCurrent()) return;
         const newAccounts = list.accounts || [];
         const newActiveId = active?.id || list.active_account_id;
         const prev = get();
@@ -72,12 +82,13 @@ export const useAccountIdentityStore = createDesktopStore<AccountIdentityStore>(
           eventBus.publish(EVENT.AUTH_IDENTITY_CHANGED, undefined);
         }
       } catch (error: any) {
+        if (!isCurrent()) return;
         set({
           loading: false,
           error: error?.message || 'failed to load account identity',
         });
       } finally {
-        loadPromise = null;
+        if (isCurrent()) loadPromise = null;
       }
     })();
     return loadPromise;

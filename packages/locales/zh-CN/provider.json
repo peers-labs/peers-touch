@@ -740,5 +740,15 @@
   "provider.editModel.displayNamePlaceholder": "显示名称",
   "provider.editModel.maxContext": "最大上下文窗口",
   "provider.editModel.enabled": "启用",
-  "provider.editModel.saveChanges": "保存更改"
+  "provider.editModel.saveChanges": "保存更改",
+  "provider.account.profile.save": "保存资料",
+  "provider.account.profile.discard": "放弃修改",
+  "provider.account.profile.reload": "使用最新资料",
+  "provider.account.profile.conflict": "资料已在其他位置修改。你的编辑已保留，请加载最新资料后重新编辑。",
+  "provider.account.profile.identityMismatch": "资料不属于当前账户。",
+  "provider.account.profile.sessionUnavailable": "请重新登录后更新资料。",
+  "provider.account.profile.savePending": "资料正在更新中。",
+  "provider.account.identity.handle": "跨站点账号",
+  "provider.account.identity.homeStation": "所属 Station",
+  "provider.account.identity.changeAvatar": "更换头像"
 }

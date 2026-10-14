@@ -13,6 +13,7 @@ use crate::state::AppState;
 use reqwest::Method;
 use serde_json::{json, Map, Value};
 use tauri::{State, Window};
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 fn token_from_state(
     state: &State<'_, Arc<AppState>>,
@@ -36,13 +37,15 @@ fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
     })
 }
 
-fn ts_millis(ts: &Option<prost_types::Timestamp>) -> serde_json::Value {
-    match ts {
-        Some(t) => {
-            serde_json::Value::Number((t.seconds * 1000 + (t.nanos as i64) / 1_000_000).into())
-        }
-        None => serde_json::Value::Null,
-    }
+fn timestamp_iso(ts: &Option<prost_types::Timestamp>) -> Option<String> {
+    let ts = ts.as_ref()?;
+    let nanos = u32::try_from(ts.nanos).ok()?;
+    OffsetDateTime::from_unix_timestamp(ts.seconds)
+        .ok()?
+        .replace_nanosecond(nanos)
+        .ok()?
+        .format(&Rfc3339)
+        .ok()
 }
 
 fn notification_to_value(n: &model::notification::Notification) -> Value {
@@ -63,8 +66,8 @@ fn notification_to_value(n: &model::notification::Notification) -> Value {
         "body": n.body,
         "metadata": Value::Object(meta),
         "groupKey": n.group_key,
-        "createdAt": ts_millis(&n.created_at),
-        "readAt": ts_millis(&n.read_at),
+        "createdAt": timestamp_iso(&n.created_at),
+        "readAt": timestamp_iso(&n.read_at),
     })
 }
 
@@ -75,7 +78,7 @@ fn notification_preference_to_value(p: &model::notification::NotificationPrefere
         "enabled": p.enabled,
         "pushEnabled": p.push_enabled,
         "soundEnabled": p.sound_enabled,
-        "updatedAt": ts_millis(&p.updated_at),
+        "updatedAt": timestamp_iso(&p.updated_at),
         "type": p.r#type,
     })
 }
@@ -91,6 +94,48 @@ fn notification_preferences_snapshot_to_value(
             .collect::<Vec<_>>(),
         "notificationPreferencesRevision": snapshot.notification_preferences_revision,
     })
+}
+
+fn push_registration_to_value(registration: &model::notification::PushRegistration) -> Value {
+    json!({
+        "registrationId": registration.registration_id,
+        "actorPtid": registration.actor_device.as_ref().map(|device| &device.actor_ptid),
+        "deviceId": registration.actor_device.as_ref().map(|device| &device.device_id),
+        "channel": registration.channel,
+        "environment": registration.environment,
+        "createdAt": timestamp_iso(&registration.created_at),
+        "updatedAt": timestamp_iso(&registration.updated_at),
+        "lastSuccessAt": timestamp_iso(&registration.last_success_at),
+    })
+}
+
+#[tauri::command]
+pub fn notification_push_devices(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    let response =
+        match station_client::request_proto::<(), model::notification::ListPushDevicesResponse>(
+            Method::GET,
+            "/notification/push/devices",
+            &token,
+            None,
+            None::<&()>,
+        ) {
+            Ok(response) => response,
+            Err(error) => return error.into_app_result("Failed to list push devices"),
+        };
+    to_stub(
+        "notification_push_devices",
+        json!({
+            "registrations": response.registrations.iter()
+                .map(push_registration_to_value).collect::<Vec<_>>(),
+        }),
+    )
 }
 
 fn load_notification_preferences_snapshot(
@@ -495,4 +540,48 @@ pub fn notification_preferences_update(
             "snapshot": snapshot,
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timestamps_match_the_frontend_iso_contract() {
+        assert_eq!(
+            timestamp_iso(&Some(prost_types::Timestamp {
+                seconds: 0,
+                nanos: 123_000_000
+            })),
+            Some("1970-01-01T00:00:00.123Z".to_string()),
+        );
+        assert_eq!(timestamp_iso(&None), None);
+        assert_eq!(
+            timestamp_iso(&Some(prost_types::Timestamp {
+                seconds: 0,
+                nanos: -1
+            })),
+            None
+        );
+    }
+
+    #[test]
+    fn push_device_readback_contains_only_presentation_fields() {
+        let registration = model::notification::PushRegistration {
+            registration_id: "registration".to_string(),
+            actor_device: Some(model::notification::ActorDeviceRef {
+                actor_ptid: "ptid:person".to_string(),
+                device_id: "mobile".to_string(),
+            }),
+            app_install_epoch_sha256: vec![1; 32],
+            provider_binding_sha256: vec![2; 32],
+            ..Default::default()
+        };
+        let value = push_registration_to_value(&registration);
+        assert_eq!(value["deviceId"], "mobile");
+        assert_eq!(value["actorPtid"], "ptid:person");
+        assert_eq!(value.as_object().unwrap().len(), 8);
+        assert!(value.get("providerBindingSha256").is_none());
+        assert!(value.get("appInstallEpochSha256").is_none());
+    }
 }

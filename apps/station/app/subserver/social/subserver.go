@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/clusterreadiness"
+	"github.com/peers-labs/peers-touch/station/app/subserver/notification"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
@@ -281,6 +282,9 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		return fmt.Errorf("initialize federated Friend Request service: %w", err)
 	}
 	s.federatedFriendRequestSvc.WithActorDeviceKeyResolver(actorDeviceKeyPort{})
+	s.federatedFriendRequestSvc.WithAttentionPublisher(
+		application.NewFriendRequestAttentionPublisher(notification.NewBridge()),
+	)
 	s.federatedRelationshipSvc, err = application.NewFederatedRelationshipService(
 		federatedStore,
 		federationRuntime.Signer(),

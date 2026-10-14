@@ -56,6 +56,10 @@ const mocks = vi.hoisted(() => ({
   resolveActorStations: vi.fn(),
   startEventStream: vi.fn(),
   stopEventStream: vi.fn(),
+  startNotificationPolling: vi.fn(),
+  stopNotificationPolling: vi.fn(),
+  resetNotifications: vi.fn(),
+  sessionListeners: [] as Array<() => void>,
   currentActorPtid: null as string | null,
   sessionEpoch: 1,
   sessionListener: undefined as (() => void) | undefined,
@@ -79,9 +83,11 @@ vi.mock('../store/session', () => ({
   useSessionStore: {
     getState: () => ({ sessionEpoch: mocks.sessionEpoch }),
     subscribe: vi.fn((listener: () => void) => {
-      mocks.sessionListener = listener;
+      mocks.sessionListeners.push(listener);
+      mocks.sessionListener = () => mocks.sessionListeners.forEach((subscriber) => subscriber());
       return () => {
-        mocks.sessionListener = undefined;
+        mocks.sessionListeners = mocks.sessionListeners.filter((subscriber) => subscriber !== listener);
+        if (!mocks.sessionListeners.length) mocks.sessionListener = undefined;
       };
     }),
   },
@@ -153,6 +159,9 @@ vi.mock('../store/notification', () => ({
       notifications: [],
       loadNotifications: vi.fn(),
       refreshUnreadCounts: vi.fn(),
+      reset: mocks.resetNotifications,
+      startPolling: mocks.startNotificationPolling,
+      stopPolling: mocks.stopNotificationPolling,
     }),
     subscribe: vi.fn(() => () => undefined),
   },
