@@ -28,6 +28,7 @@
     "tooling/acceptance/gates/desktop",
     "tooling/acceptance/provisioners/__init__.py",
     "tooling/acceptance/provisioners/desktop_shell_native.py",
+    "tooling/acceptance/provisioners/desktop_shell_native_test.py",
     "tooling/acceptance/provisioners/native_desktop_macos.py",
     "tooling/acceptance/drivers/native",
     "tooling/acceptance/registry.yaml",
