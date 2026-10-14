@@ -39,6 +39,18 @@ class DesktopShellNativeProvisionerTests(unittest.TestCase):
         self.assertIn("proc_pidpath", source)
         self.assertNotIn('"ps", "-p"', source)
 
+    def test_product_package_and_runtime_driver_are_separate_builds(self) -> None:
+        source = Path(__file__).with_name(
+            "desktop_shell_native.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"--bundles",\n                "app"', source)
+        self.assertIn('("make", "acceptance-driver-build")', source)
+        self.assertNotIn(
+            '"--features",\n                "acceptance-webdriver"',
+            source,
+        )
+
     def test_handler_projects_package_status_and_window_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

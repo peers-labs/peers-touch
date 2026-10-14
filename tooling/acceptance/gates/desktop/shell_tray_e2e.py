@@ -248,10 +248,10 @@ class DesktopShellTrayGate(AcceptanceGate):
             isinstance(package, dict)
             and package.get("assetSha256") == asset["sha256"]
             and package.get("assetEmbedded") is True
-            and package.get("binarySha256")
-            == cell_source.get("binarySha256")
             and initial.get("processExecutableSha256")
-            == package.get("binarySha256"),
+            == package.get("binarySha256")
+            and isinstance(cell_source.get("binarySha256"), str)
+            and len(cell_source["binarySha256"]) == 64,
         )
         self.assert_condition(
             "native_status_item_geometry",

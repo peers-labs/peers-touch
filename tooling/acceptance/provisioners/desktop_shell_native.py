@@ -511,8 +511,6 @@ class DesktopShellNativeProvisioner(EnvironmentProvisioner):
                 "--debug",
                 "--bundles",
                 "app",
-                "--features",
-                "acceptance-webdriver",
             ),
             cwd=REPO_ROOT,
             capture_output=True,
@@ -538,14 +536,25 @@ class DesktopShellNativeProvisioner(EnvironmentProvisioner):
                     reason=f"Desktop shell package input is missing: {path}",
                     resource="desktop-shell-package",
                 )
-        DEDICATED_BINARY.parent.mkdir(parents=True, exist_ok=True)
-        temporary = DEDICATED_BINARY.with_suffix(".tmp")
-        shutil.copy2(APP_BINARY, temporary)
-        temporary.chmod(0o755)
-        temporary.replace(DEDICATED_BINARY)
-        if _sha256_file(APP_BINARY) != _sha256_file(DEDICATED_BINARY):
-            raise ProvisioningError(
-                "Packaged and dedicated Desktop binaries do not match"
+        driver = subprocess.run(
+            ("make", "acceptance-driver-build"),
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=3600,
+            check=False,
+        )
+        if driver.returncode != 0 or not DEDICATED_BINARY.is_file():
+            raise BlockedError(
+                reason=(
+                    "Desktop runtime-cell driver build failed: "
+                    + (
+                        driver.stderr.strip()
+                        or driver.stdout.strip()
+                        or f"exit {driver.returncode}"
+                    )[-4000:]
+                ),
+                resource="desktop-acceptance-binary",
             )
 
     def _cleanup_handler(self) -> None:
