@@ -1065,16 +1065,25 @@ mod tests {
     }
 
     #[test]
-    fn target_station_request_uses_verified_route_without_switching_binding() {
+    fn target_station_requests_reuse_bounded_pool_without_switching_binding() {
         let runtime = StationRuntime::start(&temp_dir("target-station-request")).unwrap();
         let active = direct_route("route-a", "http://127.0.0.1:4101".to_string());
         let mut authority = direct_route("route-b", "http://127.0.0.1:4102".to_string());
         authority.station_peer_id = "station-two".to_string();
         authority.station_root_public_key = vec![5, 6, 7];
-        runtime.store_verified_routes(&[active, authority]).unwrap();
+        let mut second_authority = direct_route("route-c", "http://127.0.0.1:4103".to_string());
+        second_authority.station_peer_id = "station-three".to_string();
+        second_authority.station_root_public_key = vec![8, 9, 10];
+        runtime
+            .store_verified_routes(&[active, authority, second_authority])
+            .unwrap();
         runtime
             .registry
             .pin_or_verify_federation_signing_key("station-two", "station-two-key", [0x22; 32])
+            .unwrap();
+        runtime
+            .registry
+            .pin_or_verify_federation_signing_key("station-three", "station-three-key", [0x33; 32])
             .unwrap();
         runtime
             .switch_station_with_teardown("station-one", Some("route-a"), &|_| Ok(()))
@@ -1097,15 +1106,33 @@ mod tests {
             );
 
         assert!(result.is_err());
+        let second_result = runtime
+            .client()
+            .request_proto_for_actor_at_station::<
+                crate::model::chat::GetConversationPublicHeadRequest,
+                crate::model::chat::GetConversationPublicHeadResponse,
+            >(
+                "station-three",
+                Method::GET,
+                "/conversation/public-head",
+                "token",
+                Some(&[("conversation_id", "conversation-b".to_string())]),
+                None,
+            );
+
+        assert!(second_result.is_err());
         assert_eq!(runtime.binding().state(), before);
-        let attempt = runtime
-            .diagnostics()
-            .attempts
-            .last()
-            .cloned()
-            .expect("target Station route attempt");
-        assert_eq!(attempt.station_peer_id, "station-two");
-        assert_eq!(attempt.route_id, "route-b");
+        let attempts = runtime.diagnostics().attempts;
+        assert_eq!(
+            attempts
+                .iter()
+                .rev()
+                .take(2)
+                .map(|attempt| attempt.station_peer_id.as_str())
+                .collect::<Vec<_>>(),
+            ["station-three", "station-two"],
+        );
+        assert_eq!(attempts.last().unwrap().route_id, "route-c");
     }
 
     #[test]
