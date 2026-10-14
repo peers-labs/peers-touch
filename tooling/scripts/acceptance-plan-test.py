@@ -42,6 +42,11 @@ class ChangedPathsTests(unittest.TestCase):
         with (
             patch.object(
                 MODULE,
+                "repository_has_attached_head",
+                return_value=True,
+            ),
+            patch.object(
+                MODULE,
                 "discover_active_plan",
                 return_value=mounted,
             ),
@@ -59,6 +64,11 @@ class ChangedPathsTests(unittest.TestCase):
         with (
             patch.object(
                 MODULE,
+                "repository_has_attached_head",
+                return_value=True,
+            ),
+            patch.object(
+                MODULE,
                 "discover_active_plan",
                 return_value=mounted,
             ),
@@ -71,6 +81,28 @@ class ChangedPathsTests(unittest.TestCase):
             resolved = MODULE.resolve_execution_plan(explicit)
 
         self.assertIs(resolved, source)
+        load_source.assert_called_once_with(explicit.resolve())
+
+    def test_explicit_plan_in_detached_checkout_skips_machine_mount(self) -> None:
+        explicit = ROOT / "source-plan.md"
+        source = SimpleNamespace(path=explicit)
+        with (
+            patch.object(
+                MODULE,
+                "repository_has_attached_head",
+                return_value=False,
+            ),
+            patch.object(MODULE, "discover_active_plan") as discover_mount,
+            patch.object(
+                MODULE,
+                "load_formal_plan",
+                return_value=source,
+            ) as load_source,
+        ):
+            resolved = MODULE.resolve_execution_plan(explicit)
+
+        self.assertIs(resolved, source)
+        discover_mount.assert_not_called()
         load_source.assert_called_once_with(explicit.resolve())
 
     def test_make_entrypoints_default_to_external_evidence_store(self) -> None:

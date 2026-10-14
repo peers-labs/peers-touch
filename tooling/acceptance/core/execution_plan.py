@@ -167,6 +167,20 @@ def _source_plan_status(path: Path) -> dict[str, Any]:
     return _planctl_projection(path, "source-status")
 
 
+def repository_has_attached_head(root: Path) -> bool:
+    try:
+        _git(
+            root,
+            "symbolic-ref",
+            "--quiet",
+            "--short",
+            "HEAD",
+        )
+    except ExecutionPlanError:
+        return False
+    return True
+
+
 def _plan_status_for_context(path: Path) -> dict[str, Any]:
     try:
         repository_root = Path(
@@ -174,15 +188,7 @@ def _plan_status_for_context(path: Path) -> dict[str, Any]:
         )
     except ExecutionPlanError:
         return _source_plan_status(path)
-    try:
-        _git(
-            repository_root,
-            "symbolic-ref",
-            "--quiet",
-            "--short",
-            "HEAD",
-        )
-    except ExecutionPlanError:
+    if not repository_has_attached_head(repository_root):
         return _source_plan_status(path)
     try:
         mount = _workspace_plan_mount(repository_root)
