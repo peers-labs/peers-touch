@@ -132,7 +132,7 @@ def read_workspace_descriptor(path: Path) -> tuple[Path, tuple[Path, ...]]:
 def resolve_trae_workspace(
     root: Path,
     requested: str | None = None,
-) -> tuple[Path | None, tuple[Path, ...], Path]:
+) -> tuple[Path | None, tuple[Path, ...]]:
     explicit = requested or os.environ.get("PT_TRAE_WORKSPACE_FILE", "").strip()
     if explicit:
         descriptor, roots = read_workspace_descriptor(Path(explicit))
@@ -148,27 +148,11 @@ def resolve_trae_workspace(
         if len(matches) > 1:
             raise RuntimeError("TRAE_WORKSPACE_SELECTION_AMBIGUOUS")
         if not matches:
-            return None, (root,), root
+            return None, (root,)
         descriptor, roots = matches[0]
     if root not in roots:
         raise RuntimeError("TRAE_WORKSPACE_ROOT_MISMATCH")
-    return descriptor, roots, roots[0]
-
-
-def trae_hook_projection_roots(
-    root: Path,
-    workspace_roots: tuple[Path, ...],
-    bootstrap_root: Path,
-) -> tuple[Path, ...]:
-    return tuple(
-        workspace_root
-        for workspace_root in workspace_roots
-        if (
-            workspace_root == root
-            or workspace_root == bootstrap_root
-            or (workspace_root / ".trae").exists()
-        )
-    )
+    return descriptor, roots
 
 
 def canonical_integration_catalog(
@@ -1216,33 +1200,25 @@ def install(
     trae_hook_targets: list[tuple[Path, dict[str, object]]] = []
     trae_probe_root = target_root
     if host == "trae":
-        trae_workspace, workspace_roots, bootstrap_root = resolve_trae_workspace(
+        trae_workspace, _ = resolve_trae_workspace(
             root,
             workspace_file,
         )
-        for workspace_root in trae_hook_projection_roots(
-            root,
-            workspace_roots,
-            bootstrap_root,
-        ):
-            hook_root = host_root(workspace_root, "trae")
-            trae_hook_targets.append(
-                (
-                    hook_root / "hooks.json",
-                    planned_trae_hooks(
-                        root,
-                        hook_root,
-                        trae_workspace,
-                    ),
-                )
+        trae_hook_targets.append(
+            (
+                target_root / "hooks.json",
+                planned_trae_hooks(
+                    root,
+                    target_root,
+                    trae_workspace,
+                ),
             )
-        trae_probe_root = host_root(root, "trae")
+        )
     cursor_hooks = (
         planned_cursor_hooks(root, target_root)
         if host == "cursor"
         else None
     )
-    validated_work_ledger(root)
     write_installation_receipt(
         workspace_id,
         branch,
@@ -1336,7 +1312,7 @@ def cleanup(
     trae_workspace: Path | None = None
     trae_probe_root = target_root
     if host == "trae":
-        trae_workspace, _, _ = resolve_trae_workspace(
+        trae_workspace, _ = resolve_trae_workspace(
             root,
             workspace_file,
         )

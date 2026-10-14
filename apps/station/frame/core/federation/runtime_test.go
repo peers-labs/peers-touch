@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +16,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/auth/scope"
 	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	federationmodel "github.com/peers-labs/peers-touch/station/frame/core/federation/model"
-	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -34,26 +34,35 @@ func (*runtimeTestRecord) TableName() string {
 	return "federation_runtime_test_records"
 }
 
-type runtimeTestRelay struct{}
-
-func (runtimeTestRelay) BaseURL() string {
-	return "http://relay.invalid"
+type runtimeTestRelay struct {
+	baseURL        string
+	client         *http.Client
+	expectedTarget string
 }
 
-func (runtimeTestRelay) Token() string {
-	return "relay-token"
+func (r runtimeTestRelay) Available() bool {
+	return r.baseURL != ""
 }
 
-type runtimeTestRelayAddress struct {
-	baseURL string
-}
-
-func (r runtimeTestRelayAddress) BaseURL() string {
-	return r.baseURL
-}
-
-func (runtimeTestRelayAddress) Token() string {
-	return "relay-token"
+func (r runtimeTestRelay) RoundTrip(
+	ctx context.Context,
+	targetStationPeerID string,
+	request *http.Request,
+) (*http.Response, error) {
+	if targetStationPeerID != r.expectedTarget {
+		return nil, errors.New("unexpected Relay tunnel target")
+	}
+	base, err := url.Parse(r.baseURL)
+	if err != nil {
+		return nil, err
+	}
+	outbound := request.Clone(ctx)
+	target := *request.URL
+	target.Scheme = base.Scheme
+	target.Host = base.Host
+	outbound.URL = &target
+	outbound.RequestURI = ""
+	return r.client.Do(outbound)
 }
 
 func TestRuntimeComposesSharedLocalDeliveryAndCanonicalRoutes(t *testing.T) {
@@ -292,7 +301,7 @@ func TestRuntimeSealsReceiverRegistry(t *testing.T) {
 	}
 }
 
-func TestHTTPTransportUsesCanonicalRelayRouteAndTypedResult(t *testing.T) {
+func TestHTTPTransportUsesOpaqueRelayTunnelAndTypedResult(t *testing.T) {
 	scope.ResetForTest()
 	if err := RegisterPeerScopes(); err != nil {
 		t.Fatal(err)
@@ -310,18 +319,14 @@ func TestHTTPTransportUsesCanonicalRelayRouteAndTypedResult(t *testing.T) {
 		response http.ResponseWriter,
 		request *http.Request,
 	) {
-		if request.URL.Path !=
-			"/relay/forward/station-target"+DeliveryRoute {
+		if request.URL.Path != DeliveryRoute {
 			t.Errorf("path = %q", request.URL.Path)
 		}
-		if request.Header.Get("Authorization") != "Bearer relay-token" {
-			t.Errorf("relay Authorization is missing")
-		}
 		if !strings.HasPrefix(
-			request.Header.Get(nativefed.ForwardAuthorizationHeader),
+			request.Header.Get("Authorization"),
 			"Bearer ",
 		) {
-			t.Errorf("forward Federation authorization is missing")
+			t.Errorf("inner Federation authorization is missing")
 		}
 		body, readErr := io.ReadAll(request.Body)
 		if readErr != nil {
@@ -355,7 +360,11 @@ func TestHTTPTransportUsesCanonicalRelayRouteAndTypedResult(t *testing.T) {
 		keyCache,
 		"station-source",
 		nil,
-		runtimeTestRelayAddress{baseURL: peerServer.URL},
+		runtimeTestRelay{
+			baseURL:        peerServer.URL,
+			client:         peerServer.Client(),
+			expectedTarget: "station-target",
+		},
 	)
 	if err != nil {
 		t.Fatal(err)

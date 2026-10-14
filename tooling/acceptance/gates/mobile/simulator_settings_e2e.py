@@ -30,8 +30,6 @@ PRIMARY_BINDING = "station-primary"
 PROFILE_FIELDS = (
     "displayName",
     "note",
-    "region",
-    "timezone",
     "defaultVisibility",
     "manuallyApprovesFollowers",
     "messagePermission",
@@ -404,7 +402,76 @@ class SimulatorSettingsGate(AcceptanceGate):
                 f"{client_id} login returned the wrong actor or Station scope"
             )
         self._record("authenticated", client_id, actorIdentityMatched=True)
-        return actor_ptid
+        minimum_generation = 0
+        for attempt in (1, 2):
+            restart = self._mapping(
+                binding.call_action(client_id, "lifecycle.restart"),
+                f"{client_id} post-login restart",
+            )
+            if restart != {"requested": True, "scope": "webview"}:
+                raise GateError(
+                    f"{client_id} post-login restart was not acknowledged"
+                )
+            readiness = self._mapping(
+                binding.call_action(
+                    client_id,
+                    "lifecycle.waitReady",
+                    {
+                        "includeDiagnostics": True,
+                        "minimumGeneration": minimum_generation,
+                    },
+                ),
+                f"{client_id} lifecycle readiness",
+            )
+            runtimes = readiness.get("runtimes")
+            runtime_states = [
+                {
+                    "id": runtime.get("id"),
+                    "status": runtime.get("status"),
+                    "errorKey": runtime.get("errorKey"),
+                }
+                for runtime in runtimes
+                if isinstance(runtime, Mapping)
+            ] if isinstance(runtimes, list) else []
+            runtime_errors = [
+                {
+                    "runtimeId": error.get("runtimeId"),
+                    "error": redact_text(str(error.get("error", ""))),
+                }
+                for error in readiness.get("runtimeErrors", [])
+                if isinstance(error, Mapping)
+            ] if isinstance(readiness.get("runtimeErrors"), list) else []
+            self._record(
+                "runtime-readiness",
+                client_id,
+                attempt=attempt,
+                phase=readiness.get("phase"),
+                generation=readiness.get("generation"),
+                runtimes=runtime_states,
+                runtimeErrors=runtime_errors,
+            )
+            if (
+                readiness.get("phase") == "ACTIVE"
+                and isinstance(runtimes, list)
+                and all(
+                    isinstance(runtime, Mapping)
+                    and runtime.get("status") == "ready"
+                    for runtime in runtimes
+                )
+            ):
+                self._record(
+                    "runtime-ready",
+                    client_id,
+                    generation=readiness.get("generation"),
+                )
+                return actor_ptid
+            generation = readiness.get("generation")
+            minimum_generation = (
+                generation + 1
+                if isinstance(generation, int) and generation >= 0
+                else minimum_generation + 1
+            )
+        raise GateError(f"{client_id} runtime graph is not ready")
 
     def _cleanup(
         self,
@@ -439,6 +506,22 @@ class SimulatorSettingsGate(AcceptanceGate):
             try:
                 binding.call_action(client_id, action, payload)
             except Exception as error:
+                if action == "settings.profile.update":
+                    try:
+                        binding.call_action(client_id, "settings.profile.read")
+                        binding.call_action(client_id, action, payload)
+                    except Exception as retry_error:
+                        error = retry_error
+                    else:
+                        self.cleanup.append(
+                            {
+                                "clientId": client_id,
+                                "resource": f"{label}-restore",
+                                "status": "passed",
+                                "recoveredAfterRefresh": True,
+                            }
+                        )
+                        continue
                 failures.append(f"{label} restore: {type(error).__name__}")
                 self.cleanup.append(
                     {
@@ -446,6 +529,7 @@ class SimulatorSettingsGate(AcceptanceGate):
                         "resource": f"{label}-restore",
                         "status": "failed",
                         "errorType": type(error).__name__,
+                        "error": redact_text(str(error)),
                     }
                 )
             else:

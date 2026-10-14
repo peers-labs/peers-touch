@@ -16,7 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestPrivateContentServiceListRecoverablePrivateContent(t *testing.T) {
+func TestFederatedPrivateRecoveryServiceListRecoverableContent(t *testing.T) {
 	t.Run("projects exact Post and Comment locators", func(t *testing.T) {
 		fixture := newPrivateContentServiceFixture(t)
 		post := seedRecoverablePrivateMoment(t, fixture, "locator-post")

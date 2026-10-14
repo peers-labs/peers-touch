@@ -35,7 +35,7 @@ pub fn skills_list(
         Ok(token) => token,
         Err(result) => return result,
     };
-    application_skills::skills_list(input, &token)
+    application_skills::skills_list(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -48,7 +48,7 @@ pub fn skills_search(
         Ok(token) => token,
         Err(result) => return result,
     };
-    application_skills::skills_search(input, &token)
+    application_skills::skills_search(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -61,7 +61,7 @@ pub fn skills_get(
         Ok(token) => token,
         Err(result) => return result,
     };
-    application_skills::skills_get(input, &token)
+    application_skills::skills_get(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -79,7 +79,7 @@ pub fn skills_create(
         Ok(token) => token,
         Err(result) => return result,
     };
-    application_skills::skills_create(input, &token)
+    application_skills::skills_create(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -92,7 +92,7 @@ pub fn skills_update(
         Ok(token) => token,
         Err(result) => return result,
     };
-    application_skills::skills_update(input, &token)
+    application_skills::skills_update(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -105,7 +105,7 @@ pub fn skills_delete(
         Ok(token) => token,
         Err(result) => return result,
     };
-    application_skills::skills_delete(input, &token)
+    application_skills::skills_delete(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -118,7 +118,7 @@ pub fn skills_toggle(
         Ok(token) => token,
         Err(result) => return result,
     };
-    application_skills::skills_toggle(input, &token)
+    application_skills::skills_toggle(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -131,7 +131,7 @@ pub fn skills_versions(
         Ok(token) => token,
         Err(result) => return result,
     };
-    application_skills::skills_versions(input, &token)
+    application_skills::skills_versions(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -144,5 +144,5 @@ pub fn skills_rollback(
         Ok(token) => token,
         Err(result) => return result,
     };
-    application_skills::skills_rollback(input, &token)
+    application_skills::skills_rollback(state.station.client(), input, &token)
 }

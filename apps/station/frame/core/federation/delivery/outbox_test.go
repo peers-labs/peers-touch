@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -34,7 +35,7 @@ func TestDeliverySchemaUsesExplicitTablesAndConflictIndexes(t *testing.T) {
 	}
 }
 
-func TestOutboxEnqueueDetectsExactReplayAndIdentityConflicts(t *testing.T) {
+func TestFederatedPrivateReplayPreservesOneOutboxIdentity(t *testing.T) {
 	fixture := newFrameFixture(t)
 	_, repository := newSQLiteRepository(t, fixture.clock)
 	ctx := context.Background()
@@ -91,7 +92,7 @@ func TestOutboxEnqueueDetectsExactReplayAndIdentityConflicts(t *testing.T) {
 	}
 }
 
-func TestOutboxLeaseReclaimFencesStaleWorker(t *testing.T) {
+func TestFederatedPrivateRestartReclaimsLeaseAndFencesStaleWorker(t *testing.T) {
 	fixture := newFrameFixture(t)
 	_, repository := newSQLiteRepository(t, fixture.clock)
 	ctx := context.Background()
@@ -317,7 +318,7 @@ func TestDispatcherMapsReceiverDispositionsToDurableStates(t *testing.T) {
 	}
 }
 
-func TestDispatcherRetriesWithoutAttemptCapUntilImmutableExpiry(t *testing.T) {
+func TestFederatedPrivateReconcileReadsRetryAndExpiryState(t *testing.T) {
 	fixture := newFrameFixture(t)
 	db, repository := newSQLiteRepository(t, fixture.clock)
 	transport := &failingTransport{}
@@ -383,6 +384,19 @@ func TestDispatcherRetriesWithoutAttemptCapUntilImmutableExpiry(t *testing.T) {
 		transport.CallCount() != 6 {
 		t.Fatalf("retrying row = %+v, calls=%d", retrying, transport.CallCount())
 	}
+	statuses, err := repository.ReadOutboxStatuses(
+		context.Background(),
+		[]string{frame.FrameId},
+		fixture.clock.Now(),
+	)
+	if err != nil {
+		t.Fatalf("read retrying status: %v", err)
+	}
+	if len(statuses) != 1 ||
+		statuses[0].State != delivery.OutboxStateRetryWait ||
+		statuses[0].AttemptCount != 6 {
+		t.Fatalf("retrying status = %+v", statuses)
+	}
 
 	fixture.clock.Set(frame.ExpiresAt.AsTime())
 	if _, err := dispatcher.DispatchOnce(context.Background()); err != nil {
@@ -394,6 +408,162 @@ func TestDispatcherRetriesWithoutAttemptCapUntilImmutableExpiry(t *testing.T) {
 	}
 	if expired.State != delivery.OutboxStateExpired || expired.AttemptCount != 6 {
 		t.Fatalf("expired row = %+v", expired)
+	}
+}
+
+type dispatchObservationRecorder struct {
+	traceID     string
+	observation delivery.DispatchObservation
+}
+
+func (r *dispatchObservationRecorder) ObserveDispatch(
+	ctx context.Context,
+	observation delivery.DispatchObservation,
+) {
+	r.traceID = logger.GetTraceID(ctx)
+	r.observation = observation
+}
+
+func TestFederatedPrivateConflictRejectsChangedFrameBytes(t *testing.T) {
+	fixture := newFrameFixture(t)
+	_, repository := newSQLiteRepository(t, fixture.clock)
+	frame := fixture.stringFrame(t, "private-frame", "private-key", "first")
+	frame.PayloadKind = delivery.PayloadKindSocialPrivateResource
+	if err := delivery.SignFrame(
+		context.Background(),
+		frame,
+		fixture.policy,
+		fixture.signer,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.Enqueue(
+		context.Background(),
+		frame,
+		fixture.clock.Now(),
+	); err != nil {
+		t.Fatal(err)
+	}
+	conflict := fixture.stringFrame(t, "private-frame", "private-key", "changed")
+	conflict.PayloadKind = delivery.PayloadKindSocialPrivateResource
+	if err := delivery.SignFrame(
+		context.Background(),
+		conflict,
+		fixture.policy,
+		fixture.signer,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.Enqueue(
+		context.Background(),
+		conflict,
+		fixture.clock.Now(),
+	); !errors.Is(err, delivery.ErrPayloadHashConflict) {
+		t.Fatalf("conflicting private frame error = %v", err)
+	}
+}
+
+func TestFederatedPrivateRestartPreservesTraceThroughDelivery(t *testing.T) {
+	fixture := newFrameFixture(t)
+	db, repository := newSQLiteRepository(t, fixture.clock)
+	frame := fixture.stringFrame(t, "private-restart", "private-restart", "body")
+	frame.PayloadKind = delivery.PayloadKindSocialPrivateResource
+	frame.TraceId = "trace-private-restart"
+	if err := delivery.SignFrame(
+		context.Background(),
+		frame,
+		fixture.policy,
+		fixture.signer,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.Enqueue(
+		context.Background(),
+		frame,
+		fixture.clock.Now(),
+	); err != nil {
+		t.Fatal(err)
+	}
+	firstDispatcher, err := delivery.NewDispatcher(
+		repository,
+		&failingTransport{},
+		delivery.DispatcherConfig{
+			WorkerID:      "worker-before-restart",
+			BatchSize:     1,
+			LeaseDuration: time.Second,
+			IdleDelay:     time.Millisecond,
+			RetryBackoff: delivery.RetryBackoff{
+				Initial: time.Second,
+				Maximum: time.Second,
+			},
+		},
+		fixture.clock,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := firstDispatcher.DispatchOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	fixture.clock.Advance(time.Second)
+	restarted, err := delivery.NewGORMRepository(db, fixture.clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := &dispatchObservationRecorder{}
+	var transportTraceID string
+	dispatcher, err := delivery.NewDispatcher(
+		restarted,
+		delivery.TransportFunc(func(
+			ctx context.Context,
+			delivered *delivery.Frame,
+		) (delivery.Result, error) {
+			fixture.clock.Advance(250 * time.Millisecond)
+			transportTraceID = logger.GetTraceID(ctx)
+			if delivered.GetFrameId() != frame.GetFrameId() {
+				t.Fatalf("restarted frame ID = %q", delivered.GetFrameId())
+			}
+			return delivery.AcceptedResult(), nil
+		}),
+		delivery.DispatcherConfig{
+			WorkerID:      "worker-after-restart",
+			BatchSize:     1,
+			LeaseDuration: time.Second,
+			IdleDelay:     time.Millisecond,
+			RetryBackoff: delivery.RetryBackoff{
+				Initial: time.Second,
+				Maximum: time.Second,
+			},
+		},
+		fixture.clock,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := dispatcher.RegisterObserver(
+		delivery.PayloadKindSocialPrivateResource,
+		recorder,
+	); err != nil {
+		t.Fatal(err)
+	}
+	report, err := dispatcher.DispatchOnce(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Delivered != 1 ||
+		transportTraceID != frame.GetTraceId() ||
+		recorder.traceID != frame.GetTraceId() ||
+		recorder.observation.Transition != delivery.DispatchTransitionDelivered ||
+		recorder.observation.Attempt != 2 ||
+		recorder.observation.Latency != 1250*time.Millisecond {
+		t.Fatalf(
+			"restart report=%+v transport trace=%q observation=%+v observation trace=%q",
+			report,
+			transportTraceID,
+			recorder.observation,
+			recorder.traceID,
+		)
 	}
 }
 

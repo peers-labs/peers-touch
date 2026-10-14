@@ -147,12 +147,9 @@ pub fn list_actor_ptids() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    static TEST_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn with_temp_storage_root(f: impl FnOnce()) {
-        let _g = TEST_ENV_LOCK.lock().expect("lock");
+        let _guard = storage::test_storage_env_lock();
         let base = std::env::temp_dir().join(format!(
             "peers-session-store-test-{}-{}",
             std::process::id(),

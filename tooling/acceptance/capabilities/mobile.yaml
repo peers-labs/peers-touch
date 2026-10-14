@@ -3,8 +3,8 @@
   "finalizerRegistry": {
     "path": "tooling/acceptance/gates/mobile/finalizer-registry.json",
     "protectedBaseline": "tooling/acceptance/gates/mobile/finalizer-baseline.json",
-    "protectedBaselineDigest": "0639ab1fbcc167c72aa8f8acdb61ecbc058849b89f8b8469ecde7d5ec516b80a",
-    "protectedBaselineFileSha256": "518643e3df3680cfb4d5259daebd231269bde0608f7c907bb6f246834f205908"
+    "protectedBaselineDigest": "481fb130975c2f3bdad365cf07eadb0c6e6bf4e588ccd0dd9920d54bbc7bd3bf",
+    "protectedBaselineFileSha256": "2b1558e05692acb2246252bac0c699d9defb32e74ac133b28650d8d949692f33"
   },
   "requiredEvidenceFinalizers": {
     "mobile-native-access-e2e": "mobile.native.oauth-cleanup-evidence"
@@ -112,7 +112,7 @@
       "domain": "mobile",
       "direction": "acceptance_validates_product",
       "features": ["mobile-chat-contacts-groups", "mobile-moments-participation", "mobile-profile-settings"],
-      "required_gates": ["mobile-contract-static", "mobile-simulator-social-convergence-e2e", "mobile-simulator-chat-contacts-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-settings-e2e"],
+      "required_gates": ["mobile-contract-static", "mobile-simulator-social-convergence-e2e", "mobile-simulator-chat-contacts-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-settings-e2e", "mobile-social-ios-native", "mobile-social-android-native"],
       "synthetic_paths": [
         "apps/mobile/src/features/social/socialRuntime.ts",
         "apps/mobile/src/runtimes/messagingRuntime.ts",
@@ -127,9 +127,9 @@
       "evidence": {
         "truth_sources": ["Station conversation and social domains", "Station actor preferences", "Mobile runtime projections"],
         "surfaces": ["Chat", "Contacts", "Moments", "Me and Settings"],
-        "proven_by": ["mobile-contract-static", "mobile-simulator-social-convergence-e2e", "mobile-simulator-chat-contacts-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-settings-e2e"],
-        "proven_scope": ["Source-level runtime ownership and generation fencing", "Receiver-visible social journeys for two actors on the required two-simulator/same-Station cell"],
-        "unproven_scope": ["Cross-Station or Relay-backed Social delivery", "Optional physical-radio and hardware-specific behavior"]
+        "proven_by": ["mobile-contract-static", "mobile-simulator-social-convergence-e2e", "mobile-simulator-chat-contacts-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-settings-e2e", "mobile-social-ios-native", "mobile-social-android-native"],
+        "proven_scope": ["Source-level runtime ownership and generation fencing", "Receiver-visible social journeys for two actors on the required two-simulator/same-Station cell", "MPS-RC01 iOS same-Station Social parity only when mobile-social-ios-native passes", "MPS-RC02 physical Android same-Station Social parity only when mobile-social-android-native passes"],
+        "unproven_scope": ["Cross-Station or Relay-backed Social delivery", "Desktop-Mobile interoperability until its required Gates pass", "Optional physical-radio interruption behavior"]
       }
     },
     {
@@ -137,8 +137,10 @@
       "domain": "mobile",
       "direction": "acceptance_validates_product",
       "features": ["mobile-native-accessibility-performance"],
-      "required_gates": ["mobile-ios-simulator-layout-accessibility-e2e", "mobile-simulator-platform-e2e", "mobile-hard-cut-static"],
+      "required_gates": ["mobile-ios-simulator-layout-accessibility-e2e", "mobile-simulator-whole-product-usability-e2e", "mobile-simulator-platform-e2e", "mobile-hard-cut-static"],
       "synthetic_paths": [
+        "tooling/acceptance/gates/mobile/whole_product_surface_inventory.json",
+        "apps/mobile/scripts/review-mobile-surfaces.mjs",
         "apps/mobile/src/runtimes/nativeLifecycleBridge.ts",
         "apps/mobile/src-tauri/src/platform/native_events.rs",
         "apps/mobile/src-tauri/src/platform/secure_storage/ios_keychain.rs",
@@ -146,9 +148,9 @@
       ],
       "evidence": {
         "truth_sources": ["Mobile native lifecycle and secure-storage ports", "Mobile rendered accessibility tree", "Mobile runtime telemetry"],
-        "surfaces": ["iOS and Android native Mobile Shell"],
-        "proven_by": ["mobile-ios-simulator-layout-accessibility-e2e", "mobile-simulator-platform-e2e", "mobile-hard-cut-static"],
-        "proven_scope": ["iOS Simulator launch-surface layout and accessibility", "Required iOS Simulator platform, timing, cleanup, and hard-cut assertions"],
+        "surfaces": ["Complete foreground iOS Mobile surface inventory"],
+        "proven_by": ["mobile-ios-simulator-layout-accessibility-e2e", "mobile-simulator-whole-product-usability-e2e", "mobile-simulator-platform-e2e", "mobile-hard-cut-static"],
+        "proven_scope": ["Complete foreground iOS Simulator route/state layout, accessibility, human-readable content, and interaction coverage", "Required iOS Simulator platform, timing, cleanup, and hard-cut assertions"],
         "unproven_scope": ["Optional Android and physical-device accessibility and pinned-hardware performance"]
       }
     }

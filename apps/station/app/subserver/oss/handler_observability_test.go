@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -88,6 +90,35 @@ func TestHealthz_OkWhenAllChecksPass(t *testing.T) {
 	}
 	if body.Schema != ossmodel.SchemaVersionCurrent {
 		t.Errorf("schema: got %q want %q", body.Schema, ossmodel.SchemaVersionCurrent)
+	}
+}
+
+func TestClusterObjectBackingReadyRejectsLocalAndAcceptsSharedFS(t *testing.T) {
+	local := &ossSubServer{backend: storage.NewLocalBackend(t.TempDir())}
+	if err := local.ClusterObjectBackingReady(context.Background()); !errors.Is(err, ErrClusterObjectBackingNotShared) {
+		t.Fatalf("local cluster readiness error=%v want=%v", err, ErrClusterObjectBackingNotShared)
+	}
+	sharedRoot := filepath.Join(t.TempDir(), "not-created")
+	shared := &ossSubServer{
+		backend: storage.NewSharedFSBackend(sharedRoot),
+	}
+	if err := shared.ClusterObjectBackingReady(context.Background()); err != nil {
+		t.Fatalf("shared-fs cluster readiness: %v", err)
+	}
+	if _, err := os.Stat(sharedRoot); err != nil {
+		t.Fatalf("shared-fs cluster root was not initialized: %v", err)
+	}
+}
+
+func TestBackendInitializationFailureIsExplicit(t *testing.T) {
+	server := &ossSubServer{backendInitErr: errors.New("invalid shared backend")}
+	if err := server.Init(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "invalid shared backend") {
+		t.Fatalf("Init error=%v", err)
+	}
+	if err := server.Start(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "invalid shared backend") {
+		t.Fatalf("Start error=%v", err)
 	}
 }
 

@@ -1,5 +1,5 @@
 use super::EngineEndpoint;
-use crate::infrastructure::station_client;
+use crate::application::station_runtime::client::StationClient;
 use crate::model::chat::{
     ConversationMembershipAction, MemberRole, MessagingMembershipAction,
     PrepareConversationMembershipRequest, PrepareConversationMembershipResponse,
@@ -9,26 +9,35 @@ use messaging_core::proto::{actor_device_ref, actor_ref};
 use reqwest::Method;
 
 pub struct StationMembershipTransitionTransport {
+    station_client: StationClient,
     token: String,
     endpoint: EngineEndpoint,
 }
 
 impl StationMembershipTransitionTransport {
-    pub fn new(token: String, endpoint: EngineEndpoint) -> Result<Self, String> {
+    pub fn new(
+        station_client: StationClient,
+        token: String,
+        endpoint: EngineEndpoint,
+    ) -> Result<Self, String> {
         if token.trim().is_empty()
             || endpoint.ptid.trim().is_empty()
             || endpoint.device_id.trim().is_empty()
         {
             return Err("messaging membership transition transport is incomplete".to_string());
         }
-        Ok(Self { token, endpoint })
+        Ok(Self {
+            station_client,
+            token,
+            endpoint,
+        })
     }
 
     pub fn prepare(
         &self,
         input: &MembershipTransitionIntentInput,
     ) -> Result<PrepareConversationMembershipResponse, String> {
-        station_client::request_proto_for_device::<
+        self.station_client.request_proto_for_device::<
             PrepareConversationMembershipRequest,
             PrepareConversationMembershipResponse,
         >(

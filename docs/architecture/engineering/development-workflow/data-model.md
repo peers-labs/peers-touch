@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Data Model
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-07
+> **Created**: 2026-09-13 | **Updated**: 2026-10-09
 > **Owner**: Platform Team
 
 ---
@@ -431,13 +431,21 @@ Rules:
   current immutable snapshot;
 - repository/branch scans, active-work, Session, and declaration recency never
   select or replace a mount;
-- there is no workspace-binding, generation-advance, dual-read, or migration
-  fallback path.
+- there is no workspace-binding or generation-advance path;
+- during the bounded DWF-D45 adoption window, stable and legacy Plan indexes
+  are disjoint members of one digest-protected ledger envelope. Their mount-ID
+  union must equal the workspace index, so there is still one occupancy truth.
 
-The hard cut from the retired version-indexed machine schema runs only through
-`make plan-state-migrate` while every declaration and mount is non-live. It
-renames ledger keys and recomputes integrity digests once; normal readers reject
-the retired shape with `PLAN_STATE_MIGRATION_REQUIRED`.
+`make plan-state-migrate` derives one workspace from the canonical root. It
+migrates only that workspace's declaration records without changing their
+lifecycle state and preserves foreign indexes. For a selected historical
+declaration created before workflow-owner provenance, the same migration may
+attach only the live OWNER reference from its exact admitting Hook action;
+existing or foreign ownership is never replaced. A selected legacy mount
+remains close-only: stable execution cannot consume its retired snapshot,
+while the exact owner may perform only explicitly authorized `owner-unmount`.
+The mixed envelope is removed automatically when
+`liveMountsByPlanVersion` becomes empty.
 
 ## 5.2 Execution Plan Snapshot And Run
 
@@ -723,6 +731,11 @@ interface WorkflowOwnerBinding {
 }
 ```
 
+For schema continuity, `WorkflowOwnerBinding.executionRoot/workspaceId` retain
+the workspace that created the binding. They are the OWNER's default/origin
+workspace, not permanent mutation authority and not part of portable
+`WorkflowOwnerReference`.
+
 The portable reference copied into worktree and Development state is:
 
 ```ts
@@ -776,6 +789,8 @@ interface WorkflowBindingAssignment {
   parentBindingDigest: string;
   workflowSessionId: string;
   operationId: string;
+  executionRoot: string;
+  workspaceId: string;
   issuedAt: string;
   leaseUntil: string;
   digest: string;
@@ -816,13 +831,14 @@ interface WorkflowChildTerminalReceipt {
 ```
 
 Assignment creation requires a current lineage projection and an active
-matching Development Session. Its `rootBindingDigest` always names the OWNER;
-its `parentBindingDigest` names the direct issuer. Before publishing a child
-binding, claim writes one assignment-keyed create-once record. The first
-execution-session hash wins; an idempotent retry by that session reuses the
-claim, while every different session is rejected. A child is live only before
-`leaseUntil` and before a terminal receipt exists. OWNER liveness has no
-generic TTL.
+matching Development Session in the projection's selected workspace. Its
+`rootBindingDigest` always names the OWNER; its `parentBindingDigest` names the
+direct issuer; `executionRoot/workspaceId` freeze the child's assignment
+workspace. Before publishing a child binding, claim writes one assignment-keyed
+create-once record. The first execution-session hash wins; an idempotent retry
+by that session reuses the claim, while every different session is rejected. A
+child is live only before `leaseUntil` and before a terminal receipt exists.
+OWNER liveness has no generic TTL.
 
 Every hook and claim consumes one read-only projection:
 
@@ -846,16 +862,23 @@ interface WorkflowBindingProjection {
 }
 ```
 
-`executionRoot` is canonicalized through Git plus `realpath` and inherited by
-the entire lineage. `subjectRoots`, `toolRoot`, and `targetRoots` are per-event
-facts and never change authority. Status, readiness, handoff, Stop, worker
-result, and Completion Review use this same projection rather than searching
-for an arbitrary unreleased binding by worktree.
+For an OWNER mutation, `executionRoot/workspaceId` are canonicalized through
+Git plus `realpath` and identify this Action's selected workspace. Resolution
+prefers one unique mutation target, then explicit host task root, tool `cwd`,
+active editor root, and repository `cwd`. A target-less event may fall back to
+the persisted OWNER default only when every mutation path remains inside it.
+For a child, these fields always equal the assignment workspace and cannot be
+overridden. `subjectRoots`, `toolRoot`, and `targetRoots` remain per-event
+facts.
 
-For a new OWNER in a multi-root workspace, every Hook projection location is
-excluded from root selection. An explicit host task root must match one
-declared workspace root; otherwise all mutation targets must resolve to one
-root. Zero or multiple candidates produce `WORKTREE_SELECTION_REQUIRED`.
+Every Hook projection location is excluded from authority selection. When a
+workspace descriptor is present, the selected root must be declared there.
+Multiple mutation roots produce `WORKTREE_SELECTION_REQUIRED`; an admitted
+Action that escapes its selected root produces
+`ACTION_WORKSPACE_WRITE_DENIED`. Status, readiness, handoff, Stop, and worker
+result use this projection rather than searching for an arbitrary unreleased
+binding by worktree. Completion Review remains repository-native and does not
+consume it.
 
 The latest Anchor receipt is atomically replaceable because it projects current
 owner state:
@@ -1044,10 +1067,12 @@ is repository-relative, resolves inside the declared worktree, and must match
 the live `mountId`, current snapshot `planDigest`, `runId`, `planId`, and the
 ExecutionRun's current `taskId`. Once a workspace is mounted, locator-less
 declarations are rejected with `WORKSPACE_PLAN_DECLARATION_REQUIRED`. There is
-no legacy-format fallback.
+no inferred locator fallback.
 
-Publication uses lock, closed-schema validation, atomic replace and digest
-readback. Declaration intent never substitutes for a live runtime lease.
+Publication uses lock, exact per-record schema validation, atomic replace and
+digest readback. The coordination reader accepts a legacy record only as a
+foreign migration-window claim; owner mutation requires the current stable
+shape. Declaration intent never substitutes for a live runtime lease.
 Relay and database claims provide machine-wide planning visibility only; they
 do not create deployment, mutation or lease authority.
 

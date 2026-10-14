@@ -4,6 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   existsSync,
+  fstatSync,
   lstatSync,
   mkdtempSync,
   mkdirSync,
@@ -16,6 +17,7 @@ import path from 'node:path';
 import {
   isDirectInvocation,
   repoRoot,
+  workspaceRuntimePath,
   workspaceStatePath,
   workspaceWorkflowPath,
   workspaceIdForRoot,
@@ -88,6 +90,42 @@ function asSessionError(error) {
     );
   }
   return error;
+}
+
+export function resolveDevelopmentRunnerPython(options = {}) {
+  const workspaceRoot = path.resolve(options.workspaceRoot ?? repoRoot);
+  const workspaceId =
+    options.workspaceId ?? workspaceIdForRoot(workspaceRoot);
+  const venvRoot = workspaceRuntimePath('acceptance-gate-venv', {
+    home: options.home,
+    repoRoot: workspaceRoot,
+    workspaceId,
+  });
+  const executable = path.join(
+    venvRoot,
+    process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
+  );
+  const config = path.join(venvRoot, 'pyvenv.cfg');
+  try {
+    const executableStatus = lstatSync(executable);
+    const resolvedExecutableStatus = lstatSync(realpathSync(executable));
+    const configStatus = lstatSync(config);
+    if (
+      (!executableStatus.isFile() && !executableStatus.isSymbolicLink()) ||
+      !resolvedExecutableStatus.isFile() ||
+      configStatus.isSymbolicLink() ||
+      !configStatus.isFile()
+    ) {
+      throw new Error('invalid Acceptance virtual environment');
+    }
+  } catch {
+    sessionFail(
+      'SESSION_RUNTIME_REQUIRED',
+      'Development Gate runner requires the workspace Acceptance virtual environment',
+      { runtime: 'acceptance-gate-venv' },
+    );
+  }
+  return executable;
 }
 
 function segmentContains(prefix, candidate) {
@@ -965,7 +1003,6 @@ function normalizeStandardizedResult(
     );
   }
   const isStaticResult =
-    result.traceability?.status === 'not-required' &&
     result.cleanupStatus === 'not-required' &&
     result.cleanupArtifact === undefined;
   if (isStaticResult) {
@@ -974,6 +1011,15 @@ function normalizeStandardizedResult(
       result.sourceArtifactKind !== undefined ||
       result.evidenceGateId !== undefined ||
       result.evidenceStatus !== undefined;
+    if (
+      result.traceability?.status !== 'not-required' &&
+      !(result.traceability?.status === 'complete' && declaresEvidenceReport)
+    ) {
+      sessionFail(
+        'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+        'static Development Gate traceability is incomplete',
+      );
+    }
     if (
       declaresEvidenceReport
     ) {
@@ -1218,6 +1264,8 @@ function runDevelopmentClosure(
   spawnDevelopmentRunner = spawnSync,
   inspectSource = actualSource,
   spawnTaskCheck = spawnSync,
+  resolveRunnerPython = resolveDevelopmentRunnerPython,
+  environment = process.env,
 ) {
   const expectedGates =
     plan.acceptance?.closures?.[plan.currentTask.closureId] ?? [];
@@ -1318,22 +1366,36 @@ function runDevelopmentClosure(
     for (const binding of stationProfiles) {
       arguments_.push('--station-profile', binding);
     }
-    const completed = spawnDevelopmentRunner('python3', arguments_, {
+    const runnerPython = resolveRunnerPython({
+      home: options.home,
+      workspaceRoot,
+      workspaceId: plan.executionBinding.workspaceId,
+    });
+    const childEnvironment = {
+      ...environment,
+      ...(options.home
+        ? {
+            HOME: options.home,
+            PT_MACHINE_DEV_ROOT: path.join(
+              options.home,
+              '.peers-touch',
+              'dev',
+            ),
+          }
+        : {}),
+    };
+    if (path.isAbsolute(runnerPython)) {
+      const runnerBin = path.dirname(runnerPython);
+      childEnvironment.PATH = childEnvironment.PATH
+        ? `${runnerBin}${path.delimiter}${childEnvironment.PATH}`
+        : runnerBin;
+    }
+    const leaseStdio = inheritedMachineLeaseStdio(childEnvironment);
+    const completed = spawnDevelopmentRunner(runnerPython, arguments_, {
       cwd: workspaceRoot,
       encoding: 'utf8',
-      env: {
-        ...process.env,
-        ...(options.home
-          ? {
-              HOME: options.home,
-              PT_MACHINE_DEV_ROOT: path.join(
-                options.home,
-                '.peers-touch',
-                'dev',
-              ),
-            }
-          : {}),
-      },
+      env: childEnvironment,
+      ...(leaseStdio === null ? {} : { stdio: leaseStdio }),
       maxBuffer: 16 * 1024 * 1024,
     });
     if (completed.error || completed.status !== 0) {
@@ -1359,6 +1421,36 @@ function runDevelopmentClosure(
   } finally {
     rmSync(controlDirectory, { recursive: true, force: true });
   }
+}
+
+function inheritedMachineLeaseStdio(environment) {
+  const rawLeaseFd = environment.PT_MACHINE_LEASE_FD;
+  if (rawLeaseFd === undefined || rawLeaseFd === '') return null;
+  if (!/^[0-9]+$/.test(rawLeaseFd)) {
+    sessionFail(
+      'SESSION_RUNTIME_REQUIRED',
+      'inherited machine lease file descriptor is invalid',
+    );
+  }
+  const leaseFd = Number(rawLeaseFd);
+  if (!Number.isSafeInteger(leaseFd) || leaseFd < 3) {
+    sessionFail(
+      'SESSION_RUNTIME_REQUIRED',
+      'inherited machine lease file descriptor is invalid',
+    );
+  }
+  try {
+    fstatSync(leaseFd);
+  } catch {
+    sessionFail(
+      'SESSION_RUNTIME_REQUIRED',
+      'inherited machine lease file descriptor is not open',
+    );
+  }
+  const stdio = ['ignore', 'pipe', 'pipe'];
+  while (stdio.length <= leaseFd) stdio.push('ignore');
+  stdio[leaseFd] = leaseFd;
+  return stdio;
 }
 
 function validateAggregateReport(report, expectedGates) {
@@ -1926,6 +2018,9 @@ export async function commitFunctionalResult(options, dependencies = {}) {
         dependencies.spawnDevelopmentRunner ?? spawnSync,
         dependencies.inspectSource ?? actualSource,
         dependencies.spawnTaskCheck ?? spawnSync,
+        dependencies.resolveDevelopmentRunnerPython ??
+          resolveDevelopmentRunnerPython,
+        dependencies.environment ?? process.env,
       );
   let prepared = null;
   return transitionSessionSequenceStore({

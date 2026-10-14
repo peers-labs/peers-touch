@@ -2,6 +2,8 @@ package oss
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -22,6 +24,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	touchutil "github.com/peers-labs/peers-touch/station/frame/touch/util"
 )
 
 // FederationScopeName is the issuance scope OSS registers with
@@ -107,21 +110,23 @@ const (
 )
 
 type ossSubServer struct {
-	status       server.Status
-	addrs        []string
-	pathBase     string
-	dbName       string
-	storePath    string
-	signSecret   string
-	backend      storage.Backend
-	authProvider auth.Provider
-	fileService  service.FileService
-	fileRepo     repo.FileRepository
-	bucketRepo   repo.BucketRepository
-	auditRepo    repo.AuditRepository
-	blobRepo     repo.BlobRepository
-	metaRepo     repo.MetaRepository
-	chatResolver ChatSessionResolver
+	lifecycleMu    sync.RWMutex
+	status         server.Status
+	addrs          []string
+	pathBase       string
+	dbName         string
+	storePath      string
+	signSecret     string
+	backend        storage.Backend
+	backendInitErr error
+	authProvider   auth.Provider
+	fileService    service.FileService
+	fileRepo       repo.FileRepository
+	bucketRepo     repo.BucketRepository
+	auditRepo      repo.AuditRepository
+	blobRepo       repo.BlobRepository
+	metaRepo       repo.MetaRepository
+	chatResolver   ChatSessionResolver
 
 	// fedCache wraps the framework KeyStore and produces the
 	// LocalKey that Mint signs with. Lazy: a station that never
@@ -187,6 +192,8 @@ type ossSubServer struct {
 	workerPeerKeyTrimInterval    time.Duration
 	workerKeyRotationInterval    time.Duration
 	workerAuditTrimInterval      time.Duration
+	workerNodePeerID             string
+	workerIncarnation            string
 
 	// workerScheduler runs the background lifecycle workers
 	// (TTLSweeper / BlobGC for S11; Reconciler / PeerKeyTrim /
@@ -194,16 +201,20 @@ type ossSubServer struct {
 	// only constructed when at least one worker has a positive
 	// interval AND the OSS subserver has all required deps.
 	workerScheduler *worker.Scheduler
+	workerStartErr  error
 }
 
 // NewOSSSubServer constructs the OSS subserver from operator-supplied
-// options. The constructor performs only argument validation and
-// in-process wiring; network I/O against the configured backend is
-// deferred to the first request so a misconfigured S3 bucket does not
-// abort process startup for unrelated subservers.
+// options. Constructor-level configuration failures are retained and
+// returned by Init/Start; network health remains deferred to the
+// backend health/read/write operations.
 func NewOSSSubServer(opts ...option.Option) server.Subserver {
 	o := getOptions(opts...)
 	s := &ossSubServer{status: server.StatusStopped, addrs: []string{}}
+	s.workerIncarnation, _ = touchutil.RandomString(24)
+	if s.workerIncarnation == "" {
+		s.workerIncarnation = fmt.Sprintf("incarnation-%d", time.Now().UnixNano())
+	}
 	s.pathBase = o.Path
 	s.dbName = o.DBName
 	s.storePath = o.StorePath
@@ -275,9 +286,8 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 
 	backend, err := buildBackend(s.backendType, o, &s.storePath)
 	if err != nil {
-		logger.Errorf(context.Background(), "[oss] backend init failed: %v — falling back to local", err)
-		s.backendType = string(storage.DriverLocal)
-		backend = storage.NewLocalBackend(s.storePath)
+		logger.Errorf(context.Background(), "[oss] backend init failed: %v", err)
+		s.backendInitErr = err
 	}
 	s.backend = backend
 
@@ -334,7 +344,7 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 func buildBackend(backendType string, o *Options, storePath *string) (storage.Backend, error) {
 	cfg := storage.Config{Driver: storage.Driver(backendType)}
 	switch storage.Driver(backendType) {
-	case storage.DriverLocal, "":
+	case storage.DriverLocal, storage.DriverSharedFS, "":
 		if *storePath == "" {
 			if dataDir, err := appdir.Resolve("station", "data"); err == nil {
 				*storePath = filepath.Join(dataDir, "oss")
@@ -342,7 +352,11 @@ func buildBackend(backendType string, o *Options, storePath *string) (storage.Ba
 				*storePath = "/tmp/oss"
 			}
 		}
-		cfg.Driver = storage.DriverLocal
+		if storage.Driver(backendType) == storage.DriverSharedFS {
+			cfg.Driver = storage.DriverSharedFS
+		} else {
+			cfg.Driver = storage.DriverLocal
+		}
 		cfg.Local = &storage.LocalConfig{Root: *storePath}
 	case storage.DriverS3:
 		cfg.S3 = &storage.S3Config{
@@ -474,6 +488,15 @@ var ErrUnsupportedBackend = errors.New("oss: backend does not support requested 
 
 func (s *ossSubServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.status = server.StatusStarting
+	if s.backendInitErr != nil {
+		return fmt.Errorf("oss: backend initialization: %w", s.backendInitErr)
+	}
+	if s.workerNodePeerID == "" {
+		s.workerNodePeerID = currentNodePeerID()
+	}
+	if incarnation := currentNodeIncarnation(); incarnation != "" {
+		s.workerIncarnation = incarnation
+	}
 	// Idempotent: scope.MustRegister panics on duplicate, so we
 	// wrap in once.Do for test re-entry. The federation scope
 	// must be registered before any inbound request arrives —
@@ -492,9 +515,11 @@ func (s *ossSubServer) Init(ctx context.Context, opts ...option.Option) error {
 			_ = rds.AutoMigrate(
 				&ossmodel.Audit{},
 				&ossmodel.Blob{},
+				&ossmodel.BlobGCGeneration{},
 				&ossmodel.Bucket{},
 				&ossmodel.FileMeta{},
 				&ossmodel.Meta{},
+				&ossmodel.WorkerLease{},
 			)
 			// Bootstrap stamps the schema version sentinel and
 			// seeds `capability_version`. Idempotent — repeat
@@ -515,19 +540,29 @@ func (s *ossSubServer) Init(ctx context.Context, opts ...option.Option) error {
 }
 
 func (s *ossSubServer) Start(ctx context.Context, opts ...option.Option) error {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	if s.backendInitErr != nil {
+		return fmt.Errorf("oss: backend initialization: %w", s.backendInitErr)
+	}
 	s.status = server.StatusRunning
 	if err := s.startWorkers(ctx); err != nil {
+		s.workerStartErr = err
 		// Worker startup failure is logged-not-fatal: the
 		// per-request data plane is independent of the
 		// background workers, so a misconfigured TTLSweeper
 		// must not abort the subserver. Operators see the
 		// failure in audit + logs and fix the deps.
 		logger.Errorf(ctx, "[oss] background workers failed to start: %v", err)
+	} else {
+		s.workerStartErr = nil
 	}
 	return nil
 }
 
 func (s *ossSubServer) Stop(ctx context.Context) error {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
 	s.status = server.StatusStopped
 	if s.workerScheduler != nil {
 		s.workerScheduler.Stop()
@@ -649,12 +684,16 @@ func (s *ossSubServer) startWorkers(ctx context.Context) error {
 		return nil
 	}
 
-	// MemLock is correct for single-instance deployments; a
-	// PgAdvisoryLock implementation can swap in here without
-	// touching any of the worker constructors. The lock is
-	// keyed per worker name so even a multi-instance station
-	// runs each worker on exactly one node per tick.
-	s.workerScheduler = worker.NewScheduler(workers, worker.NewMemLock(), s.auditRepo)
+	leaderLock, err := worker.NewDBLeaderLock(
+		s.dbName,
+		s.workerNodePeerID,
+		s.workerIncarnation,
+		30*time.Second,
+	)
+	if err != nil {
+		return fmt.Errorf("oss: workers: shared fenced lock: %w", err)
+	}
+	s.workerScheduler = worker.NewScheduler(workers, leaderLock, s.auditRepo)
 	if err := s.workerScheduler.Start(ctx); err != nil {
 		s.workerScheduler = nil
 		return fmt.Errorf("oss: workers: scheduler start: %w", err)
@@ -662,7 +701,11 @@ func (s *ossSubServer) startWorkers(ctx context.Context) error {
 	logger.Infof(ctx, "[oss] %d background worker(s) started", len(workers))
 	return nil
 }
-func (s *ossSubServer) Status() server.Status      { return s.status }
+func (s *ossSubServer) Status() server.Status {
+	s.lifecycleMu.RLock()
+	defer s.lifecycleMu.RUnlock()
+	return s.status
+}
 func (s *ossSubServer) Name() string               { return "oss" }
 func (s *ossSubServer) Type() server.SubserverType { return server.SubserverTypeHTTP }
 func (s *ossSubServer) Address() server.SubserverAddress {
@@ -706,4 +749,118 @@ func (s *ossSubServer) MaxFileSize() int64 {
 type FileServiceProvider interface {
 	FileService() service.FileService
 	MaxFileSize() int64
+}
+
+var ErrClusterObjectBackingNotShared = errors.New("oss: object backend is not shared across Station nodes")
+
+// ClusterObjectBackingReady is consumed by cluster admission. A
+// healthy node-local filesystem remains valid for N=1 but can never
+// satisfy N>1 readiness.
+func (s *ossSubServer) ClusterObjectBackingReady(ctx context.Context) error {
+	if s.backendInitErr != nil {
+		return fmt.Errorf("oss: backend initialization: %w", s.backendInitErr)
+	}
+	shared, ok := s.backend.(storage.ClusterSharedBackend)
+	if !ok || !shared.ClusterShared() {
+		return ErrClusterObjectBackingNotShared
+	}
+	identityProvider, ok := s.backend.(storage.ClusterBackingIdentityProvider)
+	if !ok {
+		return fmt.Errorf("oss: shared object backing identity is unavailable")
+	}
+	if _, err := identityProvider.EnsureClusterBackingIdentity(ctx); err != nil {
+		return fmt.Errorf(
+			"oss: shared object backing identity is unavailable: %w",
+			err,
+		)
+	}
+	return s.backend.Healthz(ctx)
+}
+
+// ClusterReadiness verifies both shared metadata and the explicitly shared
+// physical object namespace, then returns one credential-free backing digest.
+func (s *ossSubServer) ClusterReadiness(
+	ctx context.Context,
+) (string, error) {
+	s.lifecycleMu.RLock()
+	status := s.status
+	workerNodePeerID := s.workerNodePeerID
+	workerIncarnation := s.workerIncarnation
+	workerStartErr := s.workerStartErr
+	s.lifecycleMu.RUnlock()
+	if status != server.StatusRunning ||
+		strings.TrimSpace(workerNodePeerID) == "" ||
+		strings.TrimSpace(workerIncarnation) == "" {
+		return "", fmt.Errorf("oss: cluster runtime is not running")
+	}
+	if workerStartErr != nil {
+		return "", fmt.Errorf(
+			"oss: cluster workers failed to start: %w",
+			workerStartErr,
+		)
+	}
+	if err := s.ClusterObjectBackingReady(ctx); err != nil {
+		return "", err
+	}
+	identityProvider, ok := s.backend.(storage.ClusterBackingIdentityProvider)
+	if !ok {
+		return "", fmt.Errorf("oss: shared object backing identity is unavailable")
+	}
+	backingIdentity, err := identityProvider.EnsureClusterBackingIdentity(ctx)
+	if err != nil {
+		return "", fmt.Errorf(
+			"oss: shared object backing identity is unavailable: %w",
+			err,
+		)
+	}
+	if strings.TrimSpace(backingIdentity) == "" {
+		return "", fmt.Errorf("oss: shared object backing identity is unavailable")
+	}
+	database, err := store.GetRDS(
+		ctx,
+		store.WithRDSDBName(s.dbName),
+	)
+	if err != nil {
+		return "", err
+	}
+	databaseIdentity, err := store.PostgresClusterIdentity(ctx, database)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256([]byte(
+		"oss-cluster-v1\x00" +
+			databaseIdentity + "\x00" +
+			backingIdentity,
+	))
+	return hex.EncodeToString(digest[:]), nil
+}
+
+type ClusterObjectBackingProvider interface {
+	ClusterObjectBackingReady(context.Context) error
+}
+
+func currentNodePeerID() (nodePeerID string) {
+	defer func() {
+		if recover() != nil {
+			nodePeerID = ""
+		}
+	}()
+	options := server.GetOptions()
+	if options == nil {
+		return ""
+	}
+	return strings.TrimSpace(options.Metadata["node_peer_id"])
+}
+
+func currentNodeIncarnation() (incarnation string) {
+	defer func() {
+		if recover() != nil {
+			incarnation = ""
+		}
+	}()
+	options := server.GetOptions()
+	if options == nil {
+		return ""
+	}
+	return strings.TrimSpace(options.Metadata["node_incarnation"])
 }

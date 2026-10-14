@@ -1,9 +1,8 @@
 // identity.go — runtime singleton for the local station's federation-visible
 // identity. The values are NOT known at config-load time:
 //
-//   - StationPeerID is the libp2p PeerID of the bootstrap host. The host is
-//     created by the bootstrap subserver during Init, so the value is only
-//     available after the subserver wires itself up.
+//   - StationPeerID is derived from the persistent logical Station root key.
+//     It is independent from every process node's libp2p PeerID.
 //   - StationDomain is the DNS-style host portion of `peers.node.server.baseurl`.
 //     Available immediately at boot but cached here next to PeerID so every
 //     federation consumer reads ONE struct.
@@ -29,9 +28,8 @@ import (
 // LocalIdentity captures everything a federation consumer needs to identify
 // the local station to remote peers.
 type LocalIdentity struct {
-	// StationPeerID is the libp2p PeerID of the bootstrap host (the host
-	// announced via federation.bootstrap-nodes). May be empty before
-	// bootstrap.Init runs.
+	// StationPeerID is the stable logical Station identity. May be empty
+	// before bootstrap.Init publishes the root-derived value.
 	StationPeerID peer.ID
 
 	// StationDomain is the DNS-style HTTP host portion of the configured
@@ -48,9 +46,8 @@ var (
 )
 
 // SetLocalStationPeerID is called exactly once by the bootstrap subserver
-// after libp2p.New() returns its host. Repeated calls overwrite, but in
-// production the second call should never happen — the bootstrap host is
-// long-lived and there is one per process.
+// after loading the logical Station root. Repeated calls overwrite, but in
+// production the logical identity is published once per process.
 func SetLocalStationPeerID(id peer.ID) {
 	localIdentityUpdate.Lock()
 	defer localIdentityUpdate.Unlock()

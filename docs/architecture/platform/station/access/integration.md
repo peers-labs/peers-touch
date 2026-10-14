@@ -1,86 +1,132 @@
-# Station 接入生命周期 - 集成
+# Station 统一接入生命周期 - 集成与映射
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-09-26 | **Updated**: 2026-10-06
+> **Version**: v2.3
+> **Created**: 2026-09-26 | **Updated**: 2026-10-13
 > **Owner**: Identity and Access
 
 ---
 
-## 1. 当前实现映射
+## 1. Owner Mapping
 
-| Concern | Station owner | Desktop consumer | Mobile consumer |
+| Concern | Owner | Desktop consumer | Mobile consumer |
 |---|---|---|---|
-| Station identity | bootstrap identity | identity kernel | station connection runtime |
-| Access attempt | Access Gate | session store + Rust adapter | auth session + Host adapter |
-| Session scope | Actor session | runtime coordinator | mobile runtime coordinator |
-| Session class slot | Actor session | canonical `desktop` | canonical `mobile` |
+| Station identity/route | Node Connectivity + Station host identity | station binding/registry | station feature/runtime |
+| Access attempt | Access Gate | auth/session adapter | OAuth/access runtime |
+| Session scope | Actor Session | runtime coordinator | runtime coordinator |
+| Session class slot | Actor Session | canonical `desktop` | canonical `mobile` |
 | Federation context | Federation | context store | social runtime |
-| Relay diagnosis | Station operations | read-only status | read-only status |
+| Relay diagnosis | Node Connectivity/operations | read-only projection | read-only projection |
 
-Desktop 与 Mobile 通过相同 capability ID 和 protobuf contract 对齐，但保留各自
-平台 adapter 与 UI 组织。
+Desktop and Mobile share capability IDs and protobuf semantics while retaining
+platform-specific adapters and UI organization.
 
-## 2. Owner Mapping
-
-- Station Identity：签名 statement 与验证协议。
-- Access Gate：进入 Station 的唯一 policy owner。
-- Actor：PTID、profile 与 discoverability。
-- Federation：Station membership、Ledger 与 transport。
-- Relay：转发、mount 与 invite。
-- `station-api-capabilities.yaml`：Station route/owner 唯一 registry。
-- Station Access module contract：双端 consumer 与 scope 约束的机器投影。
-
-本模块只定义客户端接入编排，不成为新的业务真源。
-
-## 3. Access Integration
-
-当前接入链：
+## 2. Canonical Flow
 
 ```text
-station.identity.verify
+verify endpoint and Station target
+  -> choose verified route
+  -> establish Station transport
+  -> station.identity.verify
   -> access.gate.start
   -> access.gate.submit | access.gate.cancel
   -> access.gate.decision
-  -> scoped session bootstrap
+  -> activate scoped Session
+  -> start scope-bound runtimes
 ```
 
-双端必须：
+Clients:
 
-- 使用 generated protobuf codec；
-- 在凭据提交前验证签名 Station identity；
-- 把 Station、Actor、Device 与 lifecycle generation 一起传递；
-- 将未知 gate 或不完整响应转换为 typed failure；
-- 只通过 registry 中的能力构建请求。
+- verify identity before credential submission;
+- pass Station/Actor/Device/lifecycle scope together;
+- decode only generated protobuf;
+- map unknown or incomplete responses to typed failure;
+- build requests only from positive capability registry entries.
 
-## 4. Federation And Relay Integration
+## 3. Node Connectivity Boundary
 
-普通客户端只消费：
+[Node Connectivity](../../runtime/node-connectivity/README.md) exclusively
+owns:
 
-- Federation context list/select；
-- scoped search/resolve；
-- 当前 Station、Federation 名称与连接状态；
-- Station 生成的 Relay 诊断摘要。
+- signed endpoint/route transport contracts;
+- Relay enrollment, route generation and grants;
+- Relay runtime role and security prerequisites;
+- standard Circuit reservation, TLS/HTTP2 ingress and ACL permits;
+- finite Circuit resource limits.
 
-Federation topology mutation 与 Relay administration 只属于 operator plane。
-Actor profile 和 visibility 由 Actor owner 提供。
+Station Access owns the user-facing effect of those capabilities:
+
+- one Station identity;
+- one route-aware binding;
+- Access Gate and Session scope;
+- route failure/switch recovery;
+- no Relay management UI or second account/runtime.
+
+## 4. Federation Boundary
+
+Clients consume Federation contexts and explicitly scoped discovery. Federation
+topology mutation remains an operator concern. Relay reachability neither
+creates Federation membership nor supplies a default `federation_id`.
+
+The persisted Actor federated handle remains the only source for
+`ActorRef.acct`; direct and Circuit requests cannot alter it.
 
 ## 5. Persistence And Lifecycle
 
-客户端持久化 key 包含：
+Durable client ownership:
 
 ```text
-station_peer_id + actor_ptid + device_id + lifecycle_generation
+AccessScope =
+  station_peer_id
+  + actor_ptid
+  + device_id
+  + lifecycle_generation
 ```
 
-切换流程先 quiesce 当前 runtime，再清理 projection，随后验证新 Station 并建立
-新 scope。任何异步结果在提交 projection 前重新比较 lifecycle generation。
+Route ID/revision is transport state. Same-Station route switching preserves
+the Access scope. Station replacement first quiesces the current runtime, then
+clears projections and advances lifecycle generation.
 
-## 6. Validation
+Every asynchronous callback compares the complete current scope before writing
+state. Session and business storage are never keyed by Relay origin.
 
-- Station route、Proto 和 owner 由 `station-api-ownership` 验证。
-- 双端 capability consumer 由 Station Access current-interface contract 验证。
-- 首次接入、恢复、切换和 Federation context 由原生 Acceptance 验证。
-- Session unit/integration tests 证明 password、OAuth 和 takeover 使用同一个
-  client-class slot；Native Desktop/Mobile 矩阵证明跨类别共存与同类别接管。
-- active 文档与模块声明由 architecture module governance 验证。
+On Desktop, the Tauri composition root owns one `StationRuntime` in `AppState`.
+The Access-owned binding coordinator publishes `RouteLease`; the
+Node-Connectivity-owned transport executes it. Route failure returns typed
+evidence to the coordinator and never mutates the registry from inside a
+request adapter.
+
+Station-relative avatar, OSS, profile and applet bundle references become
+`StationResourceRef` and use the same typed client. WebView delivery is an
+app-local scope-checked projection. External absolute or presigned URLs remain
+outside Station transport.
+
+## 6. Interface Validation
+
+- `station-api-ownership` validates Station routes, contracts and owners.
+- Station Access capability contract validates real Desktop/Mobile consumers.
+- Session tests validate same-class takeover and cross-class coexistence.
+- Native Journeys validate first access, recovery, switching and scoped
+  Federation consumption.
+- Node Connectivity Gates validate Relay role, enrollment, discovery, Circuit
+  admission and standard-stream security.
+- Desktop StationRuntime Gates validate stable transport identity, repeated
+  switch cleanup, bounded admission and joined process shutdown.
+- Architecture module governance validates non-overlapping owners and complete
+  active documents.
+
+## 7. No Duplicate Transport Truth
+
+Station Access documents may reference Relay outcomes required by product
+Journeys and aggregate Acceptance, but they do not define:
+
+- Relay credential fields;
+- node enrollment state;
+- route signature wire;
+- Circuit route and permit binding;
+- TLS/HTTP2 ingress implementation;
+- byte/rate/concurrency limits;
+- Relay role allowlist.
+
+Changes to those concerns start in Node Connectivity and propagate here only as
+consumer-visible effects.

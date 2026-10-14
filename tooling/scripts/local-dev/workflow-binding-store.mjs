@@ -26,6 +26,7 @@ import {
 } from './workflow-owner-reference.mjs';
 import {
   projectWorkflowBinding,
+  validateWorkflowBindingProjection,
 } from './workflow-binding-projection.mjs';
 import {
   validateActiveWorkRecord,
@@ -54,6 +55,7 @@ const OWNER_KEYS = new Set([...LEGACY_OWNER_KEYS, 'rootChatId']);
 const ASSIGNMENT_KEYS = new Set([
   'assignmentId',
   'digest',
+  'executionRoot',
   'issuedAt',
   'kind',
   'leaseUntil',
@@ -62,6 +64,7 @@ const ASSIGNMENT_KEYS = new Set([
   'role',
   'rootBindingDigest',
   'workflowSessionId',
+  'workspaceId',
 ]);
 const ASSIGNMENT_CLAIM_KEYS = new Set([
   'assignmentDigest',
@@ -464,6 +467,7 @@ export function validateWorkflowBindingAssignment(value, expected = {}) {
     'peers-touch-workflow-binding-assignment',
     'WORKFLOW_BINDING_ASSIGNMENT_INVALID',
   );
+  const canonicalRoot = realpathSync(value.executionRoot);
   if (
     !IDENTIFIER.test(value.assignmentId) ||
     !CHILD_ROLES.has(value.role) ||
@@ -474,6 +478,8 @@ export function validateWorkflowBindingAssignment(value, expected = {}) {
     !timestamp(value.issuedAt) ||
     !timestamp(value.leaseUntil) ||
     Date.parse(value.leaseUntil) <= Date.parse(value.issuedAt) ||
+    value.executionRoot !== canonicalRoot ||
+    value.workspaceId !== workspaceIdForRoot(canonicalRoot) ||
     (expected.assignmentId !== undefined &&
       expected.assignmentId !== value.assignmentId) ||
     (expected.digest !== undefined && expected.digest !== value.digest) ||
@@ -812,11 +818,26 @@ export function workflowOwnerIsReleased(owner, options = {}) {
   return releaseRecords(owner, options).length > 0;
 }
 
-function validateActiveWorkflowSession(owner, workflowSessionId, options = {}) {
+function validateActiveWorkflowSession(
+  executionRoot,
+  workspaceId,
+  workflowSessionId,
+  options = {},
+) {
+  const canonicalRoot = realpathSync(executionRoot);
+  if (
+    canonicalRoot !== executionRoot ||
+    workspaceIdForRoot(canonicalRoot) !== workspaceId
+  ) {
+    fail(
+      'WORKFLOW_BINDING_SESSION_INVALID',
+      'Assignment workspace identity is invalid',
+    );
+  }
   const workflowRoot = path.join(
     machineRoot(options),
     'workspaces',
-    owner.workspaceId,
+    workspaceId,
     'workflow',
   );
   try {
@@ -826,7 +847,7 @@ function validateActiveWorkflowSession(owner, workflowSessionId, options = {}) {
         'WORKFLOW_BINDING_SESSION_INVALID',
         true,
       ),
-      owner.workspaceId,
+      workspaceId,
     );
     if (
       active.sessionId !== workflowSessionId ||
@@ -851,7 +872,7 @@ function validateActiveWorkflowSession(owner, workflowSessionId, options = {}) {
       session.state.workItemId !== active.workItemId ||
       session.state.planId !== active.planId ||
       session.state.taskId !== active.currentTaskId ||
-      session.state.workspaceId !== owner.workspaceId ||
+      session.state.workspaceId !== workspaceId ||
       session.state.state !== active.devState
     ) {
       fail(
@@ -881,8 +902,8 @@ export function createWorkflowBindingAssignment(
   options = {},
 ) {
   const now = operationDate(options.now);
+  validateWorkflowBindingProjection(issuerProjection);
   if (
-    issuerProjection?.kind !== 'peers-touch-workflow-binding-projection' ||
     issuerProjection.released ||
     (issuerProjection.role !== 'OWNER' &&
       issuerProjection.childState !== 'LEASED')
@@ -907,7 +928,9 @@ export function createWorkflowBindingAssignment(
     issuer.projection.released ||
     (issuer.projection.role !== 'OWNER' &&
       (issuer.projection.childState !== 'LEASED' ||
-        issuer.projection.workflowSessionId !== input.workflowSessionId))
+        issuer.projection.workflowSessionId !== input.workflowSessionId ||
+        issuer.projection.executionRoot !== issuerProjection.executionRoot ||
+        issuer.projection.workspaceId !== issuerProjection.workspaceId))
   ) {
     fail(
       'WORKFLOW_BINDING_ASSIGNMENT_DENIED',
@@ -921,7 +944,12 @@ export function createWorkflowBindingAssignment(
       'Released owner cannot issue child assignments',
     );
   }
-  validateActiveWorkflowSession(owner, input.workflowSessionId, options);
+  validateActiveWorkflowSession(
+    issuerProjection.executionRoot,
+    issuerProjection.workspaceId,
+    input.workflowSessionId,
+    options,
+  );
   const leaseUntil = operationDate(
     input.leaseUntil ?? new Date(now.getTime() + (input.leaseMs ?? 30 * 60_000)),
   );
@@ -934,6 +962,8 @@ export function createWorkflowBindingAssignment(
     parentBindingDigest: issuerProjection.bindingDigest,
     workflowSessionId: input.workflowSessionId,
     operationId: input.operationId,
+    executionRoot: issuerProjection.executionRoot,
+    workspaceId: issuerProjection.workspaceId,
     issuedAt: now.toISOString(),
     leaseUntil: leaseUntil.toISOString(),
   };
@@ -1144,8 +1174,8 @@ export function claimWorkflowChild(
     rootBindingDigest: owner.digest,
     parentBindingDigest: assignment.parentBindingDigest,
     workflowSessionId: assignment.workflowSessionId,
-    executionRoot: owner.executionRoot,
-    workspaceId: owner.workspaceId,
+    executionRoot: assignment.executionRoot,
+    workspaceId: assignment.workspaceId,
     boundAt: now.toISOString(),
   };
   const binding = { ...unsigned, digest: digest(unsigned) };
@@ -1181,8 +1211,8 @@ export function claimWorkflowChild(
       existing.parentBindingDigest !== assignment.parentBindingDigest ||
       existing.role !== assignment.role ||
       existing.workflowSessionId !== assignment.workflowSessionId ||
-      existing.executionRoot !== owner.executionRoot ||
-      existing.workspaceId !== owner.workspaceId
+      existing.executionRoot !== assignment.executionRoot ||
+      existing.workspaceId !== assignment.workspaceId
     ) {
       fail(
         'WORKFLOW_BINDING_IMMUTABLE',

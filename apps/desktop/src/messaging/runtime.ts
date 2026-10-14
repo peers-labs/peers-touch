@@ -4,11 +4,12 @@ import type {
   ConversationServiceContract,
   MessagingServiceContract,
 } from '../services/im-service-contract';
-import { STATION_ACTIVE_CHANGED_EVENT } from '../components/common/stationRegistryEvents';
 import {
   MessagingProjectionKind,
   type MessagingProjectionInvalidation,
 } from '../gen/proto/domain/chat/event_pb';
+import { EVENT, eventBus } from '../kernel/events';
+import type { StationActiveChangedPayload } from '../kernel/events/types';
 import {
   currentAuthenticatedActorPtid,
   useSessionStore,
@@ -46,9 +47,14 @@ class DesktopMessagingDomainRuntime {
   private activationGeneration = 0;
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
   private unsubscribeSession: (() => void) | null = null;
+  private unsubscribeStation: (() => void) | null = null;
   private scopeTransition: Promise<void> = Promise.resolve();
   private scopeListeners = new Set<(scope: MessagingRuntimeScope | null) => void>();
-  private readonly onStationChanged = () => {
+  private readonly onStationChanged = (payload: StationActiveChangedPayload) => {
+    const stationPeerId = payload.stationPeerId.trim();
+    if (stationPeerId && stationPeerId === this.activeScope?.stationPeerId) {
+      return;
+    }
     this.enqueueScopeRefresh('station');
   };
 
@@ -67,9 +73,10 @@ class DesktopMessagingDomainRuntime {
         this.enqueueScopeRefresh('session');
       }
     });
-    if (typeof window !== 'undefined') {
-      window.addEventListener(STATION_ACTIVE_CHANGED_EVENT, this.onStationChanged);
-    }
+    this.unsubscribeStation = eventBus.subscribe(
+      EVENT.STATION_ACTIVE_CHANGED,
+      this.onStationChanged,
+    );
     this.installed = true;
   }
 
@@ -127,9 +134,8 @@ class DesktopMessagingDomainRuntime {
     this.clearScope();
     this.unsubscribeSession?.();
     this.unsubscribeSession = null;
-    if (typeof window !== 'undefined') {
-      window.removeEventListener(STATION_ACTIVE_CHANGED_EVENT, this.onStationChanged);
-    }
+    this.unsubscribeStation?.();
+    this.unsubscribeStation = null;
     this.requireLifecycle().teardown();
     this.installed = false;
   }

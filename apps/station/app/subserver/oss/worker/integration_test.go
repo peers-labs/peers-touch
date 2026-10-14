@@ -77,6 +77,8 @@ func initIntegrationStore(t *testing.T) *gorm.DB {
 			&ossmodel.Audit{},
 			&ossmodel.Meta{},
 			&ossmodel.Blob{},
+			&ossmodel.BlobGCGeneration{},
+			&ossmodel.WorkerLease{},
 		)
 		if integrationErr != nil {
 			return
@@ -100,7 +102,7 @@ func resetIntegration(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, tbl := range []string{
 		"oss_files", "oss_buckets", "oss_audit",
-		"oss_meta", "oss_blobs",
+		"oss_meta", "oss_blobs", "oss_blob_gc_generations", "oss_worker_leases",
 		federation.PeerKeyTable,
 		federation.AuthLocalKeyTable,
 		federation.ContentProofVerificationKeyTable,
@@ -205,7 +207,7 @@ func TestTTLSweeper_Integration_SoftDeletesExpiredAndDebits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTTLSweeper: %v", err)
 	}
-	if err := sweeper.RunOnce(ctx); err != nil {
+	if err := sweeper.RunOnce(testWorkerContext(ctx, sweeper.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
@@ -274,7 +276,6 @@ func TestTTLSweeper_Integration_SoftDeletesExpiredAndDebits(t *testing.T) {
 func TestBlobGC_Integration_RemovesOrphansAndPreservesReferenced(t *testing.T) {
 	db := initIntegrationStore(t)
 	resetIntegration(t, db)
-	ctx := context.Background()
 
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 	graceCutoff := now.Add(-2 * time.Hour)
@@ -289,6 +290,19 @@ func TestBlobGC_Integration_RemovesOrphansAndPreservesReferenced(t *testing.T) {
 		{Backend: "local", Key: "cas/aa/live", Size: 10, RefCount: 3, LastSeenAt: graceCutoff.Add(-time.Hour)},
 	}).Error; err != nil {
 		t.Fatalf("seed blobs: %v", err)
+	}
+	leaseNow := time.Now().UTC()
+	if err := db.Create(&ossmodel.WorkerLease{
+		WorkerName:       "blob_gc",
+		OwnerNodePeerID:  "node-test",
+		OwnerIncarnation: "incarnation-test",
+		FencingToken:     1,
+		Status:           ossmodel.WorkerLeaseStatusHeld,
+		AcquiredAt:       leaseNow,
+		HeartbeatAt:      leaseNow,
+		ExpiresAt:        leaseNow.Add(time.Minute),
+	}).Error; err != nil {
+		t.Fatalf("seed worker lease: %v", err)
 	}
 
 	blobs := repo.NewBlobRepository(integrationDBName)
@@ -307,7 +321,7 @@ func TestBlobGC_Integration_RemovesOrphansAndPreservesReferenced(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBlobGC: %v", err)
 	}
-	if err := gc.RunOnce(ctx); err != nil {
+	if err := gc.RunOnce(fencedGCContext()); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
@@ -394,7 +408,7 @@ func TestBucketReconciler_Integration_CorrectsCountAndByteDrift(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBucketReconciler: %v", err)
 	}
-	if err := rec.RunOnce(ctx); err != nil {
+	if err := rec.RunOnce(testWorkerContext(ctx, rec.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
@@ -454,7 +468,7 @@ func TestPeerKeyTrim_Integration_DropsUnpinnedIdleOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPeerKeyTrim: %v", err)
 	}
-	if err := trim.RunOnce(ctx); err != nil {
+	if err := trim.RunOnce(testWorkerContext(ctx, trim.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
@@ -526,7 +540,7 @@ func TestKeyRotationFinalizer_Integration_ClearsPrevAfterGrace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKeyRotationFinalizer: %v", err)
 	}
-	if err := final.RunOnce(ctx); err != nil {
+	if err := final.RunOnce(testWorkerContext(ctx, final.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
@@ -571,7 +585,7 @@ func TestKeyRotationFinalizer_Integration_LeavesPrevWithinGrace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKeyRotationFinalizer: %v", err)
 	}
-	if err := final.RunOnce(ctx); err != nil {
+	if err := final.RunOnce(testWorkerContext(ctx, final.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
@@ -614,7 +628,7 @@ func TestAuditTrim_Integration_RemovesOldRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuditTrim: %v", err)
 	}
-	if err := trim.RunOnce(ctx); err != nil {
+	if err := trim.RunOnce(testWorkerContext(ctx, trim.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 

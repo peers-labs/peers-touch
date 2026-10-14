@@ -31,7 +31,7 @@ const DefaultTTL = 5 * time.Minute
 
 // MaxTTL caps how far into the future a publisher may push expires_at.
 // Without this bound a buggy publisher could mint an effectively-
-// immortal envelope. One hour matches the relay-client token lifetime
+// immortal envelope. One hour bounds cached profile freshness independently
 // so envelope expiry stays comparable to other federation credentials.
 const MaxTTL = time.Hour
 

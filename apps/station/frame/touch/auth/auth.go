@@ -40,6 +40,17 @@ const DefaultSessionDuration = 30 * 24 * time.Hour
 var sessionManager *session.Manager
 
 func InitSessionManager(ctx context.Context) {
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		panic(fmt.Errorf("station access keyring database unavailable: %v", err))
+	}
+	if err := coreauth.InitializeConfiguredStationAccessKeyring(
+		ctx,
+		rds,
+	); err != nil {
+		panic(fmt.Errorf("station access keyring initialization failed: %v", err))
+	}
+
 	dbStore := session.NewDBStore(func(ctx context.Context) (*gorm.DB, error) {
 		return store.GetRDS(ctx)
 	}, DefaultSessionDuration)

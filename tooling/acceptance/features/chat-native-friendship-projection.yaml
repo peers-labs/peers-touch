@@ -15,7 +15,7 @@
     "apps/desktop/src/store/relationships.ts",
     "apps/desktop/src/store/friendshipProjection.ts",
     "apps/desktop/src/services/socialRealtime.ts",
-    "apps/desktop/src-tauri/src/infrastructure/station_client.rs",
+    "apps/desktop/src-tauri/src/application/station_runtime/client.rs",
     "apps/desktop/src-tauri/src/messaging/group_genesis.rs",
     "apps/desktop/src-tauri/src/messaging/engine.rs",
     "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",

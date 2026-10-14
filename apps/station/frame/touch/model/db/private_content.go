@@ -50,6 +50,8 @@ type SocialPrivateContentPlan struct {
 	CanonicalPrepareSHA256        []byte     `gorm:"column:canonical_prepare_sha256;not null"`
 	AudienceBytes                 []byte     `gorm:"column:audience_bytes"`
 	AudienceSHA256                []byte     `gorm:"column:audience_sha256"`
+	RecipientLocalitiesBytes      []byte     `gorm:"column:recipient_localities_bytes"`
+	RecipientLocalitiesSHA256     []byte     `gorm:"column:recipient_localities_sha256"`
 	GroupRecipientSnapshotBytes   []byte     `gorm:"column:group_recipient_snapshot_bytes"`
 	GroupRecipientSnapshotSHA256  []byte     `gorm:"column:group_recipient_snapshot_sha256"`
 	SubtypePrepareAuthorityBytes  []byte     `gorm:"column:subtype_prepare_authority_bytes"`

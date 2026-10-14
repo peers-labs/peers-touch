@@ -7,6 +7,7 @@ import importlib.util
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
@@ -173,6 +174,106 @@ class AcceptanceGapDetectorTests(unittest.TestCase):
                         expected_error,
                     ):
                         MODULE.resolve_changed_paths("HEAD", supplied)
+
+    def test_formal_closure_uses_current_task_scoped_paths(self) -> None:
+        formal_plan = SimpleNamespace(
+            plan_id="PLAN-1",
+            current_task_id="TASK-1",
+            current_closure="closure-1",
+            workspace_id="workspace-1",
+        )
+        plan = {
+            "execution": {
+                "mode": "closure",
+                "formalPlan": "docs/plan.md",
+                "planId": "PLAN-1",
+                "currentTaskId": "TASK-1",
+                "closure": "closure-1",
+                "workspaceId": "workspace-1",
+            }
+        }
+        with patch.object(
+            MODULE,
+            "load_formal_plan",
+            return_value=formal_plan,
+        ), patch.object(
+            MODULE,
+            "changed_paths_for_plan",
+            return_value=["src/current-task.ts"],
+        ) as scoped:
+            paths = MODULE.formal_closure_paths(plan)
+
+        self.assertEqual(paths, ["src/current-task.ts"])
+        scoped.assert_called_once_with(
+            MODULE.REPO_ROOT,
+            formal_plan,
+            "closure",
+        )
+
+    def test_formal_closure_rejects_identity_mismatch(self) -> None:
+        formal_plan = SimpleNamespace(
+            plan_id="PLAN-1",
+            current_task_id="TASK-1",
+            current_closure="closure-1",
+            workspace_id="workspace-1",
+        )
+        with patch.object(
+            MODULE,
+            "load_formal_plan",
+            return_value=formal_plan,
+        ):
+            with self.assertRaisesRegex(
+                MODULE.DetectorError,
+                "identity mismatch",
+            ):
+                MODULE.formal_closure_paths(
+                    {
+                        "execution": {
+                            "mode": "closure",
+                            "formalPlan": "docs/plan.md",
+                            "planId": "PLAN-1",
+                            "currentTaskId": "TASK-2",
+                            "closure": "closure-1",
+                            "workspaceId": "workspace-1",
+                        }
+                    }
+                )
+
+    def test_formal_scope_is_exact_for_explicit_paths(self) -> None:
+        with patch.object(MODULE, "changed_paths") as raw_paths:
+            paths = MODULE.resolve_changed_paths(
+                "BASE..HEAD",
+                ["src/current-task.ts"],
+                ["src/current-task.ts"],
+            )
+
+        self.assertEqual(paths, ["src/current-task.ts"])
+        raw_paths.assert_not_called()
+
+    def test_completion_and_full_plans_keep_broad_range_scope(self) -> None:
+        for mode in ("completion", "full"):
+            with self.subTest(mode=mode):
+                self.assertIsNone(
+                    MODULE.formal_closure_paths(
+                        {"execution": {"mode": mode}}
+                    )
+                )
+                with patch.object(
+                    MODULE,
+                    "changed_paths",
+                    return_value=["src/a.ts", "src/future-task.ts"],
+                ):
+                    paths = MODULE.resolve_changed_paths(
+                        "BASE..HEAD",
+                        [],
+                        MODULE.formal_closure_paths(
+                            {"execution": {"mode": mode}}
+                        ),
+                    )
+                self.assertEqual(
+                    paths,
+                    ["src/a.ts", "src/future-task.ts"],
+                )
 
     def test_stale_plan_paths_fail_closed(self) -> None:
         report = MODULE.detect(

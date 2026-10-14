@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Integration
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-07
+> **Created**: 2026-09-13 | **Updated**: 2026-10-09
 > **Owner**: Platform Team
 
 ---
@@ -100,10 +100,11 @@ declaration source identity advances before the next mutation or runtime
 acquisition. The machine registration does not store Git HEAD and therefore
 requires no source refresh. Task handoff also updates the declaration's `TASK`.
 
-The declaration schema is a hard compatibility boundary. Repository source
-must be synchronized before a writer publishes mount/run locator fields into
-the shared machine ledger. No legacy binding reader or inferred locator bridge
-exists.
+The declaration owner schema is a hard compatibility boundary. Repository
+source must be synchronized before a writer mutates its own mount/run locator.
+The machine coordination reader may validate foreign legacy declarations during
+the bounded DWF-D45 adoption window, but it neither normalizes nor rewrites
+their owner fields.
 
 `dev-resources-prepare` runs after all affected module Skills emit
 `ModuleImpact` and before the first runtime acquisition. It resolves the
@@ -244,19 +245,22 @@ make agent-integration-audit IDE=<trae|cursor|codex> ROOT=<worktree-root>
 ```
 
 This is the only canonical project Skill projector. Codex also receives the
-worktree-local `pt-ew-plugin`; TRAE projects equivalent canonical Hooks into
-the selected source root, the descriptor bootstrap root, and descriptor roots
-with an existing real `.trae` directory. Untouched roots remain untouched.
-Every projected Hook calls the selected source root's same plugin and remains
-transport only; the Kernel owns root selection and the single OWNER binding.
-The installer preserves unrelated host files, never edits global hooks, and
-does not depend on a grant from the Hook it installs. The machine ledger lock,
-canonical source checks, path boundaries, workspace descriptor, merged Hook
-shape, and callback proof still fail closed. Unrelated live declarations,
-child assignments, Action Receipts, and Action Store activity do not block
-this non-destructive projection. There is no separate acknowledgement command;
-restart the IDE only when the host cannot reload changed hooks, then rerun the
-audit.
+worktree-local `pt-ew-plugin`; TRAE writes one managed Hook projection only in
+the selected worktree, and every entry calls that worktree's local plugin. A
+workspace descriptor validates membership and supplies the runtime root set,
+but does not authorize writing a bootstrap folder or sibling worktree. The
+Kernel owns per-action root selection and the single OWNER binding.
+The installer preserves unrelated local host files, never edits global or
+sibling hooks, and does not depend on a grant from the Hook it installs. The
+machine ledger lock, canonical source checks, path boundaries, workspace
+descriptor, merged Hook shape, and callback proof still fail closed. Install
+does not parse PlanMount, declaration, Session, or active-work state; its
+`--projection-only` audit verifies only local projection-owned facts and leaves
+workflow identity diagnostics for the standalone full audit. Unrelated live or
+retired-schema workflow owner state does not block this non-destructive
+bootstrap. There is no separate acknowledgement command; restart the IDE only
+when the host cannot reload changed hooks, then rerun the full audit after
+workflow-state repair.
 
 `skills-hard-cut` is the only machine-store reset path. It consumes an exact
 OWNER `skills-hard-cut` grant, proves global idle, validates every reset target,
@@ -311,12 +315,13 @@ remains.
 - normalizes Codex, Cursor and TRAE lifecycle payloads into one Kernel event;
 - prewarms on Session/prompt hooks but creates authority only on the first
   blockable `PreToolUse`;
-- atomically binds one host root chat to one immutable OWNER
-  `executionRoot`;
+- atomically binds one host root chat to one immutable OWNER identity;
 - accepts only preassigned WORKER/REVIEWER child sessions and projects their
-  root/parent lineage, lease and terminal state;
-- resolves each tool action's `subjectRoot` independently, allowing
-  cross-worktree reads and denying cross-worktree writes;
+  root/parent lineage, assignment workspace, lease and terminal state;
+- resolves one workspace for each mutating OWNER action, allowing sequential
+  actions in different worktrees while denying one action that spans roots;
+- resolves each tool action's `subjectRoot` independently and checks writes
+  against the selected workspace and its declaration;
 - parses shell structure before classifying owner/read/mutation intent;
 - denies inconsistent owner state and direct runtime-owner execution without
   mutating Plan, Task, Session, declaration, active-work or evidence;
@@ -485,10 +490,16 @@ URI before source capture. Allocation rejects an existing ID instead of
 silently generating a replacement.
 
 Historical plan documents remain source history only. Normal execution accepts
-the current stable Plan contract and has no legacy reader, alias, or dual write.
-Before installing the hard cut on a machine with old state, close every live
-declaration and mount, then run `make plan-state-migrate`; the command refuses
-to run while any old owner is live and rewrites only the idle ledger schema.
+the current stable Plan contract and never executes a legacy snapshot.
+`make plan-state-migrate` adopts the selected workspace independently,
+preserves a live declaration's lifecycle state, and leaves foreign records in
+the single mixed ledger envelope as conflict inputs. A selected legacy mount is
+close-only under stable tooling: only explicitly authorized exact-owner
+`owner-unmount` removes its legacy indexes without reviving or trusting the old
+snapshot. A selected declaration that predates OWNER provenance may adopt only
+the current live Hook OWNER during this migration; existing or foreign owners
+cannot be replaced. The final legacy Plan index is deleted mechanically when
+empty.
 
 The diff-based planner may report candidate Gates but may not mutate the package
 or current closure.

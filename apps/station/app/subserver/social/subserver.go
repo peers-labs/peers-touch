@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/clusterreadiness"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
@@ -14,6 +15,7 @@ import (
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/appdir"
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/storage"
+	federationruntime "github.com/peers-labs/peers-touch/station/frame/core/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
@@ -21,6 +23,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	touch "github.com/peers-labs/peers-touch/station/frame/touch"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"gorm.io/gorm"
 )
 
 type subServer struct {
@@ -45,6 +48,8 @@ type subServer struct {
 	moderationSvc     *application.ModerationService
 	privateContentSvc *application.PrivateContentService
 	privateObjectSvc  *application.PrivateObjectService
+	database          *gorm.DB
+	privateObjects    storage.Backend
 
 	federatedFriendRequestSvc *application.FederatedFriendRequestService
 	federatedRelationshipSvc  *application.FederatedRelationshipService
@@ -138,10 +143,20 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err != nil {
 		return fmt.Errorf("initialize Social private audience authority: %w", err)
 	}
+	privateFederationMembership, err :=
+		resolvePrivateContentFederationMembership()
+	if err != nil {
+		return fmt.Errorf(
+			"initialize Social private Federation membership port: %w",
+			err,
+		)
+	}
 	privateGroupRecipients := newPrivateContentGroupRecipientPort()
 	privateRecipientDirectory, err := newPrivateContentRecipientDirectory(
 		actorCapabilities,
 		federationRuntime,
+		privateAudienceAuthority,
+		privateFederationMembership,
 	)
 	if err != nil {
 		return fmt.Errorf("initialize Social private recipient directory: %w", err)
@@ -178,14 +193,38 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err != nil {
 		return fmt.Errorf("initialize Social private content service: %w", err)
 	}
+	if err := s.privateContentSvc.ConfigureFederatedPrivateDelivery(
+		federationRuntime.LocalStationPeerID(),
+		privateFederationMembership,
+		momentEvents,
+	); err != nil {
+		return fmt.Errorf(
+			"configure Social private Federation delivery: %w",
+			err,
+		)
+	}
+	if err := federationRuntime.RegisterDeliveryObserver(
+		delivery.PayloadKindSocialPrivateResource,
+		s.privateContentSvc,
+	); err != nil {
+		return fmt.Errorf(
+			"register Social private Federation delivery observer: %w",
+			err,
+		)
+	}
+	s.relationshipSvc.ConfigurePrivateRevocation(
+		s.privateContentSvc,
+		application.NewSocialGraphEventPublisher(),
+	)
 	dataDirectory, err := appdir.Resolve("station", "data")
 	if err != nil {
 		return fmt.Errorf("resolve Social private object data directory: %w", err)
 	}
+	privateObjectBackend := clusterreadiness.FilesystemBackend(
+		filepath.Join(dataDirectory, "social-private-objects"),
+	)
 	privateObjectBlobs, err := infrastructure.NewPrivateObjectBlobStore(
-		storage.NewLocalBackend(
-			filepath.Join(dataDirectory, "social-private-objects"),
-		),
+		privateObjectBackend,
 	)
 	if err != nil {
 		return fmt.Errorf("initialize Social private object storage: %w", err)
@@ -199,6 +238,27 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	)
 	if err != nil {
 		return fmt.Errorf("initialize Social private object service: %w", err)
+	}
+	s.database = rds
+	s.privateObjects = privateObjectBackend
+	if err := s.privateObjectSvc.ConfigureFederatedRead(
+		federationRuntime.LocalStationPeerID(),
+		privateFederationMembership,
+		federatedPrivateObjectPeer{runtime: federationRuntime},
+	); err != nil {
+		return fmt.Errorf(
+			"configure Social private object Federation read: %w",
+			err,
+		)
+	}
+	if err := federationRuntime.RegisterPeerEndpoint(
+		federationruntime.PeerRouteSocialPrivateObjectRead,
+		s.handleFederatedPrivateObjectRead,
+	); err != nil {
+		return fmt.Errorf(
+			"register Social private object Federation endpoint: %w",
+			err,
+		)
 	}
 	clock := delivery.SystemClock{}
 	federatedStore, err := infrastructure.NewGORMFederatedFriendRequestStore(
@@ -230,7 +290,9 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err != nil {
 		return fmt.Errorf("initialize federated Social relationship service: %w", err)
 	}
-	s.federatedRelationshipSvc.WithActorDeviceKeyResolver(actorDeviceKeyPort{})
+	s.federatedRelationshipSvc.
+		WithActorDeviceKeyResolver(actorDeviceKeyPort{}).
+		WithPrivateContentRevoker(s.privateContentSvc)
 	if err := federationRuntime.RegisterReceivers(func(registry *delivery.Registry) error {
 		if err := infrastructure.RegisterFederatedFriendRequestReceivers(
 			registry,
@@ -238,9 +300,21 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		); err != nil {
 			return err
 		}
-		return infrastructure.RegisterFederatedRelationshipReceiver(
+		if err := infrastructure.RegisterFederatedRelationshipReceiver(
 			registry,
 			s.federatedRelationshipSvc,
+		); err != nil {
+			return err
+		}
+		if err := infrastructure.RegisterFederatedPrivateResourceReceivers(
+			registry,
+			s.privateContentSvc,
+		); err != nil {
+			return err
+		}
+		return infrastructure.RegisterFederatedPrivateInteractionReceivers(
+			registry,
+			s.privateContentSvc,
 		)
 	}); err != nil {
 		return fmt.Errorf("register Social Federation receivers: %w", err)
@@ -342,6 +416,25 @@ func (s *subServer) Name() string                     { return "social" }
 func (s *subServer) Type() server.SubserverType       { return server.SubserverTypeHTTP }
 func (s *subServer) Address() server.SubserverAddress { return server.SubserverAddress{} }
 func (s *subServer) Status() server.Status            { return s.status }
+
+// ClusterReadiness verifies that Social metadata and private object bytes are
+// shared before this node can publish clustered readiness.
+func (s *subServer) ClusterReadiness(ctx context.Context) (string, error) {
+	s.mu.RLock()
+	status := s.status
+	database := s.database
+	privateObjects := s.privateObjects
+	s.mu.RUnlock()
+	if status != server.StatusRunning {
+		return "", fmt.Errorf("social: cluster runtime is not running")
+	}
+	return clusterreadiness.SharedPostgresAndFilesystem(
+		ctx,
+		"social",
+		database,
+		privateObjects,
+	)
+}
 
 func (s *subServer) runFriendRequestDirectEffects(ctx context.Context) {
 	ticker := time.NewTicker(friendRequestEffectPollInterval)

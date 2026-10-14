@@ -1,6 +1,6 @@
+use crate::application::station_runtime::client::{StationClient, StationClientError};
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client::{self, StationClientError};
 use crate::state::AppState;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -31,8 +31,11 @@ pub fn frontend_telemetry_upload(
         Some(token) => token,
         None => return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None),
     };
-    match post_frontend_telemetry_batch_with_auth(token.as_str(), json!({ "events": input.events }))
-    {
+    match post_frontend_telemetry_batch_with_auth(
+        state.station.client(),
+        token.as_str(),
+        json!({ "events": input.events }),
+    ) {
         Ok(data) => AppResult::success(StubPayload {
             command: "frontend_telemetry_upload".to_string(),
             status: data.to_string(),
@@ -42,8 +45,9 @@ pub fn frontend_telemetry_upload(
 }
 
 fn post_frontend_telemetry_batch_with_auth(
+    station_client: &StationClient,
     token: &str,
     body: Value,
 ) -> Result<Value, StationClientError> {
-    station_client::post_json_with_auth("/telemetry/frontend/events/batch", token, body)
+    station_client.post_json_with_auth("/telemetry/frontend/events/batch", token, body)
 }

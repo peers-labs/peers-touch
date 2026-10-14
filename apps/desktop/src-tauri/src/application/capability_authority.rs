@@ -2,8 +2,8 @@ use prost::Message;
 use reqwest::Method;
 use serde::Deserialize;
 
+use crate::application::station_runtime::client::{self as station_client, StationClient};
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::model::agent;
 
 const MANIFEST_LIST_PATH: &str = "/sub-agent/agent/capability/manifest/list";
@@ -117,8 +117,13 @@ pub struct EncodedRequestInput {
     pub request_bytes: Vec<u8>,
 }
 
-pub fn list_manifests(input: CapabilityManifestListInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn list_manifests(
+    station_client: &StationClient,
+    input: CapabilityManifestListInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     request::<_, agent::ListCapabilityManifestsResponse>(
+        station_client,
         MANIFEST_LIST_PATH,
         &agent::ListCapabilityManifestsRequest {
             source_kinds: input.source_kinds,
@@ -128,16 +133,25 @@ pub fn list_manifests(input: CapabilityManifestListInput, token: &str) -> AppRes
     )
 }
 
-pub fn list_bindings(input: CapabilityBindingListInput, token: &str) -> AppResult<Vec<u8>> {
-    match list_binding_records(&input.agent_id, token) {
+pub fn list_bindings(
+    station_client: &StationClient,
+    input: CapabilityBindingListInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
+    match list_binding_records(station_client, &input.agent_id, token) {
         Ok(response) => AppResult::success(response.encode_to_vec()),
         Err(error) => error.into_app_result("agent.capabilityBindingListFailed"),
     }
 }
 
-pub fn upsert_binding(input: CapabilityBindingUpsertInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn upsert_binding(
+    station_client: &StationClient,
+    input: CapabilityBindingUpsertInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     let binding = input.binding;
     match upsert_binding_record(
+        station_client,
         agent::AgentCapabilityBinding {
             binding_id: binding.binding_id.trim().to_string(),
             ptid: String::new(),
@@ -158,8 +172,13 @@ pub fn upsert_binding(input: CapabilityBindingUpsertInput, token: &str) -> AppRe
     }
 }
 
-pub fn delete_binding(input: CapabilityBindingDeleteInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn delete_binding(
+    station_client: &StationClient,
+    input: CapabilityBindingDeleteInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     request::<_, agent::DeleteAgentCapabilityBindingResponse>(
+        station_client,
         BINDING_DELETE_PATH,
         &agent::DeleteAgentCapabilityBindingRequest {
             binding_id: input.binding_id.trim().to_string(),
@@ -172,8 +191,13 @@ pub fn delete_binding(input: CapabilityBindingDeleteInput, token: &str) -> AppRe
     )
 }
 
-pub fn readiness(input: CapabilityReadinessInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn readiness(
+    station_client: &StationClient,
+    input: CapabilityReadinessInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     request::<_, agent::GetCapabilityReadinessResponse>(
+        station_client,
         READINESS_PATH,
         &agent::GetCapabilityReadinessRequest {
             agent_id: input.agent_id.trim().to_string(),
@@ -186,11 +210,16 @@ pub fn readiness(input: CapabilityReadinessInput, token: &str) -> AppResult<Vec<
 }
 
 #[cfg(feature = "acceptance-webdriver")]
-pub fn prepare_acceptance_scenario(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn prepare_acceptance_scenario(
+    station_client: &StationClient,
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     request_encoded::<
         agent::PrepareCapabilityAcceptanceScenarioRequest,
         agent::PrepareCapabilityAcceptanceScenarioResponse,
     >(
+        station_client,
         ACCEPTANCE_SCENARIO_PREPARE_PATH,
         input,
         token,
@@ -200,11 +229,16 @@ pub fn prepare_acceptance_scenario(input: EncodedRequestInput, token: &str) -> A
 }
 
 #[cfg(feature = "acceptance-webdriver")]
-pub fn arm_acceptance_scenario_hook(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn arm_acceptance_scenario_hook(
+    station_client: &StationClient,
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     request_encoded::<
         agent::ArmCapabilityAcceptanceExecutorHookRequest,
         agent::ArmCapabilityAcceptanceExecutorHookResponse,
     >(
+        station_client,
         ACCEPTANCE_SCENARIO_ARM_PATH,
         input,
         token,
@@ -215,6 +249,7 @@ pub fn arm_acceptance_scenario_hook(input: EncodedRequestInput, token: &str) -> 
 
 #[cfg(feature = "acceptance-webdriver")]
 pub fn wait_acceptance_scenario_barrier(
+    station_client: &StationClient,
     input: EncodedRequestInput,
     token: &str,
 ) -> AppResult<Vec<u8>> {
@@ -222,6 +257,7 @@ pub fn wait_acceptance_scenario_barrier(
         agent::WaitCapabilityAcceptanceBarrierRequest,
         agent::WaitCapabilityAcceptanceBarrierResponse,
     >(
+        station_client,
         ACCEPTANCE_SCENARIO_WAIT_PATH,
         input,
         token,
@@ -232,6 +268,7 @@ pub fn wait_acceptance_scenario_barrier(
 
 #[cfg(feature = "acceptance-webdriver")]
 pub fn release_acceptance_scenario_barrier(
+    station_client: &StationClient,
     input: EncodedRequestInput,
     token: &str,
 ) -> AppResult<Vec<u8>> {
@@ -239,6 +276,7 @@ pub fn release_acceptance_scenario_barrier(
         agent::ReleaseCapabilityAcceptanceBarrierRequest,
         agent::ReleaseCapabilityAcceptanceBarrierResponse,
     >(
+        station_client,
         ACCEPTANCE_SCENARIO_RELEASE_PATH,
         input,
         token,
@@ -249,6 +287,7 @@ pub fn release_acceptance_scenario_barrier(
 
 #[cfg(feature = "acceptance-webdriver")]
 pub fn advance_acceptance_scenario_clock(
+    station_client: &StationClient,
     input: EncodedRequestInput,
     token: &str,
 ) -> AppResult<Vec<u8>> {
@@ -256,6 +295,7 @@ pub fn advance_acceptance_scenario_clock(
         agent::AdvanceCapabilityAcceptanceScenarioClockRequest,
         agent::AdvanceCapabilityAcceptanceScenarioClockResponse,
     >(
+        station_client,
         ACCEPTANCE_SCENARIO_CLOCK_ADVANCE_PATH,
         input,
         token,
@@ -266,6 +306,7 @@ pub fn advance_acceptance_scenario_clock(
 
 #[cfg(feature = "acceptance-webdriver")]
 pub fn interrupt_acceptance_scenario_worker(
+    station_client: &StationClient,
     input: EncodedRequestInput,
     token: &str,
 ) -> AppResult<Vec<u8>> {
@@ -273,6 +314,7 @@ pub fn interrupt_acceptance_scenario_worker(
         agent::InterruptCapabilityAcceptanceWorkerRequest,
         agent::InterruptCapabilityAcceptanceWorkerResponse,
     >(
+        station_client,
         ACCEPTANCE_SCENARIO_INTERRUPT_PATH,
         input,
         token,
@@ -282,11 +324,16 @@ pub fn interrupt_acceptance_scenario_worker(
 }
 
 #[cfg(feature = "acceptance-webdriver")]
-pub fn cleanup_acceptance_scenario(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn cleanup_acceptance_scenario(
+    station_client: &StationClient,
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     request_encoded::<
         agent::CleanupCapabilityAcceptanceScenarioRequest,
         agent::CleanupCapabilityAcceptanceScenarioResponse,
     >(
+        station_client,
         ACCEPTANCE_SCENARIO_CLEANUP_PATH,
         input,
         token,
@@ -295,11 +342,16 @@ pub fn cleanup_acceptance_scenario(input: EncodedRequestInput, token: &str) -> A
     )
 }
 
-pub fn list_connector_manifests(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn list_connector_manifests(
+    station_client: &StationClient,
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     request_encoded::<
         agent::ListConnectorResourceManifestsRequest,
         agent::ListConnectorResourceManifestsResponse,
     >(
+        station_client,
         CONNECTOR_MANIFEST_LIST_PATH,
         input,
         token,
@@ -309,10 +361,11 @@ pub fn list_connector_manifests(input: EncodedRequestInput, token: &str) -> AppR
 }
 
 pub(crate) fn sync_connector_manifest_records(
+    station_client: &StationClient,
     request: &agent::SyncConnectorResourceManifestsRequest,
     token: &str,
 ) -> Result<agent::SyncConnectorResourceManifestsResponse, station_client::StationClientError> {
-    station_client::request_proto(
+    station_client.request_proto(
         Method::POST,
         CONNECTOR_MANIFEST_SYNC_PATH,
         token,
@@ -322,10 +375,11 @@ pub(crate) fn sync_connector_manifest_records(
 }
 
 pub(crate) fn list_connector_manifest_records(
+    station_client: &StationClient,
     connector_id: &str,
     token: &str,
 ) -> Result<Vec<agent::ConnectorResourceManifest>, station_client::StationClientError> {
-    station_client::request_proto::<
+    station_client.request_proto::<
         agent::ListConnectorResourceManifestsRequest,
         agent::ListConnectorResourceManifestsResponse,
     >(
@@ -340,11 +394,16 @@ pub(crate) fn list_connector_manifest_records(
     .map(|response| response.manifests)
 }
 
-pub fn cancel_operation(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn cancel_operation(
+    station_client: &StationClient,
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     request_encoded::<
         agent::CancelCapabilityOperationRequest,
         agent::CancelCapabilityOperationResponse,
     >(
+        station_client,
         OPERATION_CANCEL_PATH,
         input,
         token,
@@ -353,8 +412,13 @@ pub fn cancel_operation(input: EncodedRequestInput, token: &str) -> AppResult<Ve
     )
 }
 
-pub fn get_operation(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn get_operation(
+    station_client: &StationClient,
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     request_encoded::<agent::GetCapabilityOperationRequest, agent::GetCapabilityOperationResponse>(
+        station_client,
         OPERATION_GET_PATH,
         input,
         token,
@@ -363,11 +427,16 @@ pub fn get_operation(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u
     )
 }
 
-pub fn reconcile_operation(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn reconcile_operation(
+    station_client: &StationClient,
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     request_encoded::<
         agent::ReconcileCapabilityOperationRequest,
         agent::ReconcileCapabilityOperationResponse,
     >(
+        station_client,
         OPERATION_RECONCILE_PATH,
         input,
         token,
@@ -376,11 +445,16 @@ pub fn reconcile_operation(input: EncodedRequestInput, token: &str) -> AppResult
     )
 }
 
-pub fn take_over_operation(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn take_over_operation(
+    station_client: &StationClient,
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     request_encoded::<
         agent::TakeOverCapabilityOperationRequest,
         agent::TakeOverCapabilityOperationResponse,
     >(
+        station_client,
         OPERATION_TAKEOVER_PATH,
         input,
         token,
@@ -389,11 +463,16 @@ pub fn take_over_operation(input: EncodedRequestInput, token: &str) -> AppResult
     )
 }
 
-pub fn take_over_operation_cleanup(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn take_over_operation_cleanup(
+    station_client: &StationClient,
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     request_encoded::<
         agent::TakeOverCapabilityCleanupRequest,
         agent::TakeOverCapabilityCleanupResponse,
     >(
+        station_client,
         OPERATION_CLEANUP_TAKEOVER_PATH,
         input,
         token,
@@ -402,11 +481,16 @@ pub fn take_over_operation_cleanup(input: EncodedRequestInput, token: &str) -> A
     )
 }
 
-pub fn create_knowledge_descriptor(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn create_knowledge_descriptor(
+    station_client: &StationClient,
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     request_encoded::<
         agent::CreateKnowledgeResourceDescriptorRequest,
         agent::CreateKnowledgeResourceDescriptorResponse,
     >(
+        station_client,
         KNOWLEDGE_DESCRIPTOR_CREATE_PATH,
         input,
         token,
@@ -415,11 +499,16 @@ pub fn create_knowledge_descriptor(input: EncodedRequestInput, token: &str) -> A
     )
 }
 
-pub fn update_knowledge_descriptor(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn update_knowledge_descriptor(
+    station_client: &StationClient,
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     request_encoded::<
         agent::UpdateKnowledgeResourceDescriptorRequest,
         agent::UpdateKnowledgeResourceDescriptorResponse,
     >(
+        station_client,
         KNOWLEDGE_DESCRIPTOR_UPDATE_PATH,
         input,
         token,
@@ -428,11 +517,16 @@ pub fn update_knowledge_descriptor(input: EncodedRequestInput, token: &str) -> A
     )
 }
 
-pub fn list_knowledge_descriptors(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn list_knowledge_descriptors(
+    station_client: &StationClient,
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     request_encoded::<
         agent::ListKnowledgeResourceDescriptorsRequest,
         agent::ListKnowledgeResourceDescriptorsResponse,
     >(
+        station_client,
         KNOWLEDGE_DESCRIPTOR_LIST_PATH,
         input,
         token,
@@ -442,6 +536,7 @@ pub fn list_knowledge_descriptors(input: EncodedRequestInput, token: &str) -> Ap
 }
 
 pub fn tombstone_knowledge_descriptor(
+    station_client: &StationClient,
     input: EncodedRequestInput,
     token: &str,
 ) -> AppResult<Vec<u8>> {
@@ -449,6 +544,7 @@ pub fn tombstone_knowledge_descriptor(
         agent::TombstoneKnowledgeResourceDescriptorRequest,
         agent::TombstoneKnowledgeResourceDescriptorResponse,
     >(
+        station_client,
         KNOWLEDGE_DESCRIPTOR_TOMBSTONE_PATH,
         input,
         token,
@@ -457,8 +553,13 @@ pub fn tombstone_knowledge_descriptor(
     )
 }
 
-pub fn export_agent_package(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn export_agent_package(
+    station_client: &StationClient,
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     request_encoded::<agent::ExportAgentPackageRequest, agent::ExportAgentPackageResponse>(
+        station_client,
         AGENT_PACKAGE_EXPORT_PATH,
         input,
         token,
@@ -467,8 +568,13 @@ pub fn export_agent_package(input: EncodedRequestInput, token: &str) -> AppResul
     )
 }
 
-pub fn import_agent_package(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn import_agent_package(
+    station_client: &StationClient,
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     request_encoded::<agent::ImportAgentPackageRequest, agent::ImportAgentPackageResponse>(
+        station_client,
         AGENT_PACKAGE_IMPORT_PATH,
         input,
         token,
@@ -478,10 +584,11 @@ pub fn import_agent_package(input: EncodedRequestInput, token: &str) -> AppResul
 }
 
 pub(crate) fn list_binding_records(
+    station_client: &StationClient,
     agent_id: &str,
     token: &str,
 ) -> Result<agent::ListAgentCapabilityBindingsResponse, station_client::StationClientError> {
-    station_client::request_proto(
+    station_client.request_proto(
         Method::POST,
         BINDING_LIST_PATH,
         token,
@@ -493,12 +600,13 @@ pub(crate) fn list_binding_records(
 }
 
 pub(crate) fn upsert_binding_record(
+    station_client: &StationClient,
     binding: agent::AgentCapabilityBinding,
     idempotency_key: &str,
     expected_binding_revision: u64,
     token: &str,
 ) -> Result<agent::UpsertAgentCapabilityBindingResponse, station_client::StationClientError> {
-    station_client::request_proto(
+    station_client.request_proto(
         Method::POST,
         BINDING_UPSERT_PATH,
         token,
@@ -512,6 +620,7 @@ pub(crate) fn upsert_binding_record(
 }
 
 fn request<Req, Resp>(
+    station_client: &StationClient,
     path: &str,
     body: &Req,
     token: &str,
@@ -521,13 +630,14 @@ where
     Req: Message,
     Resp: Message + Default,
 {
-    match station_client::request_proto::<Req, Resp>(Method::POST, path, token, None, Some(body)) {
+    match station_client.request_proto::<Req, Resp>(Method::POST, path, token, None, Some(body)) {
         Ok(response) => AppResult::success(response.encode_to_vec()),
         Err(error) => error.into_app_result(error_context),
     }
 }
 
 fn request_encoded<Req, Resp>(
+    station_client: &StationClient,
     path: &str,
     input: EncodedRequestInput,
     token: &str,
@@ -542,7 +652,7 @@ where
         Ok(request) => request,
         Err(error) => return error,
     };
-    request::<Req, Resp>(path, &decoded, token, error_context)
+    request::<Req, Resp>(station_client, path, &decoded, token, error_context)
 }
 
 fn decode_request<Req>(

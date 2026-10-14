@@ -103,23 +103,31 @@ func (h *TurnHandlers) SetAdmissionService(admission *service.TurnAdmissionServi
 // beginChatTaskStep ensures the Station-owned Chat root task for the conversation
 // and opens an execution step for the incoming user message. It returns the
 // task/step ids so the caller can bind them to the turn and close them out.
-func (h *TurnHandlers) beginChatTaskStep(ctx context.Context, req *model.ExecuteTurnRequest) (taskID, stepID string, err error) {
+func (h *TurnHandlers) beginChatTaskStep(
+	ctx context.Context,
+	req *model.ExecuteTurnRequest,
+) (taskID string, authority *service.ChatStepLeaseAuthority, err error) {
 	if h.chatTaskService == nil {
-		return "", "", nil
+		return "", nil, nil
 	}
 	actorID := subjectActorID(ctx)
 	if actorID == "" {
-		return "", "", nil
+		return "", nil, nil
 	}
 	taskID, err = h.chatTaskService.EnsureChatTask(ctx, actorID, req.GetAgentId(), req.GetConversationId(), req.GetUserInput())
 	if err != nil {
-		return "", "", err
+		return "", nil, err
 	}
-	stepID, err = h.chatTaskService.BeginChatStep(ctx, taskID, req.GetAgentId(), req.GetUserInput())
+	authority, err = h.chatTaskService.BeginChatStep(
+		ctx,
+		taskID,
+		req.GetAgentId(),
+		req.GetUserInput(),
+	)
 	if err != nil {
-		return taskID, "", err
+		return taskID, nil, err
 	}
-	return taskID, stepID, nil
+	return taskID, authority, nil
 }
 
 func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.ExecuteTurnRequest) (*model.ExecuteTurnResponse, error) {
@@ -198,9 +206,13 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 		config.PrecreatedTurnID = admission.GetTurnId()
 		config.TurnID = admission.GetTurnId()
 	}
-	taskID, stepID, taskErr := h.beginChatTaskStep(ctx, req)
+	taskID, leaseAuthority, taskErr := h.beginChatTaskStep(ctx, req)
 	config.TaskID = taskID
-	config.StepID = stepID
+	if leaseAuthority != nil {
+		config.StepID = leaseAuthority.StepID
+		config.ExecutorLeaseID = leaseAuthority.LeaseID
+		config.LeaseFencingToken = leaseAuthority.FencingToken
+	}
 	if taskErr != nil {
 		if admission != nil {
 			taskErr = h.turnService.SettleAdmittedTurnAfterError(
@@ -465,9 +477,13 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 	if admission != nil {
 		config.PrecreatedTurnID = turnID
 	}
-	taskID, stepID, taskErr := h.beginChatTaskStep(ctx, &input)
+	taskID, leaseAuthority, taskErr := h.beginChatTaskStep(ctx, &input)
 	config.TaskID = taskID
-	config.StepID = stepID
+	if leaseAuthority != nil {
+		config.StepID = leaseAuthority.StepID
+		config.ExecutorLeaseID = leaseAuthority.LeaseID
+		config.LeaseFencingToken = leaseAuthority.FencingToken
+	}
 	if taskErr != nil {
 		if admission != nil {
 			taskErr = h.turnService.SettleAdmittedTurnAfterError(

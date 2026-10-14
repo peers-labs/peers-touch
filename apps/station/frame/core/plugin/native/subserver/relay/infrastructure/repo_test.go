@@ -1,0 +1,264 @@
+package infrastructure
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+)
+
+func TestAutoMigratePurgesLegacyInvitePlaintext(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open("file:relay-legacy-invite?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("open database handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	defer sqlDB.Close()
+
+	if err := db.Exec(`
+		CREATE TABLE relay_invite (
+			id INTEGER PRIMARY KEY,
+			token TEXT,
+			station_peer_id TEXT,
+			status INTEGER
+		)
+	`).Error; err != nil {
+		t.Fatalf("create legacy invite table: %v", err)
+	}
+	if err := db.Exec(
+		"CREATE UNIQUE INDEX idx_relay_invite_token ON relay_invite(token)",
+	).Error; err != nil {
+		t.Fatalf("create legacy invite index: %v", err)
+	}
+	if err := db.Exec(
+		"CREATE INDEX idx_relay_invite_station_peer_id ON relay_invite(station_peer_id)",
+	).Error; err != nil {
+		t.Fatalf("create legacy invite identity index: %v", err)
+	}
+	if err := db.Exec(
+		"INSERT INTO relay_invite (id, token, station_peer_id, status) VALUES (?, ?, ?, ?)",
+		1,
+		"legacy-plaintext-secret",
+		"legacy-station",
+		domain.InviteStatusActive,
+	).Error; err != nil {
+		t.Fatalf("insert legacy invite: %v", err)
+	}
+
+	repo := NewGormRepo(db)
+	if err := repo.AutoMigrate(); err != nil {
+		t.Fatalf("migrate Relay schema: %v", err)
+	}
+	if err := repo.AutoMigrate(); err != nil {
+		t.Fatalf("repeat Relay schema migration: %v", err)
+	}
+	if db.Migrator().HasColumn(&invitePO{}, "token") {
+		t.Fatal("legacy plaintext token column still exists")
+	}
+	if db.Migrator().HasColumn(&invitePO{}, "station_peer_id") {
+		t.Fatal("legacy invite Station identity column still exists")
+	}
+	var count int64
+	if err := db.Model(&invitePO{}).Count(&count).Error; err != nil {
+		t.Fatalf("count migrated invites: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("legacy invites survived hard-cut migration: %d", count)
+	}
+	var schema string
+	if err := db.Raw(
+		"SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'relay_invite'",
+	).Scan(&schema).Error; err != nil {
+		t.Fatalf("read Relay invite schema: %v", err)
+	}
+	if strings.Contains(strings.ToLower(schema), "token") {
+		t.Fatalf("Relay invite schema still contains token column: %s", schema)
+	}
+}
+
+func TestConsumeInviteAndCreateEnrollmentIsAtomic(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open("file:relay-atomic-enrollment?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("open database handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	defer sqlDB.Close()
+
+	repo := NewGormRepo(db)
+	if err := repo.AutoMigrate(); err != nil {
+		t.Fatalf("migrate Relay schema: %v", err)
+	}
+	invite := &domain.Invite{
+		SecretDigest: "digest",
+		Status:       domain.InviteStatusActive,
+		ExpiresAt:    time.Now().UTC().Add(time.Hour),
+	}
+	if err := repo.CreateInvite(context.Background(), invite); err != nil {
+		t.Fatalf("create invite: %v", err)
+	}
+	enrollment := &domain.Enrollment{
+		StationPeerID:          "station-peer",
+		NodePeerID:             "node-peer",
+		StationRootPublicKey:   []byte{1, 2, 3},
+		NodeAuthorizationEpoch: 1,
+		NodeAuthorizationUntil: time.Now().UTC().Add(time.Hour),
+		CredentialJTI:          "jti-1",
+	}
+	activated, err := repo.ConsumeInviteAndCreateEnrollment(
+		context.Background(),
+		invite.ID,
+		enrollment,
+		1,
+	)
+	if err != nil {
+		t.Fatalf("activate enrollment: %v", err)
+	}
+	if activated.Generation != 1 ||
+		activated.Status != domain.EnrollmentStatusOffline {
+		t.Fatalf("unexpected activated enrollment: %+v", activated)
+	}
+	if _, err := repo.ConsumeInviteAndCreateEnrollment(
+		context.Background(),
+		invite.ID,
+		enrollment,
+		1,
+	); !errors.Is(err, domain.ErrInviteAlreadyConsumed) {
+		t.Fatalf("consumed invite replay error = %v", err)
+	}
+
+	restartedRepo := NewGormRepo(db)
+	if _, err := restartedRepo.ConsumeInviteAndCreateEnrollment(
+		context.Background(),
+		invite.ID,
+		enrollment,
+		1,
+	); !errors.Is(err, domain.ErrInviteAlreadyConsumed) {
+		t.Fatalf("consumed invite replay after restart error = %v", err)
+	}
+}
+
+func TestEnrollmentIdentityIsStationAndNodeScoped(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open("file:relay-multi-node-enrollment?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("open database handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	defer sqlDB.Close()
+
+	repo := NewGormRepo(db)
+	if err := repo.AutoMigrate(); err != nil {
+		t.Fatalf("migrate Relay schema: %v", err)
+	}
+	createEnrollment := func(
+		stationPeerID,
+		nodePeerID,
+		digest string,
+	) *domain.Enrollment {
+		invite := &domain.Invite{
+			SecretDigest: digest,
+			Status:       domain.InviteStatusActive,
+			ExpiresAt:    time.Now().UTC().Add(time.Hour),
+		}
+		if err := repo.CreateInvite(t.Context(), invite); err != nil {
+			t.Fatalf("create invite: %v", err)
+		}
+		enrollment, err := repo.ConsumeInviteAndCreateEnrollment(
+			t.Context(),
+			invite.ID,
+			&domain.Enrollment{
+				StationPeerID:          stationPeerID,
+				NodePeerID:             nodePeerID,
+				StationRootPublicKey:   []byte{1, 2, 3},
+				NodeAuthorizationEpoch: 1,
+				NodeAuthorizationUntil: time.Now().UTC().Add(time.Hour),
+				CredentialJTI:          "jti-" + nodePeerID,
+			},
+			1,
+		)
+		if err != nil {
+			t.Fatalf("activate %s: %v", nodePeerID, err)
+		}
+		return enrollment
+	}
+
+	first := createEnrollment("station-peer", "node-a", "digest-a")
+	second := createEnrollment("station-peer", "node-b", "digest-b")
+	if first.ID == second.ID {
+		t.Fatal("two Station nodes shared one enrollment row")
+	}
+	if _, err := repo.GetEnrollment(
+		t.Context(),
+		"station-peer",
+		"node-b",
+	); err != nil {
+		t.Fatalf("load second Station node: %v", err)
+	}
+	if _, err := repo.RevokeEnrollment(
+		t.Context(),
+		"station-peer",
+		"node-a",
+	); err != nil {
+		t.Fatalf("revoke first Station node: %v", err)
+	}
+	remaining, err := repo.GetEnrollment(
+		t.Context(),
+		"station-peer",
+		"node-b",
+	)
+	if err != nil {
+		t.Fatalf("load remaining Station node: %v", err)
+	}
+	if remaining.Status == domain.EnrollmentStatusRevoked {
+		t.Fatal("revoking one Station node revoked its sibling")
+	}
+
+	invite := &domain.Invite{
+		SecretDigest: "digest-reused-node",
+		Status:       domain.InviteStatusActive,
+		ExpiresAt:    time.Now().UTC().Add(time.Hour),
+	}
+	if err := repo.CreateInvite(t.Context(), invite); err != nil {
+		t.Fatalf("create reused-node invite: %v", err)
+	}
+	if _, err := repo.ConsumeInviteAndCreateEnrollment(
+		t.Context(),
+		invite.ID,
+		&domain.Enrollment{
+			StationPeerID:          "other-station",
+			NodePeerID:             "node-b",
+			StationRootPublicKey:   []byte{4, 5, 6},
+			NodeAuthorizationEpoch: 1,
+			NodeAuthorizationUntil: time.Now().UTC().Add(time.Hour),
+			CredentialJTI:          "jti-reused-node",
+		},
+		1,
+	); err == nil {
+		t.Fatal("one Node PeerID enrolled under two logical Stations")
+	}
+}

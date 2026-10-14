@@ -1,6 +1,5 @@
 use crate::domain::auth::session::validate_token;
 use crate::domain::pin_lock::{self, EncryptedSession, PinProtection};
-use crate::infrastructure::avatar_cache;
 use crate::infrastructure::local_scope;
 use crate::infrastructure::storage::{self, StorageKind};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -66,11 +65,10 @@ fn encrypted_session_actor_ptid(
 }
 
 pub fn account_identity_path() -> Result<PathBuf, String> {
-    let station_scope = crate::infrastructure::local_scope::active_station_scope();
     storage::app_file_path(
         "desktop",
         StorageKind::Data,
-        &["account", &station_scope, "identities.json"],
+        &["account", "identities.json"],
     )
     .map_err(|err| format!("failed to resolve account identity path: {err:?}"))
 }
@@ -158,7 +156,7 @@ fn upsert_oauth_state(
         return Err("canonical actor PTID is required".to_string());
     }
     let mut state = read_state()?;
-    let account_id = oauth_account_id(provider, provider_user_id);
+    let account_id = oauth_account_id(actor_ptid, provider, provider_user_id);
     let now = unix_to_rfc3339(chrono_like_now_unix());
     if let Some(existing) = state.accounts.iter_mut().find(|item| item.id == account_id) {
         existing.actor_ptid = actor_ptid.to_string();
@@ -209,11 +207,11 @@ fn upsert_oauth_state(
     Ok(account_id)
 }
 
-pub fn oauth_account_id(provider: &str, provider_user_id: &str) -> String {
-    let station_scope = local_scope::active_station_scope();
+pub fn oauth_account_id(actor_ptid: &str, provider: &str, provider_user_id: &str) -> String {
+    let actor_scope = storage::resolve_user_scope(actor_ptid);
     let provider_scope = storage::sanitize_storage_segment(provider);
     let provider_user_scope = storage::sanitize_storage_segment(provider_user_id);
-    format!("station:{station_scope}:{provider_scope}:{provider_user_scope}")
+    format!("actor:{actor_scope}:{provider_scope}:{provider_user_scope}")
 }
 
 fn chrono_like_now_unix() -> i64 {
@@ -576,7 +574,10 @@ fn canonical_member_index(members: &[AccountIdentity]) -> usize {
     for idx in 1..members.len() {
         let candidate = &members[idx];
         let current = &members[best];
-        let candidate_rank = (is_usable_pin_row(candidate), candidate.pin_protection.is_some());
+        let candidate_rank = (
+            is_usable_pin_row(candidate),
+            candidate.pin_protection.is_some(),
+        );
         let current_rank = (is_usable_pin_row(current), current.pin_protection.is_some());
         if candidate_rank > current_rank {
             best = idx;
@@ -634,7 +635,11 @@ fn collapse_actor_group(members: &[AccountIdentity]) -> AccountIdentity {
         .avatar_local_path
         .clone()
         .or_else(|| canonical.avatar_local_path.clone())
-        .or_else(|| members.iter().find_map(|account| account.avatar_local_path.clone()));
+        .or_else(|| {
+            members
+                .iter()
+                .find_map(|account| account.avatar_local_path.clone())
+        });
 
     AccountIdentity {
         id: canonical.id.clone(),
@@ -661,7 +666,10 @@ pub fn canonical_accounts(accounts: &[AccountIdentity]) -> Vec<AccountIdentity> 
     let mut groups: std::collections::BTreeMap<String, Vec<AccountIdentity>> =
         std::collections::BTreeMap::new();
     for account in accounts {
-        groups.entry(actor_group_key(account)).or_default().push(account.clone());
+        groups
+            .entry(actor_group_key(account))
+            .or_default()
+            .push(account.clone());
     }
     let mut collapsed: Vec<AccountIdentity> = groups
         .into_values()
@@ -710,13 +718,13 @@ pub fn update_active_avatar_local_path(local_path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Sync user profile metadata into `identities.json` and warm the avatar
-/// cache (best-effort). Returns the cached avatar path if available.
+/// Sync user profile metadata and a separately materialized avatar path.
 pub fn sync_profile_locally(
     account_id: &str,
     name: Option<&str>,
     email: Option<&str>,
     avatar_url: Option<&str>,
+    avatar_local_path: Option<&str>,
     profile_url: Option<&str>,
 ) -> Result<Option<String>, String> {
     let mut state = read_state()?;
@@ -736,13 +744,12 @@ pub fn sync_profile_locally(
         account.profile_url = p.to_string();
     }
 
-    let mut local_path: Option<String> = None;
     if let Some(url) = avatar_url.filter(|v| !v.is_empty()) {
         account.avatar_url = url.to_string();
-        local_path = avatar_cache::try_ensure_local_string(url);
-        account.avatar_local_path = local_path.clone();
+        account.avatar_local_path = avatar_local_path.map(str::to_string);
     }
 
+    let local_path = account.avatar_local_path.clone();
     write_state(&state)?;
     Ok(local_path)
 }

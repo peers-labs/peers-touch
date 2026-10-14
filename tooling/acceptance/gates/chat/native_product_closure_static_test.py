@@ -60,6 +60,9 @@ CHAT_SESSION_LIST = ROOT / "apps/desktop/src/components/chat/ChatSessionList.tsx
 CHAT_SEARCH_DROPDOWN = (
     ROOT / "apps/desktop/src/components/chat/ChatSearchDropdown.tsx"
 )
+NATIVE_FILE_PICKER = (
+    ROOT / "tooling/acceptance/gates/chat/native_file_picker.py"
+)
 CREATE_GROUP_MODAL = (
     ROOT / "apps/desktop/src/components/chat/CreateGroupModal.tsx"
 )
@@ -115,6 +118,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         station_version.start()
         self.addCleanup(station_version.stop)
         self.source = RUNNER.read_text(encoding="utf-8")
+        self.native_file_picker = NATIVE_FILE_PICKER.read_text(
+            encoding="utf-8"
+        )
         self.entry = ENTRY.read_text(encoding="utf-8")
         self.runtime_binding = RUNTIME_BINDING.read_text(encoding="utf-8")
         self.gate_catalog = GATE_CATALOG.read_text(encoding="utf-8")
@@ -1549,11 +1555,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
 
     def test_product_files_use_real_native_chooser(self) -> None:
         self.assertIn("def choose_native_file(", self.source)
+        self.assertIn("select_native_file(", self.source)
         self.assertIn("NativeDesktopAdapter", self.source)
         self.assertNotIn("create_native_desktop_adapter", self.source)
         self.assertIn(
-            "self.runtime_binding.stage_native_file(",
-            self.source,
+            "runtime_binding.stage_native_file(",
+            self.native_file_picker,
         )
         self.assertIn("AXUIElementCreateApplication", self.macos_adapter)
         self.assertIn(
@@ -1576,81 +1583,99 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"windowCount"', self.macos_adapter)
         self.assertIn('"sheetCount"', self.macos_adapter)
         self.assertIn("timeout=2", self.macos_adapter)
-        self.assertIn("def panel_open(", self.source)
+        self.assertIn("def panel_open(", self.native_file_picker)
         self.assertIn(
             'control.kind in {"list", "text-field"}',
-            self.source,
+            self.native_file_picker,
         )
         self.assertIn(
-            "control.kind != baseline_control.kind",
-            self.source,
+            "control.kind != baseline.kind",
+            self.native_file_picker,
         )
-        self.assertIn("def native_app_baseline_ready(", self.source)
+        self.assertIn("def native_app_ready(", self.native_file_picker)
         self.assertIn(
-            "control = self.native_adapter.activate_and_focused_control(",
-            self.source,
+            "adapter.activate_and_focused_control(process_id)",
+            self.native_file_picker,
         )
-        self.assertIn("control.window_count >= 1", self.source)
-        self.assertIn("control.main_window", self.source)
-        self.assertIn("control.frontmost", self.source)
-        self.assertIn('control.kind != "application-dialog"', self.source)
-        self.assertIn('return {"selected": True, "control": control}', self.source)
-        self.assertIn("NativeKey.A,", self.source)
+        self.assertIn("control.window_count >= 1", self.native_file_picker)
+        self.assertIn("control.main_window", self.native_file_picker)
+        self.assertIn("control.frontmost", self.native_file_picker)
         self.assertIn(
-            "self.native_adapter.select_file_chooser_path_to_process(",
-            self.source,
-        )
-        self.assertNotIn("def location_field_cleared(", self.source)
-        self.assertIn(
-            "poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS",
-            self.source,
-        )
-        self.assertIn("self.native_adapter.read_clipboard()", self.source)
-        self.assertIn(
-            "self.native_adapter.write_clipboard(original_clipboard)",
-            self.source,
-        )
-        self.assertIn('control.value == str(selected_path)', self.source)
-        self.assertIn(
-            "self.native_adapter.reveal_file_chooser_location_to_process(",
-            self.source,
+            'control.kind != "application-dialog"',
+            self.native_file_picker,
         )
         self.assertIn(
-            "self.native_adapter.select_file_chooser_path_to_process(",
-            self.source,
+            'return {"selected": True, "control": control}',
+            self.native_file_picker,
         )
-        self.assertIn("if revealed_control is None:", self.source)
+        self.assertIn("NativeKey.A", self.native_file_picker)
         self.assertIn(
-            'elif revealed_control.kind != "text-field":',
-            self.source,
+            "adapter.select_file_chooser_path_to_process(",
+            self.native_file_picker,
+        )
+        self.assertNotIn(
+            "def location_field_cleared(",
+            self.native_file_picker,
+        )
+        self.assertIn(
+            "poll_frequency=POLL_SECONDS",
+            self.native_file_picker,
+        )
+        self.assertIn(
+            "original_clipboard = adapter.read_clipboard()",
+            self.native_file_picker,
+        )
+        self.assertIn(
+            "adapter.write_clipboard(original_clipboard)",
+            self.native_file_picker,
+        )
+        self.assertIn(
+            "control.value == str(selected_path)",
+            self.native_file_picker,
+        )
+        self.assertIn(
+            "adapter.reveal_file_chooser_location_to_process(",
+            self.native_file_picker,
+        )
+        self.assertIn(
+            "adapter.select_file_chooser_path_to_process(",
+            self.native_file_picker,
         )
         self.assertIn(
             "Native file chooser reveal returned an invalid control",
-            self.source,
+            self.native_file_picker,
         )
         self.assertNotIn(
             "NativeKey.G,\n"
             "            modifiers=(NativeModifier.PRIMARY, NativeModifier.SHIFT),",
-            self.source,
+            self.native_file_picker,
         )
-        self.assertIn("NativeKey.V,", self.source)
-        self.assertIn("NativeKey.ENTER", self.source)
+        self.assertIn("NativeKey.V", self.native_file_picker)
+        self.assertIn("NativeKey.ENTER", self.native_file_picker)
         self.assertIn(
             '"Native Accessibility probe timed out"',
             self.macos_adapter,
         )
 
-        self.assertIn("def selection_or_browser_ready(", self.source)
-        self.assertIn("baseline_window_count", self.source)
-        self.assertIn('control.kind == "application-dialog"', self.source)
-        selection_start = self.source.index(
-            "        def selection_or_browser_ready("
+        self.assertIn(
+            "def selection_or_browser_ready(",
+            self.native_file_picker,
         )
-        selection_end = self.source.index(
-            "        intermediate = WebDriverWait(",
+        self.assertIn("baseline.window_count", self.native_file_picker)
+        self.assertIn(
+            'control.kind == "application-dialog"',
+            self.native_file_picker,
+        )
+        selection_start = self.native_file_picker.index(
+            "    def selection_or_browser_ready("
+        )
+        selection_end = self.native_file_picker.index(
+            "    intermediate = WebDriverWait(",
             selection_start,
         )
-        selection_source = self.source[selection_start:selection_end]
+        selection_source = self.native_file_picker[
+            selection_start:selection_end
+        ]
         self.assertIn("control.main_window", selection_source)
         self.assertIn("control.frontmost", selection_source)
         self.assertIn("control.focused_window", selection_source)
@@ -1659,21 +1684,30 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "core_graphics.CGEventSourceCreate(-1)",
             self.macos_adapter,
         )
-        self.assertIn('control.kind != "application-dialog"', self.source)
+        self.assertIn(
+            'control.kind != "application-dialog"',
+            self.native_file_picker,
+        )
         self.assertIn("NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS", self.source)
-        self.assertIn("def native_app_baseline_ready(", self.source)
-        self.assertIn('def native_window_restored(', self.source)
-        restored_start = self.source.index("        def native_window_restored(")
-        restored_end = self.source.index(
-            "        WebDriverWait(",
+        self.assertIn("def restore_native_window(", self.native_file_picker)
+        restored_start = self.native_file_picker.index(
+            "    def restore_native_window("
+        )
+        restored_end = self.native_file_picker.index(
+            "    selected_control =",
             restored_start,
         )
-        restored_source = self.source[restored_start:restored_end]
+        restored_source = self.native_file_picker[
+            restored_start:restored_end
+        ]
         self.assertIn("control.main_window", restored_source)
         self.assertIn("control.frontmost", restored_source)
         self.assertIn("control.focused_window", restored_source)
         self.assertNotIn('control.kind != "unknown"', restored_source)
-        self.assertNotIn("report_native_file_snapshot", self.source)
+        self.assertNotIn(
+            "report_native_file_snapshot",
+            self.native_file_picker,
+        )
         self.assertIn("self.focus_actor_window(actor)", self.source)
         self.assertIn('trigger_selector="[data-chat-background-upload]"', self.source)
         self.assertIn('trigger_selector="[data-chat-attachment-picker]"', self.source)

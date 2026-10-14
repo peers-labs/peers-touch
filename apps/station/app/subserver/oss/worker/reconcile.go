@@ -96,6 +96,9 @@ func (w *BucketReconciler) Interval() time.Duration { return w.cfg.Interval }
 // the SUM query is one statement per bucket, and most buckets carry
 // little drift (or none).
 func (w *BucketReconciler) RunOnce(ctx context.Context) error {
+	if _, err := ValidateLeaseAuthority(ctx, w.Name()); err != nil {
+		return err
+	}
 	rows, err := w.cfg.Buckets.ListAll(ctx)
 	if err != nil {
 		return err
@@ -135,6 +138,15 @@ func (w *BucketReconciler) processOne(ctx context.Context, b *ossmodel.Bucket) {
 		return
 	}
 
+	if _, err := ValidateLeaseAuthority(ctx, w.Name()); err != nil {
+		log.Warnf(
+			ctx,
+			"[oss-worker] reconcile lease lost before mutation bucket=%s: %v",
+			b.ID,
+			err,
+		)
+		return
+	}
 	if err := w.cfg.Buckets.SetUsage(ctx, b.ID, sumBytes, count); err != nil {
 		log.Warnf(ctx, "[oss-worker] reconcile setUsage failed bucket=%s: %v", b.ID, err)
 		_ = w.cfg.Audit.Append(ctx, ossmodel.Audit{

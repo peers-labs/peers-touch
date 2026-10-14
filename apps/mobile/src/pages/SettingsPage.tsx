@@ -26,12 +26,9 @@ import {
   Ban,
   Bell,
   ChevronRight,
-  Fingerprint,
   Globe,
-  Image as ImageIcon,
   MessageCircle,
   Server,
-  Settings as SettingsIcon,
   Shield,
   ShieldCheck,
   User,
@@ -45,16 +42,23 @@ import {
 } from '../app/navigation';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { requestSocialCurrentUserProfile } from '../features/social/socialRuntime';
+import { projectAcceptedContacts } from '../features/social/socialProjection';
 import { useSocialStore } from '../features/social/socialStore';
 import {
+  activeStationRoute,
   activeStationEntry,
+  stationRoutes,
+  type MobileStationRouteCandidate,
   type StoredStationRegistry,
 } from '../features/station/stationRegistry';
+import { stationDisplayName } from '../features/station/stationDisplayName';
+import { useSettingsSurfaceFixture } from '../acceptance/settingsSurfaceFixture';
 import {
   useBlockedUsersController,
   useNotificationPreferencesController,
   useSettingsController,
 } from './settings/useSettingsController';
+import { SettingsAcceptanceSurface } from './settings/SettingsAcceptanceSurface';
 import {
   BlockedUsersSection,
   DevicePrefsSection,
@@ -99,6 +103,10 @@ interface SettingsPageProps {
   readonly onOpenSetting: (settingId: MobileSettingDetailId) => void;
   readonly onBack: () => void;
   readonly onChangeStation: () => Promise<void>;
+  readonly onChangeStationRoute: (
+    stationPeerId: string,
+    route: MobileStationRouteCandidate,
+  ) => Promise<void>;
   readonly onLogout: () => Promise<void>;
 }
 
@@ -111,7 +119,12 @@ function ProfileUnavailable({
 }) {
   const { t } = useMobileI18n();
   return (
-    <Card className="settings-section" variant="borderless" role="alert">
+    <Card
+      className="settings-section"
+      variant="borderless"
+      role="alert"
+      data-product-surface="settings.detail-unavailable"
+    >
       <Text type="secondary">
         {t(reason ?? 'mobile.settings.profileUnavailable')}
       </Text>
@@ -140,13 +153,27 @@ function BlockedUsersDetail() {
 // SettingsPage — pure renderer (prototype ProfilePage layout)
 // ---------------------------------------------------------------------------
 
-export function SettingsPage({
+export function SettingsPage(props: SettingsPageProps) {
+  const fixture = useSettingsSurfaceFixture();
+  if (fixture.surfaceId) {
+    return (
+      <SettingsAcceptanceSurface
+        key={`${fixture.surfaceId}:${fixture.revision}`}
+        surfaceId={fixture.surfaceId}
+      />
+    );
+  }
+  return <SettingsPageContent {...props} />;
+}
+
+function SettingsPageContent({
   stationRegistry,
   authSession,
   activeSettingId,
   onOpenSetting,
   onBack,
   onChangeStation,
+  onChangeStationRoute,
   onLogout,
 }: SettingsPageProps) {
   const { t, language } = useMobileI18n();
@@ -159,6 +186,11 @@ export function SettingsPage({
 
   const activeStation = activeStationEntry(stationRegistry);
   const unavailableLabel = t('mobile.launch.unavailable');
+  const activeStationLabel = stationDisplayName(
+    activeStation?.label ?? '',
+    activeStation?.url ?? '',
+    t('common.stationPicker.fallbackLabel'),
+  );
   const currentUserProfile = useSocialStore((state) => state.currentUserProfile);
   const updateCurrentUserProfile = useSocialStore(
     (state) => state.updateCurrentUserProfile,
@@ -170,6 +202,9 @@ export function SettingsPage({
     (state) => state.lastReconcileAt !== null && state.error === null,
   );
   const blockedUsersCount = useSocialStore((state) => state.blockedUsers.length);
+  const currentUserPtid = useSocialStore((state) => state.currentUserPtid);
+  const friendRequests = useSocialStore((state) => state.friendRequests);
+  const peerOnline = useSocialStore((state) => state.peerOnline);
   const groupCount = useSocialStore((state) => state.messagingConversations.reduce(
     (count, conversation) => count + Number(
       conversation.active && conversation.kind === 2,
@@ -177,8 +212,14 @@ export function SettingsPage({
     0,
   ));
 
-  // Friendship status is a per-target cache, not a canonical total.
-  const friendCount = unavailableLabel;
+  const friendCount = useMemo(
+    () => projectAcceptedContacts(
+      friendRequests,
+      currentUserPtid,
+      peerOnline,
+    ).length,
+    [currentUserPtid, friendRequests, peerOnline],
+  );
 
   // Settings controller — owns dirty/save/discard/conflict lifecycle
   const controller = useSettingsController(
@@ -273,7 +314,6 @@ export function SettingsPage({
         { id: 'account-info', labelKey: 'mobile.settings.accountInfo', icon: User, tint: '#6366f1' },
         { id: 'notifications', labelKey: 'mobile.settings.section.notifications', valueOverride: notificationController.unavailable ? unavailableLabel : undefined, icon: Bell, tint: '#f59e0b' },
         { id: 'privacy-security', labelKey: 'mobile.settings.privacySecurity', icon: Shield, tint: '#22c55e' },
-        { id: 'safety-number', labelKey: 'mobile.settings.safetyNumber', icon: Fingerprint, tint: '#0ea5e9' },
         {
           id: 'blocked-users',
           labelKey: 'mobile.settings.blockedUsers',
@@ -291,14 +331,12 @@ export function SettingsPage({
       titleKey: 'mobile.settings.group.chat',
       items: [
         { id: 'chat-settings', labelKey: 'mobile.settings.chatSettings', icon: MessageCircle, tint: '#6366f1' },
-        { id: 'chat-background', labelKey: 'mobile.settings.chatBackground', icon: ImageIcon, tint: '#ec4899' },
       ],
     },
     {
       titleKey: 'mobile.settings.group.network',
       items: [
-        { id: 'station-connection', labelKey: 'mobile.settings.stationConnection', valueOverride: activeStation?.label || t('mobile.settings.stationNotSelected'), icon: Server, tint: '#22c55e' },
-        { id: 'encryption', labelKey: 'mobile.settings.encryption', valueOverride: unavailableLabel, icon: ShieldCheck, tint: '#6366f1' },
+        { id: 'station-connection', labelKey: 'mobile.settings.stationConnection', valueOverride: activeStation ? activeStationLabel : t('mobile.settings.stationNotSelected'), icon: Server, tint: '#22c55e' },
         { id: 'language', labelKey: 'mobile.settings.section.language', valueOverride: language === 'zh-CN' ? '简体中文' : 'English', icon: Globe, tint: '#0ea5e9' },
       ],
     },
@@ -310,6 +348,7 @@ export function SettingsPage({
     },
   ], [
     activeStation,
+    activeStationLabel,
     controller.appVersion,
     blockedUsersCount,
     blockedUsersOwnerAvailable,
@@ -327,10 +366,7 @@ export function SettingsPage({
   );
   const ActiveSettingIcon = activeSetting?.icon;
 
-  // --- PTID display ---
-  const ptidDisplay = authSession?.actorRef.ptid
-    ? `ptid:${String(authSession.actorRef.ptid).slice(0, 24)}...`
-    : '';
+  const profileSubtitle = t('mobile.settings.connected');
 
   // --- Logout flow ---
   const handleLogoutConfirm = useCallback(async () => {
@@ -349,7 +385,7 @@ export function SettingsPage({
         return controller.profileAvailable ? (
           <ProfileSection
             profile={controller.draftProfile}
-            actorPtid={authSession?.actorRef.ptid}
+            actorIdentity={authSession?.actorRef.acct}
             disabled={false}
             onPatch={controller.patchProfile}
           />
@@ -414,9 +450,15 @@ export function SettingsPage({
       case 'station-connection':
         return (
           <StationSection
-            stationLabel={activeStation?.label || t('mobile.settings.stationNotSelected')}
+            stationLabel={activeStation ? activeStationLabel : t('mobile.settings.stationNotSelected')}
             stationUrl={activeStation?.url || ''}
             identityVerified={activeStation?.identityVerified === true}
+            routes={activeStation ? stationRoutes(activeStation) : []}
+            activeRouteId={activeStation ? activeStationRoute(activeStation)?.routeId ?? '' : ''}
+            onChangeRoute={async (route) => {
+              if (!activeStation) return;
+              await onChangeStationRoute(activeStation.stationPeerId, route);
+            }}
             onChangeStation={async () => requestExit(onChangeStation)}
             onLogout={requestLogout}
             loggingOut={loggingOut}
@@ -456,14 +498,21 @@ export function SettingsPage({
   // --- Render ---
   if (controller.loading) {
     return (
-      <div className="page-container settings-loading">
+      <div
+        className="page-container settings-loading"
+        data-product-surface="settings.summary-loading"
+      >
+        <h1 className="sr-only">{t('mobile.settings.title')}</h1>
         <Spin />
       </div>
     );
   }
 
   const content = activeSettingId ? (
-    <div className="page-container settings-page mobile-detail-page">
+    <div
+      className="page-container settings-page mobile-detail-page"
+      data-product-surface={`settings.${activeSettingId}`}
+    >
       <header className="page-header">
         <button
           type="button"
@@ -493,22 +542,17 @@ export function SettingsPage({
       </div>
     </div>
   ) : (
-    <div className="page-container settings-page">
-      {/* Header: "Me" + Settings gear */}
+    <div
+      className="page-container settings-page"
+      data-product-surface="settings.summary"
+    >
+      {/* The page is already Settings; profile details remain the first row. */}
       <header className="page-header">
         <h1 className="header-title">{t('mobile.settings.title')}</h1>
-        <button
-          type="button"
-          className="header-action"
-          aria-label={t('mobile.settings.accountInfo')}
-          onClick={() => onOpenSetting('account-info')}
-        >
-          <SettingsIcon size={20} />
-        </button>
       </header>
 
       <div className="settings-body">
-        {/* Profile header card — Avatar 64px + name + PTID + chevron + stats */}
+        {/* Profile header card — Avatar 64px + friendly identity + chevron + stats */}
         <button
           type="button"
           className="settings-profile-trigger"
@@ -530,11 +574,9 @@ export function SettingsPage({
                 <Text strong className="settings-profile-name">
                   {displayName || t('mobile.settings.notLoggedIn')}
                 </Text>
-                {ptidDisplay && (
-                  <Text type="secondary" className="settings-profile-ptid">
-                    {ptidDisplay}
-                  </Text>
-                )}
+                <Text type="secondary" className="settings-profile-subtitle">
+                  {profileSubtitle}
+                </Text>
               </div>
               <ChevronRight size={20} color="#9ca0ab" />
             </div>
@@ -650,7 +692,10 @@ export function SettingsPage({
         ]}
         destroyOnClose
       >
-        <div data-acceptance-id="settings-unsaved-exit">
+        <div
+          data-acceptance-id="settings-unsaved-exit"
+          data-product-surface="settings.unsaved-exit"
+        >
           {t('mobile.settings.exit.body')}
         </div>
       </Modal>
@@ -665,7 +710,9 @@ export function SettingsPage({
         onCancel={() => setLogoutConfirmOpen(false)}
         destroyOnClose
       >
-        {t('mobile.settings.station.logoutConfirmBody')}
+        <div data-product-surface="settings.logout-confirm">
+          {t('mobile.settings.station.logoutConfirmBody')}
+        </div>
       </Modal>
     </>
   );

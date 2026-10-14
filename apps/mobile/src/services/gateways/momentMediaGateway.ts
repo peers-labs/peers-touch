@@ -4,7 +4,10 @@ import {
 } from '@peers-touch/client-media-security';
 
 import type { MobileAuthSession } from '../../features/auth/authSession';
-import type { ImageAttachment } from '../../gen/proto/domain/social/post_pb';
+import type {
+  ImageAttachment,
+  VideoAttachment,
+} from '../../gen/proto/domain/social/post_pb';
 import {
   executeStationOperation,
   responseArrayBuffer,
@@ -23,6 +26,11 @@ export interface ResolvedMomentMediaSource {
 export interface MomentMediaGateway {
   loadImage(
     attachment: ImageAttachment,
+    signal?: AbortSignal,
+  ): Promise<Blob>;
+  loadMedia(
+    attachment: ImageAttachment | VideoAttachment,
+    mimeType: string,
     signal?: AbortSignal,
   ): Promise<Blob>;
 }
@@ -62,28 +70,82 @@ export function createMomentMediaGateway(
   session: MobileAuthSession,
   fetcher: MomentMediaFetch = globalThis.fetch,
 ): MomentMediaGateway {
-  return {
-    async loadImage(attachment, signal): Promise<Blob> {
-      const reference = attachment.url || attachment.id;
-      const source = resolveMomentMediaSource(reference, session.stationUrl);
-      const descriptor = clientMediaEncryptionDescriptorFromAttachment(attachment);
-      if (attachment.mediaEncryption && !descriptor) {
-        throw new Error('mobile.moments.media.invalidDescriptor');
-      }
-      const headers: Record<string, string> = {
-        Accept: 'application/octet-stream',
-      };
-      const ciphertext = source.authenticated
-        ? await loadAuthenticatedObject(session, source.url, signal)
-        : await loadPublicObject(fetcher, source.url, headers, signal);
+  const loadMedia = async (
+    attachment: ImageAttachment | VideoAttachment,
+    mimeType: string,
+    signal?: AbortSignal,
+  ): Promise<Blob> => {
+    const reference = attachment.url || attachment.id;
+    const source = resolveMomentMediaSource(reference, session.stationUrl);
+    const descriptor = clientMediaEncryptionDescriptorFromAttachment(attachment);
+    if (attachment.mediaEncryption && !descriptor) {
+      throw new Error('mobile.moments.media.invalidDescriptor');
+    }
+    const headers: Record<string, string> = {
+      Accept: 'application/octet-stream',
+    };
+    const ciphertext = source.authenticated
+      ? await loadAuthenticatedObject(session, source.url, signal)
+      : await loadPublicObject(fetcher, source.url, headers, signal);
 
-      return decryptClientMediaBlob({
-        ciphertext,
-        descriptor,
-        mimeType: 'image/*',
-      });
-    },
+    return decryptClientMediaBlob({
+      ciphertext,
+      descriptor,
+      mimeType,
+    });
   };
+
+  return {
+    loadImage: async (attachment, signal) => normalizeMomentImageMimeType(
+      await loadMedia(attachment, 'application/octet-stream', signal),
+    ),
+    loadMedia,
+  };
+}
+
+export async function normalizeMomentImageMimeType(blob: Blob): Promise<Blob> {
+  if (blob.type.startsWith('image/') && blob.type !== 'image/*') return blob;
+
+  const bytes = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
+  const mimeType = imageMimeTypeFromSignature(bytes);
+  if (!mimeType) {
+    throw new Error('mobile.moments.media.unsupportedImageFormat');
+  }
+  return blob.slice(0, blob.size, mimeType);
+}
+
+function imageMimeTypeFromSignature(bytes: Uint8Array): string | null {
+  if (matches(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
+    return 'image/png';
+  }
+  if (matches(bytes, [0xff, 0xd8, 0xff])) return 'image/jpeg';
+  if (
+    matches(bytes, [0x47, 0x49, 0x46, 0x38, 0x37, 0x61])
+    || matches(bytes, [0x47, 0x49, 0x46, 0x38, 0x39, 0x61])
+  ) {
+    return 'image/gif';
+  }
+  if (
+    matches(bytes, [0x52, 0x49, 0x46, 0x46])
+    && matches(bytes.subarray(8), [0x57, 0x45, 0x42, 0x50])
+  ) {
+    return 'image/webp';
+  }
+  if (
+    matches(bytes.subarray(4), [0x66, 0x74, 0x79, 0x70])
+    && (
+      matches(bytes.subarray(8), [0x61, 0x76, 0x69, 0x66])
+      || matches(bytes.subarray(8), [0x61, 0x76, 0x69, 0x73])
+    )
+  ) {
+    return 'image/avif';
+  }
+  if (matches(bytes, [0x42, 0x4d])) return 'image/bmp';
+  return null;
+}
+
+function matches(bytes: Uint8Array, signature: readonly number[]): boolean {
+  return signature.every((byte, index) => bytes[index] === byte);
 }
 
 async function loadAuthenticatedObject(

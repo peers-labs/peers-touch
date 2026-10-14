@@ -32876,24 +32876,38 @@ export function installAcceptanceHarness(): void {
 
     async configureStation({ stationUrl }: ConfigureStationInput) {
       const expectedUrl = stationUrl.trim().replace(/\/+$/, '');
-      const probed = await api.stationAdd(expectedUrl);
-      await api.stationSetActive(expectedUrl);
+      const discovered = await api.stationAdd(expectedUrl);
+      if (discovered.entries.length !== 1) {
+        throw new Error('agent.acceptance.stationSelectionRequired');
+      }
+      const discoveredEntry = discovered.entries[0];
+      const discoveredRoute = discoveredEntry?.routes.find(
+        (route) => route.endpoint_origin.replace(/\/+$/, '') === expectedUrl,
+      ) ?? discoveredEntry?.routes[0];
+      if (!discoveredEntry || !discoveredRoute) {
+        throw new Error('agent.acceptance.stationRouteRequired');
+      }
+      await api.stationSetActive(
+        discoveredEntry.station_peer_id,
+        discoveredRoute.route_id,
+      );
       const registry = await api.stationList();
-      const activeUrl = registry.active_url?.trim().replace(/\/+$/, '') ?? null;
       const activeEntry = registry.entries.find(
-        (entry) => entry.url.trim().replace(/\/+$/, '') === expectedUrl,
+        (entry) => entry.station_peer_id === registry.active_station_peer_id,
       );
-      const activeStationPeerId = (
-        activeEntry?.peer_id?.trim() || probed.peer_id?.trim() || null
+      const activeRoute = activeEntry?.routes.find(
+        (route) => route.route_id === activeEntry.active_route_id,
       );
+      const activeUrl = activeRoute?.endpoint_origin.trim().replace(/\/+$/, '') ?? null;
+      const activeStationPeerId = activeEntry?.station_peer_id.trim() || null;
 
       return {
         configured:
           activeUrl === expectedUrl
-          && activeEntry?.online === true
+          && activeRoute?.health === 'available'
           && Boolean(activeStationPeerId),
         activeUrl,
-        online: activeEntry?.online === true,
+        online: activeRoute?.health === 'available',
         peerIdAvailable: Boolean(activeStationPeerId),
         activeStationPeerId,
       };

@@ -505,7 +505,7 @@ def validate_auth_ui_identity(repo_root: Path = REPO_ROOT) -> None:
 
     required_mobile_tokens = (
         'className="auth-gate-logo"',
-        'data-session-expired={expiredSession ? \'true\' : \'false\'}',
+        'data-session-expired={visibleExpiredSession ? \'true\' : \'false\'}',
         'data-acceptance-id="auth-session-expired"',
         "t('mobile.settings.connected')",
         "authStationLabel(",
@@ -626,13 +626,13 @@ def validate_auth_ui_identity(repo_root: Path = REPO_ROOT) -> None:
     ):
         logo_rule = css_rule_body(source, selector)
         for declaration in (
-            "width: 72px",
-            "height: 72px",
-            "border-radius: 18px",
+            "width: 44px",
+            "height: 44px",
+            "border-radius: 8px",
         ):
             if declaration not in logo_rule:
                 raise ValueError(
-                    f"{selector} must preserve Desktop Auth {declaration}"
+                    f"{selector} must preserve compact Mobile Auth {declaration}"
                 )
 
     for source, selector in (
@@ -642,11 +642,11 @@ def validate_auth_ui_identity(repo_root: Path = REPO_ROOT) -> None:
         card_rule = css_rule_body(source, selector)
         if (
             "width: min(100%, 400px)" not in card_rule
-            or "border-radius: 24px" not in card_rule
+            or "border-radius: 8px" not in card_rule
             or "margin-top: auto" in card_rule
         ):
             raise ValueError(
-                f"{selector} must preserve the centered Desktop Auth card anatomy"
+                f"{selector} must preserve the compact Mobile Auth card anatomy"
             )
 
 

@@ -53,6 +53,10 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             clients["desktop-bob"].actor,
             clients["sim-ios"].actor,
         )
+        self.assertEqual(
+            clients["desktop-bob-peer"].actor,
+            clients["desktop-bob"].actor,
+        )
         provisioner = get_provisioner(
             contract,
             station_profiles={
@@ -95,6 +99,34 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             same_station_clients["desktop-alice"]
             .service_bindings["station"].service_id,
             "station-primary",
+        )
+        suite_clients = {
+            client.id: client
+            for client in provisioner._clients_for_gate(
+                "station-access-session-class-suite-e2e",
+                overlay,
+            )
+        }
+        self.assertEqual(
+            set(suite_clients),
+            {
+                "desktop-alice",
+                "desktop-bob",
+                "desktop-bob-peer",
+                "sim-ios",
+                "sim-ios-peer",
+            },
+        )
+        self.assertEqual(
+            {client.actor for client in suite_clients.values()},
+            {"alice", "bob"},
+        )
+        self.assertEqual(
+            {
+                client.service_bindings["station"].service_id
+                for client in suite_clients.values()
+            },
+            {"station-primary"},
         )
 
     def test_catalog_uses_typed_ephemeral_mobile_capability(self) -> None:
@@ -283,19 +315,40 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             },
             "bindingState": {
                 "phase": "bound",
-                "bound_url": "https://station.invalid",
-            },
-            "scopeState": {
-                "authenticated": True,
-                "bindingPhase": "bound",
-                "actorPtid": "ptid:bob",
-                "deviceId": "desktop-device",
-                "stationPeerId": "station-peer",
+                "activeUrl": "https://station.invalid",
             },
         }
-        station_harness.side_effect = lambda _session, method, *_args, **_kwargs: (
-            events.append(f"station:{method}") or station_results[method]
+        scope_states = iter(
+            (
+                {
+                    "authenticated": False,
+                    "bindingPhase": "binding",
+                    "actorPtid": "",
+                    "deviceId": "",
+                    "stationPeerId": "station-peer",
+                },
+                {
+                    "authenticated": True,
+                    "bindingPhase": "bound",
+                    "actorPtid": "ptid:bob",
+                    "deviceId": "desktop-device",
+                    "stationPeerId": "station-peer",
+                },
+            )
         )
+
+        def station_result(
+            _session: object,
+            method: str,
+            *_args: object,
+            **_kwargs: object,
+        ) -> dict[str, object]:
+            events.append(f"station:{method}")
+            if method == "scopeState":
+                return next(scope_states)
+            return station_results[method]
+
+        station_harness.side_effect = station_result
         chat_harness.side_effect = lambda _session, method, *_args, **_kwargs: (
             events.append(f"chat:{method}")
             or {
@@ -355,6 +408,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
                 "station:identityState",
                 "station:loginWithPassword",
                 "station:bindingState",
+                "station:scopeState",
                 "station:scopeState",
             ],
         )
@@ -416,6 +470,27 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
         self.assertEqual(
             result["deviceIdentityDigest"],
             identity.device_id,
+        )
+
+    def test_desktop_replacement_reuses_only_actor_identity_storage(self) -> None:
+        runtime = object.__new__(MixedNativeRuntime)
+        runtime.desktop_binding = MagicMock()
+        runtime.client_specs = {
+            "desktop-bob": {"id": "desktop-bob"},
+            "desktop-bob-peer": {"id": "desktop-bob-peer"},
+        }
+
+        runtime.prepare_desktop_actor_identity(
+            "desktop-bob",
+            "desktop-bob-peer",
+        )
+
+        runtime.desktop_binding.clone_actor_storage.assert_called_once_with(
+            "desktop-bob",
+            runtime.client_specs["desktop-bob"],
+            "desktop-bob-peer",
+            runtime.client_specs["desktop-bob-peer"],
+            "peers-touch/desktop/data/secure-store/identity-keys",
         )
 
     def test_mobile_start_waits_for_messaging_endpoint_activation(self) -> None:

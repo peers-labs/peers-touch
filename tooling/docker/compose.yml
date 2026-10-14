@@ -55,6 +55,7 @@ services:
         BUILD_TIME: ${PEERS_TOUCH_BUILD_TIME:-unknown}
     profiles: [station]
     environment:
+      PEERS_NODE_ROLE: station
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
       PEERS_OAUTH_BRIDGE_SECRET: ${PEERS_OAUTH_BRIDGE_SECRET:-}
       # Canonical Station-owned durable files, including Messaging attachment
@@ -63,10 +64,14 @@ services:
       # DSN points at the project's bridge-internal postgres service. Never
       # at the host. POSTGRES_DB / PEERS_DB_PASSWORD come from .env.<project>.
       PEERS_DB_DSN: host=postgres user=${POSTGRES_USER:-peers} password=${PEERS_DB_PASSWORD} dbname=${POSTGRES_DB:-peers_touch} port=5432 sslmode=disable TimeZone=Asia/Shanghai
+      PEERS_STATION_CLUSTER_MODE: ${PEERS_STATION_CLUSTER_MODE:-single}
+      PEERS_STATION_CLUSTER_LEASE_SECONDS: ${PEERS_STATION_CLUSTER_LEASE_SECONDS:-15}
+      PEERS_STATION_CLUSTER_HEARTBEAT_SECONDS: ${PEERS_STATION_CLUSTER_HEARTBEAT_SECONDS:-5}
       # OSS local backend store path. Lives under /app/data so it is
       # carried by the same named volume as the libp2p identities;
       # entrypoint.sh ensures the directory exists at startup.
       PEERS_NODE_SERVER_SUBSERVER_OSS_STORE_PATH: /app/data/oss
+      PEERS_OSS_BACKEND: ${PEERS_OSS_BACKEND:-local}
       # Node-level libp2p federation policy. entrypoint.sh projects each of
       # these vars (when non-empty) into a single federation.docker.yml
       # overlay under peers.node.federation.*. Both libp2p hosts in the
@@ -96,14 +101,14 @@ services:
       # StationDomain from the URL host. Without this set, federation
       # publishing degrades silently — set it in every .env.<environment>.
       PEERS_NODE_SERVER_BASEURL: ${PEERS_NODE_SERVER_BASEURL:-}
-      # Relay-client (station-side mount onto the central Relay subserver).
-      # entrypoint.sh translates these into a relay_client.docker.yml overlay
-      # only when RELAY_CLIENT_ENABLED=true.
-      RELAY_CLIENT_ENABLED: ${RELAY_CLIENT_ENABLED:-false}
-      RELAY_CLIENT_RELAY_URL: ${RELAY_CLIENT_RELAY_URL:-}
-      RELAY_CLIENT_RELAY_STREAM_ADDR: ${RELAY_CLIENT_RELAY_STREAM_ADDR:-}
-      RELAY_CLIENT_INVITE_TOKEN: ${RELAY_CLIENT_INVITE_TOKEN:-}
-      RELAY_CLIENT_LABEL: ${RELAY_CLIENT_LABEL:-${COMPOSE_PROJECT_NAME:-station}}
+      # Standard Circuit Relay target and signed control plane.
+      STATION_RELAY_ENABLED: ${STATION_RELAY_ENABLED:-false}
+      STATION_RELAY_PEER_ID: ${STATION_RELAY_PEER_ID:-}
+      STATION_RELAY_MULTIADDR: ${STATION_RELAY_MULTIADDR:-}
+      STATION_RELAY_CONTROL_ORIGIN: ${STATION_RELAY_CONTROL_ORIGIN:-}
+      STATION_RELAY_INVITE_TOKEN: ${STATION_RELAY_INVITE_TOKEN:-}
+      STATION_RELAY_LABEL: ${STATION_RELAY_LABEL:-${COMPOSE_PROJECT_NAME:-station}}
+      STATION_RELAY_TLS_CA_FILE: ${STATION_RELAY_TLS_CA_FILE:-}
       # Envelope federation peer map: peer_id=base_url pairs for cross-station delivery.
       PEERS_FEDERATION_PEER_MAP: ${PEERS_FEDERATION_PEER_MAP:-}
       # Actor display_name pattern: replaces __NODE__ in actor.yml
@@ -135,10 +140,9 @@ services:
       # ports — set LIBP2P_PORT in the per-env file accordingly.
       - "${LIBP2P_PORT:-4001}:4001"
     volumes:
-      # Persist the libp2p identity keys (transport's libp2pIdentity.key
-      # and bootstrap subserver's bootstrap.key). Key paths are projected
-      # into /app/data via the paths.docker.yml overlay emitted by
-      # entrypoint.sh — peers.yml itself stays untouched.
+      # Persist the logical Station root and each process node identity.
+      # Key paths are projected into /app/data via the paths.docker.yml
+      # overlay emitted by entrypoint.sh; peers.yml stays untouched.
       - peers_data:/app/data
       # Host-installed CLI providers (e.g. traecli). Bind-mount the REAL
       # binary (not a ~/.local/bin symlink — bind-mounting a symlink only
@@ -153,6 +157,7 @@ services:
       # under ~/.trae on startup. Mounting the host's real home reuses its
       # existing login and persists across container recreate.
       - ${PEERS_HOST_CLI_HOME_MOUNT:-/dev/null}:/root/.host-cli-home
+      - ${STATION_RELAY_CA_FILE_MOUNT:-/dev/null}:/app/relay-ca/relay.crt:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -165,8 +170,8 @@ services:
     restart: unless-stopped
 
   # ── Relay Station ──────────────────────────────────────────────
-  # Same image, same Dockerfile — the relay role is selected by the
-  # node's own conf (sub_relay.yml) at runtime, not by build flags.
+  # Same image, same Dockerfile. PEERS_NODE_ROLE selects the relay
+  # composition allowlist at runtime; build flags never fork the binary.
   relay:
     build:
       context: ../..
@@ -177,6 +182,7 @@ services:
         BUILD_TIME: ${PEERS_TOUCH_BUILD_TIME:-unknown}
     profiles: [relay]
     environment:
+      PEERS_NODE_ROLE: relay
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
       PEERS_DATA_DIR: /app/data
       PEERS_DB_DSN: host=postgres user=${POSTGRES_USER:-peers} password=${PEERS_DB_PASSWORD} dbname=${POSTGRES_DB:-peers_relay} port=5432 sslmode=disable TimeZone=Asia/Shanghai
@@ -190,27 +196,39 @@ services:
       # own actor records (and resolves remote ones), so the same overlay
       # rule applies here.
       PEERS_NODE_SERVER_BASEURL: ${PEERS_NODE_SERVER_BASEURL:-}
-      # Relay subserver TCP listener — projected into a relay.docker.yml overlay
-      # by entrypoint.sh. Only the Relay node sets this; stations leave it
-      # unset so their relay subserver's listener stays dormant.
-      RELAY_STREAM_LISTEN_ADDR: ${RELAY_STREAM_LISTEN_ADDR:-:4501}
+      RELAY_OPERATOR_KEY_FILE: ${RELAY_OPERATOR_KEY_FILE:-}
+      RELAY_OPERATOR_ISSUER: ${RELAY_OPERATOR_ISSUER:-}
+      RELAY_OPERATOR_AUDIENCE: ${RELAY_OPERATOR_AUDIENCE:-}
+      RELAY_OPERATOR_SCOPE: ${RELAY_OPERATOR_SCOPE:-}
       PEERS_NODE_LABEL: ${PEERS_NODE_LABEL:-}
     ports:
-      - "${RELAY_STATION_PORT:-18081}:18080"
+      - "127.0.0.1:${RELAY_CONTROL_PORT:-18082}:18080"
+      - "${RELAY_PUBLIC_PORT:-18081}:18443"
       - "${LIBP2P_PORT:-4001}:4001"
-      # Relay subserver TCP stream listener for station mounts.
-      - "${RELAY_STREAM_PORT:-4501}:4501"
     volumes:
       - peers_data:/app/data
+      - ${RELAY_SECRET_DIR_MOUNT:-/dev/null}:/app/relay-secrets:ro
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "--tries=1", "--timeout=3", "http://127.0.0.1:18080/sub-oss/healthz"]
+      test: ["CMD", "wget", "-qO-", "--tries=1", "--timeout=3", "http://127.0.0.1:18080/healthz"]
       interval: 10s
       timeout: 5s
       retries: 6
       start_period: 30s
+    restart: unless-stopped
+
+  relay-proxy:
+    image: nginx:1.27-alpine
+    profiles: [relay]
+    network_mode: "service:relay"
+    volumes:
+      - ./relay-nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${RELAY_SECRET_DIR_MOUNT:-/dev/null}:/etc/nginx/tls:ro
+    depends_on:
+      relay:
+        condition: service_healthy
     restart: unless-stopped
 
   # ── LiveKit SFU (group voice/video calls) ──────────────────────

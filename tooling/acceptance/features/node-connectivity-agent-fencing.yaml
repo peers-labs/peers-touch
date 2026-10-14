@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "id": "node-connectivity-agent-fencing",
+  "domain": "agent",
+  "status": "active",
+  "owners": [
+    "model/domain/agent/orchestration.proto",
+    "apps/station/frame/core/server/options.go",
+    "apps/station/frame/core/plugin/native/node/native_init_top_comp.go",
+    "apps/station/app/subserver/agent/infrastructure/persistence/executor_lease.go",
+    "apps/station/app/subserver/agent/infrastructure/persistence/migrations.go",
+    "apps/station/app/subserver/agent/service/chat_task_service.go",
+    "apps/station/app/subserver/agent/service/turn_service.go",
+    "tooling/acceptance/environments/node-connectivity-agent-fencing.yaml",
+    "tooling/acceptance/provisioners/node_connectivity_agent_fencing.py",
+    "tooling/scripts/node-connectivity-journey.py"
+  ],
+  "truth_sources": [
+    "shared PostgreSQL agent_executor_leases authority rows",
+    "Station-owned Chat TaskRun, ExecutionStep, TaskCheckpoint, and durable tool recovery state"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "station",
+      "route": "Agent Chat execution and recovery lifecycle"
+    }
+  ],
+  "required_gates": [
+    "NCP-G06-AGENT"
+  ],
+  "acceptance": {
+    "service": [
+      "booting node B does not interrupt a healthy Agent lease owned by node A",
+      "after database-time expiry node B takes over with a strictly higher fencing token",
+      "resumed node A cannot commit completion after node B takeover",
+      "the current owner produces exactly one terminal domain record",
+      "durable external-effect recovery state survives boot and takeover without blind replay"
+    ],
+    "surface": []
+  },
+  "negative": [
+    "node startup must not settle every RUNNING Chat step",
+    "node registry heartbeat does not authorize Agent completion",
+    "a database lease does not claim exactly-once provider effects",
+    "Mobile and Native Desktop Agent rendering are not claimed"
+  ]
+}

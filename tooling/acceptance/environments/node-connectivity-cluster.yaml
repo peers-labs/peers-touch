@@ -1,0 +1,98 @@
+{
+  "id": "node-connectivity-cluster",
+  "profile": {
+    "required": true,
+    "identity_match": true
+  },
+  "services": {
+    "cluster-postgres": {
+      "kind": "postgres",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "pg_isready",
+      "status_action": "postmaster.pid",
+      "attestation_producer": "node-connectivity-cluster-provisioner"
+    },
+    "cluster-object-backend": {
+      "kind": "object-storage",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "shared-root-stat",
+      "status_action": "device-inode",
+      "attestation_producer": "node-connectivity-cluster-provisioner"
+    },
+    "station-node-a": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "node-connectivity-cluster-provisioner"
+    },
+    "station-node-b": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "node-connectivity-cluster-provisioner"
+    }
+  },
+  "fixtures": [
+    {
+      "id": "ncp-cluster-actors",
+      "authorization_required": true,
+      "authorization_ref": "env:PT_NCP_CLUSTER_RESET_AUTHORIZED",
+      "target_assertion": "run-scoped isolated Compose project on profile one",
+      "initial_assertion": "Alice and Bob are canonical actors in one logical Station"
+    }
+  ],
+  "credentials": [
+    {
+      "id": "chat-password",
+      "source_ref": "fixture:apps/station/app/conf/actor.yml#preset_users",
+      "required": true,
+      "generated_if_missing": false
+    }
+  ],
+  "clients": [
+    {
+      "id": "alice",
+      "actor": "alice",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-node-a",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "bob",
+      "actor": "bob",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-node-b",
+          "required_kind": "station"
+        }
+      }
+    }
+  ],
+  "cleanup": {
+    "resources": [
+      "remote-compose",
+      "remote-source",
+      "remote-ports",
+      "desktop-processes",
+      "desktop-ports",
+      "desktop-storage",
+      "sessions",
+      "actor-fixture",
+      "profile-lease",
+      "source-lease"
+    ]
+  }
+}

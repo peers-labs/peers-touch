@@ -17,7 +17,7 @@ const noRequestSamples: RequestRowSample[] = [];
 
 export function ContactsPage({
   contacts = demoContacts, groups = demoGroups, requests = noRequestSamples,
-  listMemory, request, avatarState, onContactClick, onGroupClick, onAddContact,
+  listMemory, request, avatarState, onContactClick, onGroupClick, onAddContact, onCreateGroup,
 }: {
   contacts?: Contact[];
   groups?: GroupItem[];
@@ -28,6 +28,7 @@ export function ContactsPage({
   onContactClick: (c: Contact) => void;
   onGroupClick: (g: GroupItem) => void;
   onAddContact?: () => void;
+  onCreateGroup?: () => void;
 }) {
   const [searchQuery, setSearchQuery] = useState(() => listMemory.read('contacts-query')?.query ?? '');
 
@@ -52,6 +53,9 @@ export function ContactsPage({
     <div className="mp-page" data-prototype-page="contacts">
       <header className="mp-header">
         <h1 className="mp-header-title">{copy['mobile.contacts.title']}</h1>
+        <button type="button" className="mp-header-action" aria-label={copy['mobile.group.create']} onClick={() => onCreateGroup?.()}>
+          <Users size={20} />
+        </button>
         <button type="button" className="mp-header-action" aria-label={copy['mobile.contacts.findPeople']} onClick={() => onAddContact?.()}>
           <UserPlus size={20} />
         </button>

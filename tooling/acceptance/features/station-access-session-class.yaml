@@ -9,7 +9,7 @@
     "apps/desktop/src-tauri/src/messaging/**",
     "apps/mobile/src-tauri/src/runtime/oauth/**",
     "apps/mobile/src-tauri/src/messaging/**",
-    "tooling/acceptance/gates/station_access/session_class_e2e.py"
+    "tooling/acceptance/gates/station_access/session_class_suite_e2e.py"
   ],
   "truth_sources": [
     "Station canonical client-class Session slots",
@@ -21,10 +21,7 @@
     {"type": "native-mobile", "route": "shell"}
   ],
   "required_gates": [
-    "chat-native-multi-device-e2e",
-    "chat-lifecycle-mixed-client-multi-device-e2e",
-    "mobile-simulator-station-lifecycle-e2e",
-    "station-access-session-class-e2e"
+    "station-access-session-class-suite-e2e"
   ],
   "acceptance": {
     "service": [
@@ -41,7 +38,8 @@
   "negative": [
     "device_id, window labels, runtime labels, and OS models must not create additional Session class slots",
     "one simulator or one storage root must not represent two same-class Mobile installations",
+    "independent regression Gates must not replace the one reusable Suite Runtime or its native receiver proof",
     "aggregate evidence must not replace any native receiver proof",
-    "stale or dirty-source proof must not satisfy SAL-G05"
+    "stale or dirty-source proof must not satisfy SAL-G08"
   ]
 }

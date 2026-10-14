@@ -195,6 +195,19 @@ type PrivateObjectStore interface {
 		string,
 		[]byte,
 	) (PrivateObjectDownload, error)
+	AuthorizeFederatedPrivateObjectSource(
+		context.Context,
+		*securecontentpb.SecureResourceRef,
+		string,
+		string,
+		string,
+	) (FederatedPrivateObjectSource, error)
+	FindRemotePrivateObject(
+		context.Context,
+		string,
+		string,
+		[]byte,
+	) (RemotePrivateObjectProjection, error)
 	ClaimPrivateObjectCleanup(
 		context.Context,
 		string,
@@ -1735,6 +1748,8 @@ func loadPrivatePostAudience(
 		"plan_id",
 		"audience_bytes",
 		"audience_sha256",
+		"recipient_localities_bytes",
+		"recipient_localities_sha256",
 		"group_recipient_snapshot_bytes",
 		"group_recipient_snapshot_sha256",
 		"subtype_prepare_authority_bytes",
@@ -1749,6 +1764,12 @@ func loadPrivatePostAudience(
 	binding := PrivatePrepareBinding{
 		AudienceBytes:  cloneBytes(model.AudienceBytes),
 		AudienceSHA256: cloneBytes(model.AudienceSHA256),
+		RecipientLocalitiesBytes: cloneBytes(
+			model.RecipientLocalitiesBytes,
+		),
+		RecipientLocalitiesSHA256: cloneBytes(
+			model.RecipientLocalitiesSHA256,
+		),
 		GroupRecipientSnapshotBytes: cloneBytes(
 			model.GroupRecipientSnapshotBytes,
 		),

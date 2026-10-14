@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
+
+import { workspaceIdForRoot } from '../lib/machine-dev-paths.mjs';
 
 export const WORKFLOW_BINDING_PROJECTION_KIND =
   'peers-touch-workflow-binding-projection';
@@ -204,14 +207,33 @@ export function projectWorkflowBinding({
 export function projectWorkflowEventRoots(
   projection,
   {
+    executionRoot = null,
     subjectRoots = [],
     toolRoot = null,
     targetRoots = [],
   } = {},
 ) {
   validateWorkflowBindingProjection(projection);
+  const selectedRoot =
+    executionRoot === null
+      ? projection.executionRoot
+      : realpathSync(path.resolve(executionRoot));
+  if (
+    projection.role !== 'OWNER' &&
+    selectedRoot !== projection.executionRoot
+  ) {
+    fail(
+      'WORKFLOW_CHILD_ROOT_MISMATCH',
+      'Assigned child execution remains scoped to its assignment workspace',
+    );
+  }
   return validateWorkflowBindingProjection({
     ...projection,
+    executionRoot: selectedRoot,
+    workspaceId:
+      executionRoot === null
+        ? projection.workspaceId
+        : workspaceIdForRoot(selectedRoot),
     subjectRoots: canonicalRoots(subjectRoots),
     toolRoot: toolRoot === null ? null : path.resolve(toolRoot),
     targetRoots: canonicalRoots(targetRoots),
@@ -241,78 +263,32 @@ export function selectOwnerExecutionRoot(
   );
   const explicitTaskRoot = resolveProjectRoot(event.explicitTaskRoot);
   const activeEditorRoot = resolveProjectRoot(event.activeEditorPath);
-  if (explicitTaskRoot !== null) {
-    if (
-      workspaceRoots.length > 0 &&
-      !workspaceRoots.includes(explicitTaskRoot)
-    ) {
-      fail(
-        'WORKTREE_SELECTION_REQUIRED',
-        'Explicit task root is not a declared workspace root',
-      );
-    }
-    if (
-      activeEditorRoot !== null &&
-      activeEditorRoot !== explicitTaskRoot
-    ) {
-      fail(
-        'WORKTREE_SELECTION_REQUIRED',
-        'Active editor and explicit task root identify different worktrees',
-      );
-    }
-    return explicitTaskRoot;
-  }
-
   const targetRoots = unique(
     targetPaths.map((candidate) => resolveProjectRoot(candidate)),
   );
-  if (workspaceRoots.length > 1) {
-    const matchingTargets = targetRoots.filter((candidate) =>
-      workspaceRoots.includes(candidate));
-    if (matchingTargets.length === 1) {
-      if (
-        activeEditorRoot !== null &&
-        activeEditorRoot !== matchingTargets[0]
-      ) {
-        fail(
-          'WORKTREE_SELECTION_REQUIRED',
-          'Active editor and mutation target identify different worktrees',
-        );
-      }
-      return matchingTargets[0];
-    }
+  if (targetRoots.length > 1) {
     fail(
       'WORKTREE_SELECTION_REQUIRED',
-      'Multi-root workspace requires one explicit task or mutation root',
+      'One mutation action cannot target multiple worktrees',
       {
         workspaceRootCount: workspaceRoots.length,
-        mutationRootCount: matchingTargets.length,
+        mutationRootCount: targetRoots.length,
       },
     );
   }
-  if (workspaceRoots.length === 1) {
-    if (
-      activeEditorRoot !== null &&
-      activeEditorRoot !== workspaceRoots[0]
-    ) {
-      fail(
-        'WORKTREE_SELECTION_REQUIRED',
-        'Active editor and declared workspace root identify different worktrees',
-      );
-    }
-    return workspaceRoots[0];
-  }
-
-  const inferred = unique([
-    resolveProjectRoot(event.repositoryWorkingDirectory),
-    resolveProjectRoot(event.toolWorkingDirectory),
+  const selected = unique([
     ...targetRoots,
-  ]);
-  if (inferred.length === 1) return inferred[0];
-  if (inferred.length === 0) return null;
-  fail(
-    'WORKTREE_SELECTION_REQUIRED',
-    'Host event resolves more than one candidate worktree',
-    { candidateCount: inferred.length },
-  );
+    explicitTaskRoot,
+    resolveProjectRoot(event.toolWorkingDirectory),
+    activeEditorRoot,
+    resolveProjectRoot(event.repositoryWorkingDirectory),
+  ])[0] ?? null;
+  if (selected === null) return null;
+  if (workspaceRoots.length > 0 && !workspaceRoots.includes(selected)) {
+    fail(
+      'WORKTREE_SELECTION_REQUIRED',
+      'Selected action root is not a declared workspace root',
+    );
+  }
+  return selected;
 }

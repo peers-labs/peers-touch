@@ -8,9 +8,12 @@ import json
 import os
 import platform
 import re
+import secrets
 import signal
 import shutil
 import socket
+import ssl
+import stat
 import subprocess
 import tempfile
 import threading
@@ -31,6 +34,7 @@ from tooling.acceptance.core import (
     ClientBindingError,
     ClientRuntimeIdentity,
     ClientRuntime,
+    DriverError,
     EnvironmentClient,
     EnvironmentContract,
     EnvironmentProvisioner,
@@ -68,10 +72,12 @@ from tooling.acceptance.core.reset_authority import (
 from tooling.acceptance.fixtures.chat_native_actors import (
     ACTOR_ACCOUNTS,
     ACTOR_PASSWORD,
+    ResolvedActorIdentity,
     prepare_bound_friendships,
     prepare_federation_contexts,
     reset_fixture,
     resolve_actor_identity,
+    resolve_existing_actor_identity,
     verify_reset_target,
 )
 from tooling.acceptance.fixtures.chat_native_reset import (
@@ -98,6 +104,10 @@ from tooling.acceptance.provisioners.mobile_native_build import (
 )
 from tooling.acceptance.provisioners.remote_source_identity import (
     resolve_remote_source_identity,
+    resolve_service_version,
+)
+from tooling.acceptance.provisioners.posix_service_runtime import (
+    resolve_posix_relay_trust_anchor,
 )
 
 
@@ -109,6 +119,7 @@ STATION_LIFECYCLE_ENVIRONMENT_ID = "mobile-station-lifecycle-simulator"
 DIRECT_SIMULATOR_ENVIRONMENT_ID = "mobile-direct-simulator"
 CHAT_MIXED_NATIVE_ENVIRONMENT_ID = "chat-mixed-native"
 STATION_ACCESS_NATIVE_ENVIRONMENT_ID = "station-access-native"
+MOBILE_RELAY_SIMULATOR_ENVIRONMENT_ID = "mobile-relay-simulator"
 STATION_LIFECYCLE_GATE_ID = "mobile-simulator-station-lifecycle-e2e"
 STATION_SETTINGS_GATE_ID = "mobile-simulator-settings-e2e"
 STATION_BOUND_SIMULATOR_GATE_IDS = frozenset(
@@ -134,6 +145,15 @@ MOBILE_LIFECYCLE_SCOPE_FIELDS = frozenset(
         "social",
         "group",
         "navigation",
+    }
+)
+MOBILE_RELAY_CHILD_HARNESS_ACTIONS = frozenset(
+    {
+        "cleanup",
+        "lifecycle.restart",
+        "lifecycle.scope.read",
+        "lifecycle.waitReady",
+        "settings.profile.read",
     }
 )
 CHAT_MIXED_NATIVE_HARNESS_ACTIONS = (
@@ -167,6 +187,192 @@ MOBILE_DIRECT_STATION_PROFILE_KEYS = {
 }
 PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 GIT_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+MOBILE_ACTOR_IDENTITY_STATE_ROOT = (
+    Path.home()
+    / ".peers-touch"
+    / "acceptance-state"
+    / "mobile-actor-identities"
+)
+
+
+def _resolve_mobile_actor_identity_via_access(
+    station_url: str,
+    deployment_environment: str,
+    role: str,
+) -> ResolvedActorIdentity:
+    account = ACTOR_ACCOUNTS.get(role)
+    if not account:
+        raise BlockedError(
+            reason=f"Mobile Relay actor role is unsupported: {role}",
+            resource=f"fixture-actor:{role}",
+        )
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PT_ACCESS_CLIENT_STATION": station_url.rstrip("/"),
+            "PT_ACCESS_CLIENT_EMAIL": account,
+            "PT_ACCESS_CLIENT_PASSWORD": ACTOR_PASSWORD,
+        }
+    )
+    try:
+        completed = subprocess.run(
+            ("go", "run", "./apps/station/app/tests/access_client"),
+            cwd=REPO_ROOT,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise BlockedError(
+            reason=(
+                "Mobile Relay canonical actor identity probe could not run: "
+                f"{type(error).__name__}"
+            ),
+            resource=f"fixture-actor:{deployment_environment}:{role}",
+        ) from error
+    if completed.returncode != 0:
+        raise BlockedError(
+            reason="Mobile Relay canonical actor identity probe failed",
+            resource=f"fixture-actor:{deployment_environment}:{role}",
+        )
+    try:
+        payload = json.loads(completed.stdout)
+    except (TypeError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise BlockedError(
+            reason="Mobile Relay canonical actor identity probe was invalid",
+            resource=f"fixture-actor:{deployment_environment}:{role}",
+        ) from error
+    if not isinstance(payload, dict):
+        raise BlockedError(
+            reason="Mobile Relay canonical actor identity probe was invalid",
+            resource=f"fixture-actor:{deployment_environment}:{role}",
+        )
+    payload.pop("token", None)
+    ptid = str(payload.get("ptid") or "").strip()
+    if not ptid.startswith("ptid:"):
+        raise BlockedError(
+            reason="Mobile Relay canonical actor PTID is unavailable",
+            resource=f"fixture-actor:{deployment_environment}:{role}",
+        )
+    return ResolvedActorIdentity(
+        role=role,
+        account_ref=f"station-account:{account}",
+        ptid=ptid,
+        device_policy="persistent-acceptance",
+    )
+
+
+def _load_or_create_mobile_actor_identity_seed(
+    station_peer_id: str,
+    actor_ptid: str,
+    actor: str,
+    *,
+    state_root: Path | None = None,
+) -> bytes:
+    if (
+        not station_peer_id.strip()
+        or not actor_ptid.startswith("ptid:")
+        or actor not in ACTOR_ACCOUNTS
+    ):
+        raise EphemeralCapabilityBlocked(
+            "Mobile Relay actor identity scope is invalid",
+            resource=SIMULATOR_APPIUM_CAPABILITY_ID,
+        )
+    root = state_root or MOBILE_ACTOR_IDENTITY_STATE_ROOT
+    try:
+        root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if root.parent.is_symlink():
+            raise OSError("identity state parent is a symlink")
+        root.mkdir(mode=0o700, exist_ok=True)
+        if root.is_symlink() or not root.is_dir():
+            raise OSError("identity state root is invalid")
+        root.chmod(0o700)
+    except OSError as error:
+        raise EphemeralCapabilityBlocked(
+            "Mobile Relay protected actor identity storage is unavailable",
+            resource=SIMULATOR_APPIUM_CAPABILITY_ID,
+        ) from error
+
+    identity_name = hashlib.sha256(
+        f"{station_peer_id}\0{actor_ptid}".encode("utf-8")
+    ).hexdigest()
+    identity_path = root / f"{identity_name}.key"
+
+    try:
+        descriptor = os.open(
+            identity_path,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+        )
+    except FileNotFoundError:
+        seed = secrets.token_bytes(32)
+        try:
+            descriptor = os.open(
+                identity_path,
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+            )
+        except FileExistsError:
+            return _load_or_create_mobile_actor_identity_seed(
+                station_peer_id,
+                actor_ptid,
+                actor,
+                state_root=root,
+            )
+        except OSError as error:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Relay protected actor identity could not be created",
+                resource=SIMULATOR_APPIUM_CAPABILITY_ID,
+            ) from error
+        try:
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "wb") as handle:
+                descriptor = -1
+                handle.write(seed)
+                handle.flush()
+                os.fsync(handle.fileno())
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+        return seed
+    except OSError as error:
+        raise EphemeralCapabilityBlocked(
+            "Mobile Relay protected actor identity could not be opened",
+            resource=SIMULATOR_APPIUM_CAPABILITY_ID,
+        ) from error
+
+    try:
+        identity_stat = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(identity_stat.st_mode)
+            or identity_stat.st_uid != os.getuid()
+            or stat.S_IMODE(identity_stat.st_mode) & 0o077
+        ):
+            raise OSError("identity state permissions are invalid")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
+            seed = handle.read(33)
+    except OSError as error:
+        raise EphemeralCapabilityBlocked(
+            "Mobile Relay protected actor identity is invalid",
+            resource=SIMULATOR_APPIUM_CAPABILITY_ID,
+        ) from error
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    if len(seed) != 32:
+        raise EphemeralCapabilityBlocked(
+            "Mobile Relay protected actor identity has invalid length",
+            resource=SIMULATOR_APPIUM_CAPABILITY_ID,
+        )
+    return seed
+
+
 SELECTED_BUILD_ENVIRONMENT_KEYS = frozenset(
     {
         "ANDROID_HOME",
@@ -4560,9 +4766,13 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
 
     _ALLOWED_OPERATIONS = (
         "create_bound_session",
+        "capture_page_source",
+        "capture_screenshot",
         "select_binding",
         "authenticate_fixture_actor",
         "begin_access_gate",
+        "activate_station_route",
+        "station_route_snapshot",
         "harness_action",
         "stop",
     )
@@ -4580,6 +4790,9 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             Callable[[str, object], object] | None
         ) = None,
         actor_manifest: Mapping[str, Any] | None = None,
+        actor_identity_seed_provider: (
+            Callable[[str, str, str], bytes] | None
+        ) = None,
         sensitive_values: Sequence[str] = (),
         verifier_source_digest: str | None = None,
     ) -> None:
@@ -4603,6 +4816,7 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             if actor_manifest is not None
             else None
         )
+        self._actor_identity_seed_provider = actor_identity_seed_provider
         self._sensitive_values = tuple(
             dict.fromkeys(value for value in sensitive_values if value)
         )
@@ -4612,9 +4826,14 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
         self._sessions: dict[str, Any] = {}
         self._session_order: list[str] = []
         self._known_services: dict[str, set[str]] = {}
+        self._active_binding_roles: dict[str, str] = {}
         self._binding_generations: dict[str, int] = {}
         self._binding_proofs: dict[str, dict[str, dict[str, Any]]] = {}
         self._proof_refs: list[dict[str, Any]] = []
+        self._ephemeral_actor_identity_seeds: dict[
+            tuple[str, str],
+            bytearray,
+        ] = {}
         self._closed = False
 
     @property
@@ -4661,6 +4880,53 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             )
 
         session = self._require_session(client_id)
+        if operation == "capture_page_source":
+            self._require_exact_fields(
+                payload,
+                {"clientId", "captureId"},
+                operation,
+            )
+            capture_id = self._request_capture_id(payload)
+            page_source = redact_text(session.get_page_source())
+            reference = self._artifact_writer.write_bytes(
+                (
+                    "runtime/mobile-simulator/evidence/"
+                    f"{capture_id}/{client_id}/web-dom.html"
+                ),
+                page_source.encode("utf-8"),
+                media_type="text/html",
+                role=(
+                    "mobile-simulator-web-dom/"
+                    f"{capture_id}/{client_id}"
+                ),
+            )
+            return {
+                "clientId": client_id,
+                "pageSource": reference.to_dict(),
+            }
+        if operation == "capture_screenshot":
+            self._require_exact_fields(
+                payload,
+                {"clientId", "captureId"},
+                operation,
+            )
+            capture_id = self._request_capture_id(payload)
+            reference = self._artifact_writer.write_bytes(
+                (
+                    "runtime/mobile-simulator/evidence/"
+                    f"{capture_id}/{client_id}/screenshot.png"
+                ),
+                session.screenshot_bytes(),
+                media_type="image/png",
+                role=(
+                    "mobile-simulator-screenshot/"
+                    f"{capture_id}/{client_id}"
+                ),
+            )
+            return {
+                "clientId": client_id,
+                "screenshot": reference.to_dict(),
+            }
         if operation == "select_binding":
             self._require_exact_fields(
                 payload,
@@ -4685,6 +4951,23 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
         if operation == "begin_access_gate":
             self._require_exact_fields(payload, {"clientId"}, operation)
             value = self._begin_access_gate(session)
+            self._require_active(deadline_monotonic, cancellation)
+            return {"clientId": client_id, "value": value}
+        if operation == "activate_station_route":
+            self._require_exact_fields(
+                payload,
+                {"clientId", "routeType"},
+                operation,
+            )
+            value = self._activate_station_route(
+                session,
+                self._request_text(payload, "routeType"),
+            )
+            self._require_active(deadline_monotonic, cancellation)
+            return {"clientId": client_id, "value": value}
+        if operation == "station_route_snapshot":
+            self._require_exact_fields(payload, {"clientId"}, operation)
+            value = self._station_route_snapshot(session)
             self._require_active(deadline_monotonic, cancellation)
             return {"clientId": client_id, "value": value}
         if operation == "harness_action":
@@ -4754,6 +5037,14 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
                     "activeBindingRole",
                     "bindingProofs",
                 },
+                "capture_page_source": {
+                    "clientId",
+                    "pageSource",
+                },
+                "capture_screenshot": {
+                    "clientId",
+                    "screenshot",
+                },
                 "select_binding": {
                     "clientId",
                     "bindingRole",
@@ -4764,6 +5055,8 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
                 },
                 "authenticate_fixture_actor": {"clientId", "value"},
                 "begin_access_gate": {"clientId", "value"},
+                "activate_station_route": {"clientId", "value"},
+                "station_route_snapshot": {"clientId", "value"},
                 "harness_action": {"clientId", "value"},
                 "stop": {"clientId", "stopped"},
             }
@@ -4781,6 +5074,212 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             }
             self._assert_no_raw_authority(safe_projection)
         return projected
+
+    def _activate_station_route(
+        self,
+        session: Any,
+        route_type: str,
+    ) -> dict[str, Any]:
+        snapshot = self._station_route_snapshot(session)
+        if route_type == "relay":
+            if not self._route_of_type(snapshot, "relay"):
+                services = _required_object(
+                    self._manifest,
+                    "services",
+                    f"{SIMULATOR_APPIUM_CAPABILITY_ID}:services",
+                )
+                relay = _required_object(
+                    services,
+                    "relay",
+                    f"{SIMULATOR_APPIUM_CAPABILITY_ID}:relay",
+                )
+                endpoint = str(relay.get("endpoint") or "")
+                if not endpoint:
+                    raise EphemeralCapabilityBlocked(
+                        "Mobile Relay service endpoint is unavailable",
+                        resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:relay",
+                    )
+                session.call_action("station.add", {"url": endpoint})
+                snapshot = self._station_route_snapshot(session)
+        if route_type not in {"direct", "relay"}:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station route type is unsupported",
+                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:route-type",
+            )
+        route = self._route_of_type(snapshot, route_type)
+        if route is None:
+            raise EphemeralCapabilityBlocked(
+                f"Mobile {route_type} Station route is unavailable",
+                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{route_type}-route",
+            )
+        active_entry = self._active_station_entry(snapshot)
+        if active_entry.get("activeRouteId") == route.get("routeId"):
+            return snapshot
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:settings"},
+        )
+        session.call_action(
+            "navigation.apply",
+            {
+                "kind": "detail.push",
+                "route": {
+                    "routeId": "detail:setting",
+                    "settingId": "station-connection",
+                },
+            },
+        )
+        route_element = self._wait_for_element(
+            session,
+            f'button[data-station-route-type="{route_type}"]',
+        )
+        session.click_element(route_element)
+        confirm = self._wait_for_element(
+            session,
+            'button[data-station-route-confirm="true"]',
+        )
+        session.click_element(confirm)
+        deadline = time.monotonic() + 30.0
+        while time.monotonic() < deadline:
+            snapshot = self._station_route_snapshot(session)
+            active_entry = self._active_station_entry(snapshot)
+            active = self._route_of_type(snapshot, route_type)
+            if (
+                active is not None
+                and active_entry.get("activeRouteId")
+                == active.get("routeId")
+            ):
+                revision = active_entry.get("routeRevision")
+                screenshot = self._artifact_writer.write_bytes(
+                    (
+                        "runtime/mobile-relay/"
+                        f"{route_type}-route-{revision}.png"
+                    ),
+                    session.screenshot_bytes(),
+                    role=(
+                        f"mobile-relay-route-ui/{route_type}/{revision}"
+                    ),
+                )
+                snapshot["uiEvidence"] = screenshot.to_dict()
+                return snapshot
+            time.sleep(0.25)
+        raise EphemeralCapabilityBlocked(
+            f"Mobile {route_type} Station route did not become active",
+            resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{route_type}-route",
+        )
+
+    @staticmethod
+    def _wait_for_element(
+        session: Any,
+        selector: str,
+        *,
+        timeout_seconds: float = 30.0,
+    ) -> str:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            try:
+                return session.find_element("css selector", selector)
+            except DriverError:
+                time.sleep(0.25)
+        raise EphemeralCapabilityBlocked(
+            "Mobile Station route control is unavailable",
+            resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:station-route-ui",
+        )
+
+    @staticmethod
+    def _active_station_entry(
+        snapshot: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        station_peer_id = str(snapshot.get("activeStationPeerId") or "")
+        entries = snapshot.get("entries")
+        entry = next(
+            (
+                item
+                for item in entries
+                if isinstance(item, Mapping)
+                and item.get("stationPeerId") == station_peer_id
+            ),
+            None,
+        ) if isinstance(entries, list) else None
+        if not isinstance(entry, Mapping):
+            raise EphemeralCapabilityBlocked(
+                "Mobile active Station route entry is unavailable",
+                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:station-route",
+            )
+        return entry
+
+    @classmethod
+    def _route_of_type(
+        cls,
+        snapshot: Mapping[str, Any],
+        route_type: str,
+    ) -> Mapping[str, Any] | None:
+        entry = cls._active_station_entry(snapshot)
+        routes = entry.get("routes")
+        return next(
+            (
+                item
+                for item in routes
+                if isinstance(item, Mapping)
+                and item.get("routeType") == route_type
+            ),
+            None,
+        ) if isinstance(routes, list) else None
+
+    @staticmethod
+    def _station_route_snapshot(session: Any) -> dict[str, Any]:
+        raw = session.call_action("station.route.snapshot")
+        snapshot = _json_safe_mapping(
+            raw,
+            label="Mobile Station route snapshot",
+        )
+        entries = snapshot.get("entries")
+        projected_entries = []
+        if isinstance(entries, list):
+            for value in entries:
+                if not isinstance(value, Mapping):
+                    continue
+                routes = value.get("routes")
+                projected_entries.append(
+                    {
+                        "stationPeerId": value.get("stationPeerId"),
+                        "activeRouteId": value.get("activeRouteId"),
+                        "routeRevision": value.get("routeRevision"),
+                        "lifecycleGeneration": value.get(
+                            "lifecycleGeneration"
+                        ),
+                        "routes": [
+                            {
+                                "routeId": route.get("routeId"),
+                                "routeType": route.get("routeType"),
+                                "routeGeneration": route.get(
+                                    "routeGeneration"
+                                ),
+                                "health": route.get("health"),
+                            }
+                            for route in routes
+                            if isinstance(route, Mapping)
+                        ] if isinstance(routes, list) else [],
+                    }
+                )
+        binding = snapshot.get("binding")
+        projected_binding = (
+            {
+                "stationPeerId": binding.get("stationPeerId"),
+                "routeId": binding.get("routeId"),
+                "routeType": binding.get("routeType"),
+                "routeGeneration": binding.get("routeGeneration"),
+                "routeRevision": binding.get("routeRevision"),
+            }
+            if isinstance(binding, Mapping)
+            else None
+        )
+        return {
+            "activeStationPeerId": snapshot.get("activeStationPeerId"),
+            "entries": projected_entries,
+            "sessionRevocation": snapshot.get("sessionRevocation"),
+            "binding": projected_binding,
+        }
 
     def quarantine(self, reason: str, *, deadline_monotonic: float) -> bool:
         del reason
@@ -4891,6 +5390,7 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             self._stop_session(client_id, preserve_bindings=True)
             raise
 
+        self._active_binding_roles[client_id] = initial_role
         self._binding_proofs[client_id] = proof_refs
         self._require_active(deadline_monotonic, cancellation)
         return {
@@ -4920,6 +5420,7 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             binding_role,
             session=session,
         )
+        self._active_binding_roles[client_id] = binding_role
         proof_ref = self._binding_proofs.get(client_id, {}).get(binding_role)
         generation = self._binding_generations.get(client_id, 0)
         if proof_ref is None or generation <= 0:
@@ -5012,10 +5513,16 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             return False
         target = self._runtime_client(client_id)
         actor = str(target.get("actor") or "")
+        active_binding_role = self._active_binding_roles.get(client_id)
+        if not active_binding_role:
+            raise EphemeralCapabilityBlocked(
+                "Mobile simulator client has no active Station binding",
+                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
+            )
         target_service_id, target_service = require_runtime_client_service(
             self._manifest,
             client_id,
-            "station",
+            active_binding_role,
         )
         clients = self._manifest.get("clients")
         if not isinstance(clients, list):
@@ -5035,51 +5542,95 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
                 == target_service_id
             )
         ]
+        resources = self._manifest.get("mobileSimulator")
+        assignments = (
+            resources.get("clientAssignments")
+            if isinstance(resources, Mapping)
+            else None
+        )
+        assignment = (
+            assignments.get(client_id)
+            if isinstance(assignments, Mapping)
+            else None
+        )
+        identity_source_id = (
+            assignment.get("identitySourceClientId")
+            if isinstance(assignment, Mapping)
+            else None
+        )
+        if identity_source_id is not None:
+            sources = [
+                source
+                for source in sources
+                if source.get("id") == identity_source_id
+            ]
+        actor_ptid = self._actor_ptid(client_id)
+        station_peer_id = str(target_service.get("runtimeIdentity") or "")
         if not sources:
-            return False
-        if len(sources) != 1:
+            if self._actor_identity_seed_provider is not None:
+                seed = bytearray(
+                    self._actor_identity_seed_provider(
+                        station_peer_id,
+                        actor_ptid,
+                        actor,
+                    )
+                )
+                if len(seed) != 32:
+                    seed[:] = b"\x00" * len(seed)
+                    raise EphemeralCapabilityBlocked(
+                        "Mobile Relay actor identity seed is invalid",
+                        resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
+                    )
+            else:
+                seed_key = (target_service_id, actor_ptid)
+                shared_seed = self._ephemeral_actor_identity_seeds.setdefault(
+                    seed_key,
+                    bytearray(os.urandom(32)),
+                )
+                seed = bytearray(shared_seed)
+        elif len(sources) != 1:
             raise EphemeralCapabilityBlocked(
                 "Chat mixed-native actor identity source is ambiguous",
                 resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
             )
-        source = sources[0]
-        source_root = Path(str(source.get("storage_root") or ""))
-        actor_ptid = self._actor_ptid(client_id)
-        station_peer_id = str(target_service.get("runtimeIdentity") or "")
-        identity_root = (
-            source_root
-            / "peers-touch"
-            / "desktop"
-            / "data"
-            / "secure-store"
-            / "identity-keys"
-        )
-        if not identity_root.is_dir():
-            return False
-        identity_key_ref = (
-            f"station_peer_{self._storage_segment(station_peer_id)}/"
-            f"{self._storage_segment(actor_ptid)}"
-        )
-        identity_file = identity_root / (
-            hashlib.sha256(identity_key_ref.encode("utf-8")).hexdigest()
-            + ".key"
-        )
-        if not identity_file.is_file():
-            raise EphemeralCapabilityBlocked(
-                "Chat mixed-native actor identity source is incomplete",
-                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
+        else:
+            source = sources[0]
+            source_root = Path(str(source.get("storage_root") or ""))
+            identity_root = (
+                source_root
+                / "peers-touch"
+                / "desktop"
+                / "data"
+                / "secure-store"
+                / "identity-keys"
             )
-        seed_hex = identity_file.read_text(encoding="utf-8").strip()
-        if re.fullmatch(r"[0-9a-f]{64}", seed_hex) is None:
-            raise EphemeralCapabilityBlocked(
-                "Chat mixed-native actor identity seed is invalid",
-                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
+            if not identity_root.is_dir():
+                return False
+            identity_key_ref = (
+                f"station_peer_{self._storage_segment(station_peer_id)}/"
+                f"{self._storage_segment(actor_ptid)}"
             )
+            identity_file = identity_root / (
+                hashlib.sha256(identity_key_ref.encode("utf-8")).hexdigest()
+                + ".key"
+            )
+            if not identity_file.is_file():
+                raise EphemeralCapabilityBlocked(
+                    "Chat mixed-native actor identity source is incomplete",
+                    resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
+                )
+            seed_hex = identity_file.read_text(encoding="utf-8").strip()
+            if re.fullmatch(r"[0-9a-f]{64}", seed_hex) is None:
+                raise EphemeralCapabilityBlocked(
+                    "Chat mixed-native actor identity seed is invalid",
+                    resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:{client_id}",
+                )
+            seed = bytearray.fromhex(seed_hex)
         storage_key = self._mobile_actor_identity_storage_key(
             station_peer_id,
             actor_ptid,
         )
-        seed = bytearray.fromhex(seed_hex)
+        seed_hex = seed.hex()
         seed_base64 = base64.b64encode(seed).decode("ascii")
         self._sensitive_values = tuple(
             dict.fromkeys((*self._sensitive_values, seed_hex, seed_base64))
@@ -5422,6 +5973,7 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
         self._sessions.pop(client_id, None)
         if not preserve_bindings:
             self._known_services.pop(client_id, None)
+            self._active_binding_roles.pop(client_id, None)
             self._binding_proofs.pop(client_id, None)
         if client_id in self._session_order:
             self._session_order.remove(client_id)
@@ -5441,6 +5993,9 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
                 self._stop_session(client_id)
             except BaseException:
                 failed = True
+        for seed in self._ephemeral_actor_identity_seeds.values():
+            seed[:] = b"\x00" * len(seed)
+        self._ephemeral_actor_identity_seeds.clear()
         self._closed = True
         return not failed and not self._sessions
 
@@ -5471,6 +6026,19 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
                 resource=SIMULATOR_APPIUM_CAPABILITY_ID,
             )
         return value
+
+    @classmethod
+    def _request_capture_id(
+        cls,
+        payload: Mapping[str, object],
+    ) -> str:
+        capture_id = cls._request_text(payload, "captureId")
+        if re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", capture_id) is None:
+            raise EphemeralCapabilityBlocked(
+                "Mobile simulator capture identity is invalid",
+                resource=SIMULATOR_APPIUM_CAPABILITY_ID,
+            )
+        return capture_id
 
     @staticmethod
     def _require_exact_fields(
@@ -5545,6 +6113,7 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
         self.session_factory = session_factory
         self._base_manifest: MobileSimulatorRuntimeManifest | None = None
         self._overlay_spec: MobileStationLifecycleSimulatorSpec | None = None
+        self._actor_manifest_payload: dict[str, Any] | None = None
         self._appium_handler: (
             MobileSimulatorAppiumCapabilityHandler | None
         ) = None
@@ -5749,6 +6318,7 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             ),
             harness_actions=self._overlay_spec.harness_actions,
             harness_result_projector=self._project_lifecycle_harness_result,
+            actor_manifest=self._actor_manifest_payload,
             sensitive_values=self._raw_authority_values(),
         )
         context = EphemeralGateLaunchContext(
@@ -5897,6 +6467,7 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                 {
                     "id": client.id,
                     "actor": client.actor,
+                    "serviceId": client.required_service_roles[0],
                     "bindingRoles": list(client.required_service_roles),
                 }
                 for client in self.contract.clients
@@ -5914,6 +6485,7 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                 for key, value in overlay.proof_scope.items()
             },
         }
+        self._actor_manifest_payload = json.loads(json.dumps(payload))
         return self.evidence_run.write_json(
             "runtime/mobile-station-lifecycle-actors.json",
             payload,
@@ -6011,7 +6583,7 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             "clients",
             f"{environment_id}:base-clients",
         )
-        return {
+        projected = {
             "appium": {
                 "serverVersion": appium.get("serverVersion"),
                 "expectedServerVersion": appium.get(
@@ -6082,6 +6654,34 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             },
             "proofScope": projected_proof_scope,
         }
+        raw_assignments = resources.get("clientAssignments")
+        if raw_assignments is not None:
+            assignments = _required_object(
+                resources,
+                "clientAssignments",
+                f"{environment_id}:client-assignments",
+            )
+            projected["clientAssignments"] = {
+                client_id: {
+                    key: value
+                    for key, value in _required_object(
+                        assignments,
+                        client_id,
+                        (
+                            f"{environment_id}:"
+                            f"client-assignment:{client_id}"
+                        ),
+                    ).items()
+                    if key
+                    in {
+                        "actor",
+                        "serviceId",
+                        "identitySourceClientId",
+                    }
+                }
+                for client_id in client_ids
+            }
+        return projected
 
     def _raw_authority_values(self) -> tuple[str, ...]:
         if self._base_manifest is None:
@@ -6201,7 +6801,8 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                     appium,
                     "serverUrl",
                     f"{SIMULATOR_APPIUM_CAPABILITY_ID}:server",
-                )
+                ),
+                timeout_seconds=SIMULATOR_CAPABILITY_TIMEOUT_SECONDS,
             ),
             client_id=client_id,
             platform=platform_name,
@@ -6278,6 +6879,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
     derives_fixture_federation_id = True
     actor_manifest_kind = ""
     actor_manifest_path = ""
+    additional_fixture_roles_by_gate: Mapping[str, tuple[str, ...]] = {}
 
     def __init__(
         self,
@@ -6287,6 +6889,12 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         overlay_path: Path | None = None,
         station_profiles: Mapping[str, str] | None = None,
         service_profiles: Mapping[str, str] | None = None,
+        actor_identity_resolver: (
+            Callable[[str, str, str], ResolvedActorIdentity] | None
+        ) = None,
+        actor_identity_seed_provider: (
+            Callable[[str, str, str], bytes] | None
+        ) = None,
     ) -> None:
         super().__init__(contract)
         self.base_factory = base_factory
@@ -6295,6 +6903,8 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         )
         self._station_profiles = dict(station_profiles or {})
         self._service_profiles = dict(service_profiles or {})
+        self._actor_identity_resolver = actor_identity_resolver
+        self._actor_identity_seed_provider = actor_identity_seed_provider
         self._base_manifest: MobileSimulatorRuntimeManifest | None = None
 
     def provision(self, gate_id: str) -> RuntimeManifest:
@@ -6425,12 +7035,64 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                     overlay["proof_scope"]["does_not_prove"]
                 ),
             }
+            raw_identity_variants = overlay.get(
+                "gate_mobile_identity_sources",
+                {},
+            )
+            if not isinstance(raw_identity_variants, Mapping):
+                raise BlockedError(
+                    reason=(
+                        f"{self.environment_id} Mobile identity sources "
+                        "must be an object"
+                    ),
+                    resource=f"{self.environment_id}:client-bindings",
+                )
+            raw_identity_sources = raw_identity_variants.get(gate_id, {})
+            if not isinstance(raw_identity_sources, Mapping):
+                raise BlockedError(
+                    reason=(
+                        f"{self.environment_id} Gate Mobile identity "
+                        "sources must be an object"
+                    ),
+                    resource=f"{self.environment_id}:client-bindings",
+                )
+            clients_by_id = {
+                client.id: client for client in environment_clients
+            }
+            for mobile_id, desktop_id in raw_identity_sources.items():
+                mobile = clients_by_id.get(str(mobile_id))
+                desktop = clients_by_id.get(str(desktop_id))
+                if (
+                    mobile is None
+                    or mobile.runtime != "tauri-ios-simulator"
+                    or desktop is None
+                    or desktop.runtime != "native-tauri"
+                    or mobile.actor != desktop.actor
+                    or mobile.service_bindings["station"].service_id
+                    != desktop.service_bindings["station"].service_id
+                ):
+                    raise BlockedError(
+                        reason=(
+                            f"{self.environment_id} Mobile identity source "
+                            f"{mobile_id!r}/{desktop_id!r} is invalid"
+                        ),
+                        resource=f"{self.environment_id}:client-bindings",
+                    )
             resources["clientAssignments"] = {
                 client.id: {
                     "actor": client.actor,
                     "serviceId": client.service_bindings[
                         "station"
                     ].service_id,
+                    **(
+                        {
+                            "identitySourceClientId": str(
+                                raw_identity_sources[client.id]
+                            )
+                        }
+                        if client.id in raw_identity_sources
+                        else {}
+                    ),
                 }
                 for client in environment_clients
             }
@@ -6517,8 +7179,17 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         gate_id: str,
         overlay: Mapping[str, Any],
     ) -> tuple[EnvironmentClient, ...]:
-        raw_variants = overlay.get("gate_client_service_bindings", {})
-        if not isinstance(raw_variants, Mapping):
+        service_variants = overlay.get(
+            "gate_client_service_bindings",
+            {},
+        )
+        client_variants = overlay.get("gate_client_ids", {})
+        actor_variants = overlay.get("gate_client_actor_bindings", {})
+        if (
+            not isinstance(service_variants, Mapping)
+            or not isinstance(client_variants, Mapping)
+            or not isinstance(actor_variants, Mapping)
+        ):
             raise BlockedError(
                 reason=(
                     f"{self.environment_id} Gate client bindings must be "
@@ -6527,7 +7198,45 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 resource=f"{self.environment_id}:client-bindings",
             )
         known_clients = {client.id: client for client in self.contract.clients}
-        for variant_gate_id, raw_bindings in raw_variants.items():
+        default_client_ids = overlay.get(
+            "default_client_ids",
+            list(known_clients),
+        )
+        if (
+            not isinstance(default_client_ids, list)
+            or not default_client_ids
+            or any(
+                not isinstance(client_id, str)
+                or client_id not in known_clients
+                for client_id in default_client_ids
+            )
+            or len(set(default_client_ids)) != len(default_client_ids)
+        ):
+            raise BlockedError(
+                reason=(
+                    f"{self.environment_id} default client set is invalid"
+                ),
+                resource=f"{self.environment_id}:client-bindings",
+            )
+        for variant_gate_id, raw_client_ids in client_variants.items():
+            if (
+                not isinstance(variant_gate_id, str)
+                or not isinstance(raw_client_ids, list)
+                or not raw_client_ids
+                or any(
+                    not isinstance(client_id, str)
+                    or client_id not in known_clients
+                    for client_id in raw_client_ids
+                )
+                or len(set(raw_client_ids)) != len(raw_client_ids)
+            ):
+                raise BlockedError(
+                    reason=(
+                        f"{self.environment_id} Gate client set is invalid"
+                    ),
+                    resource=f"{self.environment_id}:client-bindings",
+                )
+        for variant_gate_id, raw_bindings in service_variants.items():
             if not isinstance(variant_gate_id, str) or not isinstance(
                 raw_bindings,
                 Mapping,
@@ -6569,21 +7278,70 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                         resource=f"{self.environment_id}:client-bindings",
                     )
 
-        selected = raw_variants.get(gate_id, {})
+        for variant_gate_id, raw_bindings in actor_variants.items():
+            if not isinstance(variant_gate_id, str) or not isinstance(
+                raw_bindings,
+                Mapping,
+            ):
+                raise BlockedError(
+                    reason=(
+                        f"{self.environment_id} Gate actor binding variant "
+                        "is invalid"
+                    ),
+                    resource=f"{self.environment_id}:client-bindings",
+                )
+            for client_id, actor in raw_bindings.items():
+                if (
+                    not isinstance(client_id, str)
+                    or client_id not in known_clients
+                    or not isinstance(actor, str)
+                    or not actor.strip()
+                ):
+                    raise BlockedError(
+                        reason=(
+                            f"{self.environment_id} Gate actor binding "
+                            f"{variant_gate_id!r}/{client_id!r} is invalid"
+                        ),
+                        resource=f"{self.environment_id}:client-bindings",
+                    )
+
+        selected_client_ids = tuple(
+            client_variants.get(gate_id, default_client_ids)
+        )
+        selected_services = service_variants.get(gate_id, {})
+        selected_actors = actor_variants.get(gate_id, {})
+        if (
+            not set(selected_services).issubset(selected_client_ids)
+            or not set(selected_actors).issubset(selected_client_ids)
+        ):
+            raise BlockedError(
+                reason=(
+                    f"{self.environment_id} Gate client variants target "
+                    "clients outside the selected set"
+                ),
+                resource=f"{self.environment_id}:client-bindings",
+            )
         return tuple(
             dataclasses.replace(
                 client,
+                actor=str(selected_actors.get(client.id, client.actor)),
                 service_bindings={
                     **client.service_bindings,
                     "station": dataclasses.replace(
                         client.service_bindings["station"],
-                        service_id=str(selected[client.id]),
+                        service_id=str(
+                            selected_services.get(
+                                client.id,
+                                client.service_bindings[
+                                    "station"
+                                ].service_id,
+                            )
+                        ),
                     ),
                 },
             )
-            if client.id in selected
-            else client
             for client in self.contract.clients
+            if client.id in selected_client_ids
         )
 
     def _required_station_profiles(self) -> dict[str, str]:
@@ -6786,6 +7544,9 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                     remote_source_identity_provider=(
                         resolve_remote_source_identity
                     ),
+                    runtime_version_provider=(
+                        resolve_service_version
+                    ),
                 )
             services[service_id] = attestation
         return services
@@ -6799,12 +7560,15 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         clients: Sequence[EnvironmentClient] | None = None,
     ) -> dict[str, Any]:
         environment_clients = tuple(clients or self.contract.clients)
-        reset_scope = self._reset_scope()
         if self.requires_actor_reset:
+            reset_scope = self._reset_scope()
             require_station_reset_authority(reset_scope)
-        fixture_roles = tuple(
-            sorted({client.actor for client in environment_clients})
-        )
+        else:
+            reset_scope = None
+        fixture_roles = tuple(sorted({
+            *(client.actor for client in environment_clients),
+            *self.additional_fixture_roles_by_gate.get(gate_id, ()),
+        }))
         station_service_ids = tuple(
             service_id
             for service_id, binding in service_bindings.items()
@@ -6820,6 +7584,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         for service_id in station_service_ids:
             binding = service_bindings[service_id]
             if self.requires_actor_reset:
+                assert reset_scope is not None
                 verify_reset_target(
                     binding.endpoint,
                     binding.deployment_environment,
@@ -6841,10 +7606,23 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                     ),
                 )
             actors = [
-                resolve_actor_identity(
-                    binding.endpoint,
-                    binding.deployment_environment,
-                    role,
+                (
+                    resolve_actor_identity(
+                        binding.endpoint,
+                        binding.deployment_environment,
+                        role,
+                    )
+                    if self.requires_actor_reset
+                    else self._actor_identity_resolver(
+                        binding.endpoint,
+                        binding.deployment_environment,
+                        role,
+                    )
+                    if self._actor_identity_resolver is not None
+                    else resolve_existing_actor_identity(
+                        binding.endpoint,
+                        role,
+                    )
                 )
                 for role in fixture_roles
             ]
@@ -6906,30 +7684,37 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             federation_id = fixture_federation_id_from_station_ids(
                 actor["homeStationPeerId"] for actor in selected_actor_routes
             )
-            federation_targets = {
-                service_id: (
-                    service_bindings[service_id].endpoint,
-                    service_bindings[service_id].deployment_environment,
-                    tuple(sorted({
+            if self.requires_actor_reset:
+                federation_targets = {}
+                for service_id in station_service_ids:
+                    roles = tuple(sorted({
                         client.actor
                         for client in environment_clients
                         if client.service_bindings["station"].service_id
                         == service_id
-                    })),
+                    }))
+                    if not roles:
+                        continue
+                    federation_targets[service_id] = (
+                        service_bindings[service_id].endpoint,
+                        service_bindings[
+                            service_id
+                        ].deployment_environment,
+                        roles,
+                    )
+                prepared_federation_id = prepare_federation_contexts(
+                    federation_targets
                 )
-                for service_id in station_service_ids
-            }
-            prepared_federation_id = prepare_federation_contexts(
-                federation_targets
-            )
-            if prepared_federation_id != federation_id:
-                raise BlockedError(
-                    reason=(
-                        f"{self.environment_id} Fixture Federation identity "
-                        "does not match the actor manifest"
-                    ),
-                    resource=f"{self.environment_id}:fixture-federation",
-                )
+                if prepared_federation_id != federation_id:
+                    raise BlockedError(
+                        reason=(
+                            f"{self.environment_id} Fixture Federation "
+                            "identity does not match the actor manifest"
+                        ),
+                        resource=(
+                            f"{self.environment_id}:fixture-federation"
+                        ),
+                    )
             for station in stations.values():
                 for actor in station["actors"]:
                     actor["federationId"] = federation_id
@@ -7015,6 +7800,232 @@ class MobileSocialSimulatorProvisioner(
     require_distinct_station_profiles = True
     actor_manifest_kind = "mobile-social-simulator-actor-manifest"
     actor_manifest_path = "runtime/mobile-social-simulator-actors.json"
+    ephemeral_gate_ids = frozenset(
+        {"station-access-mobile-relay-native-e2e"}
+    )
+
+    def __init__(
+        self,
+        contract: EnvironmentContract,
+        *,
+        base_factory: Any = MobileSimulatorProvisioner,
+        overlay_path: Path | None = None,
+        station_profiles: Mapping[str, str] | None = None,
+        service_profiles: Mapping[str, str] | None = None,
+        session_factory: Callable[[str], Any] | None = None,
+        relay_trust_anchor_provider: (
+            Callable[[str], tuple[bytes, str]] | None
+        ) = None,
+        actor_identity_resolver: (
+            Callable[[str, str, str], ResolvedActorIdentity] | None
+        ) = None,
+        actor_identity_seed_provider: (
+            Callable[[str, str, str], bytes] | None
+        ) = None,
+    ) -> None:
+        super().__init__(
+            contract,
+            base_factory=base_factory,
+            overlay_path=overlay_path,
+            station_profiles=station_profiles,
+            service_profiles=service_profiles,
+            actor_identity_resolver=actor_identity_resolver,
+            actor_identity_seed_provider=actor_identity_seed_provider,
+        )
+        self.session_factory = session_factory
+        self.relay_trust_anchor_provider = (
+            relay_trust_anchor_provider
+            or resolve_posix_relay_trust_anchor
+        )
+        self._appium_handler: (
+            MobileSimulatorAppiumCapabilityHandler | None
+        ) = None
+        self._appium_cleanup_registered = False
+
+    def _new_base_provisioner(
+        self,
+        contract: EnvironmentContract,
+        source_commit: str,
+    ) -> MobileSimulatorProvisioner:
+        if self.base_factory is not MobileSimulatorProvisioner:
+            return super()._new_base_provisioner(contract, source_commit)
+        spec = load_mobile_simulator_spec()
+        return SelectedMobileSimulatorProvisioner(
+            contract,
+            clients=tuple(
+                client for client in spec.clients if client.platform == "ios"
+            ),
+            runtime_source_commit=source_commit,
+            repo_root=REPO_ROOT,
+        )
+
+    def _resolve_transport_trust(
+        self,
+        gate_id: str,
+        service_bindings: Mapping[str, MobileServiceBinding],
+    ) -> tuple[dict[str, str], dict[str, Any]]:
+        if gate_id not in self.ephemeral_gate_ids:
+            return {}, {}
+        relay = service_bindings.get("relay")
+        if relay is None:
+            raise BlockedError(
+                reason="Mobile Relay Gate has no Relay service binding",
+                resource="mobile-relay:transport-trust",
+            )
+        certificate, digest = self.relay_trust_anchor_provider(
+            relay.deployment_environment
+        )
+        actual_digest = "sha256:" + hashlib.sha256(certificate).hexdigest()
+        if actual_digest != digest:
+            raise BlockedError(
+                reason="Relay trust anchor digest is inconsistent",
+                resource="mobile-relay:transport-trust",
+            )
+        try:
+            certificate_der = ssl.PEM_cert_to_DER_cert(
+                certificate.decode("ascii")
+            )
+        except (UnicodeError, ValueError) as error:
+            raise BlockedError(
+                reason="Relay trust anchor is not a valid PEM certificate",
+                resource="mobile-relay:transport-trust",
+            ) from error
+        return (
+            {
+                "PT_ACCEPTANCE_RELAY_CA_DER_B64": base64.b64encode(
+                    certificate_der
+                ).decode("ascii"),
+                "PT_ACCEPTANCE_RELAY_CA_SHA256": digest,
+            },
+            {
+                "relay": {
+                    "sha256": digest,
+                    "mechanism": "embedded-rustls-root",
+                }
+            },
+        )
+
+    def create_gate_launch_context(
+        self,
+        *,
+        gate_id: str,
+        evidence_run_id: str,
+        provisioning_run_id: str,
+        required_capabilities: tuple[str, ...],
+    ) -> EphemeralGateLaunchContext:
+        if (
+            gate_id not in self.ephemeral_gate_ids
+            or required_capabilities != (SIMULATOR_APPIUM_CAPABILITY_ID,)
+        ):
+            raise BlockedError(
+                reason=(
+                    "Mobile Social simulator Gate requires the exact "
+                    "simulator Appium capability and an allowed Gate identity"
+                ),
+                resource=f"ephemeral-capabilities:{gate_id}",
+            )
+        if (
+            not isinstance(self._manifest, MobileSimulatorRuntimeManifest)
+            or not self._manifest.is_ready()
+            or self._base_manifest is None
+            or evidence_run_id != self.evidence_run.run_id
+            or provisioning_run_id != self._manifest.run_id
+        ):
+            raise BlockedError(
+                reason="Mobile Relay parent authorities are not ready",
+                resource=f"ephemeral-capabilities:{gate_id}:run-identities",
+            )
+        overlay = self._load_overlay()
+        handler = MobileSimulatorAppiumCapabilityHandler(
+            manifest=self._manifest.to_dict(),
+            artifact_writer=self.evidence_run,
+            session_factory=(
+                self.session_factory or self._new_appium_session
+            ),
+            harness_actions=overlay["harness"]["required_actions"],
+            child_harness_actions=MOBILE_RELAY_CHILD_HARNESS_ACTIONS,
+            actor_manifest=self.evidence_run.store.read_json(
+                ArtifactRef.from_dict(self._manifest.actor_manifest_ref)
+            ),
+            actor_identity_seed_provider=(
+                self._actor_identity_seed_provider
+            ),
+            sensitive_values=self._raw_authority_values(),
+        )
+        context = EphemeralGateLaunchContext(
+            required_capabilities=required_capabilities,
+            request_timeout_seconds=SIMULATOR_CAPABILITY_TIMEOUT_SECONDS,
+        )
+        context.register_capability(
+            SIMULATOR_APPIUM_CAPABILITY_ID,
+            handler,
+        )
+        self._appium_handler = handler
+        if not self._appium_cleanup_registered:
+            self.register_cleanup(
+                "appium-sessions",
+                self._cleanup_appium_sessions,
+            )
+            self._appium_cleanup_registered = True
+        return context
+
+    def _cleanup_appium_sessions(self) -> None:
+        if self._appium_handler is None:
+            return
+        result = self._appium_handler.close()
+        if not result.closed:
+            raise ProvisioningError(
+                "Mobile Relay Appium sessions did not close"
+            )
+
+    def _raw_authority_values(self) -> tuple[str, ...]:
+        return (
+            MobileStationLifecycleSimulatorProvisioner
+            ._raw_authority_values(self)
+        )
+
+    def _new_appium_session(self, client_id: str) -> Any:
+        return (
+            MobileStationLifecycleSimulatorProvisioner
+            ._new_appium_session(self, client_id)
+        )
+
+
+class MobileRelaySimulatorProvisioner(
+    MobileSocialSimulatorProvisioner
+):
+    environment_id = MOBILE_RELAY_SIMULATOR_ENVIRONMENT_ID
+    overlay_filename = "mobile-relay-simulator.yaml"
+    requires_actor_reset = False
+    derives_fixture_federation_id = False
+    actor_manifest_kind = "mobile-relay-simulator-actor-manifest"
+    actor_manifest_path = "runtime/mobile-relay-simulator-actors.json"
+    existing_actor_probe_client_ids = frozenset({"sim-ios"})
+
+    def __init__(
+        self,
+        contract: EnvironmentContract,
+        *,
+        actor_identity_resolver: (
+            Callable[[str, str, str], ResolvedActorIdentity] | None
+        ) = None,
+        actor_identity_seed_provider: (
+            Callable[[str, str, str], bytes] | None
+        ) = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            contract,
+            actor_identity_resolver=(
+                actor_identity_resolver
+                or _resolve_mobile_actor_identity_via_access
+            ),
+            actor_identity_seed_provider=(
+                actor_identity_seed_provider
+                or _load_or_create_mobile_actor_identity_seed
+            ),
+            **kwargs,
+        )
 
 
 class MobileDirectSimulatorProvisioner(
@@ -7070,6 +8081,20 @@ class MobileDirectSimulatorProvisioner(
             url_key: station_url,
             deployment_key: deployment_environment,
         }
+
+
+class MobileSocialIOSSimulatorProvisioner(
+    _MobileTwoActorSimulatorProvisioner
+):
+    environment_id = "mobile-social-ios-simulator"
+    overlay_filename = "mobile-social-ios-simulator.yaml"
+    station_profile_keys = MOBILE_DIRECT_STATION_PROFILE_KEYS
+    requires_actor_reset = False
+    actor_manifest_kind = "mobile-social-ios-simulator-actor-manifest"
+    actor_manifest_path = "runtime/mobile-social-ios-simulator-actors.json"
+    additional_fixture_roles_by_gate = {
+        "mobile-social-ios-native": ("eve",),
+    }
 
 
 class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
@@ -7162,7 +8187,7 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
             public_resources = (
                 MobileStationLifecycleSimulatorProvisioner
                 ._public_simulator_resources(
-                    self._base_manifest.simulator_resources,
+                    manifest.simulator_resources,
                     overlay,
                     client_ids=("sim-ios", "sim-ios-peer"),
                     environment_id=self.environment_id,
@@ -7273,14 +8298,20 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
             for client in (clients or self.contract.clients)
             if client.runtime == "native-tauri"
         )
-        if {client.id for client in declared} != {
-            "desktop-alice",
-            "desktop-bob",
-        }:
+        declared_ids = {client.id for client in declared}
+        allowed_client_sets = {
+            frozenset({"desktop-alice", "desktop-bob"}),
+            frozenset({
+                "desktop-alice",
+                "desktop-bob",
+                "desktop-bob-peer",
+            }),
+        }
+        if frozenset(declared_ids) not in allowed_client_sets:
             raise BlockedError(
                 reason=(
-                    "Chat mixed-native environment requires Desktop Alice "
-                    "and Desktop Bob clients"
+                    "Chat mixed-native environment has an unsupported "
+                    "Desktop client set"
                 ),
                 resource=f"{self.environment_id}:desktop-clients",
             )

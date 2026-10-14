@@ -244,7 +244,6 @@ func (s *SubServer) locatorLookup(c context.Context, ctx *app.RequestContext) {
 		"federated_handle":     rec.GetFederatedHandle(),
 		"home_station_peer_id": rec.GetHomeStationPeerId(),
 		"home_station_domain":  rec.GetHomeStationDomain(),
-		"inbox_relay_mounts":   rec.GetInboxRelayMounts(),
 		"tombstone":            rec.GetTombstone(),
 		"seq":                  rec.GetSeq(),
 		"updated_at_unix_ms":   rec.GetUpdatedAtUnixMs(),
@@ -288,9 +287,9 @@ func (s *SubServer) locatorPublish(c context.Context, ctx *app.RequestContext) {
 }
 
 // federationResolve is the Phase C diagnostic that exercises the full
-// federated user-discovery read path: locator DHT lookup → home-station
-// /actor/federation/profile fetch via /relay/forward → signature
-// verification against the locator's pinned key.
+// federated user-discovery read path: locator DHT lookup → verified home
+// Station route → /actor/federation/profile → signature verification against
+// the locator's pinned key.
 //
 // Query: handle=user@host  (or @user@host)
 // Returns: the verified ActorProfileEnvelope plus a is_local flag and
@@ -355,14 +354,16 @@ func (s *SubServer) federationResolve(c context.Context, ctx *app.RequestContext
 // Response:
 //
 //	{
-//	  "peer_id": "12D3Koo...",
+//	  "station_peer_id": "12D3Koo...",
+//	  "node_peer_id": "12D3Koo...",
 //	  "listen_addrs_raw": ["/ip4/127.0.0.1/tcp/4001"],
 //	  "dial_addrs": ["/ip4/127.0.0.1/tcp/4001/p2p/12D3Koo..."],
 //	  "mdns_enabled": true,
 //	  "dht_mode": "server"
 //	}
 //
-// info returns server basic information (peer ID and listen addresses).
+// info returns the logical Station identity, physical node identity, and
+// node listen addresses.
 func (s *SubServer) info(_ context.Context, ctx *app.RequestContext) {
 	// Collect raw listen addresses
 	var rawAddrs []string
@@ -381,8 +382,10 @@ func (s *SubServer) info(_ context.Context, ctx *app.RequestContext) {
 		}
 	}
 
+	stationPeerID, _ := peer.IDFromPrivateKey(s.opts.StationRootKey)
 	ctx.JSON(http.StatusOK, map[string]interface{}{
-		"peer_id":          s.host.ID().String(),
+		"station_peer_id":  stationPeerID.String(),
+		"node_peer_id":     s.host.ID().String(),
 		"listen_addrs_raw": rawAddrs,
 		"dial_addrs":       dialAddrs,
 		"mdns_enabled":     s.opts.EnableMDNS,

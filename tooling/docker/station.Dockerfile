@@ -7,6 +7,8 @@ ARG BASE_IMAGE=docker.m.daocloud.io/library/ubuntu:22.04
 # ─── Stage 1: Builder ─────────────────────────────────────────────────────────
 FROM ${BUILDER_IMAGE} AS builder
 
+ARG GO_VERSION=1.24.6
+
 RUN if ! command -v go >/dev/null 2>&1; then \
       sed -i \
         -e 's|http://archive.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' \
@@ -72,6 +74,13 @@ RUN CGO_ENABLED=0 go build -trimpath \
 
 # ─── Stage 2: Runtime ──────────────────────────────────────────────────────────
 FROM ${BASE_IMAGE}
+
+ARG BUILD_COMMIT=unknown
+ARG BUILD_LABEL=dev
+ARG BUILD_TIME=unknown
+LABEL org.opencontainers.image.revision="${BUILD_COMMIT}" \
+      org.opencontainers.image.version="${BUILD_LABEL}" \
+      org.opencontainers.image.created="${BUILD_TIME}"
 
 RUN sed -i \
       -e 's|http://archive.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' \

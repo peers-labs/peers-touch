@@ -254,7 +254,6 @@ export function registerDraftRestorationConsumer(
   return () => {
     if (draftRestorationConsumers.get(key) === consumer) {
       draftRestorationConsumers.delete(key);
-      observedDraftConsumers.delete(key);
     }
   };
 }
@@ -590,6 +589,16 @@ export async function restoreReliabilityDrafts(
   }
   restored.forEach(deliverRestoredDraft);
   return restored;
+}
+
+export function draftsRequiringRestoreDecision(
+  drafts: readonly DraftProjection[],
+): DraftProjection[] {
+  return drafts.filter((draft) => {
+    const key = envelopeRestorationKey(draft.envelope);
+    return !draftRestorationConsumers.has(key)
+      && !observedDraftConsumers.has(key);
+  });
 }
 
 export async function discardReliabilityDrafts(

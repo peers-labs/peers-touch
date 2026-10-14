@@ -19,11 +19,13 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from _acceptance_artifacts import explicit_output_path  # noqa: E402
 from tooling.acceptance.core.execution_plan import (  # noqa: E402
+    PLAN_BINDING_REQUIRED,
     PLAN_DRIFT,
     ExecutionPlanError,
     changed_paths_for_plan,
     discover_active_plan,
     load_formal_plan,
+    repository_has_attached_head,
 )
 from tooling.acceptance.finalizers import load_strict_json_object  # noqa: E402
 
@@ -57,6 +59,21 @@ def changed_paths(diff_range: str) -> list[str]:
             if line.strip()
         )
     return sorted(paths)
+
+
+def resolve_execution_plan(path: Path):
+    explicit = path.resolve()
+    if not repository_has_attached_head(REPO_ROOT):
+        return load_formal_plan(explicit)
+    try:
+        mounted = discover_active_plan(REPO_ROOT)
+    except ExecutionPlanError as error:
+        if error.code != PLAN_BINDING_REQUIRED:
+            raise
+    else:
+        if mounted.path.resolve() == explicit:
+            return mounted
+    return load_formal_plan(explicit)
 
 
 def gate_catalog_path(root: Path) -> str:
@@ -351,7 +368,9 @@ def main() -> int:
     )
     try:
         if args.execution_plan:
-            formal_plan = load_formal_plan(Path(args.execution_plan))
+            formal_plan = resolve_execution_plan(
+                Path(args.execution_plan)
+            )
         elif args.active_plan:
             formal_plan = discover_active_plan(REPO_ROOT)
         paths = args.changed_file or (

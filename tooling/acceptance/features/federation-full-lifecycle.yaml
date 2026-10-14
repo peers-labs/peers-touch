@@ -159,7 +159,6 @@
         "Shows federated handle (@user@station)",
         "Shows home station domain",
         "Shows locator sequence number",
-        "Shows relay mounts (or dash if none)",
         "Health status line shows Ready/Joining + peers count + seeds count",
         "Actor Discovery dropdown shows current visibility (hidden/by_handle/indexed)"
       ]

@@ -1,21 +1,23 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../services/mobileCommands', () => ({
-  verifyStationIdentityProof: vi.fn(),
+  discoverStationEndpoint: vi.fn(async () => {
+    throw new Error('mobile.launch.stationIdentityUnavailable');
+  }),
+  activateStationRouteBinding: vi.fn(),
+  fetchActiveStationIdentity: vi.fn(),
+  readStationRouteBinding: vi.fn(),
+  restoreStationRouteBinding: vi.fn(),
 }));
 
 import { verifyStationIdentity } from './stationConnection';
 
 afterEach(() => {
-  vi.unstubAllGlobals();
+  vi.clearAllMocks();
 });
 
 describe('Station identity handshake', () => {
   it('fails closed when the signed identity endpoint is unavailable', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, {
-      status: 404,
-    })));
-
     await expect(
       verifyStationIdentity('https://station.example'),
     ).rejects.toThrow('mobile.launch.stationIdentityUnavailable');

@@ -75,3 +75,59 @@ INSERT INTO social_reactions (
 		t.Fatal("duplicate private reaction bypassed the composite primary key")
 	}
 }
+
+func TestMigrateInteractionSchemaWidensReactionKindAndPreservesRows(
+	t *testing.T,
+) {
+	database, err := gorm.Open(
+		sqlite.Open("file:reaction_kind_migration?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Exec(`
+CREATE TABLE social_reactions (
+	post_id TEXT NOT NULL,
+	actor_id INTEGER NOT NULL,
+	kind VARCHAR(16) NOT NULL,
+	post_class TEXT NOT NULL,
+	created_at DATETIME NOT NULL,
+	PRIMARY KEY (post_id, actor_id, kind)
+)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Create(&dbmodel.SocialReaction{
+		PostID:    "post-1",
+		ActorID:   1,
+		Kind:      "REACTION_LIKE",
+		PostClass: "public",
+		CreatedAt: time.Now().UTC(),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MigrateInteractionSchema(database); err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateInteractionSchema(database); err != nil {
+		t.Fatalf("idempotent migration failed: %v", err)
+	}
+
+	if err := database.Create(&dbmodel.SocialReaction{
+		PostID:    "post-1",
+		ActorID:   2,
+		Kind:      "REACTION_HEART_HANDS",
+		PostClass: "public",
+		CreatedAt: time.Now().UTC(),
+	}).Error; err != nil {
+		t.Fatalf("insert expanded reaction kind: %v", err)
+	}
+	var count int64
+	if err := database.Model(&dbmodel.SocialReaction{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatalf("reaction row count = %d, want 2", count)
+	}
+}

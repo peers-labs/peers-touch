@@ -24,11 +24,12 @@ const commandMocks = vi.hoisted(() => ({
   readText: vi.fn(),
   readMoment: vi.fn(),
   openMedia: vi.fn(),
-  recoverText: vi.fn(),
-  recoverMoment: vi.fn(),
+  recoverWithNativeInput: vi.fn(),
+  react: vi.fn(),
+  unreact: vi.fn(),
+  reactionRetry: vi.fn(),
   commentSubmit: vi.fn(),
   comments: vi.fn(),
-  storeRecoveryPhrase: vi.fn(),
   reconcile: vi.fn(),
   snapshot: vi.fn(),
   teardown: vi.fn(),
@@ -46,18 +47,21 @@ vi.mock('../services/mobileCommands', async (importOriginal) => {
     privateSocialPublish: commandMocks.publishMoment,
     privateSocialRead: commandMocks.readMoment,
     privateSocialReadText: commandMocks.readText,
-    privateSocialRecover: commandMocks.recoverMoment,
-    privateSocialRecoverText: commandMocks.recoverText,
-    privateSocialStoreRecoveryPhrase: commandMocks.storeRecoveryPhrase,
+    privateSocialReact: commandMocks.react,
+    privateSocialReactionRetry: commandMocks.reactionRetry,
+    privateSocialRecoverWithNativeInput: commandMocks.recoverWithNativeInput,
     privateSocialReconcile: commandMocks.reconcile,
     privateSocialSnapshot: commandMocks.snapshot,
     privateSocialSubmitText: commandMocks.submitText,
     privateSocialTeardown: commandMocks.teardown,
+    privateSocialUnreact: commandMocks.unreact,
   };
 });
 
 import {
   createPrivateMomentsRuntimeDescriptor,
+  fencePrivateMomentsRuntimeProjection,
+  invalidatePrivateMoments,
   mergeProjectionLists,
   mergeReadProjectionMap,
   openPrivateMomentMedia,
@@ -68,9 +72,8 @@ import {
   readPrivateMomentsSnapshot,
   readPrivateTextMoment,
   recoverPrivateMoment,
-  recoverPrivateTextMoment,
   reconcilePrivateMoments,
-  storePrivateSocialRecoveryPhrase,
+  setPrivateMomentReaction,
   submitPrivateComment,
   trackPublicMomentPublish,
 } from './privateMomentsRuntime';
@@ -94,6 +97,7 @@ beforeEach(() => {
     readProjections: [],
     commentDrafts: [],
     comments: [],
+    reactionCommands: [],
   });
   commandMocks.reconcile.mockResolvedValue({
     endpointPrekeysAvailable: 8,
@@ -210,6 +214,147 @@ describe('privateMomentsRuntime projection', () => {
     expect(merged.map((item) => item.draftRevision)).toEqual([2, 1]);
   });
 
+  it('synchronously hides plaintext and rejects same-scope completions after a lifecycle fence', async () => {
+    commandMocks.activate.mockResolvedValue(activeStatus(1));
+    let resolvePublish: ((value: PrivateMomentProjection) => void) | undefined;
+    commandMocks.submitText.mockReturnValueOnce(new Promise((resolve) => {
+      resolvePublish = resolve;
+    }));
+    useAuthStore.setState({
+      session: authSession('session-1'),
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+    await activeDescriptor.bootstrap(runtimeContext);
+
+    const completion = publishPrivateTextMoment({
+      draftId: 'draft-a',
+      draftRevision: 1,
+      text: 'private',
+      audience: { kind: 'FRIENDS' },
+    });
+    await vi.waitFor(() => {
+      expect(commandMocks.submitText).toHaveBeenCalledOnce();
+    });
+
+    fencePrivateMomentsRuntimeProjection();
+
+    expect(readPrivateMomentsSnapshot()).toEqual(expect.objectContaining({
+      active: false,
+      projections: [],
+      postsById: {},
+      commentDrafts: [],
+      comments: [],
+      reactionCommands: [],
+    }));
+    await expect(publishPrivateTextMoment({
+      draftId: 'draft-b',
+      draftRevision: 1,
+      text: 'blocked',
+      audience: { kind: 'FRIENDS' },
+    })).rejects.toThrow('mobile.privateSocial.runtimeInactive');
+    await expect(reconcilePrivateMoments()).resolves.toBeNull();
+    await expect(invalidatePrivateMoments([{
+      reason: 'RESOURCE_DELETED',
+      sourceCursor: 'cursor-1',
+      postId: 'post-a',
+    }])).resolves.toEqual([]);
+    expect(commandMocks.reconcile).toHaveBeenCalledOnce();
+
+    resolvePublish?.(projection('draft-a', 1, 'PUBLISHED'));
+    await expect(completion).rejects.toThrow(
+      'mobile.privateSocial.stalePublishCompletion',
+    );
+    expect(readPrivateMomentsSnapshot().projections).toEqual([]);
+  });
+
+  it('preserves projections while suspended and reconciles before resume completes', async () => {
+    commandMocks.activate.mockResolvedValue(activeStatus(1));
+    useAuthStore.setState({
+      session: authSession('session-1'),
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+    await activeDescriptor.bootstrap(runtimeContext);
+    await activeDescriptor.suspend();
+
+    expect(readPrivateMomentsSnapshot().active).toBe(true);
+
+    let resolveReconcile: ((report: {
+      endpointPrekeysAvailable: number;
+      recoveryPrekeysAvailable: number | null;
+      submissionsProcessed: number;
+      submissionsUnknown: number;
+      submissionsTerminal: number;
+    }) => void) | undefined;
+    commandMocks.reconcile.mockReturnValueOnce(new Promise((resolve) => {
+      resolveReconcile = resolve;
+    }));
+    const resume = activeDescriptor.resume(runtimeContext);
+    await vi.waitFor(() => {
+      expect(commandMocks.reconcile).toHaveBeenCalledTimes(2);
+    });
+    expect(readPrivateMomentsSnapshot().reconciling).toBe(true);
+
+    resolveReconcile?.({
+      endpointPrekeysAvailable: 8,
+      recoveryPrekeysAvailable: null,
+      submissionsProcessed: 0,
+      submissionsUnknown: 0,
+      submissionsTerminal: 0,
+    });
+    await resume;
+
+    expect(readPrivateMomentsSnapshot()).toEqual(expect.objectContaining({
+      active: true,
+      reconciling: false,
+      stationPeerId: 'station-1',
+      actorPtid: 'ptid:alice',
+    }));
+  });
+
+  it('tears down a native activation superseded by a lifecycle fence', async () => {
+    let resolveActivation: ((value: ReturnType<typeof activeStatus>) => void) | undefined;
+    commandMocks.activate.mockReturnValueOnce(new Promise((resolve) => {
+      resolveActivation = resolve;
+    }));
+    useAuthStore.setState({
+      session: authSession('session-1'),
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+    const bootstrap = activeDescriptor.bootstrap(runtimeContext);
+    await vi.waitFor(() => {
+      expect(commandMocks.activate).toHaveBeenCalledOnce();
+    });
+
+    fencePrivateMomentsRuntimeProjection();
+    resolveActivation?.(activeStatus(4));
+    await bootstrap;
+
+    expect(commandMocks.teardown).toHaveBeenCalledWith({
+      stationPeerId: 'station-1',
+      actorPtid: 'ptid:alice',
+      deviceId: 'device-1',
+      lifecycleGeneration: 1,
+      activationGeneration: 4,
+    });
+    expect(commandMocks.reconcile).not.toHaveBeenCalled();
+    expect(readPrivateMomentsSnapshot().active).toBe(false);
+  });
+
   it('merges receiver projections by stable post ID and rejects older ready content', () => {
     const current = {
       'post-a': readProjection('post-a', '2', 'CONTENT_READY'),
@@ -233,6 +378,171 @@ describe('privateMomentsRuntime projection', () => {
       postId: 'post-a',
       state: 'NOT_FOUND_OR_NOT_AUTHORIZED',
       content: undefined,
+    }));
+  });
+
+  it('persists ordered revocation and closes every private post operation', async () => {
+    const ready = readProjection('post-a', '2', 'CONTENT_READY');
+    const comment = {
+      commentId: 'comment-1',
+      contentId: 'comment-1',
+      generation: '1',
+      postId: 'post-a',
+      replyToCommentId: '',
+      authorPtid: 'ptid:bob',
+      state: 'COMMENT_POSTED' as const,
+      text: 'private reply',
+      mentions: [],
+      reactionsCount: 0,
+      repliesCount: 0,
+    };
+    commandMocks.activate.mockResolvedValue(activeStatus(7));
+    commandMocks.snapshot.mockResolvedValueOnce({
+      publishProjections: [],
+      readProjections: [ready],
+      commentDrafts: [{
+        draftId: 'comment-draft-1',
+        draftRevision: 1,
+        postId: 'post-a',
+        replyToCommentId: '',
+        text: 'private reply',
+        mentions: [],
+        state: 'COMMENT_POSTED',
+        commentId: 'comment-1',
+      }],
+      comments: [comment],
+      reactionCommands: [{
+        commandId: 'reaction-1',
+        postId: 'post-a',
+        kind: 2,
+        operation: 'REACT',
+        state: 'REACTION_UNKNOWN_OUTCOME',
+        attemptCount: 1,
+        projectionRevision: '1',
+      }],
+    });
+    commandMocks.comments.mockResolvedValue({
+      postId: 'post-a',
+      comments: [comment],
+      nextCursor: '',
+      hasMore: false,
+    });
+    useAuthStore.setState({
+      session: authSession('session-1'),
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+    await activeDescriptor.bootstrap(runtimeContext);
+    await readPrivateComments('post-a');
+
+    const revoked = {
+      ...readProjection('post-a', '0', 'DELETED_OR_REVOKED'),
+      errorCode: 'RECIPIENT_BLOCKED',
+    };
+    commandMocks.reconcile.mockResolvedValueOnce({
+      endpointPrekeysAvailable: 0,
+      recoveryPrekeysAvailable: null,
+      submissionsProcessed: 0,
+      submissionsUnknown: 0,
+      submissionsTerminal: 0,
+      invalidatedReadProjections: [revoked],
+    });
+
+    await invalidatePrivateMoments([{
+      reason: 'RECIPIENT_BLOCKED',
+      sourceCursor: 'cursor-9',
+      authorPtid: 'ptid:alice',
+    }]);
+
+    expect(commandMocks.reconcile).toHaveBeenLastCalledWith({
+      stationPeerId: 'station-1',
+      actorPtid: 'ptid:alice',
+      deviceId: 'device-1',
+      lifecycleGeneration: 1,
+      activationGeneration: 7,
+      invalidations: [{
+        reason: 'RECIPIENT_BLOCKED',
+        sourceCursor: 'cursor-9',
+        authorPtid: 'ptid:alice',
+      }],
+    });
+    expect(readPrivateMomentsSnapshot()).toMatchObject({
+      postsById: {
+        'post-a': {
+          state: 'DELETED_OR_REVOKED',
+          content: undefined,
+          errorCode: 'RECIPIENT_BLOCKED',
+        },
+      },
+      commentDrafts: [],
+      comments: [],
+      reactionCommands: [],
+      commentThreadsByPostId: {},
+    });
+
+    await expect(readPrivateMoment('post-a'))
+      .rejects.toThrow('mobile.privateSocial.deletedOrRevoked');
+    await expect(recoverPrivateMoment('post-a'))
+      .rejects.toThrow('mobile.privateSocial.deletedOrRevoked');
+    await expect(openPrivateMomentMedia('post-a', 'object-1'))
+      .rejects.toThrow('mobile.privateSocial.deletedOrRevoked');
+    await expect(readPrivateComments('post-a'))
+      .rejects.toThrow('mobile.privateSocial.deletedOrRevoked');
+    await expect(submitPrivateComment({
+      draftId: 'comment-after-revoke',
+      draftRevision: 1,
+      postId: 'post-a',
+      text: 'blocked',
+    })).rejects.toThrow('mobile.privateSocial.deletedOrRevoked');
+    await expect(setPrivateMomentReaction('post-a', 2, true))
+      .rejects.toThrow('mobile.privateSocial.deletedOrRevoked');
+    expect(commandMocks.readMoment).not.toHaveBeenCalled();
+    expect(commandMocks.recoverWithNativeInput).not.toHaveBeenCalled();
+    expect(commandMocks.openMedia).not.toHaveBeenCalled();
+    expect(commandMocks.commentSubmit).not.toHaveBeenCalled();
+    expect(commandMocks.react).not.toHaveBeenCalled();
+  });
+
+  it('purges the readable Web projection when device access is revoked', async () => {
+    commandMocks.activate.mockResolvedValue(activeStatus(7));
+    commandMocks.snapshot.mockResolvedValueOnce({
+      publishProjections: [],
+      readProjections: [readProjection('post-a', '2', 'CONTENT_READY')],
+      commentDrafts: [],
+      comments: [],
+      reactionCommands: [],
+    });
+    useAuthStore.setState({
+      session: authSession('session-1'),
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+    await activeDescriptor.bootstrap(runtimeContext);
+
+    useAuthStore.setState({ accessDecision: null });
+
+    await vi.waitFor(() => {
+      expect(commandMocks.teardown).toHaveBeenCalledWith({
+        stationPeerId: 'station-1',
+        actorPtid: 'ptid:alice',
+        deviceId: 'device-1',
+        lifecycleGeneration: 1,
+        activationGeneration: 7,
+      });
+    });
+    expect(readPrivateMomentsSnapshot()).toEqual(expect.objectContaining({
+      active: false,
+      postsById: {},
+      comments: [],
+      reactionCommands: [],
     }));
   });
 
@@ -332,11 +642,64 @@ describe('privateMomentsRuntime projection', () => {
     expect(commandMocks.teardown).toHaveBeenCalledWith(exactScope);
   });
 
-  it('projects private publish and recovery states without exposing the phrase', async () => {
+  it('projects an unknown Native reaction command without optimistic final state', async () => {
+    commandMocks.activate.mockResolvedValue(activeStatus(7));
+    commandMocks.readMoment.mockResolvedValue(readProjection('post-a', '1', 'CONTENT_READY'));
+    commandMocks.react.mockResolvedValue({
+      command: {
+        commandId: 'reaction-1',
+        postId: 'post-a',
+        kind: 2,
+        operation: 'REACT',
+        state: 'REACTION_UNKNOWN_OUTCOME',
+        attemptCount: 1,
+        projectionRevision: '1',
+        errorCode: 'REACTION_RESULT_UNKNOWN',
+      },
+      reactions: [{ kind: 2, count: '1', reactedByViewer: true }],
+      projectionRevision: '2',
+      exactReplay: false,
+    });
+    useAuthStore.setState({
+      session: authSession('session-1'),
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+    await activeDescriptor.bootstrap(runtimeContext);
+    await readPrivateMoment('post-a');
+
+    const result = await setPrivateMomentReaction('post-a', 2, true);
+
+    expect(commandMocks.react).toHaveBeenCalledWith({
+      stationPeerId: 'station-1',
+      actorPtid: 'ptid:alice',
+      deviceId: 'device-1',
+      lifecycleGeneration: 1,
+      activationGeneration: 7,
+      postId: 'post-a',
+      kind: 2,
+    });
+    expect(result.command.state).toBe('REACTION_UNKNOWN_OUTCOME');
+    expect(readPrivateMomentsSnapshot().postsById['post-a']?.reactions).toBeUndefined();
+    expect(readPrivateMomentsSnapshot().reactionCommands).toEqual([
+      expect.objectContaining({
+        commandId: 'reaction-1',
+        state: 'REACTION_UNKNOWN_OUTCOME',
+      }),
+    ]);
+  });
+
+  it('projects native-only recovery without accepting secret material', async () => {
     commandMocks.activate.mockResolvedValue(activeStatus(7));
     commandMocks.submitText.mockResolvedValue(projection('draft-a', 1, 'PUBLISHED'));
-    commandMocks.storeRecoveryPhrase.mockResolvedValue(undefined);
-    commandMocks.recoverText.mockResolvedValue(
+    commandMocks.readText.mockResolvedValue(
+      readProjection('post-a', '1', 'RECOVERY_REQUIRED'),
+    );
+    commandMocks.recoverWithNativeInput.mockResolvedValue(
       readProjection('post-a', '2', 'CONTENT_READY'),
     );
     useAuthStore.setState({
@@ -356,18 +719,20 @@ describe('privateMomentsRuntime projection', () => {
       text: 'private',
       audience: { kind: 'FRIENDS' },
     });
-    await storePrivateSocialRecoveryPhrase('abandon '.repeat(23) + 'art', 7);
-    await recoverPrivateTextMoment('post-a');
+    await readPrivateTextMoment('post-a');
+    await recoverPrivateMoment('post-a', 7);
 
-    expect(commandMocks.storeRecoveryPhrase).toHaveBeenCalledWith({
+    expect(commandMocks.recoverWithNativeInput).toHaveBeenCalledWith({
       stationPeerId: 'station-1',
       actorPtid: 'ptid:alice',
       deviceId: 'device-1',
       lifecycleGeneration: 1,
       activationGeneration: 7,
-      recoveryPhrase: 'abandon '.repeat(23) + 'art',
+      postId: 'post-a',
       recoveryEpoch: 7,
     });
+    expect(JSON.stringify(commandMocks.recoverWithNativeInput.mock.calls))
+      .not.toMatch(/phrase|secret|handle/i);
     expect(readPrivateMomentsSnapshot().publishStateHistory).toEqual([
       'AUDIENCE_REQUIRED',
       'CHECKING_PRIVATE_READINESS',
@@ -376,6 +741,9 @@ describe('privateMomentsRuntime projection', () => {
       'PUBLISHED',
     ]);
     expect(readPrivateMomentsSnapshot().readStateHistoryByPostId['post-a']).toEqual([
+      'LOADING_AUTHORIZED_RESOURCE',
+      'WAITING_FOR_PRIVATE_KEY',
+      'RECOVERY_REQUIRED',
       'WAITING_FOR_PRIVATE_KEY',
       'CONTENT_READY',
     ]);
@@ -577,7 +945,7 @@ describe('privateMomentsRuntime projection', () => {
     expect(ready).not.toHaveBeenCalled();
   });
 
-  it('restarts independently of failed degradable messaging and social runtimes', async () => {
+  it('fences private-social behind failed messaging on restart', async () => {
     commandMocks.activate
       .mockResolvedValueOnce(activeStatus(1))
       .mockResolvedValueOnce(activeStatus(2));
@@ -636,16 +1004,26 @@ describe('privateMomentsRuntime projection', () => {
 
       const restarted = await kernel.restartRuntimeGraph();
 
+      // Private-social activation obtains its signer from the messaging
+      // runtime (secure_content_runtime_identity), so it must fence behind a
+      // failed messaging runtime rather than report a false "ready".
       expect(restarted.runtimes).toEqual(expect.arrayContaining([
         expect.objectContaining({ id: 'messaging', status: 'failed' }),
         expect.objectContaining({ id: 'social', status: 'failed' }),
-        expect.objectContaining({ id: 'private-social', status: 'ready' }),
+        expect.objectContaining({
+          id: 'private-social',
+          status: 'failed',
+          errorKey: 'mobile.lifecycle.dependencyFailed:messaging',
+        }),
       ]));
-      expect(commandMocks.activate).toHaveBeenCalledTimes(2);
+      // On restart the kernel marks dependents failed without invoking
+      // private-social's bootstrap, so its module snapshot stays in the torn
+      // down empty state; the failed dependency is visible at kernel level.
+      expect(commandMocks.activate).toHaveBeenCalledTimes(1);
       expect(readPrivateMomentsSnapshot()).toEqual(expect.objectContaining({
-        active: true,
-        stationPeerId: 'station-1',
-        actorPtid: 'ptid:alice',
+        active: false,
+        stationPeerId: null,
+        actorPtid: null,
         errorMessage: null,
       }));
     } finally {
@@ -705,7 +1083,7 @@ describe('privateMomentsRuntime projection', () => {
     expect(commandMocks.snapshot).not.toHaveBeenCalled();
     expect(commandMocks.teardown).toHaveBeenCalledWith({
       stationPeerId: 'station-1',
-      actorPtid: 'ptid:alice',
+      actorPtid: 'ptid:eve',
       deviceId: 'device-1',
       lifecycleGeneration: 1,
       activationGeneration: 13,
@@ -884,7 +1262,7 @@ describe('privateMomentsRuntime projection', () => {
     };
     commandMocks.readMoment.mockResolvedValue(placeholder);
     commandMocks.openMedia.mockResolvedValue(ready);
-    commandMocks.recoverMoment.mockResolvedValue(ready);
+    commandMocks.recoverWithNativeInput.mockResolvedValue(ready);
     commandMocks.commentSubmit.mockResolvedValue({
       draft: {
         draftId: 'comment-draft-1',
@@ -912,9 +1290,21 @@ describe('privateMomentsRuntime projection', () => {
     });
     commandMocks.comments.mockResolvedValue({
       postId: 'post-image',
-      comments: [],
-      nextCursor: '',
-      hasMore: false,
+      comments: [{
+        commentId: 'comment-1',
+        contentId: 'comment-1',
+        generation: '1',
+        postId: 'post-image',
+        replyToCommentId: '',
+        authorPtid: 'ptid:alice',
+        state: 'COMMENT_POSTED',
+        text: 'private reply',
+        mentions: [],
+        reactionsCount: 0,
+        repliesCount: 0,
+      }],
+      nextCursor: 'comment-cursor-2',
+      hasMore: true,
     });
     useAuthStore.setState({
       session: authSession('session-1'),
@@ -950,7 +1340,9 @@ describe('privateMomentsRuntime projection', () => {
     expect(commandMocks.publishMoment).toHaveBeenCalledWith(scope);
     expect(commandMocks.readMoment).toHaveBeenCalledWith(scope);
     expect(commandMocks.openMedia).toHaveBeenCalledWith(scope);
-    expect(commandMocks.recoverMoment).toHaveBeenCalledWith(scope);
+    expect(commandMocks.recoverWithNativeInput).toHaveBeenCalledWith(
+      expect.objectContaining({ recoveryEpoch: 1 }),
+    );
     expect(commandMocks.commentSubmit).toHaveBeenCalledWith(scope);
     expect(commandMocks.comments).toHaveBeenCalledWith(scope);
     expect(readPrivateMomentsSnapshot()).toMatchObject({
@@ -967,6 +1359,21 @@ describe('privateMomentsRuntime projection', () => {
           text: 'private reply',
         }),
       ],
+      commentThreadsByPostId: {
+        'post-image': {
+          comments: [
+            expect.objectContaining({
+              commentId: 'comment-1',
+              text: 'private reply',
+            }),
+          ],
+          nextCursor: 'comment-cursor-2',
+          hasMore: true,
+          loading: false,
+          initialized: true,
+          errorMessage: null,
+        },
+      },
     });
   });
 });

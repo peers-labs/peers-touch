@@ -1,6 +1,7 @@
 mod trusted_catalog;
 
 use crate::application::skills::{SKILL_DELETE_PATH, SKILL_INSTALL_PATH, SKILL_LIST_PATH};
+use crate::application::station_runtime::client::{self as station_client, StationClient};
 use crate::application::{agents, mcp, plugins};
 use crate::contracts::{
     AgentIdInput, McpCreateInput, McpNameInput, SkillImportAddressInput, SkillImportGitHubInput,
@@ -8,7 +9,6 @@ use crate::contracts::{
     SkillMarketListInput, SkillMarketSyncInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::model;
 use base64::prelude::*;
@@ -479,6 +479,7 @@ fn station_marketplace_skill_trust_level() -> String {
 }
 
 fn install_skill(
+    station_client: &StationClient,
     agent_id: String,
     name: String,
     source: String,
@@ -486,6 +487,7 @@ fn install_skill(
     token: &str,
 ) -> AppResult<StubPayload> {
     let outcome = match install_skill_at_station(
+        station_client,
         agent_id,
         name.clone(),
         source,
@@ -509,6 +511,7 @@ fn install_skill(
 }
 
 fn install_skill_at_station(
+    station_client: &StationClient,
     agent_id: String,
     name: String,
     source: String,
@@ -530,11 +533,14 @@ fn install_skill_at_station(
         content,
         trust_level,
     };
-    match station_client::request_proto::<
-        model::agent::InstallSkillRequest,
-        model::agent::InstallSkillResponse,
-    >(Method::POST, SKILL_INSTALL_PATH, token, None, Some(&req))
-    {
+    match station_client
+        .request_proto::<model::agent::InstallSkillRequest, model::agent::InstallSkillResponse>(
+            Method::POST,
+            SKILL_INSTALL_PATH,
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => Ok(SkillInstallOutcome {
             skill_id: resp.skill_id,
             installed: resp.installed,
@@ -829,13 +835,17 @@ fn infer_risk_level(skill: &MarketSkill) -> &'static str {
     }
 }
 
-fn fetch_catalog_envelope(source: &MarketSource, token: &str) -> Result<CatalogFetch, String> {
+fn fetch_catalog_envelope(
+    station_client: &StationClient,
+    source: &MarketSource,
+    token: &str,
+) -> Result<CatalogFetch, String> {
     match source.transport_kind.as_str() {
         TRANSPORT_OFFICIAL_STATION => {
             if token.trim().is_empty() {
                 return Err("OFFICIAL_CATALOG_AUTHORIZATION_FAILED".to_string());
             }
-            let response = station_client::request_proto::<
+            let response = station_client.request_proto::<
                 model::agent::GetOfficialPackageCatalogRequest,
                 model::agent::GetOfficialPackageCatalogResponse,
             >(Method::GET, OFFICIAL_CATALOG_ENDPOINT, token, None, None)
@@ -1012,7 +1022,11 @@ fn paginate_market_skills<'a>(
     Ok((page, total, next_cursor))
 }
 
-pub fn skills_import_url(input: SkillImportAddressInput, token: &str) -> AppResult<StubPayload> {
+pub fn skills_import_url(
+    station_client: &StationClient,
+    input: SkillImportAddressInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     if input.address.trim().is_empty() {
         return invalid_argument("address is required");
     }
@@ -1025,6 +1039,7 @@ pub fn skills_import_url(input: SkillImportAddressInput, token: &str) -> AppResu
         Err(error) => return AppResult::fail(ErrorCode::InvalidArgument, error, None),
     };
     install_skill(
+        station_client,
         agent_id(input.agent_id),
         name,
         input.address,
@@ -1033,7 +1048,11 @@ pub fn skills_import_url(input: SkillImportAddressInput, token: &str) -> AppResu
     )
 }
 
-pub fn skills_import_github(input: SkillImportGitHubInput, token: &str) -> AppResult<StubPayload> {
+pub fn skills_import_github(
+    station_client: &StationClient,
+    input: SkillImportGitHubInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     if input.owner.trim().is_empty() || input.repo.trim().is_empty() {
         return invalid_argument("owner and repo are required");
     }
@@ -1058,10 +1077,21 @@ pub fn skills_import_github(input: SkillImportGitHubInput, token: &str) -> AppRe
         Ok(name) => name,
         Err(error) => return AppResult::fail(ErrorCode::InvalidArgument, error, None),
     };
-    install_skill(agent_id(input.agent_id), name, url, content, token)
+    install_skill(
+        station_client,
+        agent_id(input.agent_id),
+        name,
+        url,
+        content,
+        token,
+    )
 }
 
-pub fn skills_import_zip(input: SkillImportZipInput, token: &str) -> AppResult<StubPayload> {
+pub fn skills_import_zip(
+    station_client: &StationClient,
+    input: SkillImportZipInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     if input.data_base64.trim().is_empty() {
         return invalid_argument("data_base64 is required");
     }
@@ -1080,6 +1110,7 @@ pub fn skills_import_zip(input: SkillImportZipInput, token: &str) -> AppResult<S
         Err(error) => return AppResult::fail(ErrorCode::InvalidArgument, error, None),
     };
     install_skill(
+        station_client,
         agent_id(input.agent_id),
         name,
         input.file_name,
@@ -1322,7 +1353,11 @@ pub fn skills_market_remove(input: SkillMarketIdInput) -> AppResult<StubPayload>
     )
 }
 
-pub fn skills_market_sync(input: SkillMarketSyncInput, token: &str) -> AppResult<StubPayload> {
+pub fn skills_market_sync(
+    station_client: &StationClient,
+    input: SkillMarketSyncInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     if input.market_id.trim().is_empty() {
         return invalid_argument("market_id is required");
     }
@@ -1344,11 +1379,12 @@ pub fn skills_market_sync(input: SkillMarketSyncInput, token: &str) -> AppResult
         return AppResult::fail(ErrorCode::NotFound, "market source not found", None);
     };
     let registration = source_snapshot.registration();
-    let sync_result = fetch_catalog_envelope(&source_snapshot, token).and_then(|fetch| {
-        let catalog = verify_catalog(&registration, &fetch.envelope)?;
-        validate_catalog_update(&source_snapshot, &catalog, &fetch.envelope)?;
-        Ok((catalog, fetch))
-    });
+    let sync_result =
+        fetch_catalog_envelope(station_client, &source_snapshot, token).and_then(|fetch| {
+            let catalog = verify_catalog(&registration, &fetch.envelope)?;
+            validate_catalog_update(&source_snapshot, &catalog, &fetch.envelope)?;
+            Ok((catalog, fetch))
+        });
     let mut guard = match market_store().lock() {
         Ok(guard) => guard,
         Err(error) => {
@@ -1526,24 +1562,23 @@ fn catalog_detail_content(skill: &MarketSkill) -> Result<String, String> {
 }
 
 fn verify_skill_readback(
+    station_client: &StationClient,
     agent_id: &str,
     skill_id: &str,
     token: &str,
 ) -> Result<(), AppResult<StubPayload>> {
-    let response = station_client::request_proto::<
-        model::agent::ListSkillsRequest,
-        model::agent::ListSkillsResponse,
-    >(
-        Method::POST,
-        SKILL_LIST_PATH,
-        token,
-        None,
-        Some(&model::agent::ListSkillsRequest {
-            agent_id: agent_id.to_string(),
-            category: String::new(),
-        }),
-    )
-    .map_err(|error| station_error("skills_market_install", error))?;
+    let response = station_client
+        .request_proto::<model::agent::ListSkillsRequest, model::agent::ListSkillsResponse>(
+            Method::POST,
+            SKILL_LIST_PATH,
+            token,
+            None,
+            Some(&model::agent::ListSkillsRequest {
+                agent_id: agent_id.to_string(),
+                category: String::new(),
+            }),
+        )
+        .map_err(|error| station_error("skills_market_install", error))?;
     if response
         .skills
         .iter()
@@ -1641,6 +1676,7 @@ pub fn skills_market_detail(input: SkillMarketDetailInput) -> AppResult<StubPayl
 }
 
 pub fn skills_market_install(
+    station_client: &StationClient,
     actor_ptid: &str,
     input: SkillMarketDetailInput,
     token: &str,
@@ -1694,6 +1730,7 @@ pub fn skills_market_install(
     match skill.package_type.as_deref().unwrap_or("skill") {
         "agent" => {
             return install_agent_market_package(
+                station_client,
                 actor_ptid,
                 target_agent_id,
                 market_id,
@@ -1705,6 +1742,7 @@ pub fn skills_market_install(
         }
         "mcp" => {
             return install_mcp_market_package(
+                station_client,
                 actor_ptid,
                 target_agent_id,
                 market_id,
@@ -1725,6 +1763,7 @@ pub fn skills_market_install(
         Err(error) => return AppResult::fail(ErrorCode::InvalidArgument, error, None),
     };
     let outcome = match install_skill_at_station(
+        station_client,
         target_agent_id.clone(),
         name.clone(),
         source.clone(),
@@ -1735,7 +1774,9 @@ pub fn skills_market_install(
         Ok(outcome) => outcome,
         Err(result) => return result,
     };
-    if let Err(error) = verify_skill_readback(&target_agent_id, &outcome.skill_id, token) {
+    if let Err(error) =
+        verify_skill_readback(station_client, &target_agent_id, &outcome.skill_id, token)
+    {
         return error;
     }
     let record = MarketInstallRecord {
@@ -1774,6 +1815,7 @@ pub fn skills_market_install(
 }
 
 fn install_agent_market_package(
+    station_client: &StationClient,
     _actor_ptid: &str,
     target_agent_id: String,
     market_id: String,
@@ -1797,7 +1839,7 @@ fn install_agent_market_package(
         name: skill.name.clone(),
         idempotency_key: format!("market-install-{}", ulid::Ulid::new()),
     };
-    let response = match station_client::request_proto::<
+    let response = match station_client.request_proto::<
         model::agent::ImportAgentPackageRequest,
         model::agent::ImportAgentPackageResponse,
     >(
@@ -1824,18 +1866,16 @@ fn install_agent_market_package(
             None,
         );
     };
-    let readback = station_client::request_proto::<
-        model::agent::GetAgentRequest,
-        model::agent::GetAgentResponse,
-    >(
-        Method::POST,
-        "/sub-agent/agent/get",
-        token,
-        None,
-        Some(&model::agent::GetAgentRequest {
-            agent_id: agent.agent_id.clone(),
-        }),
-    );
+    let readback = station_client
+        .request_proto::<model::agent::GetAgentRequest, model::agent::GetAgentResponse>(
+            Method::POST,
+            "/sub-agent/agent/get",
+            token,
+            None,
+            Some(&model::agent::GetAgentRequest {
+                agent_id: agent.agent_id.clone(),
+            }),
+        );
     if !matches!(readback, Ok(ref response) if response.agent.as_ref().is_some_and(|item| item.agent_id == agent.agent_id))
     {
         return AppResult::fail(
@@ -1880,6 +1920,7 @@ fn install_agent_market_package(
 }
 
 fn install_mcp_market_package(
+    station_client: &StationClient,
     actor_ptid: &str,
     target_agent_id: String,
     market_id: String,
@@ -1906,7 +1947,12 @@ fn install_mcp_market_package(
             )
         }
     };
-    let result = mcp::mcp_station_create_server(actor_ptid, token, McpCreateInput { data: server });
+    let result = mcp::mcp_station_create_server(
+        station_client,
+        actor_ptid,
+        token,
+        McpCreateInput { data: server },
+    );
     let Some(payload) = result.data else {
         return result;
     };
@@ -1923,8 +1969,12 @@ fn install_mcp_market_package(
             None,
         );
     }
-    let readback =
-        mcp::mcp_station_get_server(actor_ptid, token, McpNameInput { name: name.clone() });
+    let readback = mcp::mcp_station_get_server(
+        station_client,
+        actor_ptid,
+        token,
+        McpNameInput { name: name.clone() },
+    );
     if !readback.ok {
         return AppResult::fail(
             ErrorCode::InternalError,
@@ -1967,22 +2017,24 @@ fn install_mcp_market_package(
     )
 }
 
-fn verify_agent_absent(agent_id: &str, token: &str) -> Result<(), AppResult<StubPayload>> {
-    let response = station_client::request_proto::<
-        model::agent::ListAgentsRequest,
-        model::agent::ListAgentsResponse,
-    >(
-        Method::POST,
-        "/sub-agent/agent/list",
-        token,
-        None,
-        Some(&model::agent::ListAgentsRequest {
-            visibility: model::agent::AgentVisibility::Unspecified as i32,
-            page: 1,
-            page_size: 500,
-        }),
-    )
-    .map_err(|error| station_error("skills_market_uninstall", error))?;
+fn verify_agent_absent(
+    station_client: &StationClient,
+    agent_id: &str,
+    token: &str,
+) -> Result<(), AppResult<StubPayload>> {
+    let response = station_client
+        .request_proto::<model::agent::ListAgentsRequest, model::agent::ListAgentsResponse>(
+            Method::POST,
+            "/sub-agent/agent/list",
+            token,
+            None,
+            Some(&model::agent::ListAgentsRequest {
+                visibility: model::agent::AgentVisibility::Unspecified as i32,
+                page: 1,
+                page_size: 500,
+            }),
+        )
+        .map_err(|error| station_error("skills_market_uninstall", error))?;
     if response
         .agents
         .iter()
@@ -1999,24 +2051,23 @@ fn verify_agent_absent(agent_id: &str, token: &str) -> Result<(), AppResult<Stub
 }
 
 fn verify_skill_absent(
+    station_client: &StationClient,
     agent_id: &str,
     skill_id: &str,
     token: &str,
 ) -> Result<(), AppResult<StubPayload>> {
-    let response = station_client::request_proto::<
-        model::agent::ListSkillsRequest,
-        model::agent::ListSkillsResponse,
-    >(
-        Method::POST,
-        SKILL_LIST_PATH,
-        token,
-        None,
-        Some(&model::agent::ListSkillsRequest {
-            agent_id: agent_id.to_string(),
-            category: String::new(),
-        }),
-    )
-    .map_err(|error| station_error("skills_market_uninstall", error))?;
+    let response = station_client
+        .request_proto::<model::agent::ListSkillsRequest, model::agent::ListSkillsResponse>(
+            Method::POST,
+            SKILL_LIST_PATH,
+            token,
+            None,
+            Some(&model::agent::ListSkillsRequest {
+                agent_id: agent_id.to_string(),
+                category: String::new(),
+            }),
+        )
+        .map_err(|error| station_error("skills_market_uninstall", error))?;
     if response
         .skills
         .iter()
@@ -2033,11 +2084,12 @@ fn verify_skill_absent(
 }
 
 fn verify_mcp_absent(
+    station_client: &StationClient,
     actor_ptid: &str,
     server_name: &str,
     token: &str,
 ) -> Result<(), AppResult<StubPayload>> {
-    let result = mcp::mcp_station_list_servers(actor_ptid, token);
+    let result = mcp::mcp_station_list_servers(station_client, actor_ptid, token);
     let Some(payload) = result.data else {
         return Err(result);
     };
@@ -2068,6 +2120,7 @@ fn verify_mcp_absent(
 }
 
 pub fn skills_market_uninstall(
+    station_client: &StationClient,
     actor_ptid: &str,
     input: SkillMarketDetailInput,
     token: &str,
@@ -2107,6 +2160,7 @@ pub fn skills_market_uninstall(
 
     if package_type == "agent" {
         let result = agents::agents_delete(
+            station_client,
             actor_ptid,
             token,
             AgentIdInput {
@@ -2116,7 +2170,7 @@ pub fn skills_market_uninstall(
         if !result.ok {
             return result;
         }
-        if let Err(result) = verify_agent_absent(&record.skill_id, token) {
+        if let Err(result) = verify_agent_absent(station_client, &record.skill_id, token) {
             return result;
         }
         if let Err(result) = remove_market_install_record(&record) {
@@ -2130,6 +2184,7 @@ pub fn skills_market_uninstall(
 
     if package_type == "mcp" {
         let result = mcp::mcp_station_delete_server(
+            station_client,
             actor_ptid,
             token,
             McpNameInput {
@@ -2139,7 +2194,8 @@ pub fn skills_market_uninstall(
         if !result.ok {
             return result;
         }
-        if let Err(result) = verify_mcp_absent(actor_ptid, &record.skill_id, token) {
+        if let Err(result) = verify_mcp_absent(station_client, actor_ptid, &record.skill_id, token)
+        {
             return result;
         }
         if let Err(result) = remove_market_install_record(&record) {
@@ -2169,14 +2225,20 @@ pub fn skills_market_uninstall(
         agent_id: record.agent_id.clone(),
         skill_id: record.skill_id.clone(),
     };
-    if let Err(err) = station_client::request_proto::<
-        model::agent::DeleteSkillRequest,
-        model::agent::DeleteSkillResponse,
-    >(Method::POST, SKILL_DELETE_PATH, token, None, Some(&req))
+    if let Err(err) = station_client
+        .request_proto::<model::agent::DeleteSkillRequest, model::agent::DeleteSkillResponse>(
+            Method::POST,
+            SKILL_DELETE_PATH,
+            token,
+            None,
+            Some(&req),
+        )
     {
         return station_error("skills_market_uninstall", err);
     }
-    if let Err(result) = verify_skill_absent(&record.agent_id, &record.skill_id, token) {
+    if let Err(result) =
+        verify_skill_absent(station_client, &record.agent_id, &record.skill_id, token)
+    {
         return result;
     }
     if let Err(result) = remove_market_install_record(&record) {
@@ -2415,13 +2477,16 @@ mod tests {
 
     #[test]
     fn official_transport_does_not_send_an_unauthenticated_request() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let source = MarketStore::default()
             .sources
             .into_iter()
             .next()
             .expect("default source");
         assert_eq!(
-            fetch_catalog_envelope(&source, "").expect_err("missing token must fail"),
+            fetch_catalog_envelope(station_client, &source, "")
+                .expect_err("missing token must fail"),
             "OFFICIAL_CATALOG_AUTHORIZATION_FAILED",
         );
     }

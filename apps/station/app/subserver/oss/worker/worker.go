@@ -13,8 +13,8 @@
 //	configured `LeaderLock` to TryAcquire before each tick — only
 //	the lock holder runs the job. The lock implementation chosen at
 //	startup decides the granularity:
-//	  - `MemLock`  : per-process (single-instance deployments + tests).
-//	  - `PgAdvisoryLock` (S12+) : cluster-wide via pg_try_advisory_lock.
+//	  - `MemLock`: per-process tests.
+//	  - `DBLeaderLock`: shared production lease with monotonic fencing.
 //
 // Audit emission:
 //
@@ -148,12 +148,6 @@ func (s *Scheduler) Snapshot() []WorkerSnapshot {
 // disabling audit at the scheduler boundary is a clean way to opt
 // tests out of the noise.
 func NewScheduler(workers []Worker, lock LeaderLock, audit repo.AuditRepository) *Scheduler {
-	if lock == nil {
-		// MemLock is a sane fallback for single-instance
-		// deployments; the boot path may pass nil
-		// intentionally and we should not crash.
-		lock = NewMemLock()
-	}
 	return &Scheduler{
 		workers: workers,
 		lock:    lock,
@@ -175,6 +169,9 @@ func NewScheduler(workers []Worker, lock LeaderLock, audit repo.AuditRepository)
 func (s *Scheduler) Start(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.lock == nil {
+		return errors.New("worker: scheduler requires a fenced leader lock")
+	}
 	if s.cancel != nil {
 		return errors.New("worker: scheduler already started")
 	}
@@ -237,21 +234,26 @@ func (s *Scheduler) tick(ctx context.Context, w Worker) {
 	if ctx.Err() != nil {
 		return
 	}
-	held, release, err := s.lock.TryAcquire(ctx, w.Name())
+	runCtx := ctx
+	release := func() {}
+	stopRenewal := func() error { return nil }
+	authority, releaseFn, err := s.lock.TryAcquire(ctx, w.Name())
 	if err != nil {
-		log.Warnf(ctx, "[oss-worker] %s lock acquire error: %v", w.Name(), err)
+		log.Warnf(ctx, "[oss-worker] %s fenced lock acquire error: %v", w.Name(), err)
 		return
 	}
-	if !held {
-		// Another instance is currently the leader. Skip
-		// silently — we will get our chance on the next tick
-		// if the leader fails over.
+	if authority == nil {
 		return
 	}
+	release = releaseFn
+	runCtx, stopRenewal = startLeaseRenewal(ctx, s.lock, *authority)
 	defer release()
 
 	start := s.clock()
-	rerr := w.RunOnce(ctx)
+	rerr := w.RunOnce(runCtx)
+	if renewalErr := stopRenewal(); renewalErr != nil && rerr == nil {
+		rerr = renewalErr
+	}
 	elapsed := s.clock().Sub(start)
 
 	if rerr != nil {
@@ -259,6 +261,61 @@ func (s *Scheduler) tick(ctx context.Context, w Worker) {
 	}
 	s.recordStats(w, start, elapsed, rerr)
 	s.emitHeartbeat(ctx, w.Name(), rerr)
+}
+
+func startLeaseRenewal(
+	ctx context.Context,
+	lock LeaderLock,
+	authority LeaseAuthority,
+) (context.Context, func() error) {
+	runCtx, cancel := context.WithCancel(
+		withLeaseAuthority(
+			withLeaseValidator(ctx, lock.Validate),
+			authority,
+		),
+	)
+	done := make(chan struct{})
+	renewalErr := make(chan error, 1)
+	interval := time.Until(authority.ExpiresAt) / 3
+	if interval < 100*time.Millisecond {
+		interval = 100 * time.Millisecond
+	}
+	if interval > 10*time.Second {
+		interval = 10 * time.Second
+	}
+	go func() {
+		defer close(done)
+		timer := time.NewTicker(interval)
+		defer timer.Stop()
+		current := authority
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-timer.C:
+				renewed, err := lock.Renew(runCtx, current)
+				if err != nil {
+					select {
+					case renewalErr <- err:
+					default:
+					}
+					cancel()
+					return
+				}
+				current = *renewed
+			}
+		}
+	}()
+	return runCtx, func() error {
+		cancel()
+		<-done
+		select {
+		case err := <-renewalErr:
+			return err
+		default:
+			return nil
+		}
+	}
 }
 
 // recordStats updates the rolling per-worker counters consumed by

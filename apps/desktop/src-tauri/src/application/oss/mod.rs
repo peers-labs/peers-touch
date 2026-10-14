@@ -8,10 +8,9 @@
 //      returns the canonical attachment payload (`cid`, `key`, `host`,
 //      `mime`, `size`, `filename`). The `cid` is the federated URI
 //      that should be embedded in `MessageAttachment.cid` (chat) or
-//      `CreateImagePostRequest.image_ids` (Moments). Older Station
-//      builds that pre-date the URI work return only `key`/`url`; we
-//      synthesize a `cid` from `station_base_url` so older deployments
-//      continue to function.
+//      `CreateImagePostRequest.image_ids` (Moments). A successful upload
+//      must include a canonical `cid` or server-advertised `host`; the
+//      active transport route is never persisted as object identity.
 //      The `consumer` label is for log correlation only — the wire
 //      contract is identical across modules.
 //
@@ -42,10 +41,11 @@ use sha2::{Digest, Sha256};
 use time::{format_description::well_known::Rfc3339, Duration, OffsetDateTime};
 use ulid::Ulid;
 
+use crate::application::station_runtime::client::StationClient;
+use crate::application::station_runtime::resource::{ResourceReference, StationResourceHandle};
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::oss_cache::{self, OssCacheError, OssUri};
-use crate::infrastructure::station_client;
 
 const AGENT_ATTACHMENT_MAX_BYTES: u64 = 10 * 1024 * 1024;
 
@@ -167,6 +167,7 @@ impl Drop for TempFileCleanup {
 /// are forwarded to the OSS subserver — Moments callers should pass
 /// `bucket="moments"`, `visibility="public"`, `chat_session_id=None`.
 pub fn upload_attachment(
+    resources: &StationResourceHandle,
     file_path: &str,
     token: &str,
     consumer: &str,
@@ -175,6 +176,7 @@ pub fn upload_attachment(
     chat_session_id: Option<&str>,
 ) -> AppResult<StubPayload> {
     upload_attachment_with_mime(
+        resources,
         file_path,
         token,
         consumer,
@@ -186,6 +188,7 @@ pub fn upload_attachment(
 }
 
 pub fn upload_attachment_with_mime(
+    resources: &StationResourceHandle,
     file_path: &str,
     token: &str,
     consumer: &str,
@@ -194,6 +197,7 @@ pub fn upload_attachment_with_mime(
     chat_session_id: Option<&str>,
     mime_override: Option<&str>,
 ) -> AppResult<StubPayload> {
+    let station_client = resources.client();
     // Pre-flight the file size so we can route per-file instead of
     // per-session. We resolve metadata via `std::fs` to avoid pulling
     // a second open later.
@@ -211,7 +215,7 @@ pub fn upload_attachment_with_mime(
     // shape. We probe the home station ("self") because uploads
     // *always* go to the user's own station; cross-station uploads
     // are handled at the chat layer, not here.
-    let caps = oss_cache::capabilities_ensure("self").ok();
+    let caps = oss_cache::capabilities_ensure(station_client, "self").ok();
 
     let file_size = file_meta.len() as i64;
     let filename = std::path::Path::new(file_path)
@@ -238,7 +242,15 @@ pub fn upload_attachment_with_mime(
             // into `/sub-oss/presign-upload` is a separate
             // server+client contract change tracked outside this
             // merge.
-            match upload_via_presigned(file_path, token, &filename, &mime, file_size, c) {
+            match upload_via_presigned(
+                station_client,
+                file_path,
+                token,
+                &filename,
+                &mime,
+                file_size,
+                c,
+            ) {
                 Ok(payload) => {
                     let body = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
                     return AppResult::success(StubPayload {
@@ -258,7 +270,7 @@ pub fn upload_attachment_with_mime(
         }
     }
 
-    let resp = match station_client::upload_multipart(
+    let resp = match station_client.upload_multipart(
         "/sub-oss/upload",
         token,
         file_path,
@@ -292,24 +304,45 @@ pub fn upload_attachment_with_mime(
     let host = resp
         .get("host")
         .and_then(|v| v.as_str())
+        .filter(|value| !value.trim().is_empty())
         .map(|s| s.to_string())
-        .unwrap_or_else(|| station_client::station_base_url());
-    let cid = resp
+        .unwrap_or_default();
+    let cid = match resp
         .get("cid")
         .and_then(|v| v.as_str())
+        .filter(|value| !value.trim().is_empty())
         .map(|s| s.to_string())
-        .unwrap_or_else(|| format!("oss://{}/{}", host.trim_end_matches('/'), key));
+    {
+        Some(cid) => cid,
+        None if !host.is_empty() => {
+            format!("oss://{}/{}", host.trim_end_matches('/'), key)
+        }
+        None => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Upload succeeded but storage returned no canonical object identity",
+                None,
+            )
+        }
+    };
     let url_rel = resp
         .get("url")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let preview_url = if url_rel.starts_with('/') {
-        Some(format!("{}{}", host.trim_end_matches('/'), url_rel))
-    } else if url_rel.is_empty() {
+    let preview_url = if url_rel.is_empty() {
         None
     } else {
-        Some(url_rel)
+        match resources.project_reference(&url_rel, Some(cid.clone())) {
+            Ok(value) => Some(value),
+            Err(error) => {
+                return AppResult::fail(
+                    ErrorCode::Conflict,
+                    format!("project uploaded object preview: {error}"),
+                    Some(json!({ "reason": "station_resource_projection_failed" })),
+                )
+            }
+        }
     };
 
     let payload = ChatAttachmentUploaded {
@@ -348,12 +381,14 @@ pub fn upload_attachment_with_mime(
 }
 
 pub fn upload_agent_attachment(
+    resources: &StationResourceHandle,
     file_path: &str,
     token: &str,
     conversation_id: &str,
     filename: &str,
     mime_type: &str,
 ) -> AppResult<StubPayload> {
+    let station_client = resources.client();
     let conversation_id = conversation_id.trim();
     if conversation_id.is_empty() || conversation_id.starts_with("draft:") {
         return AppResult::fail(
@@ -387,6 +422,7 @@ pub fn upload_agent_attachment(
     }
 
     let uploaded_result = upload_attachment_with_mime(
+        resources,
         file_path,
         token,
         "agent",
@@ -416,7 +452,7 @@ pub fn upload_agent_attachment(
         || uploaded.size <= 0
         || uploaded.size as u64 > AGENT_ATTACHMENT_MAX_BYTES
     {
-        cleanup_agent_attachment_object(token, &uploaded.key);
+        cleanup_agent_attachment_object(station_client, token, &uploaded.key);
         return AppResult::fail(
             ErrorCode::InvalidArgument,
             "agent.errors.attachmentRejected",
@@ -426,7 +462,7 @@ pub fn upload_agent_attachment(
 
     let checksum = uploaded.sha256.trim().trim_start_matches("sha256:");
     if checksum.len() != 64 || !checksum.chars().all(|value| value.is_ascii_hexdigit()) {
-        cleanup_agent_attachment_object(token, &uploaded.key);
+        cleanup_agent_attachment_object(station_client, token, &uploaded.key);
         return AppResult::fail(
             ErrorCode::InternalError,
             "agent.errors.attachmentRejected",
@@ -437,7 +473,7 @@ pub fn upload_agent_attachment(
     let expires_at = match (OffsetDateTime::now_utc() + Duration::hours(24)).format(&Rfc3339) {
         Ok(value) => value,
         Err(error) => {
-            cleanup_agent_attachment_object(token, &uploaded.key);
+            cleanup_agent_attachment_object(station_client, token, &uploaded.key);
             tracing::error!(error = %error, "Failed to format Agent attachment expiry");
             return AppResult::fail(
                 ErrorCode::InternalError,
@@ -447,6 +483,7 @@ pub fn upload_agent_attachment(
         }
     };
     let patch_result = oss_patch_file(
+        station_client,
         token,
         &uploaded.key,
         &PatchFileBody {
@@ -458,7 +495,7 @@ pub fn upload_agent_attachment(
         },
     );
     if !patch_result.ok {
-        cleanup_agent_attachment_object(token, &uploaded.key);
+        cleanup_agent_attachment_object(station_client, token, &uploaded.key);
         return AppResult::fail(
             patch_result
                 .error
@@ -507,8 +544,8 @@ fn agent_attachment_content_matches(file_path: &str, mime_type: &str) -> bool {
     }
 }
 
-fn cleanup_agent_attachment_object(token: &str, key: &str) {
-    let cleanup = oss_delete_file(token, key);
+fn cleanup_agent_attachment_object(station_client: &StationClient, token: &str, key: &str) {
+    let cleanup = oss_delete_file(station_client, token, key);
     if !cleanup.ok {
         tracing::warn!(object_ref = %format!("oss:{key}"), "Failed to clean up rejected Agent attachment");
     }
@@ -541,10 +578,12 @@ fn cleanup_agent_attachment_object(token: &str, key: &str) {
 /// are required for federation; either being empty downgrades the
 /// resolve to a no-token best-effort.
 pub fn oss_resolve_url(
+    resources: &StationResourceHandle,
     input: &str,
     home_token: &str,
     home_actor_ptid: &str,
 ) -> AppResult<StubPayload> {
+    let station_client = resources.client();
     let normalized_input = normalize_oss_resolution_input(input);
     let uri = match OssUri::parse(normalized_input) {
         Ok(u) => u,
@@ -557,25 +596,74 @@ pub fn oss_resolve_url(
         }
     };
 
-    let bound_station = oss_cache::is_bound_station(&uri.origin);
-    let caps = match oss_cache::capabilities_ensure(&uri.origin) {
+    if !oss_cache::is_bound_station(station_client, &uri.origin) {
+        // Canonical OSS origins are learned only from the bound Station's
+        // capabilities, never from an arbitrary foreign response.
+        if let Err(error) = oss_cache::capabilities_ensure(station_client, "self") {
+            return resolve_error(error);
+        }
+    }
+    let bound_station = oss_cache::is_bound_station(station_client, &uri.origin);
+    let caps = match oss_cache::capabilities_ensure(station_client, &uri.origin) {
         Ok(c) => c,
         Err(e) => return resolve_error(e),
     };
 
-    // Build the canonical absolute URL once; we always return it so
-    // that even if the local mirror fails, the renderer has a
-    // network-fetch option.
-    let url = format!(
-        "{}{}?key={}",
+    let endpoint = if caps.file_endpoint.is_empty() {
+        "/sub-oss/file"
+    } else {
+        caps.file_endpoint.as_str()
+    };
+    let resource_path = format!("{endpoint}?key={}", urlencode(&uri.key));
+    let external_url = format!(
+        "{}{}",
         caps.host.trim_end_matches('/'),
-        if caps.file_endpoint.is_empty() {
-            "/sub-oss/file"
-        } else {
-            caps.file_endpoint.as_str()
-        },
-        urlencode(&uri.key),
+        resource_path.as_str()
     );
+    let station_resource = if bound_station && !caps.skip_local_mirror() {
+        match resources.reference(&resource_path, Some(uri.to_uri())) {
+            Ok(ResourceReference::Station(resource)) => Some(resource),
+            Ok(ResourceReference::External(_) | ResourceReference::Inline(_)) => {
+                return AppResult::fail(
+                    ErrorCode::InternalError,
+                    "bound OSS resource unexpectedly resolved outside Station scope",
+                    None,
+                )
+            }
+            Err(error) => {
+                return AppResult::fail(
+                    ErrorCode::Conflict,
+                    format!("bind OSS resource: {error}"),
+                    Some(json!({ "reason": "station_resource_projection_failed" })),
+                )
+            }
+        }
+    } else {
+        None
+    };
+    let url = if let Some(resource) = station_resource.as_ref() {
+        match resources.project(resource.clone()) {
+            Ok(value) => value.as_str().to_string(),
+            Err(error) => {
+                return AppResult::fail(
+                    ErrorCode::Conflict,
+                    format!("project OSS resource: {error}"),
+                    Some(json!({ "reason": "station_resource_projection_failed" })),
+                )
+            }
+        }
+    } else {
+        match resources.project_reference(&external_url, Some(uri.to_uri())) {
+            Ok(value) => value,
+            Err(error) => {
+                return AppResult::fail(
+                    ErrorCode::InvalidArgument,
+                    format!("invalid OSS external resource: {error}"),
+                    None,
+                )
+            }
+        }
+    };
 
     // For backends that should not be mirrored locally (signed URLs,
     // S3-protocol stores) the absolute URL is the authoritative
@@ -587,7 +675,11 @@ pub fn oss_resolve_url(
             local_path: None,
             url,
             data_url: None,
-            host: caps.host,
+            host: if bound_station {
+                uri.origin.clone()
+            } else {
+                caps.host
+            },
             key: uri.key,
         });
     }
@@ -598,7 +690,14 @@ pub fn oss_resolve_url(
     // distinguish "couldn't reach the network" from "denied by
     // policy" (the badge component renders different states).
     let local_path = if bound_station {
-        match oss_cache::attachment_ensure(&uri, None, Some(home_token)) {
+        let Some(resource) = station_resource.as_ref() else {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "mirrored bound OSS resource has no lifecycle scope",
+                None,
+            );
+        };
+        match oss_cache::attachment_ensure(resources, &uri, resource, Some(home_token)) {
             Ok(p) => Some(p.to_string_lossy().to_string()),
             Err(err) => {
                 tracing::warn!(error = %err, uri = %input, "OSS attachment cache miss (local)");
@@ -606,7 +705,12 @@ pub fn oss_resolve_url(
             }
         }
     } else if !home_token.trim().is_empty() && !home_actor_ptid.trim().is_empty() {
-        match oss_cache::attachment_ensure_federated(&uri, home_token, home_actor_ptid) {
+        match oss_cache::attachment_ensure_federated(
+            station_client,
+            &uri,
+            home_token,
+            home_actor_ptid,
+        ) {
             Ok(p) => Some(p.to_string_lossy().to_string()),
             Err(err) => {
                 tracing::warn!(error = %err, uri = %input, "OSS attachment cache miss (federated)");
@@ -627,7 +731,7 @@ pub fn oss_resolve_url(
             .and_then(data_url_for_cached_attachment),
         local_path,
         url,
-        host: caps.host,
+        host: if bound_station { uri.origin } else { caps.host },
         key: uri.key,
     })
 }
@@ -712,6 +816,7 @@ fn resolve_error(err: OssCacheError) -> AppResult<StubPayload> {
 /// commit. The caller is responsible for falling back to multipart
 /// when this returns `Err`.
 fn upload_via_presigned(
+    station_client: &StationClient,
     file_path: &str,
     token: &str,
     filename: &str,
@@ -726,19 +831,20 @@ fn upload_via_presigned(
         .ok_or_else(|| "presigned endpoints missing from capabilities".to_string())?;
 
     // Step 1 — open the session.
-    let presign_resp = station_client::request_json(
-        Method::POST,
-        &endpoints.presign,
-        token,
-        None,
-        Some(serde_json::json!({
-            "filename": filename,
-            "mime": mime,
-            "size": size,
-            "sha256": sha,
-        })),
-    )
-    .map_err(|e| format!("presign-upload: {e}"))?;
+    let presign_resp = station_client
+        .request_json(
+            Method::POST,
+            &endpoints.presign,
+            token,
+            None,
+            Some(serde_json::json!({
+                "filename": filename,
+                "mime": mime,
+                "size": size,
+                "sha256": sha,
+            })),
+        )
+        .map_err(|e| format!("presign-upload: {e}"))?;
 
     let already = presign_resp
         .get("already_uploaded")
@@ -767,7 +873,8 @@ fn upload_via_presigned(
     }
 
     // Step 2 — direct PUT to the storage endpoint.
-    station_client::put_presigned_url(url, &headers, file_path)
+    station_client
+        .put_presigned_url(url, &headers, file_path)
         .map_err(|e| format!("presigned put: {e}"))?;
 
     // Step 3 — register the row.
@@ -775,20 +882,21 @@ fn upload_via_presigned(
         .get("key")
         .and_then(|v| v.as_str())
         .ok_or_else(|| "presign response missing key".to_string())?;
-    let complete_resp = station_client::request_json(
-        Method::POST,
-        &endpoints.complete,
-        token,
-        None,
-        Some(serde_json::json!({
-            "key": key,
-            "filename": filename,
-            "mime": mime,
-            "size": size,
-            "sha256": sha,
-        })),
-    )
-    .map_err(|e| format!("upload-complete: {e}"))?;
+    let complete_resp = station_client
+        .request_json(
+            Method::POST,
+            &endpoints.complete,
+            token,
+            None,
+            Some(serde_json::json!({
+                "key": key,
+                "filename": filename,
+                "mime": mime,
+                "size": size,
+                "sha256": sha,
+            })),
+        )
+        .map_err(|e| format!("upload-complete: {e}"))?;
 
     Ok(complete_response_to_payload(&complete_resp, sha, caps))
 }
@@ -1035,7 +1143,11 @@ pub struct PatchFileBody {
     pub clear_expires_at: bool,
 }
 
-pub fn oss_list_my_files(token: &str, query: &ListMyFilesQuery) -> AppResult<StubPayload> {
+pub fn oss_list_my_files(
+    station_client: &StationClient,
+    token: &str,
+    query: &ListMyFilesQuery,
+) -> AppResult<StubPayload> {
     let mut params: Vec<(&str, String)> = Vec::new();
     if let Some(v) = query.bucket.as_ref().filter(|s| !s.trim().is_empty()) {
         params.push(("bucket", v.trim().to_string()));
@@ -1060,7 +1172,7 @@ pub fn oss_list_my_files(token: &str, query: &ListMyFilesQuery) -> AppResult<Stu
         }
     }
 
-    match station_client::request_json_auth(
+    match station_client.request_json_auth(
         reqwest::Method::GET,
         "/sub-oss/my-files",
         token,
@@ -1075,7 +1187,11 @@ pub fn oss_list_my_files(token: &str, query: &ListMyFilesQuery) -> AppResult<Stu
     }
 }
 
-pub fn oss_delete_file(token: &str, key: &str) -> AppResult<StubPayload> {
+pub fn oss_delete_file(
+    station_client: &StationClient,
+    token: &str,
+    key: &str,
+) -> AppResult<StubPayload> {
     let key = match agent_attachment_object_key(key) {
         Ok(value) => value,
         Err(error) => return error,
@@ -1086,7 +1202,7 @@ pub fn oss_delete_file(token: &str, key: &str) -> AppResult<StubPayload> {
     let key_owned = key;
     let params: [(&str, String); 1] = [("key", key_owned.clone())];
 
-    match station_client::request_json_auth(
+    match station_client.request_json_auth(
         reqwest::Method::DELETE,
         "/sub-oss/file",
         token,
@@ -1094,7 +1210,7 @@ pub fn oss_delete_file(token: &str, key: &str) -> AppResult<StubPayload> {
         None,
     ) {
         Ok(v) => {
-            invalidate_local_cache(&key_owned, "delete");
+            invalidate_local_cache(station_client, &key_owned, "delete");
             json_payload("oss_delete_file", &v)
         }
         Err(e) => {
@@ -1122,14 +1238,18 @@ fn agent_attachment_object_key(key_or_ref: &str) -> Result<String, AppResult<Stu
     Ok(key.to_string())
 }
 
-pub fn oss_restore_file(token: &str, key: &str) -> AppResult<StubPayload> {
+pub fn oss_restore_file(
+    station_client: &StationClient,
+    token: &str,
+    key: &str,
+) -> AppResult<StubPayload> {
     if key.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "key is required", None);
     }
     let key_owned = key.trim().to_string();
     let params: [(&str, String); 1] = [("key", key_owned.clone())];
 
-    match station_client::request_json_auth(
+    match station_client.request_json_auth(
         reqwest::Method::POST,
         "/sub-oss/file/restore",
         token,
@@ -1141,7 +1261,7 @@ pub fn oss_restore_file(token: &str, key: &str) -> AppResult<StubPayload> {
             // stale cached copy that might have been retained out of
             // band (e.g. the file was force-deleted and then
             // restored within the same session).
-            invalidate_local_cache(&key_owned, "restore");
+            invalidate_local_cache(station_client, &key_owned, "restore");
             json_payload("oss_restore_file", &v)
         }
         Err(e) => {
@@ -1151,7 +1271,12 @@ pub fn oss_restore_file(token: &str, key: &str) -> AppResult<StubPayload> {
     }
 }
 
-pub fn oss_patch_file(token: &str, key: &str, body: &PatchFileBody) -> AppResult<StubPayload> {
+pub fn oss_patch_file(
+    station_client: &StationClient,
+    token: &str,
+    key: &str,
+    body: &PatchFileBody,
+) -> AppResult<StubPayload> {
     if key.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "key is required", None);
     }
@@ -1215,7 +1340,7 @@ pub fn oss_patch_file(token: &str, key: &str, body: &PatchFileBody) -> AppResult
     let key_owned = key.trim().to_string();
     let params: [(&str, String); 1] = [("key", key_owned.clone())];
 
-    match station_client::request_json_auth(
+    match station_client.request_json_auth(
         reqwest::Method::PATCH,
         "/sub-oss/file",
         token,
@@ -1227,7 +1352,7 @@ pub fn oss_patch_file(token: &str, key: &str, body: &PatchFileBody) -> AppResult
             // who is allowed to fetch the bytes; our local cache
             // outlives that decision and would serve stale content
             // to receivers if not flushed.
-            invalidate_local_cache(&key_owned, "patch");
+            invalidate_local_cache(station_client, &key_owned, "patch");
             json_payload("oss_patch_file", &v)
         }
         Err(e) => {
@@ -1241,7 +1366,7 @@ pub fn oss_patch_file(token: &str, key: &str, body: &PatchFileBody) -> AppResult
 /// changes a file's lifecycle out-of-band (e.g. the operator
 /// force-deleted from the dashboard) so the next view does not
 /// surface the stale copy.
-pub fn oss_invalidate_cache(uri: &str) -> AppResult<StubPayload> {
+pub fn oss_invalidate_cache(station_client: &StationClient, uri: &str) -> AppResult<StubPayload> {
     let parsed = match OssUri::parse(uri) {
         Ok(u) => u,
         Err(e) => {
@@ -1251,6 +1376,10 @@ pub fn oss_invalidate_cache(uri: &str) -> AppResult<StubPayload> {
                 None,
             );
         }
+    };
+    let parsed = match oss_cache::scoped_cache_uri(station_client, &parsed) {
+        Ok(uri) => uri,
+        Err(error) => return resolve_error(error),
     };
     if let Err(err) = oss_cache::attachment_invalidate(&parsed) {
         tracing::warn!(error = %err, uri = %uri, "oss cache invalidate failed");
@@ -1264,14 +1393,20 @@ pub fn oss_invalidate_cache(uri: &str) -> AppResult<StubPayload> {
     })
 }
 
-fn invalidate_local_cache(key: &str, op: &str) {
+fn invalidate_local_cache(station_client: &StationClient, key: &str, op: &str) {
     // The user's own files always live on the bound Station; we
-    // build the canonical OssUri from the local origin so the cache
-    // path matches whatever `attachment_ensure` would write.
-    let origin = station_client::station_base_url();
+    // retain that lifecycle-relative identity instead of persisting
+    // the current route endpoint as part of the cache key.
     let uri = OssUri {
-        origin,
+        origin: "self".to_string(),
         key: key.to_string(),
+    };
+    let uri = match oss_cache::scoped_cache_uri(station_client, &uri) {
+        Ok(uri) => uri,
+        Err(error) => {
+            tracing::warn!(error = %error, "post-mutation cache scope unavailable");
+            return;
+        }
     };
     if let Err(err) = oss_cache::attachment_invalidate(&uri) {
         tracing::warn!(error = %err, key = %key, op = %op, "post-mutation cache invalidate failed");

@@ -28,6 +28,7 @@ import (
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
+	nativeRelay "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/relay"
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -301,6 +302,10 @@ func (s *subServer) getSubservers() []server.Subserver {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.subservers
+}
+
+func (s *subServer) getConnectionMaterialIssuer() nativeRelay.ConnectionMaterialIssuer {
+	return nativeRelay.ConnectionMaterialIssuerSnapshot()
 }
 
 // deriveFallbackSecret returns a fallback JWT secret derived from environment.

@@ -21,12 +21,15 @@ package storage
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -58,6 +61,22 @@ type Backend interface {
 	Stat(ctx context.Context, key string) (*StatInfo, error)
 	Delete(ctx context.Context, key string) error
 	Healthz(ctx context.Context) error
+}
+
+// ClusterSharedBackend explicitly declares whether independently
+// routed Station nodes address the same object namespace. Local
+// filesystem storage is false even when two test processes happen
+// to share a path; S3-protocol storage is true.
+type ClusterSharedBackend interface {
+	ClusterShared() bool
+}
+
+// ClusterBackingIdentityProvider exposes a credential-free identity for the
+// shared object namespace. Cluster admission compares this value across live
+// nodes in addition to requiring ClusterSharedBackend. Implementations may
+// atomically establish a persistent namespace marker during startup.
+type ClusterBackingIdentityProvider interface {
+	EnsureClusterBackingIdentity(context.Context) (string, error)
 }
 
 // Range describes an inclusive byte range request against a Backend.
@@ -155,18 +174,111 @@ type LocalBackend struct{ root string }
 // NewLocalBackend creates a LocalBackend with the given root.
 func NewLocalBackend(root string) *LocalBackend { return &LocalBackend{root: root} }
 
+func (b *LocalBackend) ClusterShared() bool { return false }
+
+// SharedFSBackend uses the same atomic file operations as LocalBackend
+// but carries an explicit operator contract that the root is one
+// shared mount visible to every admitted Station node.
+type SharedFSBackend struct {
+	*LocalBackend
+}
+
+const sharedFSClusterIdentityFile = ".peers-cluster-backing-id"
+
+func NewSharedFSBackend(root string) *SharedFSBackend {
+	return &SharedFSBackend{LocalBackend: NewLocalBackend(root)}
+}
+
+func (b *SharedFSBackend) ClusterShared() bool { return true }
+
+func (b *SharedFSBackend) EnsureClusterBackingIdentity(
+	ctx context.Context,
+) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(b.root, 0o755); err != nil {
+		return "", fmt.Errorf("create shared-fs cluster root: %w", err)
+	}
+	path := filepath.Join(b.root, sharedFSClusterIdentityFile)
+	var candidate [32]byte
+	if _, err := rand.Read(candidate[:]); err != nil {
+		return "", fmt.Errorf("generate shared-fs cluster identity: %w", err)
+	}
+	temp, err := os.CreateTemp(b.root, ".peers-cluster-backing-id-*")
+	if err != nil {
+		return "", fmt.Errorf("stage shared-fs cluster identity: %w", err)
+	}
+	tempPath := temp.Name()
+	defer func() {
+		_ = temp.Close()
+		_ = os.Remove(tempPath)
+	}()
+	if err := temp.Chmod(0o600); err != nil {
+		return "", fmt.Errorf("protect shared-fs cluster identity: %w", err)
+	}
+	if _, err := fmt.Fprintf(
+		temp,
+		"%s\n",
+		hex.EncodeToString(candidate[:]),
+	); err != nil {
+		return "", fmt.Errorf("write shared-fs cluster identity: %w", err)
+	}
+	if err := temp.Sync(); err != nil {
+		return "", fmt.Errorf("sync shared-fs cluster identity: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		return "", fmt.Errorf("close shared-fs cluster identity: %w", err)
+	}
+	if err := os.Link(tempPath, path); err != nil && !errors.Is(err, os.ErrExist) {
+		return "", fmt.Errorf("publish shared-fs cluster identity: %w", err)
+	}
+
+	for attempt := 0; attempt < 20; attempt++ {
+		value, readErr := os.ReadFile(path)
+		if readErr == nil {
+			identity := strings.TrimSpace(string(value))
+			decoded, decodeErr := hex.DecodeString(identity)
+			if decodeErr == nil && len(decoded) == 32 {
+				return identity, nil
+			}
+		}
+		timer := time.NewTimer(25 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return "", ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return "", fmt.Errorf("shared-fs cluster identity is invalid")
+}
+
 // Save writes a reader to the given key and returns the full path.
 func (b *LocalBackend) Save(ctx context.Context, key string, r io.Reader) (string, error) {
 	full := filepath.Join(b.root, key)
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return "", err
 	}
-	f, err := os.Create(full)
+	f, err := os.CreateTemp(filepath.Dir(full), ".pt-object-*")
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	tempPath := f.Name()
+	defer func() {
+		_ = f.Close()
+		_ = os.Remove(tempPath)
+	}()
 	if _, err = io.Copy(f, r); err != nil {
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(tempPath, 0o644); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tempPath, full); err != nil {
 		return "", err
 	}
 	return full, nil

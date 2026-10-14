@@ -58,6 +58,16 @@ describe('AccessGateHost schema gate surface', () => {
     expect(source).toContain('<Select');
     expect(source).toContain('<InputNumber');
   });
+
+  it('keeps the Station-authored Continue action primary', () => {
+    const markup = renderGate([], {
+      decision: schemaDecision(),
+    });
+
+    expect(markup).toContain('common.continue');
+    expect(markup).toContain('ant-btn-primary');
+    expect(markup).not.toContain('auth-actions single');
+  });
 });
 
 describe('AccessGateHost advertised credential gating', () => {
@@ -138,6 +148,29 @@ describe('AccessGateHost attempt recovery', () => {
   });
 });
 
+describe('AccessGateHost entry surface inventory', () => {
+  it('projects distinct login, OAuth, pending, and expired-session surfaces', () => {
+    expect(renderGate([
+      action('auth.password', 'ACCESS_GATE_TYPE_AUTH_LOGIN', 'submit_login'),
+    ])).toContain('data-product-surface="entry.access-login"');
+    expect(renderGate([
+      action('auth.oauth', 'ACCESS_GATE_TYPE_AUTH_OAUTH', 'start_oauth'),
+    ])).toContain('data-product-surface="entry.access-oauth"');
+    expect(renderGate([], {
+      decision: {
+        state: 'ACCESS_DECISION_STATE_PENDING',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    })).toContain('data-product-surface="entry.access-pending"');
+    expect(renderGate([
+      action('auth.password', 'ACCESS_GATE_TYPE_AUTH_LOGIN', 'submit_login'),
+    ], {
+      forceSessionExpired: true,
+    })).toContain('data-product-surface="entry.session-expired"');
+  });
+});
+
 describe('AccessGateHost shared Auth identity', () => {
   it('uses the canonical Desktop logo asset in Mobile and its prototype', () => {
     const hash = (path: string) => createHash('sha256')
@@ -181,6 +214,13 @@ describe('AccessGateHost shared Auth identity', () => {
     expect(markup).not.toContain('10.37.94.156');
     expect(source.indexOf('<Card className="auth-gate-card"')).toBeLessThan(
       source.indexOf('<section className="auth-gate-brand">'),
+    );
+    expect(source).toContain('className="auth-gate-brand-copy"');
+  });
+
+  it('uses localized client copy for the known login gate', () => {
+    expect(source).toMatch(
+      /: showLogin\s*\?\s*t\('mobile\.auth\.subtitle'\)/,
     );
   });
 
@@ -231,6 +271,34 @@ function loginDecision(alternativeActions: AccessGateAction[]): AccessDecision {
       actionId: 'auth.password',
       schemaRevision: 1,
       schemaDigest: 'a'.repeat(64),
+    }],
+  };
+}
+
+function schemaDecision(): AccessDecision {
+  return {
+    state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+    attemptId: 'attempt-1',
+    currentGateId: 'terms.acceptance',
+    gates: [{
+      gateId: 'terms.acceptance',
+      type: 'ACCESS_GATE_TYPE_CUSTOM',
+      state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
+      title: 'Terms',
+      description: 'Review the current Station terms.',
+      submitAction: 'submit_generic',
+      inputSchemaJson: JSON.stringify({
+        fields: [{
+          name: 'accepted',
+          type: 'checkbox',
+          label: 'Accept',
+          required: true,
+        }],
+      }),
+      alternativeActions: [],
+      actionId: 'terms.acceptance',
+      schemaRevision: 1,
+      schemaDigest: 'b'.repeat(64),
     }],
   };
 }

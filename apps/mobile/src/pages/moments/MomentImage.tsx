@@ -30,14 +30,40 @@ export async function loadMomentImageObjectUrl(
   signal: AbortSignal,
   createObjectUrl: (blob: Blob) => string = URL.createObjectURL,
 ): Promise<string> {
-  return createObjectUrl(await gateway.loadImage(attachment, signal));
+  const blob = await gateway.loadImage(attachment, signal);
+  return momentImageRequiresDataUrl(
+    typeof navigator === 'undefined' ? '' : navigator.userAgent,
+  )
+    ? readBlobAsDataUrl(blob)
+    : createObjectUrl(blob);
+}
+
+export function momentImageRequiresDataUrl(userAgent: string): boolean {
+  return /\bAndroid\b/i.test(userAgent);
 }
 
 export function revokeMomentImageObjectUrl(
   source: string | null,
   revokeObjectUrl: (url: string) => void = URL.revokeObjectURL,
 ): void {
-  if (source) revokeObjectUrl(source);
+  if (source?.startsWith('blob:')) revokeObjectUrl(source);
+}
+
+function readBlobAsDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(
+      reader.error ?? new Error('mobile.moments.media.decodeFailed'),
+    );
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        reject(new Error('mobile.moments.media.decodeFailed'));
+        return;
+      }
+      resolve(reader.result);
+    };
+    reader.readAsDataURL(blob);
+  });
 }
 
 export function MomentImage({ attachment, alt }: MomentImageProps) {

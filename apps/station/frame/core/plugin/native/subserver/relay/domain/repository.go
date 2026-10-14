@@ -2,7 +2,15 @@ package domain
 
 import (
 	"context"
+	"errors"
 	"time"
+)
+
+var (
+	ErrInviteAlreadyConsumed = errors.New("invite already consumed or inactive")
+	ErrEnrollmentNotFound    = errors.New("enrollment not found")
+	ErrNodeCredentialStale   = errors.New("enrollment credential is stale")
+	ErrRelayCapacityFull     = errors.New("relay capacity exceeded")
 )
 
 // Repository defines all persistence operations the application layer needs.
@@ -12,19 +20,47 @@ type Repository interface {
 
 	// Invite operations
 	CreateInvite(ctx context.Context, invite *Invite) error
-	GetInviteByToken(ctx context.Context, token string) (*Invite, error)
-	ConsumeInvite(ctx context.Context, inviteID uint64, stationPeerID string) error
+	GetInviteBySecretDigest(ctx context.Context, secretDigest string) (*Invite, error)
 	ListInvites(ctx context.Context) ([]Invite, error)
 	RevokeInvite(ctx context.Context, inviteID uint64) error
 	ExpireStaleInvites(ctx context.Context) (int64, error)
 
-	// Mount operations
-	CreateMount(ctx context.Context, mount *Mount) error
-	GetMountByStationPeerID(ctx context.Context, stationPeerID string) (*Mount, error)
-	UpdateMountStatus(ctx context.Context, stationPeerID string, status MountStatus) error
-	UpdateHeartbeat(ctx context.Context, stationPeerID string) error
-	ListOnlineMounts(ctx context.Context) ([]Mount, error)
-	CountOnlineMounts(ctx context.Context) (int64, error)
-	MarkStaleOffline(ctx context.Context, timeout time.Duration) (int64, error)
-	DeleteMount(ctx context.Context, stationPeerID string) error
+	// Enrollment operations
+	ConsumeInviteAndCreateEnrollment(
+		ctx context.Context,
+		inviteID uint64,
+		enrollment *Enrollment,
+		maxStations int,
+	) (*Enrollment, error)
+	GetEnrollment(
+		ctx context.Context,
+		stationPeerID string,
+		nodePeerID string,
+	) (*Enrollment, error)
+	UpdateEnrollmentStatus(
+		ctx context.Context,
+		stationPeerID string,
+		nodePeerID string,
+		generation uint64,
+		status EnrollmentStatus,
+	) error
+	RotateNodeCredential(
+		ctx context.Context,
+		current NodeIdentity,
+		nextCredentialJTI string,
+	) (*Enrollment, error)
+	UpdateNodeAuthorization(
+		ctx context.Context,
+		current NodeIdentity,
+		nodeAuthorizationEpoch uint64,
+		nodeAuthorizationUntil time.Time,
+	) error
+	RevokeEnrollment(
+		ctx context.Context,
+		stationPeerID string,
+		nodePeerID string,
+	) (*Enrollment, error)
+	ListAdmittedEnrollments(ctx context.Context) ([]Enrollment, error)
+	ListOnlineEnrollments(ctx context.Context) ([]Enrollment, error)
+	CountOnlineEnrollments(ctx context.Context) (int64, error)
 }

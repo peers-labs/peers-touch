@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/peer/station_identity.proto.
  */
 export const file_domain_peer_station_identity: GenFile = /*@__PURE__*/
-  fileDesc("CiJkb21haW4vcGVlci9zdGF0aW9uX2lkZW50aXR5LnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5wZWVyLnYxIisKFlN0YXRpb25JZGVudGl0eVJlcXVlc3QSEQoJY2hhbGxlbmdlGAEgASgMIq0BChhTdGF0aW9uSWRlbnRpdHlTdGF0ZW1lbnQSEQoJY2hhbGxlbmdlGAEgASgMEhcKD3N0YXRpb25fcGVlcl9pZBgCIAEoCRIYChBjYW5vbmljYWxfb3JpZ2luGAMgASgJEhQKDGNhcGFiaWxpdGllcxgEIAMoCRIZChFpc3N1ZWRfYXRfdW5peF9tcxgFIAEoAxIaChJleHBpcmVzX2F0X3VuaXhfbXMYBiABKAMiXgoXU3RhdGlvbklkZW50aXR5UmVzcG9uc2USFwoPc3RhdGVtZW50X2J5dGVzGAEgASgMEhcKD2hvc3RfcHVibGljX2tleRgCIAEoDBIRCglzaWduYXR1cmUYAyABKAxCR1pFZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvcGVlcjtwZWVyYgZwcm90bzM");
+  fileDesc("CiJkb21haW4vcGVlci9zdGF0aW9uX2lkZW50aXR5LnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5wZWVyLnYxIisKFlN0YXRpb25JZGVudGl0eVJlcXVlc3QSEQoJY2hhbGxlbmdlGAEgASgMIiwKFFN0YXRpb25DYXBhYmlsaXR5U2V0EhQKDGNhcGFiaWxpdGllcxgBIAMoCSLcAQohU3RhdGlvbk5vZGVBdXRob3JpemF0aW9uU3RhdGVtZW50EhcKD3N0YXRpb25fcGVlcl9pZBgBIAEoCRIUCgxub2RlX3BlZXJfaWQYAiABKAkSFwoPbm9kZV9wdWJsaWNfa2V5GAMgASgMEhsKE2F1dGhvcml6YXRpb25fZXBvY2gYBCABKAQSGwoTY2FwYWJpbGl0aWVzX2RpZ2VzdBgFIAEoDBIZChFpc3N1ZWRfYXRfdW5peF9tcxgGIAEoAxIaChJleHBpcmVzX2F0X3VuaXhfbXMYByABKAMibAoYU3RhdGlvbk5vZGVBdXRob3JpemF0aW9uEhcKD3N0YXRlbWVudF9ieXRlcxgBIAEoDBIfChdzdGF0aW9uX3Jvb3RfcHVibGljX2tleRgCIAEoDBIWCg5yb290X3NpZ25hdHVyZRgDIAEoDCLQAQoYU3RhdGlvbklkZW50aXR5U3RhdGVtZW50EhEKCWNoYWxsZW5nZRgBIAEoDBIXCg9zdGF0aW9uX3BlZXJfaWQYAiABKAkSGAoQY2Fub25pY2FsX29yaWdpbhgDIAEoCRIUCgxjYXBhYmlsaXRpZXMYBCADKAkSGQoRaXNzdWVkX2F0X3VuaXhfbXMYBSABKAMSGgoSZXhwaXJlc19hdF91bml4X21zGAYgASgDEiEKGW5vZGVfYXV0aG9yaXphdGlvbl9kaWdlc3QYByABKAwipwEKF1N0YXRpb25JZGVudGl0eVJlc3BvbnNlEhcKD3N0YXRlbWVudF9ieXRlcxgBIAEoDBIWCg5ub2RlX3NpZ25hdHVyZRgEIAEoDBJPChJub2RlX2F1dGhvcml6YXRpb24YBSABKAsyMy5wZWVyc190b3VjaC5tb2RlbC5wZWVyLnYxLlN0YXRpb25Ob2RlQXV0aG9yaXphdGlvbkoECAIQA0oECAMQBEJHWkVnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9wZWVyO3BlZXJiBnByb3RvMw");
 
 /**
  * StationIdentityRequest is sent before authentication. Challenge must contain
@@ -33,8 +33,105 @@ export const StationIdentityRequestSchema: GenMessage<StationIdentityRequest> = 
   messageDesc(file_domain_peer_station_identity, 0);
 
 /**
- * StationIdentityStatement is the deterministic payload signed by the
- * Station's libp2p Ed25519 host key. Capabilities are sorted by UTF-8 bytes.
+ * StationCapabilitySet is sorted by UTF-8 bytes before deterministic
+ * serialization and hashing.
+ *
+ * @generated from message peers_touch.model.peer.v1.StationCapabilitySet
+ */
+export type StationCapabilitySet = Message<"peers_touch.model.peer.v1.StationCapabilitySet"> & {
+  /**
+   * @generated from field: repeated string capabilities = 1;
+   */
+  capabilities: string[];
+};
+
+/**
+ * Describes the message peers_touch.model.peer.v1.StationCapabilitySet.
+ * Use `create(StationCapabilitySetSchema)` to create a new message.
+ */
+export const StationCapabilitySetSchema: GenMessage<StationCapabilitySet> = /*@__PURE__*/
+  messageDesc(file_domain_peer_station_identity, 1);
+
+/**
+ * StationNodeAuthorizationStatement delegates one logical Station root to one
+ * independently keyed physical node.
+ *
+ * @generated from message peers_touch.model.peer.v1.StationNodeAuthorizationStatement
+ */
+export type StationNodeAuthorizationStatement = Message<"peers_touch.model.peer.v1.StationNodeAuthorizationStatement"> & {
+  /**
+   * @generated from field: string station_peer_id = 1;
+   */
+  stationPeerId: string;
+
+  /**
+   * @generated from field: string node_peer_id = 2;
+   */
+  nodePeerId: string;
+
+  /**
+   * @generated from field: bytes node_public_key = 3;
+   */
+  nodePublicKey: Uint8Array;
+
+  /**
+   * @generated from field: uint64 authorization_epoch = 4;
+   */
+  authorizationEpoch: bigint;
+
+  /**
+   * @generated from field: bytes capabilities_digest = 5;
+   */
+  capabilitiesDigest: Uint8Array;
+
+  /**
+   * @generated from field: int64 issued_at_unix_ms = 6;
+   */
+  issuedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 expires_at_unix_ms = 7;
+   */
+  expiresAtUnixMs: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.peer.v1.StationNodeAuthorizationStatement.
+ * Use `create(StationNodeAuthorizationStatementSchema)` to create a new message.
+ */
+export const StationNodeAuthorizationStatementSchema: GenMessage<StationNodeAuthorizationStatement> = /*@__PURE__*/
+  messageDesc(file_domain_peer_station_identity, 2);
+
+/**
+ * @generated from message peers_touch.model.peer.v1.StationNodeAuthorization
+ */
+export type StationNodeAuthorization = Message<"peers_touch.model.peer.v1.StationNodeAuthorization"> & {
+  /**
+   * @generated from field: bytes statement_bytes = 1;
+   */
+  statementBytes: Uint8Array;
+
+  /**
+   * @generated from field: bytes station_root_public_key = 2;
+   */
+  stationRootPublicKey: Uint8Array;
+
+  /**
+   * @generated from field: bytes root_signature = 3;
+   */
+  rootSignature: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.peer.v1.StationNodeAuthorization.
+ * Use `create(StationNodeAuthorizationSchema)` to create a new message.
+ */
+export const StationNodeAuthorizationSchema: GenMessage<StationNodeAuthorization> = /*@__PURE__*/
+  messageDesc(file_domain_peer_station_identity, 3);
+
+/**
+ * StationIdentityStatement is the deterministic challenge-bound payload signed
+ * by the authorized node key. Capabilities are sorted by UTF-8 bytes.
  *
  * @generated from message peers_touch.model.peer.v1.StationIdentityStatement
  */
@@ -68,6 +165,11 @@ export type StationIdentityStatement = Message<"peers_touch.model.peer.v1.Statio
    * @generated from field: int64 expires_at_unix_ms = 6;
    */
   expiresAtUnixMs: bigint;
+
+  /**
+   * @generated from field: bytes node_authorization_digest = 7;
+   */
+  nodeAuthorizationDigest: Uint8Array;
 };
 
 /**
@@ -75,7 +177,7 @@ export type StationIdentityStatement = Message<"peers_touch.model.peer.v1.Statio
  * Use `create(StationIdentityStatementSchema)` to create a new message.
  */
 export const StationIdentityStatementSchema: GenMessage<StationIdentityStatement> = /*@__PURE__*/
-  messageDesc(file_domain_peer_station_identity, 1);
+  messageDesc(file_domain_peer_station_identity, 4);
 
 /**
  * @generated from message peers_touch.model.peer.v1.StationIdentityResponse
@@ -87,14 +189,14 @@ export type StationIdentityResponse = Message<"peers_touch.model.peer.v1.Station
   statementBytes: Uint8Array;
 
   /**
-   * @generated from field: bytes host_public_key = 2;
+   * @generated from field: bytes node_signature = 4;
    */
-  hostPublicKey: Uint8Array;
+  nodeSignature: Uint8Array;
 
   /**
-   * @generated from field: bytes signature = 3;
+   * @generated from field: peers_touch.model.peer.v1.StationNodeAuthorization node_authorization = 5;
    */
-  signature: Uint8Array;
+  nodeAuthorization?: StationNodeAuthorization | undefined;
 };
 
 /**
@@ -102,4 +204,4 @@ export type StationIdentityResponse = Message<"peers_touch.model.peer.v1.Station
  * Use `create(StationIdentityResponseSchema)` to create a new message.
  */
 export const StationIdentityResponseSchema: GenMessage<StationIdentityResponse> = /*@__PURE__*/
-  messageDesc(file_domain_peer_station_identity, 2);
+  messageDesc(file_domain_peer_station_identity, 5);

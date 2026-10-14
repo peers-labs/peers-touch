@@ -1,0 +1,120 @@
+{
+  "id": "mobile-social-ios-simulator",
+  "base_environment": "mobile-simulator",
+  "profile": {
+    "required": false,
+    "identity_match": false
+  },
+  "source_identity": {
+    "commit_required": true,
+    "workspace_digest_required": true
+  },
+  "services": {
+    "station": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_MOBILE_DIRECT_STATION_URL",
+      "deployment_environment_ref": "env:PT_MOBILE_DIRECT_STATION_DEPLOY_ENV",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    }
+  },
+  "fixtures": [
+    {
+      "id": "mobile-social-ios-existing-actors",
+      "authorization_required": false,
+      "target_assertion": "the Station is an approved non-stable development target",
+      "initial_assertion": "Alice, Bob and Eve already exist with distinct canonical PTIDs on one Station"
+    }
+  ],
+  "credentials": [],
+  "clients": [
+    {
+      "id": "sim-ios",
+      "actor": "alice",
+      "runtime": "tauri-ios-simulator",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "sim-ios-peer",
+      "actor": "bob",
+      "runtime": "tauri-ios-simulator",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station",
+          "required_kind": "station"
+        }
+      }
+    }
+  ],
+  "harness": {
+    "namespace": "__PEERS_MOBILE_ACCEPTANCE__",
+    "required_actions": [
+      "station.add",
+      "access.submit",
+      "lifecycle.restart",
+      "lifecycle.scope.read",
+      "session.logout",
+      "navigation.snapshot",
+      "navigation.apply",
+      "projection.read",
+      "messaging.createDirect",
+      "messaging.createGroup",
+      "messaging.reconcile",
+      "messaging.projection.read",
+      "social.people.search",
+      "social.request.send",
+      "social.request.accept",
+      "social.reconcile",
+      "social.projection.read",
+      "reliability.draft.write",
+      "reliability.draft.read",
+      "reliability.draft.action",
+      "recovery.snapshot",
+      "moments.feed.read",
+      "moments.publish",
+      "moments.private.read",
+      "moments.private.comment.submit",
+      "moments.private.reconcile",
+      "moments.private.snapshot",
+      "cleanup"
+    ],
+    "policy": "production actions only; UI actions and receiver assertions remain mandatory"
+  },
+  "proof_scope": {
+    "proves": [
+      "one source-attested Station and three verified existing actors",
+      "two isolated iOS Simulator clients",
+      "one reusable Suite Runtime for six MPS-RC01 scenarios",
+      "real Mobile UI actions and receiver-visible Social assertions",
+      "account-switch scope isolation without destructive account reset"
+    ],
+    "does_not_prove": [
+      "Android behavior",
+      "cross-Station or Relay delivery",
+      "Desktop interoperability",
+      "full SOCIAL_MOBILE_DESKTOP_PARITY_PROVEN"
+    ]
+  },
+  "cleanup": {
+    "resources": [
+      "appium-process",
+      "app-installations",
+      "ports",
+      "storage",
+      "simulator-boot",
+      "profile-leases",
+      "deployment-leases"
+    ],
+    "deterministic": true
+  }
+}

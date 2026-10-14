@@ -29,6 +29,7 @@ import {
 import { useMobileI18n } from '../app/mobileI18n';
 import type { MobileChatDetailRoute } from '../app/navigation';
 import { readRouteQuery, saveRouteQuery } from '../app/navigation/scrollRestoration';
+import { useChatSurfaceFixture } from '../acceptance/chatSurfaceFixture';
 import { BoundedList, type BoundedListHandle } from '../components/BoundedList';
 import { MobileNotice } from '../components/MobileNotice';
 import type { MobileAuthSession } from '../features/auth/authSession';
@@ -94,7 +95,6 @@ import {
   conversationAvatar,
   conversationTitle,
   formatRelativeTime,
-  stationHostFromUrl,
   friendSettingsToActionState,
   messageTimestampMillis,
   chatMessageAttachments,
@@ -114,6 +114,7 @@ import { MemberRole } from '../gen/proto/domain/chat/conversation_pb';
 import { ChatStorageOperationState } from '../gen/proto/domain/chat/storage_pb';
 import { MobileDraftSurfaceKind } from '../gen/proto/domain/mobile/reliability_pb';
 import { getDraftRestorationPort } from '../runtimes/commandRuntime';
+import { secureRandomUuid } from '../utils/randomIdentity';
 import {
   chatStorageReleasedBytes,
   mobileChatStorageProjectionRuntime,
@@ -146,6 +147,7 @@ import {
   messageKey,
 } from './chat/ChatMessageSectionBoundary';
 import {
+  ChatDestructiveConfirmSheet,
   ChatActionSheet,
   ChatOverlayHost,
   ForwardMessageSheet,
@@ -153,6 +155,7 @@ import {
   MessageActionSheet,
   type MessageForwardDestination,
 } from './chat/ChatOverlayHost';
+import { ChatAcceptanceSurface } from './chat/ChatAcceptanceSurface';
 import {
   chatActionStateMatchesPatch,
   conversationSettingsFeedback,
@@ -219,15 +222,25 @@ class ChatMountGuard extends Component<{
 
 interface ChatPageProps {
   readonly activeDetail: MobileChatDetailRoute | null;
+  readonly onStartConversation: () => void;
   readonly onOpenConversation: (route: MobileChatDetailRoute) => void;
   readonly onBack: () => void;
 }
 
 export function ChatPage(props: ChatPageProps) {
   const { t } = useMobileI18n();
+  const chatFixture = useChatSurfaceFixture();
+  if (chatFixture.surfaceId) {
+    return (
+      <ChatAcceptanceSurface
+        key={`${chatFixture.surfaceId}:${chatFixture.revision}`}
+        surfaceId={chatFixture.surfaceId}
+      />
+    );
+  }
   return (
     <ChatMountGuard fallback={(retry) => (
-      <section className="mobile-page" data-testid="chat-render-error" role="alert">
+      <section className="mobile-page" data-testid="chat-render-error" role="alert" data-product-surface="chat.list-error">
         <MobileNotice tone="error">{t('mobile.chat.renderFailed')}</MobileNotice>
         <Button icon={<RotateCcw size={16} />} onClick={retry}>
           {t('common.action.retry')}
@@ -241,6 +254,7 @@ export function ChatPage(props: ChatPageProps) {
 
 function ChatPageInner({
   activeDetail,
+  onStartConversation,
   onOpenConversation,
   onBack,
 }: ChatPageProps) {
@@ -277,6 +291,9 @@ function ChatPageInner({
   const [messageActionUlid, setMessageActionUlid] = useState('');
   const [forwardMessageSource, setForwardMessageSource] = useState<ForwardMessageSource | null>(null);
   const [forwardPendingDestinationId, setForwardPendingDestinationId] = useState('');
+  const [forwardError, setForwardError] = useState('');
+  const [clearHistoryConfirmOpen, setClearHistoryConfirmOpen] = useState(false);
+  const [clearHistoryBusy, setClearHistoryBusy] = useState(false);
   const [localActionError, setLocalActionError] = useState('');
   const messageWindow = useRef<BoundedListHandle>(null);
 
@@ -573,6 +590,9 @@ function ChatPageInner({
     setMessageActionUlid('');
     setForwardMessageSource(null);
     setForwardPendingDestinationId('');
+    setForwardError('');
+    setClearHistoryConfirmOpen(false);
+    setClearHistoryBusy(false);
     conversationSettingsAttemptRef.current += 1;
     conversationSettingsPendingRef.current = false;
     setConversationSettingsState(IDLE_CONVERSATION_SETTINGS_FEEDBACK);
@@ -1030,7 +1050,7 @@ function ChatPageInner({
     setLocalActionError('');
     try {
       const selected = Array.from(files).map((file) => ({
-        id: globalThis.crypto.randomUUID(),
+        id: secureRandomUuid('mobile.chat.attachmentIdentityUnavailable'),
         file,
         filename: file.name,
         mimeType: file.type || 'application/octet-stream',
@@ -1058,7 +1078,7 @@ function ChatPageInner({
       || Boolean(pendingAttachmentSubmission),
     onRecorded: ({ file, metadata }) => {
       const item: MobileChatAttachmentDraft = {
-        id: globalThis.crypto.randomUUID(),
+        id: secureRandomUuid('mobile.chat.attachmentIdentityUnavailable'),
         file,
         filename: file.name,
         mimeType: file.type || metadata.codec,
@@ -1184,6 +1204,7 @@ function ChatPageInner({
     if (!activeConversationId) return;
     setActionSheetOpen(false);
     setLocalActionError('');
+    setClearHistoryBusy(true);
     try {
       const result = await mobileChatStorageProjectionRuntime
         .clearConversation(activeConversationId);
@@ -1198,6 +1219,7 @@ function ChatPageInner({
       }
       const releasedBytes = chatStorageReleasedBytes(result) ?? 0n;
       await selectSession(activeConversationId);
+      setClearHistoryConfirmOpen(false);
       Modal.success({
         title: t('mobile.chat.clearHistorySuccessTitle'),
         content: (
@@ -1213,6 +1235,8 @@ function ChatPageInner({
       });
     } catch (error) {
       setLocalActionError(formatChatOperationError(error));
+    } finally {
+      setClearHistoryBusy(false);
     }
   };
 
@@ -1297,7 +1321,7 @@ function ChatPageInner({
 
   const forwardSelectedMessage = async (destination: MessageForwardDestination) => {
     if (!authSession || !forwardMessageSource || forwardPendingDestinationId) return;
-    setLocalActionError('');
+    setForwardError('');
     setForwardPendingDestinationId(destination.conversationId);
     try {
       await dispatchForwardMessage(
@@ -1308,10 +1332,8 @@ function ChatPageInner({
         destination.conversationId,
       );
       setForwardMessageSource(null);
-    } catch (operationError) {
-      setLocalActionError(
-        `${t('mobile.chat.operationForwardFailed')}: ${formatChatOperationError(operationError)}`,
-      );
+    } catch {
+      setForwardError(t('mobile.chat.operationForwardFailed'));
     } finally {
       setForwardPendingDestinationId('');
     }
@@ -1335,14 +1357,13 @@ function ChatPageInner({
       ? Boolean(friendshipStatus[activeConversation.peerPtid]?.blocked)
       : false;
     const peerMessageAvatar = peerProfile?.avatar || activeConversation?.peerAvatar || '';
-    const stationName = stationHostFromUrl(authSession?.stationUrl);
     const conversationSubtitle = peerTyping
       ? t('mobile.chat.typing')
       : activeGroupConversation
         ? t('mobile.group.memberCount', {
             count: activeGroupConversation.projection.memberPtids.length,
           })
-        : t('mobile.chat.peerAtStation', { station: stationName });
+        : t('mobile.chat.encrypted');
 
     const visibleMessages = history.visible;
     const messageCommandOutcomes = friendMessageCommandOutcomes;
@@ -1381,6 +1402,9 @@ function ChatPageInner({
       <ChatThreadPageContent
         activeInputPanel={chatBottomOcclusion.activePanel}
         keyboardOverlapHeight={chatBottomOcclusion.keyboardOverlapHeight}
+        productSurface={isGroupThread
+          ? 'chat.group-thread'
+          : 'chat.direct-thread'}
         style={chatThreadStyle}
         tabBarVisible={chatBottomOcclusion.tabBarVisible}
       >
@@ -1398,6 +1422,9 @@ function ChatPageInner({
           </button>
           {threadSearchOpen ? (
             <>
+              <h1 className="chat-search-title">
+                {t('mobile.chat.quickSearch')}
+              </h1>
               <Input.Search className="chat-header-search" value={threadSearchQuery} onChange={(e) => { setThreadSearchQuery(e.target.value); historySearch.clear(); }} prefix={<Search size={16} />} placeholder={t('mobile.chat.searchMessagesPlaceholder')} autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} allowClear loading={historySearch.loading} onSearch={historySearch.search} />
               <button className="header-action" type="button" onClick={() => { setThreadSearchOpen(false); setThreadSearchQuery(''); historySearch.clear(); }} aria-label={t('common.action.cancel')}><X size={18} /></button>
             </>
@@ -1420,10 +1447,10 @@ function ChatPageInner({
                               activeConversation.peerPtid,
                               'audio',
                             ),
-                            'mobile.call.operationFailed',
+                            'mobile.chat.callFailed',
                           );
                         }}
-                        aria-label={t('mobile.call.startAudio')}
+                        aria-label={t('mobile.chat.startAudioCall')}
                       >
                         <Phone size={19} />
                       </button>
@@ -1436,10 +1463,10 @@ function ChatPageInner({
                               activeConversation.peerPtid,
                               'video',
                             ),
-                            'mobile.call.operationFailed',
+                            'mobile.chat.callFailed',
                           );
                         }}
-                        aria-label={t('mobile.call.startVideo')}
+                        aria-label={t('mobile.chat.startVideoCall')}
                       >
                         <Video size={20} />
                       </button>
@@ -1468,11 +1495,8 @@ function ChatPageInner({
             onToggleAlert={() => { void updateChatActionState(activeKey, { alertEnabled: !actionState.alertEnabled }); }}
             onSelectBackground={(bg) => { void updateChatActionState(activeKey, { background: bg }); }}
             onClearHistory={() => {
-              Modal.confirm({
-                title: t('mobile.chat.clearHistoryConfirmTitle'), content: t('mobile.chat.clearHistoryConfirmBody'),
-                okText: t('mobile.chat.quickClearHistory'), cancelText: t('common.action.cancel'), okButtonProps: { danger: true },
-                onOk: clearConversationData,
-              });
+              setActionSheetOpen(false);
+              setClearHistoryConfirmOpen(true);
             }}
             isFriendThread={Boolean(activeConversation)}
             onManageGroup={activeGroupConversation ? () => {
@@ -1619,11 +1643,26 @@ function ChatPageInner({
             open={Boolean(forwardMessageSource)}
             destinations={forwardDestinations}
             pendingDestinationId={forwardPendingDestinationId}
+            error={forwardError}
             onClose={() => {
-              if (!forwardPendingDestinationId) setForwardMessageSource(null);
+              if (!forwardPendingDestinationId) {
+                setForwardMessageSource(null);
+                setForwardError('');
+              }
             }}
             onSelect={(destination) => {
               void forwardSelectedMessage(destination);
+            }}
+          />
+
+          <ChatDestructiveConfirmSheet
+            open={clearHistoryConfirmOpen}
+            busy={clearHistoryBusy}
+            onCancel={() => {
+              if (!clearHistoryBusy) setClearHistoryConfirmOpen(false);
+            }}
+            onConfirm={() => {
+              void clearConversationData();
             }}
           />
 
@@ -1690,7 +1729,14 @@ function ChatPageInner({
         {localActionError ? <MobileNotice onClose={() => setLocalActionError('')}>{localActionError}</MobileNotice> : null}
 
         {threadSearchQuery.trim() ? (
-          <section className="message-search-panel">
+          <section
+            className="message-search-panel"
+            data-product-surface={submittedSearch && historySearch.error
+              ? 'chat.thread-search-error'
+              : threadSearchResults.length === 0
+                ? 'chat.thread-search-empty'
+                : 'chat.thread-search'}
+          >
             {submittedSearch && historySearch.loading ? <Spin /> : submittedSearch && historySearch.error ? (
               <MobileNotice tone="error">
                 {t('mobile.chat.searchFailed')}
@@ -1813,7 +1859,10 @@ function ChatPageInner({
                 </div>
               ) : null}
               {voiceRecorder.recording ? (
-                <div className="message-composer-panel voice-recording-panel">
+                <div
+                  className="message-composer-panel voice-recording-panel"
+                  data-product-surface="chat.voice-recording"
+                >
                   <span className="voice-recording-status">
                     <span className="voice-recording-dot" />
                     <Text>{t('chat.social.composer.recording', { seconds: voiceRecorder.recordingSeconds })}</Text>
@@ -1829,7 +1878,14 @@ function ChatPageInner({
                 </div>
               ) : null}
               {attachmentDrafts.length > 0 || encryptedAttachmentRefs.length > 0 ? (
-                <div className="message-composer-panel attachment-draft-panel">
+                <div
+                  className="message-composer-panel attachment-draft-panel"
+                  data-product-surface={attachmentUploading
+                    ? 'chat.attachment-uploading'
+                    : attachmentStagingFailed
+                      ? 'chat.attachment-failed'
+                      : 'chat.attachment-ready'}
+                >
                   {attachmentDrafts.map((item) => (
                     <AttachmentDraftChip
                       key={item.id}
@@ -1864,6 +1920,13 @@ function ChatPageInner({
               className="message-composer-surface"
               ref={chatBottomOcclusion.composerRef}
             >
+              <span
+                className="chat-keyboard-context"
+                role="heading"
+                aria-level={1}
+              >
+                {headerTitle}
+              </span>
               {editingMessage ? (
                 <div className="message-editing-banner">
                   <Text type="secondary" ellipsis>{t('mobile.chat.editing')}</Text>
@@ -1889,11 +1952,13 @@ function ChatPageInner({
                   <button type="button" className={`message-composer-tool ${composerEmojiOpen ? 'active' : ''}`} aria-label={t('mobile.chat.composerEmoji')} onClick={() => { composerInputRef.current?.blur(); setComposerEmojiOpen((o) => !o); setComposerMoreOpen(false); }} disabled={voiceRecorder.recording || Boolean(pendingAttachmentSubmission)}><Smile size={18} /></button>
                 ) : null}
                 <Input ref={composerInputRef} className="message-composer-input" value={draft} onChange={(e) => handleDraftChange(e.target.value)}
+                  data-product-surface={chatBottomOcclusion.keyboardOverlapHeight > 0 ? 'chat.composer-keyboard' : undefined}
                   onFocus={() => { setComposerEmojiOpen(false); setComposerMoreOpen(false); }}
                   onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; lastCompositionEndRef.current = Date.now(); }}
                   onKeyDown={handleComposerKeyDown} placeholder={t(threadRootMessageUlid ? 'mobile.chat.threadReplyPlaceholder' : 'mobile.chat.messagePlaceholder')} disabled={voiceRecorder.recording || Boolean(pendingAttachmentSubmission)} autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} />
                 <button type="button" className={`message-composer-tool ${composerMoreOpen ? 'active' : ''}`} aria-label={t('mobile.chat.composerMore')} onClick={() => { composerInputRef.current?.blur(); setComposerMoreOpen((o) => !o); setComposerEmojiOpen(false); }} disabled={voiceRecorder.recording || Boolean(editingMessage) || Boolean(pendingAttachmentSubmission)}><Plus size={18} /></button>
                 <Button className="message-send-button" type="primary" icon={<Send size={16} />}
+                  aria-label={t('common.action.send')}
                   disabled={voiceRecorder.recording || !canSubmitChatComposerDraft({ text: draft, attachmentCount: readyChatAttachmentStages(attachmentDrafts).length, capabilities: MOBILE_THREAD_COMPOSER_CAPABILITIES }) || attachmentUploading || attachmentStagingFailed || encryptedAttachmentRefs.length > 0 || Boolean(pendingAttachmentSubmission)}
                   loading={attachmentUploading || Boolean(pendingAttachmentSubmission)}
                   onClick={() => void runChatOperation(submitMessage, 'mobile.chat.operationSendFailed')} />
@@ -1925,6 +1990,7 @@ function ChatPageInner({
       onDismissLocalError={() => setLocalActionError('')}
       onDismissSocialError={clearSocialError}
       onDismissGroupError={() => undefined}
+      onStartConversation={onStartConversation}
       onOpenConversation={openConversation}
     />
   );

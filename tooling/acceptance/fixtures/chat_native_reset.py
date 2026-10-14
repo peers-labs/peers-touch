@@ -38,6 +38,8 @@ RESET_PROFILE_AUTHORIZATION_ENV = "CHAT_ACCEPTANCE_RESET_PROFILE"
 RESET_ENVIRONMENTS_AUTHORIZATION_ENV = (
     "CHAT_ACCEPTANCE_RESET_ENVIRONMENTS"
 )
+RUNTIME_DESCRIPTOR_ENV = "PT_ACCEPTANCE_RUNTIME_DESCRIPTOR"
+RUNTIME_DESCRIPTOR_KIND = "acceptance-disposable-runtime-descriptor"
 SOCIAL_RELATIONSHIP_PROTO = "domain/social/relationship.proto"
 SOCIAL_PROTO_ROOT = REPO_ROOT / "model"
 FIXTURE_FRIENDSHIP_CREATED_AT_UNIX = 1788739200
@@ -74,6 +76,10 @@ CHAT_TABLES = (
     "federation_delivery_inbox",
     "federation_delivery_outbox",
     "friend_chat_friendships",
+    "key_exchange_content_prekey_claim_receipts",
+    "key_exchange_content_prekey_pools",
+    "key_exchange_content_prekey_publication_receipts",
+    "key_exchange_content_prekeys",
     "key_exchange_direct_fetch_receipts",
     "key_exchange_identity_keys",
     "key_exchange_mls_fetch_receipts",
@@ -270,6 +276,120 @@ def _deployment_compose_project(environment: dict[str, str]) -> str:
     )
 
 
+def _runtime_descriptor_environment(
+    station_url: str,
+    environment_name: str | None,
+) -> dict[str, str] | None:
+    raw_path = os.environ.get(RUNTIME_DESCRIPTOR_ENV, "").strip()
+    if not raw_path:
+        return None
+    source_path = Path(raw_path).expanduser()
+    if source_path.is_symlink():
+        raise RuntimeError("Chat Acceptance runtime descriptor is unavailable")
+    path = source_path.resolve()
+    if not path.is_file():
+        raise RuntimeError("Chat Acceptance runtime descriptor is unavailable")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(
+            "Chat Acceptance runtime descriptor is invalid"
+        ) from error
+    if not isinstance(payload, dict) or payload.get(
+        "artifactKind"
+    ) != RUNTIME_DESCRIPTOR_KIND:
+        raise RuntimeError(
+            "Chat Acceptance runtime descriptor has an invalid artifact kind"
+        )
+    selected_environment = str(payload.get("environmentName") or "")
+    if (
+        not SAFE_RUNTIME_NAME.fullmatch(selected_environment)
+        or (
+            environment_name is not None
+            and selected_environment != environment_name
+        )
+    ):
+        raise RuntimeError(
+            "Chat Acceptance runtime descriptor environment mismatch"
+        )
+    run_id = str(payload.get("runId") or "")
+    expected_run_id = os.environ.get("PT_ACCEPTANCE_RUN_ID", "").strip()
+    if (
+        not re.fullmatch(r"[0-9a-f]{16}", run_id)
+        or (expected_run_id and payload.get("evidenceRunId") != expected_run_id)
+    ):
+        raise RuntimeError(
+            "Chat Acceptance runtime descriptor run identity mismatch"
+        )
+    host = str(payload.get("host") or "")
+    user = str(payload.get("user") or "")
+    expected_station_url = str(payload.get("stationUrl") or "").rstrip("/")
+    parsed = urllib.parse.urlparse(expected_station_url)
+    compose_project = str(payload.get("composeProject") or "")
+    station_service = str(payload.get("stationService") or "")
+    station_container = str(payload.get("stationContainer") or "")
+    postgres_container = str(payload.get("postgresContainer") or "")
+    postgres_volume = str(payload.get("postgresVolume") or "")
+    safe_runtime_values = (
+        compose_project,
+        station_service,
+        station_container,
+        postgres_container,
+        postgres_volume,
+    )
+    if (
+        not host
+        or not user
+        or parsed.scheme not in {"http", "https"}
+        or parsed.hostname != host
+        or parsed.port is None
+        or parsed.port in PROTECTED_CLEANUP_PORTS
+        or parsed.path not in {"", "/"}
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or not compose_project.startswith("pt-ncp-")
+        or any(
+            not SAFE_RUNTIME_NAME.fullmatch(value)
+            for value in safe_runtime_values
+        )
+        or station_container
+        != f"{compose_project}-{station_service}-1"
+        or postgres_container != f"{compose_project}-postgres-1"
+        or postgres_volume != f"{compose_project}_postgres-data"
+    ):
+        raise RuntimeError(
+            "Chat Acceptance runtime descriptor topology is invalid"
+        )
+    if station_url and station_url.rstrip("/") != expected_station_url:
+        raise RuntimeError(
+            "Chat Acceptance runtime descriptor Station URL mismatch"
+        )
+    ssh_port = str(payload.get("sshPort") or "22")
+    if not ssh_port.isdecimal() or not 1 <= int(ssh_port) <= 65535:
+        raise RuntimeError(
+            "Chat Acceptance runtime descriptor SSH port is invalid"
+        )
+    return {
+        "PT_ACCEPTANCE_RUNTIME_KIND": "remote-compose",
+        "PT_ACCEPTANCE_DISPOSABLE": "1",
+        "PT_ACCEPTANCE_ENVIRONMENT": selected_environment,
+        "PT_ACCEPTANCE_STATION_URL": expected_station_url,
+        "PT_ACCEPTANCE_COMPOSE_PROJECT": compose_project,
+        "PT_ACCEPTANCE_STATION_SERVICE": station_service,
+        "PT_ACCEPTANCE_STATION_CONTAINER": station_container,
+        "PT_ACCEPTANCE_POSTGRES_CONTAINER": postgres_container,
+        "PT_ACCEPTANCE_POSTGRES_VOLUME": postgres_volume,
+        "PT_DEPLOY_HOST": host,
+        "PT_DEPLOY_USER": user,
+        "PT_DEPLOY_PORT": ssh_port,
+        "PT_DEPLOY_SSH_PORT": ssh_port,
+        "PT_DEPLOY_KNOWN_HOSTS_FILE": str(
+            payload.get("knownHostsFile") or ""
+        ),
+    }
+
+
 def _authorized_reset_environment(
     station_url: str,
     selected_environment: str,
@@ -399,6 +519,12 @@ def acceptance_station_environment(
     station_url: str,
     environment_name: str | None = None,
 ) -> dict[str, str]:
+    runtime_environment = _runtime_descriptor_environment(
+        station_url,
+        environment_name,
+    )
+    if runtime_environment is not None:
+        return runtime_environment
     local_environment = _local_source_environment(
         station_url,
         environment_name,
@@ -485,6 +611,10 @@ def verify_disposable_station_runtime(
         return _verify_local_source_station(environment)
     expected_project = environment["PT_ACCEPTANCE_COMPOSE_PROJECT"]
     expected_volume = environment["PT_ACCEPTANCE_POSTGRES_VOLUME"]
+    station_service = environment.get(
+        "PT_ACCEPTANCE_STATION_SERVICE",
+        "station",
+    )
     containers = {
         "station": environment["PT_ACCEPTANCE_STATION_CONTAINER"],
         "postgres": environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"],
@@ -513,7 +643,8 @@ def verify_disposable_station_runtime(
         state = inspection.get("State", {}) if isinstance(inspection, dict) else {}
         if (
             labels.get("com.docker.compose.project") != expected_project
-            or labels.get("com.docker.compose.service") != service
+            or labels.get("com.docker.compose.service")
+            != (station_service if service == "station" else service)
             or state.get("Running") is not True
         ):
             raise RuntimeError(
@@ -2439,12 +2570,17 @@ def reset_station_chat_state(environment_name: str) -> None:
             )
         verify_disposable_station_runtime(local_environment)
         return
-    environment = deploy_environment(environment_name)
-    station_url = environment.get("PT_ACCEPTANCE_STATION_URL", "").strip()
-    environment = acceptance_station_environment(
-        station_url,
-        environment_name,
-    )
+    environment = _runtime_descriptor_environment("", environment_name)
+    if environment is None:
+        environment = deploy_environment(environment_name)
+        station_url = environment.get(
+            "PT_ACCEPTANCE_STATION_URL",
+            "",
+        ).strip()
+        environment = acceptance_station_environment(
+            station_url,
+            environment_name,
+        )
     verify_disposable_station_runtime(environment)
     container = environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"]
     canonical_table_names = ", ".join(

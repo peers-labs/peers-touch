@@ -17,6 +17,7 @@ import test from 'node:test';
 
 import {
   ActiveWorkError,
+  adoptActiveWorkOwner,
   activeWorkStorePaths,
   clearActiveWorkRecord,
   digestActiveWork,
@@ -242,6 +243,44 @@ test('rejects active-work publication without a workflow OWNER', () => {
   }
 });
 
+test('adopts a missing legacy active-work owner with revision fencing', () => {
+  const scope = fixture();
+  try {
+    const owner = workflowOwner();
+    const created = updateActiveWorkRecord(input(), {
+      home: scope.home,
+      now: new Date(NOW),
+    });
+    const paths = activeWorkStorePaths({
+      home: scope.home,
+      workspaceId: WORKSPACE_A,
+    });
+    const legacy = { ...created };
+    delete legacy.workflowOwner;
+    legacy.recordDigest = digestActiveWork(legacy);
+    writeFileSync(paths.record, `${JSON.stringify(legacy, null, 2)}\n`);
+
+    const adopted = adoptActiveWorkOwner({
+      home: scope.home,
+      workspaceId: WORKSPACE_A,
+      workflowOwner: owner,
+      now: new Date('2026-09-19T08:01:00.000Z'),
+    });
+    assert.equal(adopted.revision, created.revision + 1);
+    assert.deepEqual(adopted.workflowOwner, owner);
+
+    const idempotent = adoptActiveWorkOwner({
+      home: scope.home,
+      workspaceId: WORKSPACE_A,
+      workflowOwner: owner,
+      now: new Date('2026-09-19T08:02:00.000Z'),
+    });
+    assert.deepEqual(idempotent, adopted);
+  } finally {
+    scope.close();
+  }
+});
+
 test('isolates concurrent Goals by workspace-owned record path', () => {
   const scope = fixture();
   try {
@@ -406,6 +445,53 @@ test('rejects stale revisions and cross-owner clear attempts', () => {
       home: scope.home,
       workspaceId: WORKSPACE_A,
     }), null);
+  } finally {
+    scope.close();
+  }
+});
+
+test('ownerless legacy recovery clears only ownerless active-work', () => {
+  const scope = fixture();
+  try {
+    const created = updateActiveWorkRecord(input(), {
+      home: scope.home,
+      now: new Date(NOW),
+    });
+    const paths = activeWorkStorePaths({
+      home: scope.home,
+      workspaceId: WORKSPACE_A,
+    });
+    const legacy = { ...created };
+    delete legacy.workflowOwner;
+    legacy.recordDigest = digestActiveWork(legacy);
+    writeFileSync(paths.record, `${JSON.stringify(legacy, null, 2)}\n`);
+
+    const cleared = clearActiveWorkRecord({
+      home: scope.home,
+      workspaceId: WORKSPACE_A,
+      expectedRevision: legacy.revision,
+      workItemId: legacy.workItemId,
+      allowOwnerlessLegacyRecovery: true,
+    });
+    assert.equal(cleared.recordDigest, legacy.recordDigest);
+    assert.equal(readActiveWorkRecord({
+      home: scope.home,
+      workspaceId: WORKSPACE_A,
+    }), null);
+
+    updateActiveWorkRecord(input(), {
+      home: scope.home,
+      now: new Date('2026-09-19T08:01:00.000Z'),
+    });
+    expectCode('ACTIVE_WORK_OWNER_MISMATCH', () =>
+      clearActiveWorkRecord({
+        home: scope.home,
+        workspaceId: WORKSPACE_A,
+        expectedRevision: 1,
+        workItemId: 'DWF-ACTIVE-WORK',
+        allowOwnerlessLegacyRecovery: true,
+      }),
+    );
   } finally {
     scope.close();
   }

@@ -1,3 +1,5 @@
+use crate::application::station_runtime::StationRuntime;
+use crate::infrastructure::event_stream::EventStreamRuntime;
 use crate::infrastructure::i18n::I18nService;
 use crate::infrastructure::storage::StorageLayout;
 use crate::infrastructure::window_session_registry::WindowSessionRegistry;
@@ -11,21 +13,18 @@ pub struct SettingsState {
     pub theme: Option<String>,
 }
 
-#[derive(Default)]
-pub struct RealtimeState {
-    pub connected: bool,
-    pub transport: Option<String>,
-}
-
 pub struct AppState {
     /// Serializes process-wide identity commits across Tauri and HTTP gateway
     /// entry points so account, window session, and messaging profile cannot
     /// expose different actors.
     pub identity_transition: Mutex<()>,
     pub settings: Mutex<SettingsState>,
-    pub realtime: Mutex<RealtimeState>,
+    pub event_streams: EventStreamRuntime,
     pub storage: StorageLayout,
     pub i18n: I18nService,
+    /// App-scoped owner for Station binding, typed requests, resources, and
+    /// Direct/Circuit transport lifecycle.
+    pub station: StationRuntime,
     pub messaging_engines: EngineRegistry,
     /// Process-scoped owner for Content PreKey maintenance and private
     /// content session-generation fencing. It is independent from Direct/MLS.
@@ -35,14 +34,16 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(layout: StorageLayout, i18n: I18nService) -> Self {
+    pub fn new(layout: StorageLayout, i18n: I18nService, station: StationRuntime) -> Self {
+        let messaging_engines = EngineRegistry::new(station.client().clone());
         Self {
             identity_transition: Mutex::new(()),
             settings: Mutex::new(SettingsState::default()),
-            realtime: Mutex::new(RealtimeState::default()),
+            event_streams: EventStreamRuntime::new(),
             storage: layout,
             i18n,
-            messaging_engines: EngineRegistry::default(),
+            station,
+            messaging_engines,
             secure_content: SecureContentSupervisor::new(),
             sessions: WindowSessionRegistry::new(),
         }

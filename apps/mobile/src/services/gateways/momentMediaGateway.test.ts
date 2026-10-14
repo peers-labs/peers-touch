@@ -64,7 +64,10 @@ describe('Moment media gateway', () => {
   });
 
   it('decrypts and verifies ciphertext with the shared media-security owner', async () => {
-    const plaintext = new TextEncoder().encode('verified moment image');
+    const plaintext = Uint8Array.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    ]);
     const encrypted = await encryptClientMediaBlobChunked(
       new Blob([plaintext], { type: 'image/png' }),
       { chunkSize: 8 },
@@ -90,6 +93,7 @@ describe('Moment media gateway', () => {
     }));
 
     expect(new Uint8Array(await result.arrayBuffer())).toEqual(plaintext);
+    expect(result.type).toBe('image/png');
     expect(executeStationOperation).toHaveBeenCalledWith(
       session,
       { operationId: 'oss_download', key: 'cas/verified/image' },

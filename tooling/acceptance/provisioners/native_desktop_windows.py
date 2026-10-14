@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PureWindowsPath
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
 
 from tooling.acceptance.core import (
     AppLaunchMetadata,
@@ -42,6 +41,9 @@ from tooling.acceptance.core.source_sync import (
     SourceSyncResult,
 )
 from tooling.acceptance.drivers.tauri import ProvisionedTauriLauncher
+from tooling.acceptance.provisioners.transport_endpoint import (
+    parse_orchestrator_endpoint,
+)
 from tooling.acceptance.transports.ssh import (
     RemotePlatform,
     SshTarget,
@@ -519,27 +521,45 @@ class NativeDesktopWindowsProvisioner:
                 },
             )
             broker_acquired = True
-            self._write_state(
-                {
-                    "cellId": self.contract.cell_id,
-                    "runId": run_id,
-                    "state": "PREPARING",
-                    "expiresAtEpoch": int(expires_at.timestamp()),
-                    "remoteHome": remote_home,
-                    "remoteSource": remote_source,
-                    "cargoTargetRoot": _windows_join(
-                        remote_home,
-                        self.profile.cargo_target_root,
-                    ),
-                    "brokerRoot": broker_root,
-                    "brokerPath": broker_path,
-                    "binaryPath": binary_path,
-                    "binarySha256": binary_sha256,
-                    "sourceCommit": source.commit,
-                    "sourceLeaseOwner": source_lease_owner,
-                    "broker": acquired,
-                }
-            )
+            state = {
+                "cellId": self.contract.cell_id,
+                "runId": run_id,
+                "state": "PREPARING",
+                "expiresAtEpoch": int(expires_at.timestamp()),
+                "remoteHome": remote_home,
+                "remoteSource": remote_source,
+                "cargoTargetRoot": _windows_join(
+                    remote_home,
+                    self.profile.cargo_target_root,
+                ),
+                "brokerRoot": broker_root,
+                "brokerPath": broker_path,
+                "binaryPath": binary_path,
+                "binarySha256": binary_sha256,
+                "sourceCommit": source.commit,
+                "sourceLeaseOwner": source_lease_owner,
+                "broker": acquired,
+            }
+            self._write_state(state)
+            if self.contract.display.fixed_geometry:
+                width, height = (
+                    int(part)
+                    for part in self.contract.display.fixed_geometry.split(
+                        "x",
+                        1,
+                    )
+                )
+                display = self._broker_from_state(
+                    state,
+                    "prepare-display",
+                    {
+                        "sourceRoot": remote_source,
+                        "width": width,
+                        "height": height,
+                    },
+                )
+                state = {**state, "displayPreparation": display}
+                self._write_state(state)
             probe = self._launch_remote_actor(
                 actor="cell-probe",
                 webdriver_port=self.profile.webdriver_port,
@@ -805,27 +825,8 @@ class NativeDesktopWindowsProvisioner:
                 f"Windows runtime-cell endpoint {normalized!r} "
                 "is already exposed"
             )
-        parsed = urlsplit(url)
-        if (
-            parsed.scheme not in {"http", "https"}
-            or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
-            or parsed.username is not None
-            or parsed.password is not None
-        ):
-            raise ProvisioningError(
-                "orchestrator endpoint must be an HTTP(S) loopback URL "
-                "without credentials"
-            )
-        try:
-            port = parsed.port
-        except ValueError as error:
-            raise ProvisioningError(
-                "orchestrator endpoint port is invalid"
-            ) from error
-        if port is None:
-            raise ProvisioningError(
-                "orchestrator endpoint must declare an explicit port"
-            )
+        endpoint = parse_orchestrator_endpoint(url)
+        port = endpoint.local_port
         remote_port = self.transport.available_remote_port()
         tunnel = self.transport.start_reverse_forward(
             local_port=port,
@@ -841,15 +842,7 @@ class NativeDesktopWindowsProvisioner:
         self._endpoints[normalized] = runtime
         return {
             "endpointId": normalized,
-            "url": urlunsplit(
-                (
-                    parsed.scheme,
-                f"127.0.0.1:{remote_port}",
-                    parsed.path,
-                    parsed.query,
-                    parsed.fragment,
-                )
-            ),
+            "url": endpoint.render(remote_port),
             "tunnelPid": runtime.tunnel_pid,
             "localPort": port,
             "remotePort": remote_port,
@@ -975,7 +968,7 @@ class NativeDesktopWindowsProvisioner:
 
     def stage_actor_file(self, actor: str, source: Path) -> str:
         state = self._require_state()
-        normalized = self._active_actor(actor)
+        normalized = self._actor_id(actor)
         local_source = source.expanduser().resolve()
         if not local_source.is_file() or not _FILE_NAME.fullmatch(
             local_source.name
@@ -1019,7 +1012,7 @@ class NativeDesktopWindowsProvisioner:
 
     def actor_file_sha256(self, actor: str, path: str) -> str:
         state = self._require_state()
-        normalized = self._active_actor(actor)
+        normalized = self._actor_id(actor)
         candidate = _normalized_windows_path(path)
         fixture_root = _windows_join(
             str(state["brokerRoot"]),

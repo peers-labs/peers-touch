@@ -70,9 +70,15 @@ export function installAcceptanceHarness(): void {
 
     async bindingState() {
       const registry = await api.stationList();
+      const activeEntry = registry.entries.find(
+        (entry) => entry.station_peer_id === registry.active_station_peer_id,
+      );
+      const activeRoute = activeEntry?.routes.find(
+        (route) => route.route_id === activeEntry.active_route_id,
+      );
       return {
         ...registry.binding,
-        activeUrl: registry.active_url ?? null,
+        activeUrl: activeRoute?.endpoint_origin ?? null,
       };
     },
 
@@ -179,12 +185,13 @@ export function installAcceptanceHarness(): void {
         api.stationList(),
         api.messagingAcceptanceCurrentEndpoint(actorPtid),
       ]);
-      const activeUrl = registry.active_url ?? null;
-      const activeEntry = registry.entries.find((entry) => entry.url === activeUrl);
+      const activeEntry = registry.entries.find(
+        (entry) => entry.station_peer_id === registry.active_station_peer_id,
+      );
       return {
         phase: identityRuntime.getSnapshot().phase.kind,
         authenticated: useSessionStore.getState().authenticated,
-        stationPeerId: activeEntry?.peer_id ?? null,
+        stationPeerId: activeEntry?.station_peer_id ?? null,
         actorPtid: activeActorPtid,
         deviceId: endpoint.device_id,
         bindingPhase: registry.binding.phase,

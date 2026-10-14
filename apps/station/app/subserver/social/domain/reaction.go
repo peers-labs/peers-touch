@@ -22,7 +22,7 @@ type Reaction struct {
 	ActorPTID string
 
 	// Kind matches the `model.ReactionKind` proto enum. Stored on the DB
-	// side as `varchar(16)` containing the proto enum's String() form
+	// side as `varchar(32)` containing the proto enum's String() form
 	// (e.g. "REACTION_LIKE") so admin queries are human-readable and the
 	// table is forward-compatible if new reaction kinds are added.
 	Kind model.ReactionKind
