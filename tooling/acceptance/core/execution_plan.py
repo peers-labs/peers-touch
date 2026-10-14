@@ -1,4 +1,4 @@
-"""Resolve the stable formal Plan mounted to a Git worktree."""
+"""Load an explicitly selected formal Plan Version."""
 
 from __future__ import annotations
 
@@ -12,8 +12,6 @@ from typing import Any
 
 
 PLAN_INPUT_REQUIRED = "EXECUTION_PLAN_INPUT_REQUIRED"
-PLAN_BINDING_REQUIRED = "PLAN_MOUNT_REQUIRED"
-PLAN_BINDING_MISMATCH = "PLAN_MOUNT_IDENTITY_MISMATCH"
 PLAN_INVALID = "EXECUTION_PLAN_INVALID"
 PLAN_COMPLETE = "EXECUTION_PLAN_COMPLETE"
 PLAN_BLOCKED = "EXECUTION_PLAN_BLOCKED"
@@ -105,7 +103,7 @@ def _is_plan(text: str) -> bool:
     )
 
 
-def _planctl_projection(path: Path, command: str) -> dict[str, Any]:
+def _explicit_plan_inspection(path: Path) -> dict[str, Any]:
     try:
         repository_root = Path(_git(path.parent, "rev-parse", "--show-toplevel"))
     except ExecutionPlanError as error:
@@ -123,7 +121,7 @@ def _planctl_projection(path: Path, command: str) -> dict[str, Any]:
         [
             "node",
             str(planctl),
-            command,
+            "inspect",
             "--plan",
             str(path),
             "--repo-root",
@@ -159,50 +157,8 @@ def _planctl_projection(path: Path, command: str) -> dict[str, Any]:
     return payload
 
 
-def _mounted_plan_status(path: Path) -> dict[str, Any]:
-    return _planctl_projection(path, "status")
-
-
-def _source_plan_status(path: Path) -> dict[str, Any]:
-    return _planctl_projection(path, "source-status")
-
-
-def repository_has_attached_head(root: Path) -> bool:
-    try:
-        _git(
-            root,
-            "symbolic-ref",
-            "--quiet",
-            "--short",
-            "HEAD",
-        )
-    except ExecutionPlanError:
-        return False
-    return True
-
-
-def _plan_status_for_context(path: Path) -> dict[str, Any]:
-    try:
-        repository_root = Path(
-            _git(path.parent, "rev-parse", "--show-toplevel")
-        )
-    except ExecutionPlanError:
-        return _source_plan_status(path)
-    if not repository_has_attached_head(repository_root):
-        return _source_plan_status(path)
-    try:
-        mount = _workspace_plan_mount(repository_root)
-    except ExecutionPlanError as error:
-        if error.code == PLAN_BINDING_REQUIRED:
-            return _source_plan_status(path)
-        raise
-    mounted_path = (repository_root / mount["planPath"]).resolve(strict=True)
-    if mounted_path != path:
-        return _source_plan_status(path)
-    return _mounted_plan_status(path)
-
-
-def _load_plan(path: Path, payload: dict[str, Any]) -> FormalExecutionPlan:
+def _load_plan_version(path: Path) -> FormalExecutionPlan:
+    payload = _explicit_plan_inspection(path)
     acceptance = payload.get("acceptance")
     if not isinstance(acceptance, dict):
         acceptance = {
@@ -211,34 +167,17 @@ def _load_plan(path: Path, payload: dict[str, Any]) -> FormalExecutionPlan:
             "full": payload.get("full"),
         }
     closures = acceptance.get("closures")
-    closure_statuses = payload.get("closureStatuses", payload.get("closures"))
-    if not isinstance(closures, dict) or not isinstance(closure_statuses, dict):
+    if not isinstance(closures, dict):
         raise ExecutionPlanError(
             PLAN_INVALID,
-            f"Plan status omitted Acceptance closures: {path}",
+            f"Plan Version inspection omitted Acceptance closures: {path}",
         )
-    current_task_id = payload.get("currentTaskId")
-    current_task_path = payload.get("currentTaskPath")
-    current_task_write_set = payload.get("currentTaskWriteSet")
-    current_closure = payload.get("currentClosure")
-    for field, value in (
-        ("currentTaskId", current_task_id),
-        ("currentTaskPath", current_task_path),
-        ("currentClosure", current_closure),
-    ):
-        if value is not None and (not isinstance(value, str) or not value):
-            raise ExecutionPlanError(PLAN_INVALID, f"{field} is invalid: {path}")
-    if (
-        not isinstance(current_task_write_set, list)
-        or any(not isinstance(item, str) or not item for item in current_task_write_set)
-    ):
-        raise ExecutionPlanError(
-            PLAN_INVALID,
-            f"currentTaskWriteSet is invalid: {path}",
-        )
+    repository_root = Path(_git(path.parent, "rev-parse", "--show-toplevel"))
     required_text = {
         "planId": payload.get("planId"),
-        "status": payload.get("status"),
+        "branch": _git(repository_root, "branch", "--show-current"),
+        "workspaceId": workspace_id(repository_root),
+        "initialHead": _git(repository_root, "rev-parse", "HEAD"),
     }
     missing = [field for field, value in required_text.items() if not value]
     if missing:
@@ -279,16 +218,16 @@ def _load_plan(path: Path, payload: dict[str, Any]) -> FormalExecutionPlan:
     return FormalExecutionPlan(
         path=path,
         plan_id=required_text["planId"],
-        plan_format="stable",
-        status=required_text["status"],
-        branch=optional_text["branch"],
-        workspace_id=optional_text["workspaceId"],
-        initial_head=optional_text["initialHead"],
-        current_task_id=current_task_id,
-        current_task_path=current_task_path,
-        current_task_write_set=tuple(current_task_write_set),
-        current_closure=current_closure,
-        closure_statuses=dict(closure_statuses),
+        plan_format="version",
+        status="explicit",
+        branch=required_text["branch"],
+        workspace_id=required_text["workspaceId"],
+        initial_head=required_text["initialHead"],
+        current_task_id=None,
+        current_task_path=None,
+        current_task_write_set=None,
+        current_closure=None,
+        closure_statuses={closure: "unselected" for closure in closures},
         acceptance=acceptance,
         source_claims=tuple(claim["pathPrefix"] for claim in source_claims),
     )
@@ -305,105 +244,17 @@ def load_formal_plan(path: Path) -> FormalExecutionPlan:
     return _load_plan(resolved, _plan_status_for_context(resolved))
 
 
-def _workspace_plan_mount(root: Path) -> dict[str, str]:
-    script = root / "tooling" / "scripts" / "plan" / "plan-mount.mjs"
-    if not script.is_file():
-        raise ExecutionPlanError(
-            PLAN_BINDING_REQUIRED,
-            f"workspace Plan mount resolver is missing: {script}",
-        )
-    completed = subprocess.run(
-        [
-            "node",
-            str(script),
-            "status",
-            "--repo-root",
-            str(root),
-        ],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if completed.returncode != 0:
-        payload: dict[str, Any] = {}
-        try:
-            payload = json.loads(completed.stderr)
-        except json.JSONDecodeError:
-            pass
-        error = payload.get("error", payload)
-        raise ExecutionPlanError(
-            error.get("code", PLAN_BINDING_REQUIRED),
-            error.get("message")
-            or completed.stderr.strip()
-            or "workspace Plan mount is unavailable",
-        )
-    try:
-        payload = json.loads(completed.stdout)
-    except json.JSONDecodeError as error:
-        raise ExecutionPlanError(
-            PLAN_INVALID,
-            f"workspace Plan mount resolver returned invalid JSON: {error}",
-        ) from error
-    mount = payload.get("mount")
-    if (
-        payload.get("ok") is not True
-        or not isinstance(mount, dict)
-        or not isinstance(mount.get("planId"), str)
-        or not mount["planId"]
-        or not isinstance(mount.get("planPath"), str)
-        or not mount["planPath"]
-    ):
-        raise ExecutionPlanError(
-            PLAN_INVALID,
-            "workspace Plan mount resolver returned an invalid result",
-        )
-    return {
-        "planId": mount["planId"],
-        "planPath": mount["planPath"],
-    }
-
-
 def discover_active_plan(
     root: Path,
     *,
     branch: str | None = None,
     validate_workspace: bool = True,
 ) -> FormalExecutionPlan:
-    canonical = root.resolve(strict=True)
-    mount = _workspace_plan_mount(canonical)
-    try:
-        path = (canonical / mount["planPath"]).resolve(strict=True)
-        path.relative_to(canonical)
-    except (FileNotFoundError, ValueError) as error:
-        raise ExecutionPlanError(
-            PLAN_BINDING_MISMATCH,
-            "mounted Plan path is missing or outside the current worktree",
-        ) from error
-    plan = _load_plan(path, _mounted_plan_status(path))
-    if plan.plan_format != "stable" or plan.plan_id != mount["planId"]:
-        raise ExecutionPlanError(
-            PLAN_BINDING_MISMATCH,
-            "mounted Plan identity does not match the Plan",
-        )
-    selected_branch = branch or _git(
-        canonical,
-        "symbolic-ref",
-        "--quiet",
-        "--short",
-        "HEAD",
+    del root, branch, validate_workspace
+    raise ExecutionPlanError(
+        PLAN_INPUT_REQUIRED,
+        "select a Plan explicitly; active Plan discovery is not supported",
     )
-    if plan.branch != selected_branch:
-        raise ExecutionPlanError(
-            PLAN_BINDING_MISMATCH,
-            "bound Plan branch does not match the current worktree",
-        )
-    if validate_workspace and plan.workspace_id != workspace_id(canonical):
-        raise ExecutionPlanError(
-            PLAN_BINDING_MISMATCH,
-            "bound Plan workspace does not match the current worktree",
-        )
-    return plan
 
 
 def changed_paths_for_plan(

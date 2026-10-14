@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate repository Plan source or inspect the Plan mounted to this worktree."""
+"""Inspect and validate the formal execution plan bound to this worktree."""
 
 from __future__ import annotations
 
@@ -14,8 +14,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core.execution_plan import (  # noqa: E402
-    PLAN_BINDING_REQUIRED,
-    PLAN_COMPLETION_REQUIRED,
     PLAN_INPUT_REQUIRED,
     PLAN_INVALID,
     ExecutionPlanError,
@@ -60,11 +58,6 @@ def main() -> int:
             for closure, status in plan.closure_statuses.items()
             if not closure_status_is_complete(status)
         }
-        if args.require_complete and getattr(plan, "status", None) == "unverified":
-            raise ExecutionPlanError(
-                PLAN_COMPLETION_REQUIRED,
-                "repository Plan completion contract is required",
-            )
         if args.require_complete and incomplete:
             raise ExecutionPlanError(
                 PLAN_INVALID,
@@ -79,7 +72,7 @@ def main() -> int:
             args.allow_untracked
             and not args.ci
             and not explicit_plan
-            and error.code == PLAN_BINDING_REQUIRED
+            and error.code == PLAN_INPUT_REQUIRED
         ):
             print(
                 json.dumps(

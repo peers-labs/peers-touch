@@ -1,16 +1,8 @@
 ---
 kind: invariant
 title: Active work state belongs to the consuming workspace
-status: active
-owns:
-  - AGENTS.md
-  - tooling/make/local-dev.mk
-  - tooling/scripts/lib/machine-dev-paths.mjs
-  - tooling/scripts/local-dev/active-work-store.mjs
-  - tooling/scripts/local-dev/active-work.mjs
-  - tooling/skills/pt-context-anchor/
-  - tooling/skills/pt-dev-workflow/
-  - tooling/skills/pt-plan-and-document/
+status: superseded-by:DWF-D42
+owns: []
 referenced-by:
   - docs/architecture/engineering/development-workflow/decisions.md
 related:
@@ -20,6 +12,11 @@ detected: 2026-09-19
 ---
 
 # Active work state belongs to the consuming workspace
+
+> Superseded by DWF-D42. Retained as historical context only. Optional task
+> records are selected explicitly and stored with their task; no single
+> workspace-wide active-work record is authoritative or required for ordinary
+> work.
 
 ## What must hold
 

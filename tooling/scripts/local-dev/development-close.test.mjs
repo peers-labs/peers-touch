@@ -1,480 +1,155 @@
 import assert from 'node:assert/strict';
-import { rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
-  mountPlan,
-  readLivePlanMountId,
-  updateExecutionRun,
-} from '../plan/plan-mount.mjs';
-import { createPlanRepository } from '../plan/plan-test-fixture.mjs';
-import { summarizeExecution } from '../plan/planctl.mjs';
-import { workspaceIdForRoot } from '../lib/machine-dev-paths.mjs';
-import {
-  activeWorkStorePaths,
-  digestActiveWork,
-  readActiveWorkRecord,
-  updateActiveWorkRecord,
-} from './active-work-store.mjs';
-import {
-  createDevelopmentCloseReceipt,
-  writeDevelopmentCloseReceipt,
-} from './development-close-store.mjs';
-import {
   closeDevelopment,
+  DevelopmentCloseError,
   runCli,
 } from './development-close.mjs';
 import {
-  checkDeclaration,
-  startOrUpdateDeclaration,
-  statusAll,
-} from './dev-work-ledger.mjs';
-import {
-  hashWorkflowRootChatIdentity,
-  WORKFLOW_OWNER_REFERENCE_KIND,
-} from './workflow-owner-reference.mjs';
+  createTaskProgress,
+  readTaskProgress,
+} from './task-progress-store.mjs';
 
-function workflowOwner() {
-  const rootChatId = 'main-chat-session';
+function git(directory, ...args) {
+  return execFileSync('git', args, {
+    cwd: directory,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
+
+function fixture() {
+  const root = mkdtempSync(path.join(tmpdir(), 'pt-development-close-'));
+  const workspace = path.join(root, 'workspace');
+  mkdirSync(workspace);
+  execFileSync('git', ['init', '-b', 'feat/close'], { cwd: workspace });
+  git(workspace, 'config', 'user.email', 'close@example.invalid');
+  git(workspace, 'config', 'user.name', 'Close Test');
+  git(workspace, 'config', 'core.hooksPath', '/dev/null');
+  writeFileSync(path.join(workspace, 'README.md'), 'fixture\n');
+  git(workspace, 'add', 'README.md');
+  git(workspace, 'commit', '-m', 'test: initialize close fixture');
   return {
-    kind: WORKFLOW_OWNER_REFERENCE_KIND,
-    host: 'trae',
-    rootChatId,
-    rootChatHash: hashWorkflowRootChatIdentity('trae', rootChatId),
-    rootBindingDigest: 'a'.repeat(64),
+    root,
+    workspace,
+    close() {
+      rmSync(root, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 100,
+      });
+    },
   };
 }
 
-function declarationOptions(fixture, overrides = {}) {
-  return {
-    home: fixture.home,
-    workspaceRoot: fixture.repoRoot,
-    workItemId: 'DWF-CLOSE-STANDALONE',
-    owner: 'test-owner',
-    purpose: 'test Development close',
-    sourceClaims: `exclusive-write:${fixture.plan}`,
-    runtimeClaims: '',
-    workflowOwner: workflowOwner(),
-    expiresMinutes: 60,
-    now: new Date('2026-10-05T00:00:00.000Z'),
+function start(scope, overrides = {}) {
+  return createTaskProgress({
+    workspaceRoot: scope.workspace,
+    taskId: 'CLOSE-TASK',
+    contribution: 'Close one selected task without sealing the worktree.',
+    goal: 'Prove task-local close.',
+    resourceRefs: [],
     ...overrides,
-  };
+  });
 }
 
-function activeDeclaration(fixture, overrides = {}) {
-  const options = declarationOptions(fixture, overrides);
-  const declaration = startOrUpdateDeclaration(options);
-  checkDeclaration({
-    home: fixture.home,
-    workspaceRoot: fixture.repoRoot,
-    workItemId: declaration.workItemId,
-    sessionId: declaration.sessionId,
-    workflowOwner: declaration.workflowOwner,
-    now: new Date('2026-10-05T00:01:00.000Z'),
-    ...(overrides.planExecution === undefined
-      ? {}
-      : { planExecution: overrides.planExecution }),
-    ...(overrides.planStatus === undefined
-      ? {}
-      : { planStatus: overrides.planStatus }),
+function expectCode(code, operation) {
+  return assert.rejects(operation, (error) => {
+    assert.ok(error instanceof DevelopmentCloseError);
+    assert.equal(error.code, code);
+    return true;
   });
-  return declaration;
 }
 
-test('standalone Development close releases declaration and persists receipt', async (t) => {
-  const fixture = createPlanRepository(t);
-  const declaration = activeDeclaration(fixture);
-
-  const receipt = await closeDevelopment({
-    home: fixture.home,
-    repoRoot: fixture.repoRoot,
-    workItemId: declaration.workItemId,
-    mode: 'standalone',
-    closeReason: 'completed',
-    environmentPolicy: 'retain',
-    owner: declaration.owner,
-    workflowOwner: declaration.workflowOwner,
-    now: new Date('2026-10-05T00:02:00.000Z'),
-  });
-
-  assert.equal(receipt.state, 'CLOSED');
-  assert.equal(receipt.resources.runtimeLeases, 'RELEASED');
-  assert.equal(receipt.resources.session, 'NOT_APPLICABLE');
-  assert.equal(receipt.resources.activeWork, 'NOT_APPLICABLE');
-  assert.equal(receipt.resources.declaration, 'RELEASED');
-  assert.equal(receipt.resources.planMount, 'NOT_APPLICABLE');
-  assert.equal(receipt.resources.environmentRegistration, 'RETAINED');
-  const stored = statusAll({
-    home: fixture.home,
-    now: new Date('2026-10-05T00:03:00.000Z'),
-  }).declarations.find(
-    (candidate) => candidate.declarationId === declaration.declarationId,
-  );
-  assert.equal(stored.state, 'RELEASED');
-});
-
-test('Development close resumes after an interrupted owner stage', async (t) => {
-  const fixture = createPlanRepository(t);
-  const declaration = activeDeclaration(fixture);
-  let interrupted = false;
-
-  await assert.rejects(
-    closeDevelopment({
-      home: fixture.home,
-      repoRoot: fixture.repoRoot,
-      workItemId: declaration.workItemId,
-      mode: 'standalone',
+test('FLOW-A15 closes only the selected task and leaves the worktree reusable', async () => {
+  const scope = fixture();
+  try {
+    const current = start(scope);
+    const closed = await closeDevelopment({
+      workspaceRoot: scope.workspace,
+      taskId: current.taskId,
       closeReason: 'completed',
-      environmentPolicy: 'retain',
-      owner: declaration.owner,
-      workflowOwner: declaration.workflowOwner,
-      now: new Date('2026-10-05T00:02:00.000Z'),
-      stageHook(stage) {
-        if (stage === 'declaration' && !interrupted) {
-          interrupted = true;
-          throw new Error('simulated interruption');
-        }
-      },
-    }),
-    (error) =>
-      error instanceof Error &&
-      error.code === 'DEVELOPMENT_CLOSE_INTERNAL_ERROR',
-  );
-
-  const receipt = await closeDevelopment({
-    home: fixture.home,
-    repoRoot: fixture.repoRoot,
-    workItemId: declaration.workItemId,
-    mode: 'standalone',
-    closeReason: 'completed',
-    environmentPolicy: 'retain',
-    owner: declaration.owner,
-    workflowOwner: declaration.workflowOwner,
-    now: new Date('2026-10-05T00:03:00.000Z'),
-  });
-  assert.equal(receipt.state, 'CLOSED');
-  assert.ok(receipt.revision > 1);
+      evidenceRefs: [{ kind: 'FUNCTIONAL_CHECK', ref: 'evidence://close' }],
+      resourceRefs: [],
+    });
+    assert.equal(closed.state, 'completed');
+    assert.equal(
+      readTaskProgress({
+        workspaceRoot: scope.workspace,
+        taskId: current.taskId,
+      }).state,
+      'completed',
+    );
+    const next = createTaskProgress({
+      workspaceRoot: scope.workspace,
+      taskId: 'NEXT-TASK',
+      contribution: 'Continue with unrelated work.',
+      goal: 'Prove no workspace-wide close guard remains.',
+    });
+    assert.equal(next.state, 'active');
+  } finally {
+    scope.close();
+  }
 });
 
-test('tracked Development close clears projections and releases mount', async (t) => {
-  const fixture = createPlanRepository(t);
-  const mounted = await mountPlan({
-    home: fixture.home,
-    repoRoot: fixture.repoRoot,
-    plan: fixture.plan,
-    projectId: 'peers-touch',
-    owner: 'test-owner',
-    now: new Date('2026-10-05T00:00:00.000Z'),
-  });
-  const execution = await updateExecutionRun(
-    {
-      home: fixture.home,
-      repoRoot: fixture.repoRoot,
-      now: new Date('2026-10-05T00:00:30.000Z'),
-    },
-    (run) => {
-      for (const taskId of Object.keys(run.taskStates)) {
-        run.taskStates[taskId] = { state: 'done', blocker: null };
-      }
-      run.state = 'completed';
-      run.currentTaskId = null;
-      run.exhaustion = null;
-      return run;
-    },
-  );
-  const taskId = execution.snapshot.plan.tasks.at(-1).id;
-  const declaration = activeDeclaration(fixture, {
-    workItemId: 'DWF-CLOSE-TRACKED',
-    planPath: fixture.plan,
-    planId: execution.mount.planId,
-    planExecution: execution,
-    planStatus: summarizeExecution(execution),
-    taskId,
-  });
-  updateActiveWorkRecord(
-    {
-      workspaceId: execution.mount.workspaceId,
-      workItemId: declaration.workItemId,
-      mountId: execution.mount.mountId,
-      runId: execution.run.runId,
-      snapshotDigest: execution.snapshot.recordDigest,
-      planId: execution.mount.planId,
-      planPath: execution.mount.planPath,
-      planStatus: 'completed',
-      currentTaskId: taskId,
-      currentTaskPath: `${fixture.plan.slice(0, fixture.plan.lastIndexOf('/'))}/${execution.snapshot.plan.tasks.find((task) => task.id === taskId).path}`,
-      taskStatus: 'done',
-      sessionId: declaration.sessionId,
-      journeyId: declaration.journeyId ?? 'DWF-CLOSE-J01',
-      devState: null,
-      branch: execution.snapshot.executionBinding.branch,
-      initialHead: execution.snapshot.executionBinding.initialHead,
-      expectedHead: declaration.sourceHead,
-      workflowOwner: declaration.workflowOwner,
-    },
-    {
-      home: fixture.home,
-      workspaceRoot: fixture.repoRoot,
-      now: new Date('2026-10-05T00:01:00.000Z'),
-    },
-  );
-
-  const receipt = await closeDevelopment({
-    home: fixture.home,
-    repoRoot: fixture.repoRoot,
-    workItemId: declaration.workItemId,
-    mode: 'tracked',
-    closeReason: 'completed',
-    environmentPolicy: 'retain',
-    owner: declaration.owner,
-    workflowOwner: declaration.workflowOwner,
-    mountId: execution.mount.mountId,
-    now: new Date('2026-10-05T00:02:00.000Z'),
-  });
-
-  assert.equal(receipt.state, 'CLOSED');
-  assert.equal(receipt.resources.activeWork, 'CLOSED');
-  assert.equal(receipt.resources.planMount, 'RELEASED');
-  assert.equal(
-    readLivePlanMountId(execution.mount.workspaceId, { home: fixture.home }),
-    null,
-  );
+test('close refuses unsettled task-owned resources but ignores unrelated workspace state', async () => {
+  const scope = fixture();
+  try {
+    const current = start(scope, {
+      resourceRefs: [{ resourceKey: 'device:one', state: 'running' }],
+    });
+    await expectCode('TASK_PROGRESS_RESOURCE_UNSETTLED', () =>
+      closeDevelopment({
+        workspaceRoot: scope.workspace,
+        taskId: current.taskId,
+        closeReason: 'completed',
+        evidenceRefs: [{ kind: 'FUNCTIONAL_CHECK', ref: 'evidence://close' }],
+      }),
+    );
+    const cancelled = await closeDevelopment({
+      workspaceRoot: scope.workspace,
+      taskId: current.taskId,
+      closeReason: 'cancelled',
+      resourceRefs: [{ resourceKey: 'device:one', state: 'released' }],
+    });
+    assert.equal(cancelled.state, 'cancelled');
+  } finally {
+    scope.close();
+  }
 });
 
-test('owner-abandon closes an orphan mount after worktree deletion', async (t) => {
-  const fixture = createPlanRepository(t);
-  const mounted = await mountPlan({
-    home: fixture.home,
-    repoRoot: fixture.repoRoot,
-    plan: fixture.plan,
-    projectId: 'peers-touch',
-    owner: 'test-owner',
-    now: new Date('2026-10-05T00:00:00.000Z'),
-  });
-  rmSync(fixture.repoRoot, {
-    recursive: true,
-    force: true,
-    maxRetries: 5,
-    retryDelay: 50,
-  });
-
-  const receipt = await closeDevelopment({
-    home: fixture.home,
-    workspaceId: mounted.mount.workspaceId,
-    mountId: mounted.mount.mountId,
-    workItemId: 'DWF-CLOSE-ORPHAN',
-    mode: 'tracked',
-    closeReason: 'owner-abandon',
-    environmentPolicy: 'retain',
-    owner: mounted.mount.mountedBy,
-    workflowOwner: workflowOwner(),
-    now: new Date('2026-10-05T00:01:00.000Z'),
-  });
-
-  assert.equal(receipt.state, 'CLOSED');
-  assert.equal(receipt.resources.planMount, 'RELEASED');
-  assert.equal(
-    readLivePlanMountId(mounted.mount.workspaceId, { home: fixture.home }),
-    null,
-  );
-});
-
-test('owner-abandon recovers exact ownerless legacy state without a Hook receipt', async (t) => {
-  const fixture = createPlanRepository(t);
-  const mounted = await mountPlan({
-    home: fixture.home,
-    repoRoot: fixture.repoRoot,
-    plan: fixture.plan,
-    projectId: 'peers-touch',
-    owner: 'test-owner',
-    now: new Date('2026-10-05T00:00:00.000Z'),
-  });
-  const task = mounted.snapshot.plan.tasks.at(0);
-  const taskId = task.id;
-  const workItemId = 'DWF-CLOSE-OWNERLESS-LEGACY';
-  const created = updateActiveWorkRecord(
-    {
-      workspaceId: mounted.mount.workspaceId,
-      workItemId,
-      mountId: mounted.mount.mountId,
-      runId: mounted.run.runId,
-      snapshotDigest: mounted.snapshot.recordDigest,
-      planId: mounted.mount.planId,
-      planPath: mounted.mount.planPath,
-      planStatus: 'active',
-      currentTaskId: taskId,
-      currentTaskPath:
-        `${fixture.plan.slice(0, fixture.plan.lastIndexOf('/'))}/${task.path}`,
-      taskStatus: 'pending',
-      sessionId: 'ownerless-legacy-session',
-      journeyId: 'DWF-CLOSE-J02',
-      devState: 'BOUND',
-      branch: mounted.snapshot.executionBinding.branch,
-      initialHead: mounted.snapshot.executionBinding.initialHead,
-      expectedHead: mounted.snapshot.executionBinding.initialHead,
-      workflowOwner: workflowOwner(),
-    },
-    {
-      home: fixture.home,
-      workspaceRoot: fixture.repoRoot,
-      now: new Date('2026-10-05T00:01:00.000Z'),
-    },
-  );
-  const paths = activeWorkStorePaths({
-    home: fixture.home,
-    workspaceId: mounted.mount.workspaceId,
-  });
-  const legacy = { ...created };
-  delete legacy.workflowOwner;
-  legacy.recordDigest = digestActiveWork(legacy);
-  writeFileSync(paths.record, `${JSON.stringify(legacy, null, 2)}\n`);
-
-  const receipt = await runCli(
-    [
-      'close',
-      '--home',
-      fixture.home,
-      '--workspace-id',
-      mounted.mount.workspaceId,
-      '--mount-id',
-      mounted.mount.mountId,
-      '--work-item',
-      workItemId,
-      '--mode',
-      'tracked',
-      '--reason',
-      'owner-abandon',
-      '--environment-policy',
-      'retain',
-      '--owner',
-      mounted.mount.mountedBy,
-    ],
-    {
-      output: { write() {} },
-      dependencies: {
-        resolveCurrentWorkflowOwnerContext: () => ({
-          workflowOwner: null,
-          actionReceiptDigest: null,
-        }),
-      },
-    },
-  );
-
-  assert.equal(receipt.state, 'CLOSED');
-  assert.equal(receipt.resources.activeWork, 'CLOSED');
-  assert.equal(receipt.resources.planMount, 'RELEASED');
-  assert.equal(
-    readActiveWorkRecord({
-      home: fixture.home,
-      workspaceId: mounted.mount.workspaceId,
-    }),
-    null,
-  );
-});
-
-test('ownerless legacy recovery rejects OWNER-bound active-work', async (t) => {
-  const fixture = createPlanRepository(t);
-  const mounted = await mountPlan({
-    home: fixture.home,
-    repoRoot: fixture.repoRoot,
-    plan: fixture.plan,
-    projectId: 'peers-touch',
-    owner: 'test-owner',
-    now: new Date('2026-10-05T00:00:00.000Z'),
-  });
-  const task = mounted.snapshot.plan.tasks.at(0);
-  const taskId = task.id;
-  const workItemId = 'DWF-CLOSE-OWNER-BOUND';
-  updateActiveWorkRecord(
-    {
-      workspaceId: mounted.mount.workspaceId,
-      workItemId,
-      mountId: mounted.mount.mountId,
-      runId: mounted.run.runId,
-      snapshotDigest: mounted.snapshot.recordDigest,
-      planId: mounted.mount.planId,
-      planPath: mounted.mount.planPath,
-      planStatus: 'active',
-      currentTaskId: taskId,
-      currentTaskPath:
-        `${fixture.plan.slice(0, fixture.plan.lastIndexOf('/'))}/${task.path}`,
-      taskStatus: 'pending',
-      sessionId: 'owner-bound-session',
-      journeyId: 'DWF-CLOSE-J03',
-      devState: 'BOUND',
-      branch: mounted.snapshot.executionBinding.branch,
-      initialHead: mounted.snapshot.executionBinding.initialHead,
-      expectedHead: mounted.snapshot.executionBinding.initialHead,
-      workflowOwner: workflowOwner(),
-    },
-    {
-      home: fixture.home,
-      workspaceRoot: fixture.repoRoot,
-      now: new Date('2026-10-05T00:01:00.000Z'),
-    },
-  );
-
-  await assert.rejects(
-    runCli(
-      [
-        'close',
-        '--home',
-        fixture.home,
-        '--workspace-id',
-        mounted.mount.workspaceId,
-        '--mount-id',
-        mounted.mount.mountId,
-        '--work-item',
-        workItemId,
-        '--mode',
-        'tracked',
-        '--reason',
-        'owner-abandon',
-        '--environment-policy',
-        'retain',
-        '--owner',
-        mounted.mount.mountedBy,
-      ],
-      {
-        output: { write() {} },
-        dependencies: {
-          resolveCurrentWorkflowOwnerContext: () => ({
-            workflowOwner: null,
-            actionReceiptDigest: null,
-          }),
-        },
-      },
-    ),
-    (error) =>
-      error?.code === 'DEVELOPMENT_CLOSE_LEGACY_RECOVERY_DENIED',
-  );
-});
-
-test('unfinished close receipt blocks new declaration admission', (t) => {
-  const fixture = createPlanRepository(t);
-  const workspaceId = workspaceIdForRoot(fixture.repoRoot);
-  const receipt = createDevelopmentCloseReceipt(
-    {
-      workspaceId,
-      workItemId: 'DWF-CLOSE-BLOCKER',
-      mode: 'standalone',
-      closeReason: 'completed',
-      environmentPolicy: 'retain',
-      owner: 'test-owner',
-      mountId: null,
-      runId: null,
-    },
-    { now: new Date('2026-10-05T00:00:00.000Z') },
-  );
-  writeDevelopmentCloseReceipt(receipt, { home: fixture.home });
-
-  assert.throws(
-    () =>
-      startOrUpdateDeclaration(
-        declarationOptions(fixture, {
-          workItemId: 'DWF-CLOSE-NEXT',
-        }),
-      ),
-    (error) => error?.code === 'DEVELOPMENT_CLOSE_IN_PROGRESS',
-  );
+test('development-close exposes only the close action', async () => {
+  const scope = fixture();
+  try {
+    const current = start(scope);
+    await expectCode('DEVELOPMENT_CLOSE_INVALID', () =>
+      runCli([
+        'status',
+        '--workspace-root',
+        scope.workspace,
+        '--task',
+        current.taskId,
+      ], { output() {} }),
+    );
+    assert.equal(
+      readTaskProgress({
+        workspaceRoot: scope.workspace,
+        taskId: current.taskId,
+      }).state,
+      'active',
+    );
+  } finally {
+    scope.close();
+  }
 });

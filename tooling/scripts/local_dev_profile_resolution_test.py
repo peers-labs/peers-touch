@@ -28,8 +28,6 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
         scripts.mkdir(parents=True)
         for name in (
             "config.sh",
-            "dev-work-ledger.mjs",
-            "dev-work-schema.mjs",
             "environment-creation-authorization.py",
             "env.sh",
             "machine-dev-lease.py",
@@ -37,6 +35,7 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
             "machine-dev.mjs",
             "profile.sh",
             "redact-env.sh",
+            "workspace-lifecycle-lock.mjs",
         ):
             shutil.copy2(SCRIPT_DIR / name, scripts / name)
         library = self.project_root / "tooling" / "scripts" / "lib"
@@ -45,10 +44,6 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
             SCRIPT_DIR.parent / "lib" / "machine-dev-paths.mjs",
             library / "machine-dev-paths.mjs",
         )
-        plan = self.project_root / "tooling" / "scripts" / "plan"
-        plan.mkdir(parents=True)
-        for name in ("plan-package.mjs", "plan-mount.mjs"):
-            shutil.copy2(SCRIPT_DIR.parent / "plan" / name, plan / name)
         self.config_script = scripts / "config.sh"
         self.profile_script = scripts / "profile.sh"
         self.machine_script = scripts / "machine-dev.mjs"

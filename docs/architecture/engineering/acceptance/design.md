@@ -23,9 +23,9 @@
    child inheritance存在，不进入durable manifest、environment secret、文件或网络。
 9. **Impact is not scheduling** — Registry只产生保守影响投影；正式Execution
    Plan的当前closure决定本次执行。Evidence latest pointer不得充当工作状态。
-10. **Functional frontier before broad proof** — completion/full、
-    generated-plan execution与Gap Detector必须先通过当前Plan/Task/Session准入；
-    缺失或pre-functional Session在Evidence Store创建和Gate启动前失败。
+10. **Runner-owned explicit scope** — Acceptance runner 在创建 run 前解析明确的
+    Gate、Plan、completion 或 full 范围；Gap Detector 直接解析变更、Plan 与 run。
+    功能验证仍先于广泛证明，但不由第二套 Session/admission owner 代行。
 11. **Suite lifecycle before Scenario execution** — 共享服务、Actor、客户端、
     设备、存储或登录态的多场景 Task 必须声明 `runtimeReuse`。昂贵资源在
     Task/Suite scope 创建一次，Scenario attach-only，并以真实产品动作和
@@ -44,7 +44,7 @@
 | 新 Agent 可从稳定 Make target 获得结构化 preflight | `verified_fact` | `tooling/acceptance/README.md` + runtime BLOCKED report | high | successful AS-02 live run |
 | 独立 Provisioner + immutable manifest 可关闭责任缺口 | `verified_fact` | `core/provisioning.py` + `core/provisioner.py` + runtime BLOCKED evidence | high | successful native runtime proof |
 | 独立 Gap Detector 可覆盖普通任务中的 silent pass | `verified_fact` | `acceptance-gap-detect-test.py` + submit pipeline | high | PR submit evidence |
-| Broad Acceptance 与 Gap Detector 共享 Session-backed admission | `verified_fact` | `tooling/scripts/plan/acceptance-admission.mjs` + focused tests | high | final workflow proof |
+| Acceptance runner 与 Gap Detector 各自拥有显式范围解析 | `verified_fact` | `tooling/scripts/acceptance-run.py` + `tooling/scripts/acceptance-gap-detect.py` + focused tests | high | none |
 
 ### 1.2 Evidence Store 扩展证据账本
 

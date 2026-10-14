@@ -177,14 +177,18 @@ export function createPlanRepository(t) {
     path.join(os.tmpdir(), 'plan-machine-home-test-'),
   );
   t.after(() => {
-    const cleanupOptions = {
+    fs.rmSync(repoDirectory, {
       recursive: true,
       force: true,
-      maxRetries: 20,
-      retryDelay: 50,
-    };
-    fs.rmSync(repoDirectory, cleanupOptions);
-    fs.rmSync(home, cleanupOptions);
+      maxRetries: 5,
+      retryDelay: 100,
+    });
+    fs.rmSync(home, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
   });
 
   fs.mkdirSync(path.join(repoRoot, 'docs', 'architecture'), {
@@ -212,6 +216,9 @@ export function createPlanRepository(t) {
     cwd: repoRoot,
   });
   execFileSync('git', ['config', 'user.email', 'plan-fixture@test.invalid'], {
+    cwd: repoRoot,
+  });
+  execFileSync('git', ['config', 'core.hooksPath', '/dev/null'], {
     cwd: repoRoot,
   });
   execFileSync('git', ['add', '.'], { cwd: repoRoot });

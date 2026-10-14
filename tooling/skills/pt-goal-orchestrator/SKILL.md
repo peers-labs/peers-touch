@@ -37,7 +37,7 @@ absence does not make the schedule unavailable.
 | Stage and workflow route | `pt-god-view` / `pt-dev-workflow` |
 | Product and architecture semantics | owning methodology Skills |
 | Vertical dependency graph | `pt-architecture-execution-methodology` |
-| Stable Plan snapshot and durable ExecutionRun lifecycle | plan owners via `pt-dev-workflow` |
+| Optional frozen Plan Version and task progress | `pt-dev-workflow` |
 | Schedule, Ready/Parked frontier, lane allocation | this Skill |
 | Host capability projection | this Skill |
 | Host adapter invocation | `pt-dev-workflow` after Guardian admission |
@@ -45,16 +45,16 @@ absence does not make the schedule unavailable.
 | Execution and durable result writes | `pt-dev-workflow` |
 | Status rendering | `pt-context-anchor` |
 
-The scheduler is read-only with respect to Plan, Task, Session, workspace
-active-work, evidence, Git, runtime registries, and host tool state.
+The scheduler is read-only with respect to Plan files, task progress, evidence,
+Git, runtime registries, and host tool state.
 
 ## Scheduler Input
 
 The caller supplies:
 
-- verified worktree binding and active Development declaration;
+- verified canonical worktree and current source identity;
 - current methodology stage and authoritative work graph;
-- for tracked execution, validated ExecutionPlanSnapshot, ExecutionRun, and current Task;
+- optional explicit Plan Version and taskId;
 - completed dependencies and current evidence;
 - declared source/runtime claims;
 - Goal budget and hard boundaries;
@@ -75,9 +75,9 @@ A valid Goal Slice is:
 - recoverable from durable owner state;
 - explicit about Ready, In Progress, Parked, and Done actions.
 
-Goal completion implies only the selected Task closure. It is an internal
-scheduling and recovery unit inside a Plan Run, not a user interaction
-boundary or a host-specific Goal object.
+Goal completion implies only the selected bounded outcome. It is an internal
+scheduling unit, not a user interaction boundary or a host-specific Goal
+object.
 
 ## Schedule Algorithm
 
@@ -87,8 +87,8 @@ boundary or a host-specific Goal object.
 3. Put dependency-ready actions in the Ready Queue.
 4. Group ready actions by frozen contracts, disjoint write sets, isolated
    runtime resources, independent verification, and integration order.
-5. Choose one bounded serial, parallel, or hybrid horizon whose successful end
-   closes the current Task.
+5. Choose one bounded serial, parallel, or hybrid horizon with an observable
+   completion boundary.
 6. Submit proposed actions and lanes to `pt-execution-plan-guardian`.
 7. Return the schedule to `pt-dev-workflow`.
 
@@ -149,15 +149,12 @@ isolation.
 
 Workers:
 
-- receive a create-once WORKER assignment rooted in the same OWNER
-  `BindingProjection`, preserve exact root/parent lineage, and use the
-  assignment workspace as explicit `workdir`;
+- receive the exact canonical worktree and non-overlapping source ownership;
 - own non-overlapping source paths;
 - never stage, commit, deploy, mutate tracking, or run broad generators;
 - stop on unexpected writes in their ownership;
 - return exact changed files and focused verification results.
-- terminalize their child binding on PASS, FAIL, BLOCKED, or CANCELLED; an
-  expired or terminal child is history and never blocks a later assignment.
+- return PASS, FAIL, BLOCKED, or CANCELLED with exact changed files and checks.
 
 Only live, addressable workers with equivalent worktree, branch, stage, source
 unit, and overlapping ownership are conflicts. Stale metadata is
@@ -172,8 +169,8 @@ unit, and overlapping ownership are conflicts. Stale metadata is
 | `REVIEW` | Findings against [`REVIEW_RUBRIC.md`](./REVIEW_RUBRIC.md), then one corrected Goal if needed |
 | `NEXT` | One successor candidate after durable owner state has advanced |
 
-`NEXT` never activates or persists its candidate. During an authorized Plan
-Run, `pt-dev-workflow` consumes it and continues without user confirmation.
+`NEXT` never activates or persists its candidate. `pt-dev-workflow` consumes
+it within the current authorization envelope.
 
 ## Verification
 

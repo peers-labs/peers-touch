@@ -11,12 +11,10 @@ owns:
   - tooling/skills/pt-trae-host-adapter/
   - tooling/skills/pt-cursor-host-adapter/
   - tooling/skills/pt-codex-host-adapter/
-  - tooling/skills/pt-defect-closure/
 referenced-by:
   - docs/architecture/engineering/development-workflow/decisions.md
 related:
   - docs/knowledge/invariants/continuous-plan-run.md
-  - docs/knowledge/invariants/dev-resource-declaration-before-write.md
 detected: 2026-09-19
 ---
 
@@ -24,89 +22,41 @@ detected: 2026-09-19
 
 ## What must hold
 
-Peers-Touch owns scheduling, authorization, product Journeys, verification
-classes, Development Session state, formal evidence, and cleanup semantics.
-TRAE, Cursor, Codex, and future agent hosts may provide worker, browser,
-desktop UI, or diagnostic tools only through a detected host adapter.
+Peers-Touch owns scheduling, product Journeys, runtime admission, verification
+classes, formal evidence, and cleanup semantics. TRAE, Cursor, Codex, and
+future hosts provide optional tool transports and advisory context only.
 
-Repository-native Make, Harness, WebDriver, Appium, accessibility, and browser
-drivers take priority and determine proof strength. Host identity comes from
-explicit current-runtime metadata, corroborated by the exposed tool inventory
-or host-injected environment markers. Installed directories and binaries are
-not current-host identity.
+Repository-native Make, Harness, WebDriver, Appium, accessibility, browser, and
+runtime entrypoints determine behavior and proof strength. Missing host
+identity, unsupported events, or Hook failure cannot block ordinary work or
+change operation permissions.
 
-A missing host capability degrades only that transport. It does not block a
-safe serial schedule or a project-native Journey. A deterministic
-`FUNCTIONAL_CHECK/PASS` must be committed to `FUNCTIONAL_PASS` before Task
-closure; a host debugger confirmation gate cannot replace that state owner.
-Completion Review preparation and submission are repository-native. They bind
-successful Development Session and current-source material to a create-once
-reviewer capability and never require an IDE Hook, Action Receipt, or host
-session identity.
-Runtime Handoff reports a missing capability and native-attempt state;
-`pt-goal-orchestrator` alone projects the Host Capability Request, and only Dev
-Workflow invokes an adapter after Guardian admission. Adapters never execute
-repository-native fallback. Dev Workflow persists one immutable unavailable
-request and may unblock it only after a new `HOST_CAPABILITY_AVAILABLE`
-observation. A failed cleanup is represented once as a bounded
-`HOST_CLEANUP_QUARANTINED` lease; it cannot recursively request cleanup or stop
-independent ready Tasks. One post-expiry `inspect-quarantine` observation may
-commit `HOST_CLEANUP_RELEASED`; a still-live side effect becomes
-`HOST_CLEANUP_ESCALATION_REQUIRED`, never a second cleanup attempt. Repeated,
-identity-changing, and pre-expiry blocked observations fail closed.
+Host adapters normalize payloads and render context. They do not create
+repository authority, infer the selected worktree, execute fallback, grant
+runtime capabilities, or upgrade observations into evidence.
 
-Host-specific debuggers run only in an adapter-owned isolated diagnostic
-sidecar, never in the Dev Workflow or Runtime Handoff owner turn. Once the
-project oracle closes, Session and Task progression precede host cleanup. A
-confirmation-retained diagnostic returns immediately as
-`HOST_DIAGNOSTIC_RETAINED` with `blocksPlanRun=false`,
-`cleanup=retained-bounded`, and a concrete `leaseExpiresAt`; it is a transient
-host observation, not a Session state, Task blocker, or Plan Run boundary.
-
-The canonical flow is developed and distributed from `peers-dev-workflow`, but
-the installed implementation executes in each consuming worktree. It derives
-that consumer's canonical root, `workspaceId`, Plan binding, Session, and
-machine-local active-work record. Host neutrality must never introduce a
-central runtime-state dependency on the workflow source repository.
+Project Skill projection is scoped to the explicitly selected worktree. Hook
+projection is independently optional and uses an absolute interpreter. No
+installer operation requires unrelated worktrees to be idle or writes a shared
+workspace descriptor.
 
 ## Why this is non-negotiable
 
-Developers use different agent hosts. If the project names one host as its
-scheduler, debugger, product operator, or proof owner, the same accepted Plan
-changes meaning across environments. Host-specific confirmation and retention
-policies can also create split-brain where runtime evidence says PASS while the
-Development Session remains blocked.
-
-Adapters preserve access to useful host tools without making those tools part
-of the project architecture.
+The same accepted request must mean the same thing in every host. If chat IDs,
+Hook availability, or host-specific retention policy decide authority or
+completion, source and evidence semantics split across editors.
 
 ## How to verify
 
 - `tooling/scripts/review/skill-check.sh` passes.
-- `rg -n "pt-trae-goal-orchestrator|use \`TRAE-debugger\` workflow" AGENTS.md docs/global docs/architecture/engineering/development-workflow tooling/skills` returns no live contract references.
-- `pt-goal-orchestrator` requires no named host runtime.
-- `pt-dev-runtime-handoff` contains `HOST_CAPABILITY_UNAVAILABLE`,
-  `SESSION_PROJECTION_STALE`, and repository-native driver priority.
-- TRAE, Cursor, and Codex adapter Skills exist and state that they cannot own
-  scheduling, proof, or Session mutation.
-- Adapter outputs contain no project-native fallback path, and cleanup failure
-  has one bounded quarantine terminal state.
-- TRAE diagnostics require an isolated diagnostic sidecar, while Runtime
-  Handoff and Dev Workflow require the non-blocking
-  `HOST_DIAGNOSTIC_RETAINED` return fields and never name a host debugger.
-- Agent integration verification executes the installed copy from at least two consuming
-  roots and proves distinct workspace IDs and active-work paths.
-- `make agent-integration-audit ROOT=<worktree-root>` passes after semantic source
-  integration and `make skills IDE=<host>`; active sessions restart from
-  durable state rather than hot-swapping their Skill catalog.
+- `node --test tooling/scripts/local-dev/workflow-kernel.test.mjs
+  tooling/scripts/local-dev/workflow-host-adapters.test.mjs
+  tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs` passes.
+- `python3 -m unittest tooling/scripts/agent-integration-audit-test.py` proves
+  selected-root projection, advisory degradation, absolute interpreter use,
+  restricted-PATH replay, removal, and non-project configuration preservation.
 
 ## Crosswalks
 
-- DWF-D21 defines the host-neutral owner and adapter boundary.
-- DWF-D20 defines the continuous Plan Run that consumes the scheduler output.
-- DWF-D22 separates workflow source distribution from runtime-state ownership.
-- DWF-D33 roots IDE enforcement in one OWNER binding, assigns child lineage,
-  and treats each hook target as a separate subject root.
-- DWF-D44 selects one workspace per mutating OWNER action without changing
-  host-neutral OWNER identity or workspace-local state ownership.
-- DWF-D37 keeps Completion Review identity independent from host transport.
+- DWF-D21 defines the host-neutral adapter boundary.
+- DWF-D42 removes host and workflow bookkeeping from ordinary admission.

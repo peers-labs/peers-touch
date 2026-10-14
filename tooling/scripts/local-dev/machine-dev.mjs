@@ -36,8 +36,9 @@ const OPTION_NAMES = new Map([
   ['budget-seconds', 'budgetSeconds'],
   ['resource-kind', 'resourceKind'],
   ['resource-id', 'resourceId'],
-  ['owner-action', 'ownerAction'],
   ['reset-scope', 'resetScope'],
+  ['expected-branch', 'expectedBranch'],
+  ['expected-head', 'expectedHead'],
   ['format', 'format'],
 ]);
 

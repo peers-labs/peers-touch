@@ -132,31 +132,30 @@ tooling/scripts/review/knowledge-match.sh --range <base>...<head> --strict
 tooling/scripts/review/hard-rules.sh --range <base>...<head>
 python3 tooling/scripts/review/code_structure_decision.py prepare --range <base>...<head>
 python3 tooling/scripts/review/code_structure_decision.py verify --range <base>...<head>
-python3 tooling/scripts/execution-plan.py --require-complete
-python3 tooling/scripts/acceptance-plan.py --active-plan --completion
+python3 tooling/scripts/execution-plan.py --plan <explicit-plan> --require-complete
+python3 tooling/scripts/acceptance-plan.py --execution-plan <explicit-plan> --completion
 ```
 
 For explicit standalone no-Plan work, replace the tracked Plan commands with:
 
 ```bash
 python3 tooling/scripts/execution-plan.py --require-complete --allow-untracked
-node tooling/skills/pt-completion-auditor/scripts/completion-audit.mjs \
+node tooling/scripts/local-dev/completion-review.mjs standalone \
   --repo-root "$PWD" \
-  --work-item <id> \
-  --mode standalone \
-  --claim-class delivery-ready
+  --obligations '<json-array>' \
+  --evidence '<json-array>'
 ```
 
-Do not manufacture a Plan, Session, active-work record, BindingProjection, or
-Completion Review receipt for standalone review. Formal Acceptance remains
-`NOT RUN/UNPROVEN` unless its normal owner produced exact proof.
+Do not manufacture a Plan, task record, host authority, or review receipt for
+standalone review. Formal Acceptance remains `NOT RUN/UNPROVEN` unless its
+normal owner produced exact proof.
 
 CI has no machine workspace binding. The PR body must declare every owned Plan
 under `## Execution Plans / 执行计划`; CI passes each path through `--plan` and
 must not infer a Plan from the PR branch.
 Reject Plan Packages that retain mutable `expectedHead`; current source
-identity belongs to the Development declaration, Session checkpoint, and
-the workspace active-work projection rather than tracked Plan content.
+identity comes directly from the selected Git worktree and current evidence,
+not tracked Plan content.
 
 If the PR touches review or skill infrastructure, also run:
 
@@ -198,47 +197,14 @@ structure signals never decide the verdict by themselves.
 For Goal, execution-skill, or tracked-work workflow changes, additionally
 verify:
 
-- every status, handoff, worker result, and review verdict consumes the
-  current canonical `BindingProjection`; child assignment validates the exact
-  current active-work and Development Session records; one assignment has one
-  atomically published execution-session claim; Completion Review uses its
-  repository-native immutable request, exact reviewer capability, internally
-  derived assessment proof, and current review namespace without enumerating
-  Workflow Bindings or Action Receipts;
-- OWNER publication uses atomic create-once semantics, and `PreCompact` /
-  `PostCompact` persist and verify one receipt per complete binding lineage so
-  concurrent OWNER/WORKER/REVIEWER compactions cannot overwrite each other;
-- Agent-created worktrees use the explicitly authorized owner-aware creation
-  path, resolve the requested start point to an exact commit, and persist both
-  a recoverable creation transaction and immutable `createdBy` main-session
-  provenance; reject raw Git creation presented as supported, Git actor
-  substitution, Action Receipt substitution for user authorization, path
-  reuse, or guessed legacy provenance;
-- stable Plan changes preserve one `planId`, append exactly one auditable
-  amendment, fence the complete manifest/Task byte set before switching the
-  ExecutionRun, and invalidate affected Task closures without remounting;
-- machine-wide work and Plan-mount ledgers remain coordination projections:
-  schema/lifecycle mutation is scoped to the selected workspace, unrelated
-  workspace liveness never becomes a migration gate, foreign legacy records
-  remain validated conflict inputs, mixed Plan indexes remain disjoint with
-  one workspace-occupancy union and a mechanical removal trigger, legacy
-  mounts accept only explicitly authorized exact-owner `owner-unmount` rather
-  than executable or terminal-trust compatibility paths, and stale writers
-  fail schema/CAS fences instead of overwriting newer state;
-- CI validates explicit Plan source without consulting machine-local mounts and
-  accepts completion only from an immutable repository
-  `completions/<planDigest>.json` attestation;
-- TRAE multi-root integration projects equivalent ingress into the selected
-  source root, descriptor bootstrap root, and existing TRAE-participating
-  roots, never treats Hook location or folder order as execution authority,
-  selects one workspace per OWNER mutation with target precedence, and rejects
-  only multi-root mutation or undeclared selection with
-  `WORKTREE_SELECTION_REQUIRED`;
-- ordinary integration projection is non-destructive, requires no Hook-issued
-  grant, global idle, or parsing of Plan/declaration/Session state, and deletes
-  no workflow state; its projection-only audit cannot claim workflow health.
-  Only exact OWNER `skills-hard-cut` and `skills-gc` grants may perform their
-  bounded global-idle cleanup, with no compatibility reader or dual writer;
+- status, handoff, worker result, and review verdict use current Git/runtime
+  facts, explicit obligations, an explicit optional task ID, and fresh
+  evidence rather than host identity or historical workflow stores;
+- optional task state is event-first, task-local, revisioned, corruption
+  isolated, and never used as write/runtime/review authority;
+- TRAE integration changes only the explicitly selected root; Skills and Hook
+  health are separate, Hook failure is advisory, and stored commands use an
+  absolute interpreter with correct quoting;
 - execution mode is justified by dependencies, write sets, generated outputs,
   shared runtime resources, verification isolation, and integration order;
 - parallel lanes reserve non-overlapping write sets and keep shared files under
@@ -246,28 +212,18 @@ verify:
 - only live, backend-addressable agents with the same Goal identity block new
   work;
 - stale agent metadata is not converted into a persistent no-subagent rule;
-- Context Anchors report the machine-derived post-Next completed count and
-  percentage, completed delta, ready queue, execution mode and lanes, conflict
-  controls, critical path, Plan Run queue/mandate/autonomous horizon/stop
-  conditions, and an evidence-backed ETA or `unknown`;
-- Anchor and dashboard consumers copy post-Next progress from
-  `planctl status.progress.nextProgressBoundary`; reject local rounded
-  percentage addition or counting newly unlocked Tasks as complete;
-- Context Anchor timing is derived transiently from the bounded current
-  Session journal or the current `planctl advance` result; reject a new metrics
-  store, active-work expansion, historical Session scans, or estimated token
-  usage;
+- Context Anchors name the selected worktree, branch/HEAD, optional task,
+  evidence, blockers, unverified scope, and next action without inventing a
+  lifecycle or completion percentage;
 - resume-time Anchor synchronization does not pause already-authorized
   execution.
 - Goal Slice completion returns a legal successor frontier to Dev Workflow
   instead of asking the user whether to continue.
 - routine stage/code review findings are remediated and re-reviewed inside the
   Plan Run.
-- Development close uses one exact `workspaceId + workItemId` selector and a
-  resumable `DevelopmentCloseReceipt`; review rejects declaration-only close,
-  wrong-owner cancel/unmount, new-task admission during `CLOSING|BLOCKED`, and
-  environment unregister while declaration, active-work, PlanMount, or lease
-  remains live. Only `close-ready` requires the exact `CLOSED` resource matrix.
+- Development close affects one explicit task only, requires its evidence and
+  resource disposition, and does not hide environment unregister or seal the
+  worktree.
 
 ### 4. Decide
 
@@ -516,16 +472,15 @@ write sets, integrator-owned reconciliation, and non-blocking Context Anchor
 projection.
 
 For Agent integration controls, reject ordinary projection that requires
-unrelated worktrees to be idle or deletes workflow state. Require separate
-exact OWNER grants for legacy-store hard cut and retired-projection GC; only
-those two destructive commands may require global idle. Ordinary projection
-must not depend on a Hook-issued grant.
+unrelated worktrees to be idle, writes a descriptor or global configuration,
+or deletes workflow state. Skill projection must remain usable when optional
+Hook installation fails.
 
 For Local Dev Profile changes, reject any stored reset-policy field or
 compatibility reader. The verified canonical Profile ID is the sole policy
 source: case-insensitive `stable` means reset-protected; all other reviewed
 Profiles are Agent-resettable only inside the exact binding capability,
-declaration, scope, topology/source identity, and OS-lease guards. Missing
+scope, topology/source identity, operation authorization, and OS-lease guards. Missing
 capability or scope must remain a typed control-plane failure, not a request for
 human authorization.
 
@@ -533,19 +488,11 @@ For machine workspace registration changes, reject persisted Git HEAD,
 command-specific HEAD reconciliation, or another mutable source cache in the
 binding. The registration owns canonical root, workspace ID, registered branch,
 Profile, slot, capabilities, and Owner metadata. Current HEAD comes from Git;
-Development declaration/Session identity and runtime build readback fence
-source-sensitive mutation. Creation provenance and current workflow ownership
-are separate facts: preserve the original `createdBy`, propagate the verified
-`workflowOwner` through declaration, Session, active-work, Snapshot, and
-Context Anchor, and fail closed when an active legacy record has no owner or
-the current binding disagrees.
+operation admission and runtime build readback fence source-sensitive mutation.
 
-For Development close changes, preserve independent state owners. The
-coordinator may sequence lease inspection, Session archive, active-work close,
-declaration release, PlanMount release, and optional environment unregister
-under the workspace lifecycle fence, but it must not reimplement their policy
-or relabel abandoned state as success. Deleted-worktree recovery requires exact
-workspace, mount, and owner identity.
+For Development close changes, require an explicit task ID, revision/CAS,
+current evidence, and a settled disposition for resources owned by that task.
+Environment unregister remains a separate explicit operation.
 
 ### Acceptance Review
 

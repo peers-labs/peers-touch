@@ -10,9 +10,8 @@ from pathlib import Path
 from unittest import mock
 
 from tooling.acceptance.core.execution_plan import (
-    PLAN_BLOCKED,
-    PLAN_BINDING_MISMATCH,
-    PLAN_BINDING_REQUIRED,
+    PLAN_COMPLETE,
+    PLAN_INPUT_REQUIRED,
     PLAN_INVALID,
     ExecutionPlanError,
     changed_paths_for_plan,
@@ -358,16 +357,23 @@ class ExecutionPlanTest(unittest.TestCase):
                     "acceptance": acceptance,
                 }
             )
-            with mock.patch(
-                "tooling.acceptance.core.execution_plan._source_plan_status",
-                return_value=status,
+            with (
+                mock.patch(
+                    "tooling.acceptance.core.execution_plan._explicit_plan_inspection",
+                    return_value=status,
+                ),
+                mock.patch(
+                    "tooling.acceptance.core.execution_plan._git",
+                    side_effect=[temporary, "feat/example", "b" * 40],
+                ),
             ):
                 plan = load_formal_plan(plan_path)
 
-        self.assertEqual(plan.plan_format, "stable")
-        self.assertEqual(plan.current_task_id, "DWF-PY-01")
+        self.assertEqual(plan.plan_format, "version")
+        self.assertIsNone(plan.current_task_id)
+        self.assertIsNone(plan.current_closure)
         self.assertEqual(
-            plan.gate_ids("closure"),
+            plan.gate_ids("completion"),
             ["development-workflow-control-plane"],
         )
 
@@ -376,21 +382,24 @@ class ExecutionPlanTest(unittest.TestCase):
             path = Path(temporary) / "plan.md"
             path.write_text(stable_plan_text("1" * 16), encoding="utf-8")
 
-            with mock.patch(
-                "tooling.acceptance.core.execution_plan._source_plan_status",
-                return_value=mounted_plan_status("1" * 16),
+            with (
+                mock.patch(
+                    "tooling.acceptance.core.execution_plan._explicit_plan_inspection",
+                    return_value=mounted_plan_status("1" * 16),
+                ),
+                mock.patch(
+                    "tooling.acceptance.core.execution_plan._git",
+                    side_effect=[temporary, "feat/example", "b" * 40],
+                ),
             ):
                 plan = load_formal_plan(path)
 
-        self.assertEqual(plan.plan_format, "stable")
-        self.assertEqual(plan.current_task_id, "T1")
-        self.assertEqual(plan.current_task_path, "tasks/T1.md")
-        self.assertEqual(
-            plan.current_task_write_set,
-            ("tooling/scripts/plan",),
-        )
-        self.assertEqual(plan.current_closure, "C1")
-        self.assertEqual(plan.gate_ids("closure"), ["cheap-gate"])
+        self.assertEqual(plan.plan_format, "version")
+        self.assertIsNone(plan.current_task_id)
+        self.assertIsNone(plan.current_task_path)
+        self.assertIsNone(plan.current_task_write_set)
+        self.assertIsNone(plan.current_closure)
+        self.assertEqual(plan.gate_ids("completion"), ["cheap-gate"])
         self.assertEqual(
             plan.source_claims,
             (
@@ -502,10 +511,16 @@ class ExecutionPlanTest(unittest.TestCase):
     def test_stable_plan_changed_paths_are_limited_to_source_claims(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "plan.md"
-            path.write_text(stable_plan_text("1" * 16), encoding="utf-8")
-            with mock.patch(
-                "tooling.acceptance.core.execution_plan._source_plan_status",
-                return_value=mounted_plan_status("1" * 16),
+            path.write_text(plan_version_text("1" * 16), encoding="utf-8")
+            with (
+                mock.patch(
+                    "tooling.acceptance.core.execution_plan._explicit_plan_inspection",
+                    return_value=mounted_plan_status("1" * 16),
+                ),
+                mock.patch(
+                    "tooling.acceptance.core.execution_plan._git",
+                    side_effect=[temporary, "feat/example", "b" * 40],
+                ),
             ):
                 plan = load_formal_plan(path)
 
@@ -522,7 +537,13 @@ class ExecutionPlanTest(unittest.TestCase):
         ):
             paths = changed_paths_for_plan(Path("/repo"), plan)
 
-        self.assertEqual(paths, ["tooling/scripts/plan/planctl.mjs"])
+        self.assertEqual(
+            paths,
+            [
+                "docs/architecture/engineering/development-workflow/design.md",
+                "tooling/scripts/plan/planctl.mjs",
+            ],
+        )
 
         with mock.patch(
             "tooling.acceptance.core.execution_plan._git",
@@ -549,7 +570,7 @@ class ExecutionPlanTest(unittest.TestCase):
             ],
         )
 
-    def test_blocked_stable_plan_has_no_runnable_closure(self) -> None:
+    def test_explicit_plan_version_has_no_implicit_runnable_closure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "plan.md"
             path.write_text(
@@ -557,12 +578,18 @@ class ExecutionPlanTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with mock.patch(
-                "tooling.acceptance.core.execution_plan._source_plan_status",
-                return_value=mounted_plan_status(
-                    "1" * 16,
-                    status="blocked",
-                    current=False,
+            with (
+                mock.patch(
+                    "tooling.acceptance.core.execution_plan._explicit_plan_inspection",
+                    return_value=mounted_plan_status(
+                        "1" * 16,
+                        status="blocked",
+                        current=False,
+                    ),
+                ),
+                mock.patch(
+                    "tooling.acceptance.core.execution_plan._git",
+                    side_effect=[temporary, "feat/example", "b" * 40],
                 ),
             ):
                 plan = load_formal_plan(path)
@@ -571,7 +598,7 @@ class ExecutionPlanTest(unittest.TestCase):
         self.assertIsNone(plan.current_closure)
         with self.assertRaises(ExecutionPlanError) as raised:
             plan.gate_ids("closure")
-        self.assertEqual(raised.exception.code, PLAN_BLOCKED)
+        self.assertEqual(raised.exception.code, PLAN_COMPLETE)
 
     def test_rejects_legacy_plan_documents(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -586,107 +613,50 @@ class ExecutionPlanTest(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, PLAN_INVALID)
 
-    def test_discovers_only_the_immutable_workspace_binding(self) -> None:
+    def test_rejects_multiple_current_closures(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            plan_dir = (
-                root / "docs" / "architecture" / "example" / "execution-plans"
-            )
-            plan_dir.mkdir(parents=True)
-            expected_workspace = workspace_id(root)
-            bound = plan_dir / "bound" / "plan.md"
-            foreign = plan_dir / "foreign" / "plan.md"
-            bound.parent.mkdir()
-            foreign.parent.mkdir()
-            bound.write_text(
-                stable_plan_text(expected_workspace),
-                encoding="utf-8",
-            )
-            foreign.write_text(
-                stable_plan_text("2" * 16),
+            path = Path(temporary) / "plan.md"
+            path.write_text(
+                plan_text(
+                    "1" * 16,
+                    rows="| C1 | in progress | |\n| C2 | in progress | |",
+                ),
                 encoding="utf-8",
             )
 
-            with (
-                mock.patch(
-                    "tooling.acceptance.core.execution_plan._workspace_plan_mount",
-                    return_value={
-                        "planId": "BOUND-PLAN",
-                        "planPath": bound.relative_to(root).as_posix(),
-                    },
-                ),
-                mock.patch(
-                    "tooling.acceptance.core.execution_plan._git",
-                    return_value="feat/example",
-                ),
-                mock.patch(
-                    "tooling.acceptance.core.execution_plan._mounted_plan_status",
-                    return_value=mounted_plan_status(
-                        expected_workspace,
-                        plan_id="BOUND-PLAN",
-                    ),
-                ) as package_projection,
-            ):
-                result = discover_active_plan(root)
+            with self.assertRaisesRegex(
+                ExecutionPlanError,
+                "multiple in-progress closures",
+            ) as raised:
+                load_formal_plan(path)
 
-        self.assertEqual(result.path, bound.resolve())
-        self.assertEqual(result.plan_id, "BOUND-PLAN")
-        package_projection.assert_called_once_with(bound.resolve())
+        self.assertEqual(raised.exception.code, PLAN_INVALID)
 
-    def test_rejects_a_bound_plan_identity_mismatch(self) -> None:
+    def test_allows_no_current_closure_after_every_closure_completes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            expected_workspace = workspace_id(root)
-            package_directory = (
-                root
-                / "docs"
-                / "architecture"
-                / "example"
-                / "execution-plans"
-                / "package"
-            )
-            package_directory.mkdir(parents=True)
-            manifest = package_directory / "plan.md"
-            manifest.write_text(
-                stable_plan_text(expected_workspace),
+            path = Path(temporary) / "plan.md"
+            path.write_text(
+                plan_text(
+                    "1" * 16,
+                    rows="| C1 | completed | |\n| C2 | completed | |",
+                ),
                 encoding="utf-8",
             )
 
-            with (
-                mock.patch(
-                    "tooling.acceptance.core.execution_plan._workspace_plan_mount",
-                    return_value={
-                        "planId": "OTHER-PLAN",
-                        "planPath": manifest.relative_to(root).as_posix(),
-                    },
-                ),
-                mock.patch(
-                    "tooling.acceptance.core.execution_plan._mounted_plan_status",
-                    return_value=mounted_plan_status(
-                        expected_workspace,
-                        plan_id="BOUND-PLAN",
-                    ),
-                ),
-            ):
-                with self.assertRaises(ExecutionPlanError) as mismatch:
-                    discover_active_plan(root, branch="feat/example")
+            plan = load_formal_plan(path)
 
-        self.assertEqual(mismatch.exception.code, PLAN_BINDING_MISMATCH)
+        self.assertIsNone(plan.current_closure)
+        with self.assertRaises(ExecutionPlanError) as raised:
+            plan.gate_ids("closure")
+        self.assertEqual(raised.exception.code, PLAN_COMPLETE)
 
-    def test_propagates_missing_workspace_binding(self) -> None:
+    def test_active_plan_discovery_requires_an_explicit_plan(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            with mock.patch(
-                "tooling.acceptance.core.execution_plan._workspace_plan_mount",
-                side_effect=ExecutionPlanError(
-                    PLAN_BINDING_REQUIRED,
-                    "workspace has no immutable Plan binding",
-                ),
-            ):
-                with self.assertRaises(ExecutionPlanError) as missing:
-                    discover_active_plan(root)
+            with self.assertRaises(ExecutionPlanError) as missing:
+                discover_active_plan(root)
 
-        self.assertEqual(missing.exception.code, PLAN_BINDING_REQUIRED)
+        self.assertEqual(missing.exception.code, PLAN_INPUT_REQUIRED)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import {
-  chmodSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
@@ -12,21 +11,13 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 import {
   machineLeasePath,
   machineRegistryPath,
   workspaceIdForRoot,
 } from '../lib/machine-dev-paths.mjs';
-import {
-  releaseDeclaration,
-  startOrUpdateDeclaration,
-} from './dev-work.mjs';
-import {
-  clearActiveWorkRecord,
-  updateActiveWorkRecord,
-} from './active-work-store.mjs';
 import {
   buildLeaseCommand,
   MachineDevError,
@@ -40,18 +31,7 @@ import {
   updateWorkspace,
   validateLeaseRequest,
 } from './machine-dev-registry.mjs';
-import { runCli as runMachineCli } from './machine-dev.mjs';
-import {
-  RESOURCE_PLAN_KIND,
-  digestValue,
-  planResourceReceiptPath,
-} from './dev-resource-plan.mjs';
-import { inspectGitWorkspace } from './git-workspace.mjs';
 import { acquireWorkspaceLifecycleLockSync } from './workspace-lifecycle-lock.mjs';
-import {
-  hashWorkflowRootChatIdentity,
-  WORKFLOW_OWNER_REFERENCE_KIND,
-} from './workflow-owner-reference.mjs';
 
 const cli = fileURLToPath(new URL('./machine-dev.mjs', import.meta.url));
 const leaseCli = fileURLToPath(new URL('./machine-dev-lease.py', import.meta.url));
@@ -69,6 +49,7 @@ function initializeGitRepository(directory, branch = 'feat/test') {
   execFileSync('git', ['init', '-b', branch], { cwd: directory });
   git(directory, 'config', 'user.email', 'machine-dev-test@example.invalid');
   git(directory, 'config', 'user.name', 'Machine Dev Test');
+  git(directory, 'config', 'core.hooksPath', '/dev/null');
   writeFileSync(path.join(directory, 'README.md'), 'fixture\n');
   git(directory, 'add', 'README.md');
   git(directory, 'commit', '-m', 'test: initialize fixture');
@@ -104,6 +85,7 @@ function addProfile(
     stationUrl,
     deployEnvironment,
     deployHost,
+    writeDeployDefinition = true,
     tracked = true,
   },
 ) {
@@ -119,7 +101,7 @@ function addProfile(
       deployEnvironment,
     }),
   );
-  if (deployEnvironment) {
+  if (deployEnvironment && writeDeployDefinition) {
     writeFileSync(
       path.join(deployDirectory, `${deployEnvironment}.env.example`),
       [
@@ -191,41 +173,11 @@ function registrationOptions(scope, overrides = {}) {
   };
 }
 
-function workflowOwner() {
-  const rootChatId = 'main-chat-session';
-  return {
-    kind: WORKFLOW_OWNER_REFERENCE_KIND,
-    host: 'trae',
-    rootChatId,
-    rootChatHash: hashWorkflowRootChatIdentity('trae', rootChatId),
-    rootBindingDigest: 'a'.repeat(64),
-  };
-}
-
 function expectCode(code, operation) {
   assert.throws(operation, (error) => {
     assert.ok(error instanceof MachineDevError);
     assert.equal(error.code, code);
     return true;
-  });
-}
-
-function declareLeaseIntent(scope) {
-  return startOrUpdateDeclaration({
-    home: scope.home,
-    workspaceRoot: scope.workspaceA,
-    workItemId: 'machine-dev-test',
-    sessionId: 'machine-dev-session',
-    owner: 'machine-dev-test@example.invalid',
-    purpose: 'exercise OS-held machine leases',
-    sourceClaims: 'exclusive-write:tooling/scripts/local-dev',
-    runtimeClaims: [
-      'shared:profile:four',
-      'exclusive:local.slot:5',
-      'exclusive:station.deploy:station-four',
-      'exclusive:station.reset:station-four-fixture',
-    ].join(';'),
-    workflowOwner: workflowOwner(),
   });
 }
 
@@ -235,7 +187,6 @@ function leaseArguments(
   resourceId,
   budgetSeconds,
   command,
-  { ownerAction } = {},
 ) {
   const args = [
     cli,
@@ -255,9 +206,6 @@ function leaseArguments(
   ];
   if (resourceKind === 'station.reset') {
     args.push('--reset-scope', resourceId);
-  }
-  if (ownerAction) {
-    args.push('--owner-action', ownerAction);
   }
   return [...args, '--', ...command];
 }
@@ -383,79 +331,6 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
   }
 });
 
-test('registration preserves the worktree main-session owner', () => {
-  const scope = fixture();
-  try {
-    const owner = workflowOwner();
-    const registered = registerWorkspace(
-      registrationOptions(scope, { createdBy: owner }),
-    );
-    assert.deepEqual(registered.createdBy, owner);
-    const updated = updateWorkspace(
-      registrationOptions(scope, {
-        purpose: 'updated without changing provenance',
-        createdBy: {
-          ...owner,
-          rootBindingDigest: 'b'.repeat(64),
-        },
-      }),
-    );
-    assert.deepEqual(updated.createdBy, owner);
-    assert.deepEqual(
-      statusAll({ home: scope.home, envRepo: scope.envRepo })
-        .registrations[0].createdBy,
-      owner,
-    );
-  } finally {
-    scope.close();
-  }
-});
-
-test('registration never substitutes the current OWNER for missing creation provenance', async () => {
-  const scope = fixture();
-  try {
-    await runMachineCli(
-      [
-        'register',
-        '--home',
-        scope.home,
-        '--workspace-root',
-        scope.workspaceA,
-        '--env-repo',
-        scope.envRepo,
-        '--profile',
-        'four',
-        '--slot',
-        '5',
-        '--capabilities',
-        'station.connect',
-        '--purpose',
-        'do not invent creation provenance',
-        '--owner',
-        'machine-dev-test@example.invalid',
-      ],
-      {
-        output() {},
-        dependencies: {
-          resolveWorkflowOwnerCommandContext: () => ({
-            workflowOwner: workflowOwner(),
-            actionReceiptDigest: 'b'.repeat(64),
-          }),
-          readWorktreeCreation: () => null,
-        },
-      },
-    );
-
-    const [registration] = statusAll({
-      home: scope.home,
-      envRepo: scope.envRepo,
-    }).registrations;
-    assert.equal(Object.hasOwn(registration, 'createdBy'), false);
-  } finally {
-    scope.close();
-  }
-});
-
 test('current Git HEAD is source state, not durable registration identity', () => {
   const scope = fixture();
   try {
@@ -540,251 +415,33 @@ test('schema v1 remains headless and rejects incompatible registry shapes', () =
   }
 });
 
-test('runtime intent remains fenced to the current Git HEAD', () => {
+test('FLOW-A11 runtime admission needs no task declaration and remains fenced to the prepared Git HEAD', () => {
   const scope = fixture();
   try {
     registerWorkspace(registrationOptions(scope));
-    declareLeaseIntent(scope);
-    writeFileSync(path.join(scope.workspaceA, 'next.txt'), 'next\n');
-    git(scope.workspaceA, 'add', 'next.txt');
-    git(scope.workspaceA, 'commit', '-m', 'test: advance declared source');
-
-    assert.equal(
-      checkWorkspace({
-        home: scope.home,
-        workspaceRoot: scope.workspaceA,
-        envRepo: scope.envRepo,
-      }).source.head,
-      git(scope.workspaceA, 'rev-parse', 'HEAD'),
-    );
-    expectCode('RUNTIME_INTENT_MISSING', () =>
-      validateLeaseRequest({
-        ...registrationOptions(scope),
-        resourceKind: 'station.deploy',
-        resourceId: 'station-four',
-        budgetSeconds: 5,
-      }),
-    );
-
-    const refreshed = declareLeaseIntent(scope);
-    assert.equal(
-      validateLeaseRequest({
-        ...registrationOptions(scope),
-        resourceKind: 'station.deploy',
-        resourceId: 'station-four',
-        budgetSeconds: 5,
-      }).declarationId,
-      refreshed.declarationId,
-    );
-  } finally {
-    scope.close();
-  }
-});
-
-test('planner-owned runtime intent requires a committed resource-plan fence', () => {
-  const scope = fixture();
-  try {
-    const registered = registerWorkspace(registrationOptions(scope));
-    const source = inspectGitWorkspace(scope.workspaceA);
-    const planPath =
-      'docs/architecture/engineering/development-workflow/execution-plans/test/plan.md';
-    const planStatus = {
-      planId: 'DWF-RESOURCE-PLAN',
-      currentTaskId: 'DWF-RESOURCE-T1',
-      workspaceId: registered.workspaceId,
-      branch: registered.branch,
-      planDigest: 'a'.repeat(64),
-      mountId: 'mount-machine-dev-test',
-      runId: 'run-machine-dev-test',
-      status: 'active',
-      taskStatuses: {
-        'DWF-RESOURCE-T1': 'in_progress',
-      },
-    };
-    const planExecution = {
-      mount: {
-        planId: planStatus.planId,
-        planPath,
-        mountId: planStatus.mountId,
-      },
-      snapshot: {
-        planDigest: planStatus.planDigest,
-      },
-      run: {
-        runId: planStatus.runId,
-      },
-    };
-    const declaration = startOrUpdateDeclaration({
-      home: scope.home,
-      workspaceRoot: scope.workspaceA,
-      workItemId: 'machine-dev-test',
-      sessionId: 'machine-dev-session',
-      owner: 'machine-dev-test@example.invalid',
-      purpose: 'exercise planner-owned machine lease admission',
-      sourceClaims: 'exclusive-write:tooling/scripts/local-dev',
-      runtimeClaims: [
-        'shared:profile:four',
-        'exclusive:local.slot:5',
-        'shared:resource.plan:machine-dev-test',
-        'exclusive:station.deploy:station-four',
-        'exclusive:station.reset:station-four-fixture',
-      ].join(';'),
-      workflowOwner: workflowOwner(),
-      planPath,
-      taskId: planStatus.currentTaskId,
-      planStatus,
-      planExecution,
-    });
-    const file = planResourceReceiptPath({
-      home: scope.home,
-      workspaceRoot: scope.workspaceA,
-      workItemId: declaration.workItemId,
-    });
-    expectCode('RESOURCE_PLAN_MISSING', () =>
-      validateLeaseRequest({
-        ...registrationOptions(scope),
-        resourceKind: 'station.deploy',
-        resourceId: 'station-four',
-        budgetSeconds: 5,
-      }),
-    );
-    mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-    const receipt = {
-      kind: RESOURCE_PLAN_KIND,
-      schemaVersion: 1,
-      planId: planStatus.planId,
-      taskId: planStatus.currentTaskId,
-      source: {
-        commit: source.commit,
-        workspaceDigest: source.workspaceDigest,
-      },
-      sourceHead: source.commit,
-      workItemId: declaration.workItemId,
-      workspaceId: registered.workspaceId,
-      declarationId: declaration.declarationId,
-      allocationDigest: digestValue({ allocation: 'station-four' }),
-      fencingToken: 1,
-      preparationState: 'RESERVING',
-      baseRuntimeClaims: [
-        {
-          kind: 'profile',
-          resourceId: 'four',
-          mode: 'shared',
-        },
-        {
-          kind: 'local.slot',
-          resourceId: '5',
-          mode: 'exclusive',
-        },
-        {
-          kind: 'station.reset',
-          resourceId: 'station-four-fixture',
-          mode: 'exclusive',
-        },
-      ],
-      plannedRuntimeClaims: [
-        {
-          kind: 'resource.plan',
-          resourceId: declaration.workItemId,
-          mode: 'shared',
-        },
-        {
-          kind: 'station.deploy',
-          resourceId: 'station-four',
-          mode: 'exclusive',
-        },
-      ],
-      resourceResults: [
-        {
-          resourceKind: 'station.deploy',
-          resourceId: 'station-four',
-          action: 'REUSE',
-          status: 'PENDING',
-          owner: 'runtime-owner',
-          manifestRef: 'runtime://station-four',
-          digests: {
-            source: null,
-            artifact: null,
-            runtime: null,
-          },
-          targetIds: ['station'],
-          requirementIds: ['station-runtime'],
-          idempotencyKeys: ['DWF-RESOURCE-PLAN:task:station-runtime:station'],
-        },
-      ],
-    };
-    const writeReceipt = () => {
-      delete receipt.receiptDigest;
-      receipt.receiptDigest = digestValue(receipt);
-      writeFileSync(file, `${JSON.stringify(receipt)}\n`, { mode: 0o600 });
-    };
-    writeReceipt();
-    chmodSync(file, 0o600);
-
-    expectCode('RESOURCE_PLAN_NOT_COMMITTED', () =>
-      validateLeaseRequest({
-        ...registrationOptions(scope),
-        resourceKind: 'station.deploy',
-        resourceId: 'station-four',
-        budgetSeconds: 5,
-      }),
-    );
-
-    receipt.preparationState = 'COMMITTED';
-    delete receipt.allocationDigest;
-    writeReceipt();
-    expectCode('RESOURCE_PLAN_INVALID', () =>
-      validateLeaseRequest({
-        ...registrationOptions(scope),
-        resourceKind: 'station.deploy',
-        resourceId: 'station-four',
-        budgetSeconds: 5,
-      }),
-    );
-
-    receipt.allocationDigest = digestValue({ allocation: 'station-four' });
-    delete receipt.fencingToken;
-    writeReceipt();
-    expectCode('RESOURCE_PLAN_INVALID', () =>
-      validateLeaseRequest({
-        ...registrationOptions(scope),
-        resourceKind: 'station.deploy',
-        resourceId: 'station-four',
-        budgetSeconds: 5,
-      }),
-    );
-
-    receipt.fencingToken = 1;
-    writeReceipt();
-    expectCode('RESOURCE_PLAN_NOT_READY', () =>
-      validateLeaseRequest({
-        ...registrationOptions(scope),
-        resourceKind: 'station.deploy',
-        resourceId: 'station-four',
-        budgetSeconds: 5,
-      }),
-    );
-
-    receipt.resourceResults[0].status = 'QUARANTINED';
-    writeReceipt();
-    expectCode('RESOURCE_PLAN_NOT_READY', () =>
-      validateLeaseRequest({
-        ...registrationOptions(scope),
-        resourceKind: 'station.deploy',
-        resourceId: 'station-four',
-        budgetSeconds: 5,
-      }),
-    );
-
-    receipt.resourceResults[0].status = 'READY';
-    writeReceipt();
-    const admitted = validateLeaseRequest({
+    const request = validateLeaseRequest({
       ...registrationOptions(scope),
       resourceKind: 'station.deploy',
       resourceId: 'station-four',
       budgetSeconds: 5,
     });
-    assert.equal(admitted.resourcePlanAdmission.authority, 'resource-plan');
+    assert.equal(request.source.head, git(scope.workspaceA, 'rev-parse', 'HEAD'));
+
+    const runner = buildLeaseCommand({
+      ...registrationOptions(scope),
+      resourceKind: 'station.deploy',
+      resourceId: 'station-four',
+      budgetSeconds: 5,
+      command: [process.execPath, '-e', 'process.exit(0)'],
+    });
+    writeFileSync(path.join(scope.workspaceA, 'next.txt'), 'next\n');
+    git(scope.workspaceA, 'add', 'next.txt');
+    git(scope.workspaceA, 'commit', '-m', 'test: advance declared source');
+    const result = spawnSync(runner.executable, runner.arguments, {
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /RUNTIME_IDENTITY_MISMATCH/);
   } finally {
     scope.close();
   }
@@ -847,7 +504,7 @@ test('profile selection registers once with an available slot and minimum remote
   }
 });
 
-test('unregisters an idle owned workspace and rejects owner mismatch', () => {
+test('FLOW-A11 unregister is blocked only by ownership and live OS leases', () => {
   const scope = fixture();
   try {
     const registered = registerWorkspace(registrationOptions(scope));
@@ -873,78 +530,21 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
         }),
       }),
     );
-    const declaration = declareLeaseIntent(scope);
-    expectCode('WORKSPACE_LIFECYCLE_CONFLICT', () =>
-      unregisterWorkspace({
-        home: scope.home,
-        workspaceRoot: scope.workspaceA,
-        owner: registered.owner,
-      }),
-    );
-    releaseDeclaration({
-      home: scope.home,
-      workspaceRoot: scope.workspaceA,
-      workItemId: declaration.workItemId,
-      sessionId: declaration.sessionId,
-      workflowOwner: declaration.workflowOwner,
-    });
-
-    const activeWork = updateActiveWorkRecord(
-      {
-        workspaceId: registered.workspaceId,
-        workItemId: 'machine-dev-test',
-        mountId: 'mount-machine-dev-test',
-        runId: 'run-machine-dev-test',
-        snapshotDigest: 'a'.repeat(64),
-        planId: 'MACHINE-DEV-PLAN',
-        planPath:
-          'docs/architecture/engineering/local-dev/execution-plans/test/plan.md',
-        planStatus: 'completed',
-        currentTaskId: 'MACHINE-DEV-T1',
-        currentTaskPath:
-          'docs/architecture/engineering/local-dev/execution-plans/test/tasks/MACHINE-DEV-T1.md',
-        taskStatus: 'done',
-        sessionId: 'machine-dev-session',
-        journeyId: 'MACHINE-DEV-J01',
-        devState: null,
-        branch: registered.branch,
-        initialHead: git(scope.workspaceA, 'rev-parse', 'HEAD'),
-        expectedHead: git(scope.workspaceA, 'rev-parse', 'HEAD'),
-        workflowOwner: declaration.workflowOwner,
-      },
-      {
-        home: scope.home,
-        workspaceRoot: scope.workspaceA,
-      },
-    );
-    expectCode('WORKSPACE_LIFECYCLE_CONFLICT', () =>
-      unregisterWorkspace({
-        home: scope.home,
-        workspaceRoot: scope.workspaceA,
-        owner: registered.owner,
-      }),
-    );
-    clearActiveWorkRecord({
-      home: scope.home,
-      workspaceRoot: scope.workspaceA,
-      expectedRevision: activeWork.revision,
-      workItemId: activeWork.workItemId,
-      workflowOwner: activeWork.workflowOwner,
-    });
-    expectCode('WORKSPACE_LIFECYCLE_CONFLICT', () =>
-      unregisterWorkspace({
-        home: scope.home,
-        workspaceRoot: scope.workspaceA,
-        owner: registered.owner,
-        readLivePlanMountId: () => 'mount-machine-dev-test',
-      }),
-    );
 
     const removed = unregisterWorkspace({
       home: scope.home,
       workspaceRoot: scope.workspaceA,
       owner: registered.owner,
       now: new Date('2026-09-17T00:05:00.000Z'),
+      readLedger: () => {
+        throw new Error('task ledger must not be read');
+      },
+      readActiveWorkRecord: () => {
+        throw new Error('active-work must not be read');
+      },
+      readLivePlanMountId: () => {
+        throw new Error('PlanMount must not be read');
+      },
     });
     assert.equal(removed.workspaceId, registered.workspaceId);
     assert.equal(removed.name, registered.name);
@@ -1022,7 +622,6 @@ test('agent-resettable profiles still require exact reset scope identity', () =>
   const scope = fixture();
   try {
     registerWorkspace(registrationOptions(scope));
-    declareLeaseIntent(scope);
     expectCode('RESET_SCOPE_MISMATCH', () =>
       buildLeaseCommand({
         ...registrationOptions(scope),
@@ -1223,6 +822,127 @@ test('malformed authoritative registry fails closed without replacement', () => 
   }
 });
 
+test('FLOW-A12 capability, stable policy, and target mismatch reject before command side effects', () => {
+  const scope = fixture();
+  try {
+    registerWorkspace(
+      registrationOptions(scope, {
+        capabilities: 'station.connect',
+      }),
+    );
+    const marker = path.join(scope.root, 'forbidden-side-effect');
+    const missingCapability = spawnSync(
+      process.execPath,
+      leaseArguments(scope, 'station.deploy', 'station-four', 5, [
+        process.execPath,
+        '-e',
+        `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`,
+      ]),
+      { encoding: 'utf8' },
+    );
+    assert.equal(missingCapability.status, 2);
+    assert.match(missingCapability.stderr, /WORKSPACE_CAPABILITY_MISSING/);
+    assert.equal(existsSync(marker), false);
+
+    updateWorkspace(
+      registrationOptions(scope, {
+        capabilities: 'station.connect,station.deploy',
+      }),
+    );
+    const wrongTarget = spawnSync(
+      process.execPath,
+      leaseArguments(scope, 'station.deploy', 'station-five', 5, [
+        process.execPath,
+        '-e',
+        `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`,
+      ]),
+      { encoding: 'utf8' },
+    );
+    assert.equal(wrongTarget.status, 2);
+    assert.match(wrongTarget.stderr, /DEPLOY_TARGET_MISMATCH/);
+    assert.equal(existsSync(marker), false);
+  } finally {
+    scope.close();
+  }
+});
+
+test('FLOW-A13 profile aliases for one reviewed target contend on the same OS lease', async () => {
+  const scope = fixture();
+  let holder;
+  try {
+    addProfile(scope, {
+      name: 'fourAlias',
+      stationUrl: 'http://192.0.2.4:18080',
+      deployEnvironment: 'station-four',
+      deployHost: '192.0.2.4',
+      writeDeployDefinition: false,
+    });
+    registerWorkspace(registrationOptions(scope));
+    registerWorkspace(
+      registrationOptions(scope, {
+        workspaceRoot: scope.workspaceB,
+        profile: 'fourAlias',
+        slot: 6,
+      }),
+    );
+    const marker = path.join(scope.root, 'alias-lease-held');
+    holder = spawn(
+      process.execPath,
+      leaseArguments(scope, 'station.deploy', 'station-four', 30, [
+        process.execPath,
+        '-e',
+        `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'held'); setInterval(() => {}, 1000)`,
+      ]),
+      { stdio: ['ignore', 'ignore', 'pipe'] },
+    );
+    let holderError = '';
+    holder.stderr.setEncoding('utf8');
+    holder.stderr.on('data', (chunk) => {
+      holderError += chunk;
+    });
+    const holderExit = waitForChild(holder);
+    await waitForFile(
+      marker,
+      () => `exitCode=${holder.exitCode} stderr=${holderError}`,
+    );
+
+    const contender = spawnSync(
+      process.execPath,
+      [
+        cli,
+        'lease',
+        '--home',
+        scope.home,
+        '--workspace-root',
+        scope.workspaceB,
+        '--env-repo',
+        scope.envRepo,
+        '--resource-kind',
+        'station.deploy',
+        '--resource-id',
+        'station-four',
+        '--budget-seconds',
+        '5',
+        '--',
+        process.execPath,
+        '-e',
+        'process.exit(0)',
+      ],
+      { encoding: 'utf8' },
+    );
+    assert.equal(contender.status, 2);
+    assert.match(contender.stderr, /STATION_CAPABILITY_CONFLICT/);
+
+    holder.kill('SIGTERM');
+    const result = await holderExit;
+    holder = null;
+    assert.equal(result.code, 143, holderError);
+  } finally {
+    if (holder && holder.exitCode === null) holder.kill('SIGKILL');
+    scope.close();
+  }
+});
+
 for (const leaseCase of [
   {
     resourceKind: 'local.slot',
@@ -1245,7 +965,6 @@ for (const leaseCase of [
     let holder;
     try {
       registerWorkspace(registrationOptions(scope));
-      declareLeaseIntent(scope);
       const marker = path.join(scope.root, `${leaseCase.resourceKind}.ready`);
       holder = spawn(
         process.execPath,
@@ -1416,7 +1135,7 @@ for (const leaseCase of [
   });
 }
 
-test('make.station owner action acquires only the bounded deploy lease', () => {
+test('FLOW-A11 deploy lease is admitted by the binding without an owner-action bypass', () => {
   const scope = fixture();
   try {
     registerWorkspace(
@@ -1424,10 +1143,7 @@ test('make.station owner action acquires only the bounded deploy lease', () => {
         capabilities: 'station.connect,station.deploy,station.reset',
       }),
     );
-    const marker = path.join(scope.root, 'owner-action-station-deploy');
-    const registryModule = pathToFileURL(
-      fileURLToPath(new URL('./machine-dev-registry.mjs', import.meta.url)),
-    ).href;
+    const marker = path.join(scope.root, 'binding-authorized-station-deploy');
     const allowed = spawnSync(
       process.execPath,
       leaseArguments(
@@ -1437,42 +1153,45 @@ test('make.station owner action acquires only the bounded deploy lease', () => {
         5,
         [
           process.execPath,
-          '--input-type=module',
           '-e',
-          [
-            `const { verifyHeldLease } = await import(${JSON.stringify(registryModule)});`,
-            `verifyHeldLease(${JSON.stringify({
-              home: scope.home,
-              workspaceRoot: scope.workspaceA,
-              envRepo: scope.envRepo,
-              resourceKind: 'station.deploy',
-              resourceId: 'station-four',
-            })});`,
-            `const { writeFileSync } = await import('node:fs');`,
-            `writeFileSync(${JSON.stringify(marker)}, 'ready');`,
-          ].join('\n'),
+          `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ready')`,
         ],
-        { ownerAction: 'make.station' },
       ),
       { encoding: 'utf8' },
     );
     assert.equal(allowed.status, 0, allowed.stderr);
     assert.equal(readFileSync(marker, 'utf8'), 'ready');
 
+    const bypassMarker = path.join(scope.root, 'owner-action-bypass');
     const rejected = spawnSync(
       process.execPath,
-      leaseArguments(
-        scope,
-        'station.reset',
-        'station-four-fixture',
-        5,
-        [process.execPath, '-e', 'process.exit(0)'],
-        { ownerAction: 'make.station' },
-      ),
+      [
+        cli,
+        'lease',
+        '--home',
+        scope.home,
+        '--workspace-root',
+        scope.workspaceA,
+        '--env-repo',
+        scope.envRepo,
+        '--resource-kind',
+        'station.deploy',
+        '--resource-id',
+        'station-four',
+        '--budget-seconds',
+        '5',
+        '--owner-action',
+        'make.station',
+        '--',
+        process.execPath,
+        '-e',
+        `require('node:fs').writeFileSync(${JSON.stringify(bypassMarker)}, 'ran')`,
+      ],
       { encoding: 'utf8' },
     );
     assert.equal(rejected.status, 2);
-    assert.match(rejected.stderr, /OWNER_ACTION_INVALID/);
+    assert.match(rejected.stderr, /unsupported option: --owner-action/);
+    assert.equal(existsSync(bypassMarker), false);
   } finally {
     scope.close();
   }
@@ -1484,7 +1203,6 @@ test('lease acquisition waits for the workspace lifecycle fence before validatio
   let lifecycle;
   try {
     registerWorkspace(registrationOptions(scope));
-    declareLeaseIntent(scope);
     lifecycle = acquireWorkspaceLifecycleLockSync({
       home: scope.home,
       workspaceRoot: scope.workspaceA,
@@ -1553,7 +1271,6 @@ test('post-lock validation rejects a binding changed after lease preparation', (
   const scope = fixture();
   try {
     const registration = registerWorkspace(registrationOptions(scope));
-    declareLeaseIntent(scope);
     const leaseFile = machineLeasePath('local.slot', '5', scope.home);
     mkdirSync(path.dirname(leaseFile), { recursive: true });
     const forged = spawnSync(process.execPath, ['-e', `
@@ -1640,7 +1357,6 @@ test('lease remains held when the Python supervisor is killed', async () => {
   let mutationPid = null;
   try {
     registerWorkspace(registrationOptions(scope));
-    declareLeaseIntent(scope);
     const marker = path.join(scope.root, 'sigkill-child.json');
     const runner = buildLeaseCommand({
       ...registrationOptions(scope),
