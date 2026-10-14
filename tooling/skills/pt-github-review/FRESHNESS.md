@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-10
-covered_docs_hash: a87a9ecf63edc9ee7bde395e764b3bd90ff6dda4f0a2e924213c2d1f19308c2c
+last_verified_at: 2026-10-14
+covered_docs_hash: 9a4decd459e516565ed2fc4970ed0c6cf3fadd8c285056d5ffafffca2fb5ea1a
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,21 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-14 Node Connectivity And Relay Review
+
+The reviewed architecture now replaces the custom WSS/mount data plane with
+standard libp2p Direct/Circuit v2 transport into the canonical Station router.
+Logical `station_peer_id` remains independent from Node PeerID and route
+coordinates. Relay owns only bounded admission and control; Desktop Station
+Access owns route selection and publishes immutable `RouteLease` values to one
+app-scoped `StationRuntime`.
+
+`SKILL.md` gained a dedicated Node Connectivity and Relay checklist because the
+new identity, Host ownership, private-CA health, failover/replay, hard-cut, and
+exact-source proof boundaries are reusable review requirements. Existing NCP
+Gates and hard rules provide executable coverage, so no generic review fixture
+or new knowledge entry is required.
 
 ## 2026-10-10 Mobile And Relay Local Sync Review
 

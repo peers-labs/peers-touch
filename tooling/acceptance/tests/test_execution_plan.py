@@ -433,6 +433,55 @@ class ExecutionPlanTest(unittest.TestCase):
         mounted_status.assert_called_once_with(path.resolve())
         source_status.assert_not_called()
 
+    def test_detached_repository_plan_uses_source_projection(self) -> None:
+        repo_root = Path(__file__).resolve().parents[3]
+        plan_path = (
+            repo_root
+            / "docs"
+            / "architecture"
+            / "domains"
+            / "agent"
+            / "execution-plans"
+            / "20261003-mcp-dual-runtime"
+            / "plan.md"
+        )
+        source_status = mounted_plan_status(
+            "1" * 16,
+            plan_id="agent-mcp-dual-runtime-20261003",
+            status="unverified",
+            current=False,
+        )
+        source_status.update(
+            {
+                "branch": None,
+                "workspaceId": None,
+                "initialHead": None,
+            }
+        )
+
+        with (
+            mock.patch(
+                "tooling.acceptance.core.execution_plan._git",
+                side_effect=[
+                    str(repo_root),
+                    ExecutionPlanError(PLAN_INVALID, "detached HEAD"),
+                ],
+            ),
+            mock.patch(
+                "tooling.acceptance.core.execution_plan._source_plan_status",
+                return_value=source_status,
+            ) as source_projection,
+            mock.patch(
+                "tooling.acceptance.core.execution_plan._workspace_plan_mount",
+            ) as mount_projection,
+        ):
+            plan = load_formal_plan(plan_path)
+
+        self.assertEqual(plan.status, "unverified")
+        self.assertIsNone(plan.workspace_id)
+        source_projection.assert_called_once_with(plan_path.resolve())
+        mount_projection.assert_not_called()
+
     def test_repository_plan_validation_does_not_require_a_machine_mount(self) -> None:
         repo_root = Path(__file__).resolve().parents[3]
         plan = load_formal_plan(

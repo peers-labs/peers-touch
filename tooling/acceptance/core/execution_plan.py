@@ -175,6 +175,16 @@ def _plan_status_for_context(path: Path) -> dict[str, Any]:
     except ExecutionPlanError:
         return _source_plan_status(path)
     try:
+        _git(
+            repository_root,
+            "symbolic-ref",
+            "--quiet",
+            "--short",
+            "HEAD",
+        )
+    except ExecutionPlanError:
+        return _source_plan_status(path)
+    try:
         mount = _workspace_plan_mount(repository_root)
     except ExecutionPlanError as error:
         if error.code == PLAN_BINDING_REQUIRED:
