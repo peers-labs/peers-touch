@@ -9,6 +9,7 @@ from tooling.acceptance.core import ENVIRONMENTS_DIR
 from tooling.acceptance.gates.desktop.shell_tray_e2e import (
     ASSET_PATH,
     CAPABILITY_ID,
+    DesktopShellTrayGate,
     GATE_ID,
     inspect_rgba_png,
     main,
@@ -47,6 +48,13 @@ class DesktopShellTrayGateTests(unittest.TestCase):
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
+
+    def test_gate_uses_current_run_artifact_writer(self) -> None:
+        source = SOURCE_PATH.read_text(encoding="utf-8")
+
+        self.assertIsNone(DesktopShellTrayGate.report_path)
+        self.assertIsNone(DesktopShellTrayGate.evidence_dir)
+        self.assertNotIn("REPORTS_DIR", source)
 
     def test_main_closes_ephemeral_client_after_gate_execution(self) -> None:
         events: list[str] = []

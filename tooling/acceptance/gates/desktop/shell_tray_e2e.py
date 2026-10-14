@@ -15,7 +15,6 @@ from tooling.acceptance.core import (
     AcceptanceGate,
     EphemeralGateClient,
     GateError,
-    REPORTS_DIR,
     load_runtime_manifest,
 )
 
@@ -45,8 +44,6 @@ TRAY_SOURCE_PATH = (
     / "tray"
     / "mod.rs"
 )
-REPORT_PATH = REPORTS_DIR / f"{GATE_ID}.json"
-EVIDENCE_DIR = REPORTS_DIR / "evidence" / GATE_ID
 
 
 def _sha256_file(path: Path) -> str:
@@ -150,8 +147,6 @@ class DesktopShellTrayGate(AcceptanceGate):
     phase = "DSTR-J01"
     bom = ("DSTR-01-SOURCE", "DSTR-02-FUNCTIONAL", "DSTR-03-FORMAL")
     spec = ("DSTR-A01", "DSTR-A02", "DSTR-A03", "DSTR-A04", "DSTR-A05", "DSTR-A06")
-    report_path = REPORT_PATH
-    evidence_dir = EVIDENCE_DIR
 
     def __init__(self, client: EphemeralGateClient) -> None:
         super().__init__()
