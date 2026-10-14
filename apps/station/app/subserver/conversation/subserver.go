@@ -258,6 +258,41 @@ func (s *subServer) Handlers() []server.Handler {
 
 	return []server.Handler{
 		server.NewTypedHandler(
+			"message-publishing-grant-create",
+			"/message-publishing/grants/create",
+			server.POST,
+			s.handleCreatePublishingGrant,
+			authenticatedActor...,
+		),
+		server.NewTypedHandler(
+			"message-publishing-grant-list",
+			"/message-publishing/grants/list",
+			server.POST,
+			s.handleListPublishingGrants,
+			authenticatedActor...,
+		),
+		server.NewTypedHandler(
+			"message-publishing-secret-rotate",
+			"/message-publishing/grants/rotate-secret",
+			server.POST,
+			s.handleRotatePublishingSecret,
+			authenticatedActor...,
+		),
+		server.NewTypedHandler(
+			"message-publishing-grant-revoke",
+			"/message-publishing/grants/revoke",
+			server.POST,
+			s.handleRevokePublishingGrant,
+			authenticatedActor...,
+		),
+		server.NewHTTPHandler(
+			"message-ingress-publish",
+			"/message-ingress/:publishing_id",
+			server.POST,
+			s.handlePublishMessage,
+			logID,
+		),
+		server.NewTypedHandler(
 			"conversation-create-direct",
 			"/conversation/direct",
 			server.POST,

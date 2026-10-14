@@ -10,15 +10,17 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/peers-labs/peers-touch/station/app/internal/securecontent"
+	botpersistence "github.com/peers-labs/peers-touch/station/app/subserver/bot/infrastructure/persistence"
 	attachmentapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/attachment"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/command"
 	deliveryapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
 	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
+	publishingapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/publishing"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	reconciliationapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/reconciliation"
-	systemdelivery "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/systemdelivery"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/entity"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	attachmentinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/attachment"
 	deliveryinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/delivery"
@@ -55,7 +57,7 @@ const (
 // canonical durable state commits.
 type ProductionRealtime interface {
 	ports.PostCommitPublisher
-	ports.BotNotificationPublisher
+	ports.ServiceNotificationPublisher
 	interactionapp.TypingPublisher
 }
 
@@ -148,12 +150,13 @@ type ProductionSharedDependencies struct {
 type ProductionComposition struct {
 	UnitOfWork *persistence.UnitOfWork
 
-	CommandService     *command.Service
-	QueryService       *query.Service
-	DeliveryService    *deliveryapp.Service
-	AttachmentService  *attachmentapp.Service
-	InteractionService *interactionapp.Service
-	SystemDelivery     *systemdelivery.Service
+	CommandService       *command.Service
+	QueryService         *query.Service
+	DeliveryService      *deliveryapp.Service
+	AttachmentService    *attachmentapp.Service
+	InteractionService   *interactionapp.Service
+	PublishingService    *publishingapp.Service
+	PublishingManagement *publishingapp.ManagementService
 
 	DeviceInboxHandler   *conversationhttp.DeviceInboxHandler
 	CommandResultHandler *conversationhttp.CommandResultHandler
@@ -424,13 +427,24 @@ func NewProductionComposition(
 		return nil, fmt.Errorf("compose Conversation interaction handler: %w", err)
 	}
 
-	systemDelivery, err := systemdelivery.NewService(
+	publishingService, err := publishingapp.NewService(
 		unitOfWork,
 		commandService,
-		func() time.Time { return config.Clock.Now() },
+		config.Clock,
+		config.IDs,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("compose Conversation system delivery service: %w", err)
+		return nil, fmt.Errorf("compose Conversation publishing service: %w", err)
+	}
+	publishingManagement, err := publishingapp.NewManagementService(
+		persistence.NewPublishingStore(config.Database),
+		unitOfWork,
+		productionPublishingActorMinter{},
+		config.Clock,
+		config.IDs,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("compose Conversation publishing management: %w", err)
 	}
 
 	return &ProductionComposition{
@@ -440,7 +454,8 @@ func NewProductionComposition(
 		DeliveryService:       deliveryService,
 		AttachmentService:     attachmentService,
 		InteractionService:    interactionService,
-		SystemDelivery:        systemDelivery,
+		PublishingService:     publishingService,
+		PublishingManagement:  publishingManagement,
 		DeviceInboxHandler:    deviceInboxHandler,
 		CommandResultHandler:  commandResultHandler,
 		AttachmentHandler:     attachmentHandler,
@@ -513,6 +528,9 @@ func migrateProductionConversationSchema(
 		if err := persistence.MigrateCanonicalSchema(ctx, tx); err != nil {
 			return err
 		}
+		if err := migrateLegacyBotPublishing(ctx, tx); err != nil {
+			return err
+		}
 		if err := tx.AutoMigrate(
 			&deliveryinfra.DeviceQueueLaneModel{},
 			&deliveryinfra.DeviceQueueItemModel{},
@@ -533,6 +551,41 @@ func migrateProductionConversationSchema(
 	}
 
 	return nil
+}
+
+func migrateLegacyBotPublishing(ctx context.Context, tx *gorm.DB) error {
+	rows, err := botpersistence.LoadLegacyPublishingGrants(tx)
+	if err != nil || len(rows) == 0 {
+		return err
+	}
+	store := persistence.NewPublishingStore(tx)
+	for _, row := range rows {
+		target, err := valueobject.DirectConversationID(
+			valueobject.PTID(row.BotPTID),
+			valueobject.PTID(row.OwnerPTID),
+		)
+		if err != nil {
+			return err
+		}
+		if err := store.CreateGrant(ctx, entity.PublishingGrant{
+			ID:              row.PublishingID,
+			Owner:           valueobject.PTID(row.OwnerPTID),
+			Sender:          valueobject.PTID(row.BotPTID),
+			Name:            row.Name,
+			SourceNamespace: "bot." + row.BotPTID,
+			DefaultTarget:   target,
+			AllowedTargets:  []valueobject.ConversationID{target},
+			SecretHash:      row.SecretHash,
+			SecretHint:      row.SecretHint,
+			Disabled:        row.Disabled,
+			Revoked:         row.Revoked,
+			CreatedAt:       row.CreatedAt,
+			RatePerMinute:   row.RateLimitPerMinute,
+		}); err != nil {
+			return err
+		}
+	}
+	return botpersistence.CompleteLegacyPublishingCutover(tx, rows)
 }
 
 type productionInteractionDeviceDirectory struct {

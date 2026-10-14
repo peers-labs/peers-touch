@@ -3,8 +3,6 @@ package bot
 import (
 	"context"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/bot/application/delivery"
-	"github.com/peers-labs/peers-touch/station/app/subserver/bot/application/ingest"
 	"github.com/peers-labs/peers-touch/station/app/subserver/bot/application/registry"
 	"github.com/peers-labs/peers-touch/station/app/subserver/bot/infrastructure"
 	"github.com/peers-labs/peers-touch/station/app/subserver/bot/infrastructure/persistence"
@@ -20,7 +18,6 @@ type subServer struct {
 	addrs      []string
 	jwtWrapper server.Wrapper
 	registry   *registry.Service
-	ingest     *ingest.Service
 }
 
 // NewBotSubServer constructs the IM Bot sub-server: owner-scoped registry
@@ -43,26 +40,12 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	if err := repo.AutoMigrate(); err != nil {
 		return err
 	}
-	if err := repo.AutoMigrateSystemTables(); err != nil {
-		return err
-	}
 	s.registry = registry.NewService(
 		repo,
 		infrastructure.NewActorMinter(),
+		infrastructure.NewLazyPublishingManager(),
 		registry.WithProfileChangePublisher(infrastructure.NewProfileChangePublisher()),
 	)
-
-	limiter := ingest.NewMemoryRateLimiter(nil)
-	ingestService, err := ingest.NewService(
-		s.registry,
-		limiter,
-		delivery.NewLazySink(),
-		nil,
-	)
-	if err != nil {
-		return err
-	}
-	s.ingest = ingestService
 	return nil
 }
 
@@ -83,9 +66,8 @@ func (s *subServer) Address() server.SubserverAddress {
 	return server.SubserverAddress{Address: s.addrs}
 }
 
-// Handlers exposes the owner-scoped registry management API and the public
-// webhook edge. The webhook route intentionally carries no JWT wrapper:
-// authentication is the per-Bot Bearer secret verified inside the edge.
+// Handlers exposes only optional Bot product management. Message ingress is
+// owned by Conversation's generic publishing capability.
 func (s *subServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewTypedHandler("bot-create", "/bot/create", server.POST, s.handleCreate, s.jwtWrapper),
@@ -93,6 +75,5 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("bot-rotate-secret", "/bot/rotate-secret", server.POST, s.handleRotateSecret, s.jwtWrapper),
 		server.NewTypedHandler("bot-set-state", "/bot/set-state", server.POST, s.handleSetState, s.jwtWrapper),
 		server.NewTypedHandler("bot-set-profile", "/bot/set-profile", server.POST, s.handleSetProfile, s.jwtWrapper),
-		server.NewHTTPHandler("bot-webhook", "/bot/webhook/:webhook_id", server.POST, s.handleWebhook),
 	}
 }

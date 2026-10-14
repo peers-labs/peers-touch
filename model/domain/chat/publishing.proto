@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "domain/chat/content.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+message PublishMessageRequest {
+  string command_id = 1;
+  // Omitted means the grant's default target on the first submission only.
+  string target = 2;
+  MessageContent content = 3;
+  MessageSourceContext source_context = 4;
+}
+
+enum PublishMessageOutcome {
+  PUBLISH_MESSAGE_OUTCOME_UNSPECIFIED = 0;
+  PUBLISH_MESSAGE_OUTCOME_ACCEPTED = 1;
+  PUBLISH_MESSAGE_OUTCOME_REPLAYED = 2;
+}
+
+message PublishMessageResponse {
+  string command_id = 1;
+  string message_id = 2;
+  string conversation_id = 3;
+  string conversation_event_id = 4;
+  int64 event_sequence = 5;
+  PublishMessageOutcome outcome = 6;
+}
+
+// Stable delegation. Credential material is deliberately not part of identity.
+message MessagePublishingGrant {
+  string publishing_id = 1;
+  string owner_ptid = 2;
+  string sender_ptid = 3;
+  string name = 4;
+  string source_namespace = 5;
+  string default_target = 6;
+  repeated string allowed_targets = 7;
+  string secret_hint = 8;
+  bool revoked = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp expires_at = 11;
+  uint32 rate_limit_per_minute = 12;
+  bool disabled = 13;
+}
+
+// JWT owner management; ordinary programs use the returned publishing
+// credential, not a Bot registration or a human device command.
+message CreateMessagePublishingGrantRequest {
+  string name = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+message CreateMessagePublishingGrantResponse {
+  MessagePublishingGrant grant = 1;
+  // Returned once. Rotation is the only way to obtain a new credential.
+  string secret = 2;
+}
+
+message ListMessagePublishingGrantsRequest {}
+
+message ListMessagePublishingGrantsResponse {
+  repeated MessagePublishingGrant grants = 1;
+}
+
+message RotateMessagePublishingSecretRequest {
+  string publishing_id = 1;
+}
+
+message RotateMessagePublishingSecretResponse {
+  MessagePublishingGrant grant = 1;
+  string secret = 2;
+}
+
+message RevokeMessagePublishingGrantRequest {
+  string publishing_id = 1;
+}
+
+message RevokeMessagePublishingGrantResponse {
+  MessagePublishingGrant grant = 1;
+}
+
+// Authenticated object upload references share the Station object plane.
+// Multipart bytes use the existing upload operation; publication validates the
+// stored object owner rather than trusting filename/media_type/size assertions.

@@ -7814,7 +7814,7 @@ export const api = {
     ),
 
   botRotateSecret: (botPtid: string) =>
-    invokeRustDataFromStatus<{ bot_ptid: string }, { secretPlaintext: string }>(
+    invokeRustDataFromStatus<{ bot_ptid: string }, { secret: string }>(
       'bot_rotate_secret', { bot_ptid: botPtid },
     ),
 
@@ -8080,20 +8080,17 @@ export interface RegistryBot {
   ownerPtid: string;
   name: string;
   state: RegistryBotState;
-  webhookId: string;
-  secretDelivered: boolean;
+  publishingId: string;
+  ingressUrl: string;
   secretHint: string;
-  deliveryScope: number;
   rateLimitPerMinute: number;
   createdAtMs: bigint | number;
-  disabledAtMs: bigint | number;
-  revokedAtMs: bigint | number;
 }
 
 export interface BotCreateResponse {
   bot: RegistryBot;
-  webhookUrl: string;
-  secretPlaintext: string;
+  ingressUrl: string;
+  secret: string;
 }
 
 export interface NotificationData {

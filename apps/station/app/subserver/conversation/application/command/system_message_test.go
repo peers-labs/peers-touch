@@ -256,20 +256,21 @@ type scriptedSystemGrant struct {
 }
 
 type systemGrantCall struct {
-	bot          valueobject.PTID
-	owner        valueobject.PTID
+	publishingID string
+	sender       valueobject.PTID
 	conversation valueobject.ConversationID
 }
 
 func (g *scriptedSystemGrant) AuthorizeSystemMessage(
 	_ context.Context,
-	bot valueobject.PTID,
-	owner valueobject.PTID,
+	publishingID string,
+	sender valueobject.PTID,
 	conversation valueobject.ConversationID,
+	_ time.Time,
 ) error {
 	g.calls = append(g.calls, systemGrantCall{
-		bot:          bot,
-		owner:        owner,
+		publishingID: publishingID,
+		sender:       sender,
 		conversation: conversation,
 	})
 	return g.deny
@@ -619,15 +620,21 @@ func mustSystemMemberDevice(
 
 func validSystemRequest(harness *systemHarness) SystemMessageRequest {
 	payload, err := proto.Marshal(&chat.DirectServicePlaintextPayload{
-		FallbackText: "任务已完成",
+		MessageContent: &chat.MessageContent{
+			Primary: &chat.MessageContent_Text{
+				Text: &chat.MessageTextContent{Text: "task completed"},
+			},
+			FallbackText: "task completed",
+		},
 	})
 	if err != nil {
 		panic(err)
 	}
 	return SystemMessageRequest{
 		ConversationID: harness.conversationID,
-		Bot:            harness.bot.Actor,
-		Owner:          harness.owner.Actor,
+		PublishingID:   "publishing-test",
+		Sender:         harness.bot.Actor,
+		Recipient:      harness.owner.Actor,
 		CommandID:      "bot-command-1",
 		MessageID:      "bot-message-1",
 		Payload:        payload,
@@ -649,9 +656,10 @@ func TestDeliverSystemMessageCommitsOwnerDeliveryViaApplicationPort(t *testing.T
 		t.Fatalf("grant checks = %d, want 1", len(harness.grant.calls))
 	}
 	call := harness.grant.calls[0]
-	if call.bot != request.Bot || call.owner != request.Owner ||
+	if call.publishingID != request.PublishingID ||
+		call.sender != request.Sender ||
 		call.conversation != request.ConversationID {
-		t.Fatalf("grant call = %+v, want exact {bot, owner, conversation}", call)
+		t.Fatalf("grant call = %+v, want exact publishing authorization", call)
 	}
 	if len(harness.inbox.intents) != 1 {
 		t.Fatalf("device inbox intents = %d, want 1", len(harness.inbox.intents))
@@ -660,7 +668,7 @@ func TestDeliverSystemMessageCommitsOwnerDeliveryViaApplicationPort(t *testing.T
 		t.Fatalf("federation outbox intents = %d, want 0 (home-local v1)", len(harness.outbox.intents))
 	}
 	intent := harness.inbox.intents[0]
-	if intent.Recipient.Actor != request.Owner ||
+	if intent.Recipient.Actor != request.Recipient ||
 		intent.PayloadKind != ports.DeviceInboxPayloadConversationEvent {
 		t.Fatalf("inbox intent = %+v, want owner conversation event", intent)
 	}
@@ -692,7 +700,7 @@ func TestDeliverSystemMessageCommitsOwnerDeliveryViaApplicationPort(t *testing.T
 		)
 	}
 	if len(harness.notify.deliveries) != 1 ||
-		harness.notify.deliveries[0].Recipient.Actor != request.Owner {
+		harness.notify.deliveries[0].Recipient.Actor != request.Recipient {
 		t.Fatalf("post-commit deliveries = %+v, want owner wake", harness.notify.deliveries)
 	}
 }

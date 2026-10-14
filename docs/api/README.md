@@ -33,7 +33,7 @@ docs/api/
     └── <capability>.md       # 一个对外能力一份合同
 ```
 
-- 示例：`bot/webhook.md`。同一能力域有多个公开端点时放同一目录，按能力拆文件，不堆超长单页。
+- 示例：`message-publishing.md`。同一能力域有多个公开端点时按能力拆文件，不堆超长单页。
 - 文件名用调用方视角的能力名，不用内部模块名。
 
 ## 3. 合同文档必备结构
@@ -57,4 +57,4 @@ docs/api/
 
 | 能力域 | 合同 | 说明 |
 |---|---|---|
-| Bot | [bot/webhook.md](./bot/webhook.md) | 外部 agent / CI / SaaS 经 webhook 向 Bot↔owner 会话投递事件 |
+| Message Publishing | [message-publishing.md](./message-publishing.md) | 脚本、CI、工具、服务及可选 Bot 发布文本、结构化事件或卡片 |

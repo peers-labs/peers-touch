@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	botpersistence "github.com/peers-labs/peers-touch/station/app/subserver/bot/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
 	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
@@ -176,14 +175,16 @@ func (f *ProductionTransactionalAdapterFactory) Bind(
 		)
 	}
 
-	systemStore := botpersistence.NewSystemStore(tx)
-	systemGrant := &productionSystemGrant{store: systemStore}
+	publishingStore := persistence.NewPublishingStore(tx)
 
 	return persistence.TransactionalAdapters{
-		Identity:          identity,
-		Federation:        federation,
-		SystemSender:      systemGrant,
-		SystemDirectories: systemGrant,
+		Identity:     identity,
+		Federation:   federation,
+		SystemSender: publishingStore,
+		Publishing:   publishingStore,
+		PublishingObjects: &productionPublishedObjects{
+			db: tx,
+		},
 		ServiceNotifications: &productionServiceNotifications{
 			producer: notificationinfra.NewTxProducer(tx),
 		},

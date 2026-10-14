@@ -99,7 +99,7 @@
 
 放**面向外部调用方的公开 HTTP/集成合同**（端点、鉴权、wire schema、状态码、幂等、限流、示例）。
 
-分类入口与写作规范：[`api/README.md`](./api/README.md)。按能力域组织（如 `api/bot/webhook.md`）。
+分类入口与写作规范：[`api/README.md`](./api/README.md)。按能力域组织（如 `api/message-publishing.md`）。
 
 边界：
 
@@ -335,7 +335,7 @@
 ### 我想从外部系统接入 / 调用公开 API
 
 - 先看 `api/README.md`（对外合同归属与写作规范、合同索引）
-- Bot webhook：`api/bot/webhook.md`
+- Message publishing：`api/message-publishing.md`
 
 ### 我想看项目整体
 

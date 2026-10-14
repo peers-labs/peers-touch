@@ -16,7 +16,10 @@ import {
   type MessageActionTarget,
 } from './ChatMessageActionOverlay';
 import { ChatMessageRow, ChatMessageRowInteractionStyle } from './ChatMessageRow';
-import { foldAdjacentBotEvents } from './botEventFold';
+import {
+  aggregateServiceEvents,
+  serviceAggregationKey,
+} from './serviceEventAggregation';
 import { blocksMessageActionOverlay } from './messageReactionState';
 import {
   chatMessageTimelineContainerStyle,
@@ -135,21 +138,41 @@ export function ChatMessageTimeline({
   resolveThreadStats,
   scrollContainerRef,
 }: ChatMessageTimelineProps) {
-  // Presentation-only collapse of consecutive same-group bot events into one
-  // card. Unread/paging/search read the full store list; the timeline renders
-  // one representative row per run plus a fold count.
-  const foldedRows = useMemo(() => foldAdjacentBotEvents(messages), [messages]);
+  const [expandedServiceGroups, setExpandedServiceGroups] = useState<Set<string>>(new Set());
+  useEffect(() => setExpandedServiceGroups(new Set()), [activeConversationId]);
+  useEffect(() => {
+    if (!highlightedMessageUlid) return;
+    const highlighted = messages.find(message => message.ulid === highlightedMessageUlid);
+    if (!highlighted) return;
+    const key = serviceAggregationKey(highlighted);
+    if (!key) return;
+    setExpandedServiceGroups(current => current.has(key)
+      ? current
+      : new Set([...current, key]));
+  }, [highlightedMessageUlid, messages]);
+  const foldedRows = useMemo(
+    () => aggregateServiceEvents(messages, expandedServiceGroups),
+    [expandedServiceGroups, messages],
+  );
   const surfaceMessages = useMemo(
     () => foldedRows.map((row) => row.message),
     [foldedRows],
   );
-  const botEventFoldCountByUlid = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const { message, foldCount } of foldedRows) {
-      if (foldCount > 1) counts.set(message.ulid, foldCount);
+  const serviceAggregationByUlid = useMemo(() => {
+    const aggregations = new Map<string, NonNullable<(typeof foldedRows)[number]['aggregation']>>();
+    for (const { message, aggregation } of foldedRows) {
+      if (aggregation) aggregations.set(message.ulid, aggregation);
     }
-    return counts;
+    return aggregations;
   }, [foldedRows]);
+  const toggleServiceAggregation = useCallback((key: string) => {
+    setExpandedServiceGroups(current => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   const surfaceItems = buildChatMessageSurfaceItems({
     messages: surfaceMessages,
@@ -309,7 +332,8 @@ export function ChatMessageTimeline({
               <ChatMessageRow
                 activeConversationId={activeConversationId}
                 activeKind={activeKind}
-                botEventFoldCount={botEventFoldCountByUlid.get(message.ulid)}
+                serviceAggregation={serviceAggregationByUlid.get(message.ulid)}
+                onToggleServiceAggregation={toggleServiceAggregation}
                 currentUserPtid={currentUserPtid}
                 getSenderProfile={getSenderProfile}
                 highlighted={highlightedMessageUlid === message.ulid}

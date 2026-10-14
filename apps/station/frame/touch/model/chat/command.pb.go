@@ -204,118 +204,6 @@ func (MessageDeliverySecurity) EnumDescriptor() ([]byte, []int) {
 	return file_domain_chat_command_proto_rawDescGZIP(), []int{2}
 }
 
-// Structured body for peers-touch.bot-event.v1, self-contained in the chat
-// domain (the conversation wire must not depend on the edge bot domain).
-type ServiceBotEventKind int32
-
-const (
-	ServiceBotEventKind_SERVICE_BOT_EVENT_KIND_UNSPECIFIED    ServiceBotEventKind = 0
-	ServiceBotEventKind_SERVICE_BOT_EVENT_KIND_TASK_COMPLETED ServiceBotEventKind = 1
-	ServiceBotEventKind_SERVICE_BOT_EVENT_KIND_WAITING_INPUT  ServiceBotEventKind = 2
-	ServiceBotEventKind_SERVICE_BOT_EVENT_KIND_TASK_FAILED    ServiceBotEventKind = 3
-	ServiceBotEventKind_SERVICE_BOT_EVENT_KIND_IDLE           ServiceBotEventKind = 4
-	ServiceBotEventKind_SERVICE_BOT_EVENT_KIND_CUSTOM         ServiceBotEventKind = 5
-)
-
-// Enum value maps for ServiceBotEventKind.
-var (
-	ServiceBotEventKind_name = map[int32]string{
-		0: "SERVICE_BOT_EVENT_KIND_UNSPECIFIED",
-		1: "SERVICE_BOT_EVENT_KIND_TASK_COMPLETED",
-		2: "SERVICE_BOT_EVENT_KIND_WAITING_INPUT",
-		3: "SERVICE_BOT_EVENT_KIND_TASK_FAILED",
-		4: "SERVICE_BOT_EVENT_KIND_IDLE",
-		5: "SERVICE_BOT_EVENT_KIND_CUSTOM",
-	}
-	ServiceBotEventKind_value = map[string]int32{
-		"SERVICE_BOT_EVENT_KIND_UNSPECIFIED":    0,
-		"SERVICE_BOT_EVENT_KIND_TASK_COMPLETED": 1,
-		"SERVICE_BOT_EVENT_KIND_WAITING_INPUT":  2,
-		"SERVICE_BOT_EVENT_KIND_TASK_FAILED":    3,
-		"SERVICE_BOT_EVENT_KIND_IDLE":           4,
-		"SERVICE_BOT_EVENT_KIND_CUSTOM":         5,
-	}
-)
-
-func (x ServiceBotEventKind) Enum() *ServiceBotEventKind {
-	p := new(ServiceBotEventKind)
-	*p = x
-	return p
-}
-
-func (x ServiceBotEventKind) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (ServiceBotEventKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_chat_command_proto_enumTypes[3].Descriptor()
-}
-
-func (ServiceBotEventKind) Type() protoreflect.EnumType {
-	return &file_domain_chat_command_proto_enumTypes[3]
-}
-
-func (x ServiceBotEventKind) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use ServiceBotEventKind.Descriptor instead.
-func (ServiceBotEventKind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{3}
-}
-
-type ServiceBotEventSeverity int32
-
-const (
-	ServiceBotEventSeverity_SERVICE_BOT_EVENT_SEVERITY_UNSPECIFIED ServiceBotEventSeverity = 0
-	ServiceBotEventSeverity_SERVICE_BOT_EVENT_SEVERITY_INFO        ServiceBotEventSeverity = 1
-	ServiceBotEventSeverity_SERVICE_BOT_EVENT_SEVERITY_ATTENTION   ServiceBotEventSeverity = 2
-	ServiceBotEventSeverity_SERVICE_BOT_EVENT_SEVERITY_ERROR       ServiceBotEventSeverity = 3
-)
-
-// Enum value maps for ServiceBotEventSeverity.
-var (
-	ServiceBotEventSeverity_name = map[int32]string{
-		0: "SERVICE_BOT_EVENT_SEVERITY_UNSPECIFIED",
-		1: "SERVICE_BOT_EVENT_SEVERITY_INFO",
-		2: "SERVICE_BOT_EVENT_SEVERITY_ATTENTION",
-		3: "SERVICE_BOT_EVENT_SEVERITY_ERROR",
-	}
-	ServiceBotEventSeverity_value = map[string]int32{
-		"SERVICE_BOT_EVENT_SEVERITY_UNSPECIFIED": 0,
-		"SERVICE_BOT_EVENT_SEVERITY_INFO":        1,
-		"SERVICE_BOT_EVENT_SEVERITY_ATTENTION":   2,
-		"SERVICE_BOT_EVENT_SEVERITY_ERROR":       3,
-	}
-)
-
-func (x ServiceBotEventSeverity) Enum() *ServiceBotEventSeverity {
-	p := new(ServiceBotEventSeverity)
-	*p = x
-	return p
-}
-
-func (x ServiceBotEventSeverity) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (ServiceBotEventSeverity) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_chat_command_proto_enumTypes[4].Descriptor()
-}
-
-func (ServiceBotEventSeverity) Type() protoreflect.EnumType {
-	return &file_domain_chat_command_proto_enumTypes[4]
-}
-
-func (x ServiceBotEventSeverity) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use ServiceBotEventSeverity.Descriptor instead.
-func (ServiceBotEventSeverity) EnumDescriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{4}
-}
-
 type MessagingMembershipAction int32
 
 const (
@@ -361,11 +249,11 @@ func (x MessagingMembershipAction) String() string {
 }
 
 func (MessagingMembershipAction) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_chat_command_proto_enumTypes[5].Descriptor()
+	return file_domain_chat_command_proto_enumTypes[3].Descriptor()
 }
 
 func (MessagingMembershipAction) Type() protoreflect.EnumType {
-	return &file_domain_chat_command_proto_enumTypes[5]
+	return &file_domain_chat_command_proto_enumTypes[3]
 }
 
 func (x MessagingMembershipAction) Number() protoreflect.EnumNumber {
@@ -374,7 +262,7 @@ func (x MessagingMembershipAction) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MessagingMembershipAction.Descriptor instead.
 func (MessagingMembershipAction) EnumDescriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{5}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{3}
 }
 
 type ConversationMemberAuthorityAction int32
@@ -410,11 +298,11 @@ func (x ConversationMemberAuthorityAction) String() string {
 }
 
 func (ConversationMemberAuthorityAction) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_chat_command_proto_enumTypes[6].Descriptor()
+	return file_domain_chat_command_proto_enumTypes[4].Descriptor()
 }
 
 func (ConversationMemberAuthorityAction) Type() protoreflect.EnumType {
-	return &file_domain_chat_command_proto_enumTypes[6]
+	return &file_domain_chat_command_proto_enumTypes[4]
 }
 
 func (x ConversationMemberAuthorityAction) Number() protoreflect.EnumNumber {
@@ -423,196 +311,25 @@ func (x ConversationMemberAuthorityAction) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ConversationMemberAuthorityAction.Descriptor instead.
 func (ConversationMemberAuthorityAction) EnumDescriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{6}
-}
-
-type ServiceBotEventSource struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Agent         string                 `protobuf:"bytes,1,opt,name=agent,proto3" json:"agent,omitempty"`
-	Workspace     string                 `protobuf:"bytes,2,opt,name=workspace,proto3" json:"workspace,omitempty"`
-	SessionId     string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	Labels        map[string]string      `protobuf:"bytes,4,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ServiceBotEventSource) Reset() {
-	*x = ServiceBotEventSource{}
-	mi := &file_domain_chat_command_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ServiceBotEventSource) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ServiceBotEventSource) ProtoMessage() {}
-
-func (x *ServiceBotEventSource) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ServiceBotEventSource.ProtoReflect.Descriptor instead.
-func (*ServiceBotEventSource) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *ServiceBotEventSource) GetAgent() string {
-	if x != nil {
-		return x.Agent
-	}
-	return ""
-}
-
-func (x *ServiceBotEventSource) GetWorkspace() string {
-	if x != nil {
-		return x.Workspace
-	}
-	return ""
-}
-
-func (x *ServiceBotEventSource) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
-}
-
-func (x *ServiceBotEventSource) GetLabels() map[string]string {
-	if x != nil {
-		return x.Labels
-	}
-	return nil
-}
-
-type ServiceBotEventContent struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Always "peers-touch.bot-event.v1".
-	Schema        string                  `protobuf:"bytes,1,opt,name=schema,proto3" json:"schema,omitempty"`
-	EventType     ServiceBotEventKind     `protobuf:"varint,2,opt,name=event_type,json=eventType,proto3,enum=peers_touch.model.chat.v1.ServiceBotEventKind" json:"event_type,omitempty"`
-	Severity      ServiceBotEventSeverity `protobuf:"varint,3,opt,name=severity,proto3,enum=peers_touch.model.chat.v1.ServiceBotEventSeverity" json:"severity,omitempty"`
-	BotPtid       string                  `protobuf:"bytes,4,opt,name=bot_ptid,json=botPtid,proto3" json:"bot_ptid,omitempty"`
-	GroupKey      string                  `protobuf:"bytes,5,opt,name=group_key,json=groupKey,proto3" json:"group_key,omitempty"`
-	DedupeKey     string                  `protobuf:"bytes,6,opt,name=dedupe_key,json=dedupeKey,proto3" json:"dedupe_key,omitempty"`
-	ActionUrl     string                  `protobuf:"bytes,7,opt,name=action_url,json=actionUrl,proto3" json:"action_url,omitempty"`
-	Source        *ServiceBotEventSource  `protobuf:"bytes,8,opt,name=source,proto3" json:"source,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ServiceBotEventContent) Reset() {
-	*x = ServiceBotEventContent{}
-	mi := &file_domain_chat_command_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ServiceBotEventContent) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ServiceBotEventContent) ProtoMessage() {}
-
-func (x *ServiceBotEventContent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ServiceBotEventContent.ProtoReflect.Descriptor instead.
-func (*ServiceBotEventContent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *ServiceBotEventContent) GetSchema() string {
-	if x != nil {
-		return x.Schema
-	}
-	return ""
-}
-
-func (x *ServiceBotEventContent) GetEventType() ServiceBotEventKind {
-	if x != nil {
-		return x.EventType
-	}
-	return ServiceBotEventKind_SERVICE_BOT_EVENT_KIND_UNSPECIFIED
-}
-
-func (x *ServiceBotEventContent) GetSeverity() ServiceBotEventSeverity {
-	if x != nil {
-		return x.Severity
-	}
-	return ServiceBotEventSeverity_SERVICE_BOT_EVENT_SEVERITY_UNSPECIFIED
-}
-
-func (x *ServiceBotEventContent) GetBotPtid() string {
-	if x != nil {
-		return x.BotPtid
-	}
-	return ""
-}
-
-func (x *ServiceBotEventContent) GetGroupKey() string {
-	if x != nil {
-		return x.GroupKey
-	}
-	return ""
-}
-
-func (x *ServiceBotEventContent) GetDedupeKey() string {
-	if x != nil {
-		return x.DedupeKey
-	}
-	return ""
-}
-
-func (x *ServiceBotEventContent) GetActionUrl() string {
-	if x != nil {
-		return x.ActionUrl
-	}
-	return ""
-}
-
-func (x *ServiceBotEventContent) GetSource() *ServiceBotEventSource {
-	if x != nil {
-		return x.Source
-	}
-	return nil
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{4}
 }
 
 // Body for PREPARED_ENDPOINT_PAYLOAD_KIND_DIRECT_SERVICE_PLAINTEXT. Unlike
-// ciphertext kinds this is readable by the Station and carries a rendered
-// fallback plus an optional structured event. Clients rendering it MUST show
-// a non-E2EE marker (and MUST NOT show a lock).
+// ciphertext kinds this is Station-readable. Clients MUST show its explicit
+// non-E2EE marker. Retired Bot payloads are not accepted by the new decoder.
 type DirectServicePlaintextPayload struct {
-	state        protoimpl.MessageState `protogen:"open.v1"`
-	FallbackText string                 `protobuf:"bytes,1,opt,name=fallback_text,json=fallbackText,proto3" json:"fallback_text,omitempty"`
-	// Types that are valid to be assigned to Content:
-	//
-	//	*DirectServicePlaintextPayload_BotEvent
-	Content       isDirectServicePlaintextPayload_Content `protobuf_oneof:"content"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	MessageContent *MessageContent        `protobuf:"bytes,10,opt,name=message_content,json=messageContent,proto3" json:"message_content,omitempty"`
+	SourceContext  *MessageSourceContext  `protobuf:"bytes,11,opt,name=source_context,json=sourceContext,proto3" json:"source_context,omitempty"`
+	// Bound by publishing authorization, never taken from untrusted labels.
+	SourceNamespace string `protobuf:"bytes,12,opt,name=source_namespace,json=sourceNamespace,proto3" json:"source_namespace,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *DirectServicePlaintextPayload) Reset() {
 	*x = DirectServicePlaintextPayload{}
-	mi := &file_domain_chat_command_proto_msgTypes[2]
+	mi := &file_domain_chat_command_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -624,7 +341,7 @@ func (x *DirectServicePlaintextPayload) String() string {
 func (*DirectServicePlaintextPayload) ProtoMessage() {}
 
 func (x *DirectServicePlaintextPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[2]
+	mi := &file_domain_chat_command_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -637,41 +354,29 @@ func (x *DirectServicePlaintextPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirectServicePlaintextPayload.ProtoReflect.Descriptor instead.
 func (*DirectServicePlaintextPayload) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{2}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *DirectServicePlaintextPayload) GetFallbackText() string {
+func (x *DirectServicePlaintextPayload) GetMessageContent() *MessageContent {
 	if x != nil {
-		return x.FallbackText
+		return x.MessageContent
+	}
+	return nil
+}
+
+func (x *DirectServicePlaintextPayload) GetSourceContext() *MessageSourceContext {
+	if x != nil {
+		return x.SourceContext
+	}
+	return nil
+}
+
+func (x *DirectServicePlaintextPayload) GetSourceNamespace() string {
+	if x != nil {
+		return x.SourceNamespace
 	}
 	return ""
 }
-
-func (x *DirectServicePlaintextPayload) GetContent() isDirectServicePlaintextPayload_Content {
-	if x != nil {
-		return x.Content
-	}
-	return nil
-}
-
-func (x *DirectServicePlaintextPayload) GetBotEvent() *ServiceBotEventContent {
-	if x != nil {
-		if x, ok := x.Content.(*DirectServicePlaintextPayload_BotEvent); ok {
-			return x.BotEvent
-		}
-	}
-	return nil
-}
-
-type isDirectServicePlaintextPayload_Content interface {
-	isDirectServicePlaintextPayload_Content()
-}
-
-type DirectServicePlaintextPayload_BotEvent struct {
-	BotEvent *ServiceBotEventContent `protobuf:"bytes,2,opt,name=bot_event,json=botEvent,proto3,oneof"`
-}
-
-func (*DirectServicePlaintextPayload_BotEvent) isDirectServicePlaintextPayload_Content() {}
 
 // A command payload prepared for exactly one endpoint. The authority validates
 // the complete required endpoint set before committing the command.
@@ -687,7 +392,7 @@ type PreparedEndpointPayload struct {
 
 func (x *PreparedEndpointPayload) Reset() {
 	*x = PreparedEndpointPayload{}
-	mi := &file_domain_chat_command_proto_msgTypes[3]
+	mi := &file_domain_chat_command_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -699,7 +404,7 @@ func (x *PreparedEndpointPayload) String() string {
 func (*PreparedEndpointPayload) ProtoMessage() {}
 
 func (x *PreparedEndpointPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[3]
+	mi := &file_domain_chat_command_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -712,7 +417,7 @@ func (x *PreparedEndpointPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreparedEndpointPayload.ProtoReflect.Descriptor instead.
 func (*PreparedEndpointPayload) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{3}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *PreparedEndpointPayload) GetRecipient() *CryptoEndpoint {
@@ -759,7 +464,7 @@ type SendMessageIntent struct {
 
 func (x *SendMessageIntent) Reset() {
 	*x = SendMessageIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[4]
+	mi := &file_domain_chat_command_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -771,7 +476,7 @@ func (x *SendMessageIntent) String() string {
 func (*SendMessageIntent) ProtoMessage() {}
 
 func (x *SendMessageIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[4]
+	mi := &file_domain_chat_command_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -784,7 +489,7 @@ func (x *SendMessageIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendMessageIntent.ProtoReflect.Descriptor instead.
 func (*SendMessageIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{4}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *SendMessageIntent) GetMessageId() string {
@@ -855,7 +560,7 @@ type EditMessageIntent struct {
 
 func (x *EditMessageIntent) Reset() {
 	*x = EditMessageIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[5]
+	mi := &file_domain_chat_command_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -867,7 +572,7 @@ func (x *EditMessageIntent) String() string {
 func (*EditMessageIntent) ProtoMessage() {}
 
 func (x *EditMessageIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[5]
+	mi := &file_domain_chat_command_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -880,7 +585,7 @@ func (x *EditMessageIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EditMessageIntent.ProtoReflect.Descriptor instead.
 func (*EditMessageIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{5}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *EditMessageIntent) GetMessageId() string {
@@ -920,7 +625,7 @@ type RetractMessageIntent struct {
 
 func (x *RetractMessageIntent) Reset() {
 	*x = RetractMessageIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[6]
+	mi := &file_domain_chat_command_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -932,7 +637,7 @@ func (x *RetractMessageIntent) String() string {
 func (*RetractMessageIntent) ProtoMessage() {}
 
 func (x *RetractMessageIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[6]
+	mi := &file_domain_chat_command_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -945,7 +650,7 @@ func (x *RetractMessageIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetractMessageIntent.ProtoReflect.Descriptor instead.
 func (*RetractMessageIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{6}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RetractMessageIntent) GetMessageId() string {
@@ -964,7 +669,7 @@ type HideMessageForActorIntent struct {
 
 func (x *HideMessageForActorIntent) Reset() {
 	*x = HideMessageForActorIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[7]
+	mi := &file_domain_chat_command_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -976,7 +681,7 @@ func (x *HideMessageForActorIntent) String() string {
 func (*HideMessageForActorIntent) ProtoMessage() {}
 
 func (x *HideMessageForActorIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[7]
+	mi := &file_domain_chat_command_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -989,7 +694,7 @@ func (x *HideMessageForActorIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HideMessageForActorIntent.ProtoReflect.Descriptor instead.
 func (*HideMessageForActorIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{7}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *HideMessageForActorIntent) GetMessageId() string {
@@ -1009,7 +714,7 @@ type ModerateMessageIntent struct {
 
 func (x *ModerateMessageIntent) Reset() {
 	*x = ModerateMessageIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[8]
+	mi := &file_domain_chat_command_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1021,7 +726,7 @@ func (x *ModerateMessageIntent) String() string {
 func (*ModerateMessageIntent) ProtoMessage() {}
 
 func (x *ModerateMessageIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[8]
+	mi := &file_domain_chat_command_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1034,7 +739,7 @@ func (x *ModerateMessageIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModerateMessageIntent.ProtoReflect.Descriptor instead.
 func (*ModerateMessageIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{8}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ModerateMessageIntent) GetMessageId() string {
@@ -1065,7 +770,7 @@ type ForwardMessageIntent struct {
 
 func (x *ForwardMessageIntent) Reset() {
 	*x = ForwardMessageIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[9]
+	mi := &file_domain_chat_command_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1077,7 +782,7 @@ func (x *ForwardMessageIntent) String() string {
 func (*ForwardMessageIntent) ProtoMessage() {}
 
 func (x *ForwardMessageIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[9]
+	mi := &file_domain_chat_command_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1090,7 +795,7 @@ func (x *ForwardMessageIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ForwardMessageIntent.ProtoReflect.Descriptor instead.
 func (*ForwardMessageIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{9}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ForwardMessageIntent) GetDestinationMessageId() string {
@@ -1146,7 +851,7 @@ type ReactionIntent struct {
 
 func (x *ReactionIntent) Reset() {
 	*x = ReactionIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[10]
+	mi := &file_domain_chat_command_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1158,7 +863,7 @@ func (x *ReactionIntent) String() string {
 func (*ReactionIntent) ProtoMessage() {}
 
 func (x *ReactionIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[10]
+	mi := &file_domain_chat_command_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1171,7 +876,7 @@ func (x *ReactionIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReactionIntent.ProtoReflect.Descriptor instead.
 func (*ReactionIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{10}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ReactionIntent) GetMessageId() string {
@@ -1205,7 +910,7 @@ type PinMessageIntent struct {
 
 func (x *PinMessageIntent) Reset() {
 	*x = PinMessageIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[11]
+	mi := &file_domain_chat_command_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1217,7 +922,7 @@ func (x *PinMessageIntent) String() string {
 func (*PinMessageIntent) ProtoMessage() {}
 
 func (x *PinMessageIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[11]
+	mi := &file_domain_chat_command_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1230,7 +935,7 @@ func (x *PinMessageIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PinMessageIntent.ProtoReflect.Descriptor instead.
 func (*PinMessageIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{11}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *PinMessageIntent) GetMessageId() string {
@@ -1259,7 +964,7 @@ type UpdateConversationIntent struct {
 
 func (x *UpdateConversationIntent) Reset() {
 	*x = UpdateConversationIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[12]
+	mi := &file_domain_chat_command_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1271,7 +976,7 @@ func (x *UpdateConversationIntent) String() string {
 func (*UpdateConversationIntent) ProtoMessage() {}
 
 func (x *UpdateConversationIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[12]
+	mi := &file_domain_chat_command_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1284,7 +989,7 @@ func (x *UpdateConversationIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateConversationIntent.ProtoReflect.Descriptor instead.
 func (*UpdateConversationIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{12}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *UpdateConversationIntent) GetName() string {
@@ -1327,7 +1032,7 @@ type MessagingMembershipChangeIntent struct {
 
 func (x *MessagingMembershipChangeIntent) Reset() {
 	*x = MessagingMembershipChangeIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[13]
+	mi := &file_domain_chat_command_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1339,7 +1044,7 @@ func (x *MessagingMembershipChangeIntent) String() string {
 func (*MessagingMembershipChangeIntent) ProtoMessage() {}
 
 func (x *MessagingMembershipChangeIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[13]
+	mi := &file_domain_chat_command_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1352,7 +1057,7 @@ func (x *MessagingMembershipChangeIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessagingMembershipChangeIntent.ProtoReflect.Descriptor instead.
 func (*MessagingMembershipChangeIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{13}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *MessagingMembershipChangeIntent) GetAction() MessagingMembershipAction {
@@ -1402,7 +1107,7 @@ type MembershipTransitionIntent struct {
 
 func (x *MembershipTransitionIntent) Reset() {
 	*x = MembershipTransitionIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[14]
+	mi := &file_domain_chat_command_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1414,7 +1119,7 @@ func (x *MembershipTransitionIntent) String() string {
 func (*MembershipTransitionIntent) ProtoMessage() {}
 
 func (x *MembershipTransitionIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[14]
+	mi := &file_domain_chat_command_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1427,7 +1132,7 @@ func (x *MembershipTransitionIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MembershipTransitionIntent.ProtoReflect.Descriptor instead.
 func (*MembershipTransitionIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{14}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *MembershipTransitionIntent) GetTransitionId() string {
@@ -1515,7 +1220,7 @@ type DissolveConversationIntent struct {
 
 func (x *DissolveConversationIntent) Reset() {
 	*x = DissolveConversationIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[15]
+	mi := &file_domain_chat_command_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1527,7 +1232,7 @@ func (x *DissolveConversationIntent) String() string {
 func (*DissolveConversationIntent) ProtoMessage() {}
 
 func (x *DissolveConversationIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[15]
+	mi := &file_domain_chat_command_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1540,7 +1245,7 @@ func (x *DissolveConversationIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DissolveConversationIntent.ProtoReflect.Descriptor instead.
 func (*DissolveConversationIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{15}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{13}
 }
 
 // Exact authority command for target-member administration. This command is
@@ -1571,7 +1276,7 @@ type ConversationMemberAuthorityCommand struct {
 
 func (x *ConversationMemberAuthorityCommand) Reset() {
 	*x = ConversationMemberAuthorityCommand{}
-	mi := &file_domain_chat_command_proto_msgTypes[16]
+	mi := &file_domain_chat_command_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1583,7 +1288,7 @@ func (x *ConversationMemberAuthorityCommand) String() string {
 func (*ConversationMemberAuthorityCommand) ProtoMessage() {}
 
 func (x *ConversationMemberAuthorityCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[16]
+	mi := &file_domain_chat_command_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1596,7 +1301,7 @@ func (x *ConversationMemberAuthorityCommand) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ConversationMemberAuthorityCommand.ProtoReflect.Descriptor instead.
 func (*ConversationMemberAuthorityCommand) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{16}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ConversationMemberAuthorityCommand) GetVersion() uint32 {
@@ -1757,7 +1462,7 @@ type ChatCommand struct {
 
 func (x *ChatCommand) Reset() {
 	*x = ChatCommand{}
-	mi := &file_domain_chat_command_proto_msgTypes[17]
+	mi := &file_domain_chat_command_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1769,7 +1474,7 @@ func (x *ChatCommand) String() string {
 func (*ChatCommand) ProtoMessage() {}
 
 func (x *ChatCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[17]
+	mi := &file_domain_chat_command_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1782,7 +1487,7 @@ func (x *ChatCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatCommand.ProtoReflect.Descriptor instead.
 func (*ChatCommand) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{17}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ChatCommand) GetCommandId() string {
@@ -2041,7 +1746,7 @@ type ConversationCommandProposal struct {
 
 func (x *ConversationCommandProposal) Reset() {
 	*x = ConversationCommandProposal{}
-	mi := &file_domain_chat_command_proto_msgTypes[18]
+	mi := &file_domain_chat_command_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2053,7 +1758,7 @@ func (x *ConversationCommandProposal) String() string {
 func (*ConversationCommandProposal) ProtoMessage() {}
 
 func (x *ConversationCommandProposal) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[18]
+	mi := &file_domain_chat_command_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2066,7 +1771,7 @@ func (x *ConversationCommandProposal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConversationCommandProposal.ProtoReflect.Descriptor instead.
 func (*ConversationCommandProposal) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{18}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ConversationCommandProposal) GetVersion() uint32 {
@@ -2190,7 +1895,7 @@ type ConversationCommandProposalSigningInput struct {
 
 func (x *ConversationCommandProposalSigningInput) Reset() {
 	*x = ConversationCommandProposalSigningInput{}
-	mi := &file_domain_chat_command_proto_msgTypes[19]
+	mi := &file_domain_chat_command_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2202,7 +1907,7 @@ func (x *ConversationCommandProposalSigningInput) String() string {
 func (*ConversationCommandProposalSigningInput) ProtoMessage() {}
 
 func (x *ConversationCommandProposalSigningInput) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[19]
+	mi := &file_domain_chat_command_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2215,7 +1920,7 @@ func (x *ConversationCommandProposalSigningInput) ProtoReflect() protoreflect.Me
 
 // Deprecated: Use ConversationCommandProposalSigningInput.ProtoReflect.Descriptor instead.
 func (*ConversationCommandProposalSigningInput) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{19}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ConversationCommandProposalSigningInput) GetVersion() uint32 {
@@ -2320,32 +2025,12 @@ var File_domain_chat_command_proto protoreflect.FileDescriptor
 
 const file_domain_chat_command_proto_rawDesc = "" +
 	"\n" +
-	"\x19domain/chat/command.proto\x12\x19peers_touch.model.chat.v1\x1a\x1cdomain/chat/attachment.proto\x1a\x1edomain/chat/conversation.proto\x1a\x1adomain/chat/endpoint.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfb\x01\n" +
-	"\x15ServiceBotEventSource\x12\x14\n" +
-	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x1c\n" +
-	"\tworkspace\x18\x02 \x01(\tR\tworkspace\x12\x1d\n" +
-	"\n" +
-	"session_id\x18\x03 \x01(\tR\tsessionId\x12T\n" +
-	"\x06labels\x18\x04 \x03(\v2<.peers_touch.model.chat.v1.ServiceBotEventSource.LabelsEntryR\x06labels\x1a9\n" +
-	"\vLabelsEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8f\x03\n" +
-	"\x16ServiceBotEventContent\x12\x16\n" +
-	"\x06schema\x18\x01 \x01(\tR\x06schema\x12M\n" +
-	"\n" +
-	"event_type\x18\x02 \x01(\x0e2..peers_touch.model.chat.v1.ServiceBotEventKindR\teventType\x12N\n" +
-	"\bseverity\x18\x03 \x01(\x0e22.peers_touch.model.chat.v1.ServiceBotEventSeverityR\bseverity\x12\x19\n" +
-	"\bbot_ptid\x18\x04 \x01(\tR\abotPtid\x12\x1b\n" +
-	"\tgroup_key\x18\x05 \x01(\tR\bgroupKey\x12\x1d\n" +
-	"\n" +
-	"dedupe_key\x18\x06 \x01(\tR\tdedupeKey\x12\x1d\n" +
-	"\n" +
-	"action_url\x18\a \x01(\tR\tactionUrl\x12H\n" +
-	"\x06source\x18\b \x01(\v20.peers_touch.model.chat.v1.ServiceBotEventSourceR\x06source\"\xa1\x01\n" +
-	"\x1dDirectServicePlaintextPayload\x12#\n" +
-	"\rfallback_text\x18\x01 \x01(\tR\ffallbackText\x12P\n" +
-	"\tbot_event\x18\x02 \x01(\v21.peers_touch.model.chat.v1.ServiceBotEventContentH\x00R\bbotEventB\t\n" +
-	"\acontent\"\xfc\x01\n" +
+	"\x19domain/chat/command.proto\x12\x19peers_touch.model.chat.v1\x1a\x1cdomain/chat/attachment.proto\x1a\x19domain/chat/content.proto\x1a\x1edomain/chat/conversation.proto\x1a\x1adomain/chat/endpoint.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9c\x02\n" +
+	"\x1dDirectServicePlaintextPayload\x12R\n" +
+	"\x0fmessage_content\x18\n" +
+	" \x01(\v2).peers_touch.model.chat.v1.MessageContentR\x0emessageContent\x12V\n" +
+	"\x0esource_context\x18\v \x01(\v2/.peers_touch.model.chat.v1.MessageSourceContextR\rsourceContext\x12)\n" +
+	"\x10source_namespace\x18\f \x01(\tR\x0fsourceNamespaceJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03R\rfallback_textR\tbot_event\"\xfc\x01\n" +
 	"\x17PreparedEndpointPayload\x12G\n" +
 	"\trecipient\x18\x01 \x01(\v2).peers_touch.model.chat.v1.CryptoEndpointR\trecipient\x12J\n" +
 	"\x04kind\x18\x02 \x01(\x0e26.peers_touch.model.chat.v1.PreparedEndpointPayloadKindR\x04kind\x12%\n" +
@@ -2530,19 +2215,7 @@ const file_domain_chat_command_proto_rawDesc = "" +
 	"\x17MessageDeliverySecurity\x12)\n" +
 	"%MESSAGE_DELIVERY_SECURITY_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eMESSAGE_DELIVERY_SECURITY_E2EE\x10\x01\x12/\n" +
-	"+MESSAGE_DELIVERY_SECURITY_SERVICE_PLAINTEXT\x10\x02*\xfe\x01\n" +
-	"\x13ServiceBotEventKind\x12&\n" +
-	"\"SERVICE_BOT_EVENT_KIND_UNSPECIFIED\x10\x00\x12)\n" +
-	"%SERVICE_BOT_EVENT_KIND_TASK_COMPLETED\x10\x01\x12(\n" +
-	"$SERVICE_BOT_EVENT_KIND_WAITING_INPUT\x10\x02\x12&\n" +
-	"\"SERVICE_BOT_EVENT_KIND_TASK_FAILED\x10\x03\x12\x1f\n" +
-	"\x1bSERVICE_BOT_EVENT_KIND_IDLE\x10\x04\x12!\n" +
-	"\x1dSERVICE_BOT_EVENT_KIND_CUSTOM\x10\x05*\xba\x01\n" +
-	"\x17ServiceBotEventSeverity\x12*\n" +
-	"&SERVICE_BOT_EVENT_SEVERITY_UNSPECIFIED\x10\x00\x12#\n" +
-	"\x1fSERVICE_BOT_EVENT_SEVERITY_INFO\x10\x01\x12(\n" +
-	"$SERVICE_BOT_EVENT_SEVERITY_ATTENTION\x10\x02\x12$\n" +
-	" SERVICE_BOT_EVENT_SEVERITY_ERROR\x10\x03*\xd0\x02\n" +
+	"+MESSAGE_DELIVERY_SECURITY_SERVICE_PLAINTEXT\x10\x02*\xd0\x02\n" +
 	"\x19MessagingMembershipAction\x12+\n" +
 	"'MESSAGING_MEMBERSHIP_ACTION_UNSPECIFIED\x10\x00\x12)\n" +
 	"%MESSAGING_MEMBERSHIP_ACTION_ADD_ACTOR\x10\x01\x12,\n" +
@@ -2568,90 +2241,84 @@ func file_domain_chat_command_proto_rawDescGZIP() []byte {
 	return file_domain_chat_command_proto_rawDescData
 }
 
-var file_domain_chat_command_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_domain_chat_command_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_domain_chat_command_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_domain_chat_command_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_domain_chat_command_proto_goTypes = []any{
 	(MessagingContentKind)(0),                       // 0: peers_touch.model.chat.v1.MessagingContentKind
 	(PreparedEndpointPayloadKind)(0),                // 1: peers_touch.model.chat.v1.PreparedEndpointPayloadKind
 	(MessageDeliverySecurity)(0),                    // 2: peers_touch.model.chat.v1.MessageDeliverySecurity
-	(ServiceBotEventKind)(0),                        // 3: peers_touch.model.chat.v1.ServiceBotEventKind
-	(ServiceBotEventSeverity)(0),                    // 4: peers_touch.model.chat.v1.ServiceBotEventSeverity
-	(MessagingMembershipAction)(0),                  // 5: peers_touch.model.chat.v1.MessagingMembershipAction
-	(ConversationMemberAuthorityAction)(0),          // 6: peers_touch.model.chat.v1.ConversationMemberAuthorityAction
-	(*ServiceBotEventSource)(nil),                   // 7: peers_touch.model.chat.v1.ServiceBotEventSource
-	(*ServiceBotEventContent)(nil),                  // 8: peers_touch.model.chat.v1.ServiceBotEventContent
-	(*DirectServicePlaintextPayload)(nil),           // 9: peers_touch.model.chat.v1.DirectServicePlaintextPayload
-	(*PreparedEndpointPayload)(nil),                 // 10: peers_touch.model.chat.v1.PreparedEndpointPayload
-	(*SendMessageIntent)(nil),                       // 11: peers_touch.model.chat.v1.SendMessageIntent
-	(*EditMessageIntent)(nil),                       // 12: peers_touch.model.chat.v1.EditMessageIntent
-	(*RetractMessageIntent)(nil),                    // 13: peers_touch.model.chat.v1.RetractMessageIntent
-	(*HideMessageForActorIntent)(nil),               // 14: peers_touch.model.chat.v1.HideMessageForActorIntent
-	(*ModerateMessageIntent)(nil),                   // 15: peers_touch.model.chat.v1.ModerateMessageIntent
-	(*ForwardMessageIntent)(nil),                    // 16: peers_touch.model.chat.v1.ForwardMessageIntent
-	(*ReactionIntent)(nil),                          // 17: peers_touch.model.chat.v1.ReactionIntent
-	(*PinMessageIntent)(nil),                        // 18: peers_touch.model.chat.v1.PinMessageIntent
-	(*UpdateConversationIntent)(nil),                // 19: peers_touch.model.chat.v1.UpdateConversationIntent
-	(*MessagingMembershipChangeIntent)(nil),         // 20: peers_touch.model.chat.v1.MessagingMembershipChangeIntent
-	(*MembershipTransitionIntent)(nil),              // 21: peers_touch.model.chat.v1.MembershipTransitionIntent
-	(*DissolveConversationIntent)(nil),              // 22: peers_touch.model.chat.v1.DissolveConversationIntent
-	(*ConversationMemberAuthorityCommand)(nil),      // 23: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand
-	(*ChatCommand)(nil),                             // 24: peers_touch.model.chat.v1.ChatCommand
-	(*ConversationCommandProposal)(nil),             // 25: peers_touch.model.chat.v1.ConversationCommandProposal
-	(*ConversationCommandProposalSigningInput)(nil), // 26: peers_touch.model.chat.v1.ConversationCommandProposalSigningInput
-	nil,                               // 27: peers_touch.model.chat.v1.ServiceBotEventSource.LabelsEntry
-	(*CryptoEndpoint)(nil),            // 28: peers_touch.model.chat.v1.CryptoEndpoint
-	(*EncryptedObjectDescriptor)(nil), // 29: peers_touch.model.chat.v1.EncryptedObjectDescriptor
-	(GroupVisibilityV1)(0),            // 30: peers_touch.model.chat.v1.GroupVisibilityV1
-	(MemberRole)(0),                   // 31: peers_touch.model.chat.v1.MemberRole
-	(*timestamppb.Timestamp)(nil),     // 32: google.protobuf.Timestamp
-	(ConversationCommandKind)(0),      // 33: peers_touch.model.chat.v1.ConversationCommandKind
+	(MessagingMembershipAction)(0),                  // 3: peers_touch.model.chat.v1.MessagingMembershipAction
+	(ConversationMemberAuthorityAction)(0),          // 4: peers_touch.model.chat.v1.ConversationMemberAuthorityAction
+	(*DirectServicePlaintextPayload)(nil),           // 5: peers_touch.model.chat.v1.DirectServicePlaintextPayload
+	(*PreparedEndpointPayload)(nil),                 // 6: peers_touch.model.chat.v1.PreparedEndpointPayload
+	(*SendMessageIntent)(nil),                       // 7: peers_touch.model.chat.v1.SendMessageIntent
+	(*EditMessageIntent)(nil),                       // 8: peers_touch.model.chat.v1.EditMessageIntent
+	(*RetractMessageIntent)(nil),                    // 9: peers_touch.model.chat.v1.RetractMessageIntent
+	(*HideMessageForActorIntent)(nil),               // 10: peers_touch.model.chat.v1.HideMessageForActorIntent
+	(*ModerateMessageIntent)(nil),                   // 11: peers_touch.model.chat.v1.ModerateMessageIntent
+	(*ForwardMessageIntent)(nil),                    // 12: peers_touch.model.chat.v1.ForwardMessageIntent
+	(*ReactionIntent)(nil),                          // 13: peers_touch.model.chat.v1.ReactionIntent
+	(*PinMessageIntent)(nil),                        // 14: peers_touch.model.chat.v1.PinMessageIntent
+	(*UpdateConversationIntent)(nil),                // 15: peers_touch.model.chat.v1.UpdateConversationIntent
+	(*MessagingMembershipChangeIntent)(nil),         // 16: peers_touch.model.chat.v1.MessagingMembershipChangeIntent
+	(*MembershipTransitionIntent)(nil),              // 17: peers_touch.model.chat.v1.MembershipTransitionIntent
+	(*DissolveConversationIntent)(nil),              // 18: peers_touch.model.chat.v1.DissolveConversationIntent
+	(*ConversationMemberAuthorityCommand)(nil),      // 19: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand
+	(*ChatCommand)(nil),                             // 20: peers_touch.model.chat.v1.ChatCommand
+	(*ConversationCommandProposal)(nil),             // 21: peers_touch.model.chat.v1.ConversationCommandProposal
+	(*ConversationCommandProposalSigningInput)(nil), // 22: peers_touch.model.chat.v1.ConversationCommandProposalSigningInput
+	(*MessageContent)(nil),                          // 23: peers_touch.model.chat.v1.MessageContent
+	(*MessageSourceContext)(nil),                    // 24: peers_touch.model.chat.v1.MessageSourceContext
+	(*CryptoEndpoint)(nil),                          // 25: peers_touch.model.chat.v1.CryptoEndpoint
+	(*EncryptedObjectDescriptor)(nil),               // 26: peers_touch.model.chat.v1.EncryptedObjectDescriptor
+	(GroupVisibilityV1)(0),                          // 27: peers_touch.model.chat.v1.GroupVisibilityV1
+	(MemberRole)(0),                                 // 28: peers_touch.model.chat.v1.MemberRole
+	(*timestamppb.Timestamp)(nil),                   // 29: google.protobuf.Timestamp
+	(ConversationCommandKind)(0),                    // 30: peers_touch.model.chat.v1.ConversationCommandKind
 }
 var file_domain_chat_command_proto_depIdxs = []int32{
-	27, // 0: peers_touch.model.chat.v1.ServiceBotEventSource.labels:type_name -> peers_touch.model.chat.v1.ServiceBotEventSource.LabelsEntry
-	3,  // 1: peers_touch.model.chat.v1.ServiceBotEventContent.event_type:type_name -> peers_touch.model.chat.v1.ServiceBotEventKind
-	4,  // 2: peers_touch.model.chat.v1.ServiceBotEventContent.severity:type_name -> peers_touch.model.chat.v1.ServiceBotEventSeverity
-	7,  // 3: peers_touch.model.chat.v1.ServiceBotEventContent.source:type_name -> peers_touch.model.chat.v1.ServiceBotEventSource
-	8,  // 4: peers_touch.model.chat.v1.DirectServicePlaintextPayload.bot_event:type_name -> peers_touch.model.chat.v1.ServiceBotEventContent
-	28, // 5: peers_touch.model.chat.v1.PreparedEndpointPayload.recipient:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	1,  // 6: peers_touch.model.chat.v1.PreparedEndpointPayload.kind:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayloadKind
-	0,  // 7: peers_touch.model.chat.v1.SendMessageIntent.content_kind:type_name -> peers_touch.model.chat.v1.MessagingContentKind
-	29, // 8: peers_touch.model.chat.v1.SendMessageIntent.attachments:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
-	10, // 9: peers_touch.model.chat.v1.SendMessageIntent.direct_payloads:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayload
-	10, // 10: peers_touch.model.chat.v1.EditMessageIntent.direct_payloads:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayload
-	0,  // 11: peers_touch.model.chat.v1.ForwardMessageIntent.content_kind:type_name -> peers_touch.model.chat.v1.MessagingContentKind
-	29, // 12: peers_touch.model.chat.v1.ForwardMessageIntent.destination_attachments:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
-	10, // 13: peers_touch.model.chat.v1.ForwardMessageIntent.destination_payloads:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayload
-	30, // 14: peers_touch.model.chat.v1.UpdateConversationIntent.visibility:type_name -> peers_touch.model.chat.v1.GroupVisibilityV1
-	5,  // 15: peers_touch.model.chat.v1.MessagingMembershipChangeIntent.action:type_name -> peers_touch.model.chat.v1.MessagingMembershipAction
-	20, // 16: peers_touch.model.chat.v1.MembershipTransitionIntent.changes:type_name -> peers_touch.model.chat.v1.MessagingMembershipChangeIntent
-	10, // 17: peers_touch.model.chat.v1.MembershipTransitionIntent.welcome_payloads:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayload
-	28, // 18: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.operator:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	6,  // 19: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.action:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityAction
-	31, // 20: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.role:type_name -> peers_touch.model.chat.v1.MemberRole
-	32, // 21: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.muted_until:type_name -> google.protobuf.Timestamp
-	32, // 22: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.client_timestamp:type_name -> google.protobuf.Timestamp
-	32, // 23: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.deadline:type_name -> google.protobuf.Timestamp
-	28, // 24: peers_touch.model.chat.v1.ChatCommand.sender:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	32, // 25: peers_touch.model.chat.v1.ChatCommand.client_timestamp:type_name -> google.protobuf.Timestamp
-	11, // 26: peers_touch.model.chat.v1.ChatCommand.send_message:type_name -> peers_touch.model.chat.v1.SendMessageIntent
-	12, // 27: peers_touch.model.chat.v1.ChatCommand.edit_message:type_name -> peers_touch.model.chat.v1.EditMessageIntent
-	13, // 28: peers_touch.model.chat.v1.ChatCommand.retract_message:type_name -> peers_touch.model.chat.v1.RetractMessageIntent
-	17, // 29: peers_touch.model.chat.v1.ChatCommand.reaction:type_name -> peers_touch.model.chat.v1.ReactionIntent
-	18, // 30: peers_touch.model.chat.v1.ChatCommand.pin_message:type_name -> peers_touch.model.chat.v1.PinMessageIntent
-	19, // 31: peers_touch.model.chat.v1.ChatCommand.update_conversation:type_name -> peers_touch.model.chat.v1.UpdateConversationIntent
-	21, // 32: peers_touch.model.chat.v1.ChatCommand.membership_transition:type_name -> peers_touch.model.chat.v1.MembershipTransitionIntent
-	22, // 33: peers_touch.model.chat.v1.ChatCommand.dissolve_conversation:type_name -> peers_touch.model.chat.v1.DissolveConversationIntent
-	14, // 34: peers_touch.model.chat.v1.ChatCommand.hide_message_for_actor:type_name -> peers_touch.model.chat.v1.HideMessageForActorIntent
-	15, // 35: peers_touch.model.chat.v1.ChatCommand.moderate_message:type_name -> peers_touch.model.chat.v1.ModerateMessageIntent
-	16, // 36: peers_touch.model.chat.v1.ChatCommand.forward_message:type_name -> peers_touch.model.chat.v1.ForwardMessageIntent
-	24, // 37: peers_touch.model.chat.v1.ConversationCommandProposal.command:type_name -> peers_touch.model.chat.v1.ChatCommand
-	23, // 38: peers_touch.model.chat.v1.ConversationCommandProposal.member_authority_command:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityCommand
-	33, // 39: peers_touch.model.chat.v1.ConversationCommandProposalSigningInput.command_kind:type_name -> peers_touch.model.chat.v1.ConversationCommandKind
-	40, // [40:40] is the sub-list for method output_type
-	40, // [40:40] is the sub-list for method input_type
-	40, // [40:40] is the sub-list for extension type_name
-	40, // [40:40] is the sub-list for extension extendee
-	0,  // [0:40] is the sub-list for field type_name
+	23, // 0: peers_touch.model.chat.v1.DirectServicePlaintextPayload.message_content:type_name -> peers_touch.model.chat.v1.MessageContent
+	24, // 1: peers_touch.model.chat.v1.DirectServicePlaintextPayload.source_context:type_name -> peers_touch.model.chat.v1.MessageSourceContext
+	25, // 2: peers_touch.model.chat.v1.PreparedEndpointPayload.recipient:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	1,  // 3: peers_touch.model.chat.v1.PreparedEndpointPayload.kind:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayloadKind
+	0,  // 4: peers_touch.model.chat.v1.SendMessageIntent.content_kind:type_name -> peers_touch.model.chat.v1.MessagingContentKind
+	26, // 5: peers_touch.model.chat.v1.SendMessageIntent.attachments:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
+	6,  // 6: peers_touch.model.chat.v1.SendMessageIntent.direct_payloads:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayload
+	6,  // 7: peers_touch.model.chat.v1.EditMessageIntent.direct_payloads:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayload
+	0,  // 8: peers_touch.model.chat.v1.ForwardMessageIntent.content_kind:type_name -> peers_touch.model.chat.v1.MessagingContentKind
+	26, // 9: peers_touch.model.chat.v1.ForwardMessageIntent.destination_attachments:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
+	6,  // 10: peers_touch.model.chat.v1.ForwardMessageIntent.destination_payloads:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayload
+	27, // 11: peers_touch.model.chat.v1.UpdateConversationIntent.visibility:type_name -> peers_touch.model.chat.v1.GroupVisibilityV1
+	3,  // 12: peers_touch.model.chat.v1.MessagingMembershipChangeIntent.action:type_name -> peers_touch.model.chat.v1.MessagingMembershipAction
+	16, // 13: peers_touch.model.chat.v1.MembershipTransitionIntent.changes:type_name -> peers_touch.model.chat.v1.MessagingMembershipChangeIntent
+	6,  // 14: peers_touch.model.chat.v1.MembershipTransitionIntent.welcome_payloads:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayload
+	25, // 15: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.operator:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	4,  // 16: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.action:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityAction
+	28, // 17: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.role:type_name -> peers_touch.model.chat.v1.MemberRole
+	29, // 18: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.muted_until:type_name -> google.protobuf.Timestamp
+	29, // 19: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.client_timestamp:type_name -> google.protobuf.Timestamp
+	29, // 20: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.deadline:type_name -> google.protobuf.Timestamp
+	25, // 21: peers_touch.model.chat.v1.ChatCommand.sender:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	29, // 22: peers_touch.model.chat.v1.ChatCommand.client_timestamp:type_name -> google.protobuf.Timestamp
+	7,  // 23: peers_touch.model.chat.v1.ChatCommand.send_message:type_name -> peers_touch.model.chat.v1.SendMessageIntent
+	8,  // 24: peers_touch.model.chat.v1.ChatCommand.edit_message:type_name -> peers_touch.model.chat.v1.EditMessageIntent
+	9,  // 25: peers_touch.model.chat.v1.ChatCommand.retract_message:type_name -> peers_touch.model.chat.v1.RetractMessageIntent
+	13, // 26: peers_touch.model.chat.v1.ChatCommand.reaction:type_name -> peers_touch.model.chat.v1.ReactionIntent
+	14, // 27: peers_touch.model.chat.v1.ChatCommand.pin_message:type_name -> peers_touch.model.chat.v1.PinMessageIntent
+	15, // 28: peers_touch.model.chat.v1.ChatCommand.update_conversation:type_name -> peers_touch.model.chat.v1.UpdateConversationIntent
+	17, // 29: peers_touch.model.chat.v1.ChatCommand.membership_transition:type_name -> peers_touch.model.chat.v1.MembershipTransitionIntent
+	18, // 30: peers_touch.model.chat.v1.ChatCommand.dissolve_conversation:type_name -> peers_touch.model.chat.v1.DissolveConversationIntent
+	10, // 31: peers_touch.model.chat.v1.ChatCommand.hide_message_for_actor:type_name -> peers_touch.model.chat.v1.HideMessageForActorIntent
+	11, // 32: peers_touch.model.chat.v1.ChatCommand.moderate_message:type_name -> peers_touch.model.chat.v1.ModerateMessageIntent
+	12, // 33: peers_touch.model.chat.v1.ChatCommand.forward_message:type_name -> peers_touch.model.chat.v1.ForwardMessageIntent
+	20, // 34: peers_touch.model.chat.v1.ConversationCommandProposal.command:type_name -> peers_touch.model.chat.v1.ChatCommand
+	19, // 35: peers_touch.model.chat.v1.ConversationCommandProposal.member_authority_command:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityCommand
+	30, // 36: peers_touch.model.chat.v1.ConversationCommandProposalSigningInput.command_kind:type_name -> peers_touch.model.chat.v1.ConversationCommandKind
+	37, // [37:37] is the sub-list for method output_type
+	37, // [37:37] is the sub-list for method input_type
+	37, // [37:37] is the sub-list for extension type_name
+	37, // [37:37] is the sub-list for extension extendee
+	0,  // [0:37] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_command_proto_init() }
@@ -2660,14 +2327,12 @@ func file_domain_chat_command_proto_init() {
 		return
 	}
 	file_domain_chat_attachment_proto_init()
+	file_domain_chat_content_proto_init()
 	file_domain_chat_conversation_proto_init()
 	file_domain_chat_endpoint_proto_init()
-	file_domain_chat_command_proto_msgTypes[2].OneofWrappers = []any{
-		(*DirectServicePlaintextPayload_BotEvent)(nil),
-	}
-	file_domain_chat_command_proto_msgTypes[12].OneofWrappers = []any{}
-	file_domain_chat_command_proto_msgTypes[16].OneofWrappers = []any{}
-	file_domain_chat_command_proto_msgTypes[17].OneofWrappers = []any{
+	file_domain_chat_command_proto_msgTypes[10].OneofWrappers = []any{}
+	file_domain_chat_command_proto_msgTypes[14].OneofWrappers = []any{}
+	file_domain_chat_command_proto_msgTypes[15].OneofWrappers = []any{
 		(*ChatCommand_SendMessage)(nil),
 		(*ChatCommand_EditMessage)(nil),
 		(*ChatCommand_RetractMessage)(nil),
@@ -2685,8 +2350,8 @@ func file_domain_chat_command_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_chat_command_proto_rawDesc), len(file_domain_chat_command_proto_rawDesc)),
-			NumEnums:      7,
-			NumMessages:   21,
+			NumEnums:      5,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

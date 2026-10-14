@@ -77,6 +77,7 @@ device-addressed Direct sessions 与 RFC 9420 MLS。
 | [design.md](./design.md) | 整体架构、owner、数据流与 failure semantics |
 | [decisions.md](./decisions.md) | 关键设计决策 |
 | [data-model.md](./data-model.md) | Proto、状态机和持久化模型 |
+| [message-publishing.md](./message-publishing.md) | 通用 HTTP 发布、稳定授权、统一内容与事件聚合 |
 | [module-layout.md](./module-layout.md) | 目标模块布局与依赖方向 |
 | [integration.md](./integration.md) | 影响面、原子切换与删除矩阵 |
 | [../api-ownership/README.md](../../../engineering/api-governance/README.md) | Accepted canonical API owner, route/store hard cut, Conversation DDD, and cross-domain Federation boundary |

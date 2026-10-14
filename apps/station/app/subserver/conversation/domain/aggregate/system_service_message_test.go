@@ -77,8 +77,8 @@ func validSystemInput(
 	return aggregate.SystemServiceMessageInput{
 		CommandID:   valueobject.CommandID("bot-command-1"),
 		MessageID:   valueobject.MessageID("bot-message-1"),
-		Bot:         fixture.bot.Actor,
-		Owner:       fixture.owner.Actor,
+		SenderActor: fixture.bot.Actor,
+		Recipient:   fixture.owner.Actor,
 		Sender:      fixture.bot,
 		Deliveries:  deliveries,
 		Payload:     []byte("peers-touch.bot-event.v1"),
@@ -178,11 +178,11 @@ func TestSystemServiceMessageRejectsFederatedOwner(t *testing.T) {
 func TestSystemServiceMessageRejectsGroup(t *testing.T) {
 	group := mustCreateGroup(t)
 	_, err := group.conversation.CommitSystemServiceMessage(aggregate.SystemServiceMessageInput{
-		CommandID: "group-bot-command",
-		MessageID: "group-bot-message",
-		Bot:       group.owner.Actor,
-		Owner:     group.member.Actor,
-		Sender:    group.owner,
+		CommandID:   "group-bot-command",
+		MessageID:   "group-bot-message",
+		SenderActor: group.owner.Actor,
+		Recipient:   group.member.Actor,
+		Sender:      group.owner,
 		Deliveries: []valueobject.PreparedDelivery{
 			systemDelivery(t, group.member, group.station),
 		},

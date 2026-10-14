@@ -36,13 +36,15 @@ import {
   type ChatSurfaceKind,
 } from './chatMessageModel';
 import { blocksMessageActionOverlay } from './messageReactionState';
+import type { ServiceEventAggregation } from './serviceEventAggregation';
 
 const { Text } = Typography;
 
 interface ChatMessageRowProps {
   activeConversationId: string;
   activeKind: ChatSurfaceKind;
-  botEventFoldCount?: number;
+  serviceAggregation?: ServiceEventAggregation;
+  onToggleServiceAggregation?: (key: string) => void;
   currentUserPtid: string | null;
   density?: 'regular' | 'compact';
   getSenderProfile: (
@@ -384,7 +386,8 @@ export function ChatMessageRowInteractionStyle() {
 export const ChatMessageRow = memo(function ChatMessageRow({
   activeConversationId,
   activeKind,
-  botEventFoldCount,
+  serviceAggregation,
+  onToggleServiceAggregation,
   currentUserPtid,
   density = 'regular',
   getSenderProfile,
@@ -598,7 +601,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           <ChatMessageContent
             message={message}
             isOwn={isOwn}
-            botEventFoldCount={botEventFoldCount}
+            serviceAggregation={serviceAggregation}
+            onToggleServiceAggregation={onToggleServiceAggregation}
             replyBlock={replyToUlid && !isRecalled ? (
               <ReplyBlock
                 replyToUlid={replyToUlid}

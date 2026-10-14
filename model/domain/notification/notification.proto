@@ -81,6 +81,7 @@ enum NotificationType {
   NOTIFICATION_TYPE_FRIEND_MESSAGE = 202;
   NOTIFICATION_TYPE_GROUP_INVITED = 203;
   NOTIFICATION_TYPE_CHAT_MENTIONED = 204;
+  NOTIFICATION_TYPE_SERVICE_MESSAGE = 205;
 
   // System (300-399)
   NOTIFICATION_TYPE_WELCOME = 300;
@@ -93,9 +94,8 @@ enum NotificationType {
   NOTIFICATION_TYPE_TASK_COMPLETED = 401;
   NOTIFICATION_TYPE_TASK_REMINDER = 402;
 
-  // IM Bot webhook event (410-419). Category stays TASK so it inherits the
-  // existing task preference/mute/push bindings; no new category is added.
-  NOTIFICATION_TYPE_BOT_EVENT = 410;
+  // Structured task-state publication.
+  NOTIFICATION_TYPE_TASK_EVENT = 410;
 }
 
 enum NotificationStatus {

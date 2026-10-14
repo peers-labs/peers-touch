@@ -58,7 +58,7 @@ import {
   visibleConversationUnread,
   type ConversationLocalState,
   type DesktopIMConversationProjection,
-  type DesktopBotServiceEvent,
+  type DesktopServiceMessage,
   type DesktopIMMessageProjection,
   type DesktopIMSenderProfileProjection,
   type FriendChatSession,
@@ -152,17 +152,17 @@ export function requireQueuedMessagingSendOutcome(
   };
 }
 
-// Loads structured bot webhook events for a conversation, keyed by message_id.
-// Best-effort: bot events enrich the ordinary fallback projection, so a read
+// Loads common service content for a conversation, keyed by message_id.
+// Best-effort: typed content enriches the ordinary fallback projection, so a read
 // failure must never block the message timeline.
-async function fetchBotEventMap(
+async function fetchServiceMessageMap(
   conversationId: string,
-): Promise<Map<string, DesktopBotServiceEvent>> {
+): Promise<Map<string, DesktopServiceMessage>> {
   try {
     const events = await imServiceV1.messaging.listServiceMessages(conversationId)
     return new Map(events.map(event => [event.messageId, event]))
   } catch (error) {
-    log.warn('socialChat', 'load bot service events failed', error)
+    log.warn('socialChat', 'load service messages failed', error)
     return new Map()
   }
 }
@@ -622,7 +622,7 @@ interface SocialChatState {
   getUnifiedConversations: () => UnifiedConversation[];
   getIMConversations: () => DesktopIMConversationProjection[];
   getIMMessages: (kind: 'friend' | 'group', conversationUlid: string) => DesktopIMMessageProjection[];
-  isBotConversation: (conversationUlid: string) => boolean;
+  isAutomatedConversation: (conversationUlid: string) => boolean;
   getIMThreadMessages: (kind: 'friend' | 'group', conversationUlid: string, rootUlid: string) => DesktopIMMessageProjection[];
   getIMSenderProfile: (
     kind: 'friend' | 'group',
@@ -1342,11 +1342,11 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     try {
       const page = await imServiceV1.messaging.listMessages(ulid);
       const projections = page.messages;
-      const botEvents = await fetchBotEventMap(ulid);
+      const serviceMessages = await fetchServiceMessageMap(ulid);
       const pageMessages = projections.map(projection => {
         const message = projectMessagingProjection(activeTab, ulid, projection);
-        const botEvent = botEvents.get(message.ulid);
-        if (botEvent) message.botEvent = botEvent;
+        const serviceMessage = serviceMessages.get(message.ulid);
+        if (serviceMessage) message.serviceMessage = serviceMessage;
         return message;
       });
       const projectionReactions = Object.fromEntries(
@@ -1439,11 +1439,11 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         beforeSequence,
       });
       const projections = page.messages;
-      const botEvents = await fetchBotEventMap(ulid);
+      const serviceMessages = await fetchServiceMessageMap(ulid);
       const olderMessages = projections.map(projection => {
         const message = projectMessagingProjection(activeKind, ulid, projection);
-        const botEvent = botEvents.get(message.ulid);
-        if (botEvent) message.botEvent = botEvent;
+        const serviceMessage = serviceMessages.get(message.ulid);
+        if (serviceMessage) message.serviceMessage = serviceMessage;
         return message;
       });
       set((state) => {
@@ -2370,17 +2370,17 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     );
   },
 
-  isBotConversation: (conversationUlid) => {
+  isAutomatedConversation: (conversationUlid) => {
     const state = get();
     const selfPtid = currentAuthenticatedActorPtid();
-    // The bot is an AGENT actor (ActorKind 7). Actor kind is an intrinsic
-    // actor attribute, so it is read from the peer's authoritative profile
-    // projection (same source as its avatar), not duplicated per membership.
+    // Automated Directs use hidden SERVICE or AGENT actors. Actor kind is read
+    // from the peer's authoritative profile, not duplicated per membership.
     const peerPtid = (state.conversationMembers[conversationUlid] || [])
       .find((member) => member.ptid && member.ptid !== selfPtid)
       ?.ptid;
     if (!peerPtid) return false;
-    return state.peerProfiles[peerPtid]?.kind === ActorKind.AGENT;
+    const kind = state.peerProfiles[peerPtid]?.kind;
+    return kind === ActorKind.AGENT || kind === ActorKind.SERVICE;
   },
 
   getIMThreadMessages: (kind, conversationUlid, rootUlid) => {

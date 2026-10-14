@@ -14,38 +14,32 @@ import (
 // the webhook edge limit and is checked before the aggregate commit.
 const MaxSystemMessagePayloadBytes = 32 * 1024
 
-// SystemMessageRequest is the internal, Station-only request to deliver a
-// non-E2EE service-plaintext message (bot webhook event) into the bot-owner
-// direct conversation. It intentionally carries no FederationID or endpoint
-// routes: those are sourced inside the transaction from the loaded authority
-// and the identity directory (G-BOT-03).
+// SystemMessageRequest is the Station-only service-plaintext command.
 type SystemMessageRequest struct {
 	ConversationID valueobject.ConversationID
-	Bot            valueobject.PTID
-	Owner          valueobject.PTID
+	PublishingID   string
+	Sender         valueobject.PTID
+	Recipient      valueobject.PTID
 	CommandID      valueobject.CommandID
 	MessageID      valueobject.MessageID
-	// Payload is the canonical marshaled DirectServicePlaintextPayload
-	// (peers-touch.bot-event.v1 or fallback-only). It is both the fact payload
-	// and the per-endpoint readable body.
+	// Payload is the canonical DirectServicePlaintextPayload.
 	Payload []byte
 }
 
 // DeliverSystemMessage commits a service-plaintext message through the
-// conversation application port. The explicit {bot, owner, conversation}
-// grant is asserted transactionally via the SystemSender port implemented by
-// the bot edge; this service only touches Conversation-owned repositories.
+// Conversation-owned publishing grant is asserted transactionally.
 func (s *Service) DeliverSystemMessage(
 	ctx context.Context,
 	request SystemMessageRequest,
 ) (Result, error) {
 	const operation = "application.deliver_system_message"
-	if request.ConversationID == "" || request.Bot == "" || request.Owner == "" ||
+	if request.ConversationID == "" || request.PublishingID == "" ||
+		request.Sender == "" || request.Recipient == "" ||
 		request.CommandID == "" || request.MessageID == "" {
 		return Result{}, invalid(operation, "request", "complete system message input is required")
 	}
-	if request.Bot == request.Owner {
-		return Result{}, invalid(operation, "bot_owner", "bot and owner must be distinct actors")
+	if request.Sender == request.Recipient {
+		return Result{}, invalid(operation, "sender_recipient", "sender and recipient must be distinct actors")
 	}
 	if len(request.Payload) == 0 || len(request.Payload) > MaxSystemMessagePayloadBytes {
 		return Result{}, invalid(
@@ -55,7 +49,7 @@ func (s *Service) DeliverSystemMessage(
 		)
 	}
 	sender := valueobject.Endpoint{
-		Actor:  request.Bot,
+		Actor:  request.Sender,
 		Device: valueobject.SystemStationDeviceID,
 	}
 	commandHash := valueobject.HashBytes(request.Payload)
@@ -79,9 +73,10 @@ func (s *Service) DeliverSystemMessage(
 			}
 			if err := transaction.SystemSender.AuthorizeSystemMessage(
 				ctx,
-				request.Bot,
-				request.Owner,
+				request.PublishingID,
+				request.Sender,
 				request.ConversationID,
+				s.clock.Now(),
 			); err != nil {
 				return err
 			}
@@ -108,10 +103,10 @@ func (s *Service) DeliverSystemMessage(
 
 			// FederationID/epoch are read from the loaded authority; recipient
 			// routing is resolved internally from the identity directory.
-			ownerRoutes, err := resolveActorRoutes(
+			recipientRoutes, err := resolveActorRoutes(
 				ctx,
 				transaction.Identity,
-				[]valueobject.PTID{request.Owner},
+				[]valueobject.PTID{request.Recipient},
 			)
 			if err != nil {
 				return err
@@ -119,7 +114,7 @@ func (s *Service) DeliverSystemMessage(
 			// v1 is home-local by contract: an owner device homed on another
 			// Station is refused at the application port as well as in the
 			// aggregate, so no kind-8 delivery ever crosses federation.
-			for _, route := range ownerRoutes {
+			for _, route := range recipientRoutes {
 				if route.HomeStation != s.localStation {
 					return conversationdomain.NewError(
 						conversationdomain.ErrorCodeUnauthorized,
@@ -129,8 +124,8 @@ func (s *Service) DeliverSystemMessage(
 					)
 				}
 			}
-			deliveries := make([]valueobject.PreparedDelivery, 0, len(ownerRoutes))
-			for _, route := range ownerRoutes {
+			deliveries := make([]valueobject.PreparedDelivery, 0, len(recipientRoutes))
+			for _, route := range recipientRoutes {
 				delivery, err := valueobject.NewPreparedDelivery(
 					route.Endpoint,
 					route.HomeStation,
@@ -147,8 +142,8 @@ func (s *Service) DeliverSystemMessage(
 				aggregate.SystemServiceMessageInput{
 					CommandID:   request.CommandID,
 					MessageID:   request.MessageID,
-					Bot:         request.Bot,
-					Owner:       request.Owner,
+					SenderActor: request.Sender,
+					Recipient:   request.Recipient,
 					Sender:      sender,
 					Deliveries:  deliveries,
 					Payload:     append([]byte(nil), request.Payload...),

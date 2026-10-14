@@ -3,20 +3,20 @@ mod fixtures;
 use messaging_core::codec::verification::{delivery_commitment, delivery_commitment_raw};
 use messaging_core::contracts::CryptoEndpoint;
 use messaging_core::inbox::{
-    ClaimedItemConsumer, ServicePlaintextProcessor, SkippedPayloadProcessor, BOT_EVENT_SCHEMA,
+    ClaimedItemConsumer, ServicePlaintextProcessor, SkippedPayloadProcessor,
     SERVICE_SYSTEM_DEVICE_ID,
 };
 use messaging_core::proto::actor_device_from_chat_endpoint;
 use messaging_core::proto::chat::{
     conversation_event, ConversationEvent, CryptoEndpoint as ProtoCryptoEndpoint,
     DeviceEventDelivery, DeviceInboxPayloadType, DirectServicePlaintextPayload,
-    DurableDeviceInboxItem, MessageCommittedFact, MessageDeliverySecurity, MessagingContentKind,
-    PreparedEndpointPayloadKind, ServiceBotEventContent, ServiceBotEventKind,
-    ServiceBotEventSeverity, ServiceBotEventSource,
+    DurableDeviceInboxItem, EventSubject, MessageCommittedFact, MessageContent,
+    MessageDeliverySecurity, MessageEventSeverity, MessageSourceContext, MessageTextContent,
+    MessagingContentKind, PreparedEndpointPayloadKind, ReportedTaskState, StructuredEventContent,
+    TaskStateUpdate,
 };
 use prost::Message;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use fixtures::TestRepo;
@@ -38,8 +38,17 @@ struct DeliveryBuilder {
 impl DeliveryBuilder {
     fn service() -> Self {
         let body = DirectServicePlaintextPayload {
-            fallback_text: "任务已完成".to_string(),
-            content: None,
+            message_content: Some(MessageContent {
+                primary: Some(messaging_core::proto::chat::message_content::Primary::Text(
+                    MessageTextContent {
+                        text: "task completed".to_string(),
+                    },
+                )),
+                attachments: Vec::new(),
+                fallback_text: "task completed".to_string(),
+            }),
+            source_context: None,
+            source_namespace: "publisher.test".to_string(),
         };
         Self {
             owner: ProtoCryptoEndpoint {
@@ -58,31 +67,45 @@ impl DeliveryBuilder {
         }
     }
 
-    fn with_bot_event(mut self) -> Self {
-        let mut labels = HashMap::new();
-        labels.insert("repo".to_string(), "peers-touch".to_string());
-        labels.insert("branch".to_string(), "feat/bot".to_string());
+    fn with_task_event(mut self) -> Self {
         let body = DirectServicePlaintextPayload {
-            fallback_text: "任务已完成".to_string(),
-            content: Some(
-                messaging_core::proto::chat::direct_service_plaintext_payload::Content::BotEvent(
-                    ServiceBotEventContent {
-                        schema: BOT_EVENT_SCHEMA.to_string(),
-                        event_type: ServiceBotEventKind::TaskCompleted as i32,
-                        severity: ServiceBotEventSeverity::Attention as i32,
-                        bot_ptid: "ptid:v1:actor:peers:b:bot-wh_x:bbb".to_string(),
-                        group_key: "task-42".to_string(),
-                        dedupe_key: "evt-42".to_string(),
-                        action_url: "peers://conversation/evt-42".to_string(),
-                        source: Some(ServiceBotEventSource {
-                            agent: "claude-code".to_string(),
-                            workspace: "peers-touch".to_string(),
-                            session_id: "session-7".to_string(),
-                            labels,
-                        }),
-                    },
+            message_content: Some(MessageContent {
+                primary: Some(
+                    messaging_core::proto::chat::message_content::Primary::Event(
+                        StructuredEventContent {
+                            event_type: "agent.task.state".to_string(),
+                            source_event_id: "evt-42".to_string(),
+                            subject: Some(EventSubject {
+                                kind: "task".to_string(),
+                                id: "task-42".to_string(),
+                                execution_id: "run-7".to_string(),
+                            }),
+                            occurred_at: None,
+                            severity: MessageEventSeverity::Attention as i32,
+                            title: "Task completed".to_string(),
+                            body: String::new(),
+                            actions: Vec::new(),
+                            detail: Some(
+                                messaging_core::proto::chat::structured_event_content::Detail::TaskState(
+                                    TaskStateUpdate {
+                                        revision: 2,
+                                        state: ReportedTaskState::Completed as i32,
+                                    },
+                                ),
+                            ),
+                        },
+                    ),
                 ),
-            ),
+                attachments: Vec::new(),
+                fallback_text: "Task completed".to_string(),
+            }),
+            source_context: Some(MessageSourceContext {
+                program: "claude-code".to_string(),
+                workspace: "peers-touch".to_string(),
+                session_id: "session-7".to_string(),
+                labels: Default::default(),
+            }),
+            source_namespace: "bot.test".to_string(),
         };
         self.endpoint_payload = body.encode_to_vec();
         self
@@ -207,14 +230,14 @@ fn service_plaintext_commits_fallback_as_ordinary_message() {
     assert_eq!(message.event_sequence, 1);
     assert_eq!(message.sender_ptid, "ptid:v1:actor:peers:b:bot-wh_x:bbb");
     assert_eq!(message.sender_device_id, SERVICE_SYSTEM_DEVICE_ID);
-    assert_eq!(message.fallback_text, "任务已完成");
-    assert!(message.bot_event.is_none());
+    assert_eq!(message.fallback_text, "task completed");
+    assert_eq!(message.source_namespace, "publisher.test");
 }
 
 #[test]
-fn service_plaintext_commits_structured_bot_event() {
+fn service_plaintext_commits_structured_task_event() {
     let (repo, processor) = service_processor();
-    let item = DeliveryBuilder::service().with_bot_event().build();
+    let item = DeliveryBuilder::service().with_task_event().build();
 
     processor.consume(&item, 1).unwrap();
 
@@ -222,24 +245,16 @@ fn service_plaintext_commits_structured_bot_event() {
     let message = committed
         .as_ref()
         .expect("service message must be committed");
-    let event = message.bot_event.as_ref().expect("bot event projection");
-    assert_eq!(event.schema, BOT_EVENT_SCHEMA);
-    assert_eq!(event.event_type, ServiceBotEventKind::TaskCompleted as i32);
-    assert_eq!(event.severity, ServiceBotEventSeverity::Attention as i32);
-    assert_eq!(event.bot_ptid, message.sender_ptid);
-    assert_eq!(event.group_key, "task-42");
-    assert_eq!(event.dedupe_key, "evt-42");
-    assert_eq!(event.action_url, "peers://conversation/evt-42");
-    assert_eq!(event.source_agent, "claude-code");
-    assert_eq!(event.source_workspace, "peers-touch");
-    assert_eq!(event.source_session_id, "session-7");
-    // Labels are projected in deterministic order.
+    assert_eq!(message.source_namespace, "bot.test");
+    let event = match message.content.primary.as_ref().expect("primary") {
+        messaging_core::proto::chat::message_content::Primary::Event(event) => event,
+        _ => panic!("expected structured event"),
+    };
+    assert_eq!(event.event_type, "agent.task.state");
+    assert_eq!(event.subject.as_ref().unwrap().execution_id, "run-7");
     assert_eq!(
-        event.source_labels,
-        vec![
-            ("branch".to_string(), "feat/bot".to_string()),
-            ("repo".to_string(), "peers-touch".to_string()),
-        ]
+        message.source_context.as_ref().unwrap().program,
+        "claude-code"
     );
 }
 

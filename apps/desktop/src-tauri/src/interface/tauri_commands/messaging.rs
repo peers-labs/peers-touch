@@ -2,8 +2,8 @@ use crate::error::{AppResult, ErrorCode};
 use crate::messaging::CommandDispatchProgress;
 use crate::model::chat::{
     ConversationKind, GetMemberSettingsRequest, GetMemberSettingsResponse, MemberRole,
-    MemberSettings, MemberStatus, MessagingMembershipAction, MlsLeaveIntent,
-    UpdateMemberSettingsRequest, UpdateMemberSettingsResponse,
+    MemberSettings, MemberStatus, MessageContent, MessageSourceContext, MessagingMembershipAction,
+    MlsLeaveIntent, UpdateMemberSettingsRequest, UpdateMemberSettingsResponse,
 };
 use crate::state::AppState;
 use prost::Message;
@@ -2447,26 +2447,92 @@ pub(crate) fn messaging_list_service_messages_result(
 }
 
 fn service_message_json(event: &crate::messaging::ServiceMessageRow) -> Value {
-    let labels: serde_json::Value =
-        serde_json::from_str(&event.source_labels_json).unwrap_or_else(|_| json!({}));
+    let content = MessageContent::decode(event.content_bytes.as_slice())
+        .ok()
+        .map(message_content_json);
+    let source_context = MessageSourceContext::decode(event.source_context_bytes.as_slice())
+        .ok()
+        .map(|source| {
+            json!({
+                "program": source.program,
+                "workspace": source.workspace,
+                "session_id": source.session_id,
+                "labels": source.labels,
+            })
+        });
     json!({
         "event_id": event.event_id,
         "event_sequence": event.event_sequence,
         "message_id": event.message_id,
         "sender_ptid": event.sender_ptid,
         "fallback_text": event.fallback_text,
-        "event_schema": event.event_schema,
-        "event_type": event.event_type,
-        "event_severity": event.event_severity,
-        "bot_ptid": event.bot_ptid,
-        "group_key": event.group_key,
-        "dedupe_key": event.dedupe_key,
-        "action_url": event.action_url,
-        "source_agent": event.source_agent,
-        "source_workspace": event.source_workspace,
-        "source_session_id": event.source_session_id,
-        "source_labels": labels,
+        "source_namespace": event.source_namespace,
+        "content": content,
+        "source_context": source_context,
         "timestamp_unix_ms": event.committed_at_unix_ms,
+    })
+}
+
+fn message_content_json(content: MessageContent) -> Value {
+    use crate::model::chat::message_content::Primary;
+    let primary = match content.primary {
+        Some(Primary::Text(text)) => json!({
+            "kind": "text",
+            "text": text.text,
+        }),
+        Some(Primary::Event(event)) => {
+            let subject = event.subject.map(|subject| {
+                json!({
+                    "kind": subject.kind,
+                    "id": subject.id,
+                    "execution_id": subject.execution_id,
+                })
+            });
+            let task_state = event.detail.map(|detail| match detail {
+                crate::model::chat::structured_event_content::Detail::TaskState(state) => json!({
+                    "revision": state.revision.to_string(),
+                    "state": state.state,
+                }),
+            });
+            json!({
+                "kind": "event",
+                "event_type": event.event_type,
+                "source_event_id": event.source_event_id,
+                "subject": subject,
+                "occurred_at_unix_ms": event.occurred_at.map(|timestamp| {
+                    timestamp.seconds.saturating_mul(1_000)
+                        .saturating_add(i64::from(timestamp.nanos) / 1_000_000)
+                }),
+                "severity": event.severity,
+                "title": event.title,
+                "body": event.body,
+                "actions": event.actions.into_iter().map(|action| json!({
+                    "label": action.label,
+                    "url": action.url,
+                })).collect::<Vec<_>>(),
+                "task_state": task_state,
+            })
+        }
+        Some(Primary::Card(card)) => json!({
+            "kind": "card",
+            "title": card.title,
+            "body": card.body,
+            "actions": card.actions.into_iter().map(|action| json!({
+                "label": action.label,
+                "url": action.url,
+            })).collect::<Vec<_>>(),
+        }),
+        None => Value::Null,
+    };
+    json!({
+        "primary": primary,
+        "fallback_text": content.fallback_text,
+        "attachments": content.attachments.into_iter().map(|attachment| json!({
+            "object_id": attachment.object_id,
+            "filename": attachment.filename,
+            "media_type": attachment.media_type,
+            "size": attachment.size.to_string(),
+        })).collect::<Vec<_>>(),
     })
 }
 

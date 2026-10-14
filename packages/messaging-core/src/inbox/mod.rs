@@ -18,7 +18,5 @@ pub use drain::{
 };
 pub use public_event::PublicEventProcessor;
 pub use receipt::{decode_device_receipt_payload, DeliveryReceiptProcessor, DeviceReceiptPayload};
-pub use service_plaintext::{
-    ServicePlaintextProcessor, BOT_EVENT_SCHEMA, SERVICE_SYSTEM_DEVICE_ID,
-};
+pub use service_plaintext::{ServicePlaintextProcessor, SERVICE_SYSTEM_DEVICE_ID};
 pub use skipped::SkippedPayloadProcessor;

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/entity"
 	domainevent "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/repository"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
@@ -69,50 +70,42 @@ type FederationDirectory interface {
 	) (bool, error)
 }
 
-// SystemSenderAuthorization is the transaction-scoped authorization for the
-// internal, non-E2EE system sender (bot webhook delivery). The bot edge
-// implements it by verifying the explicit
-// {bot, owner, bot-direct-conversation} grant plus the ACTIVE registry state;
-// the Conversation application never reaches into the bot registry itself, so
-// the two domains share a transaction without repository coupling (G-BOT-03).
+// SystemSenderAuthorization verifies one live Conversation-owned delegation.
 type SystemSenderAuthorization interface {
 	AuthorizeSystemMessage(
 		ctx context.Context,
-		bot valueobject.PTID,
-		owner valueobject.PTID,
+		publishingID string,
+		sender valueobject.PTID,
 		conversation valueobject.ConversationID,
+		at time.Time,
 	) error
 }
 
-// SystemDirectories owns the internal bot-direct bookkeeping inside the
-// delivery transaction: recording the explicit system grant, and the 24h
-// webhook idempotency bucket. Implemented by the bot sub-server over a
-// transaction-bound store.
-type SystemDirectories interface {
-	EnsureSystemGrant(
-		ctx context.Context,
-		bot valueobject.PTID,
-		owner valueobject.PTID,
-		conversation valueobject.ConversationID,
-		at time.Time,
-	) error
-	LoadIngestion(
-		ctx context.Context,
-		bot valueobject.PTID,
-		requestID string,
-		now time.Time,
-	) (eventID string, found bool, err error)
-	RecordIngestion(
-		ctx context.Context,
-		bot valueobject.PTID,
-		requestID string,
-		eventID string,
-		at time.Time,
-	) error
+// PublishingStore uses the exact authority transaction for credentials,
+// frozen receipts, object ownership, and bounded producer admission.
+type PublishingStore interface {
+	GetGrant(ctx context.Context, id string) (entity.PublishingGrant, error)
+	CreateGrant(ctx context.Context, grant entity.PublishingGrant) error
+	SaveGrant(ctx context.Context, grant entity.PublishingGrant) error
+	ListGrants(ctx context.Context, owner valueobject.PTID) ([]entity.PublishingGrant, error)
+	GetPublication(ctx context.Context, id, commandID string) (entity.PublicationReceipt, bool, error)
+	RecordPublication(ctx context.Context, receipt entity.PublicationReceipt) error
+	CheckRate(ctx context.Context, id string, limit uint32, at time.Time) error
+}
+
+type PublishedObjectDirectory interface {
+	ValidateObject(ctx context.Context, objectID string, owner valueobject.PTID, target valueobject.ConversationID, at time.Time) (PublishedObject, error)
+}
+
+type PublishedObject struct {
+	ID        string
+	Filename  string
+	MediaType string
+	Size      uint64
 }
 
 // ServiceNotificationInput is a transaction-bound internal notification
-// production request (bot events). The implementation honors recipient
+// production request. The implementation honors recipient
 // preferences and an idempotency key without leaving the caller transaction.
 type ServiceNotificationInput struct {
 	RecipientPTID  string
@@ -146,11 +139,11 @@ type ServiceNotificationProducer interface {
 	) (ServiceNotificationResult, error)
 }
 
-// BotNotificationWake is the post-commit, actor-level realtime descriptor for
-// the bot-notification SSE arm (badge/banner). The durable notification row
+// ServiceNotificationWake is the post-commit actor-level realtime descriptor.
+// The durable notification row
 // and the device inbox remain truth; this wake only reaches currently (and
 // ring-replaying) online owner devices and must never gate the webhook result.
-type BotNotificationWake struct {
+type ServiceNotificationWake struct {
 	RecipientActor   valueobject.PTID
 	NotificationID   string
 	NotificationType int32
@@ -159,10 +152,10 @@ type BotNotificationWake struct {
 	CreatedAtUnixMs  int64
 }
 
-// BotNotificationPublisher emits the actor-level bot-notification wake after
+// ServiceNotificationPublisher emits the actor-level notification wake after
 // the delivery transaction commits.
-type BotNotificationPublisher interface {
-	PublishBotNotification(ctx context.Context, wake BotNotificationWake) error
+type ServiceNotificationPublisher interface {
+	PublishServiceNotification(ctx context.Context, wake ServiceNotificationWake) error
 }
 
 // LocalScope resolves the internal Federation scope for system-authored
@@ -276,7 +269,8 @@ type Transaction struct {
 	Identity               IdentityDirectory
 	Federation             FederationDirectory
 	SystemSender           SystemSenderAuthorization
-	SystemDirectories      SystemDirectories
+	Publishing             PublishingStore
+	PublishingObjects      PublishedObjectDirectory
 	ServiceNotifications   ServiceNotificationProducer
 	LocalScope             LocalScope
 	DeviceInbox            DeviceInboxWriter

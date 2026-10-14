@@ -9,10 +9,9 @@ import (
 )
 
 // SystemServiceMessageInput is the internal, Station-only command that commits
-// a non-E2EE direct_service_plaintext message into a bot direct conversation
-// (BOT-D05/BOT-D06). It is constructed exclusively by the conversation system
-// sender application port after that port verifies the explicit
-// {bot, owner, bot-direct-conversation} grant and the ACTIVE registry state.
+// a non-E2EE direct_service_plaintext message into a service Direct
+// Conversation. It is constructed exclusively after the application port
+// verifies the live publishing delegation.
 //
 // It is intentionally not an aggregate.Command: human device traffic flows
 // through ApplyCommand, whose delivery validation rejects
@@ -20,8 +19,8 @@ import (
 type SystemServiceMessageInput struct {
 	CommandID   valueobject.CommandID
 	MessageID   valueobject.MessageID
-	Bot         valueobject.PTID
-	Owner       valueobject.PTID
+	SenderActor valueobject.PTID
+	Recipient   valueobject.PTID
 	Sender      valueobject.Endpoint
 	Deliveries  []valueobject.PreparedDelivery
 	Payload     []byte
@@ -30,15 +29,15 @@ type SystemServiceMessageInput struct {
 }
 
 // CommitSystemServiceMessage appends a service-plaintext message to a direct
-// bot conversation. Fail-closed invariants (BOT-A21):
+// service conversation. Fail-closed invariants:
 //
 //   - direct conversation only;
-//   - exactly two active members, the bot and its human owner;
+//   - exactly two active members, the delegated sender and recipient;
 //   - both members are home-local (same authority Station): v1 forbids
 //     federation rather than trusting a federation adapter to classify kinds;
-//   - the sender is the bot member acting under the reserved Station device;
-//   - every delivery is direct_service_plaintext addressed only to the owner's
-//     active endpoints — a non-owner, bot-self, or third-party target is
+//   - the sender acts under the reserved Station device;
+//   - every delivery is direct_service_plaintext addressed only to current
+//     recipient endpoints — a sender-self or third-party target is
 //     rejected here, at the only system ingress point.
 func (c *Conversation) CommitSystemServiceMessage(
 	input SystemServiceMessageInput,
@@ -59,19 +58,20 @@ func (c *Conversation) CommitSystemServiceMessage(
 			"is not writable",
 		)
 	}
-	if input.Bot == "" || input.Owner == "" || input.Bot == input.Owner {
+	if input.SenderActor == "" || input.Recipient == "" ||
+		input.SenderActor == input.Recipient {
 		return Transition{}, invalid(
 			"aggregate.commit_system_service_message",
-			"bot_owner",
-			"two distinct bot and owner actors are required",
+			"sender_recipient",
+			"two distinct sender and recipient actors are required",
 		)
 	}
-	if input.Sender.Actor != input.Bot {
+	if input.Sender.Actor != input.SenderActor {
 		return Transition{}, conversationdomain.NewError(
 			conversationdomain.ErrorCodeUnauthorized,
 			"aggregate.commit_system_service_message",
 			"sender",
-			"service plaintext must be authored by the bot member",
+			"service plaintext must be authored by the delegated sender",
 		)
 	}
 	if input.Sender.Device != valueobject.SystemStationDeviceID {
@@ -83,14 +83,15 @@ func (c *Conversation) CommitSystemServiceMessage(
 		)
 	}
 
-	botMember, botOK := c.members[input.Bot]
-	ownerMember, ownerOK := c.members[input.Owner]
-	if !botOK || !botMember.Active() || !ownerOK || !ownerMember.Active() {
+	senderMember, senderOK := c.members[input.SenderActor]
+	recipientMember, recipientOK := c.members[input.Recipient]
+	if !senderOK || !senderMember.Active() ||
+		!recipientOK || !recipientMember.Active() {
 		return Transition{}, conversationdomain.NewError(
 			conversationdomain.ErrorCodeUnauthorized,
 			"aggregate.commit_system_service_message",
 			"members",
-			"the bot and owner must both be active conversation members",
+			"the sender and recipient must both be active conversation members",
 		)
 	}
 	if c.activeMemberCount() != 2 {
@@ -103,8 +104,8 @@ func (c *Conversation) CommitSystemServiceMessage(
 	}
 	// v1 home-local only: a cross-Station (federated) owner or bot is refused
 	// regardless of payload, implementing "no federation" at the system port.
-	if botMember.HomeStation != c.authorityStation ||
-		ownerMember.HomeStation != c.authorityStation {
+	if senderMember.HomeStation != c.authorityStation ||
+		recipientMember.HomeStation != c.authorityStation {
 		return Transition{}, conversationdomain.NewError(
 			conversationdomain.ErrorCodeUnauthorized,
 			"aggregate.commit_system_service_message",
@@ -132,20 +133,12 @@ func (c *Conversation) CommitSystemServiceMessage(
 				"system delivery must be direct_service_plaintext",
 			)
 		}
-		if delivery.Recipient.Actor != input.Owner {
+		if delivery.Recipient.Actor != input.Recipient {
 			return Transition{}, conversationdomain.NewError(
 				conversationdomain.ErrorCodeUnauthorized,
 				"aggregate.commit_system_service_message",
 				"recipient",
-				"service plaintext v1 may target only the bot owner",
-			)
-		}
-		if !c.IsActiveMemberEndpoint(delivery.Recipient) {
-			return Transition{}, conversationdomain.NewError(
-				conversationdomain.ErrorCodeDeliverySetMismatch,
-				"aggregate.commit_system_service_message",
-				"recipient",
-				"delivery recipient is not an active member endpoint",
+				"service plaintext v1 may target only the authorized recipient",
 			)
 		}
 	}

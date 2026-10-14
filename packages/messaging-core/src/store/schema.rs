@@ -323,10 +323,9 @@ CREATE INDEX IF NOT EXISTS idx_messaging_message_projections_thread
     ON messaging_message_projections(
         conversation_id, thread_root_message_id, event_sequence
     );
--- Structured read model for non-E2EE Station service messages (bot webhook
--- events). The ordinary row in messaging_message_projections carries the
--- fallback text; this table holds the peers-touch.bot-event.v1 structured
--- body for rich client rendering. Mobile v1 acks without inserting here.
+-- Common read model for non-E2EE Station service messages. The ordinary row
+-- carries fallback text; this row preserves the typed protobuf content and
+-- untrusted source context without introducing a second event schema.
 CREATE TABLE IF NOT EXISTS messaging_service_messages (
     conversation_id TEXT NOT NULL,
     event_id TEXT NOT NULL,
@@ -335,17 +334,9 @@ CREATE TABLE IF NOT EXISTS messaging_service_messages (
     sender_ptid TEXT NOT NULL,
     sender_device_id TEXT NOT NULL,
     fallback_text TEXT NOT NULL,
-    event_schema TEXT NOT NULL DEFAULT '',
-    event_type INTEGER NOT NULL DEFAULT 0,
-    event_severity INTEGER NOT NULL DEFAULT 0,
-    bot_ptid TEXT NOT NULL DEFAULT '',
-    group_key TEXT NOT NULL DEFAULT '',
-    dedupe_key TEXT NOT NULL DEFAULT '',
-    action_url TEXT NOT NULL DEFAULT '',
-    source_agent TEXT NOT NULL DEFAULT '',
-    source_workspace TEXT NOT NULL DEFAULT '',
-    source_session_id TEXT NOT NULL DEFAULT '',
-    source_labels_json TEXT NOT NULL DEFAULT '',
+    source_namespace TEXT NOT NULL DEFAULT '',
+    content_bytes BLOB NOT NULL DEFAULT X'',
+    source_context_bytes BLOB NOT NULL DEFAULT X'',
     committed_at_unix_ms INTEGER NOT NULL,
     PRIMARY KEY(conversation_id, event_id),
     UNIQUE(conversation_id, message_id)
@@ -847,6 +838,7 @@ pub fn migrate_messaging_schema<B: MessagingSchemaBackend>(backend: &B) -> Resul
     backend.execute_batch("PRAGMA foreign_keys = ON; BEGIN IMMEDIATE;")?;
     let migration = (|| {
         backend.execute_batch(MESSAGING_SCHEMA_SQL)?;
+        migrate_service_message_schema(backend)?;
         for required in REQUIRED_COLUMNS {
             if !backend
                 .table_columns(required.table)?
@@ -875,6 +867,48 @@ pub fn migrate_messaging_schema<B: MessagingSchemaBackend>(backend: &B) -> Resul
             }
         }
     }
+}
+
+fn migrate_service_message_schema<B: MessagingSchemaBackend>(backend: &B) -> Result<(), String> {
+    if !backend.table_exists("messaging_service_messages")? {
+        return Ok(());
+    }
+    let columns = backend.table_columns("messaging_service_messages")?;
+    if columns.iter().any(|column| column == "content_bytes") {
+        return Ok(());
+    }
+    if !columns.iter().any(|column| column == "event_schema") {
+        return Err("messaging service-message schema is ambiguous".to_string());
+    }
+    backend.execute_batch(
+        "ALTER TABLE messaging_service_messages
+             RENAME TO messaging_service_messages_retired_bot;
+         CREATE TABLE messaging_service_messages (
+             conversation_id TEXT NOT NULL,
+             event_id TEXT NOT NULL,
+             event_sequence INTEGER NOT NULL,
+             message_id TEXT NOT NULL,
+             sender_ptid TEXT NOT NULL,
+             sender_device_id TEXT NOT NULL,
+             fallback_text TEXT NOT NULL,
+             source_namespace TEXT NOT NULL DEFAULT '',
+             content_bytes BLOB NOT NULL DEFAULT X'',
+             source_context_bytes BLOB NOT NULL DEFAULT X'',
+             committed_at_unix_ms INTEGER NOT NULL,
+             PRIMARY KEY(conversation_id, event_id),
+             UNIQUE(conversation_id, message_id)
+         );
+         INSERT INTO messaging_service_messages(
+             conversation_id, event_id, event_sequence, message_id,
+             sender_ptid, sender_device_id, fallback_text,
+             committed_at_unix_ms
+         )
+         SELECT conversation_id, event_id, event_sequence, message_id,
+                sender_ptid, sender_device_id, fallback_text,
+                committed_at_unix_ms
+         FROM messaging_service_messages_retired_bot;
+         DROP TABLE messaging_service_messages_retired_bot;",
+    )
 }
 
 fn migrate_legacy_mobile_schema<B: MessagingSchemaBackend>(backend: &B) -> Result<(), String> {

@@ -3114,9 +3114,8 @@ impl MobileMessagingStore {
 
     /// Observe-only receive commit: durable claimed-item marker, authority
     /// hash-chain advancement and consumption receipt, but no message
-    /// projection. Used for service-plaintext messages that Mobile v1 does
-    /// not render and unknown future endpoint payload kinds, so the device
-    /// lane keeps draining and later events stay chain-contiguous.
+    /// projection. Used for unknown future endpoint payload kinds so the
+    /// device lane keeps draining and later events stay chain-contiguous.
     fn commit_observe_only_receive(
         &self,
         commit: ObserveOnlyReceiveCommit<'_>,
@@ -5844,8 +5843,7 @@ impl MetadataInteractionRepository for MobileMessagingStore {
     }
 }
 
-/// Borrowed fields shared by the two observe-only receive paths
-/// (service-plaintext v1 and unknown future payload kinds).
+/// Borrowed fields for unknown future payload kinds.
 struct ObserveOnlyReceiveCommit<'a> {
     item_id: &'a str,
     event_id: &'a str,
@@ -5859,25 +5857,6 @@ struct ObserveOnlyReceiveCommit<'a> {
     receipt_id: &'a str,
     receipt_bytes: &'a [u8],
     consumed_at_unix_ms: i64,
-}
-
-impl<'a> From<&'a ServicePlaintextReceiveCommit<'a>> for ObserveOnlyReceiveCommit<'a> {
-    fn from(commit: &'a ServicePlaintextReceiveCommit<'a>) -> Self {
-        Self {
-            item_id: commit.item_id,
-            event_id: commit.event_id,
-            conversation_id: commit.conversation_id,
-            event_sequence: commit.event_sequence,
-            lane_sequence: commit.lane_sequence,
-            consumer_epoch: commit.consumer_epoch,
-            payload_sha256: commit.payload_sha256,
-            event_hash: commit.event_hash,
-            previous_event_hash: commit.previous_event_hash,
-            receipt_id: commit.receipt_id,
-            receipt_bytes: commit.receipt_bytes,
-            consumed_at_unix_ms: commit.consumed_at_unix_ms,
-        }
-    }
 }
 
 impl<'a> From<&'a SkippedEndpointReceiveCommit<'a>> for ObserveOnlyReceiveCommit<'a> {
@@ -7194,10 +7173,96 @@ impl MessagingRepository for MobileMessagingStore {
         &self,
         commit: &ServicePlaintextReceiveCommit,
     ) -> Result<ReceiveCommitResult, String> {
-        // Mobile v1 renders no service-plaintext (bot) UI: the item is
-        // acknowledged through an observe-only commit so the lane and
-        // authority chain advance without a local message projection.
-        self.commit_observe_only_receive(commit.into())
+        self.with_transaction(|transaction| {
+            let result = Self::commit_claimed_item(
+                transaction,
+                commit.item_id,
+                commit.event_id,
+                commit.conversation_id,
+                commit.lane_sequence,
+                commit.consumer_epoch,
+                commit.payload_sha256,
+                commit.consumed_at_unix_ms,
+            )?;
+            if result == ReceiveCommitResult::AlreadyCommitted {
+                return Ok(result);
+            }
+            validate_authority_event(
+                transaction,
+                commit.conversation_id,
+                commit.event_sequence,
+                commit.event_hash,
+                commit.previous_event_hash,
+                false,
+            )?;
+            transaction
+                .execute(
+                    "INSERT INTO messaging_message_projections(
+                        conversation_id, event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, plaintext, delivery_state,
+                        committed_at_unix_ms
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'consumed', ?8)",
+                    params![
+                        commit.projection.conversation_id,
+                        commit.projection.event_id,
+                        commit.projection.event_sequence,
+                        commit.projection.message_id,
+                        commit.projection.sender_ptid,
+                        commit.projection.sender_device_id,
+                        commit.projection.fallback_text,
+                        commit.projection.committed_at_unix_ms,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+            let content_bytes = commit.projection.content.encode_to_vec();
+            let source_context_bytes = commit
+                .projection
+                .source_context
+                .as_ref()
+                .map(Message::encode_to_vec)
+                .unwrap_or_default();
+            transaction
+                .execute(
+                    "INSERT INTO messaging_service_messages(
+                        conversation_id, event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, fallback_text,
+                        source_namespace, content_bytes, source_context_bytes,
+                        committed_at_unix_ms
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                    params![
+                        commit.projection.conversation_id,
+                        commit.projection.event_id,
+                        commit.projection.event_sequence,
+                        commit.projection.message_id,
+                        commit.projection.sender_ptid,
+                        commit.projection.sender_device_id,
+                        commit.projection.fallback_text,
+                        commit.projection.source_namespace,
+                        content_bytes,
+                        source_context_bytes,
+                        commit.projection.committed_at_unix_ms,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+            index_message_search(
+                transaction,
+                commit.conversation_id,
+                &commit.projection.message_id,
+                &commit.projection.fallback_text,
+                &[],
+            )?;
+            finish_authority_receive(
+                transaction,
+                commit.conversation_id,
+                commit.event_sequence,
+                commit.event_hash,
+                commit.event_id,
+                commit.receipt_id,
+                commit.receipt_bytes,
+                commit.consumed_at_unix_ms,
+            )?;
+            Ok(result)
+        })
     }
 
     fn commit_skipped_endpoint_payload(

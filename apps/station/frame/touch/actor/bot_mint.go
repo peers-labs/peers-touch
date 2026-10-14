@@ -15,15 +15,21 @@ import (
 	"gorm.io/gorm"
 )
 
-// MintInternalAgentActor creates a HIDDEN, non-human AGENT actor owned by the
-// Station itself (an IM Bot). Unlike public SignUp it sets no usable password,
-// publishes nothing to the DHT, and uses PTID account letter "b". It returns
-// the new actor PTID. The Bot never logs in; all delivery is system-mediated
-// service plaintext.
-func MintInternalAgentActor(ctx context.Context, username, displayName, namespace string) (string, error) {
+// MintInternalProgramActor creates a hidden Station-owned service identity.
+// Generic publishers use TypeService; the optional Bot product uses TypeAgent.
+func MintInternalProgramActor(
+	ctx context.Context,
+	username string,
+	displayName string,
+	namespace string,
+	accountType identity.AccountType,
+) (string, error) {
 	username = strings.TrimSpace(username)
 	if username == "" {
-		return "", fmt.Errorf("bot username is required")
+		return "", fmt.Errorf("internal program username is required")
+	}
+	if accountType != identity.TypeService && accountType != identity.TypeAgent {
+		return "", fmt.Errorf("internal program account type is unsupported")
 	}
 	if namespace == "" {
 		namespace = "peers"
@@ -31,7 +37,7 @@ func MintInternalAgentActor(ctx context.Context, username, displayName, namespac
 
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
-		log.Warnf(ctx, "[MintInternalAgentActor] get db: %v", err)
+		log.Warnf(ctx, "[MintInternalProgramActor] get db: %v", err)
 		return "", err
 	}
 
@@ -50,17 +56,17 @@ func MintInternalAgentActor(ctx context.Context, username, displayName, namespac
 		return "", err
 	}
 
-	created, err := identity.CreateIdentity(ctx, username, namespace, identity.TypeAgent)
+	created, err := identity.CreateIdentity(ctx, username, namespace, accountType)
 	if err != nil {
 		return "", err
 	}
 
 	a := db.Actor{
 		PreferredUsername: username,
-		Email:             fmt.Sprintf("bot-%s@internal.local", username),
+		Email:             fmt.Sprintf("program-%s@internal.local", username),
 		Name:              displayName,
 		Type:              "Service",
-		Kind:              string(identity.TypeAgent),
+		Kind:              string(accountType),
 		Namespace:         namespace,
 		PublicKey:         pubPEM,
 		PrivateKey:        privPEM,
@@ -74,7 +80,7 @@ func MintInternalAgentActor(ctx context.Context, username, displayName, namespac
 	a.Visibility = VisibilityHidden
 
 	if err = rds.Create(&a).Error; err != nil {
-		log.Warnf(ctx, "[MintInternalAgentActor] create actor: %v", err)
+		log.Warnf(ctx, "[MintInternalProgramActor] create actor: %v", err)
 		return "", err
 	}
 
@@ -89,7 +95,7 @@ func MintInternalAgentActor(ctx context.Context, username, displayName, namespac
 		return "", err
 	}
 
-	log.Infof(ctx, "[MintInternalAgentActor] minted AGENT actor %s (%s)", username, created.PTID)
+	log.Infof(ctx, "[MintInternalProgramActor] minted internal actor %s (%s)", username, created.PTID)
 	return created.PTID, nil
 }
 

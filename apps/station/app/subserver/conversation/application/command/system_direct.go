@@ -10,21 +10,20 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 )
 
-// EnsureSystemDirectRequest is the internal creation input for the bot↔owner
-// Direct Conversation. It deliberately has no signed command: the caller is
-// the Station acting on an explicit system grant, not a human device.
+// EnsureSystemDirectRequest is the internal creation input for a delegated
+// service sender and its local recipient.
 type EnsureSystemDirectRequest struct {
-	Bot             valueobject.PTID
-	Owner           valueobject.PTID
-	BotSystemSender valueobject.Endpoint
-	OwnerRoutes     []ports.EndpointRoute
+	Sender          valueobject.PTID
+	Recipient       valueobject.PTID
+	SystemSender    valueobject.Endpoint
+	RecipientRoutes []ports.EndpointRoute
 	FederationID    valueobject.FederationID
 	AuthorityEpoch  valueobject.AuthorityEpoch
 	CommandID       valueobject.CommandID
 	ExactEventBytes []byte
 }
 
-// EnsureSystemDirect lazily creates the system-authored bot↔owner Direct
+// EnsureSystemDirect lazily creates the system-authored service Direct
 // Conversation. Genesis deliveries go only to real owner devices; the
 // reserved station-system creator authors the fact but receives no queue
 // item. A second call with the same command id replays the receipt.
@@ -33,15 +32,15 @@ func (s *Service) EnsureSystemDirect(
 	request EnsureSystemDirectRequest,
 ) (Result, error) {
 	const operation = "application.ensure_system_direct"
-	if request.Bot == "" || request.Owner == "" ||
+	if request.Sender == "" || request.Recipient == "" ||
 		request.CommandID == "" || len(request.ExactEventBytes) == 0 {
 		return Result{}, invalid(operation, "request", "complete system direct creation input is required")
 	}
-	if request.BotSystemSender.Actor != request.Bot ||
-		request.BotSystemSender.Device != valueobject.SystemStationDeviceID {
-		return Result{}, invalid(operation, "creator", "creator must be the bot under the reserved station-system device")
+	if request.SystemSender.Actor != request.Sender ||
+		request.SystemSender.Device != valueobject.SystemStationDeviceID {
+		return Result{}, invalid(operation, "creator", "creator must be the delegated sender under the reserved station-system device")
 	}
-	conversationID, err := valueobject.DirectConversationID(request.Bot, request.Owner)
+	conversationID, err := valueobject.DirectConversationID(request.Sender, request.Recipient)
 	if err != nil {
 		return Result{}, err
 	}
@@ -60,6 +59,9 @@ func (s *Service) EnsureSystemDirect(
 				ctx,
 				conversationID,
 			); loadErr == nil {
+				if err := validateExistingSystemDirect(existing, request, s.localStation); err != nil {
+					return err
+				}
 				if _, receiptErr := transaction.Repositories.Receipts.Get(
 					ctx,
 					conversationID,
@@ -90,8 +92,8 @@ func (s *Service) EnsureSystemDirect(
 			}
 
 			routes, err := canonicalActorRoutes(
-				request.OwnerRoutes,
-				[]valueobject.PTID{request.Owner},
+				request.RecipientRoutes,
+				[]valueobject.PTID{request.Recipient},
 			)
 			if err != nil {
 				return err
@@ -109,7 +111,7 @@ func (s *Service) EnsureSystemDirect(
 
 			devices := []entity.MemberDevice{}
 			botDevice, err := entity.NewMemberDevice(
-				request.BotSystemSender,
+				request.SystemSender,
 				s.localStation,
 				1,
 			)
@@ -158,12 +160,12 @@ func (s *Service) EnsureSystemDirect(
 					AuthorityStation: s.localStation,
 					AuthorityEpoch:   request.AuthorityEpoch,
 					Participants: []aggregate.Participant{
-						{Actor: request.Bot, HomeStation: s.localStation},
-						{Actor: request.Owner, HomeStation: s.localStation},
+						{Actor: request.Sender, HomeStation: s.localStation},
+						{Actor: request.Recipient, HomeStation: s.localStation},
 					},
 					Devices:      devices,
 					CommandID:    request.CommandID,
-					Creator:      request.BotSystemSender,
+					Creator:      request.SystemSender,
 					Deliveries:   deliveries,
 					EventPayload: request.ExactEventBytes,
 					CreatedAt:    s.clock.Now(),
@@ -197,4 +199,40 @@ func (s *Service) EnsureSystemDirect(
 	}
 	result.PostCommitError = s.notify(ctx, notifications)
 	return result, nil
+}
+
+func validateExistingSystemDirect(
+	snapshot aggregate.Snapshot,
+	request EnsureSystemDirectRequest,
+	localStation valueobject.StationID,
+) error {
+	activeMembers := make(map[valueobject.PTID]bool, len(snapshot.Members))
+	for _, member := range snapshot.Members {
+		if member.Active() {
+			activeMembers[member.Actor] = member.HomeStation == localStation
+		}
+	}
+	systemSender := false
+	for _, device := range snapshot.Devices {
+		if device.Active && device.Endpoint == request.SystemSender &&
+			device.HomeStation == localStation {
+			systemSender = true
+			break
+		}
+	}
+	if snapshot.Kind != valueobject.ConversationKindDirect ||
+		snapshot.Status != valueobject.ConversationStatusActive ||
+		snapshot.AuthorityStation != localStation ||
+		len(activeMembers) != 2 ||
+		!activeMembers[request.Sender] ||
+		!activeMembers[request.Recipient] ||
+		!systemSender {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeCommandConflict,
+			"application.ensure_system_direct",
+			"conversation",
+			"existing Direct is not the provisioned local service conversation",
+		)
+	}
+	return nil
 }

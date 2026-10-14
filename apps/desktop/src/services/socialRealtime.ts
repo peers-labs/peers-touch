@@ -13,7 +13,10 @@ import type {
   RelationshipChangedPayload,
 } from '../kernel/events/types';
 import { installEventStreamBridge, startEventStream, stopEventStream } from './eventStream';
-import { installBotNotificationGate, teardownBotNotificationGate } from './botNotificationGate';
+import {
+  installServiceNotificationGate,
+  teardownServiceNotificationGate,
+} from './serviceNotificationGate';
 import { api, type NotificationData } from './desktop_api';
 import { NotificationType } from '../gen/proto/domain/notification/notification_pb';
 import { useNotificationStore } from '../store/notification';
@@ -399,13 +402,13 @@ export function installSocialRealtimeBridge(): void {
     useNotificationStore.subscribe(onNotificationProjectionChanged),
   ];
 
-  installBotNotificationGate();
+  installServiceNotificationGate();
 
   reconcileAuthenticatedRuntime();
 
   teardownBridge = () => {
     unsubs.forEach((unsubscribe) => unsubscribe());
-    teardownBotNotificationGate();
+    teardownServiceNotificationGate();
     stopSocialReconcile();
     if (externalHostReconcileTimer) {
       window.clearTimeout(externalHostReconcileTimer);

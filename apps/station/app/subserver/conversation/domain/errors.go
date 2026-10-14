@@ -13,6 +13,7 @@ const (
 	ErrorCodeInactive              ErrorCode = "CONVERSATION_INACTIVE"
 	ErrorCodeReadOnly              ErrorCode = "CONVERSATION_READ_ONLY"
 	ErrorCodeUnauthorized          ErrorCode = "CONVERSATION_UNAUTHORIZED"
+	ErrorCodeRateLimited           ErrorCode = "CONVERSATION_RATE_LIMITED"
 	ErrorCodeCommandConflict       ErrorCode = "CONVERSATION_COMMAND_CONFLICT"
 	ErrorCodeStaleAuthorityHead    ErrorCode = "CONVERSATION_STALE_AUTHORITY_HEAD"
 	ErrorCodeStaleMembershipEpoch  ErrorCode = "CONVERSATION_STALE_MEMBERSHIP_EPOCH"

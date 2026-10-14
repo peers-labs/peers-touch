@@ -662,8 +662,8 @@ export function ChatDetailPanel() {
   const isGroup = activeTab === 'group';
   // Bots are Station-resident actors; the authority-station availability row
   // is meaningless (and renders as an error) for their conversations.
-  const isBotConversation = useSocialChatStore((s) => (
-    activeTab === 'friend' && activeUlid ? s.isBotConversation(activeUlid) : false
+  const isAutomatedConversation = useSocialChatStore((s) => (
+    activeTab === 'friend' && activeUlid ? s.isAutomatedConversation(activeUlid) : false
   ));
   const activeConversation = activeUlid
     ? getIMConversations().find((conversation) => conversation.kind === activeTab && conversation.id === activeUlid)
@@ -1404,7 +1404,7 @@ export function ChatDetailPanel() {
                 groupMemberCount,
                 peerPresenceKnown,
                 peerIsOnline,
-                isBotConversation,
+                isAutomatedConversation,
                 encryptionEnabled,
                 cachedPeerProfile,
                 authorityStationId,
@@ -1416,7 +1416,7 @@ export function ChatDetailPanel() {
           </Flexbox>
         )}
 
-        {!isBotConversation && (
+        {!isAutomatedConversation && (
         <Flexbox
           data-chat-station="authority"
           data-chat-station-id={authorityStationId}
@@ -1826,7 +1826,7 @@ interface BuildChatDetailProfileArgs {
   groupMemberCount: number;
   peerPresenceKnown: boolean;
   peerIsOnline: boolean | null | undefined;
-  isBotConversation: boolean;
+  isAutomatedConversation: boolean;
   encryptionEnabled: boolean;
   cachedPeerProfile: AccountProfile | null | undefined;
   authorityStationId: string;
@@ -1849,7 +1849,7 @@ function buildChatDetailProfile({
   groupMemberCount,
   peerPresenceKnown,
   peerIsOnline,
-  isBotConversation,
+  isAutomatedConversation,
   encryptionEnabled,
   cachedPeerProfile,
   authorityStationId,
@@ -1861,8 +1861,8 @@ function buildChatDetailProfile({
   // of an "Offline" state derived from missing presence.
   const presenceLabel = isGroup
     ? t('chat.social.detail.membersCount', { count: groupMemberCount })
-    : isBotConversation
-      ? t('chat.bot.stationManaged', { defaultValue: 'Automated bot · Station resident' })
+    : isAutomatedConversation
+      ? t('chat.automation.stationManaged', { defaultValue: 'Automated service · Station resident' })
       : peerPresenceKnown
         ? peerIsOnline
           ? t('chat.social.detail.online')

@@ -12,7 +12,8 @@ import {
   type ChatMessage,
 } from './chatMessageModel';
 import { extractUrls, LinkPreviewCard } from './LinkPreviewCard';
-import { BotEventCard } from './BotEventCard';
+import { ServiceMessageCard } from './ServiceMessageCard';
+import type { ServiceEventAggregation } from './serviceEventAggregation';
 
 const { Text } = Typography;
 
@@ -28,7 +29,8 @@ interface ChatMessageContentProps {
   isOwn: boolean;
   replyBlock?: ReactNode;
   attachmentGap?: number;
-  botEventFoldCount?: number;
+  serviceAggregation?: ServiceEventAggregation;
+  onToggleServiceAggregation?: (key: string) => void;
 }
 
 export function ChatMessageContent({
@@ -36,16 +38,17 @@ export function ChatMessageContent({
   isOwn,
   replyBlock,
   attachmentGap = 6,
-  botEventFoldCount,
+  serviceAggregation,
+  onToggleServiceAggregation,
 }: ChatMessageContentProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const isRecalled = isRecalledMessage(message);
   const encryptedPlaceholder = isEncryptedPlaceholder(message);
-  const botEvent = message.botEvent;
+  const serviceMessage = message.serviceMessage;
   const attachments = message.attachments || [];
   const urls =
-    !isRecalled && !encryptedPlaceholder && !botEvent ? extractUrls(message.content) : [];
+    !isRecalled && !encryptedPlaceholder && !serviceMessage ? extractUrls(message.content) : [];
 
   return (
     <>
@@ -66,8 +69,12 @@ export function ChatMessageContent({
             {t('chat.social.encryption.encryptedMessage')}
           </Text>
         </Flexbox>
-      ) : botEvent ? (
-        <BotEventCard event={botEvent} foldCount={botEventFoldCount} />
+      ) : serviceMessage ? (
+        <ServiceMessageCard
+          service={serviceMessage}
+          aggregation={serviceAggregation}
+          onToggleAggregation={onToggleServiceAggregation}
+        />
       ) : (
         <span
           data-message-text={message.ulid}

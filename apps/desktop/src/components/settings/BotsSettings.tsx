@@ -60,21 +60,22 @@ function CredentialReveal({
 }: {
   open: boolean;
   title: string;
-  response: BotCreateResponse | { secretPlaintext: string; webhookUrl?: string; bot?: RegistryBot };
+  response: BotCreateResponse | { secret: string; ingressUrl?: string; bot?: RegistryBot };
   onClose: () => void;
 }) {
   const { t } = useTranslation('settings');
   const tt = useMemo(() => tr(t), [t]);
-  const secret = response.secretPlaintext;
-  const webhookUrl = 'webhookUrl' in response ? response.webhookUrl : '';
+  const secret = response.secret;
+  const ingressUrl = 'ingressUrl' in response ? response.ingressUrl : '';
 
   const curlSnippet = useMemo(() => {
-    if (!webhookUrl) return '';
-    return `curl -X POST "$STATION_ORIGIN${webhookUrl}" \\
+    if (!ingressUrl) return '';
+    return `curl -X POST "$STATION_ORIGIN${ingressUrl}" \\
   -H "Authorization: Bearer ${secret}" \\
   -H "Content-Type: application/json" \\
-  --data '{"schema_version":"1","request_id":"<unique-id>","event_type":"BOT_EVENT_TYPE_TASK_COMPLETED","title":"Build passed"}'`;
-  }, [secret, webhookUrl]);
+  -H "Idempotency-Key: <unique-id>" \\
+  --data '{"content":{"text":{"text":"Build passed"}},"source_context":{"program":"ci"}}'`;
+  }, [ingressUrl, secret]);
 
   const copy = (value: string) => {
     navigator.clipboard?.writeText(value).then(
@@ -96,14 +97,14 @@ function CredentialReveal({
       }
     >
       <Space direction="vertical" style={{ width: '100%' }} size={12}>
-        {webhookUrl && (
+        {ingressUrl && (
           <div>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              {tt('settings.bots.webhookUrl', 'Webhook URL (path)')}
+              {tt('settings.bots.ingressUrl', 'Message ingress URL (path)')}
             </Text>
             <Space.Compact style={{ width: '100%' }}>
-              <Input readOnly value={webhookUrl} />
-              <Button icon={<Copy size={14} />} onClick={() => copy(webhookUrl)} />
+              <Input readOnly value={ingressUrl} />
+              <Button icon={<Copy size={14} />} onClick={() => copy(ingressUrl)} />
             </Space.Compact>
           </div>
         )}
@@ -154,7 +155,7 @@ export function BotsSettings() {
   const [created, setCreated] = useState<BotCreateResponse | null>(null);
 
   const [rotatingFor, setRotatingFor] = useState<RegistryBot | null>(null);
-  const [rotated, setRotated] = useState<{ secretPlaintext: string } | null>(null);
+  const [rotated, setRotated] = useState<{ secret: string } | null>(null);
   const [busyPtid, setBusyPtid] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -259,14 +260,14 @@ export function BotsSettings() {
           <BotAvatar bot={bot} />
           <Space direction="vertical" size={0}>
             <Text strong>{bot.name}</Text>
-            <Text type="secondary" style={{ fontSize: 11 }}>{bot.webhookId}</Text>
+            <Text type="secondary" style={{ fontSize: 11 }}>{bot.publishingId}</Text>
           </Space>
         </Space>
       ),
     },
     { title: tt('settings.bots.colState', 'State'), dataIndex: 'state', render: (s: number) => stateTag(s) },
     {
-      // This is the enforced webhook rate-limit ceiling, not observed traffic.
+      // This is the enforced publishing rate-limit ceiling, not observed traffic.
       title: tt('settings.bots.colRateLimit', 'Rate limit/min'),
       dataIndex: 'rateLimitPerMinute',
       width: 120,
@@ -369,7 +370,7 @@ export function BotsSettings() {
         <Paragraph type="secondary" style={{ marginTop: 0 }}>
           {tt(
             'settings.bots.intro',
-            'Bots are automated actors that push webhook events into a private conversation with you.',
+            'Bots are automated actors backed by the common message publishing channel.',
           )}
         </Paragraph>
         <Spin spinning={loading}>
@@ -392,7 +393,7 @@ export function BotsSettings() {
         title={tt('settings.bots.createTitle', 'Create a bot')}
         onCancel={() => setCreateOpen(false)}
         confirmLoading={creating}
-        okText={tt('settings.bots.generate', 'Generate webhook & secret')}
+        okText={tt('settings.bots.generate', 'Generate channel & secret')}
         okButtonProps={{ disabled: !name.trim() }}
         onOk={submitCreate}
       >
@@ -442,7 +443,7 @@ export function BotsSettings() {
         <CredentialReveal
           open
           title={tt('settings.bots.newSecretTitle', 'New secret')}
-          response={{ secretPlaintext: rotated.secretPlaintext }}
+          response={{ secret: rotated.secret }}
           onClose={() => setRotated(null)}
         />
       )}

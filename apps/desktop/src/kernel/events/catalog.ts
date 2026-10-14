@@ -22,7 +22,7 @@ export const EVENT = {
   REALTIME_GROUP_MEMBERSHIP_CHANGE: 'realtime.group_membership_change',
   REALTIME_GROUP_FEDERATION_EVENT: 'realtime.group_federation_event',
   REALTIME_ENVELOPE_DELIVERED: 'realtime.envelope_delivered',
-  REALTIME_BOT_NOTIFICATION: 'realtime.bot_notification',
+  REALTIME_SERVICE_NOTIFICATION: 'realtime.service_notification',
   REALTIME_CONVERSATION_SETTINGS_CHANGED: 'realtime.conversation_settings_changed',
   REALTIME_SOCIAL_GRAPH_EVENT: 'realtime.social_graph_event',
   REALTIME_ACTOR_PROFILE_CHANGED: 'realtime.actor_profile_changed',

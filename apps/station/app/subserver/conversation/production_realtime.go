@@ -127,22 +127,22 @@ func (a *ProductionRealtimeAdapter) NotifyCommitted(
 	return errors.Join(publishErrors...)
 }
 
-// PublishBotNotification emits the actor-level bot-notification wake (SSE
-// arm bot_notification) after the delivery transaction committed. Unlike the
-// device-targeted envelope wake it fans out to every live owner device and
+// PublishServiceNotification emits the actor-level service-notification wake
+// after the delivery transaction committed. Unlike the device-targeted
+// envelope wake it fans out to every live recipient device and
 // enters the actor replay ring, so a reconnecting tray/badge client observes
 // it. It is a hint: the durable notification row and device inbox are truth.
-func (a *ProductionRealtimeAdapter) PublishBotNotification(
+func (a *ProductionRealtimeAdapter) PublishServiceNotification(
 	ctx context.Context,
-	wake ports.BotNotificationWake,
+	wake ports.ServiceNotificationWake,
 ) error {
 	if ctx == nil {
-		return fmt.Errorf("conversation production realtime: publish bot notification: context is required")
+		return fmt.Errorf("conversation production realtime: publish service notification: context is required")
 	}
 	recipient := strings.TrimSpace(string(wake.RecipientActor))
 	if recipient == "" || strings.TrimSpace(wake.NotificationID) == "" {
 		return fmt.Errorf(
-			"conversation production realtime: publish bot notification: recipient and notification id are required",
+			"conversation production realtime: publish service notification: recipient and notification id are required",
 		)
 	}
 
@@ -151,8 +151,8 @@ func (a *ProductionRealtimeAdapter) PublishBotNotification(
 		return err
 	}
 	_, err = bus.Publish(recipient, &realtime.StreamEvent{
-		Kind: &realtime.StreamEvent_BotNotification{
-			BotNotification: &realtime.BotNotificationDelivered{
+		Kind: &realtime.StreamEvent_ServiceNotification{
+			ServiceNotification: &realtime.ServiceNotificationDelivered{
 				NotificationId:     wake.NotificationID,
 				RecipientActorPtid: recipient,
 				NotificationType:   wake.NotificationType,
@@ -164,7 +164,7 @@ func (a *ProductionRealtimeAdapter) PublishBotNotification(
 	})
 	if err != nil {
 		return fmt.Errorf(
-			"conversation production realtime: publish bot notification recipient=%s notification=%s: %w",
+			"conversation production realtime: publish service notification recipient=%s notification=%s: %w",
 			recipient, wake.NotificationID, err,
 		)
 	}

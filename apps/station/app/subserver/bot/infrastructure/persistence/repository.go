@@ -3,6 +3,7 @@ package persistence
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/bot/domain"
@@ -17,47 +18,152 @@ type GormRepo struct {
 func NewGormRepo(db *gorm.DB) *GormRepo { return &GormRepo{db: db} }
 
 func (r *GormRepo) AutoMigrate() error {
+	if r.db.Migrator().HasTable(&BotRegistrationModel{}) {
+		return nil
+	}
 	return r.db.AutoMigrate(&BotRegistrationModel{})
+}
+
+type LegacyPublishingGrant struct {
+	ID                 uint64
+	BotPTID            string
+	OwnerPTID          string
+	PublishingID       string
+	Name               string
+	State              int32
+	Disabled           bool
+	Revoked            bool
+	SecretHash         string
+	SecretHint         string
+	RateLimitPerMinute uint32
+	CreatedAt          time.Time
+	DisabledAt         *time.Time
+	RevokedAt          *time.Time
+}
+
+// LoadLegacyPublishingGrants exposes migration data without depending on the
+// Conversation persistence implementation.
+func LoadLegacyPublishingGrants(tx *gorm.DB) ([]LegacyPublishingGrant, error) {
+	if !tx.Migrator().HasColumn(&BotRegistrationModel{}, "webhook_id") {
+		return nil, nil
+	}
+	type legacyBot struct {
+		ID                 uint64     `gorm:"column:id"`
+		BotPtid            string     `gorm:"column:bot_ptid"`
+		OwnerPtid          string     `gorm:"column:owner_ptid"`
+		Name               string     `gorm:"column:name"`
+		State              int32      `gorm:"column:state"`
+		WebhookID          string     `gorm:"column:webhook_id"`
+		SecretHash         string     `gorm:"column:secret_hash"`
+		SecretHint         string     `gorm:"column:secret_hint"`
+		RateLimitPerMinute int32      `gorm:"column:rate_limit_per_minute"`
+		CreatedAt          time.Time  `gorm:"column:created_at"`
+		DisabledAt         *time.Time `gorm:"column:disabled_at"`
+		RevokedAt          *time.Time `gorm:"column:revoked_at"`
+	}
+	var rows []legacyBot
+	if err := tx.Table("bot_registration").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make([]LegacyPublishingGrant, 0, len(rows))
+	for _, row := range rows {
+		id := row.WebhookID
+		if id == "" {
+			return nil, fmt.Errorf("legacy Bot %s has no stable ingress identity", row.BotPtid)
+		}
+		result = append(result, LegacyPublishingGrant{
+			ID:                 row.ID,
+			BotPTID:            row.BotPtid,
+			OwnerPTID:          row.OwnerPtid,
+			PublishingID:       id,
+			Name:               row.Name,
+			State:              row.State,
+			Disabled:           domain.State(row.State) == domain.StateDisabled,
+			Revoked:            domain.State(row.State) == domain.StateRevoked,
+			SecretHash:         row.SecretHash,
+			SecretHint:         row.SecretHint,
+			RateLimitPerMinute: uint32(max(row.RateLimitPerMinute, 1)),
+			CreatedAt:          row.CreatedAt,
+			DisabledAt:         row.DisabledAt,
+			RevokedAt:          row.RevokedAt,
+		})
+	}
+	return result, nil
+}
+
+func CompleteLegacyPublishingCutover(
+	tx *gorm.DB,
+	rows []LegacyPublishingGrant,
+) error {
+	if !tx.Migrator().HasColumn(&BotRegistrationModel{}, "webhook_id") {
+		return nil
+	}
+	cutover := make([]botRegistrationCutoverModel, 0, len(rows))
+	for _, row := range rows {
+		cutover = append(cutover, botRegistrationCutoverModel{
+			ID:           row.ID,
+			BotPtid:      row.BotPTID,
+			OwnerPtid:    row.OwnerPTID,
+			PublishingID: row.PublishingID,
+			Name:         row.Name,
+			State:        row.State,
+			CreatedAt:    row.CreatedAt,
+			DisabledAt:   row.DisabledAt,
+			RevokedAt:    row.RevokedAt,
+		})
+	}
+	if tx.Migrator().HasTable(&botRegistrationCutoverModel{}) {
+		if err := tx.Migrator().DropTable(&botRegistrationCutoverModel{}); err != nil {
+			return err
+		}
+	}
+	if err := tx.AutoMigrate(&botRegistrationCutoverModel{}); err != nil {
+		return err
+	}
+	if len(cutover) > 0 {
+		if err := tx.Create(&cutover).Error; err != nil {
+			return err
+		}
+	}
+	if err := tx.Migrator().DropTable(&BotRegistrationModel{}); err != nil {
+		return err
+	}
+	if err := tx.Migrator().RenameTable(
+		(&botRegistrationCutoverModel{}).TableName(),
+		(&BotRegistrationModel{}).TableName(),
+	); err != nil {
+		return err
+	}
+	return tx.AutoMigrate(&BotRegistrationModel{})
 }
 
 func toModel(b *domain.Bot) *BotRegistrationModel {
 	return &BotRegistrationModel{
-		BotPtid:            b.BotPtid,
-		OwnerPtid:          b.OwnerPtid,
-		Name:               b.Name,
-		State:              int32(b.State),
-		WebhookID:          b.WebhookID,
-		SecretHash:         b.SecretHash,
-		SecretHint:         b.SecretHint,
-		SecretDelivered:    b.SecretDelivered,
-		DeliveryScope:      int32(b.DeliveryScope),
-		RateLimitPerMinute: b.RateLimitPerMin,
-		CreatedAt:          b.CreatedAt,
-		DisabledAt:         b.DisabledAt,
-		RevokedAt:          b.RevokedAt,
+		BotPtid:      b.BotPtid,
+		OwnerPtid:    b.OwnerPtid,
+		PublishingID: b.PublishingID,
+		Name:         b.Name,
+		State:        int32(b.State),
+		CreatedAt:    b.CreatedAt,
+		DisabledAt:   b.DisabledAt,
+		RevokedAt:    b.RevokedAt,
 	}
 }
 
 func fromModel(m *BotRegistrationModel) *domain.Bot {
 	return &domain.Bot{
-		BotPtid:         m.BotPtid,
-		OwnerPtid:       m.OwnerPtid,
-		Name:            m.Name,
-		State:           domain.State(m.State),
-		WebhookID:       m.WebhookID,
-		SecretHash:      m.SecretHash,
-		SecretHint:      m.SecretHint,
-		SecretDelivered: m.SecretDelivered,
-		DeliveryScope:   domain.DeliveryScope(m.DeliveryScope),
-		RateLimitPerMin: m.RateLimitPerMinute,
-		CreatedAt:       m.CreatedAt,
-		DisabledAt:      m.DisabledAt,
-		RevokedAt:       m.RevokedAt,
+		BotPtid:      m.BotPtid,
+		OwnerPtid:    m.OwnerPtid,
+		PublishingID: m.PublishingID,
+		Name:         m.Name,
+		State:        domain.State(m.State),
+		CreatedAt:    m.CreatedAt,
+		DisabledAt:   m.DisabledAt,
+		RevokedAt:    m.RevokedAt,
 	}
 }
 
-// Create inserts a new registration. A conflicting ptid/webhook id maps to a
-// typed conflict by the caller via IsDuplicateKey.
+// Create inserts a new registration.
 func (r *GormRepo) Create(ctx context.Context, b *domain.Bot) error {
 	return r.db.WithContext(ctx).Create(toModel(b)).Error
 }
@@ -67,15 +173,10 @@ func (r *GormRepo) Update(ctx context.Context, b *domain.Bot) error {
 		Model(&BotRegistrationModel{}).
 		Where("bot_ptid = ?", b.BotPtid).
 		Updates(map[string]any{
-			"name":                  b.Name,
-			"state":                 int32(b.State),
-			"secret_hash":           b.SecretHash,
-			"secret_hint":           b.SecretHint,
-			"secret_delivered":      b.SecretDelivered,
-			"delivery_scope":        int32(b.DeliveryScope),
-			"rate_limit_per_minute": b.RateLimitPerMin,
-			"disabled_at":           b.DisabledAt,
-			"revoked_at":            b.RevokedAt,
+			"name":        b.Name,
+			"state":       int32(b.State),
+			"disabled_at": b.DisabledAt,
+			"revoked_at":  b.RevokedAt,
 		})
 	if res.Error != nil {
 		return res.Error
@@ -91,17 +192,6 @@ func (r *GormRepo) GetByPtid(ctx context.Context, botPtid string) (*domain.Bot, 
 	if err := r.db.WithContext(ctx).Where("bot_ptid = ?", botPtid).First(&m).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, domain.NewNotFound(botPtid)
-		}
-		return nil, err
-	}
-	return fromModel(&m), nil
-}
-
-func (r *GormRepo) GetByWebhookID(ctx context.Context, webhookID string) (*domain.Bot, error) {
-	var m BotRegistrationModel
-	if err := r.db.WithContext(ctx).Where("webhook_id = ?", webhookID).First(&m).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, domain.NewNotFound(webhookID)
 		}
 		return nil, err
 	}

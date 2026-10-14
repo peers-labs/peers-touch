@@ -438,28 +438,9 @@ pub struct DirectMessageContent {
     pub thread_root_message_id: Option<String>,
 }
 
-/// Structured `peers-touch.bot-event.v1` body carried by a service-plaintext
-/// message. `None` for fallback-only service messages.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ServiceBotEventProjection {
-    pub schema: String,
-    pub event_type: i32,
-    pub severity: i32,
-    pub bot_ptid: String,
-    pub group_key: String,
-    pub dedupe_key: String,
-    pub action_url: String,
-    pub source_agent: String,
-    pub source_workspace: String,
-    pub source_session_id: String,
-    /// Deterministically ordered (key, value) pairs.
-    pub source_labels: Vec<(String, String)>,
-}
-
 /// Readable projection of a non-E2EE, Station-resident service-plaintext
-/// message (bot webhook events). The message renders as an ordinary direct
-/// message; the security classification lives on the committed fact, not here.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// message. The common protobuf content remains the sole typed source.
+#[derive(Debug, Clone, PartialEq)]
 pub struct ServicePlaintextMessageContent {
     pub conversation_id: ConversationId,
     pub event_id: String,
@@ -468,7 +449,9 @@ pub struct ServicePlaintextMessageContent {
     pub sender_ptid: Ptid,
     pub sender_device_id: DeviceId,
     pub fallback_text: String,
-    pub bot_event: Option<ServiceBotEventProjection>,
+    pub source_namespace: String,
+    pub content: crate::proto::chat::MessageContent,
+    pub source_context: Option<crate::proto::chat::MessageSourceContext>,
     pub committed_at_unix_ms: i64,
 }
 

@@ -2,80 +2,67 @@ package conversation
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
-	botpersistence "github.com/peers-labs/peers-touch/station/app/subserver/bot/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	federationinfra "github.com/peers-labs/peers-touch/station/app/subserver/federation/infrastructure"
 	notificationinfra "github.com/peers-labs/peers-touch/station/app/subserver/notification/infrastructure"
+	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	"gorm.io/gorm"
 )
 
-// productionSystemGrant is the transaction-scoped implementation of both
-// ports.SystemSenderAuthorization and ports.SystemDirectories. It reaches the
-// bot tables over the exact authority transaction, so grant bookkeeping and
-// the conversation event commit or roll back together.
-type productionSystemGrant struct {
-	store *botpersistence.SystemStore
-}
-
-func (g *productionSystemGrant) AuthorizeSystemMessage(
-	ctx context.Context,
-	bot valueobject.PTID,
-	owner valueobject.PTID,
-	conversation valueobject.ConversationID,
-) error {
-	if err := g.store.Authorize(ctx, string(bot), string(owner), string(conversation)); err != nil {
-		return conversationdomain.NewError(
-			conversationdomain.ErrorCodeUnauthorized,
-			"production_system.authorize",
-			"grant",
-			err.Error(),
-		)
-	}
-	return nil
-}
-
-func (g *productionSystemGrant) EnsureSystemGrant(
-	ctx context.Context,
-	bot valueobject.PTID,
-	owner valueobject.PTID,
-	conversation valueobject.ConversationID,
-	at time.Time,
-) error {
-	return g.store.EnsureActiveGrant(
-		ctx,
-		string(bot),
-		string(owner),
-		string(conversation),
-		at,
-	)
-}
-
-func (g *productionSystemGrant) LoadIngestion(
-	ctx context.Context,
-	bot valueobject.PTID,
-	requestID string,
-	now time.Time,
-) (string, bool, error) {
-	return g.store.LoadIngestion(ctx, string(bot), requestID, now)
-}
-
-func (g *productionSystemGrant) RecordIngestion(
-	ctx context.Context,
-	bot valueobject.PTID,
-	requestID string,
-	eventID string,
-	at time.Time,
-) error {
-	return g.store.RecordIngestion(ctx, string(bot), requestID, eventID, at)
-}
-
 type productionServiceNotifications struct {
 	producer *notificationinfra.TxProducer
+}
+
+type productionPublishedObjects struct {
+	db *gorm.DB
+}
+
+func (d *productionPublishedObjects) ValidateObject(
+	ctx context.Context,
+	objectID string,
+	owner valueobject.PTID,
+	_ valueobject.ConversationID,
+	at time.Time,
+) (ports.PublishedObject, error) {
+	var object ossmodel.FileMeta
+	err := d.db.WithContext(ctx).
+		Where("id = ? AND owner_ptid = ? AND deleted_at IS NULL", objectID, owner).
+		First(&object).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ports.PublishedObject{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeUnauthorized,
+			"production_publishing.validate_object",
+			"object_id",
+			"object is not an active object owned by the grant owner",
+		)
+	}
+	if err != nil {
+		return ports.PublishedObject{}, fmt.Errorf("load published object: %w", err)
+	}
+	if object.ExpiresAt != nil && !at.Before(*object.ExpiresAt) {
+		return ports.PublishedObject{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeUnauthorized,
+			"production_publishing.validate_object",
+			"object_id",
+			"object has expired",
+		)
+	}
+	if object.Size < 0 {
+		return ports.PublishedObject{}, fmt.Errorf("published object size is invalid")
+	}
+	return ports.PublishedObject{
+		ID:        object.ID,
+		Filename:  object.Name,
+		MediaType: object.Mime,
+		Size:      uint64(object.Size),
+	}, nil
 }
 
 func (n *productionServiceNotifications) ProduceInTx(

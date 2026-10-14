@@ -2,14 +2,11 @@ syntax = "proto3";
 
 package peers_touch.model.bot.v1;
 
+import "domain/chat/publishing.proto";
+
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/bot/model;model";
 
-// Bot registry and owner-scoped management API.
-//
-// A Bot is an ACTOR_KIND_AGENT actor owned by exactly one PERSON. The edge
-// ingestion contract lives in webhook.proto; management endpoints are JWT +
-// owner resolved and kept separate from the public webhook edge.
-
+// Bot is an optional product form over the generic message-publishing grant.
 enum BotState {
   BOT_STATE_UNSPECIFIED = 0;
   BOT_STATE_DRAFT = 1;
@@ -18,44 +15,29 @@ enum BotState {
   BOT_STATE_REVOKED = 4;
 }
 
-// v1 delivery is always owner-only. LOCAL_ACTORS / FEDERATED are reserved for
-// a later scope expansion; a Bot never delivers to non-owners in v1.
-enum BotDeliveryScope {
-  BOT_DELIVERY_SCOPE_UNSPECIFIED = 0;
-  BOT_DELIVERY_SCOPE_OWNER_ONLY = 1;
-  reserved 2, 3;
-}
-
 message Bot {
   string bot_ptid = 1;
   string owner_ptid = 2;
   string name = 3;
   BotState state = 4;
-  string webhook_id = 5;
-  // True only between creation/rotation and the first owner read of the
-  // plaintext. The plaintext secret is never persisted.
-  bool secret_delivered = 6;
-  string secret_hint = 7;
-  BotDeliveryScope delivery_scope = 8;
-  int32 rate_limit_per_minute = 9;
-  int64 created_at_ms = 10;
-  int64 disabled_at_ms = 11;
-  int64 revoked_at_ms = 12;
+  reserved 5 to 12;
+  reserved "webhook_id", "secret_delivered", "secret_hint",
+    "delivery_scope", "rate_limit_per_minute", "created_at_ms",
+    "disabled_at_ms", "revoked_at_ms";
+  peers_touch.model.chat.v1.MessagePublishingGrant publishing_grant = 13;
 }
 
 message CreateBotRequest {
   string name = 1;
-  // Optional relative avatar URL (an OSS `/sub-oss/file?key=...` reference).
-  // Stored on the bot's AGENT actor profile, not on the registry row. Empty
-  // leaves the default glyph.
   optional string avatar = 2;
 }
 
 message CreateBotResponse {
   Bot bot = 1;
-  string webhook_url = 2;
-  // Plaintext, returned exactly once. The server stores only a SHA-256 hash.
-  string secret_plaintext = 3;
+  reserved 2, 3;
+  reserved "webhook_url", "secret_plaintext";
+  string ingress_url = 4;
+  string secret = 5;
 }
 
 message RotateBotSecretRequest {
@@ -63,8 +45,9 @@ message RotateBotSecretRequest {
 }
 
 message RotateBotSecretResponse {
-  // Plaintext, returned exactly once; the prior secret is invalid immediately.
-  string secret_plaintext = 1;
+  reserved 1;
+  reserved "secret_plaintext";
+  string secret = 2;
 }
 
 message SetBotStateRequest {
@@ -82,13 +65,8 @@ message ListMyBotsResponse {
   repeated Bot bots = 1;
 }
 
-// Owner updates bot-owned actor profile fields (avatar for v1). The actor
-// itself is the identity truth; this endpoint lets the owner (authenticated by
-// their own JWT) mutate their bot's AGENT actor profile. Kept separate from the
-// generic /actor/profile endpoint, whose target is always the JWT subject.
 message SetBotProfileRequest {
   string bot_ptid = 1;
-  // Relative OSS avatar URL; empty clears it back to the default glyph.
   optional string avatar = 2;
 }
 

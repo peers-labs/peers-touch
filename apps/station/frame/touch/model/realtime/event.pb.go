@@ -469,7 +469,7 @@ type StreamEvent struct {
 	//	*StreamEvent_EnvelopeDelivered
 	//	*StreamEvent_LedgerEventDelivered
 	//	*StreamEvent_SocialGraphEvent
-	//	*StreamEvent_BotNotification
+	//	*StreamEvent_ServiceNotification
 	//	*StreamEvent_ActorProfileChanged
 	Kind          isStreamEvent_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
@@ -671,10 +671,10 @@ func (x *StreamEvent) GetSocialGraphEvent() *SocialGraphEvent {
 	return nil
 }
 
-func (x *StreamEvent) GetBotNotification() *BotNotificationDelivered {
+func (x *StreamEvent) GetServiceNotification() *ServiceNotificationDelivered {
 	if x != nil {
-		if x, ok := x.Kind.(*StreamEvent_BotNotification); ok {
-			return x.BotNotification
+		if x, ok := x.Kind.(*StreamEvent_ServiceNotification); ok {
+			return x.ServiceNotification
 		}
 	}
 	return nil
@@ -757,8 +757,8 @@ type StreamEvent_SocialGraphEvent struct {
 	SocialGraphEvent *SocialGraphEvent `protobuf:"bytes,25,opt,name=social_graph_event,json=socialGraphEvent,proto3,oneof"`
 }
 
-type StreamEvent_BotNotification struct {
-	BotNotification *BotNotificationDelivered `protobuf:"bytes,26,opt,name=bot_notification,json=botNotification,proto3,oneof"`
+type StreamEvent_ServiceNotification struct {
+	ServiceNotification *ServiceNotificationDelivered `protobuf:"bytes,26,opt,name=service_notification,json=serviceNotification,proto3,oneof"`
 }
 
 type StreamEvent_ActorProfileChanged struct {
@@ -797,7 +797,7 @@ func (*StreamEvent_LedgerEventDelivered) isStreamEvent_Kind() {}
 
 func (*StreamEvent_SocialGraphEvent) isStreamEvent_Kind() {}
 
-func (*StreamEvent_BotNotification) isStreamEvent_Kind() {}
+func (*StreamEvent_ServiceNotification) isStreamEvent_Kind() {}
 
 func (*StreamEvent_ActorProfileChanged) isStreamEvent_Kind() {}
 
@@ -2376,17 +2376,14 @@ func (x *LedgerEventDelivered) GetCreatedAtUnixMs() int64 {
 	return 0
 }
 
-// BotNotificationDelivered wakes an online owner device after bot webhook
-// ingestion produced a durable notification row inside the same transaction
-// as the bot conversation message. Payload is intentionally minimal: clients
+// ServiceNotificationDelivered wakes an online recipient after message
+// publishing produced a durable notification row. Payload is minimal: clients
 // fetch authoritative notification/conversation detail through the existing
 // notification list/projection API. This arm drives OS banner/notification
 // center only; the unread badge still derives from conversation unread.
 //
-// notification_type/category carry the numeric NotificationType (410 = bot
-// event) and NotificationCategory (TASK = 4) values to keep this domain
-// self-contained without importing the notification contract.
-type BotNotificationDelivered struct {
+// notification_type/category carry notification contract numeric values.
+type ServiceNotificationDelivered struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	NotificationId     string                 `protobuf:"bytes,1,opt,name=notification_id,json=notificationId,proto3" json:"notification_id,omitempty"`
 	RecipientActorPtid string                 `protobuf:"bytes,2,opt,name=recipient_actor_ptid,json=recipientActorPtid,proto3" json:"recipient_actor_ptid,omitempty"`
@@ -2398,20 +2395,20 @@ type BotNotificationDelivered struct {
 	sizeCache          protoimpl.SizeCache
 }
 
-func (x *BotNotificationDelivered) Reset() {
-	*x = BotNotificationDelivered{}
+func (x *ServiceNotificationDelivered) Reset() {
+	*x = ServiceNotificationDelivered{}
 	mi := &file_domain_realtime_event_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *BotNotificationDelivered) String() string {
+func (x *ServiceNotificationDelivered) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*BotNotificationDelivered) ProtoMessage() {}
+func (*ServiceNotificationDelivered) ProtoMessage() {}
 
-func (x *BotNotificationDelivered) ProtoReflect() protoreflect.Message {
+func (x *ServiceNotificationDelivered) ProtoReflect() protoreflect.Message {
 	mi := &file_domain_realtime_event_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2423,47 +2420,47 @@ func (x *BotNotificationDelivered) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use BotNotificationDelivered.ProtoReflect.Descriptor instead.
-func (*BotNotificationDelivered) Descriptor() ([]byte, []int) {
+// Deprecated: Use ServiceNotificationDelivered.ProtoReflect.Descriptor instead.
+func (*ServiceNotificationDelivered) Descriptor() ([]byte, []int) {
 	return file_domain_realtime_event_proto_rawDescGZIP(), []int{18}
 }
 
-func (x *BotNotificationDelivered) GetNotificationId() string {
+func (x *ServiceNotificationDelivered) GetNotificationId() string {
 	if x != nil {
 		return x.NotificationId
 	}
 	return ""
 }
 
-func (x *BotNotificationDelivered) GetRecipientActorPtid() string {
+func (x *ServiceNotificationDelivered) GetRecipientActorPtid() string {
 	if x != nil {
 		return x.RecipientActorPtid
 	}
 	return ""
 }
 
-func (x *BotNotificationDelivered) GetNotificationType() int32 {
+func (x *ServiceNotificationDelivered) GetNotificationType() int32 {
 	if x != nil {
 		return x.NotificationType
 	}
 	return 0
 }
 
-func (x *BotNotificationDelivered) GetCategory() int32 {
+func (x *ServiceNotificationDelivered) GetCategory() int32 {
 	if x != nil {
 		return x.Category
 	}
 	return 0
 }
 
-func (x *BotNotificationDelivered) GetGroupKey() string {
+func (x *ServiceNotificationDelivered) GetGroupKey() string {
 	if x != nil {
 		return x.GroupKey
 	}
 	return ""
 }
 
-func (x *BotNotificationDelivered) GetCreatedTsUnixMs() int64 {
+func (x *ServiceNotificationDelivered) GetCreatedTsUnixMs() int64 {
 	if x != nil {
 		return x.CreatedTsUnixMs
 	}
@@ -2563,7 +2560,7 @@ func (x *SocialGraphEvent) GetActorDisplayName() string {
 // authoritative actor profile changed (display name, avatar/icon, or any
 // future profile field). It is emitted after the profile mutation committed.
 //
-// Like MomentEvent and BotNotificationDelivered it carries identifiers only:
+// Like MomentEvent and ServiceNotificationDelivered it carries identifiers only:
 // clients invalidate any cached profile for actor_ptid and refetch the
 // authoritative projection through the profile API, so Station remains the
 // source of truth and caches converge without waiting for the periodic
@@ -2628,7 +2625,7 @@ var File_domain_realtime_event_proto protoreflect.FileDescriptor
 
 const file_domain_realtime_event_proto_rawDesc = "" +
 	"\n" +
-	"\x1bdomain/realtime/event.proto\x12\x1dpeers_touch.model.realtime.v1\"\xb3\r\n" +
+	"\x1bdomain/realtime/event.proto\x12\x1dpeers_touch.model.realtime.v1\"\xbf\r\n" +
 	"\vStreamEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1c\n" +
 	"\n" +
@@ -2649,8 +2646,8 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\x1dgroup_skdm_envelope_delivered\x18\x16 \x01(\v29.peers_touch.model.realtime.v1.GroupSkdmEnvelopeDeliveredH\x00R\x1agroupSkdmEnvelopeDelivered\x12a\n" +
 	"\x12envelope_delivered\x18\x17 \x01(\v20.peers_touch.model.realtime.v1.EnvelopeDeliveredH\x00R\x11envelopeDelivered\x12k\n" +
 	"\x16ledger_event_delivered\x18\x18 \x01(\v23.peers_touch.model.realtime.v1.LedgerEventDeliveredH\x00R\x14ledgerEventDelivered\x12_\n" +
-	"\x12social_graph_event\x18\x19 \x01(\v2/.peers_touch.model.realtime.v1.SocialGraphEventH\x00R\x10socialGraphEvent\x12d\n" +
-	"\x10bot_notification\x18\x1a \x01(\v27.peers_touch.model.realtime.v1.BotNotificationDeliveredH\x00R\x0fbotNotification\x12h\n" +
+	"\x12social_graph_event\x18\x19 \x01(\v2/.peers_touch.model.realtime.v1.SocialGraphEventH\x00R\x10socialGraphEvent\x12p\n" +
+	"\x14service_notification\x18\x1a \x01(\v2;.peers_touch.model.realtime.v1.ServiceNotificationDeliveredH\x00R\x13serviceNotification\x12h\n" +
 	"\x15actor_profile_changed\x18\x1b \x01(\v22.peers_touch.model.realtime.v1.ActorProfileChangedH\x00R\x13actorProfileChangedB\x06\n" +
 	"\x04kind\"1\n" +
 	"\tHeartbeat\x12$\n" +
@@ -2851,8 +2848,8 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\x16actor_federated_handle\x18\f \x01(\tR\x14actorFederatedHandle\x12&\n" +
 	"\x0fstation_peer_id\x18\r \x01(\tR\rstationPeerId\x129\n" +
 	"\x19sequencer_station_peer_id\x18\x0e \x01(\tR\x16sequencerStationPeerId\x12+\n" +
-	"\x12created_at_unix_ms\x18\x0f \x01(\x03R\x0fcreatedAtUnixMs\"\x88\x02\n" +
-	"\x18BotNotificationDelivered\x12'\n" +
+	"\x12created_at_unix_ms\x18\x0f \x01(\x03R\x0fcreatedAtUnixMs\"\x8c\x02\n" +
+	"\x1cServiceNotificationDelivered\x12'\n" +
 	"\x0fnotification_id\x18\x01 \x01(\tR\x0enotificationId\x120\n" +
 	"\x14recipient_actor_ptid\x18\x02 \x01(\tR\x12recipientActorPtid\x12+\n" +
 	"\x11notification_type\x18\x03 \x01(\x05R\x10notificationType\x12\x1a\n" +
@@ -2924,7 +2921,7 @@ var file_domain_realtime_event_proto_goTypes = []any{
 	(*Resync)(nil),                             // 22: peers_touch.model.realtime.v1.Resync
 	(*EnvelopeDelivered)(nil),                  // 23: peers_touch.model.realtime.v1.EnvelopeDelivered
 	(*LedgerEventDelivered)(nil),               // 24: peers_touch.model.realtime.v1.LedgerEventDelivered
-	(*BotNotificationDelivered)(nil),           // 25: peers_touch.model.realtime.v1.BotNotificationDelivered
+	(*ServiceNotificationDelivered)(nil),       // 25: peers_touch.model.realtime.v1.ServiceNotificationDelivered
 	(*SocialGraphEvent)(nil),                   // 26: peers_touch.model.realtime.v1.SocialGraphEvent
 	(*ActorProfileChanged)(nil),                // 27: peers_touch.model.realtime.v1.ActorProfileChanged
 }
@@ -2945,7 +2942,7 @@ var file_domain_realtime_event_proto_depIdxs = []int32{
 	23, // 13: peers_touch.model.realtime.v1.StreamEvent.envelope_delivered:type_name -> peers_touch.model.realtime.v1.EnvelopeDelivered
 	24, // 14: peers_touch.model.realtime.v1.StreamEvent.ledger_event_delivered:type_name -> peers_touch.model.realtime.v1.LedgerEventDelivered
 	26, // 15: peers_touch.model.realtime.v1.StreamEvent.social_graph_event:type_name -> peers_touch.model.realtime.v1.SocialGraphEvent
-	25, // 16: peers_touch.model.realtime.v1.StreamEvent.bot_notification:type_name -> peers_touch.model.realtime.v1.BotNotificationDelivered
+	25, // 16: peers_touch.model.realtime.v1.StreamEvent.service_notification:type_name -> peers_touch.model.realtime.v1.ServiceNotificationDelivered
 	27, // 17: peers_touch.model.realtime.v1.StreamEvent.actor_profile_changed:type_name -> peers_touch.model.realtime.v1.ActorProfileChanged
 	0,  // 18: peers_touch.model.realtime.v1.MessageReceipt.kind:type_name -> peers_touch.model.realtime.v1.MessageReceipt.Kind
 	1,  // 19: peers_touch.model.realtime.v1.CallSignal.kind:type_name -> peers_touch.model.realtime.v1.CallSignal.Kind
@@ -2983,7 +2980,7 @@ func file_domain_realtime_event_proto_init() {
 		(*StreamEvent_EnvelopeDelivered)(nil),
 		(*StreamEvent_LedgerEventDelivered)(nil),
 		(*StreamEvent_SocialGraphEvent)(nil),
-		(*StreamEvent_BotNotification)(nil),
+		(*StreamEvent_ServiceNotification)(nil),
 		(*StreamEvent_ActorProfileChanged)(nil),
 	}
 	type x struct{}

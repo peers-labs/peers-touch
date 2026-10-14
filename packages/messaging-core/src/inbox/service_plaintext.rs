@@ -1,12 +1,12 @@
 use crate::codec::verification::verify_device_event_delivery;
 use crate::contracts::{
-    CryptoEndpoint, ReceiveCommitResult, ServiceBotEventProjection, ServicePlaintextMessageContent,
+    CryptoEndpoint, ReceiveCommitResult, ServicePlaintextMessageContent,
     ServicePlaintextReceiveCommit,
 };
 use crate::proto::chat::{
     conversation_event, DeviceConsumptionReceipt, DeviceInboxPayloadType,
     DirectServicePlaintextPayload, DurableDeviceInboxItem, MessageDeliverySecurity,
-    MessagingContentKind, PreparedEndpointPayloadKind, ServiceBotEventContent,
+    MessagingContentKind, PreparedEndpointPayloadKind,
 };
 use crate::store::MessagingRepository;
 
@@ -19,11 +19,8 @@ use std::sync::Arc;
 /// endpoint, so the bot actor needs no device keys.
 pub const SERVICE_SYSTEM_DEVICE_ID: &str = "station-system";
 
-/// Structured body schema accepted inside a service-plaintext payload.
-pub const BOT_EVENT_SCHEMA: &str = "peers-touch.bot-event.v1";
-
-/// Receives non-E2EE, Station-resident direct_service_plaintext messages (bot
-/// webhook events). There is no crypto session: the authority event chain,
+/// Receives non-E2EE, Station-resident direct_service_plaintext messages.
+/// There is no crypto session: the authority event chain,
 /// delivery commitment and recipient bindings are still fully verified before
 /// the readable payload is projected as an ordinary direct message.
 pub struct ServicePlaintextProcessor<R: MessagingRepository> {
@@ -131,15 +128,15 @@ impl<R: MessagingRepository> ServicePlaintextProcessor<R> {
 
         let payload = DirectServicePlaintextPayload::decode(delivery.endpoint_payload.as_slice())
             .map_err(|_| "messaging service-plaintext payload is invalid".to_string())?;
-        if payload.fallback_text.trim().is_empty() {
-            return Err("messaging service-plaintext payload requires fallback text".to_string());
+        let content = payload
+            .message_content
+            .ok_or_else(|| "messaging service-plaintext payload has no content".to_string())?;
+        if content.fallback_text.trim().is_empty() || content.primary.is_none() {
+            return Err("messaging service-plaintext content is incomplete".to_string());
         }
-        let bot_event = match payload.content {
-            Some(crate::proto::chat::direct_service_plaintext_payload::Content::BotEvent(
-                event,
-            )) => Some(map_bot_event(&event, &sender.ptid)?),
-            None => None,
-        };
+        if payload.source_namespace.trim().is_empty() {
+            return Err("messaging service-plaintext source namespace is required".to_string());
+        }
 
         let committed_at_unix_ms = event
             .committed_at
@@ -159,8 +156,10 @@ impl<R: MessagingRepository> ServicePlaintextProcessor<R> {
             message_id: message.message_id.clone(),
             sender_ptid: sender.ptid.clone(),
             sender_device_id: sender.device_id.clone(),
-            fallback_text: payload.fallback_text,
-            bot_event,
+            fallback_text: content.fallback_text.clone(),
+            source_namespace: payload.source_namespace,
+            content,
+            source_context: payload.source_context,
             committed_at_unix_ms,
         };
         let receipt = DeviceConsumptionReceipt {
@@ -209,37 +208,4 @@ impl<R: MessagingRepository> ClaimedItemConsumer for ServicePlaintextProcessor<R
     fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
-}
-
-/// Maps the wire bot event into the stored projection, rejecting malformed or
-/// impersonating bodies. `author_ptid` is the message fact sender (the bot
-/// actor authenticated by the Station aggregate).
-fn map_bot_event(
-    event: &ServiceBotEventContent,
-    author_ptid: &str,
-) -> Result<ServiceBotEventProjection, String> {
-    if event.schema != BOT_EVENT_SCHEMA {
-        return Err("messaging service-plaintext bot event schema is unsupported".to_string());
-    }
-    if event.bot_ptid.trim().is_empty() || event.bot_ptid != author_ptid {
-        return Err("messaging service-plaintext bot event author is not bound".to_string());
-    }
-    let source = event.source.as_ref();
-    let mut source_labels = source
-        .map(|source| source.labels.clone().into_iter().collect::<Vec<_>>())
-        .unwrap_or_default();
-    source_labels.sort();
-    Ok(ServiceBotEventProjection {
-        schema: event.schema.clone(),
-        event_type: event.event_type,
-        severity: event.severity,
-        bot_ptid: event.bot_ptid.clone(),
-        group_key: event.group_key.clone(),
-        dedupe_key: event.dedupe_key.clone(),
-        action_url: event.action_url.clone(),
-        source_agent: source.map(|s| s.agent.clone()).unwrap_or_default(),
-        source_workspace: source.map(|s| s.workspace.clone()).unwrap_or_default(),
-        source_session_id: source.map(|s| s.session_id.clone()).unwrap_or_default(),
-        source_labels,
-    })
 }

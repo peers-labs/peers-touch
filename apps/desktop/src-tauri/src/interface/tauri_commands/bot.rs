@@ -37,46 +37,46 @@ fn stub(command: &str, data: Value) -> AppResult<StubPayload> {
 
 fn bot_to_value(bot: Option<&botpb::Bot>) -> Value {
     match bot {
-        Some(b) => json!({
-            "botPtid": b.bot_ptid,
-            "ownerPtid": b.owner_ptid,
-            "name": b.name,
-            "state": b.state as i32,
-            "webhookId": b.webhook_id,
-            "secretDelivered": b.secret_delivered,
-            "secretHint": b.secret_hint,
-            "deliveryScope": b.delivery_scope as i32,
-            "rateLimitPerMinute": b.rate_limit_per_minute,
-            "createdAtMs": b.created_at_ms,
-            "disabledAtMs": b.disabled_at_ms,
-            "revokedAtMs": b.revoked_at_ms,
-        }),
+        Some(b) => {
+            let grant = b.publishing_grant.as_ref();
+            json!({
+                "botPtid": b.bot_ptid,
+                "ownerPtid": b.owner_ptid,
+                "name": b.name,
+                "state": b.state as i32,
+                "publishingId": grant.map(|value| value.publishing_id.as_str()).unwrap_or_default(),
+                "ingressUrl": grant.map(|value| {
+                    format!("/message-ingress/{}", value.publishing_id)
+                }).unwrap_or_default(),
+                "secretHint": grant.map(|value| value.secret_hint.as_str()).unwrap_or_default(),
+                "rateLimitPerMinute": grant.map(|value| value.rate_limit_per_minute).unwrap_or_default(),
+                "createdAtMs": grant.and_then(|value| value.created_at.as_ref()).map(|value| {
+                    value.seconds.saturating_mul(1_000)
+                        .saturating_add(i64::from(value.nanos) / 1_000_000)
+                }).unwrap_or_default(),
+            })
+        }
         None => Value::Null,
     }
 }
 
 #[tauri::command]
-pub fn bot_list(
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
+pub fn bot_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
     let token = match token_from_state(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
     };
-    let resp = match station_client::request_proto::<
-        botpb::ListMyBotsRequest,
-        botpb::ListMyBotsResponse,
-    >(
-        Method::POST,
-        "/bot/list",
-        &token,
-        None,
-        Some(&botpb::ListMyBotsRequest {}),
-    ) {
-        Ok(r) => r,
-        Err(e) => return e.into_app_result("Failed to list bots"),
-    };
+    let resp =
+        match station_client::request_proto::<botpb::ListMyBotsRequest, botpb::ListMyBotsResponse>(
+            Method::POST,
+            "/bot/list",
+            &token,
+            None,
+            Some(&botpb::ListMyBotsRequest {}),
+        ) {
+            Ok(r) => r,
+            Err(e) => return e.into_app_result("Failed to list bots"),
+        };
     let bots: Vec<Value> = resp.bots.iter().map(|b| bot_to_value(Some(b))).collect();
     stub("bot_list", json!({ "bots": bots }))
 }
@@ -105,9 +105,8 @@ pub fn bot_create(
     let resp = match station_client::request_proto::<
         botpb::CreateBotRequest,
         botpb::CreateBotResponse,
-    >(
-        Method::POST, "/bot/create", &token, None, Some(&body)
-    ) {
+    >(Method::POST, "/bot/create", &token, None, Some(&body))
+    {
         Ok(r) => r,
         Err(e) => return e.into_app_result("Failed to create bot"),
     };
@@ -115,8 +114,8 @@ pub fn bot_create(
         "bot_create",
         json!({
             "bot": bot_to_value(resp.bot.as_ref()),
-            "webhookUrl": resp.webhook_url,
-            "secretPlaintext": resp.secret_plaintext,
+            "ingressUrl": resp.ingress_url,
+            "secret": resp.secret,
         }),
     )
 }
@@ -152,7 +151,7 @@ pub fn bot_rotate_secret(
         Ok(r) => r,
         Err(e) => return e.into_app_result("Failed to rotate bot secret"),
     };
-    stub("bot_rotate_secret", json!({ "secretPlaintext": resp.secret_plaintext }))
+    stub("bot_rotate_secret", json!({ "secret": resp.secret }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -178,13 +177,15 @@ pub fn bot_set_state(
     let resp = match station_client::request_proto::<
         botpb::SetBotStateRequest,
         botpb::SetBotStateResponse,
-    >(
-        Method::POST, "/bot/set-state", &token, None, Some(&body)
-    ) {
+    >(Method::POST, "/bot/set-state", &token, None, Some(&body))
+    {
         Ok(r) => r,
         Err(e) => return e.into_app_result("Failed to set bot state"),
     };
-    stub("bot_set_state", json!({ "bot": bot_to_value(resp.bot.as_ref()) }))
+    stub(
+        "bot_set_state",
+        json!({ "bot": bot_to_value(resp.bot.as_ref()) }),
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -211,17 +212,15 @@ pub fn bot_set_profile(
     let resp = match station_client::request_proto::<
         botpb::SetBotProfileRequest,
         botpb::SetBotProfileResponse,
-    >(
-        Method::POST,
-        "/bot/set-profile",
-        &token,
-        None,
-        Some(&body),
-    ) {
+    >(Method::POST, "/bot/set-profile", &token, None, Some(&body))
+    {
         Ok(r) => r,
         Err(e) => return e.into_app_result("Failed to set bot profile"),
     };
-    stub("bot_set_profile", json!({ "bot": bot_to_value(resp.bot.as_ref()) }))
+    stub(
+        "bot_set_profile",
+        json!({ "bot": bot_to_value(resp.bot.as_ref()) }),
+    )
 }
 
 #[derive(Debug, Deserialize)]

@@ -196,8 +196,8 @@ export function ChatMessageArea({
   // no calls, and a one-way composer. Classified from the peer actor's kind
   // (AGENT) in the profile projection. This hook MUST stay above every early
   // return — the empty/error panes render fewer children, not fewer hooks.
-  const isBotConversation = useSocialChatStore((s) => (
-    activeTab === 'friend' && activeUlid ? s.isBotConversation(activeUlid) : false
+  const isAutomatedConversation = useSocialChatStore((s) => (
+    activeTab === 'friend' && activeUlid ? s.isAutomatedConversation(activeUlid) : false
   ));
   const directSecurityState = useCryptoStore((state) => (
     activeUlid ? state.conversationSecurity[activeUlid]?.aggregateLevel ?? 'idle' : 'idle'
@@ -971,10 +971,10 @@ export function ChatMessageArea({
             <Flexbox>
               <Flexbox horizontal align="center" gap={6}>
                 <Text strong style={{ fontSize: 14 }}>{currentName}</Text>
-                {!isBotConversation && peerOnlineIndicator}
-                {isBotConversation ? (
-                  <Tooltip title={t('chat.bot.stationManagedTip', {
-                    defaultValue: 'Automated bot · Station-resident, not end-to-end encrypted',
+                {!isAutomatedConversation && peerOnlineIndicator}
+                {isAutomatedConversation ? (
+                  <Tooltip title={t('chat.automation.stationManagedTip', {
+                    defaultValue: 'Automated service · Station-resident, not end-to-end encrypted',
                   })}>
                     <ShieldAlert
                       size={13}
@@ -988,11 +988,11 @@ export function ChatMessageArea({
                     </Tooltip>
                   )
                 )}
-                {/* Bot conversations are always Station-resident: the amber
+                {/* Automated conversations are always Station-resident: the amber
                     shield + managed subtitle already state that, so the
                     authority-station chip (which reads as an "unavailable"
                     error when the id is empty) is hidden. */}
-                {!isBotConversation && (
+                {!isAutomatedConversation && (
                 <span
                   data-chat-station="authority"
                   data-chat-station-id={authorityStationId}
@@ -1030,10 +1030,10 @@ export function ChatMessageArea({
                 </span>
                 )}
               </Flexbox>
-              {(headerSubtitle || isBotConversation) && (
+              {(headerSubtitle || isAutomatedConversation) && (
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  {isBotConversation
-                    ? t('chat.bot.stationManaged', { defaultValue: 'Automated bot · Station resident' })
+                  {isAutomatedConversation
+                    ? t('chat.automation.stationManaged', { defaultValue: 'Automated service · Station resident' })
                     : headerSubtitle}
                 </Text>
               )}
@@ -1041,8 +1041,8 @@ export function ChatMessageArea({
           </Flexbox>
         </Flexbox>
         <Flexbox horizontal align="center" gap={4}>
-          {/* Bot conversations are one-way webhook channels: no calls. */}
-          {!isBotConversation && (
+          {/* Automated conversations are one-way publishing channels: no calls. */}
+          {!isAutomatedConversation && (
           <Tooltip
             title={
               callAvailable
@@ -1059,7 +1059,7 @@ export function ChatMessageArea({
             />
           </Tooltip>
           )}
-          {!isBotConversation && (
+          {!isAutomatedConversation && (
           <Tooltip
             title={
               callAvailable
@@ -1192,7 +1192,7 @@ export function ChatMessageArea({
         </Flexbox>
       )}
 
-      {isBotConversation ? (
+      {isAutomatedConversation ? (
         <Flexbox
           horizontal
           align="center"
@@ -1207,8 +1207,8 @@ export function ChatMessageArea({
         >
           <Bot size={14} style={{ color: token.colorTextTertiary }} />
           <Text type="secondary" style={{ fontSize: 12 }}>
-            {t('chat.bot.oneWayComposer', {
-              defaultValue: 'One-way webhook channel — replies are not supported',
+            {t('chat.automation.oneWayComposer', {
+              defaultValue: 'One-way publishing channel — replies are not supported',
             })}
           </Text>
         </Flexbox>

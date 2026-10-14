@@ -430,21 +430,10 @@ pub struct PublicEventReceiveCommit<'a> {
     pub consumed_at_unix_ms: i64,
 }
 
-/// Structured `peers-touch.bot-event.v1` body accompanying a service-plaintext
-/// message. `None` service messages persist only the fallback text row.
-pub struct ServiceBotEventCommit<'a> {
-    pub schema: &'a str,
-    pub event_type: i32,
-    pub severity: i32,
-    pub bot_ptid: &'a str,
-    pub group_key: &'a str,
-    pub dedupe_key: &'a str,
-    pub action_url: &'a str,
-    pub source_agent: &'a str,
-    pub source_workspace: &'a str,
-    pub source_session_id: &'a str,
-    /// Deterministically ordered label pairs, persisted as a JSON object.
-    pub source_labels: Vec<(String, String)>,
+pub struct ServiceMessageCommit<'a> {
+    pub source_namespace: &'a str,
+    pub content_bytes: &'a [u8],
+    pub source_context_bytes: &'a [u8],
 }
 
 /// Atomic receive commit for a non-E2EE Station service-plaintext message (bot
@@ -464,14 +453,14 @@ pub struct ServicePlaintextReceiveCommit<'a> {
     pub sender_ptid: &'a str,
     pub sender_device_id: &'a str,
     pub fallback_text: &'a str,
-    pub bot_event: Option<ServiceBotEventCommit<'a>>,
+    pub service_message: ServiceMessageCommit<'a>,
     pub committed_at_unix_ms: i64,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,
 }
 
-/// Read-side row of a structured bot webhook event (`messaging_service_messages`).
+/// Read-side row of common typed service content.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServiceMessageRow {
     pub event_id: String,
@@ -479,17 +468,9 @@ pub struct ServiceMessageRow {
     pub message_id: String,
     pub sender_ptid: String,
     pub fallback_text: String,
-    pub event_schema: String,
-    pub event_type: i32,
-    pub event_severity: i32,
-    pub bot_ptid: String,
-    pub group_key: String,
-    pub dedupe_key: String,
-    pub action_url: String,
-    pub source_agent: String,
-    pub source_workspace: String,
-    pub source_session_id: String,
-    pub source_labels_json: String,
+    pub source_namespace: String,
+    pub content_bytes: Vec<u8>,
+    pub source_context_bytes: Vec<u8>,
     pub committed_at_unix_ms: i64,
 }
 
@@ -7173,11 +7154,7 @@ impl MessagingStore {
         })
     }
 
-    /// Atomic receive for a non-E2EE Station service-plaintext message (bot
-    /// webhook event). It lands as an ordinary direct-message projection
-    /// carrying the fallback text; the structured peers-touch.bot-event.v1
-    /// body, when present, is persisted for rich rendering. The authority
-    /// chain advances through the same core path as encrypted receives.
+    /// Atomic receive for a non-E2EE Station service-plaintext message.
     pub fn commit_service_plaintext_receive(
         &self,
         input: &ServicePlaintextReceiveCommit<'_>,
@@ -7216,58 +7193,36 @@ impl MessagingStore {
             consumed_at_unix_ms: input.consumed_at_unix_ms,
         };
         self.commit_receive_core(&core, ReceiveFailPoint::None, |transaction| {
-            if let Some(event) = input.bot_event.as_ref() {
-                let mut labels = serde_json::Map::new();
-                for (key, value) in &event.source_labels {
-                    labels.insert(key.clone(), serde_json::Value::String(value.clone()));
-                }
-                let labels_json = serde_json::Value::Object(labels).to_string();
-                transaction
-                    .execute(
-                        "INSERT INTO messaging_service_messages(
-                            conversation_id, event_id, event_sequence, message_id,
-                            sender_ptid, sender_device_id, fallback_text,
-                            event_schema, event_type, event_severity,
-                            bot_ptid, group_key, dedupe_key, action_url,
-                            source_agent, source_workspace, source_session_id,
-                            source_labels_json, committed_at_unix_ms
-                         ) VALUES (
-                            ?1, ?2, ?3, ?4, ?5, ?6, ?7,
-                            ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                            ?15, ?16, ?17, ?18, ?19
-                         )",
-                        params![
-                            input.conversation_id,
-                            input.event_id,
-                            input.event_sequence,
-                            input.message_id,
-                            input.sender_ptid,
-                            input.sender_device_id,
-                            input.fallback_text,
-                            event.schema,
-                            event.event_type,
-                            event.severity,
-                            event.bot_ptid,
-                            event.group_key,
-                            event.dedupe_key,
-                            event.action_url,
-                            event.source_agent,
-                            event.source_workspace,
-                            event.source_session_id,
-                            labels_json,
-                            input.committed_at_unix_ms,
-                        ],
-                    )
-                    .map_err(|error| error.to_string())?;
-            }
+            transaction
+                .execute(
+                    "INSERT INTO messaging_service_messages(
+                        conversation_id, event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, fallback_text,
+                        source_namespace, content_bytes, source_context_bytes,
+                        committed_at_unix_ms
+                     ) VALUES (
+                        ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11
+                     )",
+                    params![
+                        input.conversation_id,
+                        input.event_id,
+                        input.event_sequence,
+                        input.message_id,
+                        input.sender_ptid,
+                        input.sender_device_id,
+                        input.fallback_text,
+                        input.service_message.source_namespace,
+                        input.service_message.content_bytes,
+                        input.service_message.source_context_bytes,
+                        input.committed_at_unix_ms,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
             Ok(())
         })
     }
 
-    /// Structured bot-event rows (`messaging_service_messages`) for a
-    /// conversation, ordered on the authority sequence. Read-only projection
-    /// used to render the rich `peers-touch.bot-event.v1` card; the ordinary
-    /// fallback row still lives in `messaging_message_projections`.
+    /// Common service-content rows ordered on the authority sequence.
     pub fn service_messages_for_conversation(
         &self,
         conversation_id: &str,
@@ -7279,10 +7234,8 @@ impl MessagingStore {
         let mut statement = connection
             .prepare(
                 "SELECT event_id, event_sequence, message_id, sender_ptid,
-                        fallback_text, event_schema, event_type, event_severity,
-                        bot_ptid, group_key, dedupe_key, action_url,
-                        source_agent, source_workspace, source_session_id,
-                        source_labels_json, committed_at_unix_ms
+                        fallback_text, source_namespace, content_bytes,
+                        source_context_bytes, committed_at_unix_ms
                  FROM messaging_service_messages
                  WHERE conversation_id = ?1
                  ORDER BY event_sequence ASC, message_id ASC",
@@ -7296,18 +7249,10 @@ impl MessagingStore {
                     message_id: row.get(2)?,
                     sender_ptid: row.get(3)?,
                     fallback_text: row.get(4)?,
-                    event_schema: row.get(5)?,
-                    event_type: row.get(6)?,
-                    event_severity: row.get(7)?,
-                    bot_ptid: row.get(8)?,
-                    group_key: row.get(9)?,
-                    dedupe_key: row.get(10)?,
-                    action_url: row.get(11)?,
-                    source_agent: row.get(12)?,
-                    source_workspace: row.get(13)?,
-                    source_session_id: row.get(14)?,
-                    source_labels_json: row.get(15)?,
-                    committed_at_unix_ms: row.get(16)?,
+                    source_namespace: row.get(5)?,
+                    content_bytes: row.get(6)?,
+                    source_context_bytes: row.get(7)?,
+                    committed_at_unix_ms: row.get(8)?,
                 })
             })
             .map_err(|error| error.to_string())?
@@ -11207,15 +11152,10 @@ fn validate_service_plaintext_receive(
     {
         return Err("messaging service-plaintext receive input is incomplete".to_string());
     }
-    if let Some(event) = input.bot_event.as_ref() {
-        if event.schema.trim().is_empty()
-            || event.bot_ptid != input.sender_ptid
-            || event.source_labels.windows(2).any(|w| w[0].0 > w[1].0)
-        {
-            return Err(
-                "messaging service-plaintext bot event is not bound to the sender".to_string(),
-            );
-        }
+    if input.service_message.source_namespace.trim().is_empty()
+        || input.service_message.content_bytes.is_empty()
+    {
+        return Err("messaging service content is incomplete".to_string());
     }
     Ok(())
 }

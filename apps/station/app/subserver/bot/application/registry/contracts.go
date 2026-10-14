@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/bot/domain"
 )
@@ -12,9 +13,44 @@ type Repository interface {
 	Create(ctx context.Context, b *domain.Bot) error
 	Update(ctx context.Context, b *domain.Bot) error
 	GetByPtid(ctx context.Context, botPtid string) (*domain.Bot, error)
-	GetByWebhookID(ctx context.Context, webhookID string) (*domain.Bot, error)
 	ListByOwner(ctx context.Context, ownerPtid string) ([]*domain.Bot, error)
 	ActiveByName(ctx context.Context, ownerPtid, name string) (*domain.Bot, error)
+}
+
+type PublishingGrant struct {
+	ID                 string
+	OwnerPtid          string
+	SenderPtid         string
+	Name               string
+	SourceNamespace    string
+	DefaultTarget      string
+	AllowedTargets     []string
+	SecretHint         string
+	Disabled           bool
+	Revoked            bool
+	CreatedAt          time.Time
+	ExpiresAt          *time.Time
+	RateLimitPerMinute uint32
+}
+
+type PublishingCreated struct {
+	Grant  PublishingGrant
+	Secret string
+}
+
+// PublishingManager adapts the optional Bot product to Conversation's generic
+// publishing capability. Bot never owns a second credential or ingress path.
+type PublishingManager interface {
+	CreateForBot(
+		ctx context.Context,
+		ownerPtid string,
+		botPtid string,
+		name string,
+	) (PublishingCreated, error)
+	Get(ctx context.Context, ownerPtid, publishingID string) (PublishingGrant, error)
+	Rotate(ctx context.Context, ownerPtid, publishingID string) (PublishingCreated, error)
+	SetDisabled(ctx context.Context, ownerPtid, publishingID string, disabled bool) (PublishingGrant, error)
+	Revoke(ctx context.Context, ownerPtid, publishingID string) (PublishingGrant, error)
 }
 
 // ActorMinter provisions the non-human AGENT actor (PTID letter "b", HIDDEN)

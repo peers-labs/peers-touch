@@ -330,11 +330,11 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
       });
       return;
     }
-    case 'botNotification': {
+    case 'serviceNotification': {
       const b = kind.value;
       // Minimal wake signal: inbox/unread are driven by the envelope arm.
       // This only publishes the gating input for the OS banner decision.
-      eventBus.publish(EVENT.REALTIME_BOT_NOTIFICATION, {
+      eventBus.publish(EVENT.REALTIME_SERVICE_NOTIFICATION, {
         eventId,
         notificationId: b.notificationId,
         recipientActorPtid: b.recipientActorPtid,

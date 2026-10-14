@@ -140,17 +140,22 @@ describe('social chat conversation projection', () => {
       },
     });
 
-    expect(useSocialChatStore.getState().isBotConversation('direct-conversation')).toBe(false);
+    expect(useSocialChatStore.getState().isAutomatedConversation('direct-conversation')).toBe(false);
 
     useSocialChatStore.setState({
       peerProfiles: { 'ptid:peer:bob': peerProfile(ActorKind.PERSON) },
     });
-    expect(useSocialChatStore.getState().isBotConversation('direct-conversation')).toBe(false);
+    expect(useSocialChatStore.getState().isAutomatedConversation('direct-conversation')).toBe(false);
 
     useSocialChatStore.setState({
       peerProfiles: { 'ptid:peer:bob': peerProfile(ActorKind.AGENT) },
     });
-    expect(useSocialChatStore.getState().isBotConversation('direct-conversation')).toBe(true);
+    expect(useSocialChatStore.getState().isAutomatedConversation('direct-conversation')).toBe(true);
+
+    useSocialChatStore.setState({
+      peerProfiles: { 'ptid:peer:bob': peerProfile(ActorKind.SERVICE) },
+    });
+    expect(useSocialChatStore.getState().isAutomatedConversation('direct-conversation')).toBe(true);
   });
 
   it('keeps an immediate background preview ephemeral and conversation-scoped', () => {

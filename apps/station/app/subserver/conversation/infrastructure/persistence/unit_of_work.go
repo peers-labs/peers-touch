@@ -20,7 +20,8 @@ type TransactionalAdapters struct {
 	Identity               ports.IdentityDirectory
 	Federation             ports.FederationDirectory
 	SystemSender           ports.SystemSenderAuthorization
-	SystemDirectories      ports.SystemDirectories
+	Publishing             ports.PublishingStore
+	PublishingObjects      ports.PublishedObjectDirectory
 	ServiceNotifications   ports.ServiceNotificationProducer
 	LocalScope             ports.LocalScope
 	DeviceInbox            ports.DeviceInboxWriter
@@ -493,7 +494,8 @@ func (u *UnitOfWork) bindTransaction(tx *gorm.DB) (ports.Transaction, error) {
 		Identity:               adapters.Identity,
 		Federation:             adapters.Federation,
 		SystemSender:           adapters.SystemSender,
-		SystemDirectories:      adapters.SystemDirectories,
+		Publishing:             adapters.Publishing,
+		PublishingObjects:      adapters.PublishingObjects,
 		ServiceNotifications:   adapters.ServiceNotifications,
 		LocalScope:             adapters.LocalScope,
 		DeviceInbox:            adapters.DeviceInbox,

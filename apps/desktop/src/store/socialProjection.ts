@@ -114,8 +114,7 @@ export interface SocialMessage {
   readByPtids?: string[];
   deliveryState?: string;
   senderDeviceId?: string;
-  // Present for non-E2EE Station service messages (bot webhook events).
-  botEvent?: DesktopBotServiceEvent;
+  serviceMessage?: DesktopServiceMessage;
 }
 
 export interface FriendChatSession {
@@ -284,32 +283,51 @@ export type DesktopIMMessageProjection = IMMessageProjection<ChatAttachmentLike>
   readByPtids: string[];
   eventSequence: number;
   deliveryState: string;
-  // Present for non-E2EE Station service messages (bot webhook events). The
-  // fallback text still renders as the plaintext body; this drives the rich
-  // peers-touch.bot-event.v1 card.
-  botEvent?: DesktopBotServiceEvent;
+  // Common typed content for non-E2EE Station service messages.
+  serviceMessage?: DesktopServiceMessage;
 };
 
-// Mirrors the structured `messaging_service_messages` row exposed by the
-// `messaging_list_service_messages` command. Numeric values match the bot
-// proto enums (ServiceBotEventKind / severity).
-export interface DesktopBotServiceEvent {
+export interface DesktopServiceMessage {
   eventId: string;
   eventSequence: number;
   messageId: string;
   senderPtid: string;
   fallbackText: string;
-  eventSchema: string;
-  eventType: number;
-  eventSeverity: number;
-  botPtid: string;
-  groupKey: string;
-  dedupeKey: string;
-  actionUrl: string;
-  sourceAgent: string;
-  sourceWorkspace: string;
-  sourceSessionId: string;
-  sourceLabels: Record<string, string>;
+  sourceNamespace: string;
+  content?: {
+    primary?: {
+      kind: 'text' | 'event' | 'card';
+      text?: string;
+      eventType?: string;
+      sourceEventId?: string;
+      subject?: {
+        kind: string;
+        id: string;
+        executionId: string;
+      };
+      occurredAtUnixMs?: number;
+      severity?: number;
+      title?: string;
+      body?: string;
+      actions?: Array<{ label: string; url: string }>;
+      taskState?: {
+        revision: string;
+        state: number;
+      };
+    };
+    attachments: Array<{
+      objectId: string;
+      filename: string;
+      mediaType: string;
+      size: string;
+    }>;
+  };
+  sourceContext?: {
+    program: string;
+    workspace: string;
+    sessionId: string;
+    labels: Record<string, string>;
+  };
   timestampUnixMs: number;
 }
 
@@ -465,7 +483,7 @@ export function projectDesktopIMMessage(
     readByPtids: (message as { readByPtids?: string[] }).readByPtids ?? [],
     eventSequence: messageGroupSeq(message),
     deliveryState: (message as { deliveryState?: string }).deliveryState ?? '',
-    botEvent: message.botEvent,
+    serviceMessage: message.serviceMessage,
   };
 }
 

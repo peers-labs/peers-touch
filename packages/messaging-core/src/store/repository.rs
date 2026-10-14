@@ -348,8 +348,8 @@ pub trait MessagingRepository: Send + Sync {
 
     fn commit_direct_edit(&self, commit: &DirectEditCommit) -> Result<ReceiveCommitResult, String>;
 
-    /// Persist a non-E2EE Station service-plaintext message (bot event) as an
-    /// ordinary direct-message projection plus its structured read model.
+    /// Persist a non-E2EE Station service-plaintext message as an ordinary
+    /// direct-message projection plus its common typed read model.
     fn commit_service_plaintext_receive(
         &self,
         commit: &ServicePlaintextReceiveCommit,

@@ -68,11 +68,11 @@ Journey：BOT-J01 设置、BOT-J02/J05 会话与折叠、BOT-J03 菜单栏触达
 | 文件 | 状态 | 判定项 |
 |---|---|---|
 | `shots/01-default.png`、`02-card-avatar.png` | default，窗口聚焦 | bot 在普通会话列表；事件卡带 bot 头像（1:1 会话不重复发送者名）；无锁；角标=未读会话数 |
-| `shots/01-bot-header.png` | 打开 bot 会话 | 头部无"非端到端加密"文案，改为琥珀色警示 icon + hover tip；副标题只留"自动化 Bot · Station 托管"（不显示人类在线状态）；无语音/视频呼叫入口；底部输入框替换为"Webhook 单向推送、暂不支持回复"提示条 |
+| `shots/01-bot-header.png` | 打开 bot 会话 | 头部无"非端到端加密"文案，改为琥珀色警示 icon + hover tip；副标题只留"自动化 Bot · Station 托管"（不显示人类在线状态）；无语音/视频呼叫入口；底部输入框替换为"单向发布通道、暂不支持回复"提示条 |
 | `shots/01c-bot-detail.png` | 头部"…"直达详情（bot 不经过呼叫模拟器） | 身份区无 presence、无 Posts/Followers 社交计数，仅"自动化 Bot · 常驻可达"+ Technical details（PTID/Home Station）；唯一 SECURITY 区块为琥珀色"非端到端加密 · Station 明文"+ 不发送敏感信息提示，无 safety number 入口 |
 | `shots/03-hidden-banner.png` | 隐藏到菜单栏 + 两次等待确认 | 单条 OS 横幅（折叠 ×2）；菜单栏驻留；模拟器常驻；角标只增一次 |
 | `shots/04-settings.png` | Bots 设置 | 账户级 Bots 列表、轮换/停用/吊销主次与 destructive 分级 |
-| `shots/05-create-form.png`、`05-create-form-typed.png` | 创建 Bot 对话框 · 阶段一 | 单一对话框：名称输入 + 头像入口 + 通道说明；名称为空时"生成 Webhook 与 Secret"禁用；取消不产生任何资源；05-typed 展示创建时选定的预设头像 |
+| `shots/05-create-form.png`、`05-create-form-typed.png` | 创建 Bot 对话框 · 阶段一 | 单一对话框：名称输入 + 头像入口 + 通道说明；名称为空时"生成通道与 Secret"禁用；取消不产生任何资源；05-typed 展示创建时选定的预设头像 |
 | `shots/06-credentials-revealed.png` | 同一对话框 · 阶段二 | 提交后 URL/Secret/配置片段在原对话框就地揭示（不再弹第二个 modal）；Secret 自动选中且标注仅显示一次；新 Bot 行即时入列；"再创建一个"回到阶段一，"我已保存，完成"关闭；遗失经轮换恢复、URL 不变 |
 | `shots/09-avatar-picker.png` | 创建对话框内叠层头像选择器 | 实时预览；上传图片（image/*、≤2MB、dataURL 本地保存）、8 个预设图标 × 6 底色、恢复默认；非法文件行内报错 |
 | `shots/07-avatar-picker-row.png`、`07-settings-custom-avatars.png` | 列表行头像编辑 | 行头像右下相机角标打开同一选择器（吊销态禁用）；确认后行头像即时更新；两个 Bot 可分别自定义 |

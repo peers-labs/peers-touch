@@ -4,13 +4,15 @@
 
 import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { MessagePublishingGrant } from "../chat/publishing_pb";
+import { file_domain_chat_publishing } from "../chat/publishing_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file domain/bot/bot.proto.
  */
 export const file_domain_bot_bot: GenFile = /*@__PURE__*/
-  fileDesc("ChRkb21haW4vYm90L2JvdC5wcm90bxIYcGVlcnNfdG91Y2gubW9kZWwuYm90LnYxItgCCgNCb3QSEAoIYm90X3B0aWQYASABKAkSEgoKb3duZXJfcHRpZBgCIAEoCRIMCgRuYW1lGAMgASgJEjEKBXN0YXRlGAQgASgOMiIucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdFN0YXRlEhIKCndlYmhvb2tfaWQYBSABKAkSGAoQc2VjcmV0X2RlbGl2ZXJlZBgGIAEoCBITCgtzZWNyZXRfaGludBgHIAEoCRJCCg5kZWxpdmVyeV9zY29wZRgIIAEoDjIqLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3REZWxpdmVyeVNjb3BlEh0KFXJhdGVfbGltaXRfcGVyX21pbnV0ZRgJIAEoBRIVCg1jcmVhdGVkX2F0X21zGAogASgDEhYKDmRpc2FibGVkX2F0X21zGAsgASgDEhUKDXJldm9rZWRfYXRfbXMYDCABKAMiQAoQQ3JlYXRlQm90UmVxdWVzdBIMCgRuYW1lGAEgASgJEhMKBmF2YXRhchgCIAEoCUgAiAEBQgkKB19hdmF0YXIibgoRQ3JlYXRlQm90UmVzcG9uc2USKgoDYm90GAEgASgLMh0ucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdBITCgt3ZWJob29rX3VybBgCIAEoCRIYChBzZWNyZXRfcGxhaW50ZXh0GAMgASgJIioKFlJvdGF0ZUJvdFNlY3JldFJlcXVlc3QSEAoIYm90X3B0aWQYASABKAkiMwoXUm90YXRlQm90U2VjcmV0UmVzcG9uc2USGAoQc2VjcmV0X3BsYWludGV4dBgBIAEoCSJgChJTZXRCb3RTdGF0ZVJlcXVlc3QSEAoIYm90X3B0aWQYASABKAkSOAoMdGFyZ2V0X3N0YXRlGAIgASgOMiIucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdFN0YXRlIkEKE1NldEJvdFN0YXRlUmVzcG9uc2USKgoDYm90GAEgASgLMh0ucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdCITChFMaXN0TXlCb3RzUmVxdWVzdCJBChJMaXN0TXlCb3RzUmVzcG9uc2USKwoEYm90cxgBIAMoCzIdLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3QiSAoUU2V0Qm90UHJvZmlsZVJlcXVlc3QSEAoIYm90X3B0aWQYASABKAkSEwoGYXZhdGFyGAIgASgJSACIAQFCCQoHX2F2YXRhciJDChVTZXRCb3RQcm9maWxlUmVzcG9uc2USKgoDYm90GAEgASgLMh0ucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdCp/CghCb3RTdGF0ZRIZChVCT1RfU1RBVEVfVU5TUEVDSUZJRUQQABITCg9CT1RfU1RBVEVfRFJBRlQQARIUChBCT1RfU1RBVEVfQUNUSVZFEAISFgoSQk9UX1NUQVRFX0RJU0FCTEVEEAMSFQoRQk9UX1NUQVRFX1JFVk9LRUQQBCplChBCb3REZWxpdmVyeVNjb3BlEiIKHkJPVF9ERUxJVkVSWV9TQ09QRV9VTlNQRUNJRklFRBAAEiEKHUJPVF9ERUxJVkVSWV9TQ09QRV9PV05FUl9PTkxZEAEiBAgCEAIiBAgDEANCSVpHZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9ib3QvbW9kZWw7bW9kZWxiBnByb3RvMw");
+  fileDesc("ChRkb21haW4vYm90L2JvdC5wcm90bxIYcGVlcnNfdG91Y2gubW9kZWwuYm90LnYxIr8CCgNCb3QSEAoIYm90X3B0aWQYASABKAkSEgoKb3duZXJfcHRpZBgCIAEoCRIMCgRuYW1lGAMgASgJEjEKBXN0YXRlGAQgASgOMiIucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdFN0YXRlEksKEHB1Ymxpc2hpbmdfZ3JhbnQYDSABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lc3NhZ2VQdWJsaXNoaW5nR3JhbnRKBAgFEA1SCndlYmhvb2tfaWRSEHNlY3JldF9kZWxpdmVyZWRSC3NlY3JldF9oaW50Ug5kZWxpdmVyeV9zY29wZVIVcmF0ZV9saW1pdF9wZXJfbWludXRlUg1jcmVhdGVkX2F0X21zUg5kaXNhYmxlZF9hdF9tc1INcmV2b2tlZF9hdF9tcyJAChBDcmVhdGVCb3RSZXF1ZXN0EgwKBG5hbWUYASABKAkSEwoGYXZhdGFyGAIgASgJSACIAQFCCQoHX2F2YXRhciKPAQoRQ3JlYXRlQm90UmVzcG9uc2USKgoDYm90GAEgASgLMh0ucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdBITCgtpbmdyZXNzX3VybBgEIAEoCRIOCgZzZWNyZXQYBSABKAlKBAgCEANKBAgDEARSC3dlYmhvb2tfdXJsUhBzZWNyZXRfcGxhaW50ZXh0IioKFlJvdGF0ZUJvdFNlY3JldFJlcXVlc3QSEAoIYm90X3B0aWQYASABKAkiQQoXUm90YXRlQm90U2VjcmV0UmVzcG9uc2USDgoGc2VjcmV0GAIgASgJSgQIARACUhBzZWNyZXRfcGxhaW50ZXh0ImAKElNldEJvdFN0YXRlUmVxdWVzdBIQCghib3RfcHRpZBgBIAEoCRI4Cgx0YXJnZXRfc3RhdGUYAiABKA4yIi5wZWVyc190b3VjaC5tb2RlbC5ib3QudjEuQm90U3RhdGUiQQoTU2V0Qm90U3RhdGVSZXNwb25zZRIqCgNib3QYASABKAsyHS5wZWVyc190b3VjaC5tb2RlbC5ib3QudjEuQm90IhMKEUxpc3RNeUJvdHNSZXF1ZXN0IkEKEkxpc3RNeUJvdHNSZXNwb25zZRIrCgRib3RzGAEgAygLMh0ucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdCJIChRTZXRCb3RQcm9maWxlUmVxdWVzdBIQCghib3RfcHRpZBgBIAEoCRITCgZhdmF0YXIYAiABKAlIAIgBAUIJCgdfYXZhdGFyIkMKFVNldEJvdFByb2ZpbGVSZXNwb25zZRIqCgNib3QYASABKAsyHS5wZWVyc190b3VjaC5tb2RlbC5ib3QudjEuQm90Kn8KCEJvdFN0YXRlEhkKFUJPVF9TVEFURV9VTlNQRUNJRklFRBAAEhMKD0JPVF9TVEFURV9EUkFGVBABEhQKEEJPVF9TVEFURV9BQ1RJVkUQAhIWChJCT1RfU1RBVEVfRElTQUJMRUQQAxIVChFCT1RfU1RBVEVfUkVWT0tFRBAEQklaR2dpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2FwcC9zdWJzZXJ2ZXIvYm90L21vZGVsO21vZGVsYgZwcm90bzM", [file_domain_chat_publishing]);
 
 /**
  * @generated from message peers_touch.model.bot.v1.Bot
@@ -37,47 +39,9 @@ export type Bot = Message<"peers_touch.model.bot.v1.Bot"> & {
   state: BotState;
 
   /**
-   * @generated from field: string webhook_id = 5;
+   * @generated from field: peers_touch.model.chat.v1.MessagePublishingGrant publishing_grant = 13;
    */
-  webhookId: string;
-
-  /**
-   * True only between creation/rotation and the first owner read of the
-   * plaintext. The plaintext secret is never persisted.
-   *
-   * @generated from field: bool secret_delivered = 6;
-   */
-  secretDelivered: boolean;
-
-  /**
-   * @generated from field: string secret_hint = 7;
-   */
-  secretHint: string;
-
-  /**
-   * @generated from field: peers_touch.model.bot.v1.BotDeliveryScope delivery_scope = 8;
-   */
-  deliveryScope: BotDeliveryScope;
-
-  /**
-   * @generated from field: int32 rate_limit_per_minute = 9;
-   */
-  rateLimitPerMinute: number;
-
-  /**
-   * @generated from field: int64 created_at_ms = 10;
-   */
-  createdAtMs: bigint;
-
-  /**
-   * @generated from field: int64 disabled_at_ms = 11;
-   */
-  disabledAtMs: bigint;
-
-  /**
-   * @generated from field: int64 revoked_at_ms = 12;
-   */
-  revokedAtMs: bigint;
+  publishingGrant?: MessagePublishingGrant | undefined;
 };
 
 /**
@@ -97,10 +61,6 @@ export type CreateBotRequest = Message<"peers_touch.model.bot.v1.CreateBotReques
   name: string;
 
   /**
-   * Optional relative avatar URL (an OSS `/sub-oss/file?key=...` reference).
-   * Stored on the bot's AGENT actor profile, not on the registry row. Empty
-   * leaves the default glyph.
-   *
    * @generated from field: optional string avatar = 2;
    */
   avatar?: string | undefined;
@@ -123,16 +83,14 @@ export type CreateBotResponse = Message<"peers_touch.model.bot.v1.CreateBotRespo
   bot?: Bot | undefined;
 
   /**
-   * @generated from field: string webhook_url = 2;
+   * @generated from field: string ingress_url = 4;
    */
-  webhookUrl: string;
+  ingressUrl: string;
 
   /**
-   * Plaintext, returned exactly once. The server stores only a SHA-256 hash.
-   *
-   * @generated from field: string secret_plaintext = 3;
+   * @generated from field: string secret = 5;
    */
-  secretPlaintext: string;
+  secret: string;
 };
 
 /**
@@ -164,11 +122,9 @@ export const RotateBotSecretRequestSchema: GenMessage<RotateBotSecretRequest> = 
  */
 export type RotateBotSecretResponse = Message<"peers_touch.model.bot.v1.RotateBotSecretResponse"> & {
   /**
-   * Plaintext, returned exactly once; the prior secret is invalid immediately.
-   *
-   * @generated from field: string secret_plaintext = 1;
+   * @generated from field: string secret = 2;
    */
-  secretPlaintext: string;
+  secret: string;
 };
 
 /**
@@ -248,11 +204,6 @@ export const ListMyBotsResponseSchema: GenMessage<ListMyBotsResponse> = /*@__PUR
   messageDesc(file_domain_bot_bot, 8);
 
 /**
- * Owner updates bot-owned actor profile fields (avatar for v1). The actor
- * itself is the identity truth; this endpoint lets the owner (authenticated by
- * their own JWT) mutate their bot's AGENT actor profile. Kept separate from the
- * generic /actor/profile endpoint, whose target is always the JWT subject.
- *
  * @generated from message peers_touch.model.bot.v1.SetBotProfileRequest
  */
 export type SetBotProfileRequest = Message<"peers_touch.model.bot.v1.SetBotProfileRequest"> & {
@@ -262,8 +213,6 @@ export type SetBotProfileRequest = Message<"peers_touch.model.bot.v1.SetBotProfi
   botPtid: string;
 
   /**
-   * Relative OSS avatar URL; empty clears it back to the default glyph.
-   *
    * @generated from field: optional string avatar = 2;
    */
   avatar?: string | undefined;
@@ -294,6 +243,8 @@ export const SetBotProfileResponseSchema: GenMessage<SetBotProfileResponse> = /*
   messageDesc(file_domain_bot_bot, 10);
 
 /**
+ * Bot is an optional product form over the generic message-publishing grant.
+ *
  * @generated from enum peers_touch.model.bot.v1.BotState
  */
 export enum BotState {
@@ -328,27 +279,3 @@ export enum BotState {
  */
 export const BotStateSchema: GenEnum<BotState> = /*@__PURE__*/
   enumDesc(file_domain_bot_bot, 0);
-
-/**
- * v1 delivery is always owner-only. LOCAL_ACTORS / FEDERATED are reserved for
- * a later scope expansion; a Bot never delivers to non-owners in v1.
- *
- * @generated from enum peers_touch.model.bot.v1.BotDeliveryScope
- */
-export enum BotDeliveryScope {
-  /**
-   * @generated from enum value: BOT_DELIVERY_SCOPE_UNSPECIFIED = 0;
-   */
-  UNSPECIFIED = 0,
-
-  /**
-   * @generated from enum value: BOT_DELIVERY_SCOPE_OWNER_ONLY = 1;
-   */
-  OWNER_ONLY = 1,
-}
-
-/**
- * Describes the enum peers_touch.model.bot.v1.BotDeliveryScope.
- */
-export const BotDeliveryScopeSchema: GenEnum<BotDeliveryScope> = /*@__PURE__*/
-  enumDesc(file_domain_bot_bot, 1);

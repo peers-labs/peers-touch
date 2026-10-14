@@ -3,6 +3,7 @@ package infrastructure
 import (
 	"context"
 
+	identity "github.com/peers-labs/peers-touch/station/frame/touch/activitypub/identity"
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 )
 
@@ -13,7 +14,13 @@ type ActorMinter struct{}
 func NewActorMinter() *ActorMinter { return &ActorMinter{} }
 
 func (ActorMinter) MintAgentActor(ctx context.Context, handle, displayName, namespace string) (string, error) {
-	return touchactor.MintInternalAgentActor(ctx, handle, displayName, namespace)
+	return touchactor.MintInternalProgramActor(
+		ctx,
+		handle,
+		displayName,
+		namespace,
+		identity.TypeAgent,
+	)
 }
 
 // SetAgentAvatar writes the bot AGENT actor's icon without any federation

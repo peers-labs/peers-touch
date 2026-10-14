@@ -7,6 +7,7 @@
 package model
 
 import (
+	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -21,6 +22,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Bot is an optional product form over the generic message-publishing grant.
 type BotState int32
 
 const (
@@ -76,72 +78,15 @@ func (BotState) EnumDescriptor() ([]byte, []int) {
 	return file_domain_bot_bot_proto_rawDescGZIP(), []int{0}
 }
 
-// v1 delivery is always owner-only. LOCAL_ACTORS / FEDERATED are reserved for
-// a later scope expansion; a Bot never delivers to non-owners in v1.
-type BotDeliveryScope int32
-
-const (
-	BotDeliveryScope_BOT_DELIVERY_SCOPE_UNSPECIFIED BotDeliveryScope = 0
-	BotDeliveryScope_BOT_DELIVERY_SCOPE_OWNER_ONLY  BotDeliveryScope = 1
-)
-
-// Enum value maps for BotDeliveryScope.
-var (
-	BotDeliveryScope_name = map[int32]string{
-		0: "BOT_DELIVERY_SCOPE_UNSPECIFIED",
-		1: "BOT_DELIVERY_SCOPE_OWNER_ONLY",
-	}
-	BotDeliveryScope_value = map[string]int32{
-		"BOT_DELIVERY_SCOPE_UNSPECIFIED": 0,
-		"BOT_DELIVERY_SCOPE_OWNER_ONLY":  1,
-	}
-)
-
-func (x BotDeliveryScope) Enum() *BotDeliveryScope {
-	p := new(BotDeliveryScope)
-	*p = x
-	return p
-}
-
-func (x BotDeliveryScope) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (BotDeliveryScope) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_bot_bot_proto_enumTypes[1].Descriptor()
-}
-
-func (BotDeliveryScope) Type() protoreflect.EnumType {
-	return &file_domain_bot_bot_proto_enumTypes[1]
-}
-
-func (x BotDeliveryScope) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use BotDeliveryScope.Descriptor instead.
-func (BotDeliveryScope) EnumDescriptor() ([]byte, []int) {
-	return file_domain_bot_bot_proto_rawDescGZIP(), []int{1}
-}
-
 type Bot struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	BotPtid   string                 `protobuf:"bytes,1,opt,name=bot_ptid,json=botPtid,proto3" json:"bot_ptid,omitempty"`
-	OwnerPtid string                 `protobuf:"bytes,2,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`
-	Name      string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	State     BotState               `protobuf:"varint,4,opt,name=state,proto3,enum=peers_touch.model.bot.v1.BotState" json:"state,omitempty"`
-	WebhookId string                 `protobuf:"bytes,5,opt,name=webhook_id,json=webhookId,proto3" json:"webhook_id,omitempty"`
-	// True only between creation/rotation and the first owner read of the
-	// plaintext. The plaintext secret is never persisted.
-	SecretDelivered    bool             `protobuf:"varint,6,opt,name=secret_delivered,json=secretDelivered,proto3" json:"secret_delivered,omitempty"`
-	SecretHint         string           `protobuf:"bytes,7,opt,name=secret_hint,json=secretHint,proto3" json:"secret_hint,omitempty"`
-	DeliveryScope      BotDeliveryScope `protobuf:"varint,8,opt,name=delivery_scope,json=deliveryScope,proto3,enum=peers_touch.model.bot.v1.BotDeliveryScope" json:"delivery_scope,omitempty"`
-	RateLimitPerMinute int32            `protobuf:"varint,9,opt,name=rate_limit_per_minute,json=rateLimitPerMinute,proto3" json:"rate_limit_per_minute,omitempty"`
-	CreatedAtMs        int64            `protobuf:"varint,10,opt,name=created_at_ms,json=createdAtMs,proto3" json:"created_at_ms,omitempty"`
-	DisabledAtMs       int64            `protobuf:"varint,11,opt,name=disabled_at_ms,json=disabledAtMs,proto3" json:"disabled_at_ms,omitempty"`
-	RevokedAtMs        int64            `protobuf:"varint,12,opt,name=revoked_at_ms,json=revokedAtMs,proto3" json:"revoked_at_ms,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state           protoimpl.MessageState       `protogen:"open.v1"`
+	BotPtid         string                       `protobuf:"bytes,1,opt,name=bot_ptid,json=botPtid,proto3" json:"bot_ptid,omitempty"`
+	OwnerPtid       string                       `protobuf:"bytes,2,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`
+	Name            string                       `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	State           BotState                     `protobuf:"varint,4,opt,name=state,proto3,enum=peers_touch.model.bot.v1.BotState" json:"state,omitempty"`
+	PublishingGrant *chat.MessagePublishingGrant `protobuf:"bytes,13,opt,name=publishing_grant,json=publishingGrant,proto3" json:"publishing_grant,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Bot) Reset() {
@@ -202,69 +147,17 @@ func (x *Bot) GetState() BotState {
 	return BotState_BOT_STATE_UNSPECIFIED
 }
 
-func (x *Bot) GetWebhookId() string {
+func (x *Bot) GetPublishingGrant() *chat.MessagePublishingGrant {
 	if x != nil {
-		return x.WebhookId
+		return x.PublishingGrant
 	}
-	return ""
-}
-
-func (x *Bot) GetSecretDelivered() bool {
-	if x != nil {
-		return x.SecretDelivered
-	}
-	return false
-}
-
-func (x *Bot) GetSecretHint() string {
-	if x != nil {
-		return x.SecretHint
-	}
-	return ""
-}
-
-func (x *Bot) GetDeliveryScope() BotDeliveryScope {
-	if x != nil {
-		return x.DeliveryScope
-	}
-	return BotDeliveryScope_BOT_DELIVERY_SCOPE_UNSPECIFIED
-}
-
-func (x *Bot) GetRateLimitPerMinute() int32 {
-	if x != nil {
-		return x.RateLimitPerMinute
-	}
-	return 0
-}
-
-func (x *Bot) GetCreatedAtMs() int64 {
-	if x != nil {
-		return x.CreatedAtMs
-	}
-	return 0
-}
-
-func (x *Bot) GetDisabledAtMs() int64 {
-	if x != nil {
-		return x.DisabledAtMs
-	}
-	return 0
-}
-
-func (x *Bot) GetRevokedAtMs() int64 {
-	if x != nil {
-		return x.RevokedAtMs
-	}
-	return 0
+	return nil
 }
 
 type CreateBotRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// Optional relative avatar URL (an OSS `/sub-oss/file?key=...` reference).
-	// Stored on the bot's AGENT actor profile, not on the registry row. Empty
-	// leaves the default glyph.
-	Avatar        *string `protobuf:"bytes,2,opt,name=avatar,proto3,oneof" json:"avatar,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Avatar        *string                `protobuf:"bytes,2,opt,name=avatar,proto3,oneof" json:"avatar,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -314,13 +207,12 @@ func (x *CreateBotRequest) GetAvatar() string {
 }
 
 type CreateBotResponse struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	Bot        *Bot                   `protobuf:"bytes,1,opt,name=bot,proto3" json:"bot,omitempty"`
-	WebhookUrl string                 `protobuf:"bytes,2,opt,name=webhook_url,json=webhookUrl,proto3" json:"webhook_url,omitempty"`
-	// Plaintext, returned exactly once. The server stores only a SHA-256 hash.
-	SecretPlaintext string `protobuf:"bytes,3,opt,name=secret_plaintext,json=secretPlaintext,proto3" json:"secret_plaintext,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Bot           *Bot                   `protobuf:"bytes,1,opt,name=bot,proto3" json:"bot,omitempty"`
+	IngressUrl    string                 `protobuf:"bytes,4,opt,name=ingress_url,json=ingressUrl,proto3" json:"ingress_url,omitempty"`
+	Secret        string                 `protobuf:"bytes,5,opt,name=secret,proto3" json:"secret,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateBotResponse) Reset() {
@@ -360,16 +252,16 @@ func (x *CreateBotResponse) GetBot() *Bot {
 	return nil
 }
 
-func (x *CreateBotResponse) GetWebhookUrl() string {
+func (x *CreateBotResponse) GetIngressUrl() string {
 	if x != nil {
-		return x.WebhookUrl
+		return x.IngressUrl
 	}
 	return ""
 }
 
-func (x *CreateBotResponse) GetSecretPlaintext() string {
+func (x *CreateBotResponse) GetSecret() string {
 	if x != nil {
-		return x.SecretPlaintext
+		return x.Secret
 	}
 	return ""
 }
@@ -419,11 +311,10 @@ func (x *RotateBotSecretRequest) GetBotPtid() string {
 }
 
 type RotateBotSecretResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Plaintext, returned exactly once; the prior secret is invalid immediately.
-	SecretPlaintext string `protobuf:"bytes,1,opt,name=secret_plaintext,json=secretPlaintext,proto3" json:"secret_plaintext,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Secret        string                 `protobuf:"bytes,2,opt,name=secret,proto3" json:"secret,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RotateBotSecretResponse) Reset() {
@@ -456,9 +347,9 @@ func (*RotateBotSecretResponse) Descriptor() ([]byte, []int) {
 	return file_domain_bot_bot_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *RotateBotSecretResponse) GetSecretPlaintext() string {
+func (x *RotateBotSecretResponse) GetSecret() string {
 	if x != nil {
-		return x.SecretPlaintext
+		return x.Secret
 	}
 	return ""
 }
@@ -639,15 +530,10 @@ func (x *ListMyBotsResponse) GetBots() []*Bot {
 	return nil
 }
 
-// Owner updates bot-owned actor profile fields (avatar for v1). The actor
-// itself is the identity truth; this endpoint lets the owner (authenticated by
-// their own JWT) mutate their bot's AGENT actor profile. Kept separate from the
-// generic /actor/profile endpoint, whose target is always the JWT subject.
 type SetBotProfileRequest struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	BotPtid string                 `protobuf:"bytes,1,opt,name=bot_ptid,json=botPtid,proto3" json:"bot_ptid,omitempty"`
-	// Relative OSS avatar URL; empty clears it back to the default glyph.
-	Avatar        *string `protobuf:"bytes,2,opt,name=avatar,proto3,oneof" json:"avatar,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BotPtid       string                 `protobuf:"bytes,1,opt,name=bot_ptid,json=botPtid,proto3" json:"bot_ptid,omitempty"`
+	Avatar        *string                `protobuf:"bytes,2,opt,name=avatar,proto3,oneof" json:"avatar,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -744,37 +630,28 @@ var File_domain_bot_bot_proto protoreflect.FileDescriptor
 
 const file_domain_bot_bot_proto_rawDesc = "" +
 	"\n" +
-	"\x14domain/bot/bot.proto\x12\x18peers_touch.model.bot.v1\"\xec\x03\n" +
+	"\x14domain/bot/bot.proto\x12\x18peers_touch.model.bot.v1\x1a\x1cdomain/chat/publishing.proto\"\xf1\x02\n" +
 	"\x03Bot\x12\x19\n" +
 	"\bbot_ptid\x18\x01 \x01(\tR\abotPtid\x12\x1d\n" +
 	"\n" +
 	"owner_ptid\x18\x02 \x01(\tR\townerPtid\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x128\n" +
-	"\x05state\x18\x04 \x01(\x0e2\".peers_touch.model.bot.v1.BotStateR\x05state\x12\x1d\n" +
-	"\n" +
-	"webhook_id\x18\x05 \x01(\tR\twebhookId\x12)\n" +
-	"\x10secret_delivered\x18\x06 \x01(\bR\x0fsecretDelivered\x12\x1f\n" +
-	"\vsecret_hint\x18\a \x01(\tR\n" +
-	"secretHint\x12Q\n" +
-	"\x0edelivery_scope\x18\b \x01(\x0e2*.peers_touch.model.bot.v1.BotDeliveryScopeR\rdeliveryScope\x121\n" +
-	"\x15rate_limit_per_minute\x18\t \x01(\x05R\x12rateLimitPerMinute\x12\"\n" +
-	"\rcreated_at_ms\x18\n" +
-	" \x01(\x03R\vcreatedAtMs\x12$\n" +
-	"\x0edisabled_at_ms\x18\v \x01(\x03R\fdisabledAtMs\x12\"\n" +
-	"\rrevoked_at_ms\x18\f \x01(\x03R\vrevokedAtMs\"N\n" +
+	"\x05state\x18\x04 \x01(\x0e2\".peers_touch.model.bot.v1.BotStateR\x05state\x12\\\n" +
+	"\x10publishing_grant\x18\r \x01(\v21.peers_touch.model.chat.v1.MessagePublishingGrantR\x0fpublishingGrantJ\x04\b\x05\x10\rR\n" +
+	"webhook_idR\x10secret_deliveredR\vsecret_hintR\x0edelivery_scopeR\x15rate_limit_per_minuteR\rcreated_at_msR\x0edisabled_at_msR\rrevoked_at_ms\"N\n" +
 	"\x10CreateBotRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
 	"\x06avatar\x18\x02 \x01(\tH\x00R\x06avatar\x88\x01\x01B\t\n" +
-	"\a_avatar\"\x90\x01\n" +
+	"\a_avatar\"\xa8\x01\n" +
 	"\x11CreateBotResponse\x12/\n" +
 	"\x03bot\x18\x01 \x01(\v2\x1d.peers_touch.model.bot.v1.BotR\x03bot\x12\x1f\n" +
-	"\vwebhook_url\x18\x02 \x01(\tR\n" +
-	"webhookUrl\x12)\n" +
-	"\x10secret_plaintext\x18\x03 \x01(\tR\x0fsecretPlaintext\"3\n" +
+	"\vingress_url\x18\x04 \x01(\tR\n" +
+	"ingressUrl\x12\x16\n" +
+	"\x06secret\x18\x05 \x01(\tR\x06secretJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04R\vwebhook_urlR\x10secret_plaintext\"3\n" +
 	"\x16RotateBotSecretRequest\x12\x19\n" +
-	"\bbot_ptid\x18\x01 \x01(\tR\abotPtid\"D\n" +
-	"\x17RotateBotSecretResponse\x12)\n" +
-	"\x10secret_plaintext\x18\x01 \x01(\tR\x0fsecretPlaintext\"v\n" +
+	"\bbot_ptid\x18\x01 \x01(\tR\abotPtid\"I\n" +
+	"\x17RotateBotSecretResponse\x12\x16\n" +
+	"\x06secret\x18\x02 \x01(\tR\x06secretJ\x04\b\x01\x10\x02R\x10secret_plaintext\"v\n" +
 	"\x12SetBotStateRequest\x12\x19\n" +
 	"\bbot_ptid\x18\x01 \x01(\tR\abotPtid\x12E\n" +
 	"\ftarget_state\x18\x02 \x01(\x0e2\".peers_touch.model.bot.v1.BotStateR\vtargetState\"F\n" +
@@ -794,10 +671,7 @@ const file_domain_bot_bot_proto_rawDesc = "" +
 	"\x0fBOT_STATE_DRAFT\x10\x01\x12\x14\n" +
 	"\x10BOT_STATE_ACTIVE\x10\x02\x12\x16\n" +
 	"\x12BOT_STATE_DISABLED\x10\x03\x12\x15\n" +
-	"\x11BOT_STATE_REVOKED\x10\x04*e\n" +
-	"\x10BotDeliveryScope\x12\"\n" +
-	"\x1eBOT_DELIVERY_SCOPE_UNSPECIFIED\x10\x00\x12!\n" +
-	"\x1dBOT_DELIVERY_SCOPE_OWNER_ONLY\x10\x01\"\x04\b\x02\x10\x02\"\x04\b\x03\x10\x03BIZGgithub.com/peers-labs/peers-touch/station/app/subserver/bot/model;modelb\x06proto3"
+	"\x11BOT_STATE_REVOKED\x10\x04BIZGgithub.com/peers-labs/peers-touch/station/app/subserver/bot/model;modelb\x06proto3"
 
 var (
 	file_domain_bot_bot_proto_rawDescOnce sync.Once
@@ -811,36 +685,36 @@ func file_domain_bot_bot_proto_rawDescGZIP() []byte {
 	return file_domain_bot_bot_proto_rawDescData
 }
 
-var file_domain_bot_bot_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_domain_bot_bot_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_domain_bot_bot_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_domain_bot_bot_proto_goTypes = []any{
-	(BotState)(0),                   // 0: peers_touch.model.bot.v1.BotState
-	(BotDeliveryScope)(0),           // 1: peers_touch.model.bot.v1.BotDeliveryScope
-	(*Bot)(nil),                     // 2: peers_touch.model.bot.v1.Bot
-	(*CreateBotRequest)(nil),        // 3: peers_touch.model.bot.v1.CreateBotRequest
-	(*CreateBotResponse)(nil),       // 4: peers_touch.model.bot.v1.CreateBotResponse
-	(*RotateBotSecretRequest)(nil),  // 5: peers_touch.model.bot.v1.RotateBotSecretRequest
-	(*RotateBotSecretResponse)(nil), // 6: peers_touch.model.bot.v1.RotateBotSecretResponse
-	(*SetBotStateRequest)(nil),      // 7: peers_touch.model.bot.v1.SetBotStateRequest
-	(*SetBotStateResponse)(nil),     // 8: peers_touch.model.bot.v1.SetBotStateResponse
-	(*ListMyBotsRequest)(nil),       // 9: peers_touch.model.bot.v1.ListMyBotsRequest
-	(*ListMyBotsResponse)(nil),      // 10: peers_touch.model.bot.v1.ListMyBotsResponse
-	(*SetBotProfileRequest)(nil),    // 11: peers_touch.model.bot.v1.SetBotProfileRequest
-	(*SetBotProfileResponse)(nil),   // 12: peers_touch.model.bot.v1.SetBotProfileResponse
+	(BotState)(0),                       // 0: peers_touch.model.bot.v1.BotState
+	(*Bot)(nil),                         // 1: peers_touch.model.bot.v1.Bot
+	(*CreateBotRequest)(nil),            // 2: peers_touch.model.bot.v1.CreateBotRequest
+	(*CreateBotResponse)(nil),           // 3: peers_touch.model.bot.v1.CreateBotResponse
+	(*RotateBotSecretRequest)(nil),      // 4: peers_touch.model.bot.v1.RotateBotSecretRequest
+	(*RotateBotSecretResponse)(nil),     // 5: peers_touch.model.bot.v1.RotateBotSecretResponse
+	(*SetBotStateRequest)(nil),          // 6: peers_touch.model.bot.v1.SetBotStateRequest
+	(*SetBotStateResponse)(nil),         // 7: peers_touch.model.bot.v1.SetBotStateResponse
+	(*ListMyBotsRequest)(nil),           // 8: peers_touch.model.bot.v1.ListMyBotsRequest
+	(*ListMyBotsResponse)(nil),          // 9: peers_touch.model.bot.v1.ListMyBotsResponse
+	(*SetBotProfileRequest)(nil),        // 10: peers_touch.model.bot.v1.SetBotProfileRequest
+	(*SetBotProfileResponse)(nil),       // 11: peers_touch.model.bot.v1.SetBotProfileResponse
+	(*chat.MessagePublishingGrant)(nil), // 12: peers_touch.model.chat.v1.MessagePublishingGrant
 }
 var file_domain_bot_bot_proto_depIdxs = []int32{
-	0, // 0: peers_touch.model.bot.v1.Bot.state:type_name -> peers_touch.model.bot.v1.BotState
-	1, // 1: peers_touch.model.bot.v1.Bot.delivery_scope:type_name -> peers_touch.model.bot.v1.BotDeliveryScope
-	2, // 2: peers_touch.model.bot.v1.CreateBotResponse.bot:type_name -> peers_touch.model.bot.v1.Bot
-	0, // 3: peers_touch.model.bot.v1.SetBotStateRequest.target_state:type_name -> peers_touch.model.bot.v1.BotState
-	2, // 4: peers_touch.model.bot.v1.SetBotStateResponse.bot:type_name -> peers_touch.model.bot.v1.Bot
-	2, // 5: peers_touch.model.bot.v1.ListMyBotsResponse.bots:type_name -> peers_touch.model.bot.v1.Bot
-	2, // 6: peers_touch.model.bot.v1.SetBotProfileResponse.bot:type_name -> peers_touch.model.bot.v1.Bot
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	0,  // 0: peers_touch.model.bot.v1.Bot.state:type_name -> peers_touch.model.bot.v1.BotState
+	12, // 1: peers_touch.model.bot.v1.Bot.publishing_grant:type_name -> peers_touch.model.chat.v1.MessagePublishingGrant
+	1,  // 2: peers_touch.model.bot.v1.CreateBotResponse.bot:type_name -> peers_touch.model.bot.v1.Bot
+	0,  // 3: peers_touch.model.bot.v1.SetBotStateRequest.target_state:type_name -> peers_touch.model.bot.v1.BotState
+	1,  // 4: peers_touch.model.bot.v1.SetBotStateResponse.bot:type_name -> peers_touch.model.bot.v1.Bot
+	1,  // 5: peers_touch.model.bot.v1.ListMyBotsResponse.bots:type_name -> peers_touch.model.bot.v1.Bot
+	1,  // 6: peers_touch.model.bot.v1.SetBotProfileResponse.bot:type_name -> peers_touch.model.bot.v1.Bot
+	7,  // [7:7] is the sub-list for method output_type
+	7,  // [7:7] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_domain_bot_bot_proto_init() }
@@ -855,7 +729,7 @@ func file_domain_bot_bot_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_bot_bot_proto_rawDesc), len(file_domain_bot_bot_proto_rawDesc)),
-			NumEnums:      2,
+			NumEnums:      1,
 			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
