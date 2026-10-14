@@ -19,7 +19,8 @@
     "apps/desktop",
     "tooling/acceptance/gates/desktop",
     "tooling/acceptance/provisioners/desktop_shell_native.py",
-    "tooling/acceptance/drivers/native"
+    "tooling/acceptance/drivers/native",
+    "tooling/skills/pt-github-review/FRESHNESS.md"
   ],
   "readSet": [
     "docs/architecture/engineering/acceptance",

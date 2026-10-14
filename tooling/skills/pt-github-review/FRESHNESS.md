@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-07
-covered_docs_hash: 857f93829dc273d8744c92c7080b38badbca3c2ca922dac7a733ef7cca45ae79
+last_verified_at: 2026-10-15
+covered_docs_hash: d1588fbb22b8d93cb5a085c4a57b56471b7782eba9cfcfec55a267a36d9355fb
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,15 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-15 Public API Documentation Index Review
+
+`docs/README.md` now routes external callers to the canonical `docs/api/`
+contracts and states that public HTTP contracts are defined there once. This
+clarifies documentation ownership without changing review severity, evidence
+requirements, or implementation boundaries. Existing single-source,
+API-contract, and documentation-consistency rules already cover the change, so
+no `SKILL.md` update, generic review fixture, or knowledge entry is required.
 
 ## 2026-10-07 Integrated Ownership Review
 
