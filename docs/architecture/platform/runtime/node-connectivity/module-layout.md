@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-10-10 | **Updated**: 2026-10-13
+> **Created**: 2026-10-10 | **Updated**: 2026-10-14
 > **Owner**: Architecture Team
 
 ## 1. Existing Extension Points
@@ -84,7 +84,7 @@ apps/desktop/src-tauri/src/
 | Server ingress adapter | TLS/HTTP2 and streaming loopback into existing Hertz router | new Gateway authority or copied handler registry |
 | Relay domain/application | enrolled node, grant and ACL projections | Actor/Session/Federation membership |
 | Relay library adapter | Circuit service and public resource/admission APIs | custom mount/tunnel reader |
-| Station Relay control | enrollment, standard reservation and signed route publication | custom transport heartbeat/reconnect |
+| Station Relay control | enrollment, standard reservation, signed route publication and bounded route-client sessions | custom transport heartbeat/reconnect |
 | Federation transport | verified route selection and typed peer request | Relay storage or domain policy duplication |
 | Events owner | durable sequencing, device filter and cross-node subscriber replay | Relay pubsub or business authority |
 | Agent owner | existing lease fencing and expired-owner recovery | global healthy-task settlement |
@@ -94,6 +94,7 @@ apps/desktop/src-tauri/src/
 | Desktop typed StationClient | request encoding, traffic class, closed route constraint and replay contract | mutable route selection or business retry invention |
 | Desktop resource port | transport-independent StationResourceRef and local projection contract | active route origin as resource identity |
 | Desktop transport owner | driver, bounded admission, route sessions, cancellation and join | Station binding mutation or Session state |
+| Desktop event-stream runtime | actor supervisor cancellation and bounded thread join | Station transport or route selection |
 | Desktop transport identity adapter | endpoint-scoped libp2p keys in platform secure storage | Actor, Session, logical Station identity or cross-Relay global identity |
 | Linux runtime owner | listeners, control TLS, quotas, exact source and cleanup | additional Relay host platform |
 
@@ -118,7 +119,7 @@ Tauri composition root
   -> application/station_runtime -> AppState StationRuntime
      -> Station Access binding coordinator -> immutable RouteLease
      -> typed StationClient -> transport owner
-        -> direct HTTPS adapter | Circuit v2 route session
+        -> standard libp2p Direct | Circuit v2 route session
      -> StationResourceRef -> native/cache/custom-URI adapter
 
 domain transaction -> durable events log -> cross-node wake/replay -> local SSE

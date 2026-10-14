@@ -10,17 +10,17 @@ use base64::Engine as _;
 use libp2p_identity::PublicKey;
 use prost::Message as _;
 use rand::RngCore;
-use reqwest::blocking::{Client, Response};
+use reqwest::blocking::Client;
 use reqwest::header::{
     HeaderName, HeaderValue, CONNECTION, CONTENT_LENGTH, HOST, TRANSFER_ENCODING,
 };
-use reqwest::{Method, Url};
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use station_libp2p_http::{
-    Request as StandardRequest, RequestBody as StandardRequestBody,
-    Response as StandardResponse, Route as StandardRoute, TrafficClass,
-    TransportHandle as StandardTransportHandle, TransportOwner as StandardTransportOwner,
+    Request as StandardRequest, RequestBody as StandardRequestBody, Response as StandardResponse,
+    Route as StandardRoute, TrafficClass, TransportHandle as StandardTransportHandle,
+    TransportOwner as StandardTransportOwner,
 };
 use station_trust::{verify_node_authorization_bytes, verify_station_route_attestation_bytes};
 use tauri::State;
@@ -39,14 +39,16 @@ mod peer_proto {
 
 use peer_proto::{
     AccessEndpointOutcome, AccessEndpointRequest, AccessEndpointResponse, AccessEndpointRole,
-    StationConnectionEnvelope, StationIdentityRequest, StationIdentityResponse,
-    StationIdentityStatement, StationRouteAttestation,
+    AccessEndpointSourceProof, AccessEndpointSourceProofStatement, StationConnectionEnvelope,
+    StationConnectionGrantStatement, StationIdentityRequest, StationIdentityResponse,
+    StationIdentityStatement, StationRouteAttestation, StationRouteKind, StationRouteStatement,
 };
 
 const ACCESS_PATH: &str = "/.well-known/peers-touch/access";
 const IDENTITY_PATH: &str = "/sub-bootstrap/station-identity";
 const PROTOBUF_CONTENT_TYPE: &str = "application/protobuf";
 const ACCESS_ENDPOINT_DOMAIN: &[u8] = b"peers-touch/access-endpoint/v1\0";
+const ACCESS_ENDPOINT_SOURCE_PROOF_DOMAIN: &[u8] = b"peers-touch/access-endpoint-source-proof/v1\0";
 const ACCESS_PROTOCOL_VERSION: u32 = 1;
 const CHALLENGE_SIZE: usize = 32;
 const CLOCK_SKEW_MS: i64 = 60_000;
@@ -337,8 +339,8 @@ impl RouteRuntime {
         if let Some(transport) = transport.as_ref() {
             return Ok(transport.handle.clone());
         }
-        let owner = StandardTransportOwner::start()
-            .map_err(|_| route_error("standardTransportStart"))?;
+        let owner =
+            StandardTransportOwner::start().map_err(|_| route_error("standardTransportStart"))?;
         let handle = owner.handle();
         *transport = Some(StandardTransportRuntime {
             _owner: owner,
@@ -474,11 +476,41 @@ fn discover_station_input(input: &str) -> MobileResult<VerifiedDiscovery> {
     let parsed = parse_input(input)?;
     let mut challenge = [0_u8; CHALLENGE_SIZE];
     rand::thread_rng().fill_bytes(&mut challenge);
+    let source_proof = match (
+        parsed.connection_grant.as_deref(),
+        parsed.relay_peer_id.as_deref(),
+    ) {
+        (Some(grant), Some(relay_peer_id)) => {
+            let statement = AccessEndpointSourceProofStatement {
+                challenge: challenge.to_vec(),
+                connection_grant_digest: Sha256::digest(grant).to_vec(),
+                relay_peer_id: relay_peer_id.to_string(),
+                client_protocol_version: ACCESS_PROTOCOL_VERSION,
+            };
+            let statement_bytes = statement.encode_to_vec();
+            let mut signed = Vec::with_capacity(
+                ACCESS_ENDPOINT_SOURCE_PROOF_DOMAIN.len() + statement_bytes.len(),
+            );
+            signed.extend_from_slice(ACCESS_ENDPOINT_SOURCE_PROOF_DOMAIN);
+            signed.extend_from_slice(&statement_bytes);
+            let proof = ROUTES
+                .standard_transport()?
+                .sign_identity_proof(&signed)
+                .map_err(|_| discovery_error("sourceProofUnavailable"))?;
+            Some(AccessEndpointSourceProof {
+                statement_bytes,
+                source_public_key: proof.public_key,
+                source_signature: proof.signature,
+            })
+        }
+        (None, None) => None,
+        _ => return Err(discovery_error("connectionMaterialInvalid")),
+    };
     let request = AccessEndpointRequest {
         challenge: challenge.to_vec(),
         connection_grant: parsed.connection_grant.clone().unwrap_or_default(),
         client_protocol_version: ACCESS_PROTOCOL_VERSION,
-        source_peer_id: ROUTES.standard_transport()?.client_peer_id().to_string(),
+        source_proof,
     };
     let endpoint = format!("{}{}", parsed.origin, ACCESS_PATH);
     let mut client = Client::builder()
@@ -555,9 +587,7 @@ fn verify_discovery_response(
 
     let (role, routes) = match role {
         AccessEndpointRole::DirectStation => {
-            if response.outcome != AccessEndpointOutcome::Ready as i32
-                || !response.station_routes.is_empty()
-                || connection_grant.is_some()
+            if response.outcome != AccessEndpointOutcome::Ready as i32 || connection_grant.is_some()
             {
                 return Err(discovery_error("directOutcomeInvalid"));
             }
@@ -575,30 +605,47 @@ fn verify_discovery_response(
             {
                 return Err(discovery_error("nodeAuthorizationMismatch"));
             }
-            let route_id =
-                direct_route_id(&verified_authorization.station_peer_id, &canonical_origin);
-            let source_ref = route_source_ref(&verified_authorization.station_peer_id, &route_id);
-            (
-                VerifiedEndpointRole::DirectStation,
-                vec![StationRouteCandidate {
-                    station_peer_id: verified_authorization.station_peer_id,
-                    node_peer_id: verified_authorization.node_peer_id,
-                    station_root_public_key: verified_authorization.station_root_public_key,
-                    node_authorization_digest: verified_authorization.authorization_digest.to_vec(),
-                    authorization_epoch: verified_authorization.authorization_epoch,
-                    route_id,
-                    route_type: StationRouteType::Direct,
-                    transport: "direct_https".to_string(),
-                    endpoint_origin: canonical_origin.clone(),
-                    relay_peer_id: None,
-                    route_generation: 1,
-                    inner_tls_spki_sha256: None,
-                    addresses: vec![canonical_origin.clone()],
-                    attestation_bytes: None,
-                    attestation_expires_at_unix_ms: Some(verified_authorization.expires_at_unix_ms),
-                    source_ref,
-                }],
-            )
+            let mut direct_routes = 0;
+            let mut routes = Vec::with_capacity(response.station_routes.len());
+            for attestation in &response.station_routes {
+                let statement =
+                    StationRouteStatement::decode(attestation.statement_bytes.as_slice())
+                        .map_err(|_| discovery_error("routeStatementInvalid"))?;
+                let expected_relay_peer_id = match StationRouteKind::try_from(statement.kind).ok() {
+                    Some(StationRouteKind::Direct) => {
+                        direct_routes += 1;
+                        None
+                    }
+                    Some(StationRouteKind::Circuit)
+                        if !statement.relay_peer_id.trim().is_empty() =>
+                    {
+                        Some(statement.relay_peer_id.as_str())
+                    }
+                    _ => return Err(discovery_error("routeKindInvalid")),
+                };
+                let route = verify_route_attestation(
+                    attestation,
+                    expected_relay_peer_id,
+                    &canonical_origin,
+                    now_unix_ms,
+                )?;
+                if route.station_peer_id != verified_authorization.station_peer_id
+                    || route.node_peer_id != verified_authorization.node_peer_id
+                    || route.station_root_public_key
+                        != verified_authorization.station_root_public_key
+                    || route.node_authorization_digest
+                        != verified_authorization.authorization_digest
+                    || route.authorization_epoch != verified_authorization.authorization_epoch
+                {
+                    return Err(discovery_error("routeAuthorizationMismatch"));
+                }
+                routes.push(route);
+            }
+            if direct_routes != 1 {
+                return Err(discovery_error("directRouteMissing"));
+            }
+            routes.sort_by_key(|route| route.route_type != StationRouteType::Direct);
+            (VerifiedEndpointRole::DirectStation, routes)
         }
         AccessEndpointRole::Relay => {
             if response.node_authorization.is_some()
@@ -611,7 +658,7 @@ fn verify_discovery_response(
             for attestation in &response.station_routes {
                 routes.push(verify_route_attestation(
                     attestation,
-                    &statement.endpoint_peer_id,
+                    Some(&statement.endpoint_peer_id),
                     &canonical_origin,
                     now_unix_ms,
                 )?);
@@ -654,23 +701,29 @@ fn verify_relay_outcome(response: &AccessEndpointResponse) -> MobileResult<()> {
         Some(AccessEndpointOutcome::InvalidStationAttestation) => {
             Err(route_error("attestationInvalid"))
         }
+        Some(AccessEndpointOutcome::SourceProofInvalid) => Err(route_error("sourceProofInvalid")),
         _ => Err(discovery_error("relayOutcomeInvalid")),
     }
 }
 
 fn verify_route_attestation(
     attestation: &StationRouteAttestation,
-    relay_peer_id: &str,
-    relay_origin: &str,
+    expected_relay_peer_id: Option<&str>,
+    endpoint_origin: &str,
     now_unix_ms: i64,
 ) -> MobileResult<StationRouteCandidate> {
     let attestation_bytes = attestation.encode_to_vec();
     let verified = verify_station_route_attestation_bytes(
         &attestation_bytes,
-        Some(relay_peer_id),
+        expected_relay_peer_id,
         now_unix_ms,
     )
     .map_err(|_| route_error("attestationInvalid"))?;
+    let route_type = if verified.relay_peer_id.is_some() {
+        StationRouteType::Relay
+    } else {
+        StationRouteType::Direct
+    };
     let source_ref = route_source_ref(&verified.station_peer_id, &verified.route_id);
     Ok(StationRouteCandidate {
         station_peer_id: verified.station_peer_id,
@@ -679,10 +732,10 @@ fn verify_route_attestation(
         node_authorization_digest: verified.authorization_digest.to_vec(),
         authorization_epoch: verified.authorization_epoch,
         route_id: verified.route_id,
-        route_type: StationRouteType::Relay,
+        route_type,
         transport: "libp2p_http_v1".to_string(),
-        endpoint_origin: relay_origin.to_string(),
-        relay_peer_id: Some(relay_peer_id.to_string()),
+        endpoint_origin: endpoint_origin.to_string(),
+        relay_peer_id: verified.relay_peer_id,
         route_generation: verified.route_generation,
         inner_tls_spki_sha256: Some(verified.inner_tls_spki_sha256.to_vec()),
         addresses: verified.addresses,
@@ -716,6 +769,7 @@ fn verify_signed_statement(
 struct ParsedInput {
     origin: String,
     connection_grant: Option<Vec<u8>>,
+    relay_peer_id: Option<String>,
 }
 
 fn parse_input(input: &str) -> MobileResult<ParsedInput> {
@@ -736,32 +790,32 @@ fn parse_input(input: &str) -> MobileResult<ParsedInput> {
         {
             return Err(discovery_error("connectionMaterialIncomplete"));
         }
+        let grant = envelope
+            .connection_grant
+            .as_ref()
+            .ok_or_else(|| discovery_error("connectionMaterialIncomplete"))?;
+        let grant_statement =
+            StationConnectionGrantStatement::decode(grant.statement_bytes.as_slice())
+                .map_err(|_| discovery_error("connectionMaterialInvalid"))?;
+        if grant_statement.relay_peer_id.trim().is_empty() {
+            return Err(discovery_error("connectionMaterialInvalid"));
+        }
         return Ok(ParsedInput {
             origin: normalize_origin(&envelope.relay_origin)?,
-            connection_grant: envelope
-                .connection_grant
-                .as_ref()
-                .map(prost::Message::encode_to_vec),
+            connection_grant: Some(grant.encode_to_vec()),
+            relay_peer_id: Some(grant_statement.relay_peer_id),
         });
     }
     Ok(ParsedInput {
         origin: normalize_origin(value)?,
         connection_grant: None,
+        relay_peer_id: None,
     })
 }
 
 fn normalize_origin(value: &str) -> MobileResult<String> {
     normalize_station_origin(value, StationOriginPolicy::current_build())
         .map_err(|_| discovery_error("originInvalid"))
-}
-
-fn direct_route_id(station_peer_id: &str, origin: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(b"peers-touch/direct-route/v1\0");
-    hasher.update(station_peer_id.as_bytes());
-    hasher.update([0]);
-    hasher.update(origin.as_bytes());
-    format!("direct-{}", hex::encode(hasher.finalize()))
 }
 
 fn route_source_ref(station_peer_id: &str, route_id: &str) -> String {
@@ -935,26 +989,16 @@ fn serve_proxy_connection(mut connection: TcpStream) -> MobileResult<()> {
         .and_then(|_| connection.set_write_timeout(Some(timeout)))
         .map_err(|_| route_error("proxyTimeout"))?;
     let request = read_http_request(&mut connection)?;
-    match route.candidate.route_type {
-        StationRouteType::Direct => forward_direct(&mut connection, &route, &request, timeout),
-        StationRouteType::Relay => match open_standard_response(&route, &request) {
-            Ok(response) => write_standard_response(&mut connection, &route, response),
-            Err(_) => {
-                if !request_allows_automatic_failover(&request) {
-                    return Err(route_error("standardRoundTrip"));
-                }
-                let alternate = ROUTES.activate_alternate(&route)?;
-                match alternate.candidate.route_type {
-                    StationRouteType::Direct => {
-                        forward_direct(&mut connection, &alternate, &request, timeout)
-                    }
-                    StationRouteType::Relay => {
-                        let response = open_standard_response(&alternate, &request)?;
-                        write_standard_response(&mut connection, &alternate, response)
-                    }
-                }
+    match open_standard_response(&route, &request) {
+        Ok(response) => write_standard_response(&mut connection, &route, response),
+        Err(_) => {
+            if !request_allows_automatic_failover(&request) {
+                return Err(route_error("standardRoundTrip"));
             }
-        },
+            let alternate = ROUTES.activate_alternate(&route)?;
+            let response = open_standard_response(&alternate, &request)?;
+            write_standard_response(&mut connection, &alternate, response)
+        }
     }
 }
 
@@ -968,9 +1012,7 @@ fn request_allows_automatic_failover(request: &[u8]) -> bool {
 }
 
 fn standard_route(route: &ActiveRoute) -> MobileResult<StandardRoute> {
-    if route.candidate.route_type != StationRouteType::Relay
-        || route.candidate.transport != "libp2p_http_v1"
-    {
+    if route.candidate.transport != "libp2p_http_v1" {
         return Err(route_error("standardRouteInvalid"));
     }
     let inner_tls_spki_sha256 = route
@@ -983,9 +1025,12 @@ fn standard_route(route: &ActiveRoute) -> MobileResult<StandardRoute> {
         .candidate
         .addresses
         .iter()
-        .find(|address| address.contains("/p2p-circuit/"))
+        .find(|address| {
+            address.contains("/p2p-circuit/")
+                == (route.candidate.route_type == StationRouteType::Relay)
+        })
         .cloned()
-        .ok_or_else(|| route_error("circuitAddressMissing"))?;
+        .ok_or_else(|| route_error("standardAddressMissing"))?;
     Ok(StandardRoute {
         node_peer_id: route.candidate.node_peer_id.clone(),
         dial_multiaddr,
@@ -1063,32 +1108,6 @@ fn write_standard_response(
     }
 }
 
-fn forward_direct(
-    connection: &mut TcpStream,
-    route: &ActiveRoute,
-    request: &[u8],
-    timeout: Duration,
-) -> MobileResult<()> {
-    let parsed = parse_proxy_request(&request)?;
-    let target = Url::parse(&route.candidate.endpoint_origin)
-        .and_then(|base| base.join(&parsed.target))
-        .map_err(|_| route_error("directOriginInvalid"))?;
-    let client = Client::builder()
-        .timeout(timeout)
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|_| route_error("directClient"))?;
-    let mut outgoing = client.request(parsed.method, target);
-    for (name, value) in parsed.headers {
-        outgoing = outgoing.header(name, value);
-    }
-    let mut response = outgoing
-        .body(parsed.body)
-        .send()
-        .map_err(|_| route_error("directUnavailable"))?;
-    write_proxy_response(connection, route, &mut response)
-}
-
 struct ParsedProxyRequest {
     method: Method,
     target: String,
@@ -1138,43 +1157,6 @@ fn parse_proxy_request(request: &[u8]) -> MobileResult<ParsedProxyRequest> {
         headers: forwarded,
         body: request[header_end + 4..].to_vec(),
     })
-}
-
-fn write_proxy_response(
-    connection: &mut TcpStream,
-    route: &ActiveRoute,
-    response: &mut Response,
-) -> MobileResult<()> {
-    write!(
-        connection,
-        "HTTP/1.1 {} {}\r\n",
-        response.status().as_u16(),
-        response.status().canonical_reason().unwrap_or("")
-    )
-    .map_err(|_| route_error("proxyWrite"))?;
-    for (name, value) in response.headers() {
-        if matches!(name, &CONNECTION | &CONTENT_LENGTH | &TRANSFER_ENCODING) {
-            continue;
-        }
-        let value = value.to_str().map_err(|_| route_error("responseInvalid"))?;
-        write!(connection, "{}: {}\r\n", name.as_str(), value)
-            .map_err(|_| route_error("proxyWrite"))?;
-    }
-    write!(connection, "Connection: close\r\n\r\n").map_err(|_| route_error("proxyWrite"))?;
-    let mut buffer = [0_u8; 8192];
-    loop {
-        let count = response
-            .read(&mut buffer)
-            .map_err(|_| route_error("directRead"))?;
-        if count == 0 {
-            return Ok(());
-        }
-        ROUTES.assert_current(route)?;
-        connection
-            .write_all(&buffer[..count])
-            .and_then(|_| connection.flush())
-            .map_err(|_| route_error("proxyWrite"))?;
-    }
 }
 
 fn read_http_request(stream: &mut TcpStream) -> MobileResult<Vec<u8>> {
@@ -1328,7 +1310,11 @@ mod tests {
                 node_authorization: None,
             }),
             connection_grant: Some(peer_proto::StationConnectionGrant {
-                statement_bytes: vec![4],
+                statement_bytes: StationConnectionGrantStatement {
+                    relay_peer_id: "relay-peer".to_string(),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
                 node_signature: vec![5],
                 node_authorization: None,
             }),
@@ -1337,6 +1323,7 @@ mod tests {
         let parsed = parse_input(&encoded).expect("connection material");
         assert_eq!(parsed.origin, "https://relay.example:443");
         assert!(parsed.connection_grant.is_some());
+        assert_eq!(parsed.relay_peer_id.as_deref(), Some("relay-peer"));
     }
 
     #[test]
@@ -1348,7 +1335,7 @@ mod tests {
     }
 
     #[test]
-    fn standard_route_requires_transport_circuit_address_and_tls_pin() {
+    fn standard_route_requires_transport_matching_address_and_tls_pin() {
         let mut route = ActiveRoute {
             candidate: StationRouteCandidate {
                 station_peer_id: "station-a".to_string(),
@@ -1384,6 +1371,15 @@ mod tests {
             .push("/dns4/relay.example/tcp/4001/p2p/relay-a/p2p-circuit/p2p/node-a".to_string());
         route.candidate.inner_tls_spki_sha256 = None;
         assert!(standard_route(&route).is_err());
+
+        route.candidate.route_type = StationRouteType::Direct;
+        route.candidate.relay_peer_id = None;
+        route.candidate.inner_tls_spki_sha256 = Some(vec![3; 32]);
+        route.candidate.addresses = vec!["/dns4/station.example/tcp/4001/p2p/node-a".to_string()];
+        assert!(standard_route(&route).is_ok());
+        route.candidate.addresses =
+            vec!["/dns4/relay.example/tcp/4001/p2p/relay-a/p2p-circuit/p2p/node-a".to_string()];
+        assert!(standard_route(&route).is_err());
     }
 
     #[test]
@@ -1397,13 +1393,13 @@ mod tests {
             authorization_epoch: 1,
             route_id: "direct-b".to_string(),
             route_type: StationRouteType::Direct,
-            transport: "direct_https".to_string(),
+            transport: "libp2p_http_v1".to_string(),
             endpoint_origin: "https://station.example".to_string(),
             relay_peer_id: None,
             route_generation: 1,
-            inner_tls_spki_sha256: None,
-            addresses: vec!["https://station.example".to_string()],
-            attestation_bytes: None,
+            inner_tls_spki_sha256: Some(vec![4; 32]),
+            addresses: vec!["/dns4/station.example/tcp/4001/p2p/node-b".to_string()],
+            attestation_bytes: Some(vec![4]),
             attestation_expires_at_unix_ms: Some(i64::MAX),
             source_ref: "source-b".to_string(),
         };
@@ -1455,6 +1451,18 @@ mod tests {
         assert!(!request_allows_automatic_failover(
             b"POST /conversation HTTP/1.1\r\nHost: station\r\nContent-Length: 2\r\n\r\n{}"
         ));
+    }
+
+    #[test]
+    fn direct_and_circuit_share_one_standard_data_plane() {
+        let production = include_str!("station_route.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production route source");
+
+        assert!(!production.contains("direct_https"));
+        assert!(!production.contains("forward_direct"));
+        assert!(production.contains("open_standard_response(&route, &request)"));
     }
 
     fn read_http_request_from_bytes(bytes: &[u8]) -> MobileResult<Vec<u8>> {

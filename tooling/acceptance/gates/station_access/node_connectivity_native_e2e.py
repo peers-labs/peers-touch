@@ -209,12 +209,68 @@ class NodeConnectivityNativeGate(
 
         alice = self.clients["alice"]
         bob = self.clients["bob"]
-        proxy = DirectRouteFaultProxy(direct_url)
+        initial = station_registry_snapshot(alice)
+        routes = initial.get("routes")
+        if not isinstance(routes, list):
+            raise GateError("Alice Station registry omitted verified routes")
+        direct_routes = [
+            dict(route)
+            for route in routes
+            if isinstance(route, Mapping)
+            and route.get("route_type") == "direct"
+            and len(
+                [
+                    address
+                    for address in route.get("addresses", [])
+                    if isinstance(address, str)
+                    and "/p2p-circuit/" not in address
+                ]
+            )
+            == 1
+        ]
+        if len(direct_routes) != 1:
+            raise GateError(
+                "Alice must expose exactly one signed Direct multiaddr"
+            )
+        direct_route = direct_routes[0]
+        direct_route_id = str(direct_route.get("route_id") or "")
+        if not direct_route_id:
+            raise GateError("Alice signed Direct route omitted route identity")
+        if initial.get("activeRouteId") != direct_route_id:
+            alice.invoke_app_result(
+                "station_set_active",
+                {
+                    "input": {
+                        "station_peer_id": initial["stationPeerId"],
+                        "route_id": direct_route_id,
+                    }
+                },
+            )
+            initial = station_registry_snapshot(alice)
+        initial_route = _mapping(
+            initial.get("route"),
+            "Alice Direct route",
+        )
+        direct_addresses = [
+            str(address)
+            for address in initial_route.get("addresses", [])
+            if isinstance(address, str)
+            and "/p2p-circuit/" not in address
+        ]
+        if (
+            initial.get("activeRouteId") != direct_route_id
+            or initial_route.get("route_type") != "direct"
+            or len(direct_addresses) != 1
+        ):
+            raise GateError(
+                "Alice must expose exactly one signed Direct multiaddr"
+            )
+        proxy = DirectRouteFaultProxy(direct_addresses[0])
         proxy.start()
         override = self.runtime_binding.create_transport_override(
             "alice",
             "station",
-            proxy.url,
+            proxy.multiaddr,
         )
         try:
             self.runtime_binding.apply_verified_direct_route_override(

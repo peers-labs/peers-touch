@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/federation/locator.proto.
  */
 export const file_domain_federation_locator: GenFile = /*@__PURE__*/
-  fileDesc("Ch9kb21haW4vZmVkZXJhdGlvbi9sb2NhdG9yLnByb3RvEh9wZWVyc190b3VjaC5tb2RlbC5mZWRlcmF0aW9uLnYxIo0DChJBY3RvckxvY2F0b3JSZWNvcmQSKgoQZmVkZXJhdGVkX2hhbmRsZRgBIAEoCVIQZmVkZXJhdGVkX2hhbmRsZRIyChRob21lX3N0YXRpb25fcGVlcl9pZBgCIAEoCVIUaG9tZV9zdGF0aW9uX3BlZXJfaWQSMAoTaG9tZV9zdGF0aW9uX2RvbWFpbhgDIAEoCVITaG9tZV9zdGF0aW9uX2RvbWFpbhIuChJpbmJveF9yZWxheV9tb3VudHMYBCADKAlSEmluYm94X3JlbGF5X21vdW50cxIRCgl0b21ic3RvbmUYBSABKAgSCwoDc2VxGAYgASgEEi4KEnVwZGF0ZWRfYXRfdW5peF9tcxgHIAEoA1ISdXBkYXRlZF9hdF91bml4X21zEhEKCXNpZ25hdHVyZRgIIAEoDBIoCg9zaWduaW5nX2tleV9wZW0YCSABKAlSD3NpZ25pbmdfa2V5X3BlbRIoCg9zaWduaW5nX2tleV9raWQYCiABKAlSD3NpZ25pbmdfa2V5X2tpZEJdWltnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS9jb3JlL3BsdWdpbi9uYXRpdmUvZmVkZXJhdGlvbi9sb2NhdG9yL3BiO3BiYgZwcm90bzM");
+  fileDesc("Ch9kb21haW4vZmVkZXJhdGlvbi9sb2NhdG9yLnByb3RvEh9wZWVyc190b3VjaC5tb2RlbC5mZWRlcmF0aW9uLnYxIuMCChJBY3RvckxvY2F0b3JSZWNvcmQSKgoQZmVkZXJhdGVkX2hhbmRsZRgBIAEoCVIQZmVkZXJhdGVkX2hhbmRsZRIyChRob21lX3N0YXRpb25fcGVlcl9pZBgCIAEoCVIUaG9tZV9zdGF0aW9uX3BlZXJfaWQSMAoTaG9tZV9zdGF0aW9uX2RvbWFpbhgDIAEoCVITaG9tZV9zdGF0aW9uX2RvbWFpbhIRCgl0b21ic3RvbmUYBSABKAgSCwoDc2VxGAYgASgEEi4KEnVwZGF0ZWRfYXRfdW5peF9tcxgHIAEoA1ISdXBkYXRlZF9hdF91bml4X21zEhEKCXNpZ25hdHVyZRgIIAEoDBIoCg9zaWduaW5nX2tleV9wZW0YCSABKAlSD3NpZ25pbmdfa2V5X3BlbRIoCg9zaWduaW5nX2tleV9raWQYCiABKAlSD3NpZ25pbmdfa2V5X2tpZEoECAQQBUJdWltnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS9jb3JlL3BsdWdpbi9uYXRpdmUvZmVkZXJhdGlvbi9sb2NhdG9yL3BiO3BiYgZwcm90bzM");
 
 /**
  * ActorLocatorRecord is the on-the-wire shape of a signed locator pointer
@@ -52,23 +52,13 @@ export type ActorLocatorRecord = Message<"peers_touch.model.federation.v1.ActorL
   homeStationPeerId: string;
 
   /**
-   * Stable HTTP origin of the home station, no scheme. Receivers MUST NOT
-   * dial this directly across the federation; instead it is fed through
-   * a scoped opaque Relay tunnel to `home_station_peer_id` so NAT-bound stations
-   * remain reachable.
+   * Stable HTTP origin of the home station, no scheme. It is an identity hint,
+   * never a transport target. Receivers resolve `home_station_peer_id` through
+   * the verified Node Connectivity route registry.
    *
    * @generated from field: string home_station_domain = 3 [json_name = "home_station_domain"];
    */
   homeStationDomain: string;
-
-  /**
-   * Optional list of relay-mount labels through which this actor's home
-   * station is reachable today. Pure hint — the resolver still authoritatively
-   * looks up the live mount table from the relay before forwarding.
-   *
-   * @generated from field: repeated string inbox_relay_mounts = 4 [json_name = "inbox_relay_mounts"];
-   */
-  inboxRelayMounts: string[];
 
   /**
    * Tombstone flag. When true, the record is a withdrawal: receivers MUST

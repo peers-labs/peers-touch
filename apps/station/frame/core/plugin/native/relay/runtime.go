@@ -147,6 +147,7 @@ func (r *Runtime) Close() error {
 	if r.control != nil {
 		RegisterConnectionMaterialIssuer(nil)
 		nativeFederation.ClearRelayAccess()
+		r.control.close()
 		r.control = nil
 	}
 	r.host = nil

@@ -31,6 +31,22 @@ covered_docs:
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
 
+## 2026-10-14 Cross-Branch Preservation Review
+
+Parallel worktree review exposed a delivery gap: a PR's three-dot diff and green
+checks do not prove that the prospective merge tree preserves behavior already
+landed on its target branch. The GitHub Review Skill now requires overlap
+classification as `PRESERVED`, `INTENTIONALLY_SUPERSEDED`, or `UNPROVEN`, checks
+both coverage loss and unjustified deletion/weakening, and uses `range-diff`
+after an actual rebase or cherry-pick.
+
+This is review judgment over the final merged source. It reuses
+`pt-branch-conflict-guardian` for semantic conflict evidence and
+`pt-code-structure-review` for duplicate-owner and incomplete-cutover findings.
+It does not introduce a new Skill, Plan field, worktree-order model, scheduler,
+PR state, or CI authority. Canonical marker checks in `skill-check.sh` cover the
+new behavior; no generic code fixture is required.
+
 ## 2026-10-14 Node Connectivity And Relay Review
 
 The reviewed architecture now replaces the custom WSS/mount data plane with

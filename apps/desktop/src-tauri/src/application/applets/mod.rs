@@ -8290,10 +8290,6 @@ mod tests {
             fn active_endpoint_origin(&self) -> Option<String> {
                 Some(self.origin.clone())
             }
-
-            fn authority_endpoint_origin(&self, _station_peer_id: &str) -> Result<String, String> {
-                Ok(self.origin.clone())
-            }
         }
 
         let listener = TcpListener::bind("127.0.0.1:0").expect("agent task fixture should bind");

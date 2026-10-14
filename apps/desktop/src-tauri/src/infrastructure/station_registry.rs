@@ -6,7 +6,7 @@ use std::sync::RwLock;
 
 use crate::infrastructure::station_discovery::VerifiedStationRoute;
 
-const REGISTRY_VERSION: u32 = 3;
+const REGISTRY_VERSION: u32 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -243,6 +243,14 @@ impl StationRegistry {
             .write()
             .expect("StationRegistry write lock poisoned");
         let mut next = state.clone();
+        if let Some(generation) = next
+            .entries
+            .iter()
+            .find(|entry| entry.station_peer_id == route.station_peer_id)
+            .map(|entry| entry.lifecycle_generation)
+        {
+            retain_lifecycle_generation(&mut next, &route.station_peer_id, generation);
+        }
         if let Some(entry) = next
             .entries
             .iter_mut()
@@ -308,6 +316,8 @@ impl StationRegistry {
             }
             entry.updated_at = now;
         } else {
+            let lifecycle_generation =
+                allocate_lifecycle_generation(&mut next, &route.station_peer_id);
             next.entries.push(StationEntry {
                 station_peer_id: route.station_peer_id.clone(),
                 display_name,
@@ -316,7 +326,7 @@ impl StationRegistry {
                 candidate_route_refreshes: Vec::new(),
                 active_route_id: route.route_id.clone(),
                 route_revision: 1,
-                lifecycle_generation: 1,
+                lifecycle_generation,
                 created_at: now.clone(),
                 updated_at: now,
             });
@@ -475,6 +485,8 @@ impl StationRegistry {
                             "Station has no current verified route",
                         )
                     })?;
+                let lifecycle_generation =
+                    allocate_lifecycle_generation(&mut next, station_peer_id);
                 let entry = StationEntry {
                     station_peer_id: station_peer_id.to_string(),
                     display_name: None,
@@ -483,7 +495,7 @@ impl StationRegistry {
                     candidate_route_refreshes: Vec::new(),
                     active_route_id: selected_route_id,
                     route_revision: 1,
-                    lifecycle_generation: 1,
+                    lifecycle_generation,
                     created_at: now.clone(),
                     updated_at: now.clone(),
                 };
@@ -574,6 +586,11 @@ impl StationRegistry {
         }
         entry.updated_at = now_rfc3339();
         let selected = entry.clone();
+        retain_lifecycle_generation(
+            &mut next,
+            &candidate.station_peer_id,
+            selected.lifecycle_generation,
+        );
         next.active_station_peer_id = Some(candidate.station_peer_id.clone());
         self.persist(&next)?;
         *state = next;
@@ -637,8 +654,9 @@ impl StationRegistry {
             entry.lifecycle_generation = entry.lifecycle_generation.saturating_add(1);
         }
         entry.updated_at = now_rfc3339();
-        next.active_station_peer_id = Some(station_peer_id.to_string());
         let selected = entry.clone();
+        retain_lifecycle_generation(&mut next, station_peer_id, selected.lifecycle_generation);
+        next.active_station_peer_id = Some(station_peer_id.to_string());
         self.persist(&next)?;
         *state = next;
         Ok(selected)
@@ -692,6 +710,14 @@ impl StationRegistry {
             .write()
             .expect("StationRegistry write lock poisoned");
         let mut next = state.clone();
+        if let Some(generation) = next
+            .entries
+            .iter()
+            .find(|entry| entry.station_peer_id == station_peer_id)
+            .map(|entry| entry.lifecycle_generation)
+        {
+            retain_lifecycle_generation(&mut next, station_peer_id, generation);
+        }
         next.entries
             .retain(|entry| entry.station_peer_id != station_peer_id);
         next.federation_signing_key_pins.remove(station_peer_id);
@@ -900,6 +926,8 @@ struct PersistedData {
     active_station_peer_id: Option<String>,
     #[serde(default)]
     federation_signing_key_pins: HashMap<String, PersistedFederationSigningKeyPin>,
+    #[serde(default)]
+    lifecycle_generations: HashMap<String, u64>,
 }
 
 impl Default for PersistedData {
@@ -909,6 +937,7 @@ impl Default for PersistedData {
             entries: Vec::new(),
             active_station_peer_id: None,
             federation_signing_key_pins: HashMap::new(),
+            lifecycle_generations: HashMap::new(),
         }
     }
 }
@@ -961,7 +990,37 @@ impl PersistedData {
                     .iter()
                     .any(|entry| entry.station_peer_id == *station_peer_id)
             });
+        for entry in &self.entries {
+            self.lifecycle_generations
+                .entry(entry.station_peer_id.clone())
+                .and_modify(|generation| {
+                    *generation = (*generation).max(entry.lifecycle_generation)
+                })
+                .or_insert(entry.lifecycle_generation);
+        }
     }
+}
+
+fn allocate_lifecycle_generation(state: &mut PersistedData, station_peer_id: &str) -> u64 {
+    let generation = state
+        .lifecycle_generations
+        .get(station_peer_id)
+        .copied()
+        .unwrap_or(0)
+        .saturating_add(1)
+        .max(1);
+    state
+        .lifecycle_generations
+        .insert(station_peer_id.to_string(), generation);
+    generation
+}
+
+fn retain_lifecycle_generation(state: &mut PersistedData, station_peer_id: &str, generation: u64) {
+    state
+        .lifecycle_generations
+        .entry(station_peer_id.to_string())
+        .and_modify(|current| *current = (*current).max(generation))
+        .or_insert(generation);
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -977,7 +1036,12 @@ fn validate_verified_route(route: &VerifiedStationRoute) -> io::Result<()> {
         || route.node_authorization_digest.len() != 32
         || route.authorization_epoch == 0
         || route.route_id.trim().is_empty()
+        || route.route_generation == 0
         || route.endpoint_origin.trim().is_empty()
+        || route.inner_tls_spki_sha256.is_none()
+        || route.addresses.is_empty()
+        || route.attestation_bytes.as_ref().is_none_or(Vec::is_empty)
+        || route.expires_at_unix_ms.is_none()
     {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -999,11 +1063,7 @@ fn route_candidate(route: &VerifiedStationRoute, now: &str) -> StationRouteCandi
         authorization_epoch: route.authorization_epoch,
         route_id: route.route_id.clone(),
         route_type,
-        transport: match route_type {
-            StationRouteType::Direct => "direct_https",
-            StationRouteType::Relay => "libp2p_http_v1",
-        }
-        .to_string(),
+        transport: "libp2p_http_v1".to_string(),
         endpoint_origin: normalize_origin(&route.endpoint_origin),
         relay_peer_id: route.relay_peer_id.clone(),
         route_generation: route.route_generation,
@@ -1163,21 +1223,28 @@ mod tests {
     }
 
     fn route(station: &str, id: &str, origin: &str, relay: bool) -> VerifiedStationRoute {
+        let node_peer_id = "12D3KooWGo2HxmjfSQZKTheDEbgDBpSuhUxTNsr8DnTkXCDzdaZL".to_string();
+        let relay_peer_id = "12D3KooWLpZy2EgZ6SC2pgJFHjM13j1ygz7DXCfm9HiPeNQZ1uaW".to_string();
+        let address = if relay {
+            format!("/ip4/127.0.0.1/tcp/4501/p2p/{relay_peer_id}/p2p-circuit/p2p/{node_peer_id}")
+        } else {
+            format!("/ip4/127.0.0.1/tcp/4500/p2p/{node_peer_id}")
+        };
         VerifiedStationRoute {
             station_peer_id: station.to_string(),
-            node_peer_id: format!("{station}-node"),
+            node_peer_id,
             station_root_public_key: vec![1, 2, 3],
             node_authorization_digest: [4; 32],
             authorization_epoch: 1,
             route_id: id.to_string(),
             route_generation: 1,
             endpoint_origin: origin.to_string(),
-            relay_peer_id: relay.then(|| "relay-peer".to_string()),
-            inner_tls_spki_sha256: relay.then_some([7; 32]),
-            addresses: vec![origin.to_string()],
-            attestation_bytes: relay.then(|| vec![8, 9]),
+            relay_peer_id: relay.then_some(relay_peer_id),
+            inner_tls_spki_sha256: Some([7; 32]),
+            addresses: vec![address],
+            attestation_bytes: Some(vec![8, 9]),
             connection_grant: None,
-            expires_at_unix_ms: relay.then_some(i64::MAX),
+            expires_at_unix_ms: Some(i64::MAX),
         }
     }
 
@@ -1579,6 +1646,33 @@ mod tests {
     }
 
     #[test]
+    fn remove_and_readd_advances_lifecycle_generation_across_restart() {
+        with_seed(None, || {
+            let config_dir = temp_dir("station-readd-generation");
+            let station_route = route(
+                "station-one",
+                "station-one-route",
+                "https://station-one.example",
+                false,
+            );
+            let registry = StationRegistry::new(&config_dir);
+            let first = registry
+                .upsert_verified_route(&station_route, None)
+                .unwrap();
+            registry.set_active_station("station-one").unwrap();
+            registry.remove("station-one").unwrap();
+            drop(registry);
+
+            let restarted = StationRegistry::new(&config_dir);
+            let readded = restarted
+                .upsert_verified_route(&station_route, None)
+                .unwrap();
+
+            assert!(readded.lifecycle_generation > first.lifecycle_generation);
+        });
+    }
+
+    #[test]
     fn rejects_pre_root_identity_registry_schema() {
         with_seed(None, || {
             let dir = temp_dir("stale-schema");
@@ -1595,6 +1689,50 @@ mod tests {
                 }"#,
             )
             .unwrap();
+            let registry = StationRegistry::new(&dir);
+            assert!(registry.list().is_empty());
+            assert_eq!(registry.active_station_peer_id(), None);
+        });
+    }
+
+    #[test]
+    fn rejects_registry_schema_with_unsigned_direct_routes() {
+        with_seed(None, || {
+            let dir = temp_dir("unsigned-direct-schema");
+            let now = now_rfc3339();
+            let mut insecure = route_candidate(
+                &route("station-one", "direct-1", "https://station.example", false),
+                &now,
+            );
+            insecure.transport = "direct_https".to_string();
+            insecure.inner_tls_spki_sha256 = None;
+            insecure.addresses = vec!["https://station.example".to_string()];
+            insecure.attestation_bytes = None;
+            insecure.attestation_expires_at_unix_ms = None;
+            let state = PersistedData {
+                version: 3,
+                entries: vec![StationEntry {
+                    station_peer_id: "station-one".to_string(),
+                    display_name: None,
+                    pinned_station_root_public_key: vec![1, 2, 3],
+                    routes: vec![insecure],
+                    candidate_route_refreshes: Vec::new(),
+                    active_route_id: "direct-1".to_string(),
+                    route_revision: 1,
+                    lifecycle_generation: 1,
+                    created_at: now.clone(),
+                    updated_at: now,
+                }],
+                active_station_peer_id: Some("station-one".to_string()),
+                federation_signing_key_pins: HashMap::new(),
+                lifecycle_generations: HashMap::new(),
+            };
+            std::fs::write(
+                dir.join("stations.json"),
+                serde_json::to_vec(&state).unwrap(),
+            )
+            .unwrap();
+
             let registry = StationRegistry::new(&dir);
             assert!(registry.list().is_empty());
             assert_eq!(registry.active_station_peer_id(), None);

@@ -8,7 +8,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-func TestAdmissionFailsClosedAndConsumesPrivatePermit(t *testing.T) {
+func TestAdmissionFailsClosedAndDoesNotPreConsumePrivatePermit(t *testing.T) {
 	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
 	admission := NewAdmission()
 	admission.now = func() time.Time { return now }
@@ -41,10 +41,10 @@ func TestAdmissionFailsClosedAndConsumesPrivatePermit(t *testing.T) {
 		t.Fatal("private destination accepted a connection without a permit")
 	}
 	if err := admission.Permit(ConnectPermit{
+		PermitID:          "permit-a",
 		SourcePeerID:      source,
 		DestinationPeerID: destination,
 		Generation:        7,
-		RemainingUses:     1,
 		ExpiresAt:         now.Add(time.Minute),
 	}); err != nil {
 		t.Fatalf("install permit: %v", err)
@@ -52,8 +52,12 @@ func TestAdmissionFailsClosedAndConsumesPrivatePermit(t *testing.T) {
 	if !admission.AllowConnect(source, nil, destination) {
 		t.Fatal("valid private permit was rejected")
 	}
+	if !admission.AllowConnect(source, nil, destination) {
+		t.Fatal("ACL check consumed the permit before Circuit admission")
+	}
+	now = now.Add(2 * time.Minute)
 	if admission.AllowConnect(source, nil, destination) {
-		t.Fatal("consumed private permit was replayed")
+		t.Fatal("expired private permit remained active")
 	}
 }
 
@@ -127,10 +131,10 @@ func TestAdmissionGenerationReplacementClearsRouteAndPrivatePermits(
 		t.Fatalf("publish generation-one route: %v", err)
 	}
 	if err := admission.Permit(ConnectPermit{
+		PermitID:          "generation-one",
 		SourcePeerID:      permittedSource,
 		DestinationPeerID: destination,
 		Generation:        1,
-		RemainingUses:     2,
 		ExpiresAt:         now.Add(time.Minute),
 	}); err != nil {
 		t.Fatalf("install generation-one permit: %v", err)
@@ -204,10 +208,10 @@ func TestAdmissionRestartDoesNotRestorePrivatePermit(t *testing.T) {
 		t.Fatalf("publish private route: %v", err)
 	}
 	if err := admission.Permit(ConnectPermit{
+		PermitID:          "restart-private",
 		SourcePeerID:      source,
 		DestinationPeerID: destination,
 		Generation:        4,
-		RemainingUses:     1,
 		ExpiresAt:         now.Add(time.Minute),
 	}); err != nil {
 		t.Fatalf("install private permit: %v", err)
@@ -235,7 +239,7 @@ func TestAdmissionRestartDoesNotRestorePrivatePermit(t *testing.T) {
 		t.Fatalf("republish private route after restart: %v", err)
 	}
 	if restarted.AllowConnect(source, nil, destination) {
-		t.Fatal("consumed private permit was restored after restart")
+		t.Fatal("volatile private permit was restored after restart")
 	}
 }
 

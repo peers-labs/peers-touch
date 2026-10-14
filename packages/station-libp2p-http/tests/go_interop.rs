@@ -11,7 +11,8 @@ use std::time::Duration;
 
 struct Fixture {
     child: Child,
-    route: Route,
+    direct_route: Route,
+    circuit_route: Route,
 }
 
 impl Drop for Fixture {
@@ -30,13 +31,22 @@ fn rust_client_reaches_go_station_over_standard_circuit() {
     let transport = TransportOwner::start().expect("start Rust transport");
     let handle = transport.handle();
 
+    let mut direct_ping = handle
+        .round_trip(&fixture.direct_route, request(http::Method::GET, "/ping"))
+        .expect("round trip Direct ping");
+    assert_eq!(direct_ping.status.as_u16(), 200);
+    assert_eq!(read_body(&mut direct_ping.body), b"pong");
+    handle
+        .close_route(&fixture.direct_route)
+        .expect("close Direct route before Circuit switch");
+
     let mut ping = handle
-        .round_trip(&fixture.route, request(http::Method::GET, "/ping"))
-        .expect("round trip ping");
+        .round_trip(&fixture.circuit_route, request(http::Method::GET, "/ping"))
+        .expect("round trip Circuit ping");
     assert_eq!(ping.status.as_u16(), 200);
     assert_eq!(read_body(&mut ping.body), b"pong");
 
-    let mut wrong_route = fixture.route.clone();
+    let mut wrong_route = fixture.circuit_route.clone();
     wrong_route.inner_tls_spki_sha256[0] ^= 0xff;
     assert!(handle
         .round_trip(
@@ -46,7 +56,7 @@ fn rust_client_reaches_go_station_over_standard_circuit() {
         .is_err());
     let mut count = handle
         .round_trip(
-            &fixture.route,
+            &fixture.circuit_route,
             request(http::Method::GET, "/side-effect-count"),
         )
         .expect("read side-effect count");
@@ -59,19 +69,19 @@ fn rust_client_reaches_go_station_over_standard_circuit() {
         http::HeaderValue::from_static("text/event-stream"),
     );
     let mut events = handle
-        .round_trip(&fixture.route, events_request)
+        .round_trip(&fixture.circuit_route, events_request)
         .expect("open SSE");
     assert_eq!(read_body(&mut events.body), b"data: one\n\ndata: two\n\n");
 
     let mut blocked_request_one = request(http::Method::GET, "/events-blocking");
     blocked_request_one.traffic_class = TrafficClass::Realtime;
     let _blocked_event_one = handle
-        .round_trip(&fixture.route, blocked_request_one)
+        .round_trip(&fixture.circuit_route, blocked_request_one)
         .expect("open first unread SSE");
     let mut blocked_request_two = request(http::Method::GET, "/events-blocking");
     blocked_request_two.traffic_class = TrafficClass::Realtime;
     let _blocked_event_two = handle
-        .round_trip(&fixture.route, blocked_request_two)
+        .round_trip(&fixture.circuit_route, blocked_request_two)
         .expect("open second unread SSE");
 
     let upload = vec![0x5a; 32 * 1024 * 1024];
@@ -82,7 +92,7 @@ fn rust_client_reaches_go_station_over_standard_circuit() {
         http::HeaderValue::from_static("application/octet-stream"),
     );
     let mut response = handle
-        .round_trip(&fixture.route, upload_request)
+        .round_trip(&fixture.circuit_route, upload_request)
         .expect("upload 32 MiB");
     assert_eq!(read_body(&mut response.body), b"33554432");
     let expected = hex(Sha256::digest(&upload).as_slice());
@@ -97,7 +107,7 @@ fn rust_client_reaches_go_station_over_standard_circuit() {
     let mut download_request = request(http::Method::GET, "/download");
     download_request.traffic_class = TrafficClass::Bulk;
     let mut download = handle
-        .round_trip(&fixture.route, download_request)
+        .round_trip(&fixture.circuit_route, download_request)
         .expect("download 1 MiB attachment chunk");
     let body = read_body(&mut download.body);
     assert_eq!(body.len(), (1 << 20) + 16);
@@ -116,12 +126,12 @@ fn rust_client_reaches_go_station_over_standard_circuit() {
         request.admission_timeout = Duration::from_secs(30);
         held.push(
             handle
-                .round_trip(&fixture.route, request)
+                .round_trip(&fixture.circuit_route, request)
                 .expect("admit bounded unread response"),
         );
     }
     let error = handle
-        .round_trip(&fixture.route, request(http::Method::GET, "/ping"))
+        .round_trip(&fixture.circuit_route, request(http::Method::GET, "/ping"))
         .err()
         .expect("full response admission must reject request");
     assert_eq!(
@@ -168,16 +178,26 @@ fn start_fixture() -> Fixture {
         .expect("read Go fixture projection");
     let projection: Value = serde_json::from_str(&line).expect("decode Go fixture projection");
     let spki = decode_32(projection["spkiSha256"].as_str().expect("SPKI projection"));
+    let node_peer_id = projection["nodePeerId"]
+        .as_str()
+        .expect("Node PeerID projection")
+        .to_string();
     Fixture {
         child,
-        route: Route {
-            node_peer_id: projection["nodePeerId"]
+        direct_route: Route {
+            node_peer_id: node_peer_id.clone(),
+            dial_multiaddr: projection["directRoute"]
                 .as_str()
-                .expect("Node PeerID projection")
+                .expect("Direct route projection")
                 .to_string(),
-            dial_multiaddr: projection["route"]
+            inner_tls_spki_sha256: spki,
+            route_generation: 1,
+        },
+        circuit_route: Route {
+            node_peer_id,
+            dial_multiaddr: projection["circuitRoute"]
                 .as_str()
-                .expect("route projection")
+                .expect("Circuit route projection")
                 .to_string(),
             inner_tls_spki_sha256: spki,
             route_generation: 1,

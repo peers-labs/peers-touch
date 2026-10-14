@@ -78,9 +78,7 @@ pub enum StationRouteSecurity {
 
 impl StationRouteSecurity {
     pub(crate) fn permits(self, origin: &str) -> bool {
-        if self == Self::VerifiedRoute {
-            return true;
-        }
+        let _ = self;
         let Ok(url) = reqwest::Url::parse(origin) else {
             return false;
         };
@@ -244,10 +242,20 @@ pub struct StationResponse {
 
 pub trait StationRequestExecutor: Send + Sync {
     fn execute(&self, request: StationRequest) -> Result<StationResponse, StationTransportError>;
+    fn execute_for_station(
+        &self,
+        _station_peer_id: &str,
+        _request: StationRequest,
+    ) -> Result<StationResponse, StationTransportError> {
+        Err(StationTransportError::new(
+            StationTransportErrorKind::Unavailable,
+            "Target Station transport is unavailable",
+            false,
+        ))
+    }
     fn active_scope(&self) -> Option<StationRequestScope>;
     fn active_station_peer_id(&self) -> Option<String>;
     fn active_endpoint_origin(&self) -> Option<String>;
-    fn authority_endpoint_origin(&self, station_peer_id: &str) -> Result<String, String>;
     fn owns_resource_origin(&self, origin: &str) -> bool {
         self.active_endpoint_origin()
             .is_some_and(|active| active.trim_end_matches('/') == origin.trim_end_matches('/'))
@@ -472,23 +480,6 @@ impl StationClient {
         }
     }
 
-    pub fn authority_endpoint_origin(
-        &self,
-        station_peer_id: &str,
-    ) -> Result<String, StationClientError> {
-        self.executor
-            .authority_endpoint_origin(station_peer_id)
-            .map_err(|message| {
-                StationClientError::new(
-                    StationClientErrorKind::InvalidResponse,
-                    message,
-                    Some(serde_json::json!({
-                        "station_peer_id": station_peer_id,
-                    })),
-                )
-            })
-    }
-
     pub fn execute_raw(
         &self,
         request: StationRequest,
@@ -693,9 +684,9 @@ impl StationClient {
         )
     }
 
-    pub fn request_proto_for_actor_at<Req, Payload>(
+    pub fn request_proto_for_actor_at_station<Req, Payload>(
         &self,
-        station_url: &str,
+        station_peer_id: &str,
         method: Method,
         path: &str,
         token: &str,
@@ -706,31 +697,27 @@ impl StationClient {
         Req: Message,
         Payload: Message + Default,
     {
-        external_proto_request(station_url, method, path, Some(token), query, body, None)
-    }
-
-    pub fn request_peers_proto_no_body_for_device_at<Payload>(
-        &self,
-        station_url: &str,
-        method: Method,
-        path: &str,
-        token: &str,
-        query: Option<&[(&str, String)]>,
-        device_id: &str,
-    ) -> Result<Payload, StationClientError>
-    where
-        Payload: Message + Default,
-    {
-        let envelope: PeersResponse = self.request_proto_for_device_at::<(), PeersResponse>(
-            station_url,
+        let response = self.execute_wire_for_station(
+            station_peer_id,
             method,
             path,
-            token,
             query,
+            Some(token),
             None,
-            device_id,
+            Some("application/protobuf"),
+            "application/protobuf",
+            proto_body(body),
+            StationTransportPolicy::Interactive,
+            TrafficClass::Interactive,
+            None,
         )?;
-        decode_peers_payload(envelope)
+        Payload::decode(response.body.as_slice()).map_err(|error| {
+            StationClientError::new(
+                StationClientErrorKind::Decode,
+                format!("decode target Station proto response failed: {error}"),
+                None,
+            )
+        })
     }
 
     pub fn request_peers_proto_no_body_for_device<Payload>(
@@ -760,38 +747,6 @@ impl StationClient {
         decode_peers_envelope(&response.body)
     }
 
-    pub fn request_proto_for_device_at<Req, Payload>(
-        &self,
-        station_url: &str,
-        method: Method,
-        path: &str,
-        token: &str,
-        query: Option<&[(&str, String)]>,
-        body: Option<&Req>,
-        device_id: &str,
-    ) -> Result<Payload, StationClientError>
-    where
-        Req: Message,
-        Payload: Message + Default,
-    {
-        if device_id.trim().is_empty() {
-            return Err(StationClientError::new(
-                StationClientErrorKind::InvalidResponse,
-                "profile-scoped request requires device ID",
-                None,
-            ));
-        }
-        external_proto_request(
-            station_url,
-            method,
-            path,
-            Some(token),
-            query,
-            body,
-            Some(device_id),
-        )
-    }
-
     pub fn request_proto_no_auth<Req, Payload>(
         &self,
         method: Method,
@@ -811,20 +766,6 @@ impl StationClient {
             None,
             StationTransportPolicy::Interactive,
         )
-    }
-
-    pub fn request_proto_no_auth_at<Req, Payload>(
-        &self,
-        station_url: &str,
-        method: Method,
-        path: &str,
-        body: &Req,
-    ) -> Result<Payload, StationClientError>
-    where
-        Req: Message,
-        Payload: Message + Default,
-    {
-        external_proto_request(station_url, method, path, None, None, Some(body), None)
     }
 
     pub fn post_peers_proto_no_auth<Req, Payload>(
@@ -1226,45 +1167,56 @@ impl StationClient {
         traffic_class: TrafficClass,
         replay_policy: Option<ReplayPolicy>,
     ) -> Result<BufferedResponse, StationClientError> {
-        let path_and_query = encode_path_and_query(path, query)?;
-        let mut headers = HeaderMap::new();
-        if let Some(token) = token {
-            headers.insert(
-                reqwest::header::AUTHORIZATION,
-                HeaderValue::from_str(&format!("Bearer {token}")).map_err(header_error)?,
-            );
-        }
-        if let Some(device_id) = device_id.filter(|value| !value.trim().is_empty()) {
-            headers.insert(
-                HeaderName::from_static("x-device-id"),
-                HeaderValue::from_str(device_id).map_err(header_error)?,
-            );
-        }
-        if let Some(content_type) = content_type {
-            headers.insert(
-                reqwest::header::CONTENT_TYPE,
-                HeaderValue::from_str(content_type).map_err(header_error)?,
-            );
-        }
-        headers.insert(
-            reqwest::header::ACCEPT,
-            HeaderValue::from_str(accept).map_err(header_error)?,
-        );
-        let replay_policy = replay_policy.unwrap_or_else(|| default_replay_policy(&method));
-        let response = self.execute_raw(StationRequest {
+        let (request, replay_policy) = wire_request(
             method,
-            path_and_query,
-            headers,
+            path,
+            query,
+            token,
+            device_id,
+            content_type,
+            accept,
             body,
-            timeout: policy.timeout(),
-            admission_timeout: policy.timeout(),
+            policy,
             traffic_class,
-            route_security: StationRouteSecurity::VerifiedRoute,
-            route_policy: StationRoutePolicy::Auto,
-            replay_policy: replay_policy.clone(),
-            cancellation: CancellationToken::new(),
-            expected_scope: None,
-        })?;
+            replay_policy,
+        )?;
+        let response = self.execute_raw(request)?;
+        buffer_response(path, response, &replay_policy)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn execute_wire_for_station(
+        &self,
+        station_peer_id: &str,
+        method: Method,
+        path: &str,
+        query: Option<&[(&str, String)]>,
+        token: Option<&str>,
+        device_id: Option<&str>,
+        content_type: Option<&str>,
+        accept: &str,
+        body: StationRequestBody,
+        policy: StationTransportPolicy,
+        traffic_class: TrafficClass,
+        replay_policy: Option<ReplayPolicy>,
+    ) -> Result<BufferedResponse, StationClientError> {
+        let (request, replay_policy) = wire_request(
+            method,
+            path,
+            query,
+            token,
+            device_id,
+            content_type,
+            accept,
+            body,
+            policy,
+            traffic_class,
+            replay_policy,
+        )?;
+        let response = self
+            .executor
+            .execute_for_station(station_peer_id, request)
+            .map_err(|error| map_transport_error(error, replay_policy.clone()))?;
         buffer_response(path, response, &replay_policy)
     }
 }
@@ -1297,10 +1249,6 @@ impl StationRequestExecutor for UnavailableTestExecutor {
     fn active_endpoint_origin(&self) -> Option<String> {
         None
     }
-
-    fn authority_endpoint_origin(&self, _station_peer_id: &str) -> Result<String, String> {
-        Err("test Station authority route is unavailable".to_string())
-    }
 }
 
 #[derive(Debug)]
@@ -1308,6 +1256,64 @@ struct BufferedResponse {
     status: u16,
     headers: HeaderMap,
     body: Vec<u8>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn wire_request(
+    method: Method,
+    path: &str,
+    query: Option<&[(&str, String)]>,
+    token: Option<&str>,
+    device_id: Option<&str>,
+    content_type: Option<&str>,
+    accept: &str,
+    body: StationRequestBody,
+    policy: StationTransportPolicy,
+    traffic_class: TrafficClass,
+    replay_policy: Option<ReplayPolicy>,
+) -> Result<(StationRequest, ReplayPolicy), StationClientError> {
+    let path_and_query = encode_path_and_query(path, query)?;
+    let mut headers = HeaderMap::new();
+    if let Some(token) = token {
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {token}")).map_err(header_error)?,
+        );
+    }
+    if let Some(device_id) = device_id.filter(|value| !value.trim().is_empty()) {
+        headers.insert(
+            HeaderName::from_static("x-device-id"),
+            HeaderValue::from_str(device_id).map_err(header_error)?,
+        );
+    }
+    if let Some(content_type) = content_type {
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            HeaderValue::from_str(content_type).map_err(header_error)?,
+        );
+    }
+    headers.insert(
+        reqwest::header::ACCEPT,
+        HeaderValue::from_str(accept).map_err(header_error)?,
+    );
+    let replay_policy = replay_policy.unwrap_or_else(|| default_replay_policy(&method));
+    Ok((
+        StationRequest {
+            method,
+            path_and_query,
+            headers,
+            body,
+            timeout: policy.timeout(),
+            admission_timeout: policy.timeout(),
+            traffic_class,
+            route_security: StationRouteSecurity::VerifiedRoute,
+            route_policy: StationRoutePolicy::Auto,
+            replay_policy: replay_policy.clone(),
+            cancellation: CancellationToken::new(),
+            expected_scope: None,
+        },
+        replay_policy,
+    ))
 }
 
 fn buffer_response(
@@ -1583,61 +1589,6 @@ fn header_error(error: impl fmt::Display) -> StationClientError {
     )
 }
 
-fn external_proto_request<Req, Resp>(
-    base_url: &str,
-    method: Method,
-    path: &str,
-    token: Option<&str>,
-    query: Option<&[(&str, String)]>,
-    body: Option<&Req>,
-    device_id: Option<&str>,
-) -> Result<Resp, StationClientError>
-where
-    Req: Message,
-    Resp: Message + Default,
-{
-    let url = format!("{}{}", base_url.trim_end_matches('/'), path);
-    let client = Client::builder()
-        .timeout(INTERACTIVE_REQUEST_TIMEOUT)
-        .build()
-        .map_err(network_error)?;
-    let mut request = client.request(method, url);
-    if let Some(token) = token {
-        request = request.bearer_auth(token);
-    }
-    if let Some(device_id) = device_id.filter(|value| !value.trim().is_empty()) {
-        request = request.header("X-Device-ID", device_id);
-    }
-    if let Some(query) = query {
-        request = request.query(query);
-    }
-    request = request
-        .header("Content-Type", "application/protobuf")
-        .header("Accept", "application/protobuf");
-    if let Some(body) = body {
-        request = request.body(body.encode_to_vec());
-    }
-    let response = request.send().map_err(network_error)?;
-    let status = response.status();
-    let headers = headers_to_json(response.headers());
-    let bytes = response.bytes().map_err(network_error)?;
-    if !status.is_success() {
-        return Err(build_error_for_status_with_headers(
-            status.as_u16(),
-            path,
-            &String::from_utf8_lossy(&bytes),
-            Some(&headers),
-        ));
-    }
-    Resp::decode(bytes.as_ref()).map_err(|error| {
-        StationClientError::new(
-            StationClientErrorKind::Decode,
-            format!("decode proto response failed: {error}"),
-            None,
-        )
-    })
-}
-
 fn external_json_response(
     base_url: &str,
     method: Method,
@@ -1831,10 +1782,15 @@ mod tests {
 
     #[test]
     fn authenticated_route_security_rejects_remote_plaintext() {
-        assert!(StationRouteSecurity::TlsOrLoopback.permits("https://station.test"));
-        assert!(StationRouteSecurity::TlsOrLoopback.permits("http://127.0.0.1:18080"));
-        assert!(StationRouteSecurity::TlsOrLoopback.permits("http://localhost:18080"));
-        assert!(!StationRouteSecurity::TlsOrLoopback.permits("http://station.test"));
+        for policy in [
+            StationRouteSecurity::VerifiedRoute,
+            StationRouteSecurity::TlsOrLoopback,
+        ] {
+            assert!(policy.permits("https://station.test"));
+            assert!(policy.permits("http://127.0.0.1:18080"));
+            assert!(policy.permits("http://localhost:18080"));
+            assert!(!policy.permits("http://station.test"));
+        }
     }
 
     #[test]

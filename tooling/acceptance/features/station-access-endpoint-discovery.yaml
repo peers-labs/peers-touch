@@ -49,12 +49,12 @@
     "service": [
       "Station and Relay return challenge-bound signed endpoint roles through one protobuf contract",
       "Relay exposes only unexpired public routes whose node enrollment generation is current",
-      "private connection grants are registered before use and atomically converted into source-bound Circuit permits",
+      "private connection grants require the exact source transport key proof and are atomically converted through idempotent source-bound redemption into short-lived Circuit permits",
       "authenticated Dashboard operators invoke the Station Relay runtime issuer through a strict protobuf contract with no-store and no-referrer response policy",
       "generated Go, Desktop TypeScript, and Mobile TypeScript bindings derive from one proto"
     ],
     "surface": [
-      "one candidate, multiple candidates, no candidate, expired grant, replay, wrong Relay, and forged Station have typed outcomes"
+      "one candidate, multiple candidates, no candidate, expired grant, replay, wrong Relay, invalid source proof, and forged Station have typed outcomes"
     ]
   },
   "negative": [

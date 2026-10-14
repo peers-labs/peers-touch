@@ -46,6 +46,7 @@ type Service struct {
 	discoveryMu sync.Mutex
 	routes      map[string]domain.RouteRecord
 	grants      map[string]domain.GrantRecord
+	redemptions map[string]domain.GrantRedemptionRecord
 }
 
 func NewService(
@@ -54,13 +55,14 @@ func NewService(
 	admission *nativeRelay.Admission,
 ) *Service {
 	return &Service{
-		repo:       repo,
-		authority:  authority,
-		admission:  admission,
-		now:        func() time.Time { return time.Now().UTC() },
-		challenges: make(map[string]domain.EnrollmentChallenge),
-		routes:     make(map[string]domain.RouteRecord),
-		grants:     make(map[string]domain.GrantRecord),
+		repo:        repo,
+		authority:   authority,
+		admission:   admission,
+		now:         func() time.Time { return time.Now().UTC() },
+		challenges:  make(map[string]domain.EnrollmentChallenge),
+		routes:      make(map[string]domain.RouteRecord),
+		grants:      make(map[string]domain.GrantRecord),
+		redemptions: make(map[string]domain.GrantRedemptionRecord),
 	}
 }
 

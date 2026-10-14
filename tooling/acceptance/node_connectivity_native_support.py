@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import http.client
-import http.server
 import json
+import select
 import socket
 import tempfile
 import threading
 import time
-import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -27,18 +25,6 @@ ATTACHMENT_CHUNK = (
     b"peers-touch-node-connectivity-circuit-attachment-v1\n"
 ) * 2048
 ROUTE_PROBE_PATH = "/app-meta/version"
-_HOP_BY_HOP_HEADERS = frozenset(
-    {
-        "connection",
-        "keep-alive",
-        "proxy-authenticate",
-        "proxy-authorization",
-        "te",
-        "trailers",
-        "transfer-encoding",
-        "upgrade",
-    }
-)
 
 
 class _DirectRouteFaultState:
@@ -46,7 +32,7 @@ class _DirectRouteFaultState:
         self._lock = threading.Lock()
         self._armed = False
         self._failure_count = 0
-        self._forwarded_paths: dict[str, int] = {}
+        self._forwarded_connections = 0
 
     def arm(self) -> None:
         with self._lock:
@@ -56,14 +42,16 @@ class _DirectRouteFaultState:
         with self._lock:
             self._armed = False
 
-    def should_drop(self, path: str) -> bool:
+    def record_active_drop(self) -> None:
         with self._lock:
-            if self._armed and path == ROUTE_PROBE_PATH:
+            self._failure_count += 1
+
+    def should_drop_connection(self) -> bool:
+        with self._lock:
+            if self._armed:
                 self._failure_count += 1
                 return True
-            self._forwarded_paths[path] = (
-                self._forwarded_paths.get(path, 0) + 1
-            )
+            self._forwarded_connections += 1
             return False
 
     def snapshot(self) -> dict[str, Any]:
@@ -71,122 +59,148 @@ class _DirectRouteFaultState:
             return {
                 "armed": self._armed,
                 "failureCount": self._failure_count,
-                "forwardedPaths": dict(self._forwarded_paths),
+                "forwardedConnections": self._forwarded_connections,
             }
 
 
-class _DirectRouteFaultServer(http.server.ThreadingHTTPServer):
-    daemon_threads = True
-
-    def __init__(self, upstream_url: str) -> None:
-        parsed = urllib.parse.urlsplit(upstream_url)
-        if parsed.scheme != "http" or not parsed.hostname:
-            raise ValueError(
-                "Node Connectivity Direct fault proxy requires an HTTP upstream"
-            )
-        self.upstream_host = parsed.hostname
-        self.upstream_port = parsed.port or 80
-        self.state = _DirectRouteFaultState()
-        super().__init__(("127.0.0.1", 0), _DirectRouteFaultHandler)
-
-
-class _DirectRouteFaultHandler(http.server.BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
-
-    @property
-    def proxy(self) -> _DirectRouteFaultServer:
-        return self.server  # type: ignore[return-value]
-
-    def _handle(self) -> None:
-        length = int(self.headers.get("Content-Length", "0"))
-        body = self.rfile.read(length) if length else b""
-        path = urllib.parse.urlsplit(self.path).path
-        if self.proxy.state.should_drop(path):
-            self.close_connection = True
-            try:
-                self.connection.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
-            self.connection.close()
-            return
-
-        headers = {
-            key: value
-            for key, value in self.headers.items()
-            if key.lower() not in _HOP_BY_HOP_HEADERS
-            and key.lower() not in {"host", "content-length"}
-        }
-        upstream = http.client.HTTPConnection(
-            self.proxy.upstream_host,
-            self.proxy.upstream_port,
-            timeout=30,
+def _parse_direct_multiaddr(value: str) -> tuple[str, int, str]:
+    parts = value.strip().split("/")
+    if (
+        len(parts) != 7
+        or parts[0] != ""
+        or parts[1] not in {"ip4", "ip6", "dns4", "dns6"}
+        or parts[3] != "tcp"
+        or parts[5] != "p2p"
+        or not parts[2]
+        or not parts[6]
+    ):
+        raise ValueError(
+            "Node Connectivity Direct fault proxy requires one TCP Direct multiaddr"
         )
-        try:
-            upstream.request(
-                self.command,
-                self.path,
-                body=body or None,
-                headers=headers,
-            )
-            response = upstream.getresponse()
-            response_body = response.read()
-            self.send_response(response.status, response.reason)
-            for key, value in response.getheaders():
-                if (
-                    key.lower() not in _HOP_BY_HOP_HEADERS
-                    and key.lower() != "content-length"
-                ):
-                    self.send_header(key, value)
-            self.send_header("Content-Length", str(len(response_body)))
-            self.end_headers()
-            self.wfile.write(response_body)
-        finally:
-            upstream.close()
-
-    do_DELETE = _handle
-    do_GET = _handle
-    do_HEAD = _handle
-    do_OPTIONS = _handle
-    do_PATCH = _handle
-    do_POST = _handle
-    do_PUT = _handle
-
-    def log_message(self, _format: str, *_args: object) -> None:
-        return
+    try:
+        port = int(parts[4])
+    except ValueError as error:
+        raise ValueError("Direct multiaddr TCP port is invalid") from error
+    if port < 1 or port > 65535:
+        raise ValueError("Direct multiaddr TCP port is invalid")
+    return parts[2], port, parts[6]
 
 
 class DirectRouteFaultProxy:
-    """Transparent HTTP route used to prove real Direct connection loss."""
+    """Opaque TCP route used to prove real Direct connection loss."""
 
-    def __init__(self, station_url: str) -> None:
-        self._server = _DirectRouteFaultServer(station_url.rstrip("/"))
+    def __init__(self, upstream_multiaddr: str) -> None:
+        host, port, peer_id = _parse_direct_multiaddr(upstream_multiaddr)
+        self._upstream = (host, port)
+        self._peer_id = peer_id
+        self._state = _DirectRouteFaultState()
+        self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._listener.bind(("127.0.0.1", 0))
+        self._listener.listen()
+        self._listener.settimeout(0.2)
+        self._stop = threading.Event()
+        self._connections_lock = threading.Lock()
+        self._connections: set[socket.socket] = set()
         self._thread = threading.Thread(
-            target=self._server.serve_forever,
+            target=self._serve,
             name="ncp-direct-route-fault-proxy",
             daemon=True,
         )
 
     @property
-    def url(self) -> str:
-        host, port = self._server.server_address
-        return f"http://{host}:{port}"
+    def port(self) -> int:
+        return int(self._listener.getsockname()[1])
+
+    @property
+    def multiaddr(self) -> str:
+        return f"/ip4/127.0.0.1/tcp/{self.port}/p2p/{self._peer_id}"
 
     def start(self) -> None:
         self._thread.start()
 
     def arm(self) -> None:
-        self._server.state.arm()
+        self._state.arm()
+        with self._connections_lock:
+            connections = list(self._connections)
+        if connections:
+            self._state.record_active_drop()
+        for connection in connections:
+            try:
+                connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            connection.close()
 
     def disarm(self) -> None:
-        self._server.state.disarm()
+        self._state.disarm()
 
     def evidence(self) -> dict[str, Any]:
-        return self._server.state.snapshot()
+        return self._state.snapshot()
 
     def stop(self) -> None:
-        self._server.shutdown()
-        self._server.server_close()
+        self._stop.set()
+        self._listener.close()
+        with self._connections_lock:
+            connections = list(self._connections)
+        for connection in connections:
+            try:
+                connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            connection.close()
         self._thread.join(timeout=5)
+
+    def _serve(self) -> None:
+        while not self._stop.is_set():
+            try:
+                client, _ = self._listener.accept()
+            except TimeoutError:
+                continue
+            except OSError:
+                return
+            if self._state.should_drop_connection():
+                client.close()
+                continue
+            worker = threading.Thread(
+                target=self._forward,
+                args=(client,),
+                name="ncp-direct-route-forwarder",
+                daemon=True,
+            )
+            worker.start()
+
+    def _forward(self, client: socket.socket) -> None:
+        upstream: socket.socket | None = None
+        try:
+            upstream = socket.create_connection(self._upstream, timeout=10)
+            client.settimeout(None)
+            upstream.settimeout(None)
+            with self._connections_lock:
+                self._connections.update((client, upstream))
+            peers = {client: upstream, upstream: client}
+            while not self._stop.is_set():
+                readable, _, _ = select.select(list(peers), [], [], 0.2)
+                for source in readable:
+                    payload = source.recv(64 * 1024)
+                    if not payload:
+                        return
+                    peers[source].sendall(payload)
+        except (OSError, ValueError):
+            return
+        finally:
+            sockets = [client]
+            if upstream is not None:
+                sockets.append(upstream)
+            with self._connections_lock:
+                for connection in sockets:
+                    self._connections.discard(connection)
+            for connection in sockets:
+                try:
+                    connection.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                connection.close()
 
 
 def invoke_tauri_result(

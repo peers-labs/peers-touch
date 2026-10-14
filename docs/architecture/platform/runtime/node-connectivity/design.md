@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-10-10 | **Updated**: 2026-10-13
+> **Created**: 2026-10-10 | **Updated**: 2026-10-14
 > **Owner**: Architecture Team
 > **Module**: `apps/station/frame/core/plugin/native/`
 
@@ -37,8 +37,8 @@ source; neither an accepted design nor a source check proves runtime delivery.
 | OSS scheduler uses database-time node/incarnation/token leases; BlobGC claims immutable generations | verified_fact | `oss/oss.go`; `oss/worker/{db_lock,blob_gc}.go`; `oss/db/repo/blob_repo.go` | integrated Agent plus OSS cluster Gate |
 | Some handlers require Hertz RequestContext | verified_fact | `frame/core/server/handler.go:HertzHandlerFunc`; `touch/actor_router.go`; `oauth/oauth.go` | streaming ingress parity |
 | Circuit library defaults reset at 2 min / 128 KiB per direction | verified_fact | pinned `go-libp2p v0.45.0`, `circuitv2/relay/resources.go` | reviewed workload limits |
-| Desktop starts its local proxy and libp2p runtime from `station_base_url()` through process globals without an owned shutdown path | verified_fact | `apps/desktop/src-tauri/src/infrastructure/{station_client,station_transport}.rs` | target lifecycle cut |
-| Desktop opens a fresh Station protocol stream and performs TLS/HTTP2 setup for each relayed request | verified_fact | `packages/station-libp2p-http/src/lib.rs:prepare_response` | pooled route-session proof |
+| Desktop `AppState` owns one `StationRuntime`; Direct and Circuit routes use scoped standard libp2p drivers with bounded shutdown | verified_fact | `apps/desktop/src-tauri/src/application/station_runtime`; `infrastructure/station/transport` | current-source native lifecycle proof |
+| Direct discovery now requires a node-signed Direct route with exact Node PeerID, multiaddr and TLS SPKI; Direct and Circuit use the same pooled TLS/HTTP2 transport | verified_fact | `subserver/bootstrap/access_endpoint.go`; `station_discovery.rs`; `packages/station-libp2p-http` | current-source native pre-credential rejection proof |
 | Standard transport reduces custom protocol ownership | inference | constructor/framing inventory above | runtime suitability; no speed claim |
 | Shared state and fenced domain workers permit multiple nodes | accepted_decision | NCP-D12..NCP-D15 | all cluster Gates |
 
@@ -155,6 +155,8 @@ The transport owner starts during Tauri setup and shuts down from
 `ExitRequested`. It owns the libp2p driver, bounded command admission, route
 sessions, cancellation, draining and thread join. Getters, URL projections and
 request builders cannot create listeners, threads or network runtimes.
+`AppState` separately owns the actor realtime supervisors, including their
+cancel tokens and join handles, and drains them before `StationRuntime`.
 
 Desktop persists transport keys through the platform secure-store adapter, but
 keys are scoped to a verified transport endpoint rather than shared across all
@@ -178,6 +180,13 @@ stale callbacks from committing after route or Station replacement. Only
 `AUTO` may replay a safe request after a real transport failure commits a
 verified same-Station replacement lease.
 
+Discovery persists candidate routes. When a candidate refreshes the committed
+route ID with a new signed contract, `StationRuntime` compare-and-commits it
+immediately, advances `route_revision`, and cancels the previous lease before
+its bounded attestation expires. Explicit Station removal persists a monotonic
+lifecycle tombstone; re-adding the same logical Station allocates a higher
+`lifecycle_generation`, including across process restart.
+
 Station-owned relative media, object and bundle paths are represented as
 `StationResourceRef`, never as a transport origin. Native consumers fetch or
 stream them through the typed Station client. WebView consumers receive only an
@@ -187,9 +196,11 @@ network transport and is materialized locally for native cache consumers.
 Externally issued absolute or presigned URLs remain a distinct
 `ExternalResourceUrl` and are never rewritten through Station transport.
 
-Circuit adapters maintain bounded HTTP/2 route sessions keyed by destination,
-route generation, SPKI and traffic class. Realtime and bulk sessions have
-separate budgets. Safe reads may retry once after verified failover; mutations
+Direct and Circuit adapters maintain bounded HTTP/2 route sessions keyed by
+destination, route generation, SPKI and traffic class. Station-to-Station
+Circuit control likewise owns a bounded reusable route-client pool and releases
+retired clients after their active response bodies close. Realtime and bulk
+sessions have separate budgets. Safe reads may retry once after verified failover; mutations
 without an accepted idempotency key return an ambiguous outcome and are never
 blindly replayed.
 
@@ -208,13 +219,21 @@ Circuit ACL checks an in-memory projection of current enrollment:
 - `AllowReserve`: enrolled, unrevoked destination node only.
 - `AllowConnect`: published public destination with source quotas, or an active
   private connection permit bound to source PeerID and destination.
-- Private grant exchange happens before Circuit CONNECT through authenticated
-  Relay control; signature binds nonce, source PeerID, Relay, route, generation
-  and expiry. Relay atomically consumes uses and issues a bounded permit.
+- Private grant exchange happens before Circuit CONNECT through the reviewed
+  Relay control endpoint. The exact source libp2p transport key signs the
+  challenge, canonical grant digest, Relay PeerID and protocol version. Relay
+  derives the source PeerID, verifies route/generation/expiry, atomically
+  consumes one grant use and issues a bounded permit. The same
+  `grant_digest + source_peer_id` redemption is idempotent.
 
 An ACL callback performs bounded local checks only. Stale/unavailable policy
-fails closed. Libp2p PeerID authenticates a transport caller; Station Session or
-Federation/domain middleware independently authorizes the encrypted HTTP call.
+fails closed. It does not decrement a permit: upstream invokes ACL before
+reservation, circuit quota and destination STOP-stream success, so consuming
+there would burn authorization on denied CONNECT attempts. The standard Relay
+service owns active circuit accounting, while permit expiry and generation own
+authorization lifetime. Libp2p PeerID authenticates a transport caller; Station
+Session or Federation/domain middleware independently authorizes the encrypted
+HTTP call.
 
 Renewal refreshes credentials, routes and standard reservation before expiry
 without closing healthy circuits or advancing authorization epoch. Actual

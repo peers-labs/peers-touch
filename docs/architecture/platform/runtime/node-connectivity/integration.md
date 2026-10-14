@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-10-10 | **Updated**: 2026-10-13
+> **Created**: 2026-10-10 | **Updated**: 2026-10-14
 > **Owner**: Architecture Team
 
 ## 1. Preserved Domain Boundaries
@@ -95,7 +95,7 @@ one prepared runtime and never build, deploy or create accounts.
 |---|---|---|
 | NCP-G01 | two node keys, one root; forged delegation/route/Relay/SPKI | distinct PeerIDs and one Station scope; all forgeries rejected before credentials |
 | NCP-G02 | one-node direct/circuit HTTP2 with real handlers | same Login/Access result, router inventory, protobuf errors, SSE Flush and upload/download digest |
-| NCP-G03 | two native Desktop actors exercise Direct-only, Relay-only and a real Direct-fault `AUTO` transition, then exchange text/read receipt and a 32 MiB attachment via Circuit | typed no-route/policy-conflict, ordered Direct-failed then Relay-connected diagnostics, stable Session/lifecycle, fenced old lease, canonical Profile mutation/readback, receiver render and attachment digest |
+| NCP-G03 | two native Desktop actors exercise Direct-only, Relay-only and a real Direct-fault `AUTO` transition through an opaque TCP fault proxy, then exchange text/read receipt and a 32 MiB attachment via Circuit | typed no-route/policy-conflict, ordered Direct-failed then Relay-connected diagnostics, stable Session/lifecycle, fenced old lease, canonical Profile mutation/readback, receiver render and attachment digest |
 | NCP-G04 | two Station nodes, shared DB/object backend; send on A, subscribe on B; kill A | committed ordered events reach B, device-only events stay private, cursor resumes within 30 s |
 | NCP-G05 | Access attempt on A, acknowledge/use Session on B; concurrent same-class activation | one class winner, prior same-class revoked, other classes preserved, same logical Station |
 | NCP-G06-AGENT | healthy Agent lease on A; boot B, expire/take over, then resume A | healthy work survives B boot, takeover advances the token, stale A cannot commit, one terminal domain record |
@@ -126,8 +126,10 @@ Findings-first review of target relationships and current evidence:
 - **Gateway duplication** resolved by one Frame ingress adapter and two roles.
 - **HTTP2/Hertz context** resolved by a standard server and streaming loopback
   adapter to the existing Hertz router; no second handler registry.
-- **Private Circuit admission gap** resolved by source-bound control redemption
-  before standard CONNECT and bounded ACL projection.
+- **Private Circuit admission gap** resolved by source-transport-key proof,
+  idempotent grant redemption before standard CONNECT, and a bounded,
+  read-only ACL permit projection whose accounting cannot burn on an upstream
+  reservation or quota rejection.
 - **Default Relay limits** resolved by explicit finite connection budgets and
   bulk/realtime separation; no measured-capacity claim.
 - **Renewal disconnect risk** resolved by renewal without epoch/connection reset;

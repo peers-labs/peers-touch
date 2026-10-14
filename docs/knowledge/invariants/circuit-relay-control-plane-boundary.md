@@ -33,7 +33,7 @@ Enrollment and credential state that must survive restart MUST commit durable
 truth before publishing the replacement to memory. Consumed invites MUST remain
 consumed after repository reconstruction. Connection grants and permits are
 intentionally volatile: restart MUST fail closed and require fresh private
-connection material rather than restoring a consumed permit.
+connection material rather than restoring a prior permit.
 
 Reservations at different Relay PeerIDs MUST remain independent. Failure or
 revocation at one Relay MUST NOT mutate another Relay's live reservation.

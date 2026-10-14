@@ -64,13 +64,18 @@ func WithStationDomain(domain string) option.Option {
 	})
 }
 
+// WithInnerTLSSPKI binds signed Direct and Circuit routes to the Node TLS key.
+func WithInnerTLSSPKI(value [sha256.Size]byte) option.Option {
+	return wrapper.Wrap(func(o *Options) {
+		o.InnerTLSSPKISHA256 = value
+	})
+}
+
 // WithCircuitRoutes projects current standard Relay reservations.
 func WithCircuitRoutes(
-	innerTLSSPKISHA256 [sha256.Size]byte,
 	routes func(time.Time) []nativeRelay.CircuitRoute,
 ) option.Option {
 	return wrapper.Wrap(func(o *Options) {
-		o.InnerTLSSPKISHA256 = innerTLSSPKISHA256
 		o.CircuitRoutes = routes
 	})
 }

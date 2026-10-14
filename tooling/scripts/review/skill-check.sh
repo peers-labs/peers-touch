@@ -196,6 +196,7 @@ require_file "$skill_overlay_invariant"
 required_sections=(
   "Review Philosophy"
   "Review Workflow"
+  "Cross-Branch Preservation Review"
   "Review Learning Check"
   "Review Profiles"
   "Script vs Skill Boundary"
@@ -263,6 +264,23 @@ done
 for decision in "${growth_decisions[@]}"; do
   if ! grep -q "$decision" "$skill_file"; then
     fail "$skill_file missing growth decision: $decision"
+  fi
+done
+
+merge_preservation_markers=(
+  "prospective merge tree"
+  "PRESERVED"
+  "INTENTIONALLY_SUPERSEDED"
+  "UNPROVEN"
+  "coverage loss"
+  "false kill"
+  "git range-diff"
+  "pt-branch-conflict-guardian"
+)
+
+for marker in "${merge_preservation_markers[@]}"; do
+  if ! grep -Fq "$marker" "$skill_file"; then
+    fail "$skill_file missing cross-branch preservation marker: $marker"
   fi
 done
 

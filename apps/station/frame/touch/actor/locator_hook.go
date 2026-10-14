@@ -25,7 +25,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -189,9 +188,8 @@ func publishVisibility(
 	}
 
 	in := locator.PublishInput{
-		Handle:           a.FederatedHandle,
-		Seq:              a.LocatorSeq,
-		InboxRelayMounts: currentInboxRelayMounts(),
+		Handle: a.FederatedHandle,
+		Seq:    a.LocatorSeq,
 	}
 
 	switch a.Visibility {
@@ -213,44 +211,6 @@ func publishVisibility(
 		logger.Infof(ctx, "[locator hook] tombstoned handle=%s seq=%d", a.FederatedHandle, a.LocatorSeq)
 	}
 	return nil
-}
-
-// currentInboxRelayMounts returns the Relay origins (today: one configured
-// origin) through which the Station is reachable right now,
-// for embedding into the next signed locator record.
-//
-// Tier B2 — the locator's inbox_relay_mounts field is a hint that
-// lets remote resolvers detect "we share a relay, forward should
-// work" vs. "we're on different relays, this resolve will fail
-// unless relay-to-relay federation handles it". Receivers still
-// authoritatively look up the live mount table on the relay before
-// forwarding; we publish the hint to keep the cold-cache path
-// informed.
-//
-// Empty slice when:
-//   - the standard Relay pool is disabled for a directly reachable Station
-//   - enrollment or reservation has not completed; the next periodic
-//     republish will project the current Relay origin.
-//
-// We deliberately use RelayOrigin — a stable canonical identifier —
-// rather than the human label (`opts.Label` is the *station's* name
-// on the relay, not the relay's identity). Two stations mounted on
-// the same relay produce the same origin, which is the comparison
-// the resolver needs.
-func currentInboxRelayMounts() []string {
-	rc := fednode.RelayAccessSnapshot()
-	if rc == nil || !rc.Available() {
-		return nil
-	}
-	base := strings.TrimSpace(rc.RelayOrigin())
-	if base == "" {
-		return nil
-	}
-	// Trim trailing slash so two stations using "https://relay/"
-	// vs. "https://relay" round-trip to the same string. The
-	// resolver does the same trim at compare time.
-	base = strings.TrimRight(base, "/")
-	return []string{base}
 }
 
 // publishVisibilityAsync is the fire-and-forget variant SignUp/UpdateProfile

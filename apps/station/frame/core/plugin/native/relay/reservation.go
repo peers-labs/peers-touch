@@ -39,6 +39,7 @@ type ReservationManager struct {
 	cancel     context.CancelFunc
 	started    bool
 	group      sync.WaitGroup
+	now        func() time.Time
 }
 
 func (m *ReservationManager) SetControl(
@@ -79,6 +80,7 @@ func NewReservationManager(config Pool) (*ReservationManager, error) {
 	return &ReservationManager{
 		config: config,
 		states: make(map[peer.ID]reservationState, len(config.Targets)),
+		now:    func() time.Time { return time.Now().UTC() },
 	}, nil
 }
 
@@ -269,10 +271,14 @@ func (m *ReservationManager) record(
 	err error,
 ) {
 	m.lock.Lock()
-	m.states[relayPeerID] = reservationState{
-		route:     route,
-		lastError: err,
+	state := m.states[relayPeerID]
+	if route != nil {
+		state.route = route
+	} else if state.route != nil && !state.route.ExpiresAt.After(m.now()) {
+		state.route = nil
 	}
+	state.lastError = err
+	m.states[relayPeerID] = state
 	m.lock.Unlock()
 }
 

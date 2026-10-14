@@ -343,6 +343,9 @@
           "apps/desktop/src-tauri/src/application/station_runtime/**",
           "apps/desktop/src-tauri/src/infrastructure/station/**",
           "apps/mobile/src-tauri/src/runtime/station_route.rs",
+          "model/domain/federation/locator.proto",
+          "apps/station/frame/core/plugin/native/federation/locator/**",
+          "apps/station/frame/touch/federation/resolver/**",
           "apps/station/app/subserver/events/**",
           "apps/station/app/subserver/presence/publisher.go",
           "apps/station/frame/touch/model/peer/station_trust.go",
@@ -351,6 +354,8 @@
           "tooling/acceptance/gates/station_access/node_connectivity_native_e2e.py",
           "tooling/acceptance/provisioners/node_connectivity_durable_events.py",
           "tooling/acceptance/features/node-connectivity-standard-stream.yaml",
+          "tooling/scripts/check-node-connectivity-hard-cut.py",
+          "tooling/scripts/check-node-connectivity-hard-cut-test.py",
           "tooling/scripts/node-connectivity-journey.py"
         ]
       },

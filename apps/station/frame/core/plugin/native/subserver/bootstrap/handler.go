@@ -244,7 +244,6 @@ func (s *SubServer) locatorLookup(c context.Context, ctx *app.RequestContext) {
 		"federated_handle":     rec.GetFederatedHandle(),
 		"home_station_peer_id": rec.GetHomeStationPeerId(),
 		"home_station_domain":  rec.GetHomeStationDomain(),
-		"inbox_relay_mounts":   rec.GetInboxRelayMounts(),
 		"tombstone":            rec.GetTombstone(),
 		"seq":                  rec.GetSeq(),
 		"updated_at_unix_ms":   rec.GetUpdatedAtUnixMs(),
@@ -288,9 +287,9 @@ func (s *SubServer) locatorPublish(c context.Context, ctx *app.RequestContext) {
 }
 
 // federationResolve is the Phase C diagnostic that exercises the full
-// federated user-discovery read path: locator DHT lookup → home-station
-// /actor/federation/profile fetch via opaque Relay tunnel → signature
-// verification against the locator's pinned key.
+// federated user-discovery read path: locator DHT lookup → verified home
+// Station route → /actor/federation/profile → signature verification against
+// the locator's pinned key.
 //
 // Query: handle=user@host  (or @user@host)
 // Returns: the verified ActorProfileEnvelope plus a is_local flag and

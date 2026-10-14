@@ -15,10 +15,11 @@ import (
 )
 
 const (
-	StationNodeAuthorizationDomain = "peers-touch/station-node-authorization/v1\x00"
-	StationIdentityDomain          = "peers-touch/station-identity/v1\x00"
-	StationRouteDomain             = "peers-touch/station-route/v1\x00"
-	ConnectionGrantDomain          = "peers-touch/station-connection-grant/v1\x00"
+	StationNodeAuthorizationDomain  = "peers-touch/station-node-authorization/v1\x00"
+	StationIdentityDomain           = "peers-touch/station-identity/v1\x00"
+	StationRouteDomain              = "peers-touch/station-route/v1\x00"
+	ConnectionGrantDomain           = "peers-touch/station-connection-grant/v1\x00"
+	AccessEndpointSourceProofDomain = "peers-touch/access-endpoint-source-proof/v1\x00"
 
 	StationIdentityChallengeSize    = 32
 	MaxSignedControlBytes           = 1 << 20
@@ -35,10 +36,11 @@ const (
 )
 
 var (
-	ErrStationNodeAuthorizationInvalid = errors.New("Station node authorization is invalid")
-	ErrStationIdentityInvalid          = errors.New("Station identity is invalid")
-	ErrStationRouteAttestationInvalid  = errors.New("Station route attestation is invalid")
-	ErrStationConnectionGrantInvalid   = errors.New("Station connection grant is invalid")
+	ErrStationNodeAuthorizationInvalid  = errors.New("Station node authorization is invalid")
+	ErrStationIdentityInvalid           = errors.New("Station identity is invalid")
+	ErrStationRouteAttestationInvalid   = errors.New("Station route attestation is invalid")
+	ErrStationConnectionGrantInvalid    = errors.New("Station connection grant is invalid")
+	ErrAccessEndpointSourceProofInvalid = errors.New("access endpoint source proof is invalid")
 )
 
 type VerifiedStationNodeAuthorization struct {

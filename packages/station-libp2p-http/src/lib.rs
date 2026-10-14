@@ -37,6 +37,13 @@ const MAX_ROUTE_SESSIONS: usize = 24;
 const RESPONSE_BODY_CAPACITY: usize = 8;
 const REQUEST_CHUNK_BYTES: usize = 16 * 1024;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TransportIdentityProof {
+    pub peer_id: String,
+    pub public_key: Vec<u8>,
+    pub signature: Vec<u8>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Route {
     pub node_peer_id: String,
@@ -229,6 +236,7 @@ struct DriverLifecycle {
 
 struct Shared {
     client_peer_id: PeerId,
+    identity: identity::Keypair,
     commands: tokio_mpsc::Sender<DriverCommand>,
     accepting: AtomicBool,
     shutdown: CancellationToken,
@@ -251,6 +259,7 @@ impl TransportOwner {
 
     pub fn start_with_identity(keypair: identity::Keypair) -> Result<Self, TransportError> {
         let client_peer_id = keypair.public().to_peer_id();
+        let driver_keypair = keypair.clone();
         let (command_sender, command_receiver) = tokio_mpsc::channel(COMMAND_CAPACITY);
         let (ready_sender, ready_receiver) = mpsc::sync_channel(1);
         let (stopped_sender, stopped_receiver) = mpsc::sync_channel(1);
@@ -272,7 +281,7 @@ impl TransportOwner {
                     }
                 };
                 runtime.block_on(async move {
-                    let swarm = match build_swarm(keypair) {
+                    let swarm = match build_swarm(driver_keypair) {
                         Ok(swarm) => swarm,
                         Err(error) => {
                             let _ = ready_sender.send(Err(error.to_string()));
@@ -324,6 +333,7 @@ impl TransportOwner {
         Ok(Self {
             shared: Arc::new(Shared {
                 client_peer_id,
+                identity: keypair,
                 commands: command_sender,
                 accepting: AtomicBool::new(true),
                 shutdown,
@@ -418,6 +428,31 @@ impl Drop for TransportOwner {
 impl TransportHandle {
     pub fn client_peer_id(&self) -> PeerId {
         self.shared.client_peer_id
+    }
+
+    pub fn sign_identity_proof(
+        &self,
+        message: &[u8],
+    ) -> Result<TransportIdentityProof, TransportError> {
+        if !self.shared.accepting.load(Ordering::Acquire) {
+            return Err(TransportError::new(
+                TransportErrorKind::Shutdown,
+                FailurePhase::BeforeSubmission,
+                "Station transport is draining",
+            ));
+        }
+        let signature = self.shared.identity.sign(message).map_err(|error| {
+            TransportError::new(
+                TransportErrorKind::Unavailable,
+                FailurePhase::BeforeSubmission,
+                format!("sign Station transport identity proof: {error}"),
+            )
+        })?;
+        Ok(TransportIdentityProof {
+            peer_id: self.shared.client_peer_id.to_string(),
+            public_key: self.shared.identity.public().encode_protobuf(),
+            signature,
+        })
     }
 
     pub fn round_trip(&self, route: &Route, request: Request) -> Result<Response, TransportError> {
@@ -630,6 +665,10 @@ impl Driver {
                 });
             }
             DriverCommand::CloseRoute(route) => {
+                if let Ok(peer) = PeerId::from_str(&route.node_peer_id) {
+                    self.active.remove(&peer);
+                    let _ = self.swarm.disconnect_peer_id(peer);
+                }
                 let sessions = self.sessions.clone();
                 self.requests.spawn(async move {
                     sessions.close_route(&route).await;
@@ -1404,6 +1443,22 @@ mod tests {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<TransportOwner>();
         assert_send_sync::<TransportHandle>();
+    }
+
+    #[test]
+    fn identity_proof_uses_the_running_transport_key() {
+        let owner = TransportOwner::start().expect("start transport owner");
+        let handle = owner.handle();
+        let message = b"source-bound-grant";
+        let proof = handle
+            .sign_identity_proof(message)
+            .expect("sign identity proof");
+        let public_key = identity::PublicKey::try_decode_protobuf(&proof.public_key)
+            .expect("decode identity proof public key");
+
+        assert_eq!(proof.peer_id, handle.client_peer_id().to_string());
+        assert_eq!(public_key.to_peer_id().to_string(), proof.peer_id);
+        assert!(public_key.verify(message, &proof.signature));
     }
 
     #[test]

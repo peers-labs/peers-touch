@@ -23,6 +23,11 @@ type VerifiedStationConnectionGrant struct {
 	Authorization *VerifiedStationNodeAuthorization
 }
 
+type VerifiedAccessEndpointSourceProof struct {
+	Statement    *AccessEndpointSourceProofStatement
+	SourcePeerID libp2ppeer.ID
+}
+
 func SignStationRouteAttestation(
 	nodePrivateKey libp2pcrypto.PrivKey,
 	authorization *StationNodeAuthorization,
@@ -183,6 +188,82 @@ func VerifyStationConnectionGrant(
 	}, nil
 }
 
+func SignAccessEndpointSourceProof(
+	sourcePrivateKey libp2pcrypto.PrivKey,
+	statement *AccessEndpointSourceProofStatement,
+) (*AccessEndpointSourceProof, error) {
+	if sourcePrivateKey == nil ||
+		sourcePrivateKey.Type() != libp2pcrypto.Ed25519 ||
+		statement == nil {
+		return nil, ErrAccessEndpointSourceProofInvalid
+	}
+	if !validAccessEndpointSourceProofStatement(statement) {
+		return nil, ErrAccessEndpointSourceProofInvalid
+	}
+	statementBytes, err := marshalDeterministicBounded(statement)
+	if err != nil {
+		return nil, ErrAccessEndpointSourceProofInvalid
+	}
+	signature, err := sourcePrivateKey.Sign(
+		domainMessage(AccessEndpointSourceProofDomain, statementBytes),
+	)
+	if err != nil {
+		return nil, ErrAccessEndpointSourceProofInvalid
+	}
+	publicKey, err := libp2pcrypto.MarshalPublicKey(sourcePrivateKey.GetPublic())
+	if err != nil {
+		return nil, ErrAccessEndpointSourceProofInvalid
+	}
+	return &AccessEndpointSourceProof{
+		StatementBytes:  statementBytes,
+		SourcePublicKey: publicKey,
+		SourceSignature: signature,
+	}, nil
+}
+
+func VerifyAccessEndpointSourceProof(
+	proof *AccessEndpointSourceProof,
+) (*VerifiedAccessEndpointSourceProof, error) {
+	if proof == nil {
+		return nil, ErrAccessEndpointSourceProofInvalid
+	}
+	if raw, err := marshalDeterministicBounded(proof); err != nil ||
+		len(raw) > MaxSignedControlBytes {
+		return nil, ErrAccessEndpointSourceProofInvalid
+	}
+	statement := &AccessEndpointSourceProofStatement{}
+	if err := unmarshalCanonicalBounded(
+		proof.GetStatementBytes(),
+		statement,
+	); err != nil || !validAccessEndpointSourceProofStatement(statement) {
+		return nil, ErrAccessEndpointSourceProofInvalid
+	}
+	publicKey, err := libp2pcrypto.UnmarshalPublicKey(
+		proof.GetSourcePublicKey(),
+	)
+	if err != nil || publicKey.Type() != libp2pcrypto.Ed25519 {
+		return nil, ErrAccessEndpointSourceProofInvalid
+	}
+	sourcePeerID, err := libp2ppeer.IDFromPublicKey(publicKey)
+	if err != nil {
+		return nil, ErrAccessEndpointSourceProofInvalid
+	}
+	valid, err := publicKey.Verify(
+		domainMessage(
+			AccessEndpointSourceProofDomain,
+			proof.GetStatementBytes(),
+		),
+		proof.GetSourceSignature(),
+	)
+	if err != nil || !valid {
+		return nil, ErrAccessEndpointSourceProofInvalid
+	}
+	return &VerifiedAccessEndpointSourceProof{
+		Statement:    statement,
+		SourcePeerID: sourcePeerID,
+	}, nil
+}
+
 func validStationRouteStatement(
 	statement *StationRouteStatement,
 	authorization *VerifiedStationNodeAuthorization,
@@ -276,6 +357,21 @@ func validStationConnectionGrantStatement(
 		expiresAt.Sub(issuedAt) > 0 &&
 		expiresAt.Sub(issuedAt) <= MaxConnectionGrantLifetime &&
 		!expiresAt.After(authorizationExpiresAt)
+}
+
+func validAccessEndpointSourceProofStatement(
+	statement *AccessEndpointSourceProofStatement,
+) bool {
+	if statement == nil ||
+		len(statement.GetChallenge()) != StationIdentityChallengeSize ||
+		len(statement.GetConnectionGrantDigest()) != sha256.Size ||
+		statement.GetRelayPeerId() == "" ||
+		statement.GetRelayPeerId() != strings.TrimSpace(statement.GetRelayPeerId()) ||
+		statement.GetClientProtocolVersion() == 0 {
+		return false
+	}
+	_, err := libp2ppeer.Decode(statement.GetRelayPeerId())
+	return err == nil
 }
 
 func nodePrivateKeyMatches(

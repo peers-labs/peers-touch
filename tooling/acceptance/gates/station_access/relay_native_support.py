@@ -71,6 +71,11 @@ def station_registry_snapshot(session: TauriSession) -> dict[str, Any]:
         "lifecycleGeneration": int(
             entry.get("lifecycle_generation") or 0
         ),
+        "routes": [
+            dict(route)
+            for route in routes
+            if isinstance(route, Mapping)
+        ],
         "route": dict(active_routes[0]),
         "binding": dict(binding),
     }

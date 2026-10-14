@@ -308,7 +308,7 @@
         "proven_scope": [
           "Station and Relay roles use one challenge-bound protobuf discovery contract",
           "Relay lists only current public routes without a grant",
-          "private grants are Station-signed, Relay-bound, expiring, and replay-limited",
+          "private grants are Station-signed, Relay-bound, expiring, proof-bound to the source transport key, and idempotently replay-limited",
           "Dashboard connection material issuance is authenticated, strict, non-cacheable, and unavailable without a live Circuit reservation",
           "forged Station routes and wrong-Relay grants fail closed"
         ],

@@ -25,10 +25,10 @@ type RouteAdmission struct {
 }
 
 type ConnectPermit struct {
+	PermitID          string
 	SourcePeerID      peer.ID
 	DestinationPeerID peer.ID
 	Generation        uint64
-	RemainingUses     uint32
 	ExpiresAt         time.Time
 }
 
@@ -48,14 +48,14 @@ type Admission struct {
 	lock    sync.Mutex
 	host    host.Host
 	nodes   map[peer.ID]admissionNode
-	permits map[permitKey]ConnectPermit
+	permits map[permitKey]map[string]ConnectPermit
 	now     func() time.Time
 }
 
 func NewAdmission() *Admission {
 	return &Admission{
 		nodes:   make(map[peer.ID]admissionNode),
-		permits: make(map[permitKey]ConnectPermit),
+		permits: make(map[permitKey]map[string]ConnectPermit),
 		now:     func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -117,11 +117,11 @@ func (a *Admission) PublishRoute(input RouteAdmission) error {
 }
 
 func (a *Admission) Permit(input ConnectPermit) error {
-	if a == nil || input.SourcePeerID == "" ||
+	if a == nil || input.PermitID == "" ||
+		input.SourcePeerID == "" ||
 		input.DestinationPeerID == "" ||
 		input.SourcePeerID == input.DestinationPeerID ||
 		input.Generation == 0 ||
-		input.RemainingUses == 0 ||
 		!input.ExpiresAt.After(a.now()) {
 		return fmt.Errorf("Relay connect permit is invalid")
 	}
@@ -140,15 +140,21 @@ func (a *Admission) Permit(input ConnectPermit) error {
 		source:      input.SourcePeerID,
 		destination: input.DestinationPeerID,
 	}
-	if current, ok := a.permits[key]; ok &&
-		current.Generation == input.Generation &&
-		current.ExpiresAt.Equal(input.ExpiresAt) {
-		if current.RemainingUses > ^uint32(0)-input.RemainingUses {
-			return fmt.Errorf("Relay connect permit use count overflows")
-		}
-		input.RemainingUses += current.RemainingUses
+	bucket := a.permits[key]
+	if bucket == nil {
+		bucket = make(map[string]ConnectPermit)
 	}
-	a.permits[key] = input
+	if current, ok := bucket[input.PermitID]; ok {
+		if current.SourcePeerID != input.SourcePeerID ||
+			current.DestinationPeerID != input.DestinationPeerID ||
+			current.Generation != input.Generation ||
+			!current.ExpiresAt.Equal(input.ExpiresAt) {
+			return fmt.Errorf("Relay connect permit conflicts with current authorization")
+		}
+		return nil
+	}
+	bucket[input.PermitID] = input
+	a.permits[key] = bucket
 	return nil
 }
 
@@ -208,18 +214,13 @@ func (a *Admission) AllowConnect(
 		source:      sourcePeerID,
 		destination: destinationPeerID,
 	}
-	permit, ok := a.permits[key]
-	if !ok || permit.Generation != destination.generation ||
-		permit.RemainingUses == 0 || !permit.ExpiresAt.After(now) {
-		return false
+	for _, permit := range a.permits[key] {
+		if permit.Generation == destination.generation &&
+			permit.ExpiresAt.After(now) {
+			return true
+		}
 	}
-	permit.RemainingUses--
-	if permit.RemainingUses == 0 {
-		delete(a.permits, key)
-	} else {
-		a.permits[key] = permit
-	}
-	return true
+	return false
 }
 
 func (a *Admission) Counts() (nodes int, routes int, permits int) {
@@ -235,7 +236,10 @@ func (a *Admission) Counts() (nodes int, routes int, permits int) {
 			routes++
 		}
 	}
-	return nodes, routes, len(a.permits)
+	for _, bucket := range a.permits {
+		permits += len(bucket)
+	}
+	return nodes, routes, permits
 }
 
 func (a *Admission) removeExpiredLocked(now time.Time) {
@@ -251,8 +255,13 @@ func (a *Admission) removeExpiredLocked(now time.Time) {
 			a.deletePermitsForDestinationLocked(nodePeerID)
 		}
 	}
-	for key, permit := range a.permits {
-		if permit.RemainingUses == 0 || !permit.ExpiresAt.After(now) {
+	for key, bucket := range a.permits {
+		for permitID, permit := range bucket {
+			if !permit.ExpiresAt.After(now) {
+				delete(bucket, permitID)
+			}
+		}
+		if len(bucket) == 0 {
 			delete(a.permits, key)
 		}
 	}

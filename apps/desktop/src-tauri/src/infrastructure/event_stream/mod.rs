@@ -20,8 +20,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use prost::Message;
@@ -86,18 +87,14 @@ impl StreamControl {
     }
 }
 
-fn registry() -> &'static Mutex<HashMap<String, Arc<StreamControl>>> {
-    static REG: OnceLock<Mutex<HashMap<String, Arc<StreamControl>>>> = OnceLock::new();
-    REG.get_or_init(|| Mutex::new(HashMap::new()))
+struct StreamWorker {
+    control: Arc<StreamControl>,
+    join: JoinHandle<()>,
 }
 
-#[cfg(test)]
-pub(crate) fn register_test_control(actor_ptid: &str, cancellation: CancellationToken) {
-    let control = Arc::new(StreamControl { cancellation });
-    let mut map = registry().lock().expect("event_stream registry poisoned");
-    if let Some(previous) = map.insert(actor_ptid.to_string(), control) {
-        previous.cancel();
-    }
+#[derive(Default)]
+pub struct EventStreamRuntime {
+    workers: Mutex<HashMap<String, StreamWorker>>,
 }
 
 /// Start (or restart) the event-stream supervisor for an actor.
@@ -112,83 +109,169 @@ pub(crate) fn register_test_control(actor_ptid: &str, cancellation: Cancellation
 /// running two windows of the same actor on the same machine gets
 /// independent cursor tracking on the server side. Empty string is
 /// tolerated; the server falls back to an anonymous suffix.
-pub fn start(
-    station_client: StationClient,
-    app: AppHandle,
-    actor_ptid: String,
-    session_epoch: u64,
-    token: String,
-    device_id: String,
-) {
-    if token.trim().is_empty() {
-        tracing::warn!(actor = %actor_ptid, "event_stream: refusing to start with empty token");
-        return;
+impl EventStreamRuntime {
+    pub fn new() -> Self {
+        Self::default()
     }
-    let cancel = Arc::new(StreamControl::new());
-    {
-        let mut map = registry().lock().expect("event_stream registry poisoned");
-        if let Some(prev) = map.insert(actor_ptid.clone(), cancel.clone()) {
-            prev.cancel();
+
+    pub fn start(
+        &self,
+        station_client: StationClient,
+        app: AppHandle,
+        actor_ptid: String,
+        session_epoch: u64,
+        token: String,
+        device_id: String,
+    ) -> Result<(), String> {
+        if token.trim().is_empty() {
+            return Err("event stream requires a non-empty token".to_string());
+        }
+        let previous = self
+            .workers
+            .lock()
+            .map_err(|_| "event stream worker lock poisoned".to_string())?
+            .remove(&actor_ptid);
+        if let Some(previous) = previous {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            if !cancel_and_wait(&previous, deadline) {
+                self.workers
+                    .lock()
+                    .map_err(|_| "event stream worker lock poisoned".to_string())?
+                    .insert(actor_ptid, previous);
+                return Err(
+                    "previous event stream worker did not stop before replacement".to_string(),
+                );
+            }
+            join_worker(previous)?;
+        }
+
+        let control = Arc::new(StreamControl::new());
+        let control_for_thread = control.clone();
+        let actor_for_thread = actor_ptid.clone();
+        let station_url = station_client.active_endpoint_origin().unwrap_or_default();
+        let station_peer_id = station_client.active_station_peer_id().unwrap_or_default();
+        let stream_cursor_path = cursor_path(&actor_ptid, &station_peer_id, &station_url);
+        let join = std::thread::Builder::new()
+            .name(format!(
+                "event-stream-{}",
+                &actor_ptid[..actor_ptid.len().min(8)]
+            ))
+            .spawn(move || {
+                run_supervisor(
+                    station_client,
+                    app,
+                    actor_for_thread,
+                    session_epoch,
+                    station_url,
+                    station_peer_id,
+                    stream_cursor_path,
+                    token,
+                    device_id,
+                    control_for_thread,
+                );
+            })
+            .map_err(|error| format!("start event stream worker: {error}"))?;
+        let worker = StreamWorker { control, join };
+        self.workers
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(actor_ptid, worker);
+        Ok(())
+    }
+
+    /// Stop the event-stream supervisor for an actor (idempotent). Used
+    /// on logout, account switch, and app shutdown.
+    pub fn stop(&self, actor_ptid: &str) -> Result<(), String> {
+        let worker = self
+            .workers
+            .lock()
+            .map_err(|_| "event stream worker lock poisoned".to_string())?
+            .remove(actor_ptid);
+        let Some(worker) = worker else {
+            return Ok(());
+        };
+        if !cancel_and_wait(&worker, Instant::now() + Duration::from_secs(5)) {
+            self.workers
+                .lock()
+                .map_err(|_| "event stream worker lock poisoned".to_string())?
+                .insert(actor_ptid.to_string(), worker);
+            return Err(
+                "event stream worker did not stop before the shutdown deadline".to_string(),
+            );
+        }
+        join_worker(worker)
+    }
+
+    /// Stop every Station-scoped event stream before changing Station binding.
+    pub fn stop_all(&self) -> Result<(), String> {
+        let workers = self
+            .workers
+            .lock()
+            .map_err(|_| "event stream worker lock poisoned".to_string())?
+            .drain()
+            .collect::<Vec<_>>();
+        for (_, worker) in &workers {
+            worker.control.cancel();
+        }
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut failures = Vec::new();
+        let mut retained = Vec::new();
+        for (actor_ptid, worker) in workers {
+            if !wait_for_worker(&worker, deadline) {
+                failures.push(format!(
+                    "event stream worker {actor_ptid} did not stop before the shutdown deadline"
+                ));
+                retained.push((actor_ptid, worker));
+                continue;
+            }
+            if let Err(error) = join_worker(worker) {
+                failures.push(error);
+            }
+        }
+        if !retained.is_empty() {
+            self.workers
+                .lock()
+                .map_err(|_| "event stream worker lock poisoned".to_string())?
+                .extend(retained);
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(failures.join("; "))
         }
     }
-    let actor_for_thread = actor_ptid.clone();
-    let cancel_for_thread = cancel.clone();
-    let station_url = station_client.active_endpoint_origin().unwrap_or_default();
-    let station_peer_id = station_client.active_station_peer_id().unwrap_or_default();
-    let stream_cursor_path = cursor_path(&actor_ptid, &station_peer_id, &station_url);
-    std::thread::Builder::new()
-        .name(format!(
-            "event-stream-{}",
-            &actor_ptid[..actor_ptid.len().min(8)]
-        ))
-        .spawn(move || {
-            run_supervisor(
-                station_client,
-                app,
-                actor_for_thread.clone(),
-                session_epoch,
-                station_url,
-                station_peer_id,
-                stream_cursor_path,
-                token,
-                device_id,
-                cancel_for_thread,
-            );
-            // Best-effort cleanup if the supervisor exits naturally.
-            let mut map = registry().lock().expect("event_stream registry poisoned");
-            if let Some(existing) = map.get(&actor_for_thread) {
-                if Arc::ptr_eq(existing, &cancel) {
-                    map.remove(&actor_for_thread);
-                }
-            }
-        })
-        .ok();
-}
 
-/// Stop the event-stream supervisor for an actor (idempotent). Used
-/// on logout, account switch, and app shutdown.
-pub fn stop(actor_ptid: &str) {
-    let mut map = registry().lock().expect("event_stream registry poisoned");
-    if let Some(flag) = map.remove(actor_ptid) {
-        flag.cancel();
+    /// True if a live supervisor is registered for the actor.
+    pub fn is_running(&self, actor_ptid: &str) -> bool {
+        self.workers
+            .lock()
+            .ok()
+            .and_then(|workers| {
+                workers
+                    .get(actor_ptid)
+                    .map(|worker| !worker.join.is_finished())
+            })
+            .unwrap_or(false)
     }
 }
 
-/// Stop every Station-scoped event stream before changing Station binding.
-pub fn stop_all() {
-    let mut map = registry().lock().expect("event_stream registry poisoned");
-    for (_, flag) in map.drain() {
-        flag.cancel();
-    }
+fn cancel_and_wait(worker: &StreamWorker, deadline: Instant) -> bool {
+    worker.control.cancel();
+    wait_for_worker(worker, deadline)
 }
 
-/// True if a supervisor is registered for the actor (it may not be
-/// connected yet — registration happens before the first connect).
-pub fn is_running(actor_ptid: &str) -> bool {
-    registry()
-        .lock()
-        .map(|m| m.contains_key(actor_ptid))
-        .unwrap_or(false)
+fn wait_for_worker(worker: &StreamWorker, deadline: Instant) -> bool {
+    while !worker.join.is_finished() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    worker.join.is_finished()
+}
+
+fn join_worker(worker: StreamWorker) -> Result<(), String> {
+    worker
+        .join
+        .join()
+        .map_err(|_| "event stream worker panicked".to_string())
 }
 
 // ---------------------------------------------------------------------
@@ -242,16 +325,8 @@ fn save_cursor(path: Option<&PathBuf>, event_id: &str) {
     }
 }
 
-fn with_current_supervisor(
-    actor_ptid: &str,
-    cancel: &Arc<StreamControl>,
-    operation: impl FnOnce(),
-) -> bool {
-    let map = registry().lock().expect("event_stream registry poisoned");
-    let current = map
-        .get(actor_ptid)
-        .is_some_and(|registered| Arc::ptr_eq(registered, cancel));
-    if !current || cancel.is_cancelled() {
+fn with_current_supervisor(cancel: &Arc<StreamControl>, operation: impl FnOnce()) -> bool {
+    if cancel.is_cancelled() {
         return false;
     }
     operation();
@@ -518,7 +593,7 @@ fn dispatch(
         "event_id": resolved_event_id,
         "data_b64": data_b64.trim(),
     });
-    with_current_supervisor(actor_ptid, cancel, || {
+    with_current_supervisor(cancel, || {
         // Cursor advancement and emit share the registration fence. Once a
         // replacement supervisor is registered, the old generation can do
         // neither and the replacement resumes from the unconsumed event.
@@ -601,31 +676,41 @@ mod tests {
         }
         let old = Arc::new(StreamControl::new());
         let current = Arc::new(StreamControl::new());
-        {
-            let mut map = registry().lock().unwrap();
-            map.insert(actor.to_string(), old.clone());
-            old.cancel();
-            map.insert(actor.to_string(), current.clone());
-        }
+        old.cancel();
 
-        assert!(!with_current_supervisor(actor, &old, || {
+        assert!(!with_current_supervisor(&old, || {
             save_cursor(path.as_ref(), "stale-event");
         }));
         assert_eq!(load_cursor(path.as_ref()), "");
-        assert!(with_current_supervisor(actor, &current, || {
+        assert!(with_current_supervisor(&current, || {
             save_cursor(path.as_ref(), "current-event");
         }));
         assert_eq!(load_cursor(path.as_ref()), "current-event");
 
-        let mut map = registry().lock().unwrap();
-        if map
-            .get(actor)
-            .is_some_and(|registered| Arc::ptr_eq(registered, &current))
-        {
-            map.remove(actor);
-        }
         if let Some(path) = path {
             let _ = fs::remove_file(path);
         }
+    }
+
+    #[test]
+    fn runtime_stop_cancels_and_joins_worker() {
+        let runtime = EventStreamRuntime::new();
+        let control = Arc::new(StreamControl::new());
+        let worker_control = control.clone();
+        let join = std::thread::spawn(move || {
+            while !worker_control.is_cancelled() {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        });
+        runtime
+            .workers
+            .lock()
+            .unwrap()
+            .insert("actor-a".to_string(), StreamWorker { control, join });
+
+        runtime.stop("actor-a").unwrap();
+
+        assert!(!runtime.is_running("actor-a"));
+        assert!(runtime.workers.lock().unwrap().is_empty());
     }
 }

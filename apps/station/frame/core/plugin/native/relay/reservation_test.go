@@ -81,6 +81,40 @@ func TestCircuitDialMultiaddrsIncludeRelayTransportAddress(t *testing.T) {
 	}
 }
 
+func TestReservationRenewalFailureRetainsUnexpiredRoute(t *testing.T) {
+	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
+	manager, err := NewReservationManager(Pool{Mode: PoolModeOff})
+	if err != nil {
+		t.Fatalf("create reservation manager: %v", err)
+	}
+	manager.now = func() time.Time { return now }
+	relayPeerID := testPeerID(t)
+	route := &CircuitRoute{
+		RelayPeerID:     relayPeerID,
+		RouteGeneration: 3,
+		ExpiresAt:       now.Add(time.Minute),
+	}
+	manager.record(relayPeerID, route, nil)
+	manager.record(
+		relayPeerID,
+		nil,
+		fmt.Errorf("transient renewal failure"),
+	)
+
+	routes := manager.LiveRoutes(now)
+	if len(routes) != 1 ||
+		routes[0].RelayPeerID != relayPeerID ||
+		routes[0].RouteGeneration != route.RouteGeneration {
+		t.Fatalf("renewal failure dropped live route: %+v", routes)
+	}
+
+	now = now.Add(2 * time.Minute)
+	manager.record(relayPeerID, nil, fmt.Errorf("route expired"))
+	if routes := manager.LiveRoutes(now); len(routes) != 0 {
+		t.Fatalf("expired route survived renewal failure: %+v", routes)
+	}
+}
+
 func TestReservationManagerKeepsIndependentRelayRoutes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()

@@ -26,7 +26,6 @@ use tauri::{AppHandle, State, Window};
 use crate::application::session_resolver;
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::event_stream;
 use crate::state::AppState;
 
 fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
@@ -79,14 +78,16 @@ pub fn realtime_stream_start(
         return AppResult::fail(ErrorCode::Unauthorized, "no active actor", None);
     };
     let device_id = device_id_from(&window);
-    event_stream::start(
+    if let Err(error) = state.event_streams.start(
         state.station.client().clone(),
         app,
         actor_ptid.clone(),
         input.session_epoch,
         token,
         device_id.clone(),
-    );
+    ) {
+        return AppResult::fail(ErrorCode::InternalError, error, None);
+    }
     to_stub(
         "realtime_stream_start",
         json!({
@@ -103,7 +104,9 @@ pub fn realtime_stream_stop(
     window: Window,
 ) -> AppResult<StubPayload> {
     if let Some(actor_ptid) = session_resolver::ptid_for_window(state.inner(), &window) {
-        event_stream::stop(&actor_ptid);
+        if let Err(error) = state.event_streams.stop(&actor_ptid) {
+            return AppResult::fail(ErrorCode::InternalError, error, None);
+        }
         return to_stub("realtime_stream_stop", json!({ "actor_ptid": actor_ptid }));
     }
     to_stub("realtime_stream_stop", json!({ "actor_ptid": null }))
