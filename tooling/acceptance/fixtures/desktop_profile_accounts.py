@@ -24,7 +24,7 @@ def prepare_profile_accounts(
         raise ValueError("Desktop fixture requires a canonical workspace ID")
     actors: dict[str, ActorIdentity] = {}
     for role in ("receiver", "sender"):
-        handle = f"desktop-ui-{workspace[:8]}-{role}"
+        handle = f"dui-{workspace[:8]}-{role[0]}"
         account = f"{handle}@p.t"
         request = urllib.request.Request(
             f"{station_url.rstrip('/')}/actor/sign-up",
@@ -40,7 +40,7 @@ def prepare_profile_accounts(
                 envelope = json.loads(response.read())
         except urllib.error.HTTPError as error:
             envelope = json.loads(error.read())
-        if envelope.get("code") not in (0, 10006):
+        if envelope.get("code") not in ("200", 10006):
             raise BlockedError(
                 reason=f"Production signup rejected Desktop fixture {role}: {envelope.get('code')}",
                 resource=f"fixture-actor:{role}",
