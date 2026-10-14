@@ -284,6 +284,7 @@ def run_notifications_journey(
     receiver: TauriSession,
     sender: TauriSession,
     artifacts: Path,
+    progress: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Use production Social commands and receiver UI without resetting actors."""
     receiver_profile = read_profile(receiver)
@@ -296,40 +297,66 @@ def run_notifications_journey(
     initial_relationship = call_async_harness(receiver, "refreshOnboardingProjection", {
         "peerPtid": sender_ptid,
     }, namespace="chat")
-    if initial_relationship["acceptedFriendship"] or any(
-        request["status"] == 1 for request in initial_relationship["requests"]
-    ):
-        raise GateError("notification fixture requires an existing actor pair without accepted or pending requests")
+    if any(initial_relationship["relationship"].values()):
+        raise GateError("notification fixture requires an actor pair without an active follow relationship")
+    for request in initial_relationship["requests"]:
+        if request["status"] != 1:
+            continue
+        if not request["message"].startswith("desktop-notification-"):
+            raise GateError("notification fixture has an unrelated pending request")
+        response = receiver.invoke_app_result("social_friend_request_reject", {"input": {
+            "request_id": request["id"], "sender_ptid": sender_ptid,
+            "sender_home_station_peer_id": sender_profile["home_station_peer_id"],
+            "federation_id": request["federationId"], "message": "",
+        }})
+        if response.get("ok") is not True:
+            raise GateError("prior namespaced notification request recovery failed")
     baseline = read_payload(receiver, "notification_unread_counts")["total"]
     original_policy = receiver_profile["contact_policy"]
-    result: dict[str, Any] = {"steps": [], "assertions": {}, "notificationIds": []}
-    policy_changed = original_policy != "everyone"
+    original_preferences = read_payload(receiver, "notification_preferences")
+    chat_preference = next(item for item in original_preferences["preferences"] if item["category"] == 2)
+    result = progress if progress is not None else {}
+    result.update(steps=[], assertions={}, notificationIds=[],
+                  initialChatPreference=chat_preference,
+                  initialRelationship=initial_relationship["relationship"])
+    policy_changed = original_policy != "anyone"
+    preferences_changed = False
+    pending_request = ""
+    accept_attempted = False
     try:
         receiver.invoke_app_result("acceptance_request_activation")
+        if not chat_preference["enabled"]:
+            receiver.find_element('[data-pt-primary-nav="settings"] [role="button"]', 30).click()
+            receiver.find_element('[data-pt-secondary-tab="general"]', 30).click()
+            receiver.find_element('[data-pt-section-item="notifications"]', 30).click()
+            receiver.find_elements('[data-notification-category="chat"] button[role="switch"]')[0].click()
+            preferences_changed = True
+            wait(receiver, lambda: any(item["category"] == 2 and item["enabled"] for item in read_payload(
+                receiver, "notification_preferences",
+            )["preferences"]), "Chat notification fixture enabled through Settings")
         if policy_changed:
             read_payload(receiver, "profile_update", {"input": {
-                "contact_policy": "everyone",
+                "contact_policy": "anyone",
                 "observed_revision": receiver_profile["profile_revision"],
             }})
         marker = f"desktop-notification-{time.time_ns()}"
         for index in range(8):
-            response = sender.invoke_app_result("social_friend_request_send", {"input": {
-                "receiver_ptid": receiver_ptid,
-                "receiver_home_station_peer_id": receiver_profile["home_station_peer_id"],
-                "federation_id": federation_id,
+            response = call_async_harness(sender, "sendFriendRequest", {
+                "actorPtid": receiver_ptid,
+                "homeStationPeerId": receiver_profile["home_station_peer_id"],
+                "federationId": federation_id,
                 "message": f"{marker}-{index}",
-            }})
-            if response.get("ok") is not True:
-                raise GateError(f"production friend request failed: {response.get('error')}")
+            }, namespace="moments")
+            pending_request = response["requestId"]
             item = wait(receiver, lambda: next((
                 candidate for candidate in read_payload(receiver, "notification_list", {
                     "input": {"limit": 20},
-                })["notifications"] if candidate["body"] == f"{marker}-{index}"
+                })["notifications"] if candidate["targetId"] == pending_request
             ), None), "Social post-commit notification")
             result["notificationIds"].append(item["id"])
             wait(receiver, lambda: read_payload(receiver, "notification_unread_counts")["total"] == baseline + 1,
                  "authoritative unread increment")
-            bell_selector = 'button[aria-haspopup="dialog"]'
+            bell_selector = '[role="button"][aria-haspopup="dialog"]'
             wait(receiver, lambda: receiver.execute_script(
                 """const bell = document.querySelector(arguments[0]);
                 return bell?.parentElement?.querySelector('.ant-badge-count')?.title
@@ -341,7 +368,8 @@ def run_notifications_journey(
             if f"{marker}-{index}" not in row.text:
                 raise GateError("receiver notification body differs from the production command")
             decision = "Accept" if index == 7 else "Decline"
-            row.find_element("css selector", f'button[aria-label^="{decision}"], button[title^="{decision}"]').click()
+            accept_attempted = index == 7
+            row.find_element("css selector", f'[role="button"][aria-label^="{decision}"]').click()
             wait(receiver, lambda: read_payload(receiver, "notification_unread_counts")["total"] == baseline,
                  "inline decision reconciles authoritative unread")
             snapshot = call_async_harness(receiver, "refreshOnboardingProjection", {
@@ -351,6 +379,7 @@ def run_notifications_journey(
             if not any(request["id"] == item["targetId"] and request["status"] == expected_status
                        for request in snapshot["requests"]):
                 raise GateError(f"{decision} did not reach Social request authority")
+            pending_request = ""
             receiver.save_screenshot(artifacts / f"notification-{decision.lower()}-{index}.png")
             click_text(receiver, "More notifications")
             search_selector = '[data-notification-mode="all"] input'
@@ -413,6 +442,46 @@ def run_notifications_journey(
         result["steps"].append("push_device_authority_read_only")
         result["assertions"]["C8"] = True
     finally:
+        if pending_request and not accept_attempted:
+            response = receiver.invoke_app_result("social_friend_request_reject", {"input": {
+                "request_id": pending_request, "sender_ptid": sender_ptid,
+                "sender_home_station_peer_id": sender_profile["home_station_peer_id"],
+                "federation_id": federation_id, "message": "",
+            }})
+            if response.get("ok") is not True:
+                raise GateError("namespaced pending request cleanup failed")
+        if accept_attempted:
+            for client, peer in ((receiver, sender_ptid), (sender, receiver_ptid)):
+                response = client.invoke_app_result("social_unfollow", {"input": {"target_actor_ptid": peer}})
+                if response.get("ok") is not True:
+                    raise GateError("namespaced friendship cleanup failed")
+            restored = call_async_harness(receiver, "refreshOnboardingProjection", {
+                "peerPtid": sender_ptid,
+            }, namespace="chat")
+            if any(restored["relationship"].values()):
+                raise GateError("namespaced friendship remained active after cleanup")
+            result["relationshipRestoredExactly"] = True
+        if result["notificationIds"]:
+            read_payload(receiver, "notification_delete", {"input": {
+                "notification_ids": result["notificationIds"],
+            }})
+        if preferences_changed:
+            current = read_payload(receiver, "notification_preferences")
+            read_payload(receiver, "notification_preferences_update", {"input": {
+                "updates": [{
+                    "category": 2, "enabled": chat_preference["enabled"],
+                    "push_enabled": chat_preference["pushEnabled"],
+                    "sound_enabled": chat_preference["soundEnabled"],
+                }],
+                "observed_revision": current["notificationPreferencesRevision"],
+            }})
+            restored = next(item for item in read_payload(
+                receiver, "notification_preferences",
+            )["preferences"] if item["category"] == 2)
+            if any(restored[key] != chat_preference[key]
+                   for key in ("category", "enabled", "pushEnabled", "soundEnabled")):
+                raise GateError("Chat notification preference restoration failed")
+            result["chatPreferenceRestoredExactly"] = True
         if policy_changed:
             current = read_profile(receiver)
             read_payload(receiver, "profile_update", {"input": {
@@ -493,7 +562,8 @@ def main() -> int:
             if response.get("ok") is not True:
                 raise GateError("prior probe collection recovery failed")
             assert_profile(session, expected)
-        result["notifications"] = run_notifications_journey(session, sender, artifacts)
+        result["notifications"] = {}
+        run_notifications_journey(session, sender, artifacts, result["notifications"])
         if not args.notifications_only:
             result.update(run_profile_journey(session, binding, artifacts))
         result["result"] = "PASS"

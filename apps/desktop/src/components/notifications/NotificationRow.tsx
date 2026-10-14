@@ -92,13 +92,15 @@ export function NotificationRow({
         {request ? <>
           <ActionIcon icon={Check} size="small" disabled={busy}
             title={t('layout.notifications.accept', { name })}
+            aria-label={t('layout.notifications.accept', { name })}
             style={{ color: token.colorPrimary, background: token.colorPrimaryBg, borderRadius: 8 }}
             onClick={() => onDecision(true)} />
           <ActionIcon icon={X} size="small" disabled={busy}
             title={t('layout.notifications.decline', { name })}
+            aria-label={t('layout.notifications.decline', { name })}
             onClick={() => onDecision(false)} />
         </> : <ActionIcon icon={Trash2} size="small" disabled={busy}
-          title={t('layout.notifications.dismiss')} onClick={onDelete} />}
+          title={t('layout.notifications.dismiss')} aria-label={t('layout.notifications.dismiss')} onClick={onDelete} />}
       </div>
     </div>
   );

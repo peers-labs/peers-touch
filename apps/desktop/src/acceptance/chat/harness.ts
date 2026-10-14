@@ -8,6 +8,7 @@ import { installAuthenticatedCriticalRuntimes } from '../../services/appRuntime'
 import { api } from '../../services/desktop_api';
 import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
 import { imServiceV1 } from '../../services/im-service';
+import { socialGetRelationship } from '../../services/social_api';
 import {
   refreshPeerPresence,
   refreshSocialProjection,
@@ -314,6 +315,7 @@ async function hydrateSocialForActiveActor(): Promise<void> {
 async function onboardingSnapshot(peerPtid: string) {
   const actorPtid = activeActorPtid();
   const social = useSocialChatStore.getState();
+  const { relationship } = await socialGetRelationship(peerPtid);
   const requests = social.friendRequests
     .filter((request) => (
       (request.senderPtid === actorPtid && request.receiverPtid === peerPtid)
@@ -325,6 +327,7 @@ async function onboardingSnapshot(peerPtid: string) {
       receiverPtid: request.receiverPtid,
       status: request.status,
       federationId: request.federationId,
+      message: request.message,
     }))
     .sort((left, right) => left.id.localeCompare(right.id));
   const conversationIds = social.getIMConversations()
@@ -338,6 +341,10 @@ async function onboardingSnapshot(peerPtid: string) {
   return {
     actorPtid,
     peerPtid,
+    relationship: {
+      following: relationship?.following ?? false,
+      followedBy: relationship?.followedBy ?? false,
+    },
     acceptedFriendship: requests.some((request) => request.status === 2),
     requests,
     conversationIds,

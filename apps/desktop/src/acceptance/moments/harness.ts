@@ -983,6 +983,7 @@ export function installAcceptanceHarness(): void {
       actorPtid: string;
       federationId: string;
       homeStationPeerId: string;
+      message?: string;
     }) {
       if (
         !input.actorPtid?.trim()
@@ -995,7 +996,7 @@ export function installAcceptanceHarness(): void {
         receiverPtid: input.actorPtid,
         receiverHomeStationPeerId: input.homeStationPeerId,
         federationId: input.federationId,
-        message: 'secure-content-w7 friendship',
+        message: input.message ?? 'secure-content-w7 friendship',
       });
       const requestId = response.request?.requestId.trim();
       if (!requestId) {
