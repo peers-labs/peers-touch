@@ -16,6 +16,9 @@ use crate::application::host_events;
 const SHOW_ID: &str = "tray-show";
 const QUIT_ID: &str = "tray-quit";
 
+#[cfg(target_os = "macos")]
+const MACOS_TRAY_ICON_PNG: &[u8] = include_bytes!("../../../icons/tray-icon-macos.png");
+
 /// Build and install the system tray icon. Returns Err on platforms/builds
 /// where a tray is unavailable so the caller can degrade to close-to-quit.
 pub fn install<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
@@ -43,10 +46,19 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
             }
         });
 
-    // Reuse the build-time embedded window icon (raw RGBA), so the tray icon
-    // is present in packaged builds without a runtime PNG decoder feature.
-    if let Some(icon) = app.default_window_icon() {
-        builder = builder.icon(icon.clone());
+    #[cfg(target_os = "macos")]
+    {
+        let icon = tauri::image::Image::from_bytes(MACOS_TRAY_ICON_PNG)
+            .map_err(|e| format!("decode macOS tray icon: {e}"))?;
+        builder = builder.icon(icon).icon_as_template(true);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Other desktop trays keep the packaged application icon.
+        if let Some(icon) = app.default_window_icon() {
+            builder = builder.icon(icon.clone());
+        }
     }
 
     builder.build(app).map_err(|e| format!("build tray: {e}"))?;
@@ -63,5 +75,22 @@ pub fn restore_main_window<R: Runtime>(app: &AppHandle<R>) {
         if let Err(error) = host_events::emit_tray_open(app, "tray-click") {
             tracing::warn!(error = %error, "tray: failed to emit tray-open host event");
         }
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::MACOS_TRAY_ICON_PNG;
+
+    #[test]
+    fn macos_tray_icon_is_retina_template_artwork() {
+        let icon = tauri::image::Image::from_bytes(MACOS_TRAY_ICON_PNG).expect("decode tray icon");
+
+        assert_eq!((icon.width(), icon.height()), (88, 36));
+
+        let mut alpha = icon.rgba().chunks_exact(4).map(|pixel| pixel[3]);
+        assert!(alpha.clone().any(|value| value == 0));
+        assert!(alpha.clone().any(|value| value == u8::MAX));
+        assert!(alpha.any(|value| value > 0 && value < u8::MAX));
     }
 }

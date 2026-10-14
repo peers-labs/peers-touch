@@ -25,6 +25,14 @@ not an independently supported browser client.
 Owns the process lifecycle, native window, menu/tray, permissions, focus and
 input behavior, embedded WebView, packaging, and cleanup.
 
+The macOS status-item product contract is defined by
+[`docs/client/desktop/tray-residency.md`](../../../../client/desktop/tray-residency.md).
+Native status-item proof remains platform-owned: the Environment Provisioner
+builds and launches the package, the macOS adapter owns Accessibility and
+CoreGraphics operations, and the business Gate consumes only a bounded
+parent-owned capability. Product Gate code must not import AppKit or Quartz,
+launch the package, or own process cleanup.
+
 ### Embedded WebView Renderer
 
 Owns UI rendering, interaction, local projections, Page/Runtime/Boot contracts,
@@ -68,6 +76,10 @@ such as `desktop-macos-native`, and must include:
 - native screenshots and DOM snapshots when applicable;
 - Desktop Rust and Station identity;
 - bounded reverse-order process and resource cleanup.
+
+Shell-only journeys that require no Station state may omit Station and DOM
+evidence, but they must still prove exact source, package/binary identity,
+native Accessibility state, real native actions, and reverse cleanup.
 
 Chromium/CDP, a standalone Vite page, coordinate-only automation, API-only
 readback, and a system browser are not Desktop product proof.

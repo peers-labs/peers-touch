@@ -443,6 +443,31 @@
       "tier": "local-evidence",
       "description": "Build the Desktop Tauri application in release mode from the current clean source without packaging an installer."
     },
+    "desktop-shell-tray-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.desktop.shell_tray_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "desktop.shell.status-item"
+      ],
+      "timeout_seconds": 3600,
+      "environment": "desktop-shell-native",
+      "provisioner": "desktop-shell-native",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Build and launch the exact-source packaged macOS Desktop, prove the 88 x 36 Template Peers wordmark through a 62 x 24 AXMenuExtra status item, close-to-hide residency, native Show restoration, package/process identity, screenshot support, and reverse cleanup."
+    },
+    "desktop-shell-domain-validation": {
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain desktop-shell --require-proven",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the Desktop Shell managed domain against exact-source macOS tray residency proof and explicit cross-platform non-claims."
+    },
     "desktop-primary-navigation-e2e": {
       "command": "python3 -m tooling.acceptance.gates.desktop.primary_navigation_e2e",
       "timeout_seconds": 1800,

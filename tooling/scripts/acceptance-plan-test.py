@@ -477,6 +477,12 @@ class BehaviorRuleTests(unittest.TestCase):
                 )
             )
         )
+        self.assertEqual(
+            expected,
+            self.selected_ids(
+                "tooling/acceptance/provisioners/__init__.py"
+            ),
+        )
 
     def test_rejects_duplicate_behavior_rule_authority_keys(self) -> None:
         cases = (
@@ -559,10 +565,18 @@ class BehaviorRuleTests(unittest.TestCase):
         selected = self.selected_ids(
             "apps/desktop/src-tauri/src/interface/http_gateway/handler.rs"
         )
-        self.assertEqual(
-            selected,
-            {"chat-lifecycle-tree-zero-reference-e2e"},
-        )
+        self.assertEqual(selected, set())
+
+    def test_desktop_shell_tray_selects_only_its_native_gate(self) -> None:
+        for path in (
+            "apps/desktop/src-tauri/src/application/tray/mod.rs",
+            "apps/desktop/src-tauri/icons/tray-icon-macos.png",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(
+                    self.selected_ids(path),
+                    {"desktop-shell-tray-e2e"},
+                )
 
     def test_mobile_social_gateway_selects_chat_and_contacts_gates(self) -> None:
         selected = self.selected_ids(
@@ -571,7 +585,6 @@ class BehaviorRuleTests(unittest.TestCase):
         self.assertEqual(
             selected,
             {
-                "chat-lifecycle-tree-zero-reference-e2e",
                 "mobile-simulator-social-convergence-e2e",
                 "mobile-simulator-chat-contacts-e2e",
             },
@@ -579,7 +592,6 @@ class BehaviorRuleTests(unittest.TestCase):
 
     def test_mobile_shared_projection_owners_select_all_social_gates(self) -> None:
         expected = {
-            "chat-lifecycle-tree-zero-reference-e2e",
             "mobile-simulator-social-convergence-e2e",
             "mobile-simulator-chat-contacts-e2e",
             "mobile-simulator-moments-e2e",
@@ -602,7 +614,6 @@ class BehaviorRuleTests(unittest.TestCase):
     ) -> None:
         self.assertEqual(
             {
-                "chat-lifecycle-tree-zero-reference-e2e",
                 "mobile-simulator-social-convergence-e2e",
                 "mobile-simulator-moments-e2e",
             },
@@ -612,7 +623,6 @@ class BehaviorRuleTests(unittest.TestCase):
         )
         self.assertEqual(
             {
-                "chat-lifecycle-tree-zero-reference-e2e",
                 "mobile-simulator-social-convergence-e2e",
                 "mobile-simulator-settings-e2e",
             },

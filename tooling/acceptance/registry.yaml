@@ -381,11 +381,22 @@
       "when": {
         "paths": [
           "docs/architecture/domains/chat/lifecycle/**",
-          "apps/desktop/src/**",
-          "apps/desktop/src-tauri/src/**",
-          "apps/mobile/src/**",
-          "apps/mobile/src-tauri/src/**",
-          "apps/station/app/**",
+          "apps/desktop/src/acceptance/chat/**",
+          "apps/desktop/src/components/chat/**",
+          "apps/desktop/src/pages/SocialChatPage*",
+          "apps/desktop/src/runtimes/chat*",
+          "apps/desktop/src/services/*chat*",
+          "apps/desktop/src/store/*chat*",
+          "apps/desktop/src-tauri/src/messaging/**",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",
+          "apps/mobile/src/acceptance/**",
+          "apps/mobile/src/features/chat/**",
+          "apps/mobile/src/pages/ChatPage.tsx",
+          "apps/mobile/src/runtimes/chat*",
+          "apps/mobile/src-tauri/src/messaging/**",
+          "apps/station/app/subserver/conversation/**",
+          "apps/station/app/subserver/key_exchange/**",
+          "apps/station/app/subserver/recovery/**",
           "model/domain/chat/**",
           "packages/messaging-core/**",
           "tooling/acceptance/gates/chat/**"
@@ -393,6 +404,34 @@
       },
       "require": [
         "chat-lifecycle-tree-zero-reference-e2e"
+      ]
+    },
+    {
+      "id": "desktop-shell-tray",
+      "features": [
+        "desktop-shell-tray"
+      ],
+      "when": {
+        "paths": [
+          "apps/desktop/.gitignore",
+          "apps/desktop/src-tauri/Cargo.lock",
+          "apps/desktop/src-tauri/Cargo.toml",
+          "apps/desktop/src-tauri/icons/tray-icon-macos.png",
+          "apps/desktop/src-tauri/src/application/tray/**",
+          "apps/desktop/src-tauri/src/application/window_lifecycle.rs",
+          "docs/client/desktop/tray-residency.md",
+          "tooling/acceptance/capabilities/desktop-shell.yaml",
+          "tooling/acceptance/domains/desktop-shell.yaml",
+          "tooling/acceptance/environments/desktop-shell-native.yaml",
+          "tooling/acceptance/features/desktop-shell-tray.yaml",
+          "tooling/acceptance/gates/desktop/shell_tray_e2e.py",
+          "tooling/acceptance/gates/desktop/shell_tray_e2e_test.py",
+          "tooling/acceptance/provisioners/desktop_shell_native.py",
+          "tooling/acceptance/provisioners/desktop_shell_native_test.py"
+        ]
+      },
+      "require": [
+        "desktop-shell-tray-e2e"
       ]
     },
     {
@@ -1226,8 +1265,7 @@
           "tooling/acceptance/gates/mobile/simulator_runtime_binding.py",
           "tooling/acceptance/gates/mobile/simulator_runtime_binding_test.py",
           "tooling/acceptance/gates/mobile/simulator_station_lifecycle_e2e.py",
-          "tooling/acceptance/gates/mobile/simulator_station_lifecycle_e2e_test.py",
-          "tooling/acceptance/provisioners/__init__.py"
+          "tooling/acceptance/gates/mobile/simulator_station_lifecycle_e2e_test.py"
         ]
       },
       "require": [
@@ -1243,8 +1281,7 @@
         "paths": [
           "tooling/acceptance/environments/mobile-ios-layout-simulator.yaml",
           "tooling/acceptance/gates/mobile/simulator_layout_accessibility_e2e.py",
-          "tooling/acceptance/gates/mobile/simulator_layout_accessibility_e2e_test.py",
-          "tooling/acceptance/provisioners/__init__.py"
+          "tooling/acceptance/gates/mobile/simulator_layout_accessibility_e2e_test.py"
         ]
       },
       "require": [
@@ -1726,7 +1763,6 @@
         "paths": [
           "tooling/acceptance/environments/chat-mixed-native.yaml",
           "tooling/acceptance/provisioners/mobile_simulator.py",
-          "tooling/acceptance/provisioners/__init__.py",
           "tooling/acceptance/gates/mobile/simulator_runtime_binding.py",
           "tooling/acceptance/gates/chat/mixed_native_runtime.py",
           "tooling/acceptance/gates/chat/lifecycle_call_resolution.py",

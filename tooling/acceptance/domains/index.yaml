@@ -34,6 +34,14 @@
       "notes": "Private Moments managed domain. Formal proof is bounded to Native Desktop; Mobile parity and positive cross-Station private delivery remain UNPROVEN."
     },
     {
+      "id": "desktop-shell",
+      "status": "active",
+      "profile": "tooling/acceptance/domains/desktop-shell.yaml",
+      "capabilities": "tooling/acceptance/capabilities/desktop-shell.yaml",
+      "coverage": "managed_domain",
+      "notes": "Native Desktop process, window, menu, tray, focus, package, and cleanup domain. Initial formal proof is bounded to the macOS tray residency journey."
+    },
+    {
       "id": "applet",
       "status": "active",
       "profile": "tooling/acceptance/domains/applet.yaml",

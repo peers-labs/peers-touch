@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from tooling.acceptance.core.errors import DriverError
@@ -833,6 +834,34 @@ _CONTROL_KINDS = {
 _MEDIA_PERMISSION_ALLOW_BUTTON_IDENTIFIER = "action-button-1"
 
 
+@dataclass(frozen=True)
+class MacOSStatusItemSnapshot:
+    role: str
+    subrole: str
+    title: str
+    help: str
+    position: tuple[float, float]
+    size: tuple[float, float]
+    menu_items: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "role": self.role,
+            "subrole": self.subrole,
+            "title": self.title,
+            "help": self.help,
+            "position": {
+                "x": self.position[0],
+                "y": self.position[1],
+            },
+            "size": {
+                "width": self.size[0],
+                "height": self.size[1],
+            },
+            "menuItems": list(self.menu_items),
+        }
+
+
 class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
     @property
     def platform(self) -> str:
@@ -883,6 +912,220 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
             raise DriverError(
                 f"Native actor process {process_id} did not become frontmost"
             )
+
+    def status_item_snapshot(
+        self,
+        process_id: int,
+        *,
+        expected_help: str,
+    ) -> MacOSStatusItemSnapshot:
+        process_id = self._validated_process_id(process_id)
+        if not expected_help or "\t" in expected_help or "\n" in expected_help:
+            raise DriverError("macOS status-item help text is invalid")
+        script = f"""
+        tell application "System Events"
+          set targetProcess to first application process whose unix id is {process_id}
+          set targetItem to missing value
+          repeat with targetBar in menu bars of targetProcess
+            repeat with candidateItem in menu bar items of targetBar
+              try
+                if help of candidateItem is {json.dumps(expected_help)} then
+                  set targetItem to candidateItem
+                  exit repeat
+                end if
+              end try
+            end repeat
+            if targetItem is not missing value then exit repeat
+          end repeat
+          if targetItem is missing value then error "status item not found"
+          set itemTitle to ""
+          try
+            set itemTitle to title of targetItem as text
+          end try
+          set itemPosition to position of targetItem
+          set itemSize to size of targetItem
+          set menuTitles to ""
+          if (count of menus of targetItem) > 0 then
+            repeat with targetMenuItem in menu items of menu 1 of targetItem
+              try
+                set menuTitle to title of targetMenuItem as text
+                if menuTitle is not "" then
+                  if menuTitles is not "" then set menuTitles to menuTitles & "|"
+                  set menuTitles to menuTitles & menuTitle
+                end if
+              end try
+            end repeat
+          end if
+          return (role of targetItem as text) & tab & ¬
+            (subrole of targetItem as text) & tab & itemTitle & tab & ¬
+            (help of targetItem as text) & tab & ¬
+            (item 1 of itemPosition as text) & tab & ¬
+            (item 2 of itemPosition as text) & tab & ¬
+            (item 1 of itemSize as text) & tab & ¬
+            (item 2 of itemSize as text) & tab & menuTitles
+        end tell
+        """
+        output = self._run_osascript(script, "status-item inspection")
+        fields = output.split("\t")
+        if len(fields) != 9:
+            raise DriverError(
+                "macOS status-item inspection returned an invalid shape"
+            )
+        try:
+            position = (float(fields[4]), float(fields[5]))
+            size = (float(fields[6]), float(fields[7]))
+        except ValueError as error:
+            raise DriverError(
+                "macOS status-item geometry is invalid"
+            ) from error
+        return MacOSStatusItemSnapshot(
+            role=fields[0],
+            subrole=fields[1],
+            title=fields[2],
+            help=fields[3],
+            position=position,
+            size=size,
+            menu_items=tuple(
+                item for item in fields[8].split("|") if item
+            ),
+        )
+
+    def window_state(self, process_id: int) -> dict[str, object]:
+        process_id = self._validated_process_id(process_id)
+        script = f"""
+        tell application "System Events"
+          set targetProcess to first application process whose unix id is {process_id}
+          set windowCount to count of windows of targetProcess
+          set mainWindow to false
+          set focusedWindow to false
+          if windowCount > 0 then
+            try
+              set mainWindow to value of attribute "AXMain" of window 1 of targetProcess
+            end try
+            try
+              set focusedWindow to value of attribute "AXFocused" of window 1 of targetProcess
+            end try
+          end if
+          return (windowCount as text) & tab & ¬
+            (frontmost of targetProcess as text) & tab & ¬
+            (mainWindow as text) & tab & (focusedWindow as text)
+        end tell
+        """
+        fields = self._run_osascript(
+            script,
+            "window-state inspection",
+        ).split("\t")
+        if len(fields) != 4:
+            raise DriverError(
+                "macOS window-state inspection returned an invalid shape"
+            )
+        return {
+            "windowCount": int(fields[0]),
+            "frontmost": fields[1] == "true",
+            "mainWindow": fields[2] == "true",
+            "focusedWindow": fields[3] == "true",
+        }
+
+    def hide_main_window(
+        self,
+        process_id: int,
+        *,
+        timeout_seconds: float = 10.0,
+    ) -> dict[str, object]:
+        process_id = self._validated_process_id(process_id)
+        script = f"""
+        tell application "System Events"
+          set targetProcess to first application process whose unix id is {process_id}
+          if (count of windows of targetProcess) = 0 then error "main window is absent"
+          set closeButton to first button of window 1 of targetProcess whose subrole is "AXCloseButton"
+          perform action "AXPress" of closeButton
+        end tell
+        """
+        self._run_osascript(script, "main-window close")
+        return self._wait_for_window_count(
+            process_id,
+            expected_visible=False,
+            timeout_seconds=timeout_seconds,
+        )
+
+    def show_main_window_from_status_item(
+        self,
+        process_id: int,
+        *,
+        expected_help: str,
+        menu_item_title: str,
+        timeout_seconds: float = 10.0,
+    ) -> dict[str, object]:
+        process_id = self._validated_process_id(process_id)
+        for value in (expected_help, menu_item_title):
+            if not value or "\n" in value:
+                raise DriverError("macOS status-item action text is invalid")
+        script = f"""
+        tell application "System Events"
+          set targetProcess to first application process whose unix id is {process_id}
+          set targetItem to missing value
+          repeat with targetBar in menu bars of targetProcess
+            repeat with candidateItem in menu bar items of targetBar
+              try
+                if help of candidateItem is {json.dumps(expected_help)} then
+                  set targetItem to candidateItem
+                  exit repeat
+                end if
+              end try
+            end repeat
+            if targetItem is not missing value then exit repeat
+          end repeat
+          if targetItem is missing value then error "status item not found"
+          click targetItem
+          click menu item {json.dumps(menu_item_title)} of menu 1 of targetItem
+        end tell
+        """
+        self._run_osascript(script, "status-item Show action")
+        return self._wait_for_window_count(
+            process_id,
+            expected_visible=True,
+            timeout_seconds=timeout_seconds,
+        )
+
+    def _wait_for_window_count(
+        self,
+        process_id: int,
+        *,
+        expected_visible: bool,
+        timeout_seconds: float,
+    ) -> dict[str, object]:
+        deadline = time.monotonic() + timeout_seconds
+        last_state: dict[str, object] = {}
+        while time.monotonic() < deadline:
+            last_state = self.window_state(process_id)
+            visible = int(last_state["windowCount"]) > 0
+            if visible == expected_visible:
+                if not expected_visible or (
+                    last_state["frontmost"] is True
+                    and last_state["mainWindow"] is True
+                    and last_state["focusedWindow"] is True
+                ):
+                    return last_state
+            time.sleep(0.1)
+        raise DriverError(
+            "macOS main-window visibility did not reach the expected state: "
+            f"{last_state}"
+        )
+
+    @staticmethod
+    def _run_osascript(script: str, operation: str) -> str:
+        completed = subprocess.run(
+            ("osascript", "-e", script),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise DriverError(
+                f"macOS {operation} failed: "
+                f"{completed.stderr.strip() or completed.stdout.strip()}"
+            )
+        return completed.stdout.strip()
 
     def post_mouse(
         self,

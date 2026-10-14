@@ -1,0 +1,48 @@
+{
+  "id": "desktop-shell-tray",
+  "status": "active",
+  "product_area": "desktop-shell",
+  "owners": [
+    "apps/desktop/src-tauri/src/application/tray/mod.rs",
+    "apps/desktop/src-tauri/src/application/window_lifecycle.rs",
+    "apps/desktop/src-tauri/icons/tray-icon-macos.png",
+    "docs/client/desktop/tray-residency.md"
+  ],
+  "truth_sources": [
+    "Desktop Rust native tray and window lifecycle",
+    "packaged macOS Peers.app binary",
+    "macOS Accessibility status-item and window projections"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "native-macos",
+      "surface": "menu-bar status item"
+    },
+    {
+      "type": "native-macos",
+      "surface": "main application window"
+    }
+  ],
+  "required_gates": [
+    "desktop-shell-tray-e2e"
+  ],
+  "acceptance": {
+    "runtime": [
+      "the exact-source packaged process exposes one Peers Touch AXMenuBarItem / AXMenuExtra status item",
+      "the packaged binary embeds the exact 88 x 36 RGBA tray asset and matches the runtime-cell binary identity",
+      "closing the main window keeps the process and status item alive",
+      "the status-item Show Peers Touch action restores a focused frontmost main window",
+      "process, status item, ports, storage, and sessions are released in reverse order"
+    ],
+    "visible": [
+      "the menu bar shows the full compact Peers wordmark rather than a single letter or application icon",
+      "the native status item occupies the accepted 62 x 24 point Accessibility bounds",
+      "macOS Template rendering owns light and dark appearance"
+    ]
+  },
+  "negative": [
+    "screenshots alone do not prove geometry, source identity, restore behavior, or cleanup",
+    "Desktop shell tray changes must not select a Chat lifecycle Gate",
+    "Linux, Windows, signing, and notarization remain outside this feature claim"
+  ]
+}

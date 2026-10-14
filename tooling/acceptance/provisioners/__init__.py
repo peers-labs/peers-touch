@@ -13,6 +13,7 @@ from .chat_storage_native import ChatStorageNativeProvisioner
 from .desktop_primary_navigation_native import (
     DesktopPrimaryNavigationNativeProvisioner,
 )
+from .desktop_shell_native import DesktopShellNativeProvisioner
 from .home_station import HomeStationProvisioner
 from .mobile_native import MobileNativeProvisioner
 from .mobile_simulator import (
@@ -47,6 +48,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ChatStorageNativeProvisioner.environment_id: ChatStorageNativeProvisioner,
     DesktopPrimaryNavigationNativeProvisioner.environment_id: (
         DesktopPrimaryNavigationNativeProvisioner
+    ),
+    DesktopShellNativeProvisioner.environment_id: (
+        DesktopShellNativeProvisioner
     ),
     HomeStationProvisioner.environment_id: HomeStationProvisioner,
     MobileNativeProvisioner.environment_id: MobileNativeProvisioner,
@@ -142,6 +146,7 @@ def get_runtime_cell_lifecycle(cell_id: str) -> RuntimeCellLifecycle:
 __all__ = [
     "ChatMixedNativeProvisioner",
     "ChatStorageNativeProvisioner",
+    "DesktopShellNativeProvisioner",
     "HomeStationProvisioner",
     "MobileDirectSimulatorProvisioner",
     "MobileIOSLayoutSimulatorProvisioner",
