@@ -73,22 +73,35 @@ pub fn restore_main_window<R: Runtime>(app: &AppHandle<R>) {
         let _ = window.unminimize();
         let _ = window.set_focus();
         #[cfg(target_os = "macos")]
-        {
-            // The status-menu tracking loop still owns focus during its
-            // callback. Retry after the callback returns to the event loop.
-            let deferred_window = window.clone();
-            if let Err(error) = app.run_on_main_thread(move || {
-                if let Err(error) = deferred_window.set_focus() {
-                    tracing::warn!(error = %error, "tray: deferred main-window focus failed");
-                }
-            }) {
-                tracing::warn!(error = %error, "tray: failed to queue deferred main-window focus");
-            }
-        }
+        focus_main_window_after_menu_tracking(&window);
         if let Err(error) = host_events::emit_tray_open(app, "tray-click") {
             tracing::warn!(error = %error, "tray: failed to emit tray-open host event");
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+fn focus_main_window_after_menu_tracking<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    use dispatch2::DispatchQueue;
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSApplication, NSWindow};
+
+    let Ok(ns_window) = window.ns_window() else {
+        tracing::warn!("tray: native main window is unavailable for deferred focus");
+        return;
+    };
+    let ns_window = ns_window as usize;
+    DispatchQueue::main().exec_async(move || {
+        let Some(main_thread) = MainThreadMarker::new() else {
+            tracing::warn!("tray: deferred focus did not run on the AppKit main thread");
+            return;
+        };
+        let application = NSApplication::sharedApplication(main_thread);
+        NSApplication::activate(&application);
+        let ns_window = unsafe { &*(ns_window as *mut NSWindow) };
+        ns_window.makeKeyAndOrderFront(None);
+        ns_window.makeKeyWindow();
+    });
 }
 
 #[cfg(all(test, target_os = "macos"))]
