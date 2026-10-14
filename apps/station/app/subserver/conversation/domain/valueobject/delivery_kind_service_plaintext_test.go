@@ -2,8 +2,7 @@ package valueobject
 
 import "testing"
 
-// G-BOT-03: service plaintext uses commitment code 8 to match
-// PreparedEndpointPayloadKind=8, keeping the wire/domain codes aligned.
+// Service plaintext uses commitment code 8 to match the wire payload kind.
 func TestDeliveryKindServicePlaintextCommitmentCode(t *testing.T) {
 	code, err := DeliveryKindDirectServicePlaintext.CommitmentCode()
 	if err != nil {

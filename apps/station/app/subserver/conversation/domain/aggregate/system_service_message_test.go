@@ -62,7 +62,7 @@ func systemDelivery(
 		recipient,
 		home,
 		valueobject.DeliveryKindDirectServicePlaintext,
-		[]byte("peers-touch.bot-event.v1"),
+		[]byte("peers-touch.publisher-event.v1"),
 	)
 	if err != nil {
 		t.Fatalf("NewPreparedDelivery: %v", err)
@@ -81,14 +81,14 @@ func validSystemInput(
 		Recipient:   fixture.owner.Actor,
 		Sender:      fixture.bot,
 		Deliveries:  deliveries,
-		Payload:     []byte("peers-touch.bot-event.v1"),
+		Payload:     []byte("peers-touch.publisher-event.v1"),
 		CommittedAt: testTime.Add(time.Minute),
 		EventSealer: testEventSealer{},
 	}
 }
 
-// BOT-A21 / G-BOT-03: the internal system sender port commits service
-// plaintext to the owner on a home-local direct bot conversation.
+// The internal system sender port commits service plaintext to the owner on a
+// home-local direct Bot conversation.
 func TestCommitSystemServiceMessageAccepted(t *testing.T) {
 	fixture := mustCreateBotDirect(t, valueobject.StationID("station-a"))
 	input := validSystemInput(fixture, []valueobject.PreparedDelivery{
@@ -186,7 +186,7 @@ func TestSystemServiceMessageRejectsGroup(t *testing.T) {
 		Deliveries: []valueobject.PreparedDelivery{
 			systemDelivery(t, group.member, group.station),
 		},
-		Payload:     []byte("peers-touch.bot-event.v1"),
+		Payload:     []byte("peers-touch.publisher-event.v1"),
 		CommittedAt: testTime.Add(time.Minute),
 		EventSealer: testEventSealer{},
 	})

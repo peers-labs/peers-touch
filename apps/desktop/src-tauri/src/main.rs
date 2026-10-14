@@ -578,8 +578,8 @@ fn main() {
                 }
             }
 
-            // BOT-A30: menu-bar residency. Install the tray first and only mark
-            // the window resident once the tray is confirmed available; the
+            // Install the tray first and only mark the window resident once
+            // the tray is confirmed available; the
             // window close hook otherwise keeps the default quit behavior.
             // Disabled under WebDriver acceptance runs so multi-slot window
             // teardown and native permission prompts never perturb automation.
@@ -1153,8 +1153,8 @@ fn main() {
                     );
                 }
             }
-            // BOT-A30: clicking the dock icon with the window resident-hidden
-            // reopens and focuses it, mirroring the tray Show action.
+            // Clicking the dock icon with the window resident-hidden reopens
+            // and focuses it, mirroring the tray Show action.
             if matches!(event, tauri::RunEvent::Reopen { .. }) {
                 application::tray::restore_main_window(app);
             }

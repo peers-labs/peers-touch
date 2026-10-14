@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/peers-labs/peers-touch/station/app/internal/securecontent"
-	botpersistence "github.com/peers-labs/peers-touch/station/app/subserver/bot/infrastructure/persistence"
 	attachmentapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/attachment"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/command"
 	deliveryapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
@@ -20,7 +19,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	reconciliationapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/reconciliation"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
-	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/entity"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	attachmentinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/attachment"
 	deliveryinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/delivery"
@@ -528,9 +526,6 @@ func migrateProductionConversationSchema(
 		if err := persistence.MigrateCanonicalSchema(ctx, tx); err != nil {
 			return err
 		}
-		if err := migrateLegacyBotPublishing(ctx, tx); err != nil {
-			return err
-		}
 		if err := tx.AutoMigrate(
 			&deliveryinfra.DeviceQueueLaneModel{},
 			&deliveryinfra.DeviceQueueItemModel{},
@@ -551,41 +546,6 @@ func migrateProductionConversationSchema(
 	}
 
 	return nil
-}
-
-func migrateLegacyBotPublishing(ctx context.Context, tx *gorm.DB) error {
-	rows, err := botpersistence.LoadLegacyPublishingGrants(tx)
-	if err != nil || len(rows) == 0 {
-		return err
-	}
-	store := persistence.NewPublishingStore(tx)
-	for _, row := range rows {
-		target, err := valueobject.DirectConversationID(
-			valueobject.PTID(row.BotPTID),
-			valueobject.PTID(row.OwnerPTID),
-		)
-		if err != nil {
-			return err
-		}
-		if err := store.CreateGrant(ctx, entity.PublishingGrant{
-			ID:              row.PublishingID,
-			Owner:           valueobject.PTID(row.OwnerPTID),
-			Sender:          valueobject.PTID(row.BotPTID),
-			Name:            row.Name,
-			SourceNamespace: "bot." + row.BotPTID,
-			DefaultTarget:   target,
-			AllowedTargets:  []valueobject.ConversationID{target},
-			SecretHash:      row.SecretHash,
-			SecretHint:      row.SecretHint,
-			Disabled:        row.Disabled,
-			Revoked:         row.Revoked,
-			CreatedAt:       row.CreatedAt,
-			RatePerMinute:   row.RateLimitPerMinute,
-		}); err != nil {
-			return err
-		}
-	}
-	return botpersistence.CompleteLegacyPublishingCutover(tx, rows)
 }
 
 type productionInteractionDeviceDirectory struct {

@@ -436,8 +436,8 @@ pub struct ServiceMessageCommit<'a> {
     pub source_context_bytes: &'a [u8],
 }
 
-/// Atomic receive commit for a non-E2EE Station service-plaintext message (bot
-/// webhook event). No crypto session exists; the message is stored as an
+/// Atomic receive commit for a non-E2EE Station service-plaintext publication.
+/// No crypto session exists; the message is stored as an
 /// ordinary direct-message projection plus an optional structured row.
 pub struct ServicePlaintextReceiveCommit<'a> {
     pub item_id: &'a str,
@@ -476,7 +476,7 @@ pub struct ServiceMessageRow {
 
 /// Observe-only commit for an endpoint payload kind this build does not
 /// understand: the authority chain and consumption marker advance, but no
-/// message projection is created (forward-compatible skip+ack, G-BOT-10).
+/// message projection is created.
 pub struct SkippedEndpointReceiveCommit<'a> {
     pub item_id: &'a str,
     pub event_id: &'a str,

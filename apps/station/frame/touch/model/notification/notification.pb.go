@@ -511,9 +511,8 @@ type Notification struct {
 	GroupKey      string                 `protobuf:"bytes,12,opt,name=group_key,json=groupKey,proto3" json:"group_key,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	ReadAt        *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=read_at,json=readAt,proto3" json:"read_at,omitempty"`
-	// Producer idempotency key (e.g. inbound webhook request id). Produce with
-	// the same (recipient_ptid, idempotency_key, 24h bucket) returns the
-	// original notification; uniqueness is enforced by a DB unique index.
+	// Producer idempotency key. Reusing the same key for one recipient returns
+	// the original notification; uniqueness is enforced by a DB unique index.
 	IdempotencyKey string `protobuf:"bytes,15,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache

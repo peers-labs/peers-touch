@@ -1,4 +1,4 @@
-//! Menu-bar residency (BOT-A30).
+//! Menu-bar residency.
 //!
 //! On supported desktops the app keeps running with its window hidden and a
 //! tray icon present. Closing the window hides it instead of quitting; the

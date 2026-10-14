@@ -6,7 +6,7 @@ import (
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
-// G-BOT-02: migration kind mapping accepts the "b" agent shorthand.
+// Migration kind mapping accepts the "b" agent shorthand.
 func TestMigrationActorKindAgent(t *testing.T) {
 	got, err := migrationActorKind("b")
 	if err != nil {

@@ -126,7 +126,7 @@ impl ClaimedItemConsumer for MessagingItemConsumer {
             Ok(kind) => kind,
             // Forward compatibility: an endpoint payload kind this build does
             // not understand is skip+acked through the observe-only processor
-            // instead of poisoning the device lane (G-BOT-10).
+            // instead of poisoning the device lane.
             Err(_) => return self.skipped.consume(item, consumer_epoch),
         };
         match payload_kind {

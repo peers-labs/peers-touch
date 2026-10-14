@@ -52,8 +52,8 @@ func mustSystemCreateInput(
 	}
 }
 
-// BOT-A20: system genesis authors under the reserved station-system device
-// but queues the genesis state marker only for real owner endpoints.
+// System genesis uses the reserved station-system device but queues the state
+// marker only for real owner endpoints.
 func TestCreateSystemDirectDeliversGenesisOnlyToOwner(t *testing.T) {
 	bot := mustEndpoint(t, "ptid:bot-claude", string(valueobject.SystemStationDeviceID))
 	owner := mustEndpoint(t, "ptid:owner-alice", "owner-device")

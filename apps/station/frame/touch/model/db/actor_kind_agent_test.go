@@ -6,8 +6,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
-// G-BOT-02: the "b" shorthand must round-trip to AGENT explicitly. It must
-// never collapse into the Person defaults.
+// The "b" shorthand round-trips to AGENT and never collapses into Person.
 func TestAgentKindShorthandRoundTrip(t *testing.T) {
 	if got := KindFromProto(model.ActorKind_ACTOR_KIND_AGENT); got != "b" {
 		t.Fatalf("KindFromProto(AGENT) = %q, want b", got)

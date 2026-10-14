@@ -2,7 +2,7 @@ package identity
 
 import "testing"
 
-// G-BOT-02: PTID account letter "b" parses and validates for AGENT actors.
+// PTID account letter "b" parses and validates for AGENT actors.
 func TestAgentPTID(t *testing.T) {
 	s := "ptid:v1:actor:peers:b:claude-code-notifier:abcdef0123456789"
 	id, err := Parse(s)

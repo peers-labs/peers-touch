@@ -6,8 +6,7 @@ import (
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
-// G-BOT-02: the endpoint manifest validator gates both issuance and
-// verification; it must accept AGENT actors so bot endpoints route.
+// The endpoint manifest validator accepts AGENT actors for Bot routing.
 func TestValidateManifestActorAcceptsAgent(t *testing.T) {
 	ref := &actormodel.ActorRef{
 		Ptid: "ptid:v1:actor:peers:b:claude-code-notifier:abcdef0123456789",

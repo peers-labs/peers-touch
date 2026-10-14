@@ -11,7 +11,7 @@ use std::sync::Arc;
 /// understand. The delivery is fully verified and the authority hash chain
 /// advances, but no message projection is created and the drain acks the
 /// item normally, so a future wire kind cannot poison the device lane on an
-/// older Desktop (G-BOT-10).
+/// older Desktop.
 pub struct SkippedPayloadProcessor {
     store: Arc<MessagingStore>,
     endpoint: EngineEndpoint,

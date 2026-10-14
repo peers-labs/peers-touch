@@ -1,6 +1,6 @@
 // Package bot implements the IM Bot (ACTOR_KIND_AGENT) sub-server: a
-// Station-resident, webhook-driven non-human actor that delivers structured
-// events into an owner-only conversation via service-plaintext messages.
+// Station-resident non-human actor backed by Conversation's generic publishing
+// capability and delivered through service-plaintext messages.
 //
 // Layering (mirrors subserver/conversation):
 //

@@ -47,6 +47,7 @@ CHAT_TABLES = (
     "actor_endpoint_directory_versions",
     "actor_identity_keys",
     "actor_sessions",
+    "bot_registration",
     "conversation_attachment_audits",
     "conversation_attachment_grants",
     "conversation_attachment_objects",
@@ -79,7 +80,13 @@ CHAT_TABLES = (
     "key_exchange_mls_fetch_receipts",
     "key_exchange_one_time_pre_keys",
     "key_exchange_signed_pre_keys",
+    "message_publication_receipts",
+    "message_publishing_grants",
+    "message_publishing_rates",
     "mls_key_packages",
+    "notification_unread_counts",
+    "notifications",
+    "realtime_events",
     "recovery_revisions",
     "social_friend_request_commands",
     "social_friend_request_effects",
@@ -2472,6 +2479,35 @@ BEGIN
   END IF;
 END
 $acceptance_reset$;
+CREATE TEMP TABLE acceptance_program_actor_ids ON COMMIT DROP AS
+SELECT id, ptid
+FROM touch_actor
+WHERE kind IN ('b', 's');
+
+CREATE TEMP TABLE acceptance_program_identity_ids ON COMMIT DROP AS
+SELECT id
+FROM touch_identities
+WHERE type IN ('b', 's');
+
+DELETE FROM follows
+WHERE follower_id IN (SELECT id FROM acceptance_program_actor_ids)
+   OR following_id IN (SELECT id FROM acceptance_program_actor_ids);
+DELETE FROM touch_actor_status
+WHERE actor_id IN (SELECT id FROM acceptance_program_actor_ids);
+DELETE FROM touch_actor_meta
+WHERE actor_id IN (SELECT id FROM acceptance_program_actor_ids);
+DELETE FROM touch_actor
+WHERE id IN (SELECT id FROM acceptance_program_actor_ids);
+
+DELETE FROM touch_identity_bindings
+WHERE identity_id IN (SELECT id FROM acceptance_program_identity_ids);
+DELETE FROM touch_identity_aliases
+WHERE identity_id IN (SELECT id FROM acceptance_program_identity_ids);
+DELETE FROM touch_identity_keys
+WHERE identity_id IN (SELECT id FROM acceptance_program_identity_ids);
+DELETE FROM touch_identities
+WHERE id IN (SELECT id FROM acceptance_program_identity_ids);
+
 DELETE FROM touch_actor WHERE origin = 'remote_cached';
 LOCK TABLE follows IN SHARE ROW EXCLUSIVE MODE;
 DO $acceptance$

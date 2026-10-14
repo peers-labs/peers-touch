@@ -39,13 +39,13 @@ committed result under one stable delegation identity.
 ## How To Detect A Recurrence
 
 ```bash
-rg -n '24h|webhook_id.*request_id|bot-msg:|bot-event:' \
+rg -n 'publishing_id|command_id|message_publication_receipts' \
   apps/station/app/subserver/conversation \
   apps/station/app/subserver/bot
 ```
 
-The command must not find an active publication receipt or message-identity
-path.
+The command must show the stable publishing identity on receipt and
+message-identity paths.
 
 Focused tests must cover credential rotation, changed default targets,
 same-command conflicting content, and two publishers using the same command ID.

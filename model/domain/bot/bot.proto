@@ -20,11 +20,7 @@ message Bot {
   string owner_ptid = 2;
   string name = 3;
   BotState state = 4;
-  reserved 5 to 12;
-  reserved "webhook_id", "secret_delivered", "secret_hint",
-    "delivery_scope", "rate_limit_per_minute", "created_at_ms",
-    "disabled_at_ms", "revoked_at_ms";
-  peers_touch.model.chat.v1.MessagePublishingGrant publishing_grant = 13;
+  peers_touch.model.chat.v1.MessagePublishingGrant publishing_grant = 5;
 }
 
 message CreateBotRequest {
@@ -34,10 +30,8 @@ message CreateBotRequest {
 
 message CreateBotResponse {
   Bot bot = 1;
-  reserved 2, 3;
-  reserved "webhook_url", "secret_plaintext";
-  string ingress_url = 4;
-  string secret = 5;
+  string ingress_url = 2;
+  string secret = 3;
 }
 
 message RotateBotSecretRequest {
@@ -45,9 +39,7 @@ message RotateBotSecretRequest {
 }
 
 message RotateBotSecretResponse {
-  reserved 1;
-  reserved "secret_plaintext";
-  string secret = 2;
+  string secret = 1;
 }
 
 message SetBotStateRequest {

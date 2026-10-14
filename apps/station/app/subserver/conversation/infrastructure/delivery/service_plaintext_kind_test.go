@@ -7,9 +7,8 @@ import (
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 )
 
-// G-BOT-03 (BOT-A21): the device receipt contract must admit the new
-// direct_service_plaintext payload kind (8) once the aggregate can produce it,
-// while still failing closed on genuinely unknown kinds.
+// The device receipt contract admits direct_service_plaintext payload kind 8
+// while still failing closed on unknown kinds.
 func TestDeliveryKindFromProtoServicePlaintext(t *testing.T) {
 	got, err := deliveryKindFromProto(
 		chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_DIRECT_SERVICE_PLAINTEXT,

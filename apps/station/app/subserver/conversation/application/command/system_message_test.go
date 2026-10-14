@@ -18,11 +18,10 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// G-BOT-03 structural proof: the bot edge drives service-plaintext delivery
-// exclusively through the Conversation application port. The test never
-// implements or reaches into bot-registry repositories — authorization is an
-// injected transaction port, and Federation scope / recipient routes are
-// sourced internally from the loaded authority and identity directory.
+// Service-plaintext delivery runs exclusively through the Conversation
+// application port. Authorization is an injected transaction port, and
+// Federation scope and recipient routes come from the loaded authority and
+// identity directory.
 
 type immediateUnitOfWork struct {
 	transaction *ports.Transaction

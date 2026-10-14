@@ -14,9 +14,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// TxInput is the transaction-bound production instruction from internal
-// producers (bot webhook ingestion). The caller owns the GORM transaction so
-// the notification row commits atomically with its cause.
+// TxInput is the transaction-bound instruction from internal producers. The
+// caller owns the GORM transaction so the notification row commits atomically
+// with its cause.
 type TxInput struct {
 	RecipientPTID  string
 	ActorPTID      string
@@ -50,9 +50,9 @@ func NewTxProducer(db *gorm.DB) *TxProducer { return &TxProducer{db: db} }
 
 // ProduceInTx inserts one notification and bumps the unread counter in the
 // bound transaction. It honors the recipient's category preference (silent
-// tasks skip the row while the causing message is still produced, BOT-A05B)
-// and collapses replays through the partial unique idempotency index
-// (BOT-A28). A zero Produced means either muted preference or replay.
+// tasks skip the row while the causing message is still produced) and
+// collapses replays through the partial unique idempotency index. A zero
+// Produced means either muted preference or replay.
 func (p *TxProducer) ProduceInTx(
 	ctx context.Context,
 	input TxInput,

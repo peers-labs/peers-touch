@@ -14,7 +14,7 @@ enum ActorKind {
   ACTOR_KIND_SERVICE = 4;
   ACTOR_KIND_APPLICATION = 5;
   ACTOR_KIND_NODE = 6;
-  // IM bot: a conversable non-human actor driven by an inbound webhook.
+  // IM bot: a conversable non-human actor backed by a message-publishing grant.
   // Distinct from APPLICATION/SERVICE: an AGENT owns an ordinary conversation
   // graph edge with its owner but is never E2EE (service-plaintext delivery).
   ACTOR_KIND_AGENT = 7;

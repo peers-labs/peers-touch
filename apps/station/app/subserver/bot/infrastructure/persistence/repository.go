@@ -3,7 +3,6 @@ package persistence
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/bot/domain"
@@ -22,119 +21,6 @@ func (r *GormRepo) AutoMigrate() error {
 		return nil
 	}
 	return r.db.AutoMigrate(&BotRegistrationModel{})
-}
-
-type LegacyPublishingGrant struct {
-	ID                 uint64
-	BotPTID            string
-	OwnerPTID          string
-	PublishingID       string
-	Name               string
-	State              int32
-	Disabled           bool
-	Revoked            bool
-	SecretHash         string
-	SecretHint         string
-	RateLimitPerMinute uint32
-	CreatedAt          time.Time
-	DisabledAt         *time.Time
-	RevokedAt          *time.Time
-}
-
-// LoadLegacyPublishingGrants exposes migration data without depending on the
-// Conversation persistence implementation.
-func LoadLegacyPublishingGrants(tx *gorm.DB) ([]LegacyPublishingGrant, error) {
-	if !tx.Migrator().HasColumn(&BotRegistrationModel{}, "webhook_id") {
-		return nil, nil
-	}
-	type legacyBot struct {
-		ID                 uint64     `gorm:"column:id"`
-		BotPtid            string     `gorm:"column:bot_ptid"`
-		OwnerPtid          string     `gorm:"column:owner_ptid"`
-		Name               string     `gorm:"column:name"`
-		State              int32      `gorm:"column:state"`
-		WebhookID          string     `gorm:"column:webhook_id"`
-		SecretHash         string     `gorm:"column:secret_hash"`
-		SecretHint         string     `gorm:"column:secret_hint"`
-		RateLimitPerMinute int32      `gorm:"column:rate_limit_per_minute"`
-		CreatedAt          time.Time  `gorm:"column:created_at"`
-		DisabledAt         *time.Time `gorm:"column:disabled_at"`
-		RevokedAt          *time.Time `gorm:"column:revoked_at"`
-	}
-	var rows []legacyBot
-	if err := tx.Table("bot_registration").Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	result := make([]LegacyPublishingGrant, 0, len(rows))
-	for _, row := range rows {
-		id := row.WebhookID
-		if id == "" {
-			return nil, fmt.Errorf("legacy Bot %s has no stable ingress identity", row.BotPtid)
-		}
-		result = append(result, LegacyPublishingGrant{
-			ID:                 row.ID,
-			BotPTID:            row.BotPtid,
-			OwnerPTID:          row.OwnerPtid,
-			PublishingID:       id,
-			Name:               row.Name,
-			State:              row.State,
-			Disabled:           domain.State(row.State) == domain.StateDisabled,
-			Revoked:            domain.State(row.State) == domain.StateRevoked,
-			SecretHash:         row.SecretHash,
-			SecretHint:         row.SecretHint,
-			RateLimitPerMinute: uint32(max(row.RateLimitPerMinute, 1)),
-			CreatedAt:          row.CreatedAt,
-			DisabledAt:         row.DisabledAt,
-			RevokedAt:          row.RevokedAt,
-		})
-	}
-	return result, nil
-}
-
-func CompleteLegacyPublishingCutover(
-	tx *gorm.DB,
-	rows []LegacyPublishingGrant,
-) error {
-	if !tx.Migrator().HasColumn(&BotRegistrationModel{}, "webhook_id") {
-		return nil
-	}
-	cutover := make([]botRegistrationCutoverModel, 0, len(rows))
-	for _, row := range rows {
-		cutover = append(cutover, botRegistrationCutoverModel{
-			ID:           row.ID,
-			BotPtid:      row.BotPTID,
-			OwnerPtid:    row.OwnerPTID,
-			PublishingID: row.PublishingID,
-			Name:         row.Name,
-			State:        row.State,
-			CreatedAt:    row.CreatedAt,
-			DisabledAt:   row.DisabledAt,
-			RevokedAt:    row.RevokedAt,
-		})
-	}
-	if tx.Migrator().HasTable(&botRegistrationCutoverModel{}) {
-		if err := tx.Migrator().DropTable(&botRegistrationCutoverModel{}); err != nil {
-			return err
-		}
-	}
-	if err := tx.AutoMigrate(&botRegistrationCutoverModel{}); err != nil {
-		return err
-	}
-	if len(cutover) > 0 {
-		if err := tx.Create(&cutover).Error; err != nil {
-			return err
-		}
-	}
-	if err := tx.Migrator().DropTable(&BotRegistrationModel{}); err != nil {
-		return err
-	}
-	if err := tx.Migrator().RenameTable(
-		(&botRegistrationCutoverModel{}).TableName(),
-		(&BotRegistrationModel{}).TableName(),
-	); err != nil {
-		return err
-	}
-	return tx.AutoMigrate(&BotRegistrationModel{})
 }
 
 func toModel(b *domain.Bot) *BotRegistrationModel {

@@ -42,7 +42,7 @@ func TestTxProducerProducesAndBumpsUnread(t *testing.T) {
 		TargetID:       "conv-1",
 		Title:          "Build Bot",
 		Body:           "任务完成",
-		IdempotencyKey: "bot-event:req-1",
+		IdempotencyKey: "publication:req-1",
 	}, now)
 	if err != nil {
 		t.Fatalf("ProduceInTx: %v", err)
@@ -50,8 +50,8 @@ func TestTxProducerProducesAndBumpsUnread(t *testing.T) {
 	if !result.Produced {
 		t.Fatal("first production should report produced=true")
 	}
-	if result.NotificationID != "ntf-bot-event:req-1" {
-		t.Fatalf("notification id = %q, want ntf-bot-event:req-1", result.NotificationID)
+	if result.NotificationID != "ntf-publication:req-1" {
+		t.Fatalf("notification id = %q, want ntf-publication:req-1", result.NotificationID)
 	}
 	counts, err := repo.GetUnreadCounts("ptid:owner")
 	if err != nil {
@@ -72,7 +72,7 @@ func TestTxProducerReplayCollapses(t *testing.T) {
 		Type:           410,
 		Category:       domain.CategoryTask,
 		TargetID:       "conv-1",
-		IdempotencyKey: "bot-event:req-1",
+		IdempotencyKey: "publication:req-1",
 	}
 	if _, err := producer.ProduceInTx(context.Background(), input, now); err != nil {
 		t.Fatalf("first: %v", err)
@@ -139,7 +139,7 @@ func TestTxProducerHonorsMutedPreference(t *testing.T) {
 		ActorPTID:      "ptid:bot",
 		Type:           410,
 		Category:       domain.CategoryTask,
-		IdempotencyKey: "bot-event:req-1",
+		IdempotencyKey: "publication:req-1",
 	}, now)
 	if err != nil {
 		t.Fatalf("produce muted: %v", err)

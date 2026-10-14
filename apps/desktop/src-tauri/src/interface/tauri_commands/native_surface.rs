@@ -107,7 +107,7 @@ pub fn native_notification_show(input: NativeNotificationInput) -> AppResult<Stu
 }
 
 /// Restrict deep-link targets to the in-app conversation family so a
-/// notification can never launch an external scheme (BOT-A34).
+/// notification can never launch an external scheme.
 ///
 /// Conversation ids are single route segments carrying an optional kind
 /// prefix (`direct-<hex>` for one-to-one, `group-<hex>` for groups, or a bare

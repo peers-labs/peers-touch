@@ -84,7 +84,7 @@ type Bot struct {
 	OwnerPtid       string                       `protobuf:"bytes,2,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`
 	Name            string                       `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	State           BotState                     `protobuf:"varint,4,opt,name=state,proto3,enum=peers_touch.model.bot.v1.BotState" json:"state,omitempty"`
-	PublishingGrant *chat.MessagePublishingGrant `protobuf:"bytes,13,opt,name=publishing_grant,json=publishingGrant,proto3" json:"publishing_grant,omitempty"`
+	PublishingGrant *chat.MessagePublishingGrant `protobuf:"bytes,5,opt,name=publishing_grant,json=publishingGrant,proto3" json:"publishing_grant,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -209,8 +209,8 @@ func (x *CreateBotRequest) GetAvatar() string {
 type CreateBotResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Bot           *Bot                   `protobuf:"bytes,1,opt,name=bot,proto3" json:"bot,omitempty"`
-	IngressUrl    string                 `protobuf:"bytes,4,opt,name=ingress_url,json=ingressUrl,proto3" json:"ingress_url,omitempty"`
-	Secret        string                 `protobuf:"bytes,5,opt,name=secret,proto3" json:"secret,omitempty"`
+	IngressUrl    string                 `protobuf:"bytes,2,opt,name=ingress_url,json=ingressUrl,proto3" json:"ingress_url,omitempty"`
+	Secret        string                 `protobuf:"bytes,3,opt,name=secret,proto3" json:"secret,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -312,7 +312,7 @@ func (x *RotateBotSecretRequest) GetBotPtid() string {
 
 type RotateBotSecretResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Secret        string                 `protobuf:"bytes,2,opt,name=secret,proto3" json:"secret,omitempty"`
+	Secret        string                 `protobuf:"bytes,1,opt,name=secret,proto3" json:"secret,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -630,28 +630,27 @@ var File_domain_bot_bot_proto protoreflect.FileDescriptor
 
 const file_domain_bot_bot_proto_rawDesc = "" +
 	"\n" +
-	"\x14domain/bot/bot.proto\x12\x18peers_touch.model.bot.v1\x1a\x1cdomain/chat/publishing.proto\"\xf1\x02\n" +
+	"\x14domain/bot/bot.proto\x12\x18peers_touch.model.bot.v1\x1a\x1cdomain/chat/publishing.proto\"\xeb\x01\n" +
 	"\x03Bot\x12\x19\n" +
 	"\bbot_ptid\x18\x01 \x01(\tR\abotPtid\x12\x1d\n" +
 	"\n" +
 	"owner_ptid\x18\x02 \x01(\tR\townerPtid\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x128\n" +
 	"\x05state\x18\x04 \x01(\x0e2\".peers_touch.model.bot.v1.BotStateR\x05state\x12\\\n" +
-	"\x10publishing_grant\x18\r \x01(\v21.peers_touch.model.chat.v1.MessagePublishingGrantR\x0fpublishingGrantJ\x04\b\x05\x10\rR\n" +
-	"webhook_idR\x10secret_deliveredR\vsecret_hintR\x0edelivery_scopeR\x15rate_limit_per_minuteR\rcreated_at_msR\x0edisabled_at_msR\rrevoked_at_ms\"N\n" +
+	"\x10publishing_grant\x18\x05 \x01(\v21.peers_touch.model.chat.v1.MessagePublishingGrantR\x0fpublishingGrant\"N\n" +
 	"\x10CreateBotRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
 	"\x06avatar\x18\x02 \x01(\tH\x00R\x06avatar\x88\x01\x01B\t\n" +
-	"\a_avatar\"\xa8\x01\n" +
+	"\a_avatar\"}\n" +
 	"\x11CreateBotResponse\x12/\n" +
 	"\x03bot\x18\x01 \x01(\v2\x1d.peers_touch.model.bot.v1.BotR\x03bot\x12\x1f\n" +
-	"\vingress_url\x18\x04 \x01(\tR\n" +
+	"\vingress_url\x18\x02 \x01(\tR\n" +
 	"ingressUrl\x12\x16\n" +
-	"\x06secret\x18\x05 \x01(\tR\x06secretJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04R\vwebhook_urlR\x10secret_plaintext\"3\n" +
+	"\x06secret\x18\x03 \x01(\tR\x06secret\"3\n" +
 	"\x16RotateBotSecretRequest\x12\x19\n" +
-	"\bbot_ptid\x18\x01 \x01(\tR\abotPtid\"I\n" +
+	"\bbot_ptid\x18\x01 \x01(\tR\abotPtid\"1\n" +
 	"\x17RotateBotSecretResponse\x12\x16\n" +
-	"\x06secret\x18\x02 \x01(\tR\x06secretJ\x04\b\x01\x10\x02R\x10secret_plaintext\"v\n" +
+	"\x06secret\x18\x01 \x01(\tR\x06secret\"v\n" +
 	"\x12SetBotStateRequest\x12\x19\n" +
 	"\bbot_ptid\x18\x01 \x01(\tR\abotPtid\x12E\n" +
 	"\ftarget_state\x18\x02 \x01(\x0e2\".peers_touch.model.bot.v1.BotStateR\vtargetState\"F\n" +

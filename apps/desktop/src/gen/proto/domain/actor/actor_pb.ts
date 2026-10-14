@@ -1079,7 +1079,7 @@ export enum ActorKind {
   NODE = 6,
 
   /**
-   * IM bot: a conversable non-human actor driven by an inbound webhook.
+   * IM bot: a conversable non-human actor backed by a message-publishing grant.
    * Distinct from APPLICATION/SERVICE: an AGENT owns an ordinary conversation
    * graph edge with its owner but is never E2EE (service-plaintext delivery).
    *

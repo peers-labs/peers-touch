@@ -20,8 +20,8 @@ type subServer struct {
 	registry   *registry.Service
 }
 
-// NewBotSubServer constructs the IM Bot sub-server: owner-scoped registry
-// management under JWT plus the public, Bearer-authenticated webhook edge.
+// NewBotSubServer constructs the owner-scoped IM Bot registry. Message ingress
+// is owned by Conversation's generic publishing capability.
 func NewBotSubServer(opts ...option.Option) server.Subserver {
 	return &subServer{status: server.StatusStopped, addrs: []string{}}
 }

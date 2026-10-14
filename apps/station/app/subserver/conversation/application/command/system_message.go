@@ -11,7 +11,7 @@ import (
 
 // MaxSystemMessagePayloadBytes bounds the readable
 // DirectServicePlaintextPayload body accepted by the system sender. It mirrors
-// the webhook edge limit and is checked before the aggregate commit.
+// the public publishing limit and is checked before the aggregate commit.
 const MaxSystemMessagePayloadBytes = 32 * 1024
 
 // SystemMessageRequest is the Station-only service-plaintext command.

@@ -17,9 +17,3 @@ type BotRegistrationModel struct {
 }
 
 func (BotRegistrationModel) TableName() string { return "bot_registration" }
-
-type botRegistrationCutoverModel BotRegistrationModel
-
-func (botRegistrationCutoverModel) TableName() string {
-	return "bot_registration_cutover"
-}

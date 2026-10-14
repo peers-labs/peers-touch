@@ -163,7 +163,7 @@ func TestProductionRealtimePublishServiceNotificationFansOutToAllOwnerDevices(t 
 	})
 	wake := ports.ServiceNotificationWake{
 		RecipientActor:   "ptid:owner",
-		NotificationID:   "ntf-bot-event:req-1",
+		NotificationID:   "ntf-publication:req-1",
 		NotificationType: 410,
 		Category:         4,
 		GroupKey:         "task-42",
@@ -234,7 +234,7 @@ func TestProductionRealtimeFailsClosedWithoutEventBus(t *testing.T) {
 			run: func() error {
 				return adapter.PublishServiceNotification(ctx, ports.ServiceNotificationWake{
 					RecipientActor:   "ptid:bob",
-					NotificationID:   "ntf-bot-event:req-1",
+					NotificationID:   "ntf-publication:req-1",
 					NotificationType: 410,
 					Category:         4,
 				})

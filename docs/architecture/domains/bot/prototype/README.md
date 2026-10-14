@@ -20,12 +20,12 @@ pnpm typecheck    # 仅本包 tsc（跨包预存在错误见“已知差异”�
 ```
 
 Bot 会话与消息**复用 social-chat 原型**（生产 1:1 对齐的 ChatArea/SessionList），
-不复制聊天面；social-chat 仅增加默认休眠的 additive seam：
+不复制聊天面；social-chat 仅增加默认休眠的扩展点：
 
-- `MockConversation.type` 增加 `'bot'`、`MockMessage.type` 增加 `'bot-event'`；
+- `MockConversation.type` 增加 `'bot'`，消息沿用通用 service-plaintext 投影；
 - `Avatar` 增加 `botIcon`；
-- `ChatArea.registerBotEventRenderer()` 注册点（social-chat 自身不注册，行为不变）；
-- `useChatState(seed?)` 支持 seed 与 `ingestInboundMessage`（外部注入 + 折叠）。
+- 时间线从通用结构化消息内容派生活动卡片；
+- `useChatState(seed?)` 支持 seed 与通用发布消息注入、分组。
 
 bot-inbox 提供事件卡片渲染器、Bots 设置、菜单栏驻留层与事件模拟器。
 
@@ -79,7 +79,7 @@ Journey：BOT-J01 设置、BOT-J02/J05 会话与折叠、BOT-J03 菜单栏触达
 | `shots/08-chat-avatar-propagated.png` | 返回聊天 | 头像单一事实源在账户级 Bot 设置，经会话补丁 + profile store 双路同步：会话列表、时间线事件卡（含 ×2 折叠卡）全部一致；头部仍为琥珀警示 icon |
 
 L3：成功路径（横幅→查看→恢复会话）、折叠、静音/焦点/离线分支可在 `pnpm dev` 手动复现；`capture.mjs` 覆盖点击链路。
-L4 Runtime Quality（语义/对比度/长列表/真机性能）：`UNPROVEN`（web 原型不证明真机 tray；以 Tauri 打包 Journey G-BOT-06 为准）。
+L4 Runtime Quality（语义/对比度/长列表/真机性能）：`UNPROVEN`（web 原型不证明真机 tray；以 Tauri 真机验收为准）。
 
 ## 总账状态
 

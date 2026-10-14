@@ -142,7 +142,7 @@ type ServiceNotificationProducer interface {
 // ServiceNotificationWake is the post-commit actor-level realtime descriptor.
 // The durable notification row
 // and the device inbox remain truth; this wake only reaches currently (and
-// ring-replaying) online owner devices and must never gate the webhook result.
+// ring-replaying) online owner devices and must never gate publication.
 type ServiceNotificationWake struct {
 	RecipientActor   valueobject.PTID
 	NotificationID   string

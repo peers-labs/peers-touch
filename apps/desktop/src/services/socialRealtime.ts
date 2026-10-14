@@ -182,9 +182,8 @@ export async function refreshSocialProjection(label: string, includeNotification
 export function dispatchSocialRuntimeHostEvent(event: SocialHostEvent): void {
   if (!currentAuthenticatedActorPtid()) return;
 
-  // BOT-A31: a native notification tap carries the conversation ULID — open
-  // that conversation (selecting it also clears unread / marks read) and
-  // navigate to the social chat surface.
+  // A native notification tap carries the conversation ULID. Selecting it
+  // clears unread state and opens the social chat surface.
   if (event.kind === 'notification-tap' && event.sessionUlid) {
     useSocialChatStore.getState().selectSession(event.sessionUlid);
     eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'chat' });

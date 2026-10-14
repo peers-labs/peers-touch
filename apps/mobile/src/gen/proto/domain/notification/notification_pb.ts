@@ -94,9 +94,8 @@ export type Notification = Message<"peers_touch.model.notification.v1.Notificati
   readAt?: Timestamp | undefined;
 
   /**
-   * Producer idempotency key (e.g. inbound webhook request id). Produce with
-   * the same (recipient_ptid, idempotency_key, 24h bucket) returns the
-   * original notification; uniqueness is enforced by a DB unique index.
+   * Producer idempotency key. Reusing the same key for one recipient returns
+   * the original notification; uniqueness is enforced by a DB unique index.
    *
    * @generated from field: string idempotency_key = 15;
    */

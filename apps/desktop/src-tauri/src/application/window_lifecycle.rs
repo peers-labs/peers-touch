@@ -1,4 +1,4 @@
-//! Main-window close behavior for menu-bar residency (BOT-A30).
+//! Main-window close behavior for menu-bar residency.
 //!
 //! When a system tray is installed, closing the main window hides it instead
 //! of quitting, so the resident app keeps receiving bot and social events and

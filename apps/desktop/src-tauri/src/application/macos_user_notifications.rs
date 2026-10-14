@@ -1,4 +1,4 @@
-//! macOS UserNotifications integration for bot/social events (BOT-A31/A33/A35).
+//! macOS UserNotifications integration for Bot and Social events.
 //!
 //! Why native instead of `tauri-plugin-notification`: that plugin's desktop
 //! backend is notify-rust and is fire-and-forget — it drops the identifier,
@@ -142,8 +142,8 @@ pub fn is_available() -> bool {
 }
 
 /// Schedule one notification. Reusing the same `notification_id` replaces a
-/// pending/delivered notification, giving one surface per event per device
-/// (BOT-A35). Construction hops to the main thread; only plain strings cross.
+/// pending/delivered notification, giving one surface per event per device.
+/// Construction hops to the main thread; only plain strings cross.
 pub fn post(route: NativeNotificationRoute) -> Result<(), String> {
     if !is_available() {
         return Err("native notifications are unavailable in this process".to_string());

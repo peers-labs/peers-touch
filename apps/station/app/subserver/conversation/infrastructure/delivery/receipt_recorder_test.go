@@ -1083,12 +1083,10 @@ func TestReceiptRecorderPreservesAcknowledgedState(t *testing.T) {
 	}
 }
 
-// Bot/service-plaintext events are authored by the reserved keyless
-// station-system device, which structurally never receives an originator
-// synchronization delivery. The owner's consumption receipt must therefore
-// record without demanding an originator route (regression: every bot-event
-// receipt was permanently 409 "does not contain an originator synchronization
-// route" and retried forever).
+// Service-plaintext messages are authored by the reserved keyless
+// station-system device, which never receives an originator synchronization
+// delivery. The owner's consumption receipt therefore records without
+// demanding an originator route.
 func TestReceiptRecorderAcceptsSystemSenderWithoutOriginatorRoute(t *testing.T) {
 	fixture := newDeliveryFixture(t, standardLimits(), standardPolicy())
 	if err := fixture.db.AutoMigrate(

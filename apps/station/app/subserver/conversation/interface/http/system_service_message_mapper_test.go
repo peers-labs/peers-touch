@@ -11,9 +11,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// G-BOT-03: a system service message maps onto the ordinary committed-message
-// wire arm, but with the explicit service-plaintext security marker and SYSTEM
-// content kind so clients suppress the E2EE lock instead of guessing.
+// A system service message maps onto the ordinary committed-message wire arm,
+// with the explicit service-plaintext security marker and SYSTEM content kind.
 func TestMapEventSystemServiceMessageSecurityMarker(t *testing.T) {
 	at := time.Date(2026, time.October, 12, 9, 0, 0, 0, time.UTC)
 	record := domainevent.Record{
@@ -26,7 +25,7 @@ func TestMapEventSystemServiceMessageSecurityMarker(t *testing.T) {
 			Device: valueobject.SystemStationDeviceID,
 		},
 		CommittedAt: at,
-		Fact:        domainevent.NewSystemServiceMessageFact(valueobject.MessageID("msg-bot-1"), []byte("peers-touch.bot-event.v1")),
+		Fact:        domainevent.NewSystemServiceMessageFact(valueobject.MessageID("msg-bot-1"), []byte("peers-touch.publisher-event.v1")),
 	}
 
 	wire, err := conversationhttp.MapEvent(record)
@@ -51,9 +50,9 @@ func TestMapEventSystemServiceMessageSecurityMarker(t *testing.T) {
 	}
 }
 
-// G-BOT-03: the system author is keyless; device delivery encoding must
-// accept an empty sender identity key for the reserved station-system device
-// while still binding the delivery commitment and payload kind.
+// The system author is keyless, so device delivery encoding accepts an empty
+// sender identity key for the reserved station-system device while still
+// binding the delivery commitment and payload kind.
 func TestEncodeDeviceEventKeylessSystemAuthor(t *testing.T) {
 	record := domainevent.Record{
 		ID:             valueobject.EventID("evt-bot-2"),
@@ -75,7 +74,7 @@ func TestEncodeDeviceEventKeylessSystemAuthor(t *testing.T) {
 		recipient,
 		valueobject.StationID("station-a"),
 		valueobject.DeliveryKindDirectServicePlaintext,
-		[]byte("peers-touch.bot-event.v1"),
+		[]byte("peers-touch.publisher-event.v1"),
 	)
 	if err != nil {
 		t.Fatalf("NewPreparedDelivery: %v", err)

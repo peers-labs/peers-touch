@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/bot/bot.proto.
  */
 export const file_domain_bot_bot: GenFile = /*@__PURE__*/
-  fileDesc("ChRkb21haW4vYm90L2JvdC5wcm90bxIYcGVlcnNfdG91Y2gubW9kZWwuYm90LnYxIr8CCgNCb3QSEAoIYm90X3B0aWQYASABKAkSEgoKb3duZXJfcHRpZBgCIAEoCRIMCgRuYW1lGAMgASgJEjEKBXN0YXRlGAQgASgOMiIucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdFN0YXRlEksKEHB1Ymxpc2hpbmdfZ3JhbnQYDSABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lc3NhZ2VQdWJsaXNoaW5nR3JhbnRKBAgFEA1SCndlYmhvb2tfaWRSEHNlY3JldF9kZWxpdmVyZWRSC3NlY3JldF9oaW50Ug5kZWxpdmVyeV9zY29wZVIVcmF0ZV9saW1pdF9wZXJfbWludXRlUg1jcmVhdGVkX2F0X21zUg5kaXNhYmxlZF9hdF9tc1INcmV2b2tlZF9hdF9tcyJAChBDcmVhdGVCb3RSZXF1ZXN0EgwKBG5hbWUYASABKAkSEwoGYXZhdGFyGAIgASgJSACIAQFCCQoHX2F2YXRhciKPAQoRQ3JlYXRlQm90UmVzcG9uc2USKgoDYm90GAEgASgLMh0ucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdBITCgtpbmdyZXNzX3VybBgEIAEoCRIOCgZzZWNyZXQYBSABKAlKBAgCEANKBAgDEARSC3dlYmhvb2tfdXJsUhBzZWNyZXRfcGxhaW50ZXh0IioKFlJvdGF0ZUJvdFNlY3JldFJlcXVlc3QSEAoIYm90X3B0aWQYASABKAkiQQoXUm90YXRlQm90U2VjcmV0UmVzcG9uc2USDgoGc2VjcmV0GAIgASgJSgQIARACUhBzZWNyZXRfcGxhaW50ZXh0ImAKElNldEJvdFN0YXRlUmVxdWVzdBIQCghib3RfcHRpZBgBIAEoCRI4Cgx0YXJnZXRfc3RhdGUYAiABKA4yIi5wZWVyc190b3VjaC5tb2RlbC5ib3QudjEuQm90U3RhdGUiQQoTU2V0Qm90U3RhdGVSZXNwb25zZRIqCgNib3QYASABKAsyHS5wZWVyc190b3VjaC5tb2RlbC5ib3QudjEuQm90IhMKEUxpc3RNeUJvdHNSZXF1ZXN0IkEKEkxpc3RNeUJvdHNSZXNwb25zZRIrCgRib3RzGAEgAygLMh0ucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdCJIChRTZXRCb3RQcm9maWxlUmVxdWVzdBIQCghib3RfcHRpZBgBIAEoCRITCgZhdmF0YXIYAiABKAlIAIgBAUIJCgdfYXZhdGFyIkMKFVNldEJvdFByb2ZpbGVSZXNwb25zZRIqCgNib3QYASABKAsyHS5wZWVyc190b3VjaC5tb2RlbC5ib3QudjEuQm90Kn8KCEJvdFN0YXRlEhkKFUJPVF9TVEFURV9VTlNQRUNJRklFRBAAEhMKD0JPVF9TVEFURV9EUkFGVBABEhQKEEJPVF9TVEFURV9BQ1RJVkUQAhIWChJCT1RfU1RBVEVfRElTQUJMRUQQAxIVChFCT1RfU1RBVEVfUkVWT0tFRBAEQklaR2dpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2FwcC9zdWJzZXJ2ZXIvYm90L21vZGVsO21vZGVsYgZwcm90bzM", [file_domain_chat_publishing]);
+  fileDesc("ChRkb21haW4vYm90L2JvdC5wcm90bxIYcGVlcnNfdG91Y2gubW9kZWwuYm90LnYxIrkBCgNCb3QSEAoIYm90X3B0aWQYASABKAkSEgoKb3duZXJfcHRpZBgCIAEoCRIMCgRuYW1lGAMgASgJEjEKBXN0YXRlGAQgASgOMiIucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdFN0YXRlEksKEHB1Ymxpc2hpbmdfZ3JhbnQYBSABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lc3NhZ2VQdWJsaXNoaW5nR3JhbnQiQAoQQ3JlYXRlQm90UmVxdWVzdBIMCgRuYW1lGAEgASgJEhMKBmF2YXRhchgCIAEoCUgAiAEBQgkKB19hdmF0YXIiZAoRQ3JlYXRlQm90UmVzcG9uc2USKgoDYm90GAEgASgLMh0ucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdBITCgtpbmdyZXNzX3VybBgCIAEoCRIOCgZzZWNyZXQYAyABKAkiKgoWUm90YXRlQm90U2VjcmV0UmVxdWVzdBIQCghib3RfcHRpZBgBIAEoCSIpChdSb3RhdGVCb3RTZWNyZXRSZXNwb25zZRIOCgZzZWNyZXQYASABKAkiYAoSU2V0Qm90U3RhdGVSZXF1ZXN0EhAKCGJvdF9wdGlkGAEgASgJEjgKDHRhcmdldF9zdGF0ZRgCIAEoDjIiLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3RTdGF0ZSJBChNTZXRCb3RTdGF0ZVJlc3BvbnNlEioKA2JvdBgBIAEoCzIdLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3QiEwoRTGlzdE15Qm90c1JlcXVlc3QiQQoSTGlzdE15Qm90c1Jlc3BvbnNlEisKBGJvdHMYASADKAsyHS5wZWVyc190b3VjaC5tb2RlbC5ib3QudjEuQm90IkgKFFNldEJvdFByb2ZpbGVSZXF1ZXN0EhAKCGJvdF9wdGlkGAEgASgJEhMKBmF2YXRhchgCIAEoCUgAiAEBQgkKB19hdmF0YXIiQwoVU2V0Qm90UHJvZmlsZVJlc3BvbnNlEioKA2JvdBgBIAEoCzIdLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3QqfwoIQm90U3RhdGUSGQoVQk9UX1NUQVRFX1VOU1BFQ0lGSUVEEAASEwoPQk9UX1NUQVRFX0RSQUZUEAESFAoQQk9UX1NUQVRFX0FDVElWRRACEhYKEkJPVF9TVEFURV9ESVNBQkxFRBADEhUKEUJPVF9TVEFURV9SRVZPS0VEEARCSVpHZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9ib3QvbW9kZWw7bW9kZWxiBnByb3RvMw", [file_domain_chat_publishing]);
 
 /**
  * @generated from message peers_touch.model.bot.v1.Bot
@@ -39,7 +39,7 @@ export type Bot = Message<"peers_touch.model.bot.v1.Bot"> & {
   state: BotState;
 
   /**
-   * @generated from field: peers_touch.model.chat.v1.MessagePublishingGrant publishing_grant = 13;
+   * @generated from field: peers_touch.model.chat.v1.MessagePublishingGrant publishing_grant = 5;
    */
   publishingGrant?: MessagePublishingGrant | undefined;
 };
@@ -83,12 +83,12 @@ export type CreateBotResponse = Message<"peers_touch.model.bot.v1.CreateBotRespo
   bot?: Bot | undefined;
 
   /**
-   * @generated from field: string ingress_url = 4;
+   * @generated from field: string ingress_url = 2;
    */
   ingressUrl: string;
 
   /**
-   * @generated from field: string secret = 5;
+   * @generated from field: string secret = 3;
    */
   secret: string;
 };
@@ -122,7 +122,7 @@ export const RotateBotSecretRequestSchema: GenMessage<RotateBotSecretRequest> = 
  */
 export type RotateBotSecretResponse = Message<"peers_touch.model.bot.v1.RotateBotSecretResponse"> & {
   /**
-   * @generated from field: string secret = 2;
+   * @generated from field: string secret = 1;
    */
   secret: string;
 };

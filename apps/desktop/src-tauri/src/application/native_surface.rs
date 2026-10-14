@@ -1,5 +1,5 @@
 //! Native desktop surface integration: user notifications and dock / taskbar
-//! unread badge (BOT-A31/A33/A35, BOT-D13).
+//! unread badge.
 //!
 //! These are side-effect-only wrappers over platform frameworks. Routing and
 //! focus / mute gating live in the UI projection; this layer turns an already
@@ -9,8 +9,7 @@
 /// Routing payload for one native user notification.
 #[derive(Debug, Clone)]
 pub(crate) struct NativeNotificationRoute {
-    /// Stable id; reusing it replaces the previous notification (one per event
-    /// per device, BOT-A35).
+    /// Stable id; reusing it replaces the previous notification.
     pub notification_id: String,
     pub title: String,
     pub body: String,

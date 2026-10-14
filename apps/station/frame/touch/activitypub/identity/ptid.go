@@ -26,7 +26,7 @@ const (
 	TypeService      AccountType = "s"
 	TypeApplication  AccountType = "a"
 	// TypeAgent is an IM bot: a conversable, non-human, Station-resident
-	// actor driven by an inbound webhook. It is never E2EE.
+	// actor backed by a message-publishing grant. It is never E2EE.
 	TypeAgent AccountType = "b"
 )
 
