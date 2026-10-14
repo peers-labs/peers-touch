@@ -271,10 +271,8 @@ def resolve_existing_actor(
     station_url: str,
     role: str,
     password: str,
-    *,
-    account: str | None = None,
 ) -> ActorIdentity:
-    account = account or ACTOR_ACCOUNTS.get(role)
+    account = ACTOR_ACCOUNTS.get(role)
     if not account:
         raise BlockedError(
             reason=f"Unsupported Agent native actor role: {role}",

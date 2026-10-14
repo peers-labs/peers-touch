@@ -540,14 +540,11 @@ def main() -> int:
     try:
         password = DEV_ACCOUNT_PASSWORD
         if not args.account:
-            actors = prepare_profile_accounts(station_url, workspace_id(REPO_ROOT))
-            args.account = actors["receiver"].account_ref.removeprefix("station-account:")
-            args.sender_account = actors["sender"].account_ref.removeprefix("station-account:")
+            accounts = prepare_profile_accounts(station_url, workspace_id(REPO_ROOT))
+            args.account = accounts["receiver"]
+            args.sender_account = accounts["sender"]
             password = PROFILE_ACCOUNT_PASSWORD
-            result["actorFixture"] = {
-                role: {"accountRef": actor.account_ref, "ptid": actor.ptid}
-                for role, actor in actors.items()
-            }
+        result["actorFixture"] = {}
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             sender_port = probe.getsockname()[1]
@@ -569,10 +566,18 @@ def main() -> int:
             }, namespace="chat", script_timeout=90)
             if login.get("authenticated") is not True:
                 raise GateError(f"existing {role} actor did not authenticate")
+            profile = read_profile(client)
+            result["actorFixture"][role] = {
+                "accountRef": f"station-account:{account}",
+                "ptid": profile["peers_touch"]["network_id"],
+                "homeStationPeerId": profile["home_station_peer_id"],
+            }
             client_specs[role] = {
                 "webdriver_port": client_port, "renderer_port": client_port,
                 "storage_root": client.storage_root, "storage_lifecycle": "ephemeral",
             }
+        if result["actorFixture"]["receiver"]["ptid"] == result["actorFixture"]["sender"]["ptid"]:
+            raise GateError("Native Access Gate resolved both fixture roles to one actor")
         if args.recover_probe_collections:
             snapshot = read_profile(session)
             expected = {
