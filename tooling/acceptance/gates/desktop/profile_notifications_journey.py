@@ -15,7 +15,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from tooling.acceptance.core import GateError, call_async_harness, workspace_id
 from tooling.acceptance.core.redaction import redact_text_with_values, redact_value_with_values
-from tooling.acceptance.drivers.native import NativeKey
+from tooling.acceptance.drivers.native import MouseAction, NativeKey
 from tooling.acceptance.drivers.native.runtime import (
     LocalMacOSRuntimeBinding,
     NativeDesktopRuntimeBinding,
@@ -72,6 +72,40 @@ def fill(session: TauriSession, selector: str, value: str) -> None:
     field.click()
     field.clear()
     field.send_keys(value)
+
+
+def native_click(
+    session: TauriSession,
+    binding: NativeDesktopRuntimeBinding,
+    selector: str,
+    sessions: tuple[TauriSession, ...],
+) -> dict[str, Any]:
+    """Exercise the actual pointer path, including Popover outside-click handling."""
+    pid = session.process_id
+    if pid is None:
+        raise GateError("Native pointer target has no owning process")
+    binding.request_cooperative_activation(session, sessions)
+    wait(session, lambda: session.execute_script("return document.hasFocus()"), "Native pointer focus")
+    element = session.find_element(selector, 30)
+    geometry = session.execute_script(
+        """const rect = arguments[0].getBoundingClientRect();
+        return {x: rect.left + rect.width / 2, y: rect.top + rect.height / 2,
+          width: window.innerWidth, height: window.innerHeight, ratio: window.devicePixelRatio};""",
+        element,
+    )
+    origin = binding.native_adapter.content_origin(pid)
+    if origin is None:
+        window = session.driver.get_window_rect()
+        ratio = geometry["ratio"]
+        origin = (
+            window["x"] / ratio + max(0, (window["width"] / ratio - geometry["width"]) / 2),
+            window["y"] / ratio + max(0, window["height"] / ratio - geometry["height"]),
+        )
+    point = (origin[0] + geometry["x"], origin[1] + geometry["y"])
+    binding.native_adapter.post_mouse_to_process(
+        pid, (MouseAction.LEFT_DOWN, MouseAction.LEFT_UP), point,
+    )
+    return {"processId": pid, "selector": selector, "point": list(point)}
 
 
 def select_native_image(
@@ -336,6 +370,7 @@ def run_notifications_journey(
     receiver: TauriSession,
     sender: TauriSession,
     artifacts: Path,
+    binding: NativeDesktopRuntimeBinding,
     progress: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Use production Social commands and receiver UI without resetting actors."""
@@ -417,7 +452,12 @@ def run_notifications_journey(
                   === String(arguments[1]);""",
                 bell_selector, baseline + 1,
             ), "receiver Native notification badge increment")
-            receiver.find_element(bell_selector, 30).click()
+            result["nativeInput"] = native_click(
+                receiver, binding, bell_selector, (receiver, sender),
+            )
+            wait(receiver, lambda: receiver.find_element(bell_selector).get_attribute(
+                "aria-expanded",
+            ) == "true", "notification preview opens after Native click")
             row = receiver.find_element(f'[data-shell-notification="{item["id"]}"]', 30)
             if f"{marker}-{index}" not in row.text:
                 raise GateError("receiver notification body differs from the production command")
@@ -670,7 +710,7 @@ def main() -> int:
         if not args.notifications_only:
             result.update(run_profile_journey(session, binding, artifacts))
         result["notifications"] = {}
-        run_notifications_journey(session, sender, artifacts, result["notifications"])
+        run_notifications_journey(session, sender, artifacts, binding, result["notifications"])
         result["result"] = "PASS"
     except Exception as error:
         result.update(result="FAIL", failure=str(error), failureType=type(error).__name__)
