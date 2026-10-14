@@ -9,6 +9,7 @@ package model
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
@@ -2192,8 +2193,13 @@ type UpdateProfileRequest struct {
 	Discoverability           *ActorVisibility            `protobuf:"varint,14,opt,name=discoverability,proto3,enum=peers_touch.model.actor.v1.ActorVisibility,oneof" json:"discoverability,omitempty"`
 	ContactPolicy             *ActorContactPolicy         `protobuf:"varint,15,opt,name=contact_policy,proto3,enum=peers_touch.model.actor.v1.ActorContactPolicy,oneof" json:"contact_policy,omitempty"`
 	FederationVisibility      *FederationVisibilityPolicy `protobuf:"bytes,16,opt,name=federation_visibility,proto3" json:"federation_visibility,omitempty"`
-	unknownFields             protoimpl.UnknownFields
-	sizeCache                 protoimpl.SizeCache
+	// Scalar optionals and federation_visibility retain their own presence.
+	// Repeated fields have no wire presence: list "tags" and/or "links" here
+	// to replace that entire collection, including replacement with an empty
+	// list. Omitted collections are unchanged. No other paths are allowed.
+	CollectionUpdateMask *fieldmaskpb.FieldMask `protobuf:"bytes,17,opt,name=collection_update_mask,proto3" json:"collection_update_mask,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *UpdateProfileRequest) Reset() {
@@ -2327,6 +2333,13 @@ func (x *UpdateProfileRequest) GetContactPolicy() ActorContactPolicy {
 func (x *UpdateProfileRequest) GetFederationVisibility() *FederationVisibilityPolicy {
 	if x != nil {
 		return x.FederationVisibility
+	}
+	return nil
+}
+
+func (x *UpdateProfileRequest) GetCollectionUpdateMask() *fieldmaskpb.FieldMask {
+	if x != nil {
+		return x.CollectionUpdateMask
 	}
 	return nil
 }
@@ -2521,7 +2534,7 @@ var File_domain_actor_actor_proto protoreflect.FileDescriptor
 
 const file_domain_actor_actor_proto_rawDesc = "" +
 	"\n" +
-	"\x18domain/actor/actor.proto\x12\x1apeers_touch.model.actor.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa3\x02\n" +
+	"\x18domain/actor/actor.proto\x12\x1apeers_touch.model.actor.v1\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa3\x02\n" +
 	"\x1aFederationVisibilityPolicy\x12\x8c\x01\n" +
 	"\x18visibility_by_federation\x18\x01 \x03(\v2R.peers_touch.model.actor.v1.FederationVisibilityPolicy.VisibilityByFederationEntryR\x16visibilityByFederation\x1av\n" +
 	"\x1bVisibilityByFederationEntry\x12\x10\n" +
@@ -2689,7 +2702,7 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x0fdiscoverability\x18! \x01(\x0e2+.peers_touch.model.actor.v1.ActorVisibilityR\x0fdiscoverability\x129\n" +
 	"\x04kind\x18\" \x01(\x0e2%.peers_touch.model.actor.v1.ActorKindR\x04kind\x12V\n" +
 	"\x0econtact_policy\x18# \x01(\x0e2..peers_touch.model.actor.v1.ActorContactPolicyR\x0econtact_policy\x12l\n" +
-	"\x15federation_visibility\x18$ \x01(\v26.peers_touch.model.actor.v1.FederationVisibilityPolicyR\x15federation_visibilityJ\x04\b\x1a\x10\x1bR\x12message_permission\"\xf7\a\n" +
+	"\x15federation_visibility\x18$ \x01(\v26.peers_touch.model.actor.v1.FederationVisibilityPolicyR\x15federation_visibilityJ\x04\b\x1a\x10\x1bR\x12message_permission\"\xcb\b\n" +
 	"\x14UpdateProfileRequest\x12'\n" +
 	"\fdisplay_name\x18\x01 \x01(\tH\x00R\fdisplay_name\x88\x01\x01\x12\x17\n" +
 	"\x04note\x18\x02 \x01(\tH\x01R\x04note\x88\x01\x01\x12\x1b\n" +
@@ -2707,7 +2720,8 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x0fdiscoverability\x18\x0e \x01(\x0e2+.peers_touch.model.actor.v1.ActorVisibilityH\tR\x0fdiscoverability\x88\x01\x01\x12[\n" +
 	"\x0econtact_policy\x18\x0f \x01(\x0e2..peers_touch.model.actor.v1.ActorContactPolicyH\n" +
 	"R\x0econtact_policy\x88\x01\x01\x12l\n" +
-	"\x15federation_visibility\x18\x10 \x01(\v26.peers_touch.model.actor.v1.FederationVisibilityPolicyR\x15federation_visibilityB\x0f\n" +
+	"\x15federation_visibility\x18\x10 \x01(\v26.peers_touch.model.actor.v1.FederationVisibilityPolicyR\x15federation_visibility\x12R\n" +
+	"\x16collection_update_mask\x18\x11 \x01(\v2\x1a.google.protobuf.FieldMaskR\x16collection_update_maskB\x0f\n" +
 	"\r_display_nameB\a\n" +
 	"\x05_noteB\t\n" +
 	"\a_avatarB\t\n" +
@@ -2819,6 +2833,7 @@ var file_domain_actor_actor_proto_goTypes = []any{
 	nil,                                       // 33: peers_touch.model.actor.v1.FederationVisibilityPolicy.VisibilityByFederationEntry
 	nil,                                       // 34: peers_touch.model.actor.v1.Actor.EndpointsEntry
 	(*timestamppb.Timestamp)(nil),             // 35: google.protobuf.Timestamp
+	(*fieldmaskpb.FieldMask)(nil),             // 36: google.protobuf.FieldMask
 }
 var file_domain_actor_actor_proto_depIdxs = []int32{
 	33, // 0: peers_touch.model.actor.v1.FederationVisibilityPolicy.visibility_by_federation:type_name -> peers_touch.model.actor.v1.FederationVisibilityPolicy.VisibilityByFederationEntry
@@ -2861,15 +2876,16 @@ var file_domain_actor_actor_proto_depIdxs = []int32{
 	2,  // 37: peers_touch.model.actor.v1.UpdateProfileRequest.discoverability:type_name -> peers_touch.model.actor.v1.ActorVisibility
 	3,  // 38: peers_touch.model.actor.v1.UpdateProfileRequest.contact_policy:type_name -> peers_touch.model.actor.v1.ActorContactPolicy
 	7,  // 39: peers_touch.model.actor.v1.UpdateProfileRequest.federation_visibility:type_name -> peers_touch.model.actor.v1.FederationVisibilityPolicy
-	6,  // 40: peers_touch.model.actor.v1.UpdateProfileResponse.outcome:type_name -> peers_touch.model.actor.v1.ProfileUpdateOutcome
-	27, // 41: peers_touch.model.actor.v1.UpdateProfileResponse.profile:type_name -> peers_touch.model.actor.v1.ActorProfile
-	23, // 42: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
-	2,  // 43: peers_touch.model.actor.v1.FederationVisibilityPolicy.VisibilityByFederationEntry.value:type_name -> peers_touch.model.actor.v1.ActorVisibility
-	44, // [44:44] is the sub-list for method output_type
-	44, // [44:44] is the sub-list for method input_type
-	44, // [44:44] is the sub-list for extension type_name
-	44, // [44:44] is the sub-list for extension extendee
-	0,  // [0:44] is the sub-list for field type_name
+	36, // 40: peers_touch.model.actor.v1.UpdateProfileRequest.collection_update_mask:type_name -> google.protobuf.FieldMask
+	6,  // 41: peers_touch.model.actor.v1.UpdateProfileResponse.outcome:type_name -> peers_touch.model.actor.v1.ProfileUpdateOutcome
+	27, // 42: peers_touch.model.actor.v1.UpdateProfileResponse.profile:type_name -> peers_touch.model.actor.v1.ActorProfile
+	23, // 43: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
+	2,  // 44: peers_touch.model.actor.v1.FederationVisibilityPolicy.VisibilityByFederationEntry.value:type_name -> peers_touch.model.actor.v1.ActorVisibility
+	45, // [45:45] is the sub-list for method output_type
+	45, // [45:45] is the sub-list for method input_type
+	45, // [45:45] is the sub-list for extension type_name
+	45, // [45:45] is the sub-list for extension extendee
+	0,  // [0:45] is the sub-list for field type_name
 }
 
 func init() { file_domain_actor_actor_proto_init() }

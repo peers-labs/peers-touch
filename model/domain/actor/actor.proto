@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package peers_touch.model.actor.v1;
 
+import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
@@ -304,6 +305,11 @@ message UpdateProfileRequest {
   optional ActorVisibility discoverability = 14;
   optional ActorContactPolicy contact_policy = 15 [json_name = "contact_policy"];
   FederationVisibilityPolicy federation_visibility = 16 [json_name = "federation_visibility"];
+  // Scalar optionals and federation_visibility retain their own presence.
+  // Repeated fields have no wire presence: list "tags" and/or "links" here
+  // to replace that entire collection, including replacement with an empty
+  // list. Omitted collections are unchanged. No other paths are allowed.
+  google.protobuf.FieldMask collection_update_mask = 17 [json_name = "collection_update_mask"];
 }
 
 enum ProfileUpdateOutcome {

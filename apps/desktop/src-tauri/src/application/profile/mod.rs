@@ -436,8 +436,10 @@ fn profile_input_to_proto(input: &ProfileUpdateInput) -> UpdateProfileRequest {
     if let Some(s) = input.timezone.clone() {
         r.timezone = Some(s);
     }
+    let mut collection_paths = Vec::new();
     if let Some(tags) = input.tags.clone() {
         r.tags = tags;
+        collection_paths.push("tags".to_string());
     }
     if let Some(links) = input.links.as_ref() {
         r.links = links
@@ -447,6 +449,12 @@ fn profile_input_to_proto(input: &ProfileUpdateInput) -> UpdateProfileRequest {
                 url: l.url.clone(),
             })
             .collect();
+        collection_paths.push("links".to_string());
+    }
+    if !collection_paths.is_empty() {
+        r.collection_update_mask = Some(prost_types::FieldMask {
+            paths: collection_paths,
+        });
     }
     if let Some(value) = input.discoverability.as_deref() {
         r.discoverability = Some(discoverability_value(value));

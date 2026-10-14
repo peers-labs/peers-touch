@@ -407,10 +407,13 @@ func TestValidateProfileUpdateRequest(t *testing.T) {
 		t.Fatalf("empty mutation error = %v", err)
 	}
 	invalidDiscoverability := modelpb.ActorVisibility(65538)
-	request := UpdateProfileRequestFromProto(&modelpb.UpdateProfileRequest{
+	request, err := UpdateProfileRequestFromProto(&modelpb.UpdateProfileRequest{
 		Discoverability:  &invalidDiscoverability,
 		ObservedRevision: 1,
 	})
+	if err != nil {
+		t.Fatalf("convert discoverability: %v", err)
+	}
 	if err := ValidateProfileUpdateRequest(request); !errors.Is(err, ErrInvalidDiscoverability) {
 		t.Fatalf("wrapped discoverability error = %v", err)
 	}

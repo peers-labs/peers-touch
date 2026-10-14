@@ -48,6 +48,16 @@ actor, session epoch and request generation before awaiting native commands.
 Account-registry loads have the same session/reset fence. A delayed response
 from a replaced session cannot write any current identity projection.
 
+Profile writes preserve protobuf presence end to end. Optional scalar fields
+and the Federation visibility message select their own replacements.
+`UpdateProfileRequest.collection_update_mask` selects complete `tags` and
+`links` replacements, including empty lists. An omitted collection remains
+unchanged; a nonempty collection without its mask path is invalid. Unknown,
+nested and duplicate paths are rejected before persistence. Desktop's profile
+command constructs the mask from the input's optional collections; image-only
+writes select neither collection. All replacements use the same observed
+revision and Actor profile transaction.
+
 ## 3. Phase Model
 
 The top-level phase is `IdentityPhase`:

@@ -19,12 +19,13 @@ import (
 )
 
 var (
-	ErrProfileRevisionRequired = errors.New("profile observed revision is required")
-	ErrEmptyProfileMutation    = errors.New("profile mutation is empty")
-	ErrInvalidDiscoverability  = errors.New("profile discoverability is invalid")
-	ErrInvalidContactPolicy    = errors.New("profile contact policy is invalid")
-	ErrInvalidFederationScope  = errors.New("profile Federation visibility is invalid")
-	ErrRemoteProfileMutation   = errors.New("remote actor profile cannot be mutated")
+	ErrProfileRevisionRequired      = errors.New("profile observed revision is required")
+	ErrEmptyProfileMutation         = errors.New("profile mutation is empty")
+	ErrInvalidProfileCollectionMask = errors.New("profile collection update mask is invalid")
+	ErrInvalidDiscoverability       = errors.New("profile discoverability is invalid")
+	ErrInvalidContactPolicy         = errors.New("profile contact policy is invalid")
+	ErrInvalidFederationScope       = errors.New("profile Federation visibility is invalid")
+	ErrRemoteProfileMutation        = errors.New("remote actor profile cannot be mutated")
 )
 
 type PeersTouchInfo struct {
@@ -749,9 +750,20 @@ func WebProfileToActorProfileProto(p *ProfileResponse) *modelpb.ActorProfile {
 
 // UpdateProfileRequestFromProto converts a protobuf update payload to the internal
 // UpdateProfileRequest used by persistence (optional pointer semantics preserved).
-func UpdateProfileRequestFromProto(req *modelpb.UpdateProfileRequest) UpdateProfileRequest {
+func UpdateProfileRequestFromProto(req *modelpb.UpdateProfileRequest) (UpdateProfileRequest, error) {
 	if req == nil {
-		return UpdateProfileRequest{}
+		return UpdateProfileRequest{}, nil
+	}
+	collections := make(map[string]bool)
+	for _, path := range req.GetCollectionUpdateMask().GetPaths() {
+		if (path != "tags" && path != "links") || collections[path] {
+			return UpdateProfileRequest{}, ErrInvalidProfileCollectionMask
+		}
+		collections[path] = true
+	}
+	if (len(req.Tags) > 0 && !collections["tags"]) ||
+		(len(req.Links) > 0 && !collections["links"]) {
+		return UpdateProfileRequest{}, ErrInvalidProfileCollectionMask
 	}
 	out := UpdateProfileRequest{}
 	if req.DisplayName != nil {
@@ -778,21 +790,19 @@ func UpdateProfileRequestFromProto(req *modelpb.UpdateProfileRequest) UpdateProf
 		s := *req.Timezone
 		out.Timezone = &s
 	}
-	if len(req.Tags) > 0 {
-		t := append([]string(nil), req.Tags...)
+	if collections["tags"] {
+		t := append([]string{}, req.Tags...)
 		out.Tags = &t
 	}
-	if len(req.Links) > 0 {
+	if collections["links"] {
 		al := make([]UserLink, 0, len(req.Links))
 		for _, l := range req.Links {
 			if l == nil {
-				continue
+				return UpdateProfileRequest{}, ErrInvalidProfileCollectionMask
 			}
 			al = append(al, UserLink{Label: l.GetLabel(), URL: l.GetUrl()})
 		}
-		if len(al) > 0 {
-			out.Links = &al
-		}
+		out.Links = &al
 	}
 	if req.DefaultVisibility != nil {
 		s := *req.DefaultVisibility
@@ -822,5 +832,5 @@ func UpdateProfileRequestFromProto(req *modelpb.UpdateProfileRequest) UpdateProf
 		out.Discoverability = &value
 	}
 	out.ObservedRevision = req.ObservedRevision
-	return out
+	return out, nil
 }

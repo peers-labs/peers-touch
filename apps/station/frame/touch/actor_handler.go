@@ -748,7 +748,11 @@ func UpdateActorProfile(c context.Context, ctx *app.RequestContext) {
 		ctx.JSON(http.StatusBadRequest, err.Error())
 		return
 	}
-	params := actor.UpdateProfileRequestFromProto(&protoReq)
+	params, err := actor.UpdateProfileRequestFromProto(&protoReq)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	if err := actor.ValidateProfileUpdateRequest(params); err != nil {
 		ctx.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
