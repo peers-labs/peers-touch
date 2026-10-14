@@ -94,6 +94,7 @@ struct StreamWorker {
 
 #[derive(Default)]
 pub struct EventStreamRuntime {
+    transition: Mutex<()>,
     workers: Mutex<HashMap<String, StreamWorker>>,
 }
 
@@ -126,6 +127,10 @@ impl EventStreamRuntime {
         if token.trim().is_empty() {
             return Err("event stream requires a non-empty token".to_string());
         }
+        let _transition = self
+            .transition
+            .lock()
+            .map_err(|_| "event stream transition lock poisoned".to_string())?;
         let previous = self
             .workers
             .lock()
@@ -182,6 +187,10 @@ impl EventStreamRuntime {
     /// Stop the event-stream supervisor for an actor (idempotent). Used
     /// on logout, account switch, and app shutdown.
     pub fn stop(&self, actor_ptid: &str) -> Result<(), String> {
+        let _transition = self
+            .transition
+            .lock()
+            .map_err(|_| "event stream transition lock poisoned".to_string())?;
         let worker = self
             .workers
             .lock()
@@ -204,6 +213,10 @@ impl EventStreamRuntime {
 
     /// Stop every Station-scoped event stream before changing Station binding.
     pub fn stop_all(&self) -> Result<(), String> {
+        let _transition = self
+            .transition
+            .lock()
+            .map_err(|_| "event stream transition lock poisoned".to_string())?;
         let workers = self
             .workers
             .lock()
@@ -712,5 +725,24 @@ mod tests {
 
         assert!(!runtime.is_running("actor-a"));
         assert!(runtime.workers.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn lifecycle_operations_are_serialized() {
+        let runtime = Arc::new(EventStreamRuntime::new());
+        let transition = runtime.transition.lock().unwrap();
+        let completed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let completed_by_worker = completed.clone();
+        let runtime_for_worker = runtime.clone();
+        let worker = std::thread::spawn(move || {
+            runtime_for_worker.stop("actor-a").unwrap();
+            completed_by_worker.store(true, std::sync::atomic::Ordering::Release);
+        });
+
+        std::thread::sleep(Duration::from_millis(20));
+        assert!(!completed.load(std::sync::atomic::Ordering::Acquire));
+        drop(transition);
+        worker.join().unwrap();
+        assert!(completed.load(std::sync::atomic::Ordering::Acquire));
     }
 }

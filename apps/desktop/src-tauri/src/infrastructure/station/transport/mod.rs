@@ -19,6 +19,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
+const MAX_SCOPED_TRANSPORTS: usize = 16;
+
 #[derive(Debug)]
 pub struct StationTransportLifecycleError(String);
 
@@ -35,9 +37,21 @@ struct ScopedTransport {
     handle: SecureTransportHandle,
 }
 
+struct ScopedTransportEntry {
+    transport: Arc<ScopedTransport>,
+    last_used: u64,
+    active_responses: usize,
+}
+
+#[derive(Default)]
+struct TransportPool {
+    entries: HashMap<TransportIdentityScope, ScopedTransportEntry>,
+    sequence: u64,
+}
+
 struct Shared {
     identity_store: TransportIdentityStore,
-    transports: Mutex<HashMap<TransportIdentityScope, Arc<ScopedTransport>>>,
+    transports: Mutex<TransportPool>,
     #[cfg(feature = "acceptance-webdriver")]
     direct_route_overrides: Mutex<HashMap<(String, String), String>>,
     shutdown: CancellationToken,
@@ -78,13 +92,19 @@ impl Drop for LinkedCancellation {
 struct FencedResponseBody {
     inner: Box<dyn Read + Send>,
     cancellation: LinkedCancellation,
+    _transport_usage: Option<TransportUsage>,
 }
 
 impl FencedResponseBody {
-    fn new(inner: Box<dyn Read + Send>, cancellation: LinkedCancellation) -> Self {
+    fn new(
+        inner: Box<dyn Read + Send>,
+        cancellation: LinkedCancellation,
+        transport_usage: Option<TransportUsage>,
+    ) -> Self {
         Self {
             inner,
             cancellation,
+            _transport_usage: transport_usage,
         }
     }
 }
@@ -108,12 +128,32 @@ impl Read for FencedResponseBody {
     }
 }
 
+struct TransportUsage {
+    shared: Arc<Shared>,
+    scope: TransportIdentityScope,
+    transport: Arc<ScopedTransport>,
+}
+
+impl Drop for TransportUsage {
+    fn drop(&mut self) {
+        let Ok(mut pool) = self.shared.transports.lock() else {
+            return;
+        };
+        let Some(entry) = pool.entries.get_mut(&self.scope) else {
+            return;
+        };
+        if Arc::ptr_eq(&entry.transport, &self.transport) {
+            entry.active_responses = entry.active_responses.saturating_sub(1);
+        }
+    }
+}
+
 impl StationTransportOwner {
     pub fn start() -> Result<Self, StationTransportLifecycleError> {
         Ok(Self {
             shared: Arc::new(Shared {
                 identity_store: TransportIdentityStore::new(),
-                transports: Mutex::new(HashMap::new()),
+                transports: Mutex::new(TransportPool::default()),
                 #[cfg(feature = "acceptance-webdriver")]
                 direct_route_overrides: Mutex::new(HashMap::new()),
                 shutdown: CancellationToken::new(),
@@ -146,14 +186,19 @@ impl StationTransportHandle {
         message: &[u8],
     ) -> Result<TransportIdentityProof, StationTransportLifecycleError> {
         self.prepare_route(scope.clone())?;
-        let transports = self.shared.transports.lock().map_err(|_| {
+        let mut pool = self.shared.transports.lock().map_err(|_| {
             StationTransportLifecycleError("Station transport lifecycle lock poisoned".to_string())
         })?;
-        let transport = transports.get(&scope).ok_or_else(|| {
+        pool.sequence = pool.sequence.saturating_add(1);
+        let sequence = pool.sequence;
+        let transport = pool.entries.get_mut(&scope).ok_or_else(|| {
             StationTransportLifecycleError(
                 "Station transport identity was not prepared".to_string(),
             )
         })?;
+        transport.last_used = sequence;
+        let transport = transport.transport.clone();
+        drop(pool);
         transport
             .handle
             .sign_identity_proof(message)
@@ -169,18 +214,16 @@ impl StationTransportHandle {
         scope: TransportIdentityScope,
     ) -> Result<(), StationTransportLifecycleError> {
         {
-            let transports = self.shared.transports.lock().map_err(|_| {
+            let mut pool = self.shared.transports.lock().map_err(|_| {
                 StationTransportLifecycleError(
                     "Station transport lifecycle lock poisoned".to_string(),
                 )
             })?;
-            if transports.contains_key(&scope) {
+            pool.sequence = pool.sequence.saturating_add(1);
+            let sequence = pool.sequence;
+            if let Some(existing) = pool.entries.get_mut(&scope) {
+                existing.last_used = sequence;
                 return Ok(());
-            }
-            if transports.len() >= 2 {
-                return Err(StationTransportLifecycleError(
-                    "Station transport candidate capacity is exhausted".to_string(),
-                ));
             }
         }
         let keypair = self
@@ -192,26 +235,61 @@ impl StationTransportHandle {
             StationTransportLifecycleError(format!("start scoped Station transport: {error}"))
         })?;
         let handle = owner.handle();
-        let mut transports = self.shared.transports.lock().map_err(|_| {
+        let transport = Arc::new(ScopedTransport { owner, handle });
+        let mut pool = self.shared.transports.lock().map_err(|_| {
             StationTransportLifecycleError("Station transport lifecycle lock poisoned".to_string())
         })?;
-        if transports.contains_key(&scope) {
-            drop(transports);
-            owner.shutdown(Duration::from_secs(5)).map_err(|error| {
-                StationTransportLifecycleError(format!(
-                    "discard duplicate Station transport: {error}"
-                ))
-            })?;
+        if pool.entries.contains_key(&scope) {
+            drop(pool);
+            transport
+                .owner
+                .shutdown(Duration::from_secs(5))
+                .map_err(|error| {
+                    StationTransportLifecycleError(format!(
+                        "discard duplicate Station transport: {error}"
+                    ))
+                })?;
             return Ok(());
         }
-        if transports.len() >= 2 {
-            drop(transports);
-            let _ = owner.shutdown(Duration::from_secs(5));
-            return Err(StationTransportLifecycleError(
-                "Station transport candidate capacity is exhausted".to_string(),
-            ));
+        let retired = if pool.entries.len() >= MAX_SCOPED_TRANSPORTS {
+            let oldest = pool
+                .entries
+                .iter()
+                .filter(|(_, entry)| entry.active_responses == 0)
+                .min_by_key(|(_, entry)| entry.last_used)
+                .map(|(scope, _)| scope.clone());
+            let Some(oldest) = oldest else {
+                drop(pool);
+                let _ = transport.owner.shutdown(Duration::from_secs(5));
+                return Err(StationTransportLifecycleError(
+                    "Station transport pool is fully occupied by active responses".to_string(),
+                ));
+            };
+            pool.entries.remove(&oldest).map(|entry| entry.transport)
+        } else {
+            None
+        };
+        pool.sequence = pool.sequence.saturating_add(1);
+        let sequence = pool.sequence;
+        pool.entries.insert(
+            scope,
+            ScopedTransportEntry {
+                transport,
+                last_used: sequence,
+                active_responses: 0,
+            },
+        );
+        drop(pool);
+        if let Some(retired) = retired {
+            retired
+                .owner
+                .shutdown(Duration::from_secs(5))
+                .map_err(|error| {
+                    StationTransportLifecycleError(format!(
+                        "retire least-recently-used Station transport: {error}"
+                    ))
+                })?;
         }
-        transports.insert(scope, Arc::new(ScopedTransport { owner, handle }));
         Ok(())
     }
 
@@ -220,36 +298,35 @@ impl StationTransportHandle {
         retained: Option<&TransportIdentityScope>,
         timeout: Duration,
     ) -> Result<(), StationTransportLifecycleError> {
-        let transports = self
-            .shared
-            .transports
-            .lock()
-            .map_err(|_| {
+        let transports = {
+            let mut pool = self.shared.transports.lock().map_err(|_| {
                 StationTransportLifecycleError(
                     "Station transport lifecycle lock poisoned".to_string(),
                 )
-            })?
-            .iter()
-            .filter(|(scope, _)| Some(*scope) != retained)
-            .map(|(scope, transport)| (scope.clone(), transport.clone()))
-            .collect::<Vec<_>>();
+            })?;
+            let scopes = pool
+                .entries
+                .keys()
+                .filter(|scope| Some(*scope) != retained)
+                .cloned()
+                .collect::<Vec<_>>();
+            scopes
+                .into_iter()
+                .filter_map(|scope| {
+                    pool.entries
+                        .remove(&scope)
+                        .map(|entry| (scope, entry.transport))
+                })
+                .collect::<Vec<_>>()
+        };
         let deadline = std::time::Instant::now() + timeout;
-        for (scope, transport) in transports {
+        for (_, transport) in transports {
             transport
                 .owner
                 .shutdown(deadline.saturating_duration_since(std::time::Instant::now()))
                 .map_err(|error| {
                     StationTransportLifecycleError(format!("retire Station transport: {error}"))
                 })?;
-            self.shared
-                .transports
-                .lock()
-                .map_err(|_| {
-                    StationTransportLifecycleError(
-                        "Station transport lifecycle lock poisoned".to_string(),
-                    )
-                })?
-                .remove(&scope);
         }
         Ok(())
     }
@@ -337,7 +414,11 @@ impl StationTransportHandle {
         let Ok(transports) = self.shared.transports.lock() else {
             return;
         };
-        let Some(transport) = transports.get(&scope).cloned() else {
+        let Some(transport) = transports
+            .entries
+            .get(&scope)
+            .map(|entry| entry.transport.clone())
+        else {
             return;
         };
         drop(transports);
@@ -365,21 +446,7 @@ impl StationTransportHandle {
         cancellation: LinkedCancellation,
     ) -> Result<StationResponse, StationTransportError> {
         let expected_scope = route_transport_scope(lease)?;
-        let transports = self.shared.transports.lock().map_err(|_| {
-            StationTransportError::new(
-                StationTransportErrorKind::Shutdown,
-                "Station transport lifecycle lock poisoned",
-                false,
-            )
-        })?;
-        let transport = transports.get(&expected_scope).cloned().ok_or_else(|| {
-            StationTransportError::new(
-                StationTransportErrorKind::Shutdown,
-                "Station transport identity was not prepared",
-                false,
-            )
-        })?;
-        drop(transports);
+        let transport_usage = self.acquire_transport(expected_scope)?;
         let route = secure_stream_route(lease, self.direct_route_override(lease)?)?;
         let mut secure_request = SecureRequest::new(
             request.method,
@@ -411,7 +478,8 @@ impl StationTransportHandle {
             TrafficClass::Bulk => SecureTrafficClass::Bulk,
         };
         secure_request.cancellation = cancellation.token();
-        let response = transport
+        let response = transport_usage
+            .transport
             .handle
             .round_trip(&route, secure_request)
             .map_err(|error| {
@@ -442,7 +510,37 @@ impl StationTransportHandle {
             body: Box::new(FencedResponseBody::new(
                 Box::new(response.body),
                 cancellation,
+                Some(transport_usage),
             )),
+        })
+    }
+
+    fn acquire_transport(
+        &self,
+        scope: TransportIdentityScope,
+    ) -> Result<TransportUsage, StationTransportError> {
+        let mut pool = self.shared.transports.lock().map_err(|_| {
+            StationTransportError::new(
+                StationTransportErrorKind::Shutdown,
+                "Station transport lifecycle lock poisoned",
+                false,
+            )
+        })?;
+        pool.sequence = pool.sequence.saturating_add(1);
+        let sequence = pool.sequence;
+        let entry = pool.entries.get_mut(&scope).ok_or_else(|| {
+            StationTransportError::new(
+                StationTransportErrorKind::Shutdown,
+                "Station transport identity was not prepared",
+                false,
+            )
+        })?;
+        entry.last_used = sequence;
+        entry.active_responses = entry.active_responses.saturating_add(1);
+        Ok(TransportUsage {
+            shared: self.shared.clone(),
+            scope,
+            transport: entry.transport.clone(),
         })
     }
 
@@ -583,6 +681,7 @@ mod tests {
                 token: cancellation.clone(),
                 monitor_stop: CancellationToken::new(),
             },
+            None,
         );
         let mut prefix = [0_u8; 7];
         body.read_exact(&mut prefix).unwrap();
