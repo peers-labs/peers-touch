@@ -6,12 +6,20 @@ import json
 import re
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from tooling.acceptance.core.errors import BlockedError
 
 
 # Public test credentials satisfying the complete production password validator.
 PROFILE_ACCOUNT_PASSWORD = "NativeProof2026!"
+
+
+def profile_account_storage(workspace: str, role: str) -> Path:
+    """Keep Actor and Device key continuity in a dedicated fixture installation."""
+    if not re.fullmatch(r"[a-f0-9]{16}", workspace) or role not in ("receiver", "sender"):
+        raise ValueError("Desktop fixture storage requires a canonical workspace and role")
+    return Path.home() / ".peers-touch/dev/workspaces" / workspace / "fixtures/desktop-profile" / role
 
 
 def prepare_profile_accounts(
@@ -22,7 +30,7 @@ def prepare_profile_accounts(
         raise ValueError("Desktop fixture requires a canonical workspace ID")
     accounts: dict[str, str] = {}
     for role in ("receiver", "sender"):
-        handle = f"dui-{workspace[:8]}-{role[0]}"
+        handle = f"dui-{workspace[:8]}-p{role[0]}"
         account = f"{handle}@p.t"
         request = urllib.request.Request(
             f"{station_url.rstrip('/')}/actor/sign-up",

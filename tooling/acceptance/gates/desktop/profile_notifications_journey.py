@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import socket
 import sys
 import time
@@ -15,6 +14,7 @@ from typing import Any, Callable
 from selenium.webdriver.support.ui import WebDriverWait
 
 from tooling.acceptance.core import GateError, call_async_harness, workspace_id
+from tooling.acceptance.core.redaction import redact_text_with_values, redact_value_with_values
 from tooling.acceptance.drivers.native import NativeKey
 from tooling.acceptance.drivers.native.runtime import (
     LocalMacOSRuntimeBinding,
@@ -24,6 +24,7 @@ from tooling.acceptance.drivers.tauri import LocalTauriLauncher, TauriSession
 from tooling.acceptance.fixtures.desktop_profile_accounts import (
     PROFILE_ACCOUNT_PASSWORD,
     prepare_profile_accounts,
+    profile_account_storage,
 )
 from tooling.acceptance.gates.chat.native_support import DEV_ACCOUNT_PASSWORD, shared_federation_id
 
@@ -105,6 +106,74 @@ def select_native_image(
     return {"nativeChooser": True, "sha256": binding.native_file_sha256("profile", staged)}
 
 
+def run_preference_journey(session: TauriSession) -> dict[str, Any]:
+    """Change every supported category through UI and verify remounted readback."""
+    original = read_payload(session, "notification_preferences")["preferences"]
+    fields = ("enabled", "pushEnabled", "soundEnabled")
+    observed: dict[str, Any] = {}
+    try:
+        for category, name in enumerate(("social", "chat", "system", "task"), start=1):
+            initial = next(item for item in original if item["category"] == category)
+            selector = f'[data-notification-category="{name}"] button[role="switch"]'
+
+            def set_value(index: int, expected: bool) -> None:
+                control = wait(session, lambda: next((
+                    item for offset, item in enumerate(session.find_elements(selector))
+                    if offset == index and item.is_enabled()
+                ), None), f"{name} preference control")
+                if (control.get_attribute("aria-checked") == "true") != expected:
+                    control.click()
+                wait(session, lambda: next(item for item in read_payload(
+                    session, "notification_preferences",
+                )["preferences"] if item["category"] == category)[fields[index]] == expected,
+                     f"{name} {fields[index]} canonical save")
+                wait(session, lambda: session.find_elements(selector)[0].is_enabled(),
+                     "preference save completes")
+
+            set_value(0, True)
+            for index in (1, 2):
+                expected = not initial[fields[index]]
+                set_value(index, expected)
+                session.find_element('[data-pt-section-item="general"]').click()
+                session.find_element('[data-pt-section-item="notifications"]').click()
+                wait(session, lambda: len(session.find_elements(selector)) == 3,
+                     f"{name} preference remount")
+                if (session.find_elements(selector)[index].get_attribute("aria-checked") == "true") != expected:
+                    raise GateError(f"{name} {fields[index]} did not survive remount")
+                set_value(index, initial[fields[index]])
+            set_value(0, False)
+            if any(control.is_enabled() for control in session.find_elements(selector)[1:]):
+                raise GateError(f"{name} push or sound control stayed enabled while category disabled")
+            session.find_element('[data-pt-section-item="general"]').click()
+            session.find_element('[data-pt-section-item="notifications"]').click()
+            wait(session, lambda: len(session.find_elements(selector)) == 3,
+                 f"{name} disabled preference remount")
+            if session.find_elements(selector)[0].get_attribute("aria-checked") != "false":
+                raise GateError(f"{name} enabled preference did not survive remount")
+            set_value(0, initial["enabled"])
+            observed[name] = {"enabled": True, "pushEnabled": True, "soundEnabled": True}
+    finally:
+        current = read_payload(session, "notification_preferences")
+        updates = [{
+            "category": item["category"], "enabled": item["enabled"],
+            "push_enabled": item["pushEnabled"], "sound_enabled": item["soundEnabled"],
+        } for item in original if any(
+            next(candidate for candidate in current["preferences"]
+                 if candidate["category"] == item["category"])[field] != item[field]
+            for field in fields
+        )]
+        if updates:
+            read_payload(session, "notification_preferences_update", {"input": {
+                "updates": updates, "observed_revision": current["notificationPreferencesRevision"],
+            }})
+        restored = read_payload(session, "notification_preferences")["preferences"]
+        if any(any(next(candidate for candidate in restored
+                        if candidate["category"] == item["category"])[field] != item[field]
+                   for field in fields) for item in original):
+            raise GateError("notification category preferences did not restore exactly")
+    return observed
+
+
 def run_profile_journey(
     session: TauriSession,
     binding: NativeDesktopRuntimeBinding,
@@ -115,8 +184,6 @@ def run_profile_journey(
     original = read_profile(session)
     result: dict[str, Any] = {"journey": "DUI-C1-C9", "steps": [], "assertions": {}}
     changed = False
-    preferences_changed = False
-    original_social_enabled: str | None = None
     try:
         session.find_element('[data-pt-primary-nav="settings"] [role="button"]', 30).click()
         session.invoke_app_result("acceptance_request_activation")
@@ -245,33 +312,13 @@ def run_profile_journey(
              "Use latest profile restores canonical snapshot")
         result["steps"].append("revision_conflict_preserves_draft")
         session.save_screenshot(artifacts / "profile.png")
+        result["assertions"].update({f"C{index}": True for index in range(1, 7)})
 
         session.find_element('[data-pt-section-item="notifications"]', 30).click()
-        selector = '[data-notification-category="social"] button[role="switch"]'
-        switch = session.find_element(selector, 30)
-        original_social_enabled = switch.get_attribute("aria-checked")
-        switch.click()
-        preferences_changed = True
-        wait(session, lambda: session.find_element(selector).get_attribute("aria-checked") != original_social_enabled,
-             "Social preference changes")
-        wait(session, lambda: session.find_element(selector).is_enabled(), "preference save completes")
-        session.find_element('[data-pt-section-item="general"]').click()
-        session.find_element('[data-pt-section-item="notifications"]').click()
-        if session.find_element(selector, 30).get_attribute("aria-checked") == original_social_enabled:
-            raise GateError("notification preference did not survive remount")
-        session.find_element(selector).click()
-        wait(session, lambda: session.find_element(selector).get_attribute("aria-checked") == original_social_enabled,
-             "Social preference restores")
-        wait(session, lambda: session.find_element(selector).is_enabled(), "preference restoration completes")
-        preferences_changed = False
+        result["assertions"]["categoryPreferences"] = run_preference_journey(session)
         result["steps"].append("notification_preference_persistence_restore")
         session.save_screenshot(artifacts / "notifications.png")
     finally:
-        if preferences_changed and original_social_enabled is not None:
-            selector = '[data-notification-category="social"] button[role="switch"]'
-            if session.find_element(selector, 30).get_attribute("aria-checked") != original_social_enabled:
-                session.find_element(selector).click()
-            wait(session, lambda: session.find_element(selector).is_enabled(), "preference cleanup")
         if changed:
             current = read_profile(session)
             restored = session.invoke_app_result("profile_update", {"input": {
@@ -325,6 +372,7 @@ def run_notifications_journey(
     result.update(steps=[], assertions={}, notificationIds=[],
                   initialChatPreference=chat_preference,
                   initialRelationship=initial_relationship["relationship"])
+    sender_notification_ids: list[str] = []
     policy_changed = original_policy != "anyone"
     preferences_changed = False
     pending_request = ""
@@ -378,6 +426,14 @@ def run_notifications_journey(
             row.find_element("css selector", f'[role="button"][aria-label^="{decision}"]').click()
             wait(receiver, lambda: read_payload(receiver, "notification_unread_counts")["total"] == baseline,
                  "inline decision reconciles authoritative unread")
+            wait(receiver, lambda: receiver.execute_script(
+                """const bell = document.querySelector(arguments[0]);
+                const badge = bell?.parentElement?.querySelector('.ant-badge-count');
+                return arguments[1] ? badge?.title === String(arguments[1])
+                  : !badge || badge.classList.contains('ant-badge-count-hidden')
+                    || getComputedStyle(badge).display === 'none';""",
+                bell_selector, baseline,
+            ), "receiver Native notification badge clears")
             snapshot = call_async_harness(receiver, "refreshOnboardingProjection", {
                 "peerPtid": sender_ptid,
             }, namespace="chat")
@@ -385,6 +441,13 @@ def run_notifications_journey(
             if not any(request["id"] == item["targetId"] and request["status"] == expected_status
                        for request in snapshot["requests"]):
                 raise GateError(f"{decision} did not reach Social request authority")
+            if index == 7:
+                accepted_notification = wait(sender, lambda: next((
+                    candidate for candidate in read_payload(sender, "notification_list", {
+                        "input": {"limit": 20},
+                    })["notifications"] if candidate["targetId"] == item["targetId"]
+                ), None), "sender acceptance notification")
+                sender_notification_ids.append(accepted_notification["id"])
             pending_request = ""
             receiver.save_screenshot(artifacts / f"notification-{decision.lower()}-{index}.png")
             click_text(receiver, "More notifications")
@@ -476,6 +539,11 @@ def run_notifications_journey(
             read_payload(receiver, "notification_delete", {"input": {
                 "notification_ids": result["notificationIds"],
             }})
+        if sender_notification_ids:
+            read_payload(sender, "notification_delete", {"input": {
+                "notification_ids": sender_notification_ids,
+            }})
+            result["senderNotificationsCleaned"] = True
         if preferences_changed:
             current = read_payload(receiver, "notification_preferences")
             read_payload(receiver, "notification_preferences_update", {"input": {
@@ -530,6 +598,7 @@ def main() -> int:
         port = probe.getsockname()[1]
     session = TauriSession(LocalTauriLauncher(
         port=port, profile="profile-notifications-development",
+        storage_root=str(profile_account_storage(workspace_id(REPO_ROOT), "receiver")),
         environment={"PT_STATION_URL": station_url, "PT_STATION_HEALTH_URL": f"{station_url}/sub-oss/healthz"},
     ))
     binding = LocalMacOSRuntimeBinding()
@@ -550,6 +619,7 @@ def main() -> int:
             sender_port = probe.getsockname()[1]
         sender = TauriSession(LocalTauriLauncher(
             port=sender_port, profile="profile-notifications-sender",
+            storage_root=str(profile_account_storage(workspace_id(REPO_ROOT), "sender")),
             environment={"PT_STATION_URL": station_url, "PT_STATION_HEALTH_URL": f"{station_url}/sub-oss/healthz"},
         ))
         sessions.append(sender)
@@ -566,15 +636,22 @@ def main() -> int:
             }, namespace="chat", script_timeout=90)
             if login.get("authenticated") is not True:
                 raise GateError(f"existing {role} actor did not authenticate")
+            device = WebDriverWait(client.driver, 60, poll_frequency=0.5).until(
+                lambda _: (state if (state := call_async_harness(
+                    client, "getRealtimeDevice", {}, namespace="chat",
+                ))["active"] else None),
+                f"{role} production Device enrollment",
+            )
             profile = read_profile(client)
             result["actorFixture"][role] = {
                 "accountRef": f"station-account:{account}",
                 "ptid": profile["peers_touch"]["network_id"],
                 "homeStationPeerId": profile["home_station_peer_id"],
+                "deviceId": device["deviceId"],
             }
             client_specs[role] = {
                 "webdriver_port": client_port, "renderer_port": client_port,
-                "storage_root": client.storage_root, "storage_lifecycle": "ephemeral",
+                "storage_root": client.storage_root, "storage_lifecycle": "persistent",
             }
         if result["actorFixture"]["receiver"]["ptid"] == result["actorFixture"]["sender"]["ptid"]:
             raise GateError("Native Access Gate resolved both fixture roles to one actor")
@@ -604,7 +681,9 @@ def main() -> int:
         result["nativeProcessIds"] = [client.process_id for client in sessions if client.process_id]
         for index, client in enumerate(sessions):
             if client.log_path is not None and client.log_path.exists():
-                shutil.copyfile(client.log_path, artifacts / f"native-{index}.log")
+                (artifacts / f"native-{index}.log").write_text(redact_text_with_values(
+                    client.log_path.read_text(errors="replace"), (PROFILE_ACCOUNT_PASSWORD,),
+                ))
         for client in reversed(sessions):
             client.stop()
         cleanup = binding.finalize_cleanup(tuple(sessions), client_specs)
@@ -619,6 +698,7 @@ def main() -> int:
         if alive or cleanup.get("cleanupErrors"):
             result.update(result="FAIL", failure="Native runtime cleanup failed")
         result["cleanup"] = cleanup
+        result = redact_value_with_values(result, (PROFILE_ACCOUNT_PASSWORD,))
         (artifacts / "result.json").write_text(json.dumps(result, indent=2))
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
     return 0 if result.get("result") == "PASS" else 1
