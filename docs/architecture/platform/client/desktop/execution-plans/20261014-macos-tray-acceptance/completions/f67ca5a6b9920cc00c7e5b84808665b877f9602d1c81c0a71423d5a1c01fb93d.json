@@ -1,0 +1,22 @@
+{
+  "branch": "feat/bot-actor-inbox",
+  "closureStatuses": {
+    "desktop-shell-tray-formal": "done",
+    "desktop-shell-tray-functional": "done"
+  },
+  "completedAt": "2026-10-14T21:49:35.042Z",
+  "digest": "6db5ba93fcf472fdf4247a1ceeca1d996d6494df052f494852173773cd020e2f",
+  "initialHead": "7df635d048eedb6469c511326a90253f694f4db6",
+  "kind": "peers-touch-plan-completion",
+  "planContentDigest": "f1d19a6c44bdbe0353aa61ca5b5d738b428792d6bcee5a8916453f8c6d74a98e",
+  "planDigest": "f67ca5a6b9920cc00c7e5b84808665b877f9602d1c81c0a71423d5a1c01fb93d",
+  "planId": "desktop-macos-tray-acceptance-20261014",
+  "runId": "run-20261014120236740-5826fae4e3f7445a35eb3f494d14cb78",
+  "schemaVersion": 1,
+  "snapshotDigest": "3e57358f55983f4f3538aa7ff959e2a9cb231920278143b55852faa060c4a5a2",
+  "taskStates": {
+    "DSTR-02-FUNCTIONAL": "done",
+    "DSTR-03-FORMAL": "done"
+  },
+  "workspaceId": "872e6a11e6df33b5"
+}
