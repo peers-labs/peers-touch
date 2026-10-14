@@ -83,8 +83,7 @@
           "model/domain/oauth/**",
           "tooling/acceptance/capabilities/oauth-login-broker.yaml",
           "tooling/acceptance/domains/oauth-login-broker.yaml",
-          "tooling/acceptance/features/oauth-live-login.yaml",
-          "tooling/acceptance/gates.yaml"
+          "tooling/acceptance/features/oauth-live-login.yaml"
         ]
       },
       "require": [

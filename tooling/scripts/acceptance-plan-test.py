@@ -594,6 +594,16 @@ class BehaviorRuleTests(unittest.TestCase):
             ),
         )
 
+    def test_gate_catalog_path_does_not_select_oauth_product_gates(self) -> None:
+        oauth_gates = {
+            "oauth-login-broker-handoff-contract",
+            "oauth-login-broker-provider-identity",
+            "oauth-login-broker-architecture",
+            "oauth-login-broker-contract",
+        }
+        selected = self.selected_ids("tooling/acceptance/gates.yaml")
+        self.assertTrue(oauth_gates.isdisjoint(selected))
+
     def test_rejects_duplicate_behavior_rule_authority_keys(self) -> None:
         cases = (
             '"when":{"paths":["src/**"]},"when":{"paths":[]}',

@@ -20,6 +20,8 @@
     "tooling/acceptance/gates/desktop",
     "tooling/acceptance/provisioners/desktop_shell_native.py",
     "tooling/acceptance/drivers/native",
+    "tooling/acceptance/registry.yaml",
+    "tooling/scripts/acceptance-plan-test.py",
     "tooling/skills/pt-github-review/FRESHNESS.md"
   ],
   "readSet": [
