@@ -2,6 +2,8 @@ package infrastructure
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -92,7 +94,7 @@ func (p *TxProducer) ProduceInTx(
 		metaJSON = string(encoded)
 	}
 	record := NotificationModel{
-		NotifID:        "ntf-" + input.IdempotencyKey,
+		NotifID:        notificationID(input.IdempotencyKey, at),
 		RecipientPTID:  input.RecipientPTID,
 		ActorPTID:      input.ActorPTID,
 		Type:           input.Type,
@@ -108,12 +110,6 @@ func (p *TxProducer) ProduceInTx(
 		CreatedAt:      at,
 		UpdatedAt:      at,
 	}
-	// Idempotency key also stabilizes the notification id; legacy producers
-	// keep the nanosecond id from the ordinary Create path.
-	if input.IdempotencyKey == "" {
-		record.NotifID = fmt.Sprintf("ntf-%d", at.UnixNano())
-	}
-
 	create := p.db.WithContext(ctx)
 	if input.IdempotencyKey != "" {
 		// The partial unique index uidx_notification_idempotency protects the
@@ -138,4 +134,16 @@ func (p *TxProducer) ProduceInTx(
 		return TxResult{}, err
 	}
 	return TxResult{Produced: true, NotificationID: record.NotifID}, nil
+}
+
+func notificationID(idempotencyKey string, at time.Time) string {
+	if idempotencyKey == "" {
+		return fmt.Sprintf("ntf-%d", at.UnixNano())
+	}
+	const prefix = "ntf-"
+	if len(prefix)+len(idempotencyKey) <= 64 {
+		return prefix + idempotencyKey
+	}
+	sum := sha256.Sum256([]byte(idempotencyKey))
+	return "ntf-sha256-" + base64.RawURLEncoding.EncodeToString(sum[:])
 }

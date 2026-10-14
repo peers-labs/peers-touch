@@ -2,6 +2,7 @@ package infrastructure
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -86,6 +87,42 @@ func TestTxProducerReplayCollapses(t *testing.T) {
 	counts, _ := repo.GetUnreadCounts("ptid:owner")
 	if counts.ByCategory[domain.CategoryTask] != 1 {
 		t.Fatalf("task unread = %d, still want 1", counts.ByCategory[domain.CategoryTask])
+	}
+}
+
+func TestTxProducerBoundsNotificationIDForLongIdempotencyKey(t *testing.T) {
+	repo := newTxProducerTestDB(t)
+	producer := NewTxProducer(repo.db)
+	now := time.Now().UTC()
+	input := TxInput{
+		RecipientPTID:  "ptid:owner",
+		ActorPTID:      "ptid:publisher",
+		Type:           205,
+		Category:       domain.CategoryChat,
+		TargetID:       "direct-1",
+		IdempotencyKey: "publishing:" + strings.Repeat("a", 128),
+	}
+
+	first, err := producer.ProduceInTx(context.Background(), input, now)
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if !first.Produced {
+		t.Fatal("first production should report produced=true")
+	}
+	if len(first.NotificationID) > 64 {
+		t.Fatalf("notification id length = %d, want <= 64", len(first.NotificationID))
+	}
+	if !strings.HasPrefix(first.NotificationID, "ntf-sha256-") {
+		t.Fatalf("notification id = %q, want bounded hash identity", first.NotificationID)
+	}
+
+	replay, err := producer.ProduceInTx(context.Background(), input, now)
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if replay.Produced {
+		t.Fatal("replayed long idempotency key must collapse")
 	}
 }
 
