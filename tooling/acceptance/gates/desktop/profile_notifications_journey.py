@@ -13,7 +13,7 @@ from typing import Any, Callable
 
 from selenium.webdriver.support.ui import WebDriverWait
 
-from tooling.acceptance.core import GateError, call_async_harness
+from tooling.acceptance.core import GateError, call_async_harness, workspace_id
 from tooling.acceptance.drivers.native import NativeKey
 from tooling.acceptance.drivers.native.runtime import (
     LocalMacOSRuntimeBinding,
@@ -259,14 +259,20 @@ def run_profile_journey(
 def main() -> int:
     """Development-only runtime owner; never publishes formal proof."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--artifact-root", type=Path, required=True)
     parser.add_argument("--account", required=True)
     parser.add_argument("--recover-probe-collections", action="store_true")
     args = parser.parse_args()
     station_url = os.environ["PT_STATION_URL"]
     if "localhost" in station_url or "127.0.0.1" in station_url:
         raise GateError("Native development requires the approved remote Station")
-    artifacts = args.artifact_root.expanduser().resolve()
+    workspace = Path.home() / ".peers-touch/dev/workspaces" / workspace_id(REPO_ROOT)
+    active = json.loads((workspace / "workflow/active-work.json").read_text())
+    if active.get("currentTaskId") != "DUI-01-PROFILE-NOTIFICATIONS" or active.get("devState") != "FUNCTIONAL_RUNNING":
+        raise GateError("Native Profile diagnostics require the current functional Task")
+    session_id = str(active["sessionId"])
+    if Path(session_id).name != session_id:
+        raise GateError("Development Session identity is invalid")
+    artifacts = workspace / "debug" / session_id / f"profile-{time.time_ns()}"
     artifacts.mkdir(parents=True, exist_ok=True)
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
