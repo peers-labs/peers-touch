@@ -12,8 +12,8 @@ from tooling.acceptance.core.provisioning import ActorIdentity
 from tooling.acceptance.provisioners.home_station import resolve_existing_actor
 
 
-# Public disposable-test credentials; production signup validates 8-20 characters.
-PROFILE_ACCOUNT_PASSWORD = "NativeProof2026"
+# Public test credentials satisfying the complete production password validator.
+PROFILE_ACCOUNT_PASSWORD = "NativeProof2026!"
 
 
 def prepare_profile_accounts(
