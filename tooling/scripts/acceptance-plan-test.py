@@ -27,6 +27,10 @@ from tooling.acceptance.core import (
     RUN_WORKSPACE_ENV,
     EvidenceStore,
 )
+from tooling.acceptance.core.execution_plan import (
+    PLAN_BINDING_REQUIRED,
+    ExecutionPlanError,
+)
 
 SPEC = importlib.util.spec_from_file_location("acceptance_plan", SCRIPT)
 if SPEC is None or SPEC.loader is None:
@@ -36,6 +40,112 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ChangedPathsTests(unittest.TestCase):
+    def test_explicit_mounted_plan_uses_active_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            execution_plan = root / "plan.md"
+            execution_plan.write_text("# mounted plan\n", encoding="utf-8")
+            active = SimpleNamespace(path=execution_plan.resolve())
+
+            with (
+                patch.object(MODULE, "REPO_ROOT", root),
+                patch.object(
+                    MODULE,
+                    "discover_active_plan",
+                    return_value=active,
+                ) as discover,
+                patch.object(MODULE, "load_formal_plan") as load_formal,
+            ):
+                resolved = MODULE.resolve_execution_plan(execution_plan)
+
+            self.assertIs(resolved, active)
+            discover.assert_called_once_with(root)
+            load_formal.assert_not_called()
+
+    def test_explicit_offline_plan_uses_formal_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            execution_plan = root / "plan.md"
+            execution_plan.write_text("# completed plan\n", encoding="utf-8")
+            formal = SimpleNamespace(path=execution_plan.resolve())
+
+            with (
+                patch.object(MODULE, "REPO_ROOT", root),
+                patch.object(
+                    MODULE,
+                    "discover_active_plan",
+                    side_effect=ExecutionPlanError(
+                        PLAN_BINDING_REQUIRED,
+                        "workspace has no live Plan mount",
+                    ),
+                ) as discover,
+                patch.object(
+                    MODULE,
+                    "load_formal_plan",
+                    return_value=formal,
+                ) as load_formal,
+            ):
+                resolved = MODULE.resolve_execution_plan(execution_plan)
+
+            self.assertIs(resolved, formal)
+            discover.assert_called_once_with(root)
+            load_formal.assert_called_once_with(execution_plan.resolve())
+
+    def test_explicit_foreign_plan_does_not_replace_workspace_mount(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            mounted_plan = root / "mounted.md"
+            execution_plan = root / "offline.md"
+            mounted_plan.write_text("# mounted plan\n", encoding="utf-8")
+            execution_plan.write_text("# offline plan\n", encoding="utf-8")
+            active = SimpleNamespace(path=mounted_plan.resolve())
+            formal = SimpleNamespace(path=execution_plan.resolve())
+
+            with (
+                patch.object(MODULE, "REPO_ROOT", root),
+                patch.object(
+                    MODULE,
+                    "discover_active_plan",
+                    return_value=active,
+                ),
+                patch.object(
+                    MODULE,
+                    "load_formal_plan",
+                    return_value=formal,
+                ) as load_formal,
+            ):
+                resolved = MODULE.resolve_execution_plan(execution_plan)
+
+            self.assertIs(resolved, formal)
+            load_formal.assert_called_once_with(execution_plan.resolve())
+
+    def test_explicit_plan_does_not_hide_mount_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            execution_plan = root / "plan.md"
+            execution_plan.write_text("# plan\n", encoding="utf-8")
+
+            with (
+                patch.object(MODULE, "REPO_ROOT", root),
+                patch.object(
+                    MODULE,
+                    "discover_active_plan",
+                    side_effect=ExecutionPlanError(
+                        "PLAN_MOUNT_IDENTITY_MISMATCH",
+                        "mounted Plan identity drifted",
+                    ),
+                ),
+                patch.object(MODULE, "load_formal_plan") as load_formal,
+            ):
+                with self.assertRaises(ExecutionPlanError) as raised:
+                    MODULE.resolve_execution_plan(execution_plan)
+
+            self.assertEqual(
+                raised.exception.code,
+                "PLAN_MOUNT_IDENTITY_MISMATCH",
+            )
+            load_formal.assert_not_called()
+
     def test_make_entrypoints_default_to_external_evidence_store(self) -> None:
         makefile = (
             ROOT / "tooling" / "make" / "acceptance.mk"

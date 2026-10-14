@@ -19,6 +19,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from _acceptance_artifacts import explicit_output_path  # noqa: E402
 from tooling.acceptance.core.execution_plan import (  # noqa: E402
+    PLAN_BINDING_REQUIRED,
     PLAN_DRIFT,
     ExecutionPlanError,
     changed_paths_for_plan,
@@ -330,6 +331,25 @@ def default_output_path(self_check: bool) -> Path:
     )
 
 
+def resolve_execution_plan(path: Path) -> Any:
+    requested = path.resolve(strict=True)
+    try:
+        requested.relative_to(REPO_ROOT.resolve(strict=True))
+    except ValueError:
+        return load_formal_plan(requested)
+
+    try:
+        active = discover_active_plan(REPO_ROOT)
+    except ExecutionPlanError as error:
+        if error.code != PLAN_BINDING_REQUIRED:
+            raise
+        return load_formal_plan(requested)
+
+    if active.path.resolve(strict=True) == requested:
+        return active
+    return load_formal_plan(requested)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default="tooling/acceptance")
@@ -351,7 +371,7 @@ def main() -> int:
     )
     try:
         if args.execution_plan:
-            formal_plan = load_formal_plan(Path(args.execution_plan))
+            formal_plan = resolve_execution_plan(Path(args.execution_plan))
         elif args.active_plan:
             formal_plan = discover_active_plan(REPO_ROOT)
         paths = args.changed_file or (
