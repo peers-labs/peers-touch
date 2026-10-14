@@ -134,10 +134,30 @@ def run_profile_journey(
                 wait(session, lambda: session.find_element("[data-pt-account-avatar-url]").get_attribute(
                     "data-pt-account-avatar-url",
                 ) == uploaded[field], "Account avatar projection")
+                wait(session, lambda: session.execute_script(
+                    """return [...document.querySelectorAll('[data-pt-account-avatar-url] img')]
+                    .some(image => image.complete && image.naturalWidth > 0)""",
+                ), "Account avatar image loads")
             else:
                 wait(session, lambda: uploaded[field] in session.find_element(
                     'button[aria-label="Change header"]',
                 ).get_attribute("style"), "Account header projection")
+                loaded = session.execute_async_script(
+                    """
+                    const done = arguments[arguments.length - 1];
+                    const background = getComputedStyle(
+                      document.querySelector('button[aria-label="Change header"]')
+                    ).backgroundImage;
+                    const match = background.match(/^url\\(["']?(.*?)["']?\\)$/);
+                    if (!match) { done(false); return; }
+                    const image = new Image();
+                    image.onload = () => done(image.naturalWidth > 0);
+                    image.onerror = () => done(false);
+                    image.src = match[1];
+                    """,
+                )
+                if loaded is not True:
+                    raise GateError("Account header image failed to load")
             result["assertions"][f"{field}_native_oss"] = chooser
         result["steps"].append("native_avatar_and_header_oss")
 
