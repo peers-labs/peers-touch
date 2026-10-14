@@ -412,6 +412,27 @@ Check:
 - errors use typed codes and include context;
 - persistence changes include migration or compatibility reasoning.
 
+### Node Connectivity And Relay Review
+
+Check:
+
+- `station_peer_id` remains logical Station identity; Node PeerID, URL, Direct,
+  and Circuit endpoints remain transport routes;
+- one process owns one libp2p Host and Frame adapts standard Direct/Circuit v2
+  streams into the canonical HTTP/protobuf/SSE router;
+- Relay owns bounded admission and control only, never Station credentials,
+  Session, Federation membership, business APIs, or a custom payload data plane;
+- Desktop `AppState` owns one `StationRuntime`; Station Access alone selects
+  routes and publishes immutable `RouteLease` values to transport;
+- same-Station route changes preserve Session scope, advance route revision,
+  cancel the old lease, and never blindly replay an ambiguous mutation;
+- private Relay TLS health uses the reviewed trust anchor and rejects insecure
+  verification bypass, endpoint drift, and substituted Relay identity;
+- cutovers delete old WSS/mount framing, duplicate route owners, stale runtime
+  docs, registrations, and compatibility fallbacks in the same change;
+- runtime claims use exact-source NCP Gates and preserve explicit unproven
+  cluster or Mobile cells instead of generalizing from source checks.
+
 ### Desktop Review
 
 Check:
