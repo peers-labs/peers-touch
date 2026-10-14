@@ -734,11 +734,14 @@ mod tests {
         let completed = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let completed_by_worker = completed.clone();
         let runtime_for_worker = runtime.clone();
+        let (started_tx, started_rx) = std::sync::mpsc::sync_channel(0);
         let worker = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
             runtime_for_worker.stop("actor-a").unwrap();
             completed_by_worker.store(true, std::sync::atomic::Ordering::Release);
         });
 
+        started_rx.recv().unwrap();
         std::thread::sleep(Duration::from_millis(20));
         assert!(!completed.load(std::sync::atomic::Ordering::Acquire));
         drop(transition);
