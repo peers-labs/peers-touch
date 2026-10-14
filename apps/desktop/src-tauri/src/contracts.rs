@@ -246,7 +246,6 @@ pub struct SocialFriendRequestAcceptInput {
     pub sender_ptid: String,
     pub sender_home_station_peer_id: String,
     pub federation_id: String,
-    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -255,7 +254,6 @@ pub struct SocialFriendRequestRejectInput {
     pub sender_ptid: String,
     pub sender_home_station_peer_id: String,
     pub federation_id: String,
-    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

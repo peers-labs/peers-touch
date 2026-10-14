@@ -1559,7 +1559,7 @@ pub fn social_friend_request_accept(
             receiver_ptid: actor_ptid.clone(),
             sender_home_station_peer_id: input.sender_home_station_peer_id,
             receiver_home_station_peer_id,
-            message: input.message.unwrap_or_default(),
+            message: String::new(),
             federation_id: input.federation_id,
         },
     ) {
@@ -1632,7 +1632,7 @@ pub fn social_friend_request_reject(
             receiver_ptid: actor_ptid.clone(),
             sender_home_station_peer_id: input.sender_home_station_peer_id,
             receiver_home_station_peer_id,
-            message: input.message.unwrap_or_default(),
+            message: String::new(),
             federation_id: input.federation_id,
         },
     ) {

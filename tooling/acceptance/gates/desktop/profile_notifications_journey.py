@@ -410,7 +410,7 @@ def run_notifications_journey(
         response = receiver.invoke_app_result("social_friend_request_reject", {"input": {
             "request_id": request["id"], "sender_ptid": sender_ptid,
             "sender_home_station_peer_id": sender_profile["home_station_peer_id"],
-            "federation_id": request["federationId"], "message": "",
+            "federation_id": request["federationId"],
         }})
         if response.get("ok") is not True:
             raise GateError("prior namespaced notification request recovery failed")
@@ -582,7 +582,7 @@ def run_notifications_journey(
             response = receiver.invoke_app_result("social_friend_request_reject", {"input": {
                 "request_id": pending_request, "sender_ptid": sender_ptid,
                 "sender_home_station_peer_id": sender_profile["home_station_peer_id"],
-                "federation_id": federation_id, "message": "",
+                "federation_id": federation_id,
             }})
             if response.get("ok") is not True:
                 raise GateError("namespaced pending request cleanup failed")

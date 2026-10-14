@@ -7794,7 +7794,6 @@ export const api = {
     senderPtid: string;
     senderHomeStationPeerId: string;
     federationId: string;
-    message?: string;
   }) =>
     invokeRustProto(
       'social_friend_request_accept',
@@ -7804,7 +7803,6 @@ export const api = {
         sender_ptid: input.senderPtid,
         sender_home_station_peer_id: input.senderHomeStationPeerId,
         federation_id: input.federationId,
-        message: input.message,
       },
     ),
 
@@ -7813,7 +7811,6 @@ export const api = {
     senderPtid: string;
     senderHomeStationPeerId: string;
     federationId: string;
-    message?: string;
   }) =>
     invokeRustProto(
       'social_friend_request_reject',
@@ -7823,7 +7820,6 @@ export const api = {
         sender_ptid: input.senderPtid,
         sender_home_station_peer_id: input.senderHomeStationPeerId,
         federation_id: input.federationId,
-        message: input.message,
       },
     ),
 

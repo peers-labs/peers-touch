@@ -319,7 +319,6 @@ describe('Moments acceptance harness', () => {
       senderPtid: 'ptid:test:alice',
       senderHomeStationPeerId: 'station-four',
       federationId: 'federation-1',
-      message: '',
     });
   });
 
