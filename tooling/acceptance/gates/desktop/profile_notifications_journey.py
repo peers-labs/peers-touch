@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import socket
 import sys
 import time
@@ -20,6 +21,10 @@ from tooling.acceptance.drivers.native.runtime import (
     NativeDesktopRuntimeBinding,
 )
 from tooling.acceptance.drivers.tauri import LocalTauriLauncher, TauriSession
+from tooling.acceptance.fixtures.desktop_profile_accounts import (
+    PROFILE_ACCOUNT_PASSWORD,
+    prepare_profile_accounts,
+)
 from tooling.acceptance.gates.chat.native_support import DEV_ACCOUNT_PASSWORD, shared_federation_id
 
 
@@ -297,8 +302,10 @@ def run_notifications_journey(
     initial_relationship = call_async_harness(receiver, "refreshOnboardingProjection", {
         "peerPtid": sender_ptid,
     }, namespace="chat")
-    if any(initial_relationship["relationship"].values()):
-        raise GateError("notification fixture requires an actor pair without an active follow relationship")
+    result = progress if progress is not None else {}
+    result["initialRelationship"] = initial_relationship["relationship"]
+    if all(initial_relationship["relationship"].values()):
+        raise GateError("notification fixture requires an actor pair without an active mutual relationship")
     for request in initial_relationship["requests"]:
         if request["status"] != 1:
             continue
@@ -315,7 +322,6 @@ def run_notifications_journey(
     original_policy = receiver_profile["contact_policy"]
     original_preferences = read_payload(receiver, "notification_preferences")
     chat_preference = next(item for item in original_preferences["preferences"] if item["category"] == 2)
-    result = progress if progress is not None else {}
     result.update(steps=[], assertions={}, notificationIds=[],
                   initialChatPreference=chat_preference,
                   initialRelationship=initial_relationship["relationship"])
@@ -451,14 +457,19 @@ def run_notifications_journey(
             if response.get("ok") is not True:
                 raise GateError("namespaced pending request cleanup failed")
         if accept_attempted:
-            for client, peer in ((receiver, sender_ptid), (sender, receiver_ptid)):
+            for client, peer, originally_following in (
+                (receiver, sender_ptid, initial_relationship["relationship"]["following"]),
+                (sender, receiver_ptid, initial_relationship["relationship"]["followedBy"]),
+            ):
+                if originally_following:
+                    continue
                 response = client.invoke_app_result("social_unfollow", {"input": {"target_actor_ptid": peer}})
                 if response.get("ok") is not True:
                     raise GateError("namespaced friendship cleanup failed")
             restored = call_async_harness(receiver, "refreshOnboardingProjection", {
                 "peerPtid": sender_ptid,
             }, namespace="chat")
-            if any(restored["relationship"].values()):
+            if restored["relationship"] != initial_relationship["relationship"]:
                 raise GateError("namespaced friendship remained active after cleanup")
             result["relationshipRestoredExactly"] = True
         if result["notificationIds"]:
@@ -495,11 +506,13 @@ def run_notifications_journey(
 def main() -> int:
     """Development-only runtime owner; never publishes formal proof."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--account", required=True)
-    parser.add_argument("--sender-account", required=True)
+    parser.add_argument("--account")
+    parser.add_argument("--sender-account")
     parser.add_argument("--notifications-only", action="store_true")
     parser.add_argument("--recover-probe-collections", action="store_true")
     args = parser.parse_args()
+    if bool(args.account) != bool(args.sender_account):
+        parser.error("--account and --sender-account must be supplied together")
     station_url = os.environ["PT_STATION_URL"]
     if "localhost" in station_url or "127.0.0.1" in station_url:
         raise GateError("Native development requires the approved remote Station")
@@ -525,6 +538,16 @@ def main() -> int:
     client_specs: dict[str, dict[str, Any]] = {}
     sessions = [session]
     try:
+        password = DEV_ACCOUNT_PASSWORD
+        if not args.account:
+            actors = prepare_profile_accounts(station_url, workspace_id(REPO_ROOT))
+            args.account = actors["receiver"].account_ref.removeprefix("station-account:")
+            args.sender_account = actors["sender"].account_ref.removeprefix("station-account:")
+            password = PROFILE_ACCOUNT_PASSWORD
+            result["actorFixture"] = {
+                role: {"accountRef": actor.account_ref, "ptid": actor.ptid}
+                for role, actor in actors.items()
+            }
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             sender_port = probe.getsockname()[1]
@@ -542,7 +565,7 @@ def main() -> int:
             client.invoke_app_result("station_add", {"input": {"url": station_url}})
             client.invoke_app_result("station_set_active", {"input": {"url": station_url}})
             login = call_async_harness(client, "loginWithPassword", {
-                "account": account, "password": DEV_ACCOUNT_PASSWORD,
+                "account": account, "password": password,
             }, namespace="chat", script_timeout=90)
             if login.get("authenticated") is not True:
                 raise GateError(f"existing {role} actor did not authenticate")
@@ -562,10 +585,10 @@ def main() -> int:
             if response.get("ok") is not True:
                 raise GateError("prior probe collection recovery failed")
             assert_profile(session, expected)
-        result["notifications"] = {}
-        run_notifications_journey(session, sender, artifacts, result["notifications"])
         if not args.notifications_only:
             result.update(run_profile_journey(session, binding, artifacts))
+        result["notifications"] = {}
+        run_notifications_journey(session, sender, artifacts, result["notifications"])
         result["result"] = "PASS"
     except Exception as error:
         result.update(result="FAIL", failure=str(error), failureType=type(error).__name__)
@@ -574,9 +597,22 @@ def main() -> int:
             session.save_screenshot(artifacts / "failure.png")
     finally:
         result["nativeProcessIds"] = [client.process_id for client in sessions if client.process_id]
+        for index, client in enumerate(sessions):
+            if client.log_path is not None and client.log_path.exists():
+                shutil.copyfile(client.log_path, artifacts / f"native-{index}.log")
         for client in reversed(sessions):
             client.stop()
         cleanup = binding.finalize_cleanup(tuple(sessions), client_specs)
+        alive = []
+        for pid in result["nativeProcessIds"]:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                continue
+            alive.append(pid)
+        cleanup["originalProcessIdsReleased"] = not alive
+        if alive or cleanup.get("cleanupErrors"):
+            result.update(result="FAIL", failure="Native runtime cleanup failed")
         result["cleanup"] = cleanup
         (artifacts / "result.json").write_text(json.dumps(result, indent=2))
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
