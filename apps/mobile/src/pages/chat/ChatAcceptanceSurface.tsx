@@ -52,6 +52,11 @@ import type { ConversationSettingsFeedback } from './conversationSettingsState';
 
 const { Text } = Typography;
 
+const FIXTURE_ATTACHMENT_NAME = 'launch-checklist.pdf';
+const FIXTURE_PEER_AVATAR = 'A';
+const FIXTURE_SEARCH_RESULT = 'The revised launch checklist is ready.';
+const FIXTURE_SELF_AVATAR = 'Y';
+
 const LIST_SURFACES = new Set<ChatSurfaceFixtureId>([
   'chat.list',
   'chat.list-loading',
@@ -412,7 +417,7 @@ function ChatFixtureThread({
             <Text type="secondary">{t('mobile.chat.noMessageResults')}</Text>
           ) : (
             <button type="button" className="message-search-result">
-              <Text ellipsis>The revised launch checklist is ready.</Text>
+              <Text ellipsis>{FIXTURE_SEARCH_RESULT}</Text>
               <Text type="secondary">10:42</Text>
             </button>
           )}
@@ -447,7 +452,7 @@ function ChatFixtureThread({
             <div className="message-composer-panel attachment-draft-panel">
               <div className="attachment-draft-chip">
                 <FileText size={17} />
-                <span>launch-checklist.pdf</span>
+                <span>{FIXTURE_ATTACHMENT_NAME}</span>
                 {surfaceId === 'chat.attachment-uploading' ? <Spin size="small" /> : null}
                 {surfaceId === 'chat.attachment-failed' ? (
                   <button type="button" aria-label={t('common.action.retry')}>
@@ -555,7 +560,9 @@ function FixtureMessage({
   };
   return (
     <div className={`message-bubble-row ${mine ? 'mine' : 'peer'}`}>
-      {!mine ? <span className="message-avatar ant-avatar">A</span> : null}
+      {!mine ? (
+        <span className="message-avatar ant-avatar">{FIXTURE_PEER_AVATAR}</span>
+      ) : null}
       <div className="message-bubble">
         <Text className="message-text">{text}</Text>
         <span className="message-meta attachment-only-meta message-meta-row">
@@ -570,7 +577,9 @@ function FixtureMessage({
           {uncertain ? <MessageCommandStatus outcome={commandOutcome} /> : null}
         </span>
       </div>
-      {mine ? <span className="message-avatar ant-avatar">Y</span> : null}
+      {mine ? (
+        <span className="message-avatar ant-avatar">{FIXTURE_SELF_AVATAR}</span>
+      ) : null}
     </div>
   );
 }

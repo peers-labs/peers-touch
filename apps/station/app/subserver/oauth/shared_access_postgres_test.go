@@ -916,8 +916,13 @@ func sharedAccessProcessEnvironment(
 }
 
 func printSharedAccessResult(result sharedAccessProcessResult) {
-	encoded, _ := json.Marshal(result)
-	fmt.Println("NCP_ACCESS_RESULT " + string(encoded))
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		panic(err)
+	}
+	if _, err := fmt.Fprintf(os.Stdout, "NCP_ACCESS_RESULT %s\n", encoded); err != nil {
+		panic(err)
+	}
 }
 
 func parseSharedAccessResult(

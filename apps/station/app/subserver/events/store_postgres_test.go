@@ -486,7 +486,9 @@ func runEventSubscriberHelper(t *testing.T, database *gorm.DB) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	fmt.Println("NCP_EVENT_READY")
+	if _, err := fmt.Fprintln(os.Stdout, "NCP_EVENT_READY"); err != nil {
+		t.Fatal(err)
+	}
 	result := helperSubscriberResult{}
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
