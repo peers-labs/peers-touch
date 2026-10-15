@@ -249,6 +249,18 @@ class MessagePublishingNativeGate(AcceptanceGate):
                 or hydration.get("actorPtid") != self.owner_ptid
             ):
                 raise GateError("Alice Native messaging identity did not hydrate")
+            resumed = call_async_harness(
+                client,
+                "resumeMessagingLifecycle",
+                {"actorPtid": self.owner_ptid},
+                namespace="chat",
+                script_timeout=30,
+            )
+            if (
+                not isinstance(resumed, dict)
+                or resumed.get("activated") is not True
+            ):
+                raise GateError("Alice Native messaging lifecycle did not resume")
             self.lifecycles.mark_authenticated(client)
             self.client = client
 
@@ -1583,7 +1595,7 @@ class MessagePublishingNativeGate(AcceptanceGate):
                 )
         self.owner_token = ""
         self.secret = ""
-        if self.client is not None:
+        if self.client is not None and self.client.is_alive():
             try:
                 self.save_screenshot(self.client, "alice-final")
                 self.save_dom(self.client, "alice-final")

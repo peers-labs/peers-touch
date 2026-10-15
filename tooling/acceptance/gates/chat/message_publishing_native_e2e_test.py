@@ -140,6 +140,8 @@ class MessagePublishingNativeGateTests(unittest.TestCase):
 
     def test_client_readiness_requires_hydrated_active_device_identity(self) -> None:
         self.assertIn('"hydrateActiveActor"', self.source)
+        self.assertIn('"resumeMessagingLifecycle"', self.source)
+        self.assertIn('resumed.get("activated") is not True', self.source)
         self.assertEqual(
             self.source.count('and value.get("actorPtid") == self.owner_ptid'),
             2,
@@ -147,6 +149,10 @@ class MessagePublishingNativeGateTests(unittest.TestCase):
         self.assertEqual(
             self.source.count('and value.get("active") is True'),
             2,
+        )
+        self.assertIn(
+            "if self.client is not None and self.client.is_alive():",
+            self.source,
         )
 
     def test_runtime_setup_is_inside_cleanup_envelope(self) -> None:
