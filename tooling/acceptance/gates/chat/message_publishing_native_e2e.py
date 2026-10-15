@@ -237,18 +237,6 @@ class MessagePublishingNativeGate(AcceptanceGate):
                 or login.get("actorPtid") != self.owner_ptid
             ):
                 raise GateError("Alice Native login identity is invalid")
-            hydration = call_async_harness(
-                client,
-                "hydrateActiveActor",
-                {},
-                namespace="chat",
-                script_timeout=30,
-            )
-            if (
-                not isinstance(hydration, dict)
-                or hydration.get("actorPtid") != self.owner_ptid
-            ):
-                raise GateError("Alice Native messaging identity did not hydrate")
             resumed = call_async_harness(
                 client,
                 "resumeMessagingLifecycle",

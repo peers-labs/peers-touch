@@ -39,12 +39,22 @@ HARNESS = (
     / "message_publishing"
     / "harness.ts"
 )
+CHAT_HARNESS = (
+    ROOT
+    / "apps"
+    / "desktop"
+    / "src"
+    / "acceptance"
+    / "chat"
+    / "harness.ts"
+)
 
 
 class MessagePublishingNativeGateTests(unittest.TestCase):
     def setUp(self) -> None:
         self.source = GATE.read_text(encoding="utf-8")
         self.harness = HARNESS.read_text(encoding="utf-8")
+        self.chat_harness = CHAT_HARNESS.read_text(encoding="utf-8")
         self.tree = ast.parse(self.source)
 
     def test_contract_is_one_suite_with_eight_attach_only_scenarios(self) -> None:
@@ -200,8 +210,22 @@ class MessagePublishingNativeGateTests(unittest.TestCase):
         )
         self.assertNotIn("SuiteRuntimeAction.CLIENT_REPLACEMENT", self.source)
 
-    def test_client_readiness_requires_hydrated_active_device_identity(self) -> None:
-        self.assertIn('"hydrateActiveActor"', self.source)
+    def test_client_readiness_reuses_login_hydration_and_requires_active_device(
+        self,
+    ) -> None:
+        login_start = self.chat_harness.index("    async loginWithPassword(")
+        login_end = self.chat_harness.index(
+            "    async hydrateActiveActor()",
+            login_start,
+        )
+        login_source = self.chat_harness[login_start:login_end]
+
+        self.assertIn("await hydrateSocialForActiveActor();", login_source)
+        self.assertLess(
+            login_source.index("await hydrateSocialForActiveActor();"),
+            login_source.rindex("return {"),
+        )
+        self.assertNotIn('"hydrateActiveActor"', self.source)
         self.assertIn('"resumeMessagingLifecycle"', self.source)
         self.assertIn('resumed.get("activated") is not True', self.source)
         self.assertEqual(
