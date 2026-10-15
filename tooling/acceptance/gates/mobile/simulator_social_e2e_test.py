@@ -437,6 +437,27 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertEqual(result["command"]["commandId"], "reaction-1")
         self.assertEqual(result["read"]["postId"], "post-1")
 
+    def test_private_reaction_readback_surfaces_mobile_root_error(self) -> None:
+        session = Mock()
+        session.execute_script.return_value = (
+            "Error: private Reaction command failed\n"
+            "at setPrivateMomentReaction"
+        )
+
+        with self.assertRaisesRegex(
+            GateError,
+            "Reaction kind 2 triggered Mobile root error: "
+            "Error: private Reaction command failed",
+        ):
+            SimulatorSocialGate._wait_private_reaction_readback(
+                session,
+                "post-1",
+                2,
+                "Reaction kind 2",
+            )
+
+        session.call_action.assert_not_called()
+
     def test_antd_option_selection_opens_the_control_before_clicking_option(
         self,
     ) -> None:

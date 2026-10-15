@@ -1455,6 +1455,19 @@ return {
         last_command: dict[str, Any] | None = None
         last_read: dict[str, Any] | None = None
         while time.monotonic() < deadline:
+            root_error = session.execute_script(
+                """
+const stack = document.querySelector(
+  '[data-acceptance-root-error-stack]'
+);
+return stack?.textContent || '';
+"""
+            )
+            if isinstance(root_error, str) and root_error.strip():
+                raise GateError(
+                    f"{label} triggered Mobile root error: "
+                    f"{root_error.strip()}"
+                )
             snapshot = session.call_action("moments.private.snapshot")
             if not isinstance(snapshot, Mapping):
                 time.sleep(0.25)
