@@ -337,6 +337,9 @@ func TestSecureContentResetPostgresRebuildsLegacyPrivatePostSchema(
 	t *testing.T,
 ) {
 	database, _ := openPrivateContentStorePostgres(t)
+	if err := validateCanonicalPrivatePostSchema(database); err != nil {
+		t.Fatalf("canonical PostgreSQL private Post schema: %v", err)
+	}
 	if err := database.AutoMigrate(
 		&dbmodel.SocialPublicPost{},
 		&dbmodel.SocialComment{},
@@ -421,6 +424,29 @@ func TestSecureContentResetPostgresRebuildsLegacyPrivatePostSchema(
 	canonical.ContentID = "canonical-content-after-reset"
 	if err := database.Create(&canonical).Error; err != nil {
 		t.Fatalf("canonical insert after reset: %v", err)
+	}
+}
+
+func TestSecureContentResetPostgresRejectsUnexpectedPartialIndexPredicate(
+	t *testing.T,
+) {
+	database, _ := openPrivateContentStorePostgres(t)
+	if err := database.Exec(
+		`DROP INDEX uidx_social_private_post_content`,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Exec(`
+CREATE UNIQUE INDEX uidx_social_private_post_content
+ON social_private_posts (content_id)
+WHERE content_id IS NOT NULL
+`).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	err := validateCanonicalPrivatePostSchema(database)
+	if ResetCodeOf(err) != ResetCodeSchemaTargetUnreviewed {
+		t.Fatalf("schema validation error = %v", err)
 	}
 }
 

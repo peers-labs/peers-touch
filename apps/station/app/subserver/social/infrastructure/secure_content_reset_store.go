@@ -3206,8 +3206,9 @@ type canonicalColumnExpectation struct {
 }
 
 type canonicalIndexExpectation struct {
-	Columns []string
-	Unique  bool
+	Columns          []string
+	Unique           bool
+	PartialPredicate string
 }
 
 type postgresCanonicalIndexRow struct {
@@ -3217,6 +3218,7 @@ type postgresCanonicalIndexRow struct {
 	IsUnique   bool    `gorm:"column:is_unique"`
 	IsPrimary  bool    `gorm:"column:is_primary"`
 	IsPartial  bool    `gorm:"column:is_partial"`
+	Predicate  *string `gorm:"column:predicate"`
 	IsValid    bool    `gorm:"column:is_valid"`
 	IsReady    bool    `gorm:"column:is_ready"`
 }
@@ -3476,6 +3478,23 @@ func validateCanonicalModelIndexes(
 			Columns: columns,
 			Unique:  strings.EqualFold(index.Class, "UNIQUE"),
 		}
+		if database.Dialector.Name() == "postgres" &&
+			statement.Schema.Table == "social_private_posts" {
+			switch index.Name {
+			case "uidx_social_private_post_id":
+				expected[index.Name] = canonicalIndexExpectation{
+					Columns:          columns,
+					Unique:           true,
+					PartialPredicate: canonicalPostgresPrivateIndexPredicate("post_id"),
+				}
+			case "uidx_social_private_post_content":
+				expected[index.Name] = canonicalIndexExpectation{
+					Columns:          columns,
+					Unique:           true,
+					PartialPredicate: canonicalPostgresPrivateIndexPredicate("content_id"),
+				}
+			}
+		}
 	}
 
 	indexes, err := canonicalModelIndexes(
@@ -3492,7 +3511,8 @@ func validateCanonicalModelIndexes(
 		if !ok {
 			if allowed, found := allowedExtraIndexes[name]; found &&
 				index.Unique == allowed.Unique &&
-				slices.Equal(index.Columns, allowed.Columns) {
+				slices.Equal(index.Columns, allowed.Columns) &&
+				index.PartialPredicate == allowed.PartialPredicate {
 				continue
 			}
 			if allowedExtraColumns != nil &&
@@ -3508,16 +3528,19 @@ func validateCanonicalModelIndexes(
 			)
 		}
 		if index.Unique != wanted.Unique ||
-			!slices.Equal(index.Columns, wanted.Columns) {
+			!slices.Equal(index.Columns, wanted.Columns) ||
+			index.PartialPredicate != wanted.PartialPredicate {
 			return resetError(
 				ResetCodeSchemaTargetUnreviewed,
-				"index %s.%s shape or uniqueness does not match the canonical model: got columns=%v unique=%t, want columns=%v unique=%t",
+				"index %s.%s shape does not match the canonical model: got columns=%v unique=%t predicate=%q, want columns=%v unique=%t predicate=%q",
 				statement.Schema.Table,
 				name,
 				index.Columns,
 				index.Unique,
+				index.PartialPredicate,
 				wanted.Columns,
 				wanted.Unique,
+				wanted.PartialPredicate,
 			)
 		}
 		seen[name] = struct{}{}
@@ -3601,6 +3624,10 @@ SELECT
   index_definition.indisunique AS is_unique,
   index_definition.indisprimary AS is_primary,
   index_definition.indpred IS NOT NULL AS is_partial,
+  pg_catalog.pg_get_expr(
+    index_definition.indpred,
+    index_definition.indrelid
+  ) AS predicate,
   index_definition.indisvalid AS is_valid,
   index_definition.indisready AS is_ready
 FROM pg_catalog.pg_index AS index_definition
@@ -3637,12 +3664,20 @@ ORDER BY index_relation.relname, index_column.ordinality
 		if row.IsPrimary {
 			continue
 		}
-		if row.IsPartial || !row.IsValid || !row.IsReady ||
+		if !row.IsValid || !row.IsReady ||
 			row.ColumnName == nil ||
 			row.Ordinal != ordinals[row.IndexName]+1 {
 			return nil, resetError(
 				ResetCodeSchemaTargetUnreviewed,
-				"index %s.%s is partial, invalid, not ready, expression-based, or unordered",
+				"index %s.%s is invalid, not ready, expression-based, or unordered",
+				table,
+				row.IndexName,
+			)
+		}
+		if row.IsPartial != (row.Predicate != nil) {
+			return nil, resetError(
+				ResetCodeSchemaTargetUnreviewed,
+				"index %s.%s has inconsistent partial-index metadata",
 				table,
 				row.IndexName,
 			)
@@ -3658,11 +3693,35 @@ ORDER BY index_relation.relname, index_column.ordinality
 		}
 		index.Unique = row.IsUnique
 		index.Columns = append(index.Columns, strings.ToLower(*row.ColumnName))
+		if row.Predicate != nil {
+			predicate := normalizePostgresIndexPredicate(*row.Predicate)
+			if found && index.PartialPredicate != predicate {
+				return nil, resetError(
+					ResetCodeSchemaTargetUnreviewed,
+					"index %s.%s has inconsistent partial predicates",
+					table,
+					row.IndexName,
+				)
+			}
+			index.PartialPredicate = predicate
+		}
 		result[row.IndexName] = index
 		ordinals[row.IndexName] = row.Ordinal
 	}
 
 	return result, nil
+}
+
+func canonicalPostgresPrivateIndexPredicate(column string) string {
+	return fmt.Sprintf(
+		"((%s IS NOT NULL) AND ((%s)::text <> ''::text))",
+		column,
+		column,
+	)
+}
+
+func normalizePostgresIndexPredicate(predicate string) string {
+	return strings.Join(strings.Fields(predicate), " ")
 }
 
 func primaryKeyColumns(
