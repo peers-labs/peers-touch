@@ -416,9 +416,15 @@ human authorization.
 
 Reviewed non-stable Profiles authorize routine environment selection,
 registration, provisioning, deploy, restart, and reset. Local Profile creation
-through `make profile-init` and coherent verified local commits are not review
-violations; push, PR, merge, release, history rewrite, and stable mutation
-remain separately governed.
+through `make profile-init` and coherent local checkpoint commits are not review
+violations; checkpoint commits may precede runtime proof and never imply
+delivery. Reject local Profile readers that accept symlinks, non-private or
+foreign-owned files, escaped paths, or shell-active values. Stable selection
+must remain connect-only by default; explicit capability binding is required
+for stable deploy, and stable reset remains forbidden. Namespaced internal
+deployment transport ref updates are not collaboration pushes. Push, PR,
+merge, release, history rewrite, and stable mutation remain separately
+governed.
 
 For machine workspace registration changes, reject persisted Git HEAD,
 command-specific HEAD reconciliation, or another mutable source cache in the

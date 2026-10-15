@@ -45,9 +45,10 @@ source work.
 3. No worktree create/switch/remove/prune occurs without explicit user request.
 4. Current source identity matches the action's prepared source.
 5. The action follows accepted architecture and platform standards.
-6. Local commit is allowed for a coherent verified task-owned change.
-   Non-stable development operations derive authority from the reviewed
-   Profile and capability; separately governed operations have exact
+6. Local checkpoint commit is allowed for any useful coherent task-owned
+   change. It may precede runtime proof and never implies completion or
+   delivery. Non-stable development operations derive authority from the
+   reviewed Profile and capability; separately governed operations have exact
    authorization.
 7. Runtime actions pass Profile, capability, target/scope, stable protection,
    topology, source, and OS-held lease checks at their concrete entrypoint.

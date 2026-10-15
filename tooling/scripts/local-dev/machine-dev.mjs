@@ -9,6 +9,7 @@ import {
   buildLeaseCommand,
   canonicalize,
   checkWorkspace,
+  profileEnvironment,
   registerWorkspace,
   selectWorkspaceProfile,
   statusAll,
@@ -85,6 +86,7 @@ function shellQuote(value) {
 
 function outputShell(resolved) {
   const values = {
+    ...profileEnvironment(resolved.profile),
     PT_MACHINE_DEV_AUTHORITY: resolved.authority,
     PT_MACHINE_WORKSPACE_ID: resolved.binding.workspaceId,
     PT_MACHINE_WORKSPACE_ROOT: resolved.binding.canonicalRoot,

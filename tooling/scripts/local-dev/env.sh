@@ -68,15 +68,20 @@ else
   PROFILE_FROM_MACHINE=1
 fi
 
-# shellcheck disable=SC1090
-profile_allexport_enabled=0
-case "$-" in
-  *a*) profile_allexport_enabled=1 ;;
-esac
-set -a
-source "$PROFILE_FILE"
-if [[ "$profile_allexport_enabled" -eq 0 ]]; then
-  set +a
+if [[ "$PROFILE_FROM_MACHINE" == "0" ]]; then
+  # Acceptance runtime manifests are run-scoped files validated above.
+  # Canonical machine Profile values arrive as shell-quoted exports from the
+  # resolver and are never executed by sourcing the Profile file.
+  # shellcheck disable=SC1090
+  profile_allexport_enabled=0
+  case "$-" in
+    *a*) profile_allexport_enabled=1 ;;
+  esac
+  set -a
+  source "$PROFILE_FILE"
+  if [[ "$profile_allexport_enabled" -eq 0 ]]; then
+    set +a
+  fi
 fi
 
 : "${PT_DEV_PROFILE:?PT_DEV_PROFILE not set in profile}"

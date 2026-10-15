@@ -60,7 +60,7 @@ Target command behavior:
 |---------|----------------------|
 | `make env-register` | Explicitly enroll the verified current workspace and allocate one profile/slot/capability binding |
 | `make env-unregister [WORKSPACE_ID=<id>]` | Remove the exact idle registration owned by the caller; reject any live OS-held lease |
-| `make profile <name>` | Explicitly select a reviewed Profile; register with the lowest free slot and minimum operational capabilities, excluding reset, on first use; otherwise update the existing binding |
+| `make profile <name>` | Select a reviewed Profile; register with the lowest free slot on first use; non-stable remote Profiles receive connect+deploy, while stable/local/compose Profiles receive connect only |
 | `make env-update` | Atomically replace requested binding fields and the registered branch while no lease is held |
 | `make env-check` | Verify current root/ID/branch, live Git source, selected definition, slot, capabilities, target host, and budget |
 | `make dev-start TASK=<id> ...` | Optionally create task-local recovery state |
@@ -242,9 +242,9 @@ Migration remains incomplete until every condition below holds:
 
 - `make profile <name>` and `make env-register` are the only operations that
   enroll the current `workspaceId`. The former is the normal explicit
-  first-use path with atomic free-slot allocation and minimum operational
-  capabilities without reset; the latter accepts an Owner-provided purpose,
-  profile, capability set, and slot.
+  first-use path with atomic free-slot allocation; non-stable remote Profiles
+  receive connect+deploy while stable/local/compose Profiles receive connect
+  only. The latter accepts purpose metadata, profile, capability set, and slot.
 - `make profiles`, `git worktree list`, repository scans, and old
   `.local/dev/active` pointers are discovery only.
 - `make env-status-all` lists registered worktrees first, then separately

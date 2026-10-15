@@ -1,8 +1,8 @@
 # Local Dev Control Plane
 
 > **Status**: active
-> **Version**: v1.5
-> **Created**: 2026-09-13 | **Updated**: 2026-10-13
+> **Version**: v1.6
+> **Created**: 2026-09-13 | **Updated**: 2026-10-15
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -53,9 +53,10 @@ Application Support namespace，不适合承载开发期产物；目标路径统
 7. 将 Acceptance Evidence Store 收敛到同一 Dev Control Plane 根。
 8. 所有冲突 fail closed，不依赖人工记忆或 worktree 私有缓存。
 9. 让所有 worktree 在实际资源入口看到已持有的 OS lease 和冲突。
-10. 环境创建必须由研发人员对精确名称和目标显式授权；Agent 不得自行生成授权。
-11. 仅由 canonical Profile ID 派生 reset 策略：大小写不敏感包含
-    `stable` 的 Profile 禁止 Agent 自主 reset，其余已评审 Profile 允许
+10. 已评审非 stable Profile 直接授权 capability 覆盖的开发环境操作；
+    worktree-local Profile 可由 canonical `profile-init` 直接创建。
+11. 仅由 canonical Profile ID 派生 reset 策略：大小写不敏感、以
+    `stable` 结尾的 Profile 禁止 Agent 自主 reset，其余已评审 Profile 允许
     Agent 在能力、精确 scope、当前源码和 lease 约束下选择 reset。
 12. Workflow Snapshot 通过按需 CLI/API 提供只读开发状态，不启动常驻服务、
     不占用端口，也不成为控制面真源。
@@ -76,12 +77,13 @@ machine-local authority at:
 ~/.peers-touch/dev/leases/
 ```
 
-An existing `authority: observed-snapshot` file remains diagnostic until an
-Owner explicitly runs `make profile <name>` or `make env-register`. Either
+An existing `authority: observed-snapshot` file remains diagnostic until the
+canonical `make profile <name>` or `make env-register` action runs. Either
 operation promotes the registry to `authority: machine-control-plane` and adds
 the verified current workspace binding atomically. `make profile` allocates the
-lowest free slot and the Profile's minimum operational capabilities, never
-`station.reset`; `make env-register` remains available for explicit allocation.
+the lowest free slot and the Profile's minimum operational capabilities, never
+`station.reset`; stable Profiles default to `station.connect` only.
+`make env-register` remains available for explicit allocation.
 Discovery and legacy profile pointers never perform promotion or registration.
 
 Git worktree discovery does not create a registration. The initial registered

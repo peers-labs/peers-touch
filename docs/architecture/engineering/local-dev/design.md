@@ -27,10 +27,11 @@
 8. **Repository cleanliness**: transient debug sessions, logs, traces,
    screenshots, DOM dumps, and ad-hoc reports are machine development state,
    not repository-root content.
-9. **Profile-authorized environment lifecycle**: a reviewed Profile authorizes
-   routine selection, registration, provisioning, deploy, restart, and reset
-   within its declared capabilities. A worktree-local Profile may be created
-   directly; remote topology still comes from tracked source.
+9. **Profile-authorized environment lifecycle**: a reviewed non-stable Profile
+   authorizes routine selection, registration, provisioning, deploy, restart,
+   and reset within its declared capabilities. A worktree-local Profile may be
+   created directly; remote topology still comes from tracked source. Stable
+   Profiles default to connect-only and require explicit binding for mutation.
 10. **Profile-ID reset policy**: the canonical Profile ID is the only reset
     policy source. A case-insensitive terminal `stable` suffix protects the Profile
     from autonomous reset; every other reviewed Profile is Agent-resettable.
@@ -143,15 +144,19 @@ reset lease. These are scope, topology, identity, and concurrency guards; none
 is a human-permission prompt. A stable Profile fails with
 `PROFILE_RESET_PROTECTED` before lease acquisition.
 
-An existing reviewed Profile and the current workspace binding authorize deploy
-and restart within their capabilities. Non-stable reset is likewise
-Profile-authorized. Every operation still resolves the exact target, current
-source, clean remote topology when applicable, and OS-held lease. Stable reset
-fails before lease acquisition.
+An existing reviewed non-stable Profile and the current workspace binding
+authorize deploy and restart within their capabilities. Non-stable reset is
+likewise Profile-authorized. Stable Profile selection grants only
+`station.connect`; a user-directed explicit binding is required to add
+`station.deploy`, while stable reset always fails before lease acquisition.
+Every operation still resolves the exact target, current source, clean remote
+topology when applicable, and OS-held lease.
 
 `profile-init` creates one worktree-local compose Profile and never overwrites
-an existing definition. It creates development topology, not another worktree
-and not delivery permission.
+an existing definition. Runtime accepts only a private, current-user-owned
+regular file directly inside the worktree Profile root with shell-safe literal
+assignments. It creates development topology, not another worktree and not
+delivery permission.
 
 ### 4.2 Machine Registry
 
@@ -260,6 +265,12 @@ the authoritative binding, capability, reviewed Profile, normalized target,
 reset policy, and exact scope under the lifecycle and registry locks. This
 closes registration/source-change races without treating task records as
 permission.
+
+Remote exact-source synchronization may force-update
+`refs/peers-touch/deploy/<environment>/<branch>` in a dedicated internal
+transport repository. The ref carries Git objects to one deployment target; it
+is not a collaboration branch, delivery publication, or authorization to push
+origin/GitHub.
 
 ### 4.7 Runtime Observer
 

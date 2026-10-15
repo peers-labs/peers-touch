@@ -670,8 +670,8 @@ actual mutation.
 
 ### Context
 
-`make profile <name>` is an explicit Owner action, but previously delegated to
-the update-only registry operation. A newly cloned or newly created worktree
+`make profile <name>` is the canonical selection action, but previously
+delegated to the update-only registry operation. A newly cloned or newly created worktree
 therefore failed with `WORKSPACE_UNREGISTERED` and required callers to discover
 the separate registration command, slot, capabilities, purpose, and owner
 fields before they could select an existing reviewed Profile.
@@ -688,8 +688,9 @@ dirty remote source, or missing runtime environment file.
 selection:
 
 - an unregistered worktree atomically receives the lowest available local slot;
-- a reviewed remote Profile receives only `station.connect` and
+- a reviewed non-stable remote Profile receives only `station.connect` and
   `station.deploy`;
+- a stable remote Profile receives only `station.connect`;
 - a local or compose Profile receives only `station.connect`;
 - `station.reset` is never granted implicitly;
 - an existing registration keeps its slot, owner, and purpose while switching
@@ -974,12 +975,18 @@ operator convention is a terminal `stable` suffix.
   command are removed.
 - Profile IDs ending in `stable`, case-insensitively, are
   `stable-protected`; every other Profile is `agent-resettable`.
+- Canonical first selection grants a stable Profile only `station.connect`.
+  Stable deploy/restart requires a user-directed explicit `station.deploy`
+  binding; stable reset remains forbidden.
 - A non-stable operation still requires exact target or reset scope, current
   source identity, clean topology where remote deployment is involved, and the
   matching OS-held lease.
 - Remote Profile definitions remain tracked source in the sibling environment
   repository. Runtime code may not invent a host, credential, or dirty
   topology definition.
+- Source synchronization may force-update a namespaced ref in an internal
+  deployment transport repository. That ref is not a collaboration branch,
+  delivery push, or authorization to publish to origin/GitHub.
 
 ### Rationale
 
@@ -1001,6 +1008,9 @@ target identity, stable protection, source fencing, or resource exclusion.
 - Non-stable development environments can be prepared and reset as part of an
   ordinary verification loop.
 - A non-terminal `stable` token no longer protects a Profile.
-- Stable reset remains rejected before lease acquisition.
+- Stable reset remains rejected before lease acquisition; stable deployment is
+  absent from default selection and exists only through an explicit binding.
 - Push, PR, merge, release, history rewrite, and worktree lifecycle remain
-  separately governed operations.
+  separately governed operations. Internal deployment transport ref updates
+  are part of Profile-authorized source synchronization, not collaboration
+  publication.

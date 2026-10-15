@@ -1,8 +1,8 @@
 # Local Development Environment
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-07-23 | **Updated**: 2026-10-05
+> **Version**: v1.4
+> **Created**: 2026-07-23 | **Updated**: 2026-10-15
 > **Owner**: Platform Team
 
 ---
@@ -47,7 +47,8 @@ diagnostic and makes normal runtime resolution fail closed. Legacy
 
 Do not interpret discovered worktrees or profile pointers as active usage:
 
-- registration is an explicit Owner action;
+- registration is created only by canonical `make profile` or
+  `make env-register`;
 - `active` requires a matching live process/listener or valid lease;
 - a registered worktree without live resources is `idle`;
 - an unregistered worktree remains an observation only.
@@ -105,12 +106,6 @@ The registry remains schema v1. Runtime does not migrate or accept
 head-bearing registrations; machine-local files produced by superseded
 development code must be corrected explicitly.
 
-The registration stores the canonical root and registered branch, but not Git
-HEAD. Current HEAD is read directly from the worktree for each command.
-The registry remains schema v1. Runtime does not migrate or accept
-head-bearing registrations; machine-local files produced by superseded
-development code must be corrected explicitly.
-
 Local slot and Desktop/Mobile ports come from the machine binding. A profile's
 `PT_DEV_SLOT` and local client port fields are legacy topology observations and
 cannot override the allocation. See
@@ -131,7 +126,11 @@ make profile-init PROFILE=<name> SLOT=<n>
 ```
 
 This creates one non-overwriting Profile under the current worktree. It does
-not create a worktree or grant remote delivery permission.
+not create a worktree or grant remote delivery permission. Runtime accepts the
+file only when it is a non-symlink regular file directly inside the local
+Profile directory, owned by the current user, private to that user, and made
+only of shell-safe literal assignments. The resolver emits shell-quoted
+exports; normal development never executes the local file with `source`.
 
 Remote deployment continues to require exactly one Git-tracked, clean Profile
 and deploy definition from the sibling `env` repository. New remote topology is
@@ -143,7 +142,7 @@ fallbacks.
 `PT_DEV_PROFILE_FILE_AUTHORITY=acceptance-runtime-manifest`, and the owned
 regular profile file must be directly contained by the absolute
 `PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT`. Normal development resolves reviewed
-env-repository topology or an authorized local compose profile.
+env-repository topology or a validated worktree-local compose Profile.
 
 ### 2.3 Existing Profile Operation Admission
 
@@ -157,13 +156,14 @@ verified canonical ID then determines reset policy:
 
 There is no reset-policy environment field or machine-state override. For
 non-stable Profiles, reset still requires the workspace `station.reset`
-capability, a live declaration for the same Profile and exact exclusive scope,
-the same command scope, matching tracked-clean remote topology and source
-identity, and the OS-held reset lease.
+capability, the same exact command scope, matching tracked-clean remote
+topology and source identity, and the OS-held reset lease.
 
 Deploy/restart of an existing reviewed non-stable remote Profile is authorized
 by the Profile and workspace capability binding. It needs no separate Plan or
-chat grant. Stable mutations remain separately protected.
+chat grant. Stable selection defaults to `station.connect`; stable deploy or
+restart requires a user-directed explicit `station.deploy` binding, and stable
+reset remains forbidden.
 
 ### 2.4 Profile Fields
 
@@ -217,9 +217,9 @@ Station runs on a remote host. `make station` triggers a full deploy cycle:
 
 ```
 make station (remote mode)
-  1. Push current branch to git server (central/local/github per deploy env)
+  1. Make current HEAD available through the configured source transport
   2. SSH to remote host
-  3. Remote pulls the branch
+  3. Remote fetches the exact commit
   4. Remote rebuilds Go binary
   5. Remote restarts Station service
   6. Health check until ready
@@ -230,6 +230,12 @@ make station (remote mode)
 branch's HEAD commit** to the remote Station. Uncommitted changes are NOT deployed.
 If you have local changes that need to be tested remotely, commit them first
 (even as a WIP commit on a feature branch), then run `make station`.
+
+For `direct` and `central` modes, source sync force-updates only the namespaced
+internal ref `refs/peers-touch/deploy/<environment>/<branch>`. The bare
+repository is a deployment transport, not a collaboration remote: this update
+is covered by the Profile deploy capability and does not publish a branch,
+deliver a stage, or authorize push to origin/GitHub.
 
 ### 3.3 Mode-specific behavior summary
 
@@ -278,7 +284,7 @@ registered and its binding must resolve.
 
 | Target | What it does |
 |--------|-------------|
-| `make profile <name>` | Explicitly select a reviewed Profile; on first use, register with the lowest free slot and minimum operational capabilities without reset |
+| `make profile <name>` | Select a reviewed Profile; on first use, allocate the lowest free slot; non-stable remote gets connect+deploy, while stable/local/compose gets connect only |
 | `make env-register ...` | Explicitly register this verified workspace and allocate profile, slot, and allowed capabilities |
 | `make env-update ...` | Update requested binding fields and current registered branch while no lease is held |
 | `make env-unregister [WORKSPACE_ID=<id>]` | Remove the exact owned idle registration; rejects a live OS-held lease |
@@ -481,7 +487,8 @@ SELECT id, conversation_id, created_at FROM device_queue_lanes ORDER BY created_
    through its authoritative `workspaceId` binding. Profiles may be shared;
    slots may not.
 4. **Health check is the contract** — `make station` is not done until health passes.
-5. **Current branch deploys** — remote mode pushes HEAD, not necessarily main.
+5. **Current branch deploys** — remote mode transports current HEAD, not
+   necessarily main; internal transport refs are not collaboration branches.
 6. **Environment repository is authoritative for remote topology** — do not
    repurpose a canonical Profile by editing only its `.local` cache. New remote
    topology must be a tracked source change in the explicitly selected
@@ -504,3 +511,6 @@ SELECT id, conversation_id, created_at FROM device_queue_lanes ORDER BY created_
 12. **Explicit unregister** — normal task completion retains the registration.
     Explicit worktree removal invokes unregister separately; it fails while an
     OS-held lease remains or the exact caller/root ownership does not match.
+13. **Resolve contention from facts first** — reuse, serialize, or choose a
+    non-conflicting slot/target from current leases and process identity. Ask
+    the user only when ownership or safe ordering cannot be determined.
