@@ -503,7 +503,17 @@ class NativeDesktopMacOSProvisioner:
                 raise ProvisioningError(
                     "macOS runtime-cell probe process identity is unavailable"
                 )
-            session.invoke_app_result("acceptance_request_activation")
+            activation = session.invoke_app_result(
+                "acceptance_request_activation"
+            )
+            if activation.get("ok") is not True:
+                raise BlockedError(
+                    reason=(
+                        "macOS runtime-cell probe rejected "
+                        "process-owned activation"
+                    ),
+                    resource="runtime-cell-native-focus",
+                )
             adapter.position_main_window(process_id, (100.0, 100.0))
             bounds = self._await_window_bounds(process_id)
             point, pointer, stack, input_probe, attempted_points = (

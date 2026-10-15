@@ -131,6 +131,7 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
     ) -> None:
         launcher = Mock(log_path=None)
         session = Mock(process_id=42, log_path=None)
+        session.invoke_app_result.return_value = {"ok": True}
         adapter = Mock(spec=MacOSNativeDesktopAdapter)
         adapter.capture_screenshot.side_effect = (
             lambda path: path.write_bytes(b"screenshot")
@@ -232,6 +233,55 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         session.invoke_app_result.assert_called_once_with(
             "acceptance_request_activation"
         )
+        session.stop.assert_called_once_with()
+
+    def test_probe_activation_rejection_blocks_before_window_observation(
+        self,
+    ) -> None:
+        launcher = Mock(log_path=None)
+        session = Mock(process_id=42, log_path=None)
+        session.invoke_app_result.return_value = {"ok": False}
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        lifecycle = NativeDesktopMacOSProvisioner()
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": "exclusive-native-input",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": "isolated-gui-session",
+            },
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "resolve_smoke_port",
+            return_value=45123,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "find_app_binary",
+            return_value="/tmp/peers-touch-desktop",
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "LocalTauriLauncher",
+            return_value=launcher,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "TauriSession",
+            return_value=session,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "MacOSNativeDesktopAdapter",
+            return_value=adapter,
+        ), patch.object(
+            lifecycle,
+            "_await_window_bounds",
+        ) as window_probe:
+            with self.assertRaisesRegex(
+                BlockedError,
+                "rejected process-owned activation",
+            ):
+                lifecycle._probe_native_adapter()
+
+        window_probe.assert_not_called()
+        adapter.position_main_window.assert_not_called()
         session.stop.assert_called_once_with()
 
     def test_semantic_probe_uses_webdriver_without_native_input(self) -> None:
